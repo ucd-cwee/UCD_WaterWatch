@@ -893,6 +893,22 @@ namespace GoodLang {
 			}
 		};
 
+		/* auto shared_ptr_thread = AsThread([](){}); */
+		template<typename F> std::shared_ptr<void> AsThread(F Loop, std::function<void(void)> OnThreadEnd = {}) {
+			std::atomic<bool>* shared_lock = new std::atomic<bool>(true);
+			std::shared_ptr<void> lifetimeTracker = std::shared_ptr<void>(nullptr, [Promise = async([todo = std::move(Loop), shared_lock]() {
+				while (shared_lock->load()) {
+					todo();
+				}
+			}).as_promise(), shared_lock, OnThreadEnd](void* p) {
+				shared_lock->store(false);
+				const_cast<promise&>(Promise).wait();
+				delete shared_lock;
+				if (OnThreadEnd) OnThreadEnd();
+			});
+			return lifetimeTracker;
+		};
+
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
 			F out{ std::forward<F>(SharedObject) };
