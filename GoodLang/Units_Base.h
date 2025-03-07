@@ -256,7 +256,7 @@ namespace GoodLang {
 
 		};
 		using scalar = value;
-
+		
 		namespace impl {
 			class value_accessor {
 			public:
@@ -360,6 +360,8 @@ namespace GoodLang {
 			};
 		};
 	};
+	template <> __forceinline std::string ToString(Units::value const& r) { return r.ToString(); };
+
 };
 
 namespace std {

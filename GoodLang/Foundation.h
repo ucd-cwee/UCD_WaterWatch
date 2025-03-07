@@ -489,6 +489,30 @@ namespace GoodLang {
 
 		template<class _type_, int _blockSize_ = std::max<size_t>(128, (sizeof(_type_) << 4)), bool ForcePOD = false>
 		using FastAllocator = FastBlockAllocator<_type_, _blockSize_, ForcePOD>;
+
+		template<typename T>
+		class constexpr_type_info {
+		private:
+			constexpr static std::string_view fullname_intern() {
+				return __FUNCTION__;
+			}
+			constexpr static std::string_view name_impl() {
+				size_t length = fullname_intern().size();
+				return fullname_intern().substr(20 + 8 + 9 + 4, (length - (19 + 8 + 9 + 4)) - 19);
+			}
+			constexpr static size_t constexpr_hash(std::string_view str) {
+				size_t seed = 31;
+				for (char c : str) {
+					seed ^= static_cast<uint64_t>(c) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+				}
+				return seed;
+			};
+
+		public:
+			using type = T;
+			constexpr static std::string_view name{ name_impl() };
+			constexpr static size_t hash{ constexpr_hash(name_impl()) };
+		};
 	};
 
 	/* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast.

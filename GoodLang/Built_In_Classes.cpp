@@ -410,7 +410,7 @@ namespace GoodLang {
 				classPtr->AddFunction("tm_yday", make_callable(&DateTime::tm_yday));
 				classPtr->AddFunction("tm_wday", make_callable(&DateTime::tm_wday));
 				classPtr->AddFunction("tm_year", make_callable(&DateTime::tm_year));
-				classPtr->AddFunction("load", make_callable(&DateTime::load));
+				// classPtr->AddFunction("load", make_callable(&DateTime::load));
 				classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
 				//classPtr->AddFunction("getNumDaysInSameMonth", make_callable([](DateTime const& dt) -> int {
 				//	return DateTime::getNumDaysInSameMonth(dt);
@@ -588,10 +588,10 @@ namespace GoodLang {
 				ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
 
 				// Functions
-				classPtr->AddFunction("first", make_callable([](thisType& r) -> Var& { return r.first; }));
-				classPtr->AddFunction("first", make_callable([](thisType const& r) -> Var const& { return r.first; }));
-				classPtr->AddFunction("second", make_callable([](thisType& r) -> Var& { return r.second; }));
-				classPtr->AddFunction("second", make_callable([](thisType const& r) -> Var const& { return r.second; }));
+				classPtr->AddFunction("first", make_callable([](thisType& r) -> Any { return r.first; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeRef() }), user_type_shared<Var>().lock()->MakeRef()));
+				classPtr->AddFunction("first", make_callable([](thisType const& r) -> Any { return r.first; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeConstRef()));
+				classPtr->AddFunction("second", make_callable([](thisType& r) -> Any { return r.second; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeRef() }), user_type_shared<Var>().lock()->MakeRef()));
+				classPtr->AddFunction("second", make_callable([](thisType const& r) -> Any { return r.second; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeConstRef()));
 
 				// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
 				this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x)->std::string {

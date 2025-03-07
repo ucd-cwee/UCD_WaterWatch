@@ -8,69 +8,14 @@
 #include <concurrent_unordered_map.h>
 // #include <string_view>
 
+#include <vector>
+#include <map>
+#include <set>
+
+
 // typenames, function_traits
 namespace GoodLang {
 	namespace utilities {
-#if 0
-		class typenames {
-		public:
-			template<typename T>
-			struct identity { typedef T type; };
-
-			class detail {
-			public:
-				using type_name_prober = void;
-				template <typename T> static constexpr std::string_view wrapped_type_name() {
-#ifdef __clang__
-					return __PRETTY_FUNCTION__;
-#elif defined(__GNUC__)
-					return __PRETTY_FUNCTION__;
-#elif defined(_MSC_VER)
-					return __FUNCSIG__;
-#else
-#error "Unsupported compiler"
-#endif
-				};
-				static constexpr std::size_t wrapped_type_name_prefix_length() { return wrapped_type_name<type_name_prober>().find(sv_type_name<type_name_prober>()); };
-				static constexpr std::size_t wrapped_type_name_suffix_length() { return wrapped_type_name<type_name_prober>().length() - wrapped_type_name_prefix_length() - sv_type_name<type_name_prober>().length(); };
-			};
-
-			template <typename T>
-			static constexpr std::string_view sv_type_name() {
-				return sv_type_name(identity<T>());
-			};
-
-			template <typename T>
-			static constexpr const char* type_name() {
-				return type_name(identity<T>());
-			};
-
-		private:
-			template <typename T>
-			static constexpr std::string_view sv_type_name(identity<T>)
-			{
-				constexpr std::string_view wrapped_name = utilities::typenames::detail::wrapped_type_name<T>();
-				constexpr auto prefix_length = utilities::typenames::detail::wrapped_type_name_prefix_length();
-				constexpr auto suffix_length = utilities::typenames::detail::wrapped_type_name_suffix_length();
-				constexpr auto type_name_length = wrapped_name.length() - prefix_length - suffix_length;
-				return wrapped_name.substr(prefix_length, type_name_length);
-			};
-
-			template <typename T>
-			static constexpr const char* type_name(identity<T>)
-			{
-				constexpr std::string_view wrapped_name = utilities::typenames::detail::wrapped_type_name<T>();
-				constexpr auto prefix_length = utilities::typenames::detail::wrapped_type_name_prefix_length();
-				constexpr auto suffix_length = utilities::typenames::detail::wrapped_type_name_suffix_length();
-				constexpr auto type_name_length = wrapped_name.length() - prefix_length - suffix_length;
-				return wrapped_name.substr(prefix_length, type_name_length).data();
-			};
-
-			static constexpr std::string_view sv_type_name(identity<void>) { return "void"; };
-			static constexpr const char* type_name(identity<void>) { return "void"; };
-		};
-#endif
-
 		template<typename T> struct count_arg;
 		template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
 		template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
@@ -695,6 +640,97 @@ __forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLa
 	return !operator==(a, b);
 };
 
+// ToString
+namespace GoodLang {
+	namespace details {
+		template <template<class, class, class, class, class, class> class H, class S1, class S2, class S3, class S4, class S5, class S6> __forceinline std::string ToString_templated() {
+			return user_type<H<S1, S2, S3, S4, S5, S6>>().name();
+		};
+		template <template<class, class, class, class, class> class H, class S1, class S2, class S3, class S4, class S5> __forceinline std::string ToString_templated() {
+			return user_type<H<S1, S2, S3, S4, S5>>().name();
+		};
+		template <template<class, class, class, class> class H, class S1, class S2, class S3, class S4> __forceinline std::string ToString_templated() {
+			return user_type<H<S1, S2, S3, S4>>().name();
+		};
+		template <template<class, class, class> class H, class S1, class S2, class S3> __forceinline std::string ToString_templated() {
+			return user_type<H<S1, S2, S3>>().name();
+		};
+		template <template<class, class> class H, class S1, class S2> __forceinline std::string ToString_templated() {
+			return user_type<H<S1, S2>>().name();
+		};
+		template <template<class> class H, class S1> __forceinline std::string ToString_templated() {
+			return user_type<H<S1>>().name();
+		};
+		template <typename T> __forceinline std::string ToString_templated() {
+			return user_type<T>().name();
+		};
+	};
+	template <typename T> __forceinline std::string ToString(T const&) { return details::ToString_templated<T>(); };
+	template <> __forceinline std::string ToString(std::nullptr_t const&) { return ""; };
+	template <> __forceinline std::string ToString(char const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(unsigned char const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(short const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(unsigned short const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(int const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(unsigned int const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(long const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(unsigned long const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(long long const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(unsigned long long const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(float const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(double const& r) { return std::to_string(r); };
+	template <> __forceinline std::string ToString(std::string const& r) { return r; };
+	template <> __forceinline std::string ToString(Type_Info const& r) { return r.name(); };
+	template <typename T> __forceinline std::string ToString(std::shared_ptr<T> const& r) { if (r) return ToString(*r); else return ToString(nullptr); };
+	template <typename T> __forceinline std::string ToString(std::weak_ptr<T> const& r) { return ToString(r.lock()); };
+	template <typename T, typename... Args> __forceinline std::string ToString(std::unique_ptr<T, Args...> const& r) { if (r) return ToString(*r); else return ToString(nullptr); };
+	template <typename T, typename... Args> __forceinline std::string ToString(std::pair<T, Args...> const& r) {
+		return std::string("<") + ToString(r.first) + ", " + ToString(r.second) + ">";
+	};
+	template <typename T, typename... Args> __forceinline std::string ToString(std::vector<T, Args...> const& r) {
+		std::string out{};
+		for (auto& x : r) {
+			if (out.empty())
+				out += ToString(x);
+			else
+				out += std::string(", ") + ToString(x);
+		}
+		return std::string("[") + out + std::string("]");
+	};
+	template <typename T, typename... Args> __forceinline std::string ToString(std::set<T, Args...> const& r) {
+		std::string out{};
+		for (auto& x : r) {
+			if (out.empty())
+				out += ToString(x);
+			else
+				out += std::string(", ") + ToString(x);
+		}
+		return std::string("[") + out + std::string("]");
+	};
+	template <typename T, typename... Args> __forceinline std::string ToString(std::map<T, Args...> const& r) {
+		std::string out{};
+		for (auto& x : r) {
+			if (out.empty())
+				out += ToString(x);
+			else
+				out += std::string(", ") + ToString(x);
+		}
+		return std::string("[") + out + std::string("]");
+	};
+	template <typename T, typename... Args> __forceinline std::string ToString(concurrency::concurrent_unordered_map<Args...> const& r) {
+		std::string out{};
+		for (auto& x : r) {
+			if (out.empty())
+				out += ToString(x);
+			else
+				out += std::string(", ") + ToString(x);
+		}
+		return std::string("[") + out + std::string("]");
+	};
+	template <typename T> __forceinline std::string ToStringImpl(T const& r) { return ToString(r); };
+
+};
+
 // DynamicObject && Var
 namespace GoodLang {
 	// serves as an instance of a customizable class
@@ -729,6 +765,7 @@ namespace GoodLang {
 		std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>
 			m_objects;
 	};
+	template <> __forceinline std::string ToString(DynamicObject const& r) { return ToString(r.m_actualType) + "{ " + ToString(r.m_objects) + " }"; };
 
 #define AllowInlineVarTyping
 	/* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
@@ -756,6 +793,7 @@ namespace GoodLang {
 			return !operator==(_Left, _Right);
 		};
 	};
+	template <> __forceinline std::string ToString(Var const& r) { return ToString(r.p_data); };
 };
 
 // Any, AnyAutoCast, DynamicObject, exceptions
@@ -834,6 +872,7 @@ namespace GoodLang {
 
 			std::string m_triedToFind;
 		};
+
 	}; // namespace exception
 
 	namespace details {
@@ -844,6 +883,7 @@ namespace GoodLang {
 		template<class T> struct get_type<const std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
 		template<class T> struct get_type<const std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
 		template<class T> struct get_type<const std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+
 	};
 
 	class AnyData {
@@ -904,11 +944,15 @@ namespace GoodLang {
 			}
 			// return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
 		};
+		virtual std::string ToString() const { return ""; };
+		virtual size_t Constexpr_Type_Hash() const { return 0; };
+		// virtual std::vector<std::weak_ptr<AnyData>> get_children() const;
 
 	protected:
 		std::weak_ptr< AnyData> m_self;
 		size_t typeHash;
-	};
+
+	};	
 
 	template <typename T>
 	class AnyData_Instanced final : public AnyData {
@@ -935,6 +979,13 @@ namespace GoodLang {
 			}
 			return nullptr;
 		};
+		virtual std::string ToString() const override {
+			return GoodLang::ToString(m_obj);
+		};
+		virtual size_t Constexpr_Type_Hash() const override { 
+			return GoodLang::utilities::constexpr_type_info<T>::hash;
+		};
+		// virtual std::vector<std::weak_ptr<AnyData>> get_children() const override { /* depending on the type, it'll have children. */ };
 
 	private:
 		T m_obj;
@@ -964,11 +1015,19 @@ namespace GoodLang {
 		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { return user_type_shared<T>(); };
 		virtual void* ptr() const override { return const_cast<void*>((const void*)(m_obj.get())); };
 		virtual std::shared_ptr<void> shared_ptr() const override { return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(m_obj)); };
+		virtual std::string ToString() const override {
+			return GoodLang::ToString(*m_obj);
+		};
+		virtual size_t Constexpr_Type_Hash() const override {
+			return GoodLang::utilities::constexpr_type_info<T>::hash;
+		};
+		// virtual std::vector<std::weak_ptr<AnyData>> get_children() const override { /* depending on the type, it'll have children. */ };
 
 	private:
 		std::shared_ptr<T> m_obj;
 
 	};
+	template <> __forceinline std::string ToString(AnyData const& r) { return r.ToString(); };
 
 	namespace details {
 		class AnyAutoCast; /* forward decl */
@@ -978,8 +1037,8 @@ namespace GoodLang {
 	class Any {
 	public:
 		struct Object_Data {
-			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(const H<S>* obj) { return get(*obj); };
-			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static decltype(auto) get(H<S> obj) {
+			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static std::shared_ptr<AnyData> get(const H<S>* obj) { return get(*obj); };
+			template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>>>> static std::shared_ptr<AnyData> get(H<S> obj) {
 				if (obj) {
 					if constexpr (std::is_same<Any, S>::value) {
 						return obj->container;
@@ -994,19 +1053,19 @@ namespace GoodLang {
 					return std::shared_ptr<AnyData>();
 				}
 			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(T* t) { return get(std::make_shared<T>(t)); };
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(const T* t) { return get(*t); };
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(const T& obj) {
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(T* t) { return get(std::make_shared<T>(t)); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(const T* t) { return get(*t); };
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(const T& obj) {
 				return get((std::decay_t<T>)obj);
 			};
-			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static decltype(auto) get(T&& obj) {
+			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(T&& obj) {
 				std::shared_ptr<AnyData> instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::decay_t<T>>>(std::forward<T>(obj)));
 				instanced_any->SetSelf(instanced_any);
 				return instanced_any;
 			};
 
-			static decltype(auto) get(const GoodLang::details::AnyAutoCast& obj);
-			static decltype(auto) get(const GoodLang::details::AnyAutoCast* t);
+			static std::shared_ptr<AnyData> get(const GoodLang::details::AnyAutoCast& obj);
+			static std::shared_ptr<AnyData> get(const GoodLang::details::AnyAutoCast* t);
 		};
 		template<typename ValueType> static std::shared_ptr<AnyData> CreateContainer(const ValueType& r) { return Object_Data::get(r); };
 		template<typename ValueType> static std::shared_ptr<AnyData> CreateContainer(ValueType&& r) { return Object_Data::get(std::forward<ValueType>(r)); };
@@ -1095,7 +1154,7 @@ namespace GoodLang {
 		void Clear() noexcept;
 
 		template <typename ValueT> static const char* TypeNameOf() { return TypeOf<ValueT>().name(); };
-		template <typename ValueT> static Type_Info TypeOf() { return user_type<ValueT>(); };
+		template <typename ValueT> static const Type_Info& TypeOf() { return user_type<ValueT>(); };
 
 		std::string TypeName() const noexcept;
 		// DynamicObjects can "present" as one class but actually be another. This checks the ACTUAL class, not the presenting class.
@@ -1247,10 +1306,20 @@ namespace GoodLang {
 		details::AnyAutoCast cast() const noexcept;
 		std::shared_ptr<AnyData> impl() const;
 
+		size_t Constexpr_Type_Hash() const {
+			if (std::shared_ptr<AnyData>& m = container) {
+				return m->Constexpr_Type_Hash();
+			}
+			else {
+				return 0;
+			}
+		};
+
 	public:
 		mutable std::shared_ptr<AnyData> container;
 		mutable std::shared_mutex mut;
 	};
+	template <> __forceinline std::string ToString(Any const& r) { return ToString(r.container); };
 
 	namespace details {
 		/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */
@@ -1279,7 +1348,7 @@ namespace GoodLang {
 
 	/*! Casts to whatever is on the left-hand-side, with specializations for references, pointers, values, and std::shared_ptrs. References and pointers are lifetime-sensitive. */
 	__forceinline details::AnyAutoCast Any::cast() const noexcept { return details::AnyAutoCast(this); };
-	__forceinline decltype(auto) Any::Object_Data::get(const details::AnyAutoCast& obj) {
+	__forceinline std::shared_ptr<AnyData> Any::Object_Data::get(const details::AnyAutoCast& obj) {
 		Any* t = const_cast<Any*>(obj.parent);
 		if (t) {
 			auto locked{ std::shared_lock(t->mut) };
@@ -1287,7 +1356,7 @@ namespace GoodLang {
 		}
 		return std::shared_ptr<AnyData>{ nullptr };
 	};
-	__forceinline decltype(auto) Any::Object_Data::get(const details::AnyAutoCast* t) { return get(*t); };
+	__forceinline std::shared_ptr<AnyData> Any::Object_Data::get(const details::AnyAutoCast* t) { return get(*t); };
 };
 
 // GetCopyConstructor

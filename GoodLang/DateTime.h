@@ -141,4 +141,5 @@ namespace GoodLang {
 
 
 	};
+	template <> __forceinline std::string ToString(DateTime const& r) { return (std::string)r; };
 };

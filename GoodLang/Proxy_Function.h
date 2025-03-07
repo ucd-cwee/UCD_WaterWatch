@@ -1010,6 +1010,45 @@ namespace GoodLang {
 			Proxy_Function_Base(GoodLang::FunctionSignature const& p_signature) : m_signature(p_signature) {}
 		};
 	};
+	template <> __forceinline std::string ToString(details::Proxy_Function_Base const& r) { 
+		auto sig = r.GetSignature();
+		std::string out;
+		auto returns = ToString(sig.Returns());
+		if (!sig.Name().empty()) {
+			// named function, probably from the FunctionsMap containers
+			// int GetInt(double, double)
+
+			out = returns;
+			out += " ";
+			out += sig.QualifiedName();
+			out += "(";
+			size_t i = 0;
+			for (; (i < r.NumArguments()) && (i < 1); i++) {
+				out += ToString(r.Argument(i));
+			}
+			for (; i < r.NumArguments(); i++) {
+				out += ", ";
+				out += ToString(r.Argument(i));
+			}
+			out += ")";
+		}
+		else {
+			// may be a lambda or free function?
+			// (double, double) -> int
+			out = "(";
+			size_t i = 0;
+			for (; (i < r.NumArguments()) && (i < 1); i++) {
+				out += ToString(r.Argument(i));
+			}
+			for (; i < r.NumArguments(); i++) {
+				out += ", ";
+				out += ToString(r.Argument(i));
+			}
+			out += ") -> ";
+			out += returns;
+		}
+		return out;
+	};
 };
 
 // Proxy_Function_Base std::hash, std::less, std::greater, std::equal_to
@@ -3895,6 +3934,7 @@ namespace GoodLang {
 		bool m_isEplicit{ false };
 		bool m_isCached{ false };
 	};
+	template <> __forceinline std::string ToString(Function const& r) { return ToString(r.m_function); };
 
 	/*
 	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
@@ -4070,4 +4110,5 @@ namespace GoodLang {
 		Any Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
 
 	};
+
 };

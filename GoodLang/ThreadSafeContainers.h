@@ -724,6 +724,28 @@ namespace GoodLang {
 		friend bool operator!=(Union const& a, Union const& b) {
 			return !operator==(a, b);
 		};
+		std::string ToString() const {
+			std::string out;
+			if constexpr (num_parameters >= 1) { out = GoodLang::ToString(get<0>()); }
+			if constexpr (num_parameters >= 2) { out += std::string(", ") + GoodLang::ToString(get<1>()); }
+			if constexpr (num_parameters >= 3) { out += std::string(", ") + GoodLang::ToString(get<2>()); }
+			if constexpr (num_parameters >= 4) { out += std::string(", ") + GoodLang::ToString(get<3>()); }
+			if constexpr (num_parameters >= 5) { out += std::string(", ") + GoodLang::ToString(get<4>()); }
+			if constexpr (num_parameters >= 6) { out += std::string(", ") + GoodLang::ToString(get<5>()); }
+			if constexpr (num_parameters >= 7) { out += std::string(", ") + GoodLang::ToString(get<6>()); }
+			if constexpr (num_parameters >= 8) { out += std::string(", ") + GoodLang::ToString(get<7>()); }
+			if constexpr (num_parameters >= 9) { out += std::string(", ") + GoodLang::ToString(get<8>()); }
+			if constexpr (num_parameters >= 10) { out += std::string(", ") + GoodLang::ToString(get<9>()); }
+			if constexpr (num_parameters >= 11) { out += std::string(", ") + GoodLang::ToString(get<10>()); }
+			if constexpr (num_parameters >= 12) { out += std::string(", ") + GoodLang::ToString(get<11>()); }
+			if constexpr (num_parameters >= 13) { out += std::string(", ") + GoodLang::ToString(get<12>()); }
+			if constexpr (num_parameters >= 14) { out += std::string(", ") + GoodLang::ToString(get<13>()); }
+			if constexpr (num_parameters >= 15) { out += std::string(", ") + GoodLang::ToString(get<14>()); }
+			if constexpr (num_parameters >= 16) { out += std::string(", ") + GoodLang::ToString(get<15>()); }
+			return std::string("<") + out + ">";
+		};
+
+
 #pragma endregion
 	private:
 #pragma region DATA ARRAY (BYTES)
@@ -999,6 +1021,7 @@ namespace GoodLang {
 		};
 #pragma endregion
 	};
+	template <typename T, typename... Args> __forceinline std::string ToString(Union<T, Args...> const& r) { return r.ToString();  };
 
 	/// <summary>
 	/// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
@@ -1067,6 +1090,7 @@ namespace GoodLang {
 	protected:
 		T* ptr;
 	};
+	template <typename T> __forceinline std::string ToString(atomic_ptr<T> const& r) { if (auto* p = r.Get()) return ToString(*p); else return ToString(nullptr); };
 
 	/// <summary>
 	/// thread-safe and fiber-safe integer (atomic swapping of integers)
@@ -1163,6 +1187,7 @@ namespace GoodLang {
 		long	value;
 
 	};
+	template <> __forceinline std::string ToString(InterlockedLong const& r) { return ToString(r.load()); };
 
 	namespace cas_impl {
 		template<typename... Args> struct UnionDetails {
@@ -1645,6 +1670,10 @@ namespace GoodLang {
 			return;
 		}; // sets the value to the input
 	};
+	template <typename Arg> __forceinline std::string ToString(Lockable<Arg> const& r) { 
+		auto read = r.Read();
+		return ToString(*read);
+	};
 
 	/// <summary>
 	/// allows any copiable object to be thread-safe by wrapping it in a locking container.
@@ -1807,6 +1836,10 @@ namespace GoodLang {
 			return;
 		}; // sets the value to the input
 	};
+	template <typename T, typename... Args> __forceinline std::string ToString(SharedLockable<T, Args...> const& r) {
+		auto read = r.Shared();
+		return ToString(*read);
+	};
 
 	namespace impl {
 		struct Interlocked {
@@ -1910,6 +1943,7 @@ namespace GoodLang {
 			long	value;
 		};
 	};
+	template <> __forceinline std::string ToString(impl::Interlocked const& r) { return ToString(r.load()); };
 
 	/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
 	Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
@@ -2746,9 +2780,10 @@ namespace GoodLang {
 		friend bool operator!=(Map const& _Left, Map const& _Right) {
 			return !operator==(_Left, _Right);
 		};
-
+		std::string ToString() const{ return GoodLang::ToString(data); };
 	};
-	
+	template <typename T, typename... Args> __forceinline std::string ToString(Map<T, Args...> const& r) { return r.ToString(); };
+
 	/// <summary>
 	/// thread-safe unsorted concurrency::unordered_map. Higher performance than the sorted map.
 	/// </summary>

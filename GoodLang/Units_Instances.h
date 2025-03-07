@@ -259,4 +259,38 @@ namespace GoodLang {
 
 
 	};
+
+#define DerivedUnitType(type, category, abbreviation, Ratio) \
+    template <> __forceinline std::string ToString(Units:: ## type const& r) { return r.ToString(); }
+
+#define DerivedUnitTypeWithMetricPrefix(type, prefix) \
+	template <> __forceinline std::string ToString(Units:: ## prefix ## type const& r) { return r.ToString(); }
+
+#define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
+	DerivedUnitType(type, category, abbreviation, ratio); \
+	DerivedUnitTypeWithMetricPrefix(type, femto); \
+	DerivedUnitTypeWithMetricPrefix(type, pico); \
+	DerivedUnitTypeWithMetricPrefix(type, nano); \
+	DerivedUnitTypeWithMetricPrefix(type, micro); \
+	DerivedUnitTypeWithMetricPrefix(type, milli); \
+	DerivedUnitTypeWithMetricPrefix(type, centi); \
+	DerivedUnitTypeWithMetricPrefix(type, deci); \
+	DerivedUnitTypeWithMetricPrefix(type, deca); \
+	DerivedUnitTypeWithMetricPrefix(type, hecto); \
+	DerivedUnitTypeWithMetricPrefix(type, kilo); \
+	DerivedUnitTypeWithMetricPrefix(type, mega); \
+	DerivedUnitTypeWithMetricPrefix(type, giga); \
+	DerivedUnitTypeWithMetricPrefix(type, tera); \
+	DerivedUnitTypeWithMetricPrefix(type, peta)
+
+	DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
+
+#undef DerivedUnitTypeWithMetricPrefix
+#undef DerivedUnitTypeWithMetricPrefixes
+#undef DerivedUnitType
+
+
+
+
+
 };
