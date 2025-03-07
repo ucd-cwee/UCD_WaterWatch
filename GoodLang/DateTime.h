@@ -141,5 +141,10 @@ namespace GoodLang {
 
 
 	};
-	template <> __forceinline std::string ToString(DateTime const& r) { return (std::string)r; };
+
+	namespace Impl {
+		__forceinline void ToString(Tag<DateTime>, DateTime const& r, std::string& out) {
+			out = (std::string)r;
+		};
+	};
 };

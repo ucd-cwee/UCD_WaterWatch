@@ -1010,44 +1010,45 @@ namespace GoodLang {
 			Proxy_Function_Base(GoodLang::FunctionSignature const& p_signature) : m_signature(p_signature) {}
 		};
 	};
-	template <> __forceinline std::string ToString(details::Proxy_Function_Base const& r) { 
-		auto sig = r.GetSignature();
-		std::string out;
-		auto returns = ToString(sig.Returns());
-		if (!sig.Name().empty()) {
-			// named function, probably from the FunctionsMap containers
-			// int GetInt(double, double)
 
-			out = returns;
-			out += " ";
-			out += sig.QualifiedName();
-			out += "(";
-			size_t i = 0;
-			for (; (i < r.NumArguments()) && (i < 1); i++) {
-				out += ToString(r.Argument(i));
+	namespace Impl {
+		__forceinline void ToString(Tag<details::Proxy_Function_Base>, details::Proxy_Function_Base const& r, std::string& out) {
+			auto sig = r.GetSignature();
+			auto returns = GoodLang::ToString(sig.Returns());
+			if (!sig.Name().empty()) {
+				// named function, probably from the FunctionsMap containers
+				// int GetInt(double, double)
+
+				out = returns;
+				out += " ";
+				out += sig.QualifiedName();
+				out += "(";
+				size_t i = 0;
+				for (; (i < r.NumArguments()) && (i < 1); i++) {
+					out += GoodLang::ToString(r.Argument(i));
+				}
+				for (; i < r.NumArguments(); i++) {
+					out += ", ";
+					out += GoodLang::ToString(r.Argument(i));
+				}
+				out += ")";
 			}
-			for (; i < r.NumArguments(); i++) {
-				out += ", ";
-				out += ToString(r.Argument(i));
+			else {
+				// may be a lambda or free function?
+				// (double, double) -> int
+				out = "(";
+				size_t i = 0;
+				for (; (i < r.NumArguments()) && (i < 1); i++) {
+					out += GoodLang::ToString(r.Argument(i));
+				}
+				for (; i < r.NumArguments(); i++) {
+					out += ", ";
+					out += GoodLang::ToString(r.Argument(i));
+				}
+				out += ") -> ";
+				out += returns;
 			}
-			out += ")";
-		}
-		else {
-			// may be a lambda or free function?
-			// (double, double) -> int
-			out = "(";
-			size_t i = 0;
-			for (; (i < r.NumArguments()) && (i < 1); i++) {
-				out += ToString(r.Argument(i));
-			}
-			for (; i < r.NumArguments(); i++) {
-				out += ", ";
-				out += ToString(r.Argument(i));
-			}
-			out += ") -> ";
-			out += returns;
-		}
-		return out;
+		};
 	};
 };
 
@@ -3934,8 +3935,12 @@ namespace GoodLang {
 		bool m_isEplicit{ false };
 		bool m_isCached{ false };
 	};
-	template <> __forceinline std::string ToString(Function const& r) { return ToString(r.m_function); };
-
+	namespace Impl {
+		__forceinline void ToString(Tag<Function>, Function const& r, std::string& out) {
+			out = GoodLang::ToString(r.m_function);
+		};
+	};
+	
 	/*
 	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
 	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };

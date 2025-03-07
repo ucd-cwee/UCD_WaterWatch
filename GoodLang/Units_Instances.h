@@ -261,10 +261,10 @@ namespace GoodLang {
 	};
 
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
-    template <> __forceinline std::string ToString(Units:: ## type const& r) { return r.ToString(); }
+	namespace Impl { __forceinline void ToString(Tag<Units:: ## type>, Units:: ## type const& r, std::string& out) { out = r.ToString(); }; };
 
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) \
-	template <> __forceinline std::string ToString(Units:: ## prefix ## type const& r) { return r.ToString(); }
+    namespace Impl { __forceinline void ToString(Tag< Units:: ## prefix ## type >, Units:: ## prefix ## type const& r, std::string& out) { out = r.ToString(); }; };
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
 	DerivedUnitType(type, category, abbreviation, ratio); \

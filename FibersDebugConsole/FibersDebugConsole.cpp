@@ -115,557 +115,63 @@ public:
 #define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
-
-
-
-
-
-
-
-
-#if 1
-
-namespace TEST2 {
-	namespace Impl {
-		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of reads.
-		template <typename T> std::string ToStringImpl(T const& value) {
-			std::string out;
-			read(Tag<T>(), value, out);
-			return out;
-		}
-	} // namespace Read
-
-	template <typename T> std::string ToString(T const& value) {
-		return Impl::ToStringImpl<T>(value);
-	}
-
-	namespace Impl {
-		template <typename T> void read(Tag<std::shared_ptr<T>>, std::shared_ptr<T> const& r, std::string& out) {
-			if (r)
-				out = ToString(*r);
-			else
-				out = "";
-		};
-
-		void read(Tag<std::nullptr_t>, nullptr_t const&, std::string& out) {
-			out = "";
-		};
-
-		void read(Tag<char>, char const& r, std::string& out) {
-			out = std::string(1, r);
-		};
-
-		void read(Tag<GoodLang::Type_Info>, GoodLang::Type_Info const& r, std::string& out) {
-			out = r.name();
-		};
-
-		void read(Tag<int>, int const& r, std::string& out) {
-			out = std::to_string(r);
-		};
-
-		void read(Tag<float>, float const& r, std::string& out) {
-			out = std::to_string(r);
-		};
-
-		void read(Tag<double>, double const& r, std::string& out) {
-			out = std::to_string(r);
-		};
-
-		template <typename T> void read(Tag<std::vector<T>>, std::vector<T> const& r, std::string& out) {
-			for (auto& x : r) {
-				if (out.empty())
-					out += ToString(x);
-				else
-					out += std::string(", ") + ToString(x);
-			}
-			out = std::string("[") + out + std::string("]");
-		};
-
-		void read(Tag<std::string>, std::string const& r, std::string& out) {
-			out = r;
-		};
-
-		template <typename... Arg> void read(Tag<std::map<Arg...>>, std::map<Arg...> const& r, std::string& out) {
-			for (auto& x : r) {
-				if (out.empty())
-					out += ToString(x);
-				else
-					out += std::string(", ") + ToString(x);
-			}
-			out = std::string("[") + out + std::string("]");
-		};
-
-		template <typename T, typename R> void read(Tag<std::pair<T, R>>, std::pair<T, R> const& r, std::string& out) {
-			out = std::string("<") + ToString(r.first) + ", " + ToString(r.second) + ">";
-		};
-
-
-
-	} // namespace Read
-
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-namespace TEST_impl {
-	class impl {
-	public:
-		using mapType = concurrency::concurrent_unordered_map<size_t, std::pair<std::string_view, std::function<std::string(void*)>>>;
-		static mapType& to_string_funcs() {
-			static mapType out{};
-			return out;
-		};
-	};
-	static void print_known_conversions() {
-		print("");
-		for (auto& x : impl::to_string_funcs()) {
-			print(std::string("\t\t") + std::string(std::to_string(x.first)) + std::string(": \"") + std::string(x.second.first) + "\", ");
-		}
-		print("");
-	};
-
-	template <typename T> static std::string ToString_Impl(T const& obj) {
-		static constexpr size_t thisHash{ GoodLang::utilities::constexpr_type_info<T>::hash };
-		impl::mapType::iterator iter{ impl::to_string_funcs().find(thisHash) };
-		if (iter != impl::to_string_funcs().end()) {
-			return iter->second.second(&const_cast<T&>(obj));
-		}
-		else {
-			std::string typeName = std::string("\"") + std::string(GoodLang::utilities::constexpr_type_info<T>::name) + "\"";
-			auto tryPrint = GoodLang::printf("\tAttempted to find %zu for %s:", thisHash, typeName.c_str());
-			print(tryPrint);
-
-			print_known_conversions();
-
-			return "FAILURE"; // GoodLang::user_type<T>().name();
-		}
-	};
-
-	template <typename F> static size_t Add_ToString(F const& func) {
-		using T = std::remove_const_t< std::remove_pointer_t<std::remove_reference_t< typename std::tuple_element<0, typename GoodLang::utilities::function_traits<decltype(std::function(func))>::arguments>::type>>>;
-		static constexpr size_t thisHash{ GoodLang::utilities::constexpr_type_info<T>::hash };
-		print(std::string("ADDING ") + std::string(GoodLang::utilities::constexpr_type_info<T>::name));
-
-		impl::to_string_funcs().insert(std::pair<size_t, std::pair<std::string_view, std::function<std::string(void*)>>>{ thisHash, std::pair<std::string_view, std::function<std::string(void*)>>{ GoodLang::utilities::constexpr_type_info<T>::name, std::function<std::string(void*)>([func](void* p)->std::string {
-			return func(*static_cast<T*>(p));
-		}) } });
-		return thisHash;
-	};	
-	template <typename T> static std::string ToString(T const& obj) {
-		return ToString_Impl(obj);
-	};
-
-
-};
-static auto to_string_func1{ TEST_impl::Add_ToString([](std::nullptr_t const&) { return ""; }) };
-static auto to_string_func2{ TEST_impl::Add_ToString([](char const& r) { return std::string(1, r); }) };
-static auto to_string_func3{ TEST_impl::Add_ToString([](int const& r) { return std::to_string(r); }) };
-static auto to_string_func4{ TEST_impl::Add_ToString([](float const& r) { return std::to_string(r); }) };
-static auto to_string_func5{ TEST_impl::Add_ToString([](double const& r) { return std::to_string(r); }) };
-static auto to_string_func6{ TEST_impl::Add_ToString([](std::string const& r) { return r; }) };
-
-
-
-
-namespace TEST_impl {
-	template <> static std::string ToString(GoodLang::Type_Info const& r) {
-		static auto to_string_func{ TEST_impl::Add_ToString([](GoodLang::Type_Info const& r) {
-			return r.name();
-		}) };
-		return ToString_Impl(r);
-	};
-
-	template <typename T> static std::string ToString(std::shared_ptr<T> const& r) {
-		static auto to_string_func{ TEST_impl::Add_ToString([](std::shared_ptr<T> const& r) {
-			if (r) return ToString(*r); else return ToString(nullptr);
-		}) };
-		return ToString_Impl(r);
-	};
-
-	template <typename T, typename... Args> static std::string ToString(std::vector<T, Args...> const& r) {
-		static auto to_string_func{ TEST_impl::Add_ToString([](std::vector<T, Args...> const& r) {
-			std::string out{};
-			for (auto& x : r) {
-				if (out.empty())
-					out += ToString(x);
-				else
-					out += std::string(", ") + ToString(x);
-			}
-			return std::string("[") + out + std::string("]");
-		}) };
-		return ToString_Impl(r);
-	};
-
-	template <typename T, typename... Args> static std::string ToString(std::map<T, Args...> const& r) {
-		static auto to_string_func{ TEST_impl::Add_ToString([](std::map<T, Args...> const& r) {
-			std::string out{};
-			for (auto& x : r) {
-				if (out.empty())
-					out += ToString(x);
-				else
-					out += std::string(", ") + ToString(x);
-			}
-			return std::string("[") + out + std::string("]");
-		}) };
-		return ToString_Impl(r);
-	};
-
-	template <typename T, typename... Args> static std::string ToString(std::pair<T, Args...> const& r) {
-		static auto to_string_func{ TEST_impl::Add_ToString([](std::pair<T, Args...> const& r) {
-			return std::string("<") + ToString(r.first) + ", " + ToString(r.second) + ">";
-		}) };
-		return ToString_Impl(r);
-	};
-}
-
-
-
-namespace TEST {
-// public:
-	class details {
-	public:
-		template <template<class, class, class, class, class, class> class H, class S1, class S2, class S3, class S4, class S5, class S6> __forceinline static std::string ToString_templated() {
-			return GoodLang::user_type<H<S1, S2, S3, S4, S5, S6>>().name();
-		};
-		template <template<class, class, class, class, class> class H, class S1, class S2, class S3, class S4, class S5> __forceinline std::string static ToString_templated() {
-			return GoodLang::user_type<H<S1, S2, S3, S4, S5>>().name();
-		};
-		template <template<class, class, class, class> class H, class S1, class S2, class S3, class S4> __forceinline std::string static ToString_templated() {
-			return GoodLang::user_type<H<S1, S2, S3, S4>>().name();
-		};
-		template <template<class, class, class> class H, class S1, class S2, class S3> __forceinline std::string static ToString_templated() {
-			return GoodLang::user_type<H<S1, S2, S3>>().name();
-		};
-		template <template<class, class> class H, class S1, class S2> __forceinline std::string static ToString_templated() {
-			return GoodLang::user_type<H<S1, S2>>().name();
-		};
-		template <template<class> class H, class S1> __forceinline std::string static ToString_templated() {
-			return GoodLang::user_type<H<S1>>().name();
-		};
-		template <typename T> __forceinline std::string static ToString_templated() {
-			return GoodLang::user_type<T>().name();
-		};
-	};
-	template <typename T> std::string static ToString(T const&) { return details::ToString_templated<T>(); };
-	template <> std::string static ToString(std::nullptr_t const&) { return ""; };
-	template <> std::string static ToString(char const& r) { return std::string(1, r); };
-	template <> std::string static ToString(unsigned char const& r) { return std::string(1, r); };
-	template <> std::string static ToString(short const& r) { return std::to_string(r); };
-	template <> std::string static ToString(unsigned short const& r) { return std::to_string(r); };
-	template <> std::string static ToString(int const& r) { return std::to_string(r); };
-	template <> std::string static ToString(unsigned int const& r) { return std::to_string(r); };
-	template <> std::string static ToString(long const& r) { return std::to_string(r); };
-	template <> std::string static ToString(unsigned long const& r) { return std::to_string(r); };
-	template <> std::string static ToString(long long const& r) { return std::to_string(r); };
-	// template <> __forceinline std::string static ToString(unsigned long long const& r) { return std::to_string(r); };
-	template <> std::string static ToString(float const& r) { return std::to_string(r); };
-	template <> std::string static ToString(double const& r) { return std::to_string(r); };
-	template <> std::string static ToString(std::string const& r) { return r; };
-	template <> std::string static ToString(GoodLang::Type_Info const& r) { return r.name(); };
-	template <typename T> std::string static ToString(std::shared_ptr<T> const& r) { if (r) return ToString(*r); else return ToString(nullptr); };
-	template <typename T> std::string static ToString(std::weak_ptr<T> const& r) { return ToString(r.lock()); };
-	template <typename T, typename... Args> std::string static ToString(std::unique_ptr<T, Args...> const& r) { if (r) return ToString(*r); else return ToString(nullptr); };
-	//template <typename T, typename... Args> __forceinline std::string static ToString(std::pair<T, Args...> const& r) {
-	//	return std::string("<") + ToString(r.first) + ", " + ToString(r.second) + ">";
-	//};
-	template <typename T, typename... Args> std::string static ToString(std::vector<T, Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> std::string static ToString(std::set<T, Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> std::string static ToString(std::map<T, Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> std::string static ToString(concurrency::concurrent_unordered_map<Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-
-};
-
-// this works...
-template <> __forceinline static std::string TEST::ToString(unsigned long long const& r) { return "I AM UNSIGNED LONG LONG"; };
-
-// this fails...
-namespace TEST {
-	template <typename T, typename... Args> __forceinline std::string static ToString(std::pair<T, Args...> const& r) {
-		return std::string("<") + ToString(r.first) + ", " + ToString(r.second) + ">";
-	};
-};
-
-
-#else
-class TEST {
-public:
-	template <typename T> __forceinline static std::string ToString(T const& r, int recursion = 0) {
-		return ToStringImpl<GoodLang::utilities::constexpr_type_info<T>::hash>(r, recursion + 1);
-	};
-
-	template <size_t type_hash, class T> __forceinline static std::string ToStringImpl(T const& r, int recursion = 0) {
-		if (recursion < 5) { 
-			return ToString(r, recursion + 1); 
-		} else {
-			return "unspecified";
-		}
-	};
-	template <>  __forceinline static std::string ToStringImpl<GoodLang::utilities::constexpr_type_info<std::nullptr_t>::hash>(std::nullptr_t const&, int recursion) { return "null"; };
-	template <>  __forceinline static std::string ToStringImpl<GoodLang::utilities::constexpr_type_info<int>::hash>(int const& r, int recursion) { return std::to_string(r); };
-	template <>  __forceinline static std::string ToStringImpl<GoodLang::utilities::constexpr_type_info<float>::hash>(float const& r, int recursion) { return std::to_string(r); };
-	template <>  __forceinline static std::string ToStringImpl<GoodLang::utilities::constexpr_type_info<double>::hash>(double const& r, int recursion) { return std::to_string(r); };
-	template <>  __forceinline static std::string ToStringImpl<GoodLang::utilities::constexpr_type_info<std::string>::hash>(std::string const& r, int recursion) { return r; };
-
-	template <typename T> __forceinline static std::string ToString(std::shared_ptr<T> const& r, int recursion = 0) { if (r) return ToString(*r, recursion + 1); else return ""; };
-	template <typename T> __forceinline static std::string ToString(std::weak_ptr<T> const& r, int recursion = 0) {
-		return ToString(r.lock(), recursion + 1);
-	};
-	template <typename T, typename... Args> __forceinline std::string ToString(std::unique_ptr<T, Args...> const& r, int recursion = 0) {
-		if (r)
-			return ToString(*r, recursion + 1);
-		else
-			return "";
-	};
-	template <typename T, typename... Args> __forceinline static std::string ToString(std::pair<T, Args...> const& r, int recursion = 0) {
-		return std::string("<") + ToString(r.first, recursion + 1) + ", " + ToString(r.second, recursion + 1) + ">";
-	};
-	template <typename T, typename... Args> __forceinline static std::string ToString(std::vector<T, Args...> const& r, int recursion = 0) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x, recursion + 1);
-			else
-				out += std::string(", ") + ToString(x, recursion + 1);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> __forceinline static std::string ToString(std::set<T, Args...> const& r, int recursion = 0) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x, recursion + 1);
-			else
-				out += std::string(", ") + ToString(x, recursion + 1);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> __forceinline static std::string ToString(std::map<T, Args...> const& r, int recursion = 0) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x, recursion + 1);
-			else
-				out += std::string(", ") + ToString(x, recursion+1);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-
-};
-
-template <> __forceinline static std::string TEST::ToStringImpl<GoodLang::utilities::constexpr_type_info<char>::hash>(char const& r, int recursion) {
-	return "I AM CHAR";
-};
-//template <> __forceinline static std::string TEST::ToString(char const& r, int recursion) {
-//	return std::to_string(r);
-//};
-template <> __forceinline static std::string TEST::ToString(unsigned long long const& r, int recursion) {
-	return "I AM UNSIGNED LONG LONG";
-};
-template <> __forceinline static std::string TEST::ToString(GoodLang::DateTime const& r, int recursion) {
-	return r.operator std::string();
-};
-#endif
-
-
-
-
-
-
-
-
-
-
-
-
 int main() {
 	using namespace GoodLang;
 
-	print(TEST2::ToString(nullptr)); // 
-	print(TEST2::ToString(100)); // 
-	print(TEST2::ToString(100.0f)); // 
-	print(TEST2::ToString(100.0)); // 
-	print(TEST2::ToString(std::string("TEST"))); // 
-	print(TEST2::ToString(std::vector<int>({ 10 }))); // 
-	print(TEST2::ToString(std::vector<double>({ 10.0 }))); // 
-	print(TEST2::ToString(std::vector<std::string>({ "TEST" }))); // 
-	print(TEST2::ToString(std::map<int, int>{ {0, 0}, { 1,1 }, { 2,2 } })); // 
-	print(TEST2::ToString(std::make_shared<std::map<int, double>>(std::map<int, double>{ {0, 0.0}, { 1,1.0 }, { 2,2.0 } }))); // 
-	// print(TEST2::ToString(Any())); // doesn't compile because a custom read function was not made for this yet! 
-
-
-
-
-
-
-
-
-
-
-
-
-	print(utilities::constexpr_type_info<int>::hash);
-	print(utilities::constexpr_type_info<double>::hash);
-	print(utilities::constexpr_type_info<std::string>::hash);
-	std::cout << utilities::constexpr_type_info<std::map<double, std::string>>::hash << std::endl;
-	std::cout << utilities::constexpr_type_info<std::map<int, std::string>>::hash << std::endl;
-	std::cout << utilities::constexpr_type_info<Union<int, double>>::hash << std::endl;
-	std::cout << utilities::constexpr_type_info<GoodLang::SharedLockable< std::map<int, std::string> >>::hash << std::endl;
-	
-	print(Any(int()).Constexpr_Type_Hash());
-	print(Any(double()).Constexpr_Type_Hash());
-	print(Any(std::string{}).Constexpr_Type_Hash());
-	print(Any(std::map<double, std::string>{}).Constexpr_Type_Hash());
-	print(Any(std::map<int, std::string>{}).Constexpr_Type_Hash());
-	print(Any(Union<int, double>(100, 100)).Constexpr_Type_Hash());
-	print(Any(GoodLang::SharedLockable< std::map<int, std::string> >()).Constexpr_Type_Hash());
-
-	TEST_impl::print_known_conversions();
-
-	print(TEST_impl::ToString(nullptr)); // 
-	print(TEST_impl::ToString(100)); // 
-	print(TEST_impl::ToString(100.0f)); // 
-	print(TEST_impl::ToString(100.0)); // 
-	print(TEST_impl::ToString(std::string("TEST"))); // 
-	// print(TEST_impl::ToString(std::pair<int, int>(10, 20))); // 
-	// print(TEST_impl::ToString(std::make_shared<std::pair<int, int>>(10, 20))); // 
-	print(TEST_impl::ToString(std::make_shared<std::string>("TEST"))); // 
-	print(TEST_impl::ToString(std::string("TEST"))); // 
-	print(TEST_impl::ToString(std::vector<int>({ 10 }))); // 
-	print(TEST_impl::ToString(std::vector<double>({ 10.0 }))); // 
-	print(TEST_impl::ToString(std::vector<std::string>({ "TEST" }))); // 
-
-
-
-
-
-	utilities::constexpr_type_info<std::map<int,double>>::hash;
-
-
-
-
-
-
-
-	TEST_impl::print_known_conversions();
-
-	print(TEST_impl::ToString(std::map<int, int>{ {0, 0}, { 1,1 }, { 2,2 } })); // 
-
-	TEST_impl::print_known_conversions();
-
-
-	std::cout << TEST_impl::ToString(std::make_shared<std::map<int, int>>(std::map<int, int>{ {0, 0}, { 1,1 }, { 2,2 } })) << std::endl; // 
-	print(TEST_impl::ToString(std::map<int, int>{ {0, 0}, { 1,1 }, { 2,2 } })); // 
-	std::cout << TEST_impl::ToString(std::make_shared<std::map<int, int>>(std::map<int, int>{ {0, 0}, { 1,1 }, { 2,2 } })) << std::endl; // 
-
-
-	std::cout << TEST_impl::ToString(std::make_shared<std::map<int, double>>(std::map<int, double>{ {0, 0.0}, { 1,1.0 }, { 2,2.0 } })) << std::endl; // 
-	print(TEST_impl::ToString(std::map<int, double>{ {0, 0.0}, { 1,1.0 }, { 2,2.0 } })); // 
-	std::cout << TEST_impl::ToString(std::make_shared<std::map<int, double>>(std::map<int, double>{ {0, 0.0}, { 1,1.0 }, { 2,2.0 } })) << std::endl; // 
-
-	TEST_impl::print_known_conversions();
-
-
-
-
-
-
-
-
-	print(TEST_impl::ToString(std::pair<int, int>(10, 20))); // 
-
-
-
-
-	print(TEST_impl::ToString(std::map<int, int>({ {0,0}, {1,1}, {2,2} }))); // 
-
-
-	print(TEST_impl::ToString(std::map<int, int>({ {0,0}, {1,1}, {2,2} }))); // 
-	// print(TEST_impl::ToString(std::map<int, double>({ {0,0.0}, {1,1.0}, {2,2.0} }))); // 
-
-
-
-
-
-
-
-
-
-
-
-	print(TEST::ToString(nullptr)); // 
-	print(TEST::ToString(std::make_shared<int>(100))); // 
-	print(TEST::ToString(100.0f)); // 
-	print(TEST::ToString(int(100))); // 
-	print(TEST::ToString(double(100.0))); // 
-	print(TEST::ToString(std::string("TEST"))); // 
-	print(TEST::ToString(std::vector<int>({ 10 }))); // 
-	print(TEST::ToString(std::vector<double>({ 10.0 }))); // 
-	print(TEST::ToString(std::vector<std::string>({ "TEST" }))); // 
-	print(TEST::ToString(std::pair<int, int>(10, 20))); // 
-	print(TEST::ToString(std::map<int, int>({ {0,0}, {1,1}, {2,2} }))); // 
-	std::cout << TEST::ToString(std::make_shared<std::map<int, double>>(std::map<int, double>{ {0,0.0}, {1,1.0}, {2,2.0} })) << std::endl; // 
-	// print(TEST::ToString(Any(std::map<int, std::string>({ {0,"0str"}, {1,"1str"}, {2,"2str"} })))); // success
-
-	print(TEST::ToString('A')); // 
-	print(TEST::ToString(std::make_shared<char>('A'))); // 
-
-	print(TEST::ToString(unsigned long long{ 100 })); // 
-	print(TEST::ToString(std::make_shared<unsigned long long>(100))); // 
-
-	
-
-
-
-
-
+	if (1) {
+		std::vector<Any> temp{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } };
+		print(ToString(temp));
+	}
+	if (1) {
+		std::vector<Var> temp{ Var(Any{ 100 }), Var(Any{ std::string("test") }), Var(Any{ Union<double, double>(100, 200) }) };
+		print(ToString(temp));
+	}
+	if (1) {
+		std::vector<Any> temp;
+		temp = std::vector<Any>{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } };
+		print(ToString(temp));
+	}
+	if (1) {
+		std::vector<Any> temp{ std::vector<Any>{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } } };
+		print(ToString(temp));
+	}
+	if (1) {
+		AnyData_Instanced< std::vector<Any> > temp1;
+		print(temp1.ToString());
+	}	
+	if (1) {
+		AnyData_Instanced< std::vector<Any> > temp2{ std::vector<Any>{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } } };
+		print(temp2.ToString());
+	}
+	if (1) {
+		AnyData_Instanced< std::vector<Any> > temp2{ std::vector<Any>() };
+		print(temp2.ToString());
+	}
+	if (1) {
+		AnyData_Instanced< std::vector<Any> > temp3{ std::vector<Any>() };
+		print(temp3.ToString());
+	}
+
+
+
+	if (1) {
+		Any test_vec;
+		test_vec = std::vector<Any>();
+	}
+
+
+	if (1) {
+		Any test_vec;
+		test_vec = std::vector<Any>();
+		test_vec.cast<std::vector<Any>>().push_back(test_vec);
+		print(ToString(test_vec));
+
+		test_vec.cast<std::vector<Any>>().clear();
+		test_vec = nullptr;
+	}
+
+	// test the worst-case scenario:
+	print(ToString(Any(Var(Any(std::make_shared<SharedLockable< spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> >>()))))); // amazing. It worked. 
 	print(ToString(nullptr)); // success
 	print(ToString(std::make_shared<int>(100))); // success
 	print(ToString(Any(std::string("TEST")))); // success
@@ -684,11 +190,8 @@ int main() {
 	if (1) {
 		Any test(std::map<int, std::string>({ {0,"0str"}, {1,"1str"}, {2,"2str"} }));
 		print(ToString(test)); // success
-		print(ToStringImpl(test.cast<std::map<int, std::string>>())); // success
 		print(test.container->ToString()); // success		
 		print(ToString(test.cast<std::map<int, std::string>>())); // success
-
-		print(ToStringImpl(test)); // success
 	}
 
 	print(ToString(make_callable(&DateTime::time))); // success
@@ -710,7 +213,6 @@ int main() {
 		GoodLang::SharedLockable< std::map<int, std::string> > lockable({ {0,"0str"}, {1,"1str"}, {2,"2str"} });
 		print(ToString(lockable)); // success
 		print(ToString(Any(lockable))); // failed
-		print(ToStringImpl(Any(lockable))); // failed
 	}
 
 
@@ -722,7 +224,6 @@ int main() {
 
 		print(ToString(test)); // success
 		print(ToString(Any(GoodLang::Map<int, std::string>()))); // failed
-		print(ToStringImpl(Any(GoodLang::Map<int, std::string>()))); // failed
 		print(ToString(Any(test))); // failed
 	}
 

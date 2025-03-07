@@ -1021,7 +1021,11 @@ namespace GoodLang {
 		};
 #pragma endregion
 	};
-	template <typename T, typename... Args> __forceinline std::string ToString(Union<T, Args...> const& r) { return r.ToString();  };
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< Union<Args...> >, Union<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
+	};
 
 	/// <summary>
 	/// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
@@ -1090,7 +1094,11 @@ namespace GoodLang {
 	protected:
 		T* ptr;
 	};
-	template <typename T> __forceinline std::string ToString(atomic_ptr<T> const& r) { if (auto* p = r.Get()) return ToString(*p); else return ToString(nullptr); };
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< atomic_ptr<Args...> >, atomic_ptr<Args...> const& r, std::string& out) {
+			if (auto* p = r.Get()) out = GoodLang::ToString(*p); else out = GoodLang::ToString(nullptr);
+		};
+	};
 
 	/// <summary>
 	/// thread-safe and fiber-safe integer (atomic swapping of integers)
@@ -1187,7 +1195,11 @@ namespace GoodLang {
 		long	value;
 
 	};
-	template <> __forceinline std::string ToString(InterlockedLong const& r) { return ToString(r.load()); };
+	namespace Impl {
+		__forceinline void ToString(Tag< InterlockedLong >, InterlockedLong const& r, std::string& out) {
+			out = GoodLang::ToString(r.load());
+		};
+	};
 
 	namespace cas_impl {
 		template<typename... Args> struct UnionDetails {
@@ -1670,9 +1682,11 @@ namespace GoodLang {
 			return;
 		}; // sets the value to the input
 	};
-	template <typename Arg> __forceinline std::string ToString(Lockable<Arg> const& r) { 
-		auto read = r.Read();
-		return ToString(*read);
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< Lockable<Args...> >, Lockable<Args...> const& r, std::string& out) {
+			auto read = r.Read();
+			out = GoodLang::ToString(*read);
+		};
 	};
 
 	/// <summary>
@@ -1836,9 +1850,11 @@ namespace GoodLang {
 			return;
 		}; // sets the value to the input
 	};
-	template <typename T, typename... Args> __forceinline std::string ToString(SharedLockable<T, Args...> const& r) {
-		auto read = r.Shared();
-		return ToString(*read);
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< SharedLockable<Args...> >, SharedLockable<Args...> const& r, std::string& out) {
+			auto read = r.Shared();
+			out = GoodLang::ToString(*read);
+		};
 	};
 
 	namespace impl {
@@ -1943,7 +1959,11 @@ namespace GoodLang {
 			long	value;
 		};
 	};
-	template <> __forceinline std::string ToString(impl::Interlocked const& r) { return ToString(r.load()); };
+	namespace Impl {
+		__forceinline void ToString(Tag< impl::Interlocked >, impl::Interlocked const& r, std::string& out) {
+			out = GoodLang::ToString(r.load());
+		};
+	};
 
 	/* Thread- and fiber-safe queue which utilizes a fixed-sized buffer of size *maxCapacity*
 	Can optionally lock-up once the buffer is full, to support some atomic operations like memory allocators. */
@@ -2782,7 +2802,11 @@ namespace GoodLang {
 		};
 		std::string ToString() const{ return GoodLang::ToString(data); };
 	};
-	template <typename T, typename... Args> __forceinline std::string ToString(Map<T, Args...> const& r) { return r.ToString(); };
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< Map<Args...> >, Map<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
+	};
 
 	/// <summary>
 	/// thread-safe unsorted concurrency::unordered_map. Higher performance than the sorted map.
@@ -2922,7 +2946,12 @@ namespace GoodLang {
 		friend bool operator!=(UnorderedMap const& _Left, UnorderedMap const& _Right) {
 			return !operator==(_Left, _Right);
 		};
-
+		std::string ToString() const { return GoodLang::ToString(data); };
+	};
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< UnorderedMap<Args...> >, UnorderedMap<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
 	};
 
 	/// <summary>
@@ -3096,6 +3125,13 @@ namespace GoodLang {
 	public:
 		SETUP_ITERATOR(Vector, it_state);
 
+		std::string ToString() const { return GoodLang::ToString(data); };
+
+	};
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< Vector<Args...> >, Vector<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
 	};
 
 	/// <summary>
@@ -3348,7 +3384,12 @@ namespace GoodLang {
 		friend bool operator!=(Set const& _Left, Set const& _Right) {
 			return !operator==(_Left, _Right);
 		};
-
+		std::string ToString() const { return GoodLang::ToString(data); };
+	};
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< Set<Args...> >, Set<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
 	};
 
 	/// <summary>
@@ -3454,7 +3495,12 @@ namespace GoodLang {
 		friend bool operator!=(UnorderedSet const& _Left, UnorderedSet const& _Right) {
 			return !operator==(_Left, _Right);
 		};
-
+		std::string ToString() const { return GoodLang::ToString(data); };
+	};
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< UnorderedSet<Args...> >, UnorderedSet<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
 	};
 
 	/// <summary>
@@ -3608,6 +3654,8 @@ namespace GoodLang {
 					, step
 				);
 			};
+
+			std::string ToString() const { return GoodLang::ToString(data); };
 		};
 
 		/// <summary>
@@ -3666,7 +3714,17 @@ namespace GoodLang {
 			};
 
 		};
+
 	};
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< spline::Spline<Args...> >, spline::Spline<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void ToString(Tag< spline::CatmullRomSpline<Args...> >, spline::CatmullRomSpline<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
+	};
+
 
 };
 

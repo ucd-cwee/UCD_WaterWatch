@@ -962,6 +962,17 @@ namespace GoodLang {
 
 	};
 
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< parallel::future<Args...> >, parallel::future<Args...> const& r, std::string& out) {
+			out = GoodLang::ToString(const_cast<parallel::future<Args...>&>(r).wait_get_any());
+		};
+		__forceinline void ToString(Tag< parallel::promise >, parallel::promise const& r, std::string& out) {
+			out = GoodLang::ToString(const_cast<parallel::promise&>(r).wait_get_any());
+		};
+	};
+
+
+
 	class MultithreadingInstanceManager {
 	public:
 		MultithreadingInstanceManager() {};

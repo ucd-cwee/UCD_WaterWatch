@@ -6,11 +6,13 @@
 #include <boost/any.hpp>
 #include <shared_mutex>
 #include <concurrent_unordered_map.h>
+#include <concurrent_unordered_set.h>
 // #include <string_view>
 
 #include <vector>
 #include <map>
 #include <set>
+#include <unordered_set>
 
 
 // typenames, function_traits
@@ -44,6 +46,15 @@ namespace GoodLang {
 
 		template <typename T>
 		constexpr bool is_std_hashable_v = is_std_hashable<T>::value;
+
+		template <typename T, typename = std::void_t<>>
+		struct is_std_stringable : std::false_type { };
+
+		template <typename T>
+		struct is_std_stringable<T, std::void_t<decltype(std::to_string(std::declval<T>()))>> : std::true_type { };
+
+		template <typename T>
+		constexpr bool is_std_stringable_v = is_std_stringable<T>::value;
 	};
 };
 
@@ -642,93 +653,121 @@ __forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLa
 
 // ToString
 namespace GoodLang {
-	namespace details {
-		template <template<class, class, class, class, class, class> class H, class S1, class S2, class S3, class S4, class S5, class S6> __forceinline std::string ToString_templated() {
-			return user_type<H<S1, S2, S3, S4, S5, S6>>().name();
+	namespace Impl {
+		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of functions in correct order.
+		class ImplClass { public:
+			template <typename T> static std::string ToStringImpl(T const& value) {
+				std::string out;
+				ToString(Tag<T>(), value, out); // does not need to be forward-declared due to presence in template
+				return out;
+			}
 		};
-		template <template<class, class, class, class, class> class H, class S1, class S2, class S3, class S4, class S5> __forceinline std::string ToString_templated() {
-			return user_type<H<S1, S2, S3, S4, S5>>().name();
-		};
-		template <template<class, class, class, class> class H, class S1, class S2, class S3, class S4> __forceinline std::string ToString_templated() {
-			return user_type<H<S1, S2, S3, S4>>().name();
-		};
-		template <template<class, class, class> class H, class S1, class S2, class S3> __forceinline std::string ToString_templated() {
-			return user_type<H<S1, S2, S3>>().name();
-		};
-		template <template<class, class> class H, class S1, class S2> __forceinline std::string ToString_templated() {
-			return user_type<H<S1, S2>>().name();
-		};
-		template <template<class> class H, class S1> __forceinline std::string ToString_templated() {
-			return user_type<H<S1>>().name();
-		};
-		template <typename T> __forceinline std::string ToString_templated() {
-			return user_type<T>().name();
-		};
-	};
-	template <typename T> __forceinline std::string ToString(T const&) { return details::ToString_templated<T>(); };
-	template <> __forceinline std::string ToString(std::nullptr_t const&) { return ""; };
-	template <> __forceinline std::string ToString(char const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(unsigned char const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(short const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(unsigned short const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(int const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(unsigned int const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(long const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(unsigned long const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(long long const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(unsigned long long const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(float const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(double const& r) { return std::to_string(r); };
-	template <> __forceinline std::string ToString(std::string const& r) { return r; };
-	template <> __forceinline std::string ToString(Type_Info const& r) { return r.name(); };
-	template <typename T> __forceinline std::string ToString(std::shared_ptr<T> const& r) { if (r) return ToString(*r); else return ToString(nullptr); };
-	template <typename T> __forceinline std::string ToString(std::weak_ptr<T> const& r) { return ToString(r.lock()); };
-	template <typename T, typename... Args> __forceinline std::string ToString(std::unique_ptr<T, Args...> const& r) { if (r) return ToString(*r); else return ToString(nullptr); };
-	template <typename T, typename... Args> __forceinline std::string ToString(std::pair<T, Args...> const& r) {
-		return std::string("<") + ToString(r.first) + ", " + ToString(r.second) + ">";
-	};
-	template <typename T, typename... Args> __forceinline std::string ToString(std::vector<T, Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> __forceinline std::string ToString(std::set<T, Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> __forceinline std::string ToString(std::map<T, Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T, typename... Args> __forceinline std::string ToString(concurrency::concurrent_unordered_map<Args...> const& r) {
-		std::string out{};
-		for (auto& x : r) {
-			if (out.empty())
-				out += ToString(x);
-			else
-				out += std::string(", ") + ToString(x);
-		}
-		return std::string("[") + out + std::string("]");
-	};
-	template <typename T> __forceinline std::string ToStringImpl(T const& r) { return ToString(r); };
+	} // namespace Read
 
+	template <typename T> __forceinline std::string ToString(T const& value) { return Impl::ImplClass::ToStringImpl<T>(value); };
+	template <size_t N> __forceinline std::string ToString(const char(&r)[N]) { return r; };
+
+	namespace Impl {
+		// ultimate fall-back
+		template <typename T> __forceinline void ToString(Tag<T>, T const& r, std::string& out) {
+			if constexpr (GoodLang::utilities::is_std_stringable<T>::value) {
+				out = std::to_string(r);
+			}
+			else {
+				out = GoodLang::user_type<T>().name();
+			}			
+		};
+		// specializations
+		__forceinline void ToString(Tag<std::nullptr_t>, nullptr_t const&, std::string& out) {
+			out = "nullptr";
+		};
+		__forceinline void ToString(Tag<GoodLang::Type_Info>, GoodLang::Type_Info const& r, std::string& out) {
+			out = r.name();
+		};
+		__forceinline void ToString(Tag<std::string>, std::string const& r, std::string& out) {
+			out = r;
+		};
+		__forceinline void ToString(Tag<const char*>, const char* const& r, std::string& out) {
+			out = r;
+		};
+		template <typename T> __forceinline void ToString(Tag<std::shared_ptr<T>>, std::shared_ptr<T> const& r, std::string& out) {
+			if (r) out = GoodLang::ToString(*r);
+			else out = "nullptr";
+		};
+		template <typename T> __forceinline void ToString(Tag<std::weak_ptr<T>>, std::weak_ptr<T> const& r, std::string& out) {
+			out = GoodLang::ToString(r.lock());
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::unique_ptr<Args...>>, std::unique_ptr<Args...> const& r, std::string& out) {
+			if (r) out = GoodLang::ToString(*r);
+			else out = "nullptr";
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::pair<Args...>>, std::pair<Args...> const& r, std::string& out) {
+			out = std::string("<") + GoodLang::ToString(r.first) + ", " + GoodLang::ToString(r.second) + ">";
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::vector<Args...>>, std::vector<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::set<Args...>>, std::set<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::unordered_set<Args...>>, std::unordered_set<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::map<Args...>>, std::map<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+		template <typename... Args> __forceinline void ToString(Tag<std::unordered_map<Args...>>, std::unordered_map<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+		template <typename... Args> __forceinline void ToString(Tag<concurrency::concurrent_unordered_map<Args...>>, concurrency::concurrent_unordered_map<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+		template <typename... Args> __forceinline void ToString(Tag<concurrency::concurrent_unordered_set<Args...>>, concurrency::concurrent_unordered_set<Args...> const& r, std::string& out) {
+			for (auto& x : r) {
+				if (out.empty())
+					out += GoodLang::ToString(x);
+				else
+					out += std::string(", ") + GoodLang::ToString(x);
+			}
+			out = std::string("[") + out + std::string("]");
+		};
+	};
 };
 
 // DynamicObject && Var
@@ -765,7 +804,11 @@ namespace GoodLang {
 		std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>
 			m_objects;
 	};
-	template <> __forceinline std::string ToString(DynamicObject const& r) { return ToString(r.m_actualType) + "{ " + ToString(r.m_objects) + " }"; };
+	namespace Impl {
+		__forceinline void ToString(Tag<DynamicObject>, DynamicObject const& r, std::string& out) {
+			out = GoodLang::ToString(r.m_actualType) + "{ " + GoodLang::ToString(r.m_objects) + " }";
+		};
+	};
 
 #define AllowInlineVarTyping
 	/* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
@@ -793,7 +836,11 @@ namespace GoodLang {
 			return !operator==(_Left, _Right);
 		};
 	};
-	template <> __forceinline std::string ToString(Var const& r) { return ToString(r.p_data); };
+	namespace Impl {
+		__forceinline void ToString(Tag<Var>, Var const& r, std::string& out) {
+			out = GoodLang::ToString(r.p_data);
+		};
+	};
 };
 
 // Any, AnyAutoCast, DynamicObject, exceptions
@@ -889,10 +936,10 @@ namespace GoodLang {
 	class AnyData {
 	public:
 		AnyData() noexcept = default;
-		AnyData(AnyData const&) = default;
-		AnyData(AnyData&&) = default;
-		AnyData& operator=(AnyData const&) = default;
-		AnyData& operator=(AnyData&&) = default;
+		AnyData(AnyData const&) = delete;
+		AnyData(AnyData&&) = delete;
+		AnyData& operator=(AnyData const&) = delete;
+		AnyData& operator=(AnyData&&) = delete;
 		virtual ~AnyData() = default;
 
 	public:
@@ -957,15 +1004,22 @@ namespace GoodLang {
 	template <typename T>
 	class AnyData_Instanced final : public AnyData {
 	public:
-		AnyData_Instanced() noexcept = default;
-		AnyData_Instanced(T t_obj) noexcept
+		AnyData_Instanced() noexcept 
 			: AnyData()
-			, m_obj{ std::move(t_obj) }
+			, m_obj()
+		{}
+		AnyData_Instanced(T const& t_obj) noexcept
+			: AnyData()
+			, m_obj(t_obj)
 		{ };
-		AnyData_Instanced(AnyData_Instanced const&) = default;
-		AnyData_Instanced(AnyData_Instanced&&) = default;
-		AnyData_Instanced& operator=(AnyData_Instanced const&) = default;
-		AnyData_Instanced& operator=(AnyData_Instanced&&) = default;
+		AnyData_Instanced(T && t_obj) noexcept
+			: AnyData()
+			, m_obj(std::forward<T>(t_obj))
+		{ };
+		AnyData_Instanced(AnyData_Instanced const&) = delete;
+		AnyData_Instanced(AnyData_Instanced&&) = delete;
+		AnyData_Instanced& operator=(AnyData_Instanced const&) = delete;
+		AnyData_Instanced& operator=(AnyData_Instanced&&) = delete;
 		virtual ~AnyData_Instanced() = default;
 
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
@@ -995,7 +1049,10 @@ namespace GoodLang {
 	template <typename T>
 	class AnyData_Shared final : public AnyData {
 	public:
-		AnyData_Shared() noexcept = default;
+		AnyData_Shared() noexcept
+			: AnyData()
+			, m_obj()
+		{ };
 		AnyData_Shared(std::shared_ptr<T> const& t_obj) noexcept
 			: AnyData()
 			, m_obj(t_obj)
@@ -1004,10 +1061,10 @@ namespace GoodLang {
 			: AnyData()
 			, m_obj(std::forward<std::shared_ptr<T>>(t_obj))
 		{ };
-		AnyData_Shared(AnyData_Shared const&) = default;
-		AnyData_Shared(AnyData_Shared&&) = default;
-		AnyData_Shared& operator=(AnyData_Shared const&) = default;
-		AnyData_Shared& operator=(AnyData_Shared&&) = default;
+		AnyData_Shared(AnyData_Shared const&) = delete;
+		AnyData_Shared(AnyData_Shared&&) = delete;
+		AnyData_Shared& operator=(AnyData_Shared const&) = delete;
+		AnyData_Shared& operator=(AnyData_Shared&&) = delete;
 		virtual ~AnyData_Shared() = default;
 
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
@@ -1027,7 +1084,12 @@ namespace GoodLang {
 		std::shared_ptr<T> m_obj;
 
 	};
-	template <> __forceinline std::string ToString(AnyData const& r) { return r.ToString(); };
+
+	namespace Impl {
+		__forceinline void ToString(Tag<AnyData>, AnyData const& r, std::string& out) {
+			out = r.ToString();
+		};
+	};
 
 	namespace details {
 		class AnyAutoCast; /* forward decl */
@@ -1056,7 +1118,11 @@ namespace GoodLang {
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(T* t) { return get(std::make_shared<T>(t)); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(const T* t) { return get(*t); };
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(const T& obj) {
-				return get((std::decay_t<T>)obj);
+				// return get((std::decay_t<T>)obj); // makes a copy
+
+				std::shared_ptr<AnyData> instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::decay_t<T>>>(obj));
+				instanced_any->SetSelf(instanced_any);
+				return instanced_any;
 			};
 			template<typename T, typename = std::enable_if_t<!std::is_same_v<GoodLang::details::AnyAutoCast, T>>> static std::shared_ptr<AnyData> get(T&& obj) {
 				std::shared_ptr<AnyData> instanced_any = std::dynamic_pointer_cast<GoodLang::AnyData>(std::make_shared<GoodLang::AnyData_Instanced<std::decay_t<T>>>(std::forward<T>(obj)));
@@ -1319,7 +1385,11 @@ namespace GoodLang {
 		mutable std::shared_ptr<AnyData> container;
 		mutable std::shared_mutex mut;
 	};
-	template <> __forceinline std::string ToString(Any const& r) { return ToString(r.container); };
+	namespace Impl {
+		__forceinline void ToString(Tag<Any>, Any const& r, std::string& out) {
+			out = GoodLang::ToString(r.container);
+		};
+	};
 
 	namespace details {
 		/*! Supports forward-declaring a "cast" from an Any to the desired destination type. e.g: int& ref_int = any_obj.cast(); ... std::string str = any_obj.cast(); */

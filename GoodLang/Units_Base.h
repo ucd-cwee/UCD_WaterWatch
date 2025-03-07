@@ -360,7 +360,11 @@ namespace GoodLang {
 			};
 		};
 	};
-	template <> __forceinline std::string ToString(Units::value const& r) { return r.ToString(); };
+	namespace Impl {
+		__forceinline void ToString(Tag<Units::value>, Units::value const& r, std::string& out) {
+			out = r.ToString();
+		};
+	};
 
 };
 
