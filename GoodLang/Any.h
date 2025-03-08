@@ -653,18 +653,77 @@ __forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLa
 
 // ToString
 namespace GoodLang {
+	namespace exception {
+		struct recursive_function_error : std::runtime_error {
+			recursive_function_error()
+				: std::runtime_error("")
+			{}
+			recursive_function_error(const recursive_function_error&) = default;
+			~recursive_function_error() noexcept override = default;
+		};
+	}; // namespace exception
+	
 	namespace Impl {
 		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of functions in correct order.
-		class ImplClass { public:
+		class ImplClass {
+		public:
 			template <typename T> static std::string ToStringImpl(T const& value) {
+				thread_local static size_t recursion_detection{ 0 };
 				std::string out;
-				ToString(Tag<T>(), value, out); // does not need to be forward-declared due to presence in template
+#if 0				
+				// first entry
+				size_t entryNumber = recursion_detection++;
+				if (entryNumber == 0) {
+					try {
+						ToString(Tag<T>(), value, out);
+					}
+					catch (exception::recursive_function_error const& e) { // catch this error as late as possible
+						recursion_detection--;
+						return "...";
+					}
+					catch (...) {
+						recursion_detection--;
+						std::rethrow_exception(std::current_exception()); // this was not a recursion error - rethrow it for the user to handle. 
+					}
+					recursion_detection--;
+				}
+				// second and remaining ALLOWED recursions
+				else if (entryNumber < 50) {
+					try {
+						ToString(Tag<T>(), value, out);
+					}
+					catch (exception::recursive_function_error const& e) { // catch this error as late as possible
+						recursion_detection--;
+						throw exception::recursive_function_error();
+					}
+					catch (...) {
+						recursion_detection--;
+						std::rethrow_exception(std::current_exception()); // throw again for all possible errors
+					}
+					recursion_detection--;
+				}
+				// further ILLEGAL recursions
+				else {
+					recursion_detection--;
+					throw exception::recursive_function_error();
+				}
+#else
+				if (recursion_detection++ < 50) {
+					ToString(Tag<T>(), value, out);
+				}
+				else {
+					out = "...";
+				}
+				recursion_detection--;
+#endif
 				return out;
-			}
+			};
 		};
-	} // namespace Read
+	}; // namespace Read
 
-	template <typename T> __forceinline std::string ToString(T const& value) { return Impl::ImplClass::ToStringImpl<T>(value); };
+	template <typename T> __forceinline std::string ToString(T const& value) { 
+		return Impl::ImplClass::ToStringImpl<T>(value);
+	};
 	template <size_t N> __forceinline std::string ToString(const char(&r)[N]) { return r; };
 
 	namespace Impl {
