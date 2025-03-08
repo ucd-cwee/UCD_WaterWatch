@@ -164,6 +164,8 @@ int main() {
 		Any test_vec;
 		test_vec = std::vector<Any>();
 		test_vec.cast<std::vector<Any>>().push_back(test_vec);
+		test_vec.cast<std::vector<Any>>().push_back(Any(100));
+		test_vec.cast<std::vector<Any>>().push_back(Any(200));
 		print(ToString(test_vec));
 
 		test_vec.cast<std::vector<Any>>().clear();

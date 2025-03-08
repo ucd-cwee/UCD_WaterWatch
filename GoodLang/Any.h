@@ -670,41 +670,36 @@ namespace GoodLang {
 			template <typename T> static std::string ToStringImpl(T const& value) {
 				thread_local static size_t recursion_detection{ 0 };
 				std::string out;
-#if 0				
+#if 1				
 				// first entry
 				size_t entryNumber = recursion_detection++;
-				if (entryNumber == 0) {
+				defer(recursion_detection--);
+
+				if (entryNumber <= 1) {
 					try {
 						ToString(Tag<T>(), value, out);
 					}
 					catch (exception::recursive_function_error const& e) { // catch this error as late as possible
-						recursion_detection--;
 						return "...";
 					}
 					catch (...) {
-						recursion_detection--;
 						std::rethrow_exception(std::current_exception()); // this was not a recursion error - rethrow it for the user to handle. 
 					}
-					recursion_detection--;
 				}
 				// second and remaining ALLOWED recursions
 				else if (entryNumber < 50) {
-					try {
+					//try {
 						ToString(Tag<T>(), value, out);
-					}
-					catch (exception::recursive_function_error const& e) { // catch this error as late as possible
-						recursion_detection--;
-						throw exception::recursive_function_error();
-					}
-					catch (...) {
-						recursion_detection--;
-						std::rethrow_exception(std::current_exception()); // throw again for all possible errors
-					}
-					recursion_detection--;
+					//}
+					//catch (exception::recursive_function_error const& e) { // catch this error as late as possible
+					//	std::rethrow_exception(std::current_exception());
+					//}
+					//catch (...) {
+					//	std::rethrow_exception(std::current_exception()); // throw again for all possible errors
+					//}
 				}
 				// further ILLEGAL recursions
 				else {
-					recursion_detection--;
 					throw exception::recursive_function_error();
 				}
 #else
