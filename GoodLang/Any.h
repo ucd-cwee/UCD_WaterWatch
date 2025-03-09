@@ -688,15 +688,7 @@ namespace GoodLang {
 				}
 				// second and remaining ALLOWED recursions
 				else if (entryNumber < 50) {
-					//try {
-						ToString(Tag<T>(), value, out);
-					//}
-					//catch (exception::recursive_function_error const& e) { // catch this error as late as possible
-					//	std::rethrow_exception(std::current_exception());
-					//}
-					//catch (...) {
-					//	std::rethrow_exception(std::current_exception()); // throw again for all possible errors
-					//}
+					ToString(Tag<T>(), value, out);
 				}
 				// further ILLEGAL recursions
 				else {
@@ -737,6 +729,15 @@ namespace GoodLang {
 		};
 		__forceinline void ToString(Tag<GoodLang::Type_Info>, GoodLang::Type_Info const& r, std::string& out) {
 			out = r.name();
+		};
+		__forceinline void ToString(Tag<char>, char const& r, std::string& out) {
+			out = std::string(1, r);
+		};
+		__forceinline void ToString(Tag<unsigned char>, unsigned char const& r, std::string& out) {
+			out = std::string(1, r);
+		};
+		__forceinline void ToString(Tag<signed char>, signed char const& r, std::string& out) {
+			out = std::string(1, r);
 		};
 		__forceinline void ToString(Tag<std::string>, std::string const& r, std::string& out) {
 			out = r;

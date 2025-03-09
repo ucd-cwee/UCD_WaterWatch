@@ -118,62 +118,35 @@ public:
 int main() {
 	using namespace GoodLang;
 
-	if (1) {
-		std::vector<Any> temp{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } };
-		print(ToString(temp));
-	}
-	if (1) {
-		std::vector<Var> temp{ Var(Any{ 100 }), Var(Any{ std::string("test") }), Var(Any{ Union<double, double>(100, 200) }) };
-		print(ToString(temp));
-	}
-	if (1) {
-		std::vector<Any> temp;
-		temp = std::vector<Any>{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } };
-		print(ToString(temp));
-	}
-	if (1) {
-		std::vector<Any> temp{ std::vector<Any>{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } } };
-		print(ToString(temp));
-	}
-	if (1) {
-		AnyData_Instanced< std::vector<Any> > temp1;
-		print(temp1.ToString());
-	}	
-	if (1) {
-		AnyData_Instanced< std::vector<Any> > temp2{ std::vector<Any>{ Any{ 100 }, Any{ std::string("test") }, Any{ Union<double, double>(100, 200) } } };
-		print(temp2.ToString());
-	}
-	if (1) {
-		AnyData_Instanced< std::vector<Any> > temp2{ std::vector<Any>() };
-		print(temp2.ToString());
-	}
-	if (1) {
-		AnyData_Instanced< std::vector<Any> > temp3{ std::vector<Any>() };
-		print(temp3.ToString());
-	}
-
-
-
+	// test the worst-case scenarios:
 	if (1) {
 		Any test_vec;
 		test_vec = std::vector<Any>();
-	}
-
-
-	if (1) {
-		Any test_vec;
-		test_vec = std::vector<Any>();
-		test_vec.cast<std::vector<Any>>().push_back(test_vec);
+		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
 		test_vec.cast<std::vector<Any>>().push_back(Any(100));
 		test_vec.cast<std::vector<Any>>().push_back(Any(200));
-		print(ToString(test_vec));
+		print(ToString(test_vec)); // amazing. It worked.
 
 		test_vec.cast<std::vector<Any>>().clear();
 		test_vec = nullptr;
-	}
+	}	
+	if (1) {
+		Any test_vec;
+		test_vec = std::map<std::string, Any>();
+		test_vec.cast<std::map<std::string, Any>>()["test1"] = std::vector<Any>();
+		test_vec.cast<std::map<std::string, Any>>()["test1"].cast<std::vector<Any>>().push_back(test_vec);
+		test_vec.cast<std::map<std::string, Any>>()["test2"] = test_vec;
+		test_vec.cast<std::map<std::string, Any>>()["test3"] = 100;
+		test_vec.cast<std::map<std::string, Any>>()["test4"] = make_callable(&DateTime::time);
 
-	// test the worst-case scenario:
+		print(ToString(test_vec)); // amazing. It worked.
+
+		test_vec.cast<std::map<std::string, Any>>().clear();
+		test_vec = nullptr;
+	}
 	print(ToString(Any(Var(Any(std::make_shared<SharedLockable< spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> >>()))))); // amazing. It worked. 
+	print(ToString("TESTING CHAR ARRAY")); // success
+	print(ToString('A')); // success
 	print(ToString(nullptr)); // success
 	print(ToString(std::make_shared<int>(100))); // success
 	print(ToString(Any(std::string("TEST")))); // success
