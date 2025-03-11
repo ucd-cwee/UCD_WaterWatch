@@ -15,7 +15,6 @@
 
 #include "../FiberTasks/Concurrent_Queue.h"
 
-
 //#include "../FiberTasks/Fibers.h"
 //#include "../FiberTasks/UnitsLibrary.h"
 //#include "../FiberTasks/ScriptingLanguage2.h"
@@ -115,8 +114,76 @@ public:
 #define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
+static void recursive(int indentLevel, GoodLang::Impl::NodeCache const& cache) {
+	if (cache.recursiveFlag) {
+		std::cout << GoodLang::ToString(cache.self) << " { ...recursive... };\n";
+	}
+	else {
+		if (cache.children.size() == 0) {
+			std::cout << GoodLang::ToString(cache.self) << ";\n";
+		}
+		else if (cache.children.size() == 1) {
+			std::cout << GoodLang::ToString(cache.self) << " -> ";
+			recursive(indentLevel, cache.children[0]);
+		}
+		else {
+			std::cout << GoodLang::ToString(cache.self) << " -> " << std::to_string(cache.children.size()) << " children: { \n";
+
+			for (auto& child : cache.children) {
+				for (int i = 0; i < indentLevel + 1; i++) std::cout << "\t";
+				recursive(indentLevel + 1, child);
+			}
+
+			for (int i = 0; i < indentLevel; i++) std::cout << "\t";
+
+			std::cout << "}\n";
+		}
+	}
+
+
+
+	//if (cache.children.size() > 0) {
+	//	std::cout << GoodLang::ToString(cache.self) << " -> " << std::to_string(cache.children.size()) << " children: { \n";
+	//	for (auto& child : cache.children) {
+	//		recursive(indentLevel + 1, child);
+	//	}
+	//	for (int i = 0; i < indentLevel; i++) std::cout << "\t";
+	//	std::cout << "}\n";
+	//}
+	//else {
+	//	std::cout << GoodLang::ToString(cache.self) << " -> 0 children: { } \n";
+	//}
+};
+
 int main() {
 	using namespace GoodLang;
+
+	// test the "GetChildren" function...
+	if (1) {
+		Any test_vec;
+		test_vec = std::vector<Any>();
+		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
+		test_vec.cast<std::vector<Any>>().push_back(Any(100));
+		test_vec.cast<std::vector<Any>>().push_back(Any(200));
+
+		recursive(0, GetChildren(test_vec));
+
+		test_vec.cast<std::vector<Any>>().clear();
+		test_vec = nullptr;
+
+
+
+
+
+
+		print(ToString(GetChildren(Any(Var(Any(std::make_shared<SharedLockable< spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> >>())))))); // amazing. It worked. 
+
+
+
+	}
+
+
+
 
 	// test the worst-case scenarios:
 	if (1) {
@@ -180,14 +247,14 @@ int main() {
 	print(ToString(Any(InterlockedLong(100)))); // success
 
 	print(ToString(Union<int, double>(100, 100))); // success
-	print(ToString(Any(Union<int, double>(100, 100)))); // failed
+	print(ToString(Any(Union<int, double>(100, 100)))); // success
 
 
 
 	if (1) {
 		GoodLang::SharedLockable< std::map<int, std::string> > lockable({ {0,"0str"}, {1,"1str"}, {2,"2str"} });
 		print(ToString(lockable)); // success
-		print(ToString(Any(lockable))); // failed
+		print(ToString(Any(lockable))); // success
 	}
 
 
@@ -198,8 +265,8 @@ int main() {
 		(void)test.get_or_insert(2, "str 2");
 
 		print(ToString(test)); // success
-		print(ToString(Any(GoodLang::Map<int, std::string>()))); // failed
-		print(ToString(Any(test))); // failed
+		print(ToString(Any(GoodLang::Map<int, std::string>()))); // success
+		print(ToString(Any(test))); // success
 	}
 
 

@@ -651,6 +651,45 @@ __forceinline bool operator!=(GoodLang::Type_Info const& b, std::weak_ptr<GoodLa
 	return !operator==(a, b);
 };
 
+namespace GoodLang::Impl {
+	struct UniqueNode {
+		const void* address;
+		const GoodLang::Type_Info* type;
+	};
+	template <typename T> UniqueNode GetNode(const T& r) {
+		return {
+			static_cast<const void*>(&r),
+			&user_type<T>()
+		};
+	};
+
+	class NodeCache {
+	public:
+		std::vector< NodeCache > children{};
+		UniqueNode self{};		
+		int refCount{ 0 };
+		bool recursiveFlag{ false };
+	};
+};
+
+__forceinline bool operator==(GoodLang::Impl::UniqueNode const& b, GoodLang::Impl::UniqueNode const& a) {
+	return (a.address == b.address) && (a.type == b.type);
+};
+__forceinline bool operator!=(GoodLang::Impl::UniqueNode const& b, GoodLang::Impl::UniqueNode const& a) {
+	return !operator==(a, b);
+};
+namespace std {
+	template <> struct less<GoodLang::Impl::UniqueNode> {
+		std::size_t operator()(const GoodLang::Impl::UniqueNode& lhs, const GoodLang::Impl::UniqueNode& rhs) const {
+			size_t hash1{ 0 };
+			GoodLang::details::hash_combine(hash1, lhs.address, lhs.type);
+			size_t hash2{ 0 };
+			GoodLang::details::hash_combine(hash2, rhs.address, rhs.type);
+			return hash1 < hash2;
+		};
+	};
+};
+
 // ToString
 namespace GoodLang {
 	namespace exception {
@@ -665,54 +704,54 @@ namespace GoodLang {
 	
 	namespace Impl {
 		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of functions in correct order.
+
 		class ImplClass {
 		public:
 			template <typename T> static std::string ToStringImpl(T const& value) {
 				thread_local static size_t recursion_detection{ 0 };
+				constexpr int maxNumReEntry{ 50 };
+
 				std::string out;
-#if 1				
-				// first entry
 				size_t entryNumber = recursion_detection++;
 				defer(recursion_detection--);
 
 				if (entryNumber <= 1) {
-					try {
-						ToString(Tag<T>(), value, out);
-					}
-					catch (exception::recursive_function_error const& e) { // catch this error as late as possible
-						return "...";
-					}
-					catch (...) {
-						std::rethrow_exception(std::current_exception()); // this was not a recursion error - rethrow it for the user to handle. 
-					}
+					try { ToString(Tag<T>(), value, out); }
+					catch (exception::recursive_function_error const& e) { return "..."; }					
 				}
-				// second and remaining ALLOWED recursions
-				else if (entryNumber < 50) {
-					ToString(Tag<T>(), value, out);
-				}
-				// further ILLEGAL recursions
-				else {
-					throw exception::recursive_function_error();
-				}
-#else
-				if (recursion_detection++ < 50) {
-					ToString(Tag<T>(), value, out);
-				}
-				else {
-					out = "...";
-				}
-				recursion_detection--;
-#endif
+				else if (entryNumber < maxNumReEntry) ToString(Tag<T>(), value, out);
+				else throw exception::recursive_function_error();
 				return out;
 			};
+
+			template <typename T> static Impl::NodeCache GetChildrenImpl(T const& parent) {
+				thread_local static size_t recursion_detection{ 0 };
+				constexpr int maxNumReEntry{ 50 };
+
+				Impl::NodeCache out; {
+					out.self = GetNode(parent);
+					out.refCount = 0;
+				}
+				size_t entryNumber = recursion_detection++;
+				defer(recursion_detection--);
+
+				if (entryNumber <= 1) {
+					try { GetChildren(Tag<T>(), parent, out.children); }
+					catch (exception::recursive_function_error const& e) { out.children = {}; out.recursiveFlag = true; return out; }
+				}
+				else if (entryNumber < maxNumReEntry) GetChildren(Tag<T>(), parent, out.children);
+				else throw exception::recursive_function_error();
+				return out;
+			};
+
 		};
 	}; // namespace Read
 
+	// ToString
 	template <typename T> __forceinline std::string ToString(T const& value) { 
 		return Impl::ImplClass::ToStringImpl<T>(value);
 	};
 	template <size_t N> __forceinline std::string ToString(const char(&r)[N]) { return r; };
-
 	namespace Impl {
 		// ultimate fall-back
 		template <typename T> __forceinline void ToString(Tag<T>, T const& r, std::string& out) {
@@ -724,6 +763,12 @@ namespace GoodLang {
 			}			
 		};
 		// specializations
+		__forceinline void ToString(Tag<Impl::UniqueNode>, Impl::UniqueNode const& r, std::string& out) {
+			out = r.type->name()/* + " @ " + std::to_string((unsigned long long)r.address)*/;
+		};
+		__forceinline void ToString(Tag<Impl::NodeCache>, Impl::NodeCache const& r, std::string& out) {
+			out = GoodLang::ToString(r.self) + " -> " + GoodLang::ToString(r.children);
+		};
 		__forceinline void ToString(Tag<std::nullptr_t>, nullptr_t const&, std::string& out) {
 			out = "nullptr";
 		};
@@ -744,6 +789,9 @@ namespace GoodLang {
 		};
 		__forceinline void ToString(Tag<const char*>, const char* const& r, std::string& out) {
 			out = r;
+		};
+		__forceinline void ToString(Tag<const void*>, const void* const& r, std::string& out) {
+			out = GoodLang::ToString((unsigned long long)r);
 		};
 		template <typename T> __forceinline void ToString(Tag<std::shared_ptr<T>>, std::shared_ptr<T> const& r, std::string& out) {
 			if (r) out = GoodLang::ToString(*r);
@@ -822,7 +870,67 @@ namespace GoodLang {
 			}
 			out = std::string("[") + out + std::string("]");
 		};
+    };
+
+	// GetChildren
+	template <typename T> __forceinline Impl::NodeCache GetChildren(T const& value) {
+		return Impl::ImplClass::GetChildrenImpl<T>(value);
 	};
+	namespace Impl {
+		// ultimate fall-back
+		template <typename T> __forceinline void GetChildren(Tag<T>, T const& r, std::vector< NodeCache >& out) {};
+		// specializations
+		template <typename T> __forceinline void GetChildren(Tag<std::shared_ptr<T>>, std::shared_ptr<T> const& r, std::vector< NodeCache >& out) {
+			if (r) out.push_back(GoodLang::GetChildren(*r));
+		};
+		template <typename T> __forceinline void GetChildren(Tag<std::unique_ptr<T>>, std::unique_ptr<T> const& r, std::vector< NodeCache >& out) {
+			if (r) out.push_back(GoodLang::GetChildren(*r));
+		};
+		template <typename T> __forceinline void GetChildren(Tag<std::weak_ptr<T>>, std::weak_ptr<T> const& r, std::vector< NodeCache >& out) {	};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::pair<Args...>>, std::pair<Args...> const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(r.first));
+			out.push_back(GoodLang::GetChildren(r.second));
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::vector<Args...>>, std::vector<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::set<Args...>>, std::set<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::unordered_set<Args...>>, std::unordered_set<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::map<Args...>>, std::map<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::unordered_map<Args...>>, std::unordered_map<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<concurrency::concurrent_unordered_map<Args...>>, concurrency::concurrent_unordered_map<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<concurrency::concurrent_unordered_set<Args...>>, concurrency::concurrent_unordered_set<Args...> const& r, std::vector< NodeCache >& out) {
+			for (auto& x : r) {
+				out.push_back(GoodLang::GetChildren(x));
+			}
+		};
+
+	};
+
+
+
 };
 
 // DynamicObject && Var
@@ -863,6 +971,9 @@ namespace GoodLang {
 		__forceinline void ToString(Tag<DynamicObject>, DynamicObject const& r, std::string& out) {
 			out = GoodLang::ToString(r.m_actualType) + "{ " + GoodLang::ToString(r.m_objects) + " }";
 		};
+		template <typename T> __forceinline void GetChildren(Tag<DynamicObject>, DynamicObject const& r, std::vector< NodeCache >& out) {
+			out = { GoodLang::GetChildren(r.m_objects) };
+		};
 	};
 
 #define AllowInlineVarTyping
@@ -894,6 +1005,11 @@ namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag<Var>, Var const& r, std::string& out) {
 			out = GoodLang::ToString(r.p_data);
+		};
+		template <typename T> __forceinline void GetChildren(Tag<Var>, Var const& r, std::vector< NodeCache >& out) {
+			if (r.p_data) {
+				out.push_back(GoodLang::GetChildren(*r.p_data));
+			}
 		};
 	};
 };
@@ -1047,8 +1163,7 @@ namespace GoodLang {
 			// return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
 		};
 		virtual std::string ToString() const { return ""; };
-		virtual size_t Constexpr_Type_Hash() const { return 0; };
-		// virtual std::vector<std::weak_ptr<AnyData>> get_children() const;
+		virtual std::vector< Impl::NodeCache > GetChildren() const { return std::vector< Impl::NodeCache >{};	};
 
 	protected:
 		std::weak_ptr< AnyData> m_self;
@@ -1091,10 +1206,9 @@ namespace GoodLang {
 		virtual std::string ToString() const override {
 			return GoodLang::ToString(m_obj);
 		};
-		virtual size_t Constexpr_Type_Hash() const override { 
-			return GoodLang::utilities::constexpr_type_info<T>::hash;
+		std::vector< Impl::NodeCache > GetChildren() const override {
+			return { GoodLang::GetChildren(m_obj) };
 		};
-		// virtual std::vector<std::weak_ptr<AnyData>> get_children() const override { /* depending on the type, it'll have children. */ };
 
 	private:
 		T m_obj;
@@ -1130,10 +1244,14 @@ namespace GoodLang {
 		virtual std::string ToString() const override {
 			return GoodLang::ToString(*m_obj);
 		};
-		virtual size_t Constexpr_Type_Hash() const override {
-			return GoodLang::utilities::constexpr_type_info<T>::hash;
+		std::vector< Impl::NodeCache > GetChildren() const override {
+			if (m_obj) {
+				return { GoodLang::GetChildren(*m_obj) };
+			}
+			else {
+				return {};
+			}
 		};
-		// virtual std::vector<std::weak_ptr<AnyData>> get_children() const override { /* depending on the type, it'll have children. */ };
 
 	private:
 		std::shared_ptr<T> m_obj;
@@ -1143,6 +1261,15 @@ namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag<AnyData>, AnyData const& r, std::string& out) {
 			out = r.ToString();
+		};
+		__forceinline void GetChildren(Tag<AnyData>, AnyData const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		template <typename T> __forceinline void GetChildren(Tag<AnyData_Instanced<T>>, AnyData_Instanced<T> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		template <typename T> __forceinline void GetChildren(Tag<AnyData_Shared<T>>, AnyData_Shared<T> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
 		};
 	};
 
@@ -1427,15 +1554,6 @@ namespace GoodLang {
 		details::AnyAutoCast cast() const noexcept;
 		std::shared_ptr<AnyData> impl() const;
 
-		size_t Constexpr_Type_Hash() const {
-			if (std::shared_ptr<AnyData>& m = container) {
-				return m->Constexpr_Type_Hash();
-			}
-			else {
-				return 0;
-			}
-		};
-
 	public:
 		mutable std::shared_ptr<AnyData> container;
 		mutable std::shared_mutex mut;
@@ -1443,6 +1561,11 @@ namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag<Any>, Any const& r, std::string& out) {
 			out = GoodLang::ToString(r.container);
+		};
+		__forceinline void GetChildren(Tag<Any>, Any const& r, std::vector< NodeCache >& out) {
+			if (r.container) {
+				out.push_back(GoodLang::GetChildren(*r.container));
+			}
 		};
 	};
 
