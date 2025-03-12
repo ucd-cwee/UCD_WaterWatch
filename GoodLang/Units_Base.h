@@ -364,7 +364,7 @@ namespace GoodLang {
 		__forceinline void ToString(Tag<Units::value>, Units::value const& r, std::string& out) {
 			out = r.ToString();
 		};
-		__forceinline void GetChildren(Tag<Units::value>, Units::value const& r, std::vector< NodeCache >& out) { };
+		// __forceinline void GetChildren(Tag<Units::value>, Units::value const& r, std::vector< NodeCache >& out) { };
 	};
 
 };

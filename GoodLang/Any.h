@@ -13,7 +13,7 @@
 #include <map>
 #include <set>
 #include <unordered_set>
-
+#include <deque>
 
 // typenames, function_traits
 namespace GoodLang {
@@ -101,6 +101,8 @@ namespace GoodLang {
 // forward decl
 namespace GoodLang {
 	class Any;
+	class AnyData;
+	template <typename T> class AnyData_Shared;
 };
 
 // Type_Info
@@ -667,7 +669,7 @@ namespace GoodLang::Impl {
 	public:
 		std::vector< NodeCache > children{};
 		UniqueNode self{};
-		// std::shared_ptr<Any> data{ nullptr };
+		std::shared_ptr<AnyData> data{ nullptr };
 		int refCount{ 0 };
 		bool recursiveFlag{ false };
 	};
@@ -737,7 +739,7 @@ namespace GoodLang {
 				Impl::NodeCache out; {
 					out.self = GetNode(parent);
 					out.refCount = 0;
-					// out.data = std::make_shared<Any>(std::shared_ptr<T>(const_cast<T*>(&parent), [](T*) { /* do nothing */ }));
+					out.data = std::dynamic_pointer_cast<AnyData>(std::make_shared<AnyData_Shared<T>>(std::shared_ptr<T>(const_cast<T*>(&parent), [](T*) { /* do nothing */ })));
 				}
 				size_t entryNumber = recursion_detection++;
 				defer(recursion_detection--);
@@ -820,6 +822,10 @@ namespace GoodLang {
 		};
 		__forceinline void ToString(Tag<GoodLang::Type_Info>, GoodLang::Type_Info const& r, std::string& out) {
 			out = r.name();
+		};
+		__forceinline void ToString(Tag<bool>, bool const& r, std::string& out) {
+			if (r) out = "true";
+			else out = "false";
 		};
 		__forceinline void ToString(Tag<char>, char const& r, std::string& out) {
 			out = std::string(1, r);
@@ -1062,7 +1068,12 @@ namespace GoodLang {
 	};
 	namespace Impl {
 		__forceinline void ToString(Tag<Var>, Var const& r, std::string& out) {
-			out = GoodLang::ToString(r.p_data);
+			if (r.p_data) {
+				out = GoodLang::ToString(*r.p_data);
+			}
+			else {
+				out = GoodLang::ToString(r.p_data);
+			}
 		};
 		__forceinline void GetChildren(Tag<Var>, Var const& r, std::vector< NodeCache >& out) {
 			if (r.p_data) {
@@ -1225,7 +1236,8 @@ namespace GoodLang {
 			// return std::static_pointer_cast<void>(std::const_pointer_cast<std::remove_const_t<T>>(std::forward<std::shared_ptr<T>>(data)));
 		};
 		virtual std::string ToString() const { return ""; };
-		virtual std::vector< Impl::NodeCache > GetChildren() const { return std::vector< Impl::NodeCache >{};	};
+		virtual std::vector< Impl::NodeCache > GetChildren() const { return std::vector< Impl::NodeCache >{}; };
+		virtual bool TryDisconnectChild() const { return false; };
 
 	protected:
 		std::weak_ptr< AnyData> m_self;
@@ -1268,9 +1280,12 @@ namespace GoodLang {
 		virtual std::string ToString() const override {
 			return GoodLang::ToString(m_obj);
 		};
-		std::vector< Impl::NodeCache > GetChildren() const override {
+		virtual std::vector< Impl::NodeCache > GetChildren() const override {
 			return { GoodLang::GetChildren(m_obj) };
 		};
+		//virtual bool TryDisconnectChild() const override { 
+		//	return GoodLang::TryDisconnectChild(m_obj);
+		//};
 
 	private:
 		T m_obj;
@@ -1306,12 +1321,20 @@ namespace GoodLang {
 		virtual std::string ToString() const override {
 			return GoodLang::ToString(*m_obj);
 		};
-		std::vector< Impl::NodeCache > GetChildren() const override {
+		virtual std::vector< Impl::NodeCache > GetChildren() const override {
 			if (m_obj) {
 				return { GoodLang::GetChildren(*m_obj) };
 			}
 			else {
 				return {};
+			}
+		};
+		virtual bool TryDisconnectChild() const override {
+			if (m_obj) {
+				return { GoodLang::TryDisconnectChild(*m_obj) };
+			}
+			else {
+				return false;
 			}
 		};
 
@@ -1327,6 +1350,9 @@ namespace GoodLang {
 		__forceinline void GetChildren(Tag<AnyData>, AnyData const& r, std::vector< NodeCache >& out) {
 			out = r.GetChildren();
 		};
+		//__forceinline void TryDisconnectChild(Tag<AnyData>, AnyData const& r, bool& out) {
+		//	out = r.TryDisconnectChild();
+		//};
 	};
 
 	namespace details {
@@ -1616,11 +1642,14 @@ namespace GoodLang {
 	};
 	namespace Impl {
 		__forceinline void ToString(Tag<Any>, Any const& r, std::string& out) {
-			out = GoodLang::ToString(r.container);
+			if (r.container)
+				out = r.container->ToString();
+			else 
+				out = GoodLang::ToString(r.container);
 		};
 		__forceinline void GetChildren(Tag<Any>, Any const& r, std::vector< NodeCache >& out) {
 			if (r.container) {
-				out.push_back(GoodLang::GetChildren(*r.container));
+				out = r.container->GetChildren();
 			}
 		};
 		__forceinline void TryDisconnectChild(Tag<Any>, Any const& r, bool& out) {
@@ -1698,5 +1727,58 @@ namespace GoodLang {
 			}
 		}) };
 		return out;
+	};
+};
+
+namespace GoodLang {
+	namespace Impl {
+		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path) {
+			if (path.size() > 0) {
+				if (current_cache.recursiveFlag) {
+					return true;
+				}
+				else {
+					for (auto& child : current_cache.children) {
+						path.push_back(&child);
+						if (find_recursion(child, path)) {
+							return true;
+						}
+						path.pop_back();
+					}
+				}
+			}
+			else {
+				path.push_back(&current_cache);
+				for (auto& child : current_cache.children) {
+					path.push_back(&child);
+					if (find_recursion(child, path)) {
+						return true;
+					}
+					path.pop_back();
+				}
+				path.pop_back();
+			}
+			return false;
+		};
+	};
+	template <typename T> static bool try_remove_recursions(T const& obj) {
+		bool result{ false };
+		while (true) {
+			auto children = GoodLang::GetChildren(obj);
+			std::deque<const GoodLang::Impl::NodeCache*> queue;
+			if (Impl::find_recursion(children, queue)) {
+				result = true;
+				while (queue.size() > 0) {
+					if (queue.back()->data) {
+						if (queue.back()->data->TryDisconnectChild()) {
+							break;
+						}
+					}
+					queue.pop_back();
+				}
+			}
+			else break;
+		}
+		return result;
 	};
 };

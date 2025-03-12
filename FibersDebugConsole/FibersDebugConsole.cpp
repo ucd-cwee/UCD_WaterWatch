@@ -114,29 +114,6 @@ public:
 #define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
-static const GoodLang::Impl::NodeCache* find_recursion(GoodLang::Impl::NodeCache const& current_cache, const GoodLang::Impl::NodeCache* previous_cache = nullptr) {
-	if (previous_cache) {
-		if (current_cache.recursiveFlag) {
-			return previous_cache;
-		}
-		else {
-			for (auto& child : current_cache.children) {
-				if (auto* found = find_recursion(child, &current_cache)) {
-					return found;
-				}
-			}
-		}
-	}
-	else {
-		for (auto& child : current_cache.children) {			
-			if (auto* found = find_recursion(child, &current_cache)) {
-				return found;
-			}
-		}
-	}	
-	return nullptr;
-};
-
 int main() {
 	using namespace GoodLang;
 
@@ -147,9 +124,13 @@ int main() {
 		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
 		test_vec.cast<std::vector<Any>>().push_back(Any(100));
 		test_vec.cast<std::vector<Any>>().push_back(Any(200));
+		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
 
 		print(ToString(GetChildren(test_vec)));
-		// recursive(0, GetChildren(test_vec));
+		
+		EXPECT_EQ(true, try_remove_recursions(test_vec));
+
+		print(ToString(GetChildren(test_vec)));
 
 		spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> temp_pat;
 		temp_pat.emplace(0, 0);
@@ -158,18 +139,10 @@ int main() {
 		temp_pat.emplace(3, 3);
 		
 		print(ToString(GetChildren(Any(Var(Any(std::make_shared<SharedLockable< spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> >>(temp_pat)))))));
-		// recursive(0, GetChildren(Any(Var(Any(std::make_shared<SharedLockable< spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> >>(temp_pat))))));
-
-		auto children = GetChildren(test_vec);
-		if (auto* remove_here = find_recursion(children)) {
-			print(ToString(*remove_here));
-
-			// print(ToString(remove_here->data));
-		}
 
 
-		test_vec.cast<std::vector<Any>>().clear();
-		test_vec = nullptr;
+		EXPECT_EQ(false, try_remove_recursions(GetChildren(Any(Var(Any(std::make_shared<SharedLockable< spline::CatmullRomSpline<Units::second, Units::gallon_per_minute> >>(temp_pat)))))));
+
 	}
 
 
@@ -177,15 +150,21 @@ int main() {
 
 	// test the worst-case scenarios:
 	if (1) {
-		Any test_vec;
-		test_vec = std::vector<Any>();
+		Any test_vec = std::vector<Any>();
 		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
-		test_vec.cast<std::vector<Any>>().push_back(Any(100));
+		test_vec.cast<std::vector<Any>>().push_back(Any(stackThing("WAS A SUCCESS")));
 		test_vec.cast<std::vector<Any>>().push_back(Any(200));
-		print(ToString(test_vec)); // amazing. It worked.
+		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
+		test_vec.cast<std::vector<Any>>().push_back(std::map<int, Any>{ { 10, test_vec } }); // recursion occurs here -- expect "..."
 
-		test_vec.cast<std::vector<Any>>().clear();
-		test_vec = nullptr;
+		auto test = Any(Var(Any(Var(Any(Var(test_vec))))));
+
+		print(ToString(GetChildren(test)));
+
+		try_remove_recursions(test); // removes (hopefully!) all recursion wherever possible, as "late" as possible... though it apparently doesn't always succeed. 
+
+		print(ToString(GetChildren(test)));
+
 	}	
 	if (1) {
 		Any test_vec;

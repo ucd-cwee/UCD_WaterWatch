@@ -261,12 +261,14 @@ namespace GoodLang {
 	};
 
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
-	namespace Impl { __forceinline void ToString(Tag<Units:: ## type>, Units:: ## type const& r, std::string& out) { out = r.ToString(); }; }; \
-    namespace Impl { __forceinline void GetChildren(Tag<Units:: ## type>, Units:: ## type const& r, std::vector< NodeCache >& out) { }; };
+	namespace Impl { __forceinline void ToString(Tag<Units:: ## type>, Units:: ## type const& r, std::string& out) { out = r.ToString(); }; }; 
+
+    // namespace Impl { __forceinline void GetChildren(Tag<Units:: ## type>, Units:: ## type const& r, std::vector< NodeCache >& out) { }; };
 
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) \
-    namespace Impl { __forceinline void ToString(Tag< Units:: ## prefix ## type >, Units:: ## prefix ## type const& r, std::string& out) { out = r.ToString(); }; }; \
-    namespace Impl { __forceinline void GetChildren(Tag< Units:: ## prefix ## type >, Units:: ## prefix ## type const& r, std::vector< NodeCache >& out) { }; };
+    namespace Impl { __forceinline void ToString(Tag< Units:: ## prefix ## type >, Units:: ## prefix ## type const& r, std::string& out) { out = r.ToString(); }; };
+    
+	// namespace Impl { __forceinline void GetChildren(Tag< Units:: ## prefix ## type >, Units:: ## prefix ## type const& r, std::vector< NodeCache >& out) { }; };
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
 	DerivedUnitType(type, category, abbreviation, ratio); \
