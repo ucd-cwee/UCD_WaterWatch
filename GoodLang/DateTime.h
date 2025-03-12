@@ -146,5 +146,8 @@ namespace GoodLang {
 		__forceinline void ToString(Tag<DateTime>, DateTime const& r, std::string& out) {
 			out = (std::string)r;
 		};
+		__forceinline void GetChildren(Tag<DateTime>, DateTime const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(r.time));
+		};
 	};
 };

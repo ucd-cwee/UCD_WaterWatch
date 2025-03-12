@@ -1049,6 +1049,9 @@ namespace GoodLang {
 				out += returns;
 			}
 		};
+		__forceinline void GetChildren(Tag<details::Proxy_Function_Base>, details::Proxy_Function_Base const& r, std::vector< NodeCache >& out) {
+			// TBD
+		};
 	};
 };
 
@@ -3938,6 +3941,13 @@ namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag<Function>, Function const& r, std::string& out) {
 			out = GoodLang::ToString(r.m_function);
+		};
+		__forceinline void GetChildren(Tag<Function>, Function const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(r.m_function));
+		};
+		__forceinline void TryDisconnectChild(Tag<Function>, Function const& r, bool& out) {
+			const_cast<Function&>(r) = Function();
+			out = true;
 		};
 	};
 	

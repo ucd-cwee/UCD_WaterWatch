@@ -666,7 +666,8 @@ namespace GoodLang::Impl {
 	class NodeCache {
 	public:
 		std::vector< NodeCache > children{};
-		UniqueNode self{};		
+		UniqueNode self{};
+		// std::shared_ptr<Any> data{ nullptr };
 		int refCount{ 0 };
 		bool recursiveFlag{ false };
 	};
@@ -723,14 +724,20 @@ namespace GoodLang {
 				else throw exception::recursive_function_error();
 				return out;
 			};
-
 			template <typename T> static Impl::NodeCache GetChildrenImpl(T const& parent) {
 				thread_local static size_t recursion_detection{ 0 };
-				constexpr int maxNumReEntry{ 50 };
+				constexpr int maxNumReEntry{ 50 }; // maximum times we are allowed to see this type re-entered before it becomes unlikely to be intentional.
+
+				// This approach is a cheap alternative to tracking the actually-visitied pointers.
+				// Issue with tracking visited pointers is that what method is used during iteration matters -- for example:
+				//      for (auto& x : std::map<int, int>{...}){ GetChildren(x); }
+				// Resulted in an incorrect recursion detection, because the iterator during the loop was being shared between iterations.
+				// This cheap approach is immune to that type of issue (as far as I've tested at least). 
 
 				Impl::NodeCache out; {
 					out.self = GetNode(parent);
 					out.refCount = 0;
+					// out.data = std::make_shared<Any>(std::shared_ptr<T>(const_cast<T*>(&parent), [](T*) { /* do nothing */ }));
 				}
 				size_t entryNumber = recursion_detection++;
 				defer(recursion_detection--);
@@ -741,9 +748,14 @@ namespace GoodLang {
 				}
 				else if (entryNumber < maxNumReEntry) GetChildren(Tag<T>(), parent, out.children);
 				else throw exception::recursive_function_error();
+
 				return out;
 			};
-
+			template <typename T> static bool TryDisconnectChildImpl(T const& parent) {
+				bool out{ false };
+				TryDisconnectChild(Tag<T>(), parent, out);
+				return out;
+			};
 		};
 	}; // namespace Read
 
@@ -764,10 +776,44 @@ namespace GoodLang {
 		};
 		// specializations
 		__forceinline void ToString(Tag<Impl::UniqueNode>, Impl::UniqueNode const& r, std::string& out) {
-			out = r.type->name()/* + " @ " + std::to_string((unsigned long long)r.address)*/;
+			out = r.type->name();
+		};
+		namespace NodeCachedetails {
+			static void recursive(int indentLevel, GoodLang::Impl::NodeCache const& cache, std::string& out) {
+				if (cache.recursiveFlag) {
+					out += GoodLang::ToString(cache.self);
+					out += " { ...recursive... };\n";
+				}
+				else {
+					if (cache.children.size() == 0) {
+						out += GoodLang::ToString(cache.self);
+						out += ";\n";
+					}
+					else if (cache.children.size() == 1) {
+						out += GoodLang::ToString(cache.self);
+						out += " -> ";
+						recursive(indentLevel, cache.children[0], out);
+					}
+					else {
+						out += GoodLang::ToString(cache.self);
+						out += " -> ";
+						out += std::to_string(cache.children.size());
+						out += " children: { \n";
+
+						for (auto& child : cache.children) {
+							for (int i = 0; i < indentLevel + 1; i++) out += "\t";
+							recursive(indentLevel + 1, child, out);
+						}
+
+						for (int i = 0; i < indentLevel; i++) out += "\t";
+
+						out += "}\n";
+					}
+				}
+			};
 		};
 		__forceinline void ToString(Tag<Impl::NodeCache>, Impl::NodeCache const& r, std::string& out) {
-			out = GoodLang::ToString(r.self) + " -> " + GoodLang::ToString(r.children);
+			NodeCachedetails::recursive(0, r, out);
 		};
 		__forceinline void ToString(Tag<std::nullptr_t>, nullptr_t const&, std::string& out) {
 			out = "nullptr";
@@ -929,7 +975,19 @@ namespace GoodLang {
 
 	};
 
-
+	// TryDisconnectChild
+	template <typename T> __forceinline bool TryDisconnectChild(T const& value) {
+		return Impl::ImplClass::TryDisconnectChildImpl<T>(value);
+	};
+	namespace Impl {
+		// ultimate fall-back
+		template <typename T> __forceinline void TryDisconnectChild(Tag<T>, T const& r, bool& out) {};
+		// specializations
+		template <typename T> __forceinline void TryDisconnectChild(Tag<std::shared_ptr<T>>, std::shared_ptr<T> const& r, bool& out) {
+			const_cast<std::shared_ptr<T>&>(r) = nullptr;
+			out = true;
+		};
+	};
 
 };
 
@@ -971,7 +1029,7 @@ namespace GoodLang {
 		__forceinline void ToString(Tag<DynamicObject>, DynamicObject const& r, std::string& out) {
 			out = GoodLang::ToString(r.m_actualType) + "{ " + GoodLang::ToString(r.m_objects) + " }";
 		};
-		template <typename T> __forceinline void GetChildren(Tag<DynamicObject>, DynamicObject const& r, std::vector< NodeCache >& out) {
+		__forceinline void GetChildren(Tag<DynamicObject>, DynamicObject const& r, std::vector< NodeCache >& out) {
 			out = { GoodLang::GetChildren(r.m_objects) };
 		};
 	};
@@ -1006,10 +1064,14 @@ namespace GoodLang {
 		__forceinline void ToString(Tag<Var>, Var const& r, std::string& out) {
 			out = GoodLang::ToString(r.p_data);
 		};
-		template <typename T> __forceinline void GetChildren(Tag<Var>, Var const& r, std::vector< NodeCache >& out) {
+		__forceinline void GetChildren(Tag<Var>, Var const& r, std::vector< NodeCache >& out) {
 			if (r.p_data) {
 				out.push_back(GoodLang::GetChildren(*r.p_data));
 			}
+		};
+		__forceinline void TryDisconnectChild(Tag<Var>, Var const& r, bool& out) {
+			const_cast<Var&>(r).p_data = nullptr;
+			out = true;
 		};
 	};
 };
@@ -1263,12 +1325,6 @@ namespace GoodLang {
 			out = r.ToString();
 		};
 		__forceinline void GetChildren(Tag<AnyData>, AnyData const& r, std::vector< NodeCache >& out) {
-			out = r.GetChildren();
-		};
-		template <typename T> __forceinline void GetChildren(Tag<AnyData_Instanced<T>>, AnyData_Instanced<T> const& r, std::vector< NodeCache >& out) {
-			out = r.GetChildren();
-		};
-		template <typename T> __forceinline void GetChildren(Tag<AnyData_Shared<T>>, AnyData_Shared<T> const& r, std::vector< NodeCache >& out) {
 			out = r.GetChildren();
 		};
 	};
@@ -1566,6 +1622,10 @@ namespace GoodLang {
 			if (r.container) {
 				out.push_back(GoodLang::GetChildren(*r.container));
 			}
+		};
+		__forceinline void TryDisconnectChild(Tag<Any>, Any const& r, bool& out) {
+			const_cast<Any&>(r) = nullptr;
+			out = true;
 		};
 	};
 

@@ -744,7 +744,26 @@ namespace GoodLang {
 			if constexpr (num_parameters >= 16) { out += std::string(", ") + GoodLang::ToString(get<15>()); }
 			return std::string("<") + out + ">";
 		};
-
+		std::vector< Impl::NodeCache > GetChildren() const {
+			std::vector< Impl::NodeCache > out;
+			if constexpr (num_parameters >= 1) { out.push_back(GoodLang::GetChildren(get<0>())); }
+			if constexpr (num_parameters >= 2) { out.push_back(GoodLang::GetChildren(get<1>())); }
+			if constexpr (num_parameters >= 3) { out.push_back(GoodLang::GetChildren(get<2>())); }
+			if constexpr (num_parameters >= 4) { out.push_back(GoodLang::GetChildren(get<3>())); }
+			if constexpr (num_parameters >= 5) { out.push_back(GoodLang::GetChildren(get<4>())); }
+			if constexpr (num_parameters >= 6) { out.push_back(GoodLang::GetChildren(get<5>())); }
+			if constexpr (num_parameters >= 7) { out.push_back(GoodLang::GetChildren(get<6>())); }
+			if constexpr (num_parameters >= 8) { out.push_back(GoodLang::GetChildren(get<7>())); }
+			if constexpr (num_parameters >= 9) { out.push_back(GoodLang::GetChildren(get<8>())); }
+			if constexpr (num_parameters >= 10) { out.push_back(GoodLang::GetChildren(get<9>())); }
+			if constexpr (num_parameters >= 11) { out.push_back(GoodLang::GetChildren(get<10>())); }
+			if constexpr (num_parameters >= 12) { out.push_back(GoodLang::GetChildren(get<11>())); }
+			if constexpr (num_parameters >= 13) { out.push_back(GoodLang::GetChildren(get<12>())); }
+			if constexpr (num_parameters >= 14) { out.push_back(GoodLang::GetChildren(get<13>())); }
+			if constexpr (num_parameters >= 15) { out.push_back(GoodLang::GetChildren(get<14>())); }
+			if constexpr (num_parameters >= 16) { out.push_back(GoodLang::GetChildren(get<15>())); }
+			return out;
+		};
 
 #pragma endregion
 	private:
@@ -1025,6 +1044,9 @@ namespace GoodLang {
 		template <typename... Args> __forceinline void ToString(Tag< Union<Args...> >, Union<Args...> const& r, std::string& out) {
 			out = r.ToString();
 		};
+		template <typename... Args> __forceinline void GetChildren(Tag<Union<Args...>>, Union<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
 	};
 
 	/// <summary>
@@ -1098,6 +1120,13 @@ namespace GoodLang {
 		template <typename... Args> __forceinline void ToString(Tag< atomic_ptr<Args...> >, atomic_ptr<Args...> const& r, std::string& out) {
 			if (auto* p = r.Get()) out = GoodLang::ToString(*p); else out = GoodLang::ToString(nullptr);
 		};
+		template <typename... Args> __forceinline void GetChildren(Tag<atomic_ptr<Args...>>, atomic_ptr<Args...> const& r, std::vector< NodeCache >& out) {
+			if (auto* p = r.Get()) out.push_back(GoodLang::GetChildren(*p));
+		};
+		//template <typename... Args> __forceinline void TryDisconnectChild(Tag<atomic_ptr<Args...>>, atomic_ptr<Args...> const& r, bool& out) {
+		//	const_cast<atomic_ptr<Args...>&>(r) = nullptr;
+		//	out = true;
+		//};
 	};
 
 	/// <summary>
@@ -1198,6 +1227,9 @@ namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag< InterlockedLong >, InterlockedLong const& r, std::string& out) {
 			out = GoodLang::ToString(r.load());
+		};
+		__forceinline void GetChildren(Tag<InterlockedLong>, InterlockedLong const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(r.load()));
 		};
 	};
 
@@ -1687,6 +1719,10 @@ namespace GoodLang {
 			auto read = r.Read();
 			out = GoodLang::ToString(*read);
 		};
+		template <typename... Args> __forceinline void GetChildren(Tag<Lockable<Args...>>, Lockable<Args...> const& r, std::vector< NodeCache >& out) {
+			auto read = r.Read();
+			out.push_back(GoodLang::GetChildren(*read));
+		};
 	};
 
 	/// <summary>
@@ -1855,6 +1891,10 @@ namespace GoodLang {
 			auto read = r.Shared();
 			out = GoodLang::ToString(*read);
 		};
+		template <typename... Args> __forceinline void GetChildren(Tag<SharedLockable<Args...>>, SharedLockable<Args...> const& r, std::vector< NodeCache >& out) {
+			auto read = r.Shared();
+			out.push_back(GoodLang::GetChildren(*read));
+		};
 	};
 
 	namespace impl {
@@ -1962,6 +2002,9 @@ namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag< impl::Interlocked >, impl::Interlocked const& r, std::string& out) {
 			out = GoodLang::ToString(r.load());
+		};
+		__forceinline void GetChildren(Tag<impl::Interlocked>, impl::Interlocked const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(r.load()));
 		};
 	};
 
@@ -2801,10 +2844,14 @@ namespace GoodLang {
 			return !operator==(_Left, _Right);
 		};
 		std::string ToString() const{ return GoodLang::ToString(data); };
+		std::vector< Impl::NodeCache > GetChildren() const { return { GoodLang::GetChildren(data) }; };
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< Map<Args...> >, Map<Args...> const& r, std::string& out) {
 			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<Map<Args...>>, Map<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
 		};
 	};
 
@@ -2947,10 +2994,14 @@ namespace GoodLang {
 			return !operator==(_Left, _Right);
 		};
 		std::string ToString() const { return GoodLang::ToString(data); };
+		std::vector< Impl::NodeCache > GetChildren() const { return { GoodLang::GetChildren(data) }; };
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< UnorderedMap<Args...> >, UnorderedMap<Args...> const& r, std::string& out) {
 			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<UnorderedMap<Args...>>, UnorderedMap<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
 		};
 	};
 
@@ -3126,11 +3177,14 @@ namespace GoodLang {
 		SETUP_ITERATOR(Vector, it_state);
 
 		std::string ToString() const { return GoodLang::ToString(data); };
-
+		std::vector< Impl::NodeCache > GetChildren() const { return { GoodLang::GetChildren(data) }; };
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< Vector<Args...> >, Vector<Args...> const& r, std::string& out) {
 			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<Vector<Args...>>, Vector<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
 		};
 	};
 
@@ -3385,10 +3439,14 @@ namespace GoodLang {
 			return !operator==(_Left, _Right);
 		};
 		std::string ToString() const { return GoodLang::ToString(data); };
+		std::vector< Impl::NodeCache > GetChildren() const { return { GoodLang::GetChildren(data) }; };
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< Set<Args...> >, Set<Args...> const& r, std::string& out) {
 			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<Set<Args...>>, Set<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
 		};
 	};
 
@@ -3496,10 +3554,14 @@ namespace GoodLang {
 			return !operator==(_Left, _Right);
 		};
 		std::string ToString() const { return GoodLang::ToString(data); };
+		std::vector< Impl::NodeCache > GetChildren() const { return { GoodLang::GetChildren(data) }; };
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< UnorderedSet<Args...> >, UnorderedSet<Args...> const& r, std::string& out) {
 			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<UnorderedSet<Args...>>, UnorderedSet<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
 		};
 	};
 
@@ -3656,6 +3718,7 @@ namespace GoodLang {
 			};
 
 			std::string ToString() const { return GoodLang::ToString(data); };
+			std::vector< Impl::NodeCache > GetChildren() const { return { GoodLang::GetChildren(data) }; };
 		};
 
 		/// <summary>
@@ -3723,6 +3786,14 @@ namespace GoodLang {
 		template <typename... Args> __forceinline void ToString(Tag< spline::CatmullRomSpline<Args...> >, spline::CatmullRomSpline<Args...> const& r, std::string& out) {
 			out = r.ToString();
 		};
+
+		template <typename... Args> __forceinline void GetChildren(Tag<spline::Spline<Args...>>, spline::Spline<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<spline::CatmullRomSpline<Args...>>, spline::CatmullRomSpline<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+
 	};
 
 

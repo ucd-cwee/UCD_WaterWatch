@@ -969,6 +969,13 @@ namespace GoodLang {
 		__forceinline void ToString(Tag< parallel::promise >, parallel::promise const& r, std::string& out) {
 			out = GoodLang::ToString(const_cast<parallel::promise&>(r).wait_get_any());
 		};
+
+		template <typename... Args> __forceinline void GetChildren(Tag<parallel::future<Args...>>, parallel::future<Args...> const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(const_cast<parallel::future<Args...>&>(r).wait_get_any()));
+		};
+		__forceinline void GetChildren(Tag<parallel::promise>, parallel::promise const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(const_cast<parallel::promise&>(r).wait_get_any()));
+		};
 	};
 
 
