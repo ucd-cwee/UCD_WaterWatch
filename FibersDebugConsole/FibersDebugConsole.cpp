@@ -114,8 +114,140 @@ public:
 #define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
+
+
+
+//class LambdaFunction {
+//public:
+//	std::map<std::string, GoodLang::Any> captures; // name for each capture must be provided
+//
+//
+//	GoodLang::Any operator()(std::shared_ptr<GoodLang::Scope> parentScope) const {
+//		if (parentScope) {
+//			auto newScope = std::make_shared< GoodLang::Scope>(parentScope);
+//			newScope->SetSelf(newScope);
+//
+//			for (auto& capture : captures) {
+//				newScope->AddObj(capture.first, std::make_shared<GoodLang::Any>(capture.second));
+//			}
+//
+//			// newScope->CallFunction();
+//
+//
+//
+//		}
+//	};
+//
+//
+//
+//};
+
+
+
+namespace GoodLang {
+	template <typename T> static bool try_remove_recursion(T const& obj) {
+		bool result{ false };
+		//while (true) {
+			auto children = GoodLang::GetChildren(obj);
+			std::deque<const GoodLang::Impl::NodeCache*> queue;
+			if (Impl::find_recursion(children, queue)) {
+				// queue.pop_back(); // the last one is never the one we want
+				result = true;
+
+				// turn the queue into a vector
+				std::vector< const GoodLang::Impl::NodeCache* > records; // in order of least deep to deepest
+				while (queue.size() > 0) {
+					if (queue.front()->data) {
+						records.push_back(queue.front());
+					}
+					queue.pop_front();
+				}
+
+				std::set<std::shared_ptr<AnyData>> data;
+				bool doDisconnection = false;
+				for (auto& x : records) {
+					if (data.find(x->data) != data.end()) {
+						// we have a loop -- start attempting disconnection.
+						doDisconnection = true;
+					}
+					else {
+						data.emplace(x->data);
+					}
+
+					if (doDisconnection) {
+						if (x->data->TryDisconnectChild()) {
+							break;
+						}
+					}
+				}
+			}
+			// else break;
+		//}
+		return result;
+	};
+};
+
+
+
 int main() {
 	using namespace GoodLang;
+
+	if (1) {
+		auto globalScope = std::make_shared<GoodLang::Global>();
+		globalScope->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 3")));
+
+		if (1) {
+			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->AddObj("int", std::make_shared<Any>(100));
+			scoped->AddObj("vec", std::make_shared<Any>(std::vector<Any>{ Any(100), Any(200), Any(300) }));
+			scoped->AddObj("loop", std::make_shared<Any>(globalScope));
+			scoped->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 1")));
+		}
+		if (1) {
+			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 2")));
+			scoped->AddObj("scoped", std::make_shared<Any>(scoped));
+
+			//print(ToString(GetChildren(scoped)));
+
+			EXPECT_EQ(true, try_remove_recursions(scoped));
+
+			//print(ToString(GetChildren(scoped)));
+		}
+	}
+
+	if (1) {
+		auto globalScope = std::make_shared<GoodLang::Global>();
+		globalScope->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 3")));
+		globalScope->AddObj("globalScope", std::make_shared<Any>(globalScope));
+
+		if (1) {
+			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->AddObj("int", std::make_shared<Any>(100));
+			scoped->AddObj("vec", std::make_shared<Any>(std::vector<Any>{ Any(100), Any(200), Any(300) }));
+			scoped->AddObj("loop", std::make_shared<Any>(globalScope));
+			scoped->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 1")));
+		}
+		if (1) {
+			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 2")));
+			scoped->AddObj("scoped", std::make_shared<Any>(scoped));
+
+			// print(ToString(GetChildren(scoped)));
+
+			EXPECT_EQ(true, try_remove_recursions(scoped));
+
+			// print(ToString(GetChildren(scoped)));
+		}
+
+		//print(ToString(GetChildren(globalScope)));
+
+		EXPECT_EQ(true, try_remove_recursions(globalScope));
+
+		//print(ToString(GetChildren(globalScope)));
+	}
+
+
 
 	// test the "GetChildren" function...
 	if (1) {
@@ -160,6 +292,20 @@ int main() {
 		auto test = Any(Var(Any(Var(Any(Var(test_vec))))));
 
 		print(ToString(GetChildren(test)));
+
+		try_remove_recursion(test);
+
+		print(ToString(GetChildren(test)));
+
+		try_remove_recursion(test);
+
+		print(ToString(GetChildren(test)));
+
+		try_remove_recursion(test);
+
+		print(ToString(GetChildren(test)));
+
+
 
 		try_remove_recursions(test); // removes (hopefully!) all recursion wherever possible, as "late" as possible... though it apparently doesn't always succeed. 
 

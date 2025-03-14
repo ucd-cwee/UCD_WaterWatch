@@ -527,6 +527,7 @@ namespace GoodLang {
 	public:
 		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params) const;
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const;
+		Any CallFunction(Proxy_Function const& function, std::vector<Any> const& params) const;
 
 		template <typename T>
 		T Cast(Any const& from) const {
@@ -585,6 +586,11 @@ namespace GoodLang {
 			throw exception::not_found_error(GetTypeName(user_type_shared<T>()));
 		};
 
+	public:
+		virtual std::string ToString() const;
+		virtual std::vector< Impl::NodeCache > GetChildren() const;
+		virtual bool TryDisconnectChild() const;
+
 	};
 
 	class Namespace : public Scope {
@@ -617,9 +623,6 @@ namespace GoodLang {
 	private:
 		UnorderedMap<std::string, std::weak_ptr<Class>> // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
 			p_postfixes;
-
-	public:
-
 
 	private:
 		std::shared_ptr<Functions> // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
@@ -684,6 +687,10 @@ namespace GoodLang {
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) override;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params) override;
 
+	public:
+		virtual std::string ToString() const override;
+		virtual std::vector< Impl::NodeCache > GetChildren() const override;
+		virtual bool TryDisconnectChild() const override;
 	};
 
 	class Class final : public Namespace {
@@ -785,6 +792,11 @@ namespace GoodLang {
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
 		) const;
+
+	public:
+		virtual std::string ToString() const override;
+		virtual std::vector< Impl::NodeCache > GetChildren() const override;
+		virtual bool TryDisconnectChild() const override;
 
 	};
 
@@ -1020,6 +1032,30 @@ namespace GoodLang {
 			return false;
 		};
 
+	public:
+		virtual std::string ToString() const override;
+		virtual std::vector< Impl::NodeCache > GetChildren() const override;
+		virtual bool TryDisconnectChild() const override;
 	};
 
+};
+
+namespace GoodLang {
+	namespace Impl {
+		void ToString(Tag<Scope>, Scope const& r, std::string& out);
+		void GetChildren(Tag<Scope>, Scope const& r, std::vector< NodeCache >& out);
+		void TryDisconnectChild(Tag<Scope>, Scope const& r, bool& out);
+
+		void ToString(Tag<Namespace>, Namespace const& r, std::string& out);
+		void GetChildren(Tag<Namespace>, Namespace const& r, std::vector< NodeCache >& out);
+		void TryDisconnectChild(Tag<Namespace>, Namespace const& r, bool& out);
+
+		void ToString(Tag<Class>, Class const& r, std::string& out);
+		void GetChildren(Tag<Class>, Class const& r, std::vector< NodeCache >& out);
+		void TryDisconnectChild(Tag<Class>, Class const& r, bool& out);
+
+		void ToString(Tag<Global>, Global const& r, std::string& out);
+		void GetChildren(Tag<Global>, Global const& r, std::vector< NodeCache >& out);
+		void TryDisconnectChild(Tag<Global>, Global const& r, bool& out);
+	};
 };

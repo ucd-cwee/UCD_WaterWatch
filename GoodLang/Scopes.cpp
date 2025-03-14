@@ -923,7 +923,15 @@ namespace GoodLang {
 			throw exception::not_found_error(GoodLang::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
 		}
 	};
-
+	Any Scope::CallFunction(Proxy_Function const& func, std::vector<Any> const& params) const {
+		auto tree{ this->GetTypeConverterTree() };
+		if (func) {
+			return call(func, params, *tree);
+		}
+		else {
+			throw std::runtime_error("Empty function was provided to CallFunction with direct instancing -- this shouldn't be allowed normally by design.");
+		}
+	};
 
 	bool Namespace::AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists) {
 		const_cast<Function&>(function).m_function->GetSignature().Name(name);
@@ -1601,4 +1609,105 @@ namespace GoodLang {
 	};
 
 
+};
+
+
+namespace GoodLang {
+	std::string Scope::ToString() const {
+		return "Scope";
+	};
+	std::vector< Impl::NodeCache > Scope::GetChildren() const {
+		return {
+			GoodLang::GetChildren(this->p_children),
+			GoodLang::GetChildren(this->p_objects)
+		};
+	};
+	bool Scope::TryDisconnectChild() const {
+		return false;
+	};
+
+	std::string Namespace::ToString() const {
+		return "Namespace";
+	};
+	std::vector< Impl::NodeCache > Namespace::GetChildren() const {
+		return {
+			GoodLang::GetChildren(this->p_children),
+			GoodLang::GetChildren(this->p_objects),
+			GoodLang::GetChildren(this->p_functions)
+		};
+	};
+	bool Namespace::TryDisconnectChild() const {
+		return false;
+	};
+
+	std::string Class::ToString() const {
+		return "Class";
+	};
+	std::vector< Impl::NodeCache > Class::GetChildren() const {
+		return {
+			GoodLang::GetChildren(this->p_children),
+			GoodLang::GetChildren(this->p_objects),
+			GoodLang::GetChildren(this->p_functions),
+			GoodLang::GetChildren(this->p_declared_member_objects)
+		};
+	};
+	bool Class::TryDisconnectChild() const {
+		return false;
+	};
+
+	std::string Global::ToString() const {
+		return "Global";
+	};
+	std::vector< Impl::NodeCache > Global::GetChildren() const {
+		return {
+			GoodLang::GetChildren(this->p_children),
+			GoodLang::GetChildren(this->p_objects),
+			GoodLang::GetChildren(this->p_functions)
+		};
+	};
+	bool Global::TryDisconnectChild() const {
+		return false;
+	};
+
+	namespace Impl {
+		void ToString(Tag<Scope>, Scope const& r, std::string& out) {
+			out = r.ToString();
+		};
+		void GetChildren(Tag<Scope>, Scope const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		void TryDisconnectChild(Tag<Scope>, Scope const& r, bool& out) {
+			out = r.TryDisconnectChild();
+		};
+
+		void ToString(Tag<Namespace>, Namespace const& r, std::string& out) {
+			out = r.ToString();
+		};
+		void GetChildren(Tag<Namespace>, Namespace const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		void TryDisconnectChild(Tag<Namespace>, Namespace const& r, bool& out) {
+			out = r.TryDisconnectChild();
+		};
+
+		void ToString(Tag<Class>, Class const& r, std::string& out) {
+			out = r.ToString();
+		};
+		void GetChildren(Tag<Class>, Class const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		void TryDisconnectChild(Tag<Class>, Class const& r, bool& out) {
+			out = r.TryDisconnectChild();
+		};
+
+		void ToString(Tag<Global>, Global const& r, std::string& out) {
+			out = r.ToString();
+		};
+		void GetChildren(Tag<Global>, Global const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		void TryDisconnectChild(Tag<Global>, Global const& r, bool& out) {
+			out = r.TryDisconnectChild();
+		};
+	};
 };

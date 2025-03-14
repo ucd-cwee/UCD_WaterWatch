@@ -15,6 +15,8 @@
 #include <unordered_set>
 #include <deque>
 
+// #include <iostream>
+
 // typenames, function_traits
 namespace GoodLang {
 	namespace utilities {
@@ -670,8 +672,9 @@ namespace GoodLang::Impl {
 		std::vector< NodeCache > children{};
 		UniqueNode self{};
 		std::shared_ptr<AnyData> data{ nullptr };
+		// std::shared_ptr<AnyData> recursive_source{ nullptr };
 		int refCount{ 0 };
-		bool recursiveFlag{ false };
+		uint64_t recursiveFlag{ 0 };
 	};
 };
 
@@ -708,6 +711,35 @@ namespace GoodLang {
 	namespace Impl {
 		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of functions in correct order.
 
+		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path) {
+			if (path.size() > 0) {
+				if (current_cache.recursiveFlag == 1) {
+					return true;
+				}
+				else {
+					for (auto& child : current_cache.children) {
+						path.push_back(&child);
+						if (find_recursion(child, path)) {
+							return true;
+						}
+						path.pop_back();
+					}
+				}
+			}
+			else {
+				path.push_back(&current_cache);
+				for (auto& child : current_cache.children) {
+					path.push_back(&child);
+					if (find_recursion(child, path)) {
+						return true;
+					}
+					path.pop_back();
+				}
+				path.pop_back();
+			}
+			return false;
+		};
+
 		class ImplClass {
 		public:
 			template <typename T> static std::string ToStringImpl(T const& value) {
@@ -736,7 +768,7 @@ namespace GoodLang {
 				// Resulted in an incorrect recursion detection, because the iterator during the loop was being shared between iterations.
 				// This cheap approach is immune to that type of issue (as far as I've tested at least). 
 
-				Impl::NodeCache out; {
+				Impl::NodeCache out{}; {
 					out.self = GetNode(parent);
 					out.refCount = 0;
 					out.data = std::dynamic_pointer_cast<AnyData>(std::make_shared<AnyData_Shared<T>>(std::shared_ptr<T>(const_cast<T*>(&parent), [](T*) { /* do nothing */ })));
@@ -744,13 +776,58 @@ namespace GoodLang {
 				size_t entryNumber = recursion_detection++;
 				defer(recursion_detection--);
 
+#if 1
 				if (entryNumber <= 1) {
-					try { GetChildren(Tag<T>(), parent, out.children); }
-					catch (exception::recursive_function_error const& e) { out.children = {}; out.recursiveFlag = true; return out; }
+					try { 
+						GetChildren(Tag<T>(), parent, out.children); 
+						for (auto& child : out.children) {
+							if (child.recursiveFlag > 0) {
+								out.recursiveFlag = child.recursiveFlag + 1;
+								break;
+							}
+						}
+					}
+					catch (exception::recursive_function_error const& e) { 
+						out.children = {}; 
+						out.recursiveFlag = 1; 
+						return out; 
+					}
 				}
-				else if (entryNumber < maxNumReEntry) GetChildren(Tag<T>(), parent, out.children);
+				else if (entryNumber < maxNumReEntry) {
+					GetChildren(Tag<T>(), parent, out.children);
+					for (auto& child : out.children) {
+						if (child.recursiveFlag > 0) {
+							out.recursiveFlag = child.recursiveFlag + 1;
+							break;
+						}
+					}
+				}
 				else throw exception::recursive_function_error();
-
+#else
+				if (entryNumber >= maxNumReEntry) {
+					out.recursiveFlag = 1;
+					out.children = {};
+				}
+				else if (entryNumber == 1) {
+					GetChildren(Tag<T>(), parent, out.children);
+					for (auto& child : out.children) {
+						if (child.recursiveFlag > 0) {
+							out.children = {}; // clear the children from the list.
+							out.recursiveFlag = 1; // child.recursiveFlag + 1;
+							break;
+						}
+					}
+				}
+				else {
+					GetChildren(Tag<T>(), parent, out.children);
+					for (auto& child : out.children) {
+						if (child.recursiveFlag > 0) {
+							out.recursiveFlag = child.recursiveFlag + 1;
+							break;
+						}
+					}
+				}
+#endif
 				return out;
 			};
 			template <typename T> static bool TryDisconnectChildImpl(T const& parent) {
@@ -782,22 +859,22 @@ namespace GoodLang {
 		};
 		namespace NodeCachedetails {
 			static void recursive(int indentLevel, GoodLang::Impl::NodeCache const& cache, std::string& out) {
-				if (cache.recursiveFlag) {
+				if (cache.recursiveFlag == 1) {
 					out += GoodLang::ToString(cache.self);
 					out += " { ...recursive... };\n";
 				}
 				else {
-					if (cache.children.size() == 0) {
-						out += GoodLang::ToString(cache.self);
+					out += GoodLang::ToString(cache.self);
+					if (cache.recursiveFlag > 0) out += std::string("*") + std::to_string(cache.recursiveFlag) + "*";
+
+					if (cache.children.size() == 0) {						
 						out += ";\n";
 					}
 					else if (cache.children.size() == 1) {
-						out += GoodLang::ToString(cache.self);
 						out += " -> ";
 						recursive(indentLevel, cache.children[0], out);
 					}
 					else {
-						out += GoodLang::ToString(cache.self);
 						out += " -> ";
 						out += std::to_string(cache.children.size());
 						out += " children: { \n";
@@ -1731,46 +1808,20 @@ namespace GoodLang {
 };
 
 namespace GoodLang {
-	namespace Impl {
-		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path) {
-			if (path.size() > 0) {
-				if (current_cache.recursiveFlag) {
-					return true;
-				}
-				else {
-					for (auto& child : current_cache.children) {
-						path.push_back(&child);
-						if (find_recursion(child, path)) {
-							return true;
-						}
-						path.pop_back();
-					}
-				}
-			}
-			else {
-				path.push_back(&current_cache);
-				for (auto& child : current_cache.children) {
-					path.push_back(&child);
-					if (find_recursion(child, path)) {
-						return true;
-					}
-					path.pop_back();
-				}
-				path.pop_back();
-			}
-			return false;
-		};
-	};
 	template <typename T> static bool try_remove_recursions(T const& obj) {
 		bool result{ false };
 		while (true) {
 			auto children = GoodLang::GetChildren(obj);
 			std::deque<const GoodLang::Impl::NodeCache*> queue;
 			if (Impl::find_recursion(children, queue)) {
+				// queue.pop_back(); // the last one is never the one we want
 				result = true;
 				while (queue.size() > 0) {
 					if (queue.back()->data) {
-						if (queue.back()->data->TryDisconnectChild()) {
+						/*if (queue.back()->recursive_source->TryDisconnectChild()) {
+							break;
+						} 
+						else */if (queue.back()->data->TryDisconnectChild()) {
 							break;
 						}
 					}
