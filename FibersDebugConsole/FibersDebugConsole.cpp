@@ -151,37 +151,59 @@ namespace GoodLang {
 			auto children = GoodLang::GetChildren(obj);
 			std::deque<const GoodLang::Impl::NodeCache*> queue;
 			if (Impl::find_recursion(children, queue)) {
-				// queue.pop_back(); // the last one is never the one we want
-				result = true;
-
-				// turn the queue into a vector
-				std::vector< const GoodLang::Impl::NodeCache* > records; // in order of least deep to deepest
-				while (queue.size() > 0) {
-					if (queue.front()->data) {
-						records.push_back(queue.front());
-					}
-					queue.pop_front();
-				}
-
-				std::set<std::shared_ptr<AnyData>> data;
 				bool doDisconnection = false;
-				for (auto& x : records) {
-					if (data.find(x->data) != data.end()) {
-						// we have a loop -- start attempting disconnection.
-						doDisconnection = true;
-					}
-					else {
-						data.emplace(x->data);
-					}
+				std::set<void*> data;
+				while (queue.size() > 0) {
+					if (queue.back()->data) {
+						if (data.find(queue.back()->data->ptr()) != data.end()) {
+							doDisconnection = true;
+						}
+						else {
+							data.emplace(queue.back()->data->ptr());
+						}
 
-					if (doDisconnection) {
-						if (x->data->TryDisconnectChild()) {
-							break;
+						if (doDisconnection) {
+							if (queue.back()->data->TryDisconnectChild()) {
+								result = true;
+								break;
+							}
 						}
 					}
+					queue.pop_back();
 				}
+				// if (!doDisconnection) break; // something went wrong!
+
+
+				//// turn the queue into a vector
+				//std::vector< const GoodLang::Impl::NodeCache* > records; // in order of least deep to deepest
+				//while (queue.size() > 0) {
+				//	if (queue.front()->data) {
+				//		records.push_back(queue.front());
+				//	}
+				//	queue.pop_front();
+				//}
+
+				//std::set<void*> data;
+				//bool doDisconnection = false;
+				//for (auto& x : records) {
+				//	if (data.find(x->data->ptr()) != data.end()) {
+				//		// we have a loop -- start attempting disconnection.
+				//		doDisconnection = true;
+				//	}
+				//	else {
+				//		data.emplace(x->data->ptr());
+				//	}
+
+				//	if (doDisconnection) {
+				//		if (x->data->TryDisconnectChild()) {
+				//			result = true;
+				//			break;
+				//		}
+				//	}
+				//}
+				//if (!doDisconnection) break; // something went wrong!
 			}
-			// else break;
+			//else break;
 		//}
 		return result;
 	};
@@ -280,14 +302,18 @@ int main() {
 
 
 
+
+
+
 	// test the worst-case scenarios:
 	if (1) {
 		Any test_vec = std::vector<Any>();
 		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
+		test_vec.cast<std::vector<Any>>().push_back(std::vector<Any>{ test_vec }); // recursion occurs here -- expect "..."
 		test_vec.cast<std::vector<Any>>().push_back(Any(stackThing("WAS A SUCCESS")));
 		test_vec.cast<std::vector<Any>>().push_back(Any(200));
 		test_vec.cast<std::vector<Any>>().push_back(test_vec); // recursion occurs here -- expect "..."
-		test_vec.cast<std::vector<Any>>().push_back(std::map<int, Any>{ { 10, test_vec } }); // recursion occurs here -- expect "..."
+		test_vec.cast<std::vector<Any>>().push_back(std::map<int, Any>{ { 10, test_vec }, { 20, test_vec } }); // recursion occurs here -- expect "..."
 
 		auto test = Any(Var(Any(Var(Any(Var(test_vec))))));
 
@@ -304,6 +330,17 @@ int main() {
 		try_remove_recursion(test);
 
 		print(ToString(GetChildren(test)));
+
+		try_remove_recursion(test);
+
+		print(ToString(GetChildren(test)));
+
+		try_remove_recursion(test);
+
+		print(ToString(GetChildren(test)));
+
+
+
 
 
 

@@ -674,7 +674,7 @@ namespace GoodLang::Impl {
 		std::shared_ptr<AnyData> data{ nullptr };
 		// std::shared_ptr<AnyData> recursive_source{ nullptr };
 		int refCount{ 0 };
-		uint64_t recursiveFlag{ 0 };
+		long long recursiveFlag{ 0 };
 	};
 };
 
@@ -711,36 +711,76 @@ namespace GoodLang {
 	namespace Impl {
 		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of functions in correct order.
 
-		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path) {
-			if (path.size() > 0) {
-				if (current_cache.recursiveFlag == 1) {
-					return true;
+		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path/*, bool FoundRecursion = false*/) {			
+			//if (FoundRecursion) {
+			//	// look for the path to the start of the recursion. It should be in here. 
+			//	if (current_cache.recursiveFlag == -1) {
+			//		for (auto& child : current_cache.children) {
+			//			path.push_back(&child);
+			//			if (find_recursion(child, path, true)) {
+			//				return true;
+			//			}
+			//			path.pop_back();
+			//		}
+			//		return true;
+			//	}
+			//	else {					
+			//		return false;
+			//	}
+			//}
+			//else {
+				if (path.size() > 0) {
+					if (current_cache.recursiveFlag == 1) { // we started the final recursion search. We are looking for -1 from here on out.
+						const GoodLang::Impl::NodeCache* this_cache{ &current_cache };
+						int max_iter = 100;
+						while (this_cache && ((max_iter--) >= 0)) {
+							auto& children = this_cache->children;
+							this_cache = nullptr;
+							for (int i = 0; i < children.size(); i++) {
+								if (children[i].recursiveFlag < 0) {
+									path.push_back(this_cache = &children[i]);
+									break;
+								}
+							}
+						}
+						return true; // regardless, return true. 
+					}
+					else {
+						for (auto& child : current_cache.children) {
+							path.push_back(&child);
+							if (find_recursion(child, path/*, FoundRecursion*/)) {
+								return true;
+							}
+							path.pop_back();
+						}
+					}
 				}
 				else {
+					path.push_back(&current_cache);
 					for (auto& child : current_cache.children) {
 						path.push_back(&child);
-						if (find_recursion(child, path)) {
+						if (find_recursion(child, path/*, FoundRecursion*/)) {
 							return true;
 						}
 						path.pop_back();
 					}
-				}
-			}
-			else {
-				path.push_back(&current_cache);
-				for (auto& child : current_cache.children) {
-					path.push_back(&child);
-					if (find_recursion(child, path)) {
-						return true;
-					}
 					path.pop_back();
 				}
-				path.pop_back();
-			}
-			return false;
+				return false;
+			//}
 		};
 
 		class ImplClass {
+		private:
+			static size_t& GetCurrentDepth() {
+				thread_local static size_t currentDepth{ 0 };
+				return currentDepth;
+			};
+			static size_t& GetCurrentDepthLimit() {
+				thread_local static size_t currentDepthLimit{ std::numeric_limits<size_t>::max() };
+				return currentDepthLimit;
+			};
+
 		public:
 			template <typename T> static std::string ToStringImpl(T const& value) {
 				thread_local static size_t recursion_detection{ 0 };
@@ -758,10 +798,11 @@ namespace GoodLang {
 				else throw exception::recursive_function_error();
 				return out;
 			};
+			
 			template <typename T> static Impl::NodeCache GetChildrenImpl(T const& parent) {
 				thread_local static size_t recursion_detection{ 0 };
 				constexpr int maxNumReEntry{ 50 }; // maximum times we are allowed to see this type re-entered before it becomes unlikely to be intentional.
-
+				
 				// This approach is a cheap alternative to tracking the actually-visitied pointers.
 				// Issue with tracking visited pointers is that what method is used during iteration matters -- for example:
 				//      for (auto& x : std::map<int, int>{...}){ GetChildren(x); }
@@ -774,35 +815,55 @@ namespace GoodLang {
 					out.data = std::dynamic_pointer_cast<AnyData>(std::make_shared<AnyData_Shared<T>>(std::shared_ptr<T>(const_cast<T*>(&parent), [](T*) { /* do nothing */ })));
 				}
 				size_t entryNumber = recursion_detection++;
-				defer(recursion_detection--);
+				size_t depthNumber = GetCurrentDepth()++;
+				if (depthNumber == 0) GetCurrentDepthLimit() = std::numeric_limits<size_t>::max(); // reset
+				defer(recursion_detection--; GetCurrentDepth()--);
 
-#if 1
-				if (entryNumber <= 1) {
-					try { 
-						GetChildren(Tag<T>(), parent, out.children); 
+				if (entryNumber < GetCurrentDepthLimit()) {
+					if (entryNumber <= 1) {
+						GetChildren(Tag<T>(), parent, out.children);
 						for (auto& child : out.children) {
-							if (child.recursiveFlag > 0) {
-								out.recursiveFlag = child.recursiveFlag + 1;
+							if (child.recursiveFlag < 0) {
+								out.recursiveFlag = 1;
 								break;
+							}
+							else if (child.recursiveFlag > 0) {
+								out.recursiveFlag = std::max(out.recursiveFlag, child.recursiveFlag + 1);
 							}
 						}
 					}
-					catch (exception::recursive_function_error const& e) { 
-						out.children = {}; 
-						out.recursiveFlag = 1; 
-						return out; 
-					}
-				}
-				else if (entryNumber < maxNumReEntry) {
-					GetChildren(Tag<T>(), parent, out.children);
-					for (auto& child : out.children) {
-						if (child.recursiveFlag > 0) {
-							out.recursiveFlag = child.recursiveFlag + 1;
-							break;
+					else if (entryNumber < maxNumReEntry) {
+						try {
+							GetChildren(Tag<T>(), parent, out.children);
+							for (auto& child : out.children) {
+								if (child.recursiveFlag < 0) {
+									out.recursiveFlag = child.recursiveFlag - 1;
+									// out.children = {};
+									break;
+								}
+								else if (child.recursiveFlag > 0) {
+									out.recursiveFlag = std::max(out.recursiveFlag, child.recursiveFlag + 1);
+								}
+							}
+						}
+						catch (exception::recursive_function_error const&) {
+							out.recursiveFlag = -1;
+							// out.children = {};
 						}
 					}
+					else {
+						// out.children = {};
+						out.recursiveFlag = -1; // negative one indicates it is the source of the recursion
+						GetCurrentDepthLimit() = std::min<size_t>(GetCurrentDepthLimit(), 3);
+						throw exception::recursive_function_error();
+					}
 				}
-				else throw exception::recursive_function_error();
+				else {
+					// loop must end
+				}
+
+#if 1
+				
 #else
 				if (entryNumber >= maxNumReEntry) {
 					out.recursiveFlag = 1;
@@ -1813,20 +1874,28 @@ namespace GoodLang {
 		while (true) {
 			auto children = GoodLang::GetChildren(obj);
 			std::deque<const GoodLang::Impl::NodeCache*> queue;
+			bool doDisconnection = false;
+			std::set<void*> data;
 			if (Impl::find_recursion(children, queue)) {
-				// queue.pop_back(); // the last one is never the one we want
-				result = true;
 				while (queue.size() > 0) {
 					if (queue.back()->data) {
-						/*if (queue.back()->recursive_source->TryDisconnectChild()) {
-							break;
-						} 
-						else */if (queue.back()->data->TryDisconnectChild()) {
-							break;
+						if (data.find(queue.back()->data->ptr()) != data.end()) {
+							doDisconnection = true;
+						}
+						else {
+							data.emplace(queue.back()->data->ptr());
+						}
+
+						if (doDisconnection) {
+							if (queue.back()->data->TryDisconnectChild()) {
+								result = true;
+								break;
+							}
 						}
 					}
 					queue.pop_back();
 				}
+				if (!doDisconnection) break; // something went wrong!
 			}
 			else break;
 		}
