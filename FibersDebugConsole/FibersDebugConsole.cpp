@@ -142,176 +142,871 @@ public:
 //
 //};
 
-BETTER_ENUM(AST_Node_Type, uint8_t,
-	Id,
-	Fun_Call,
-	Unused_Return_Fun_Call,
-	Arg_List,
-	Equation,
-	Var_Decl,
-	Assign_Decl,
-	Array_Call,
-	Dot_Access,
-	Lambda,
-	Block,
-	Scopeless_Block,
-	Def,
-	While,
-	If,
-	For,
-	Ranged_For,
-	Inline_Array,
-	Inline_Map,
-	Return,
-	File,
-	Prefix,
-	Break,
-	Continue,
-	Map_Pair,
-	Value_Range,
-	Inline_Range,
-	Do,
-	Try,
-	Catch,
-	Finally,
-	Method,
-	Attr_Decl,
-	Logical_And,
-	Logical_Or,
-	Reference,
-	Switch,
-	Case,
-	Default,
-	Noop,
-	Class,
-	Binary,
-	Arg,
-	Global_Decl,
-	Constant,
-	Compiled,
-	ControlBlock,
-	Postfix,
-	Assign_Retroactively,
-	Parallel,
-	AST_Node_Type_end
-);
-struct File_Position {
-	int line = 0;
-	int column = 0;
+namespace GoodLang {
+	namespace Scripting {
+		BETTER_ENUM(AST_Node_Type, uint8_t,
+			Id,
+			Fun_Call,
+			Unused_Return_Fun_Call,
+			Arg_List,
+			Equation,
+			Var_Decl,
+			Assign_Decl,
+			Array_Call,
+			Dot_Access,
+			Lambda,
+			Block,
+			Scopeless_Block,
+			Def,
+			While,
+			If,
+			For,
+			Parallel_For,
+			Ranged_For,
+			Inline_Array,
+			Inline_Map,
+			Return,
+			File,
+			Prefix,
+			Break,
+			Continue,
+			Map_Pair,
+			Value_Range,
+			Inline_Range,
+			Do,
+			Try,
+			Catch,
+			Finally,
+			Method,
+			Attr_Decl,
+			Logical_And,
+			Logical_Or,
+			Reference,
+			Switch,
+			Case,
+			Default,
+			Noop,
+			Class,
+			Binary,
+			Arg,
+			Global_Decl,
+			Constant,
+			Compiled,
+			ControlBlock,
+			Postfix,
+			Assign_Retroactively,
+			Parallel,
+			AST_Node_Type_end
+		);
+		struct File_Position {
+			int line = 0;
+			int column = 0;
 
-	constexpr File_Position(int t_file_line, int t_file_column) noexcept
-		: line(t_file_line)
-		, column(t_file_column) {
-	}
-
-	constexpr File_Position() noexcept = default;
-};
-struct Parse_Location {
-	Parse_Location(std::string t_fname = "", const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
-		: start(t_start_line, t_start_col)
-		, end(t_end_line, t_end_col)
-		, filename(std::move(t_fname)) 
-	{}
-	File_Position start;
-	File_Position end;
-	std::string filename;
-};
-
-struct AST_Node {
-public:
-	struct AST_Node_Trace {
-		const AST_Node_Type identifier;
-		const std::string text;
-		Parse_Location location;
-
-		const std::string& filename() const noexcept { return location.filename; }
-
-		const File_Position& start() const noexcept { return location.start; }
-
-		const File_Position& end() const noexcept { return location.end; }
-
-		std::string pretty_print() const {
-			std::ostringstream oss;
-
-			oss << text;
-
-			for (const auto& elem : children) {
-				oss << elem.pretty_print() << ' ';
+			constexpr File_Position(int t_file_line, int t_file_column) noexcept
+				: line(t_file_line)
+				, column(t_file_column) {
 			}
 
-			return oss.str();
-		}
+			constexpr File_Position() noexcept = default;
+		};
+		struct Parse_Location {
+			Parse_Location(std::string t_fname = "", const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
+				: start(t_start_line, t_start_col)
+				, end(t_end_line, t_end_col)
+				, filename(std::move(t_fname))
+			{}
+			File_Position start;
+			File_Position end;
+			std::string filename;
+		};
+		struct AST_Node {
+		public:
+			struct AST_Node_Trace {
+				const AST_Node_Type identifier;
+				const std::string text;
+				Parse_Location location;
 
-		std::vector<AST_Node_Trace> get_children(const AST_Node& node) {
-			const auto node_children = node.get_children();
-			return std::vector<AST_Node_Trace>(node_children.begin(), node_children.end());
+				const std::string& filename() const noexcept { return location.filename; }
+
+				const File_Position& start() const noexcept { return location.start; }
+
+				const File_Position& end() const noexcept { return location.end; }
+
+				std::string pretty_print() const {
+					std::ostringstream oss;
+
+					oss << text;
+
+					for (const auto& elem : children) {
+						oss << elem.pretty_print() << ' ';
+					}
+
+					return oss.str();
+				}
+
+				std::vector<AST_Node_Trace> get_children(const AST_Node& node) {
+					const auto node_children = node.get_children();
+					return std::vector<AST_Node_Trace>(node_children.begin(), node_children.end());
+				};
+
+				AST_Node_Trace(const AST_Node& node)
+					: identifier(node.identifier)
+					, text(node.text)
+					, location(node.location)
+					, children(get_children(node)) {
+				};
+
+				std::vector<AST_Node_Trace> children;
+			};
+
+		public:
+			const AST_Node_Type identifier;
+			const std::string text;
+			Parse_Location location;
+			std::weak_ptr<Type_Info> return_type;
+
+			const std::string& filename() const noexcept { return location.filename; }
+			const File_Position& start() const noexcept { return location.start; }
+			const File_Position& end() const noexcept { return location.end; }
+
+			std::string pretty_print() const {
+				std::ostringstream oss;
+
+				oss << text;
+
+				for (auto& elem : get_children()) {
+					oss << elem.get().pretty_print() << ' ';
+				}
+
+				return oss.str();
+			}
+
+			virtual std::vector<std::reference_wrapper<AST_Node>> get_children() const = 0;
+			virtual Any eval(std::shared_ptr<Scope> const& currentScope) const = 0;
+
+			/// Prints the contents of an AST node, including its children, recursively
+			std::string to_string(const std::string& t_prepend = "") const {
+				std::ostringstream oss;
+
+				//oss << t_prepend << "(" << ast_node_type_to_string(this->identifier) << ") " << this->text << " : " << this->location.start.line
+				//	<< ", " << this->location.start.column << '\n';
+
+				//for (auto& elem : get_children()) {
+				//	oss << elem.get().to_string(t_prepend + "  ");
+				//}
+
+				return oss.str();
+			}
+
+			virtual ~AST_Node() noexcept = default;
+			AST_Node(AST_Node&&) = default;
+			AST_Node& operator=(AST_Node&&) = delete;
+			AST_Node(const AST_Node&) = delete;
+			AST_Node& operator=(const AST_Node&) = delete;
+
+		protected:
+			AST_Node(std::string t_ast_node_text, AST_Node_Type t_id, Parse_Location t_loc)
+				: identifier(t_id)
+				, text(std::move(t_ast_node_text))
+				, location(std::move(t_loc))
+				, return_type{ GoodLang::user_type_shared<void>() }
+			{}
 		};
 
-		AST_Node_Trace(const AST_Node& node)
-			: identifier(node.identifier)
-			, text(node.text)
-			, location(node.location)
-			, children(get_children(node)) {
+		template<typename T> struct AST_Node_Impl;
+		template<typename T> using AST_Node_Impl_Ptr = typename std::shared_ptr<AST_Node_Impl<T>>;
+
+		namespace exception {
+			/// Errors generated during parsing or evaluation
+			struct eval_error : std::runtime_error {
+				std::string reason;
+				File_Position start_position;
+				std::string filename;
+				std::string detail;
+				std::vector<AST_Node::AST_Node_Trace> call_stack;
+
+				eval_error(const std::string& t_why, const File_Position& t_where, const std::string& t_fname) noexcept
+					: std::runtime_error(format(t_why, t_where, t_fname))
+					, reason(t_why)
+					, start_position(t_where)
+					, filename(t_fname) {
+				}
+
+				explicit eval_error(const std::string& t_why) noexcept
+					: std::runtime_error(t_why)
+					, reason(t_why) {
+				}
+
+				eval_error(const eval_error&) = default;
+
+				std::string pretty_print() const {
+					std::ostringstream ss;
+
+					/*ss << what();
+					if (!call_stack.empty()) {
+						ss << " during evaluation at (" << fname(call_stack[0]) << " " << startpos(call_stack[0]) << ").";
+						if (detail.length() != 0) {
+							ss << " " << detail << ".";
+						}
+						ss << " " << fname(call_stack[0]) << " (" << startpos(call_stack[0]) << ") '" << pretty(call_stack[0]) << "'";
+
+						for (size_t j = 1; j < call_stack.size(); ++j) {
+							if (id(call_stack[j]) != chaiscript::AST_Node_Type::Block && id(call_stack[j]) != chaiscript::AST_Node_Type::File) {
+								ss << " from " << fname(call_stack[j]) << " (" << startpos(call_stack[j]) << ") '" << pretty(call_stack[j]) << "'";
+							}
+						}
+					}*/
+
+					//ss << '\n';
+					return ss.str();
+				}
+
+				~eval_error() noexcept override = default;
+
+			private:
+				template<typename T>
+				static AST_Node_Type id(const T& t) noexcept {
+					return t.identifier;
+				};
+
+				template<typename T>
+				static std::string pretty(const T& t) {
+					return t.pretty_print();
+				};
+
+				template<typename T>
+				static const std::string& fname(const T& t) noexcept {
+					return t.filename();
+				};
+
+				template<typename T>
+				static std::string startpos(const T& t) {
+					std::ostringstream oss;
+					oss << t.start().line << ", " << t.start().column;
+					return oss.str();
+				};
+
+				static std::string format_why(const std::string& t_why) { return "Error: \"" + t_why + "\""; };
+
+				template<typename T>
+				static std::string format_location(const T& t) {
+					std::ostringstream oss;
+					oss << "(" << t.filename() << " " << t.start().line << ", " << t.start().column << ")";
+					return oss.str();
+				};
+
+				static std::string format_filename(const std::string& t_fname) {
+					std::stringstream ss;
+
+					if (t_fname != "__EVAL__") {
+						ss << "in '" << t_fname << "' ";
+					}
+					else {
+						ss << "during evaluation ";
+					}
+
+					return ss.str();
+				};
+
+				static std::string format_location(const File_Position& t_where) {
+					std::stringstream ss;
+					ss << "at (" << t_where.line << ", " << t_where.column << ")";
+					return ss.str();
+				};
+
+#if 0
+				static std::string format_types(const Const_Proxy_Function& t_func, bool t_dot_notation, const chaiscript::detail::Dispatch_Engine& t_ss) {
+					assert(t_func);
+					int arity = t_func->get_arity();
+					chaiscript::small_vector<Type_Info> types = t_func->get_param_types();
+
+					std::string retval;
+					if (arity == -1) {
+						retval = "(...)";
+						if (t_dot_notation) {
+							retval = "(Object)." + retval;
+						}
+					}
+					else if (types.size() <= 1) {
+						retval = "()";
+					}
+					else {
+						std::stringstream ss;
+						ss << "(";
+
+						std::string paramstr;
+
+						for (size_t index = 1; index != types.size(); ++index) {
+							paramstr += (types[index].is_const() ? "const " : "");
+							paramstr += t_ss.get_type_name(types[index]);
+
+							if (index == 1 && t_dot_notation) {
+								paramstr += ").(";
+								if (types.size() == 2) {
+									paramstr += ", ";
+								}
+							}
+							else {
+								paramstr += ", ";
+							}
+						}
+
+						ss << paramstr.substr(0, paramstr.size() - 2);
+
+						ss << ")";
+						retval = ss.str();
+					}
+
+					AUTO dynfun = chaiscript::dynamic_shared_ptr_cast<const dispatch::Dynamic_Proxy_Function>(t_func);
+
+					if (dynfun && dynfun->has_parse_tree()) {
+						Proxy_Function f = dynfun->get_guard();
+
+						if (f) {
+							auto dynfunguard = chaiscript::dynamic_shared_ptr_cast<const dispatch::Dynamic_Proxy_Function>(f);
+							if (dynfunguard && dynfunguard->has_parse_tree()) {
+								retval += " : " + format_guard(dynfunguard->get_parse_tree());
+							}
+						}
+
+						retval += "\n          Defined at " + format_location(dynfun->get_parse_tree());
+					}
+
+					return retval;
+				}
+
+				template<typename T>
+				static std::string format_guard(const T& t) {
+					return t.pretty_print();
+				}
+
+
+
+				static std::string format_detail(const chaiscript::small_vector<chaiscript::Const_Proxy_Function>& t_functions,
+					bool t_dot_notation,
+					const chaiscript::detail::Dispatch_Engine& t_ss) {
+					std::stringstream ss;
+					if (t_functions.size() == 1) {
+						assert(t_functions[0]);
+						ss << "  Expected: " << format_types(t_functions[0], t_dot_notation, t_ss) << '\n';
+					}
+					else {
+						ss << "  " << t_functions.size() << " overloads available:\n";
+
+						for (const auto& t_function : t_functions) {
+							ss << "      " << format_types((t_function), t_dot_notation, t_ss) << '\n';
+						}
+					}
+
+					return ss.str();
+				}
+
+				static std::string
+					format_parameters(const chaiscript::small_vector<Boxed_Value>& t_parameters, bool t_dot_notation, const chaiscript::detail::Dispatch_Engine& t_ss) {
+					std::stringstream ss;
+					ss << "(";
+
+					if (!t_parameters.empty()) {
+						std::string paramstr;
+
+						for (auto itr = t_parameters.begin(); itr != t_parameters.end(); ++itr) {
+							paramstr += (itr->is_const() ? "const " : "");
+							paramstr += t_ss.type_name(*itr);
+
+							if (itr == t_parameters.begin() && t_dot_notation) {
+								paramstr += ").(";
+								if (t_parameters.size() == 1) {
+									paramstr += ", ";
+								}
+							}
+							else {
+								paramstr += ", ";
+							}
+						}
+
+						ss << paramstr.substr(0, paramstr.size() - 2);
+					}
+					ss << ")";
+
+					return ss.str();
+				}
+
+
+
+				static std::string format(const std::string& t_why,
+					const File_Position& t_where,
+					const std::string& t_fname,
+					const chaiscript::small_vector<Boxed_Value>& t_parameters,
+					bool t_dot_notation,
+					const chaiscript::detail::Dispatch_Engine& t_ss) {
+					std::stringstream ss;
+
+					ss << format_why(t_why);
+					ss << " ";
+
+					ss << "With parameters: " << format_parameters(t_parameters, t_dot_notation, t_ss);
+					ss << " ";
+
+					ss << format_filename(t_fname);
+					ss << " ";
+
+					ss << format_location(t_where);
+
+					return ss.str();
+				}
+
+				static std::string format(const std::string& t_why,
+					const chaiscript::small_vector<Boxed_Value>& t_parameters,
+					bool t_dot_notation,
+					const chaiscript::detail::Dispatch_Engine& t_ss) {
+					std::stringstream ss;
+
+					ss << format_why(t_why);
+					ss << " ";
+
+					ss << "With parameters: " << format_parameters(t_parameters, t_dot_notation, t_ss);
+					ss << " ";
+
+					return ss.str();
+				}
+
+#endif
+				static std::string format(const std::string& t_why, const File_Position& t_where, const std::string& t_fname) {
+					std::stringstream ss;
+
+					ss << format_why(t_why);
+					ss << " ";
+
+					ss << format_filename(t_fname);
+					ss << " ";
+
+					ss << format_location(t_where);
+
+					return ss.str();
+				};
+
+
+
+			};
 		};
 
-		std::vector<AST_Node_Trace> children;
+		namespace tracer {
+			struct Noop_Tracer_Detail {
+				template<typename T>
+				constexpr void trace(std::shared_ptr<Scope> const& currentScope, const AST_Node_Impl<T>*) noexcept {}
+			};
+
+			template<typename... T>
+			struct Tracer : T... {
+				Tracer() = default;
+				constexpr explicit Tracer(T... t) : T(std::move(t))... {};
+
+				void do_trace(std::shared_ptr<Scope> const& currentScope, const AST_Node_Impl<Tracer<T...>>* node) {
+					// (static_cast<T&>(*this).trace(ds, node), ...);
+				}
+
+				static void trace(std::shared_ptr<Scope> const& currentScope, const AST_Node_Impl<Tracer<T...>>* node) {
+					// ds->get_parser().get_tracer<Tracer<T...>>().do_trace(ds, node);
+				}
+			};
+
+			using Noop_Tracer = Tracer<Noop_Tracer_Detail>;
+		};
+
+		namespace detail {
+			/// Special type for returned values
+			struct Return_Value {
+				Any retval;
+			};
+
+			/// Special type indicating a call to 'break'
+			struct Break_Loop {};
+
+			/// Special type indicating a call to 'continue'
+			struct Continue_Loop {};
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct AST_Node_Impl : public AST_Node {
+			AST_Node_Impl(std::string t_ast_node_text,
+				AST_Node_Type t_id,
+				Parse_Location t_loc,
+				std::vector<AST_Node_Impl_Ptr<T>> t_children = std::vector<AST_Node_Impl_Ptr<T>>())
+				: AST_Node(std::move(t_ast_node_text), t_id, std::move(t_loc))
+				, children(std::move(t_children))
+			{};
+
+			std::vector<std::reference_wrapper<AST_Node>> get_children() const override final {
+				std::vector<std::reference_wrapper<AST_Node>> retval;
+				retval.reserve(children.size());
+				for (const AST_Node_Impl_Ptr<T>& child : children) {
+					retval.emplace_back(*child);
+				}
+				return retval;
+			};
+
+			Any eval(std::shared_ptr<Scope> const& currentScope) const override final {
+				try {
+					// T::trace(currentScope, this);
+					return eval_internal(currentScope);
+				}
+				catch (exception::eval_error& ee) {
+					ee.call_stack.push_back(*this);
+					throw ee;
+				}
+				catch (std::runtime_error& ee) {
+					auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
+					e.call_stack.push_back(*this);
+					throw e;
+				}
+				catch (std::exception& ee) {
+					auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
+					e.call_stack.push_back(*this);
+					throw e;
+				}
+			}
+
+			std::vector<AST_Node_Impl_Ptr<T>> children;
+
+		protected:
+			virtual Any eval_internal(std::shared_ptr<Scope> const&) const {
+				return Any();
+				// throw std::runtime_error("Undispatched ast_node (internal error)");
+			};
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Constant_AST_Node final : public AST_Node_Impl<T> {
+			Constant_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, Any t_value)
+				: AST_Node_Impl<T>(t_ast_node_text, AST_Node_Type::Constant, std::move(t_loc))
+				, m_value(std::move(t_value)) 
+			{
+				this->return_type = m_value.Type();
+			}
+
+			explicit Constant_AST_Node(Any t_value)
+				: AST_Node_Impl<T>("", AST_Node_Type::Constant, Parse_Location())
+				, m_value(std::move(t_value)) 
+			{
+				this->return_type = m_value.Type();
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>&) const override { return m_value; }
+
+			Any m_value;
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Id_AST_Node final : AST_Node_Impl<T> {
+			Id_AST_Node(const std::string& t_ast_node_text, Parse_Location t_loc)
+				: AST_Node_Impl<T>(t_ast_node_text, AST_Node_Type::Id, std::move(t_loc)) 
+			{
+				// Consider (if possible) doing the look-up at compile time, rather than at script-run time.
+				// If fails, we can still allow the script to move forward, but if succeeds, the user should be rewarded with better performance and better debug info. 
+				this->return_type = user_type_shared<void>();
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				if (auto obj = currentScope->FindObj(this->text)) {
+					const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+					return obj;
+				}
+				throw exception::eval_error("Can not find object: " + this->text);				
+			}
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Arg_AST_Node final : AST_Node_Impl<T> {
+			Arg_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, AST_Node_Impl_Ptr<T> t_child)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg, std::move(t_loc), { std::move(t_child) })
+			{
+				// this->return_type = this->children[this->children.size() - 1]->return_type;
+			};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				return this->children.back()->eval(currentScope);
+			}
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Arg_List_AST_Node final : AST_Node_Impl<T> {
+			Arg_List_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg_List, std::move(t_loc), std::move(t_children)) 
+			{
+				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::Arg_List, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// evaluate all of the children, return the result of the last child
+				int numChildren = this->children.size();
+				for (int i = 0; i < numChildren - 1; i++) {
+					this->children[i]->eval(currentScope);
+				}
+				return this->children.back()->eval(currentScope);
+			}
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Scopeless_Block_AST_Node final : AST_Node_Impl<T> {
+			Scopeless_Block_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
+			{
+				// this->return_type = this->children[this->children.size() - 1]->return_type;
+			};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// evaluate all of the children, return the result of the last child
+				int numChildren = this->children.size();
+				
+				for (int i = 0; i < numChildren - 1; i++) {
+					this->children[i]->eval(currentScope);
+				}
+				return this->children.back()->eval(currentScope);
+			}
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Block_AST_Node final : AST_Node_Impl<T> {
+			Block_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
+			{
+				// this->return_type = this->children[this->children.size() - 1]->return_type;
+			};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				auto newScope = std::make_shared<Scope>(currentScope);
+				newScope->SetSelf(newScope);
+
+				const auto num_children = this->children.size();
+				for (size_t i = 0; i < num_children - 1; ++i) {
+					this->children[i]->eval(newScope);
+				}
+				return this->children.back()->eval(newScope);
+			};
+		};
+
+		// if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node		
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct If_AST_Node final : AST_Node_Impl<T> {
+			If_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::If, std::move(t_loc), std::move(t_children)) 
+			{
+				assert(this->children.size() >= 2); // CONDITION, IF_TRUE_BLOCK, ELSE_BLOCK
+				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::If, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// create a temporary scope for temporary variables made in the CONDITION
+				if (1) {
+					auto newScope = std::make_shared<Scope>(currentScope);
+					newScope->SetSelf(newScope);
+					// evaluate the CONDITION statement within this new scope -- note that the new scope only applies if true! 
+					if (newScope->Cast<bool>(this->children[0]->eval(newScope))) {
+						return this->children[1]->eval(newScope);
+					}
+				}
+
+				// if an else-statement is available...
+				if (this->children.size() >= 3) {
+					auto newScope = std::make_shared<Scope>(currentScope);
+					newScope->SetSelf(newScope);
+
+					return this->children[2]->eval(newScope);
+				}
+				else return Any(); // returns void
+			}
+		};
+
+		// while (Scopeless_Block_AST_Node) Block_AST_Node
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct While_AST_Node final : AST_Node_Impl<T> {
+			While_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::While, std::move(t_loc), std::move(t_children)) 
+			{
+				assert(this->children.size() >= 2);
+				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::While, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				Any out;
+				try {
+					while (true) {
+						auto newScope = std::make_shared<Scope>(currentScope);
+						newScope->SetSelf(newScope);
+						if (newScope->Cast<bool>(this->children[0]->eval(newScope))) {
+							try {
+								out = this->children[1]->eval(newScope);
+							}
+							catch (detail::Continue_Loop&) {
+								// we got a continue exception, which means all of the remaining
+								// loop implementation is skipped and we just need to continue to
+								// the next condition test
+							}
+						}
+						else {
+							break;
+						}
+					}
+				}
+				catch (detail::Break_Loop&) {
+					// loop was broken intentionally
+				}
+				return out;
+			}
+		};
+
+		// for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct For_AST_Node final : AST_Node_Impl<T> {
+			For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::For, std::move(t_loc), std::move(t_children))
+			{
+				assert(this->children.size() >= 4);
+				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::While, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				Any out;
+
+				auto forScope = std::make_shared<Scope>(currentScope);
+				forScope->SetSelf(forScope);
+				{
+					// INIT_BLOCK
+					this->children[0]->eval(forScope); // may include declaring a variable, or nothing at all
+					try {
+						while (true) {
+							// CONDITION_BLOCK
+							Any condition_result = this->children[1]->eval(forScope);
+							// if the condition is empty / void, then we accept it as if it were true.
+							// if the condition is not empty, then it must evaluate to a boolean. 
+							if (condition_result.IsEmpty() || forScope->Cast<bool>(condition_result)) {
+								try {
+									auto newScope = std::make_shared<Scope>(forScope);
+									newScope->SetSelf(newScope);
+
+									// WORK_BLOCK
+									out = this->children[3]->eval(newScope);
+								}
+								catch (detail::Continue_Loop&) {
+									// we got a continue exception, which means all of the remaining
+									// loop implementation is skipped and we just need to continue to
+									// the next condition test
+								}
+							}
+							else {
+								break;
+							}
+							// PROGRESS_BLOCK
+							this->children[2]->eval(forScope);
+						}						
+					} catch (detail::Break_Loop&) { /* loop was broken */ }
+				}
+				return out;
+			}
+		};
+
+		// parallel_for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Parallel_For_AST_Node final : AST_Node_Impl<T> {
+			Parallel_For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Parallel_For, std::move(t_loc), std::move(t_children))
+			{
+				assert(this->children.size() >= 4);
+				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::While, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				auto forScope = std::make_shared<Scope>(currentScope);
+				forScope->SetSelf(forScope);
+				
+				if (1) {
+					impl::context ctx;
+					impl::Dispatch(ctx,
+						int(100) /* count of jobs */,
+						[&](impl::JobArgs const& _args)-> void {
+							auto& shared_memory = *((std::shared_ptr<Scope>*)_args.sharedmemory);
+							if (_args.groupIndex == 0) {
+								// start of a group, so initialize the shared_memory
+								shared_memory = std::make_shared<Scope>(forScope);
+								shared_memory->SetSelf(shared_memory);
+
+								// call the initializer
+								this->children[0]->eval(shared_memory);
+
+								// need to call "PROGRESS_BLOCK" _args.jobIndex number of times (e.g. 0 times for the first call)
+								for (int i = 0; i < _args.jobIndex; i++) {
+									this->children[2]->eval(shared_memory);
+								}
+							}
+							else {
+								// need to call "PROGRESS_BLOCK" one time to progress this job
+								this->children[2]->eval(shared_memory);
+							}
+
+							// do the work
+							try {
+								auto newScope = std::make_shared<Scope>(shared_memory);
+								newScope->SetSelf(newScope);
+
+								this->children[3]->eval(newScope);
+							}
+							catch (detail::Continue_Loop&) {}
+						},
+						sizeof(std::shared_ptr<Scope>) /* size of shared memory */,
+						[&](void* p) -> void {
+							new (p) std::shared_ptr<Scope>(); // initialize the shared memory (doesn't know the job index at this time, though)
+						},
+						[&](void* p) -> void {
+							((std::shared_ptr<Scope>*)p)->~std::shared_ptr<Scope>(); // destroy the shared memory
+						}
+					);
+
+					try {
+						impl::Wait(ctx);
+					} catch (detail::Break_Loop&) {};
+				}
+
+				return Any();
+			}
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Fun_Call_AST_Node : AST_Node_Impl<T> {
+			Fun_Call_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children)) {
+				assert(!this->children.empty());
+
+				// Consider (if possible) doing the look-up at compile time, rather than at script-run time.
+				// If fails, we can still allow the script to move forward, but if succeeds, the user should be rewarded with better performance and better debug info. 
+				this->return_type = user_type_shared<void>();
+			};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// chaiscript::eval::detail::Function_Push_Pop fpp(t_ss);
+
+				std::vector<Any> params{};
+
+				params.reserve(this->children[1]->children.size());
+				for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
+					params.push_back(child->eval(currentScope));
+				}
+
+				try {
+					return currentScope->CallFunction(this->children[0]->text, params);
+				}
+				catch (detail::Return_Value& rv) {
+					return rv.retval;
+				}
+			}
+		};
+
 	};
 
-public:
-	const AST_Node_Type identifier;
-	const std::string text;
-	Parse_Location location;
 
-	const std::string& filename() const noexcept { return location.filename; }
 
-	const File_Position& start() const noexcept { return location.start; }
 
-	const File_Position& end() const noexcept { return location.end; }
 
-	std::string pretty_print() const {
-		std::ostringstream oss;
-
-		oss << text;
-
-		for (auto& elem : get_children()) {
-			oss << elem.get().pretty_print() << ' ';
-		}
-
-		return oss.str();
-	}
-
-	virtual std::vector<std::reference_wrapper<AST_Node>> get_children() const = 0;
-	// virtual Boxed_Value eval(const chaiscript::detail::Dispatch_State& t_e) const = 0;
-
-	/// Prints the contents of an AST node, including its children, recursively
-	std::string to_string(const std::string& t_prepend = "") const {
-		std::ostringstream oss;
-
-		//oss << t_prepend << "(" << ast_node_type_to_string(this->identifier) << ") " << this->text << " : " << this->location.start.line
-		//	<< ", " << this->location.start.column << '\n';
-
-		//for (auto& elem : get_children()) {
-		//	oss << elem.get().to_string(t_prepend + "  ");
-		//}
-
-		return oss.str();
-	}
-
-	virtual ~AST_Node() noexcept = default;
-	AST_Node(AST_Node&&) = default;
-	AST_Node& operator=(AST_Node&&) = delete;
-	AST_Node(const AST_Node&) = delete;
-	AST_Node& operator=(const AST_Node&) = delete;
-
-protected:
-	AST_Node(std::string t_ast_node_text, AST_Node_Type t_id, Parse_Location t_loc)
-		: identifier(t_id)
-		, text(std::move(t_ast_node_text))
-		, location(std::move(t_loc))
-	{}
 };
-
-
 
 
 
@@ -332,6 +1027,49 @@ int main() {
 		auto globalScope = std::make_shared<GoodLang::Global>();
 		globalScope->SetSelf(globalScope);
 		globalScope->AddBuiltIns();
+
+		if (1) {
+			auto constVal = Scripting::Constant_AST_Node(std::string("100"));
+			EXPECT_EQ(user_type_shared<std::string>(), constVal.return_type);
+			EXPECT_EQ("100", ToString(constVal.eval(globalScope)));
+		}
+
+		if (1) {
+			auto function_AST_node = Scripting::Fun_Call_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+				std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
+				std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>(
+					"", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					    std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(
+						    100 // literal determined from "100" written into the script
+						)
+				    }
+				)
+			});
+			EXPECT_EQ("100 m", ToString(function_AST_node.eval(globalScope)));
+		}
+
+		if (1) {
+			auto function_AST_node = Scripting::Fun_Call_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+				std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
+				std::make_shared<Scripting::Arg_AST_Node<Scripting::tracer::Noop_Tracer>>(
+					"", Scripting::Parse_Location(), std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(
+						100 // literal determined from "100" written into the script
+					)				   
+				)
+			});
+			EXPECT_EQ("100 m", ToString(function_AST_node.eval(globalScope)));
+		}
+
+
+
+
+
+
+
+
+
+
+
 
 		Stopwatch sw;
 		sw.Start();

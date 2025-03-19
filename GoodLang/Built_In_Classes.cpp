@@ -794,7 +794,7 @@ namespace GoodLang {
 
 			}
 
-			// Map. Note that this implimentation of map is unsorted, due to the hashing not being sorted by value. 
+			// Map.
 			if (1) {
 				using thisType = Map<size_t, std::pair<Var, Var>>;
 				std::string thisTypeName = "Map";
@@ -1248,7 +1248,6 @@ namespace GoodLang {
 #undef Do1
 #undef Do
 			}
-
 		}
 
 		// Built-In static, templated functions
