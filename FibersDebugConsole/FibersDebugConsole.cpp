@@ -142,6 +142,189 @@ public:
 //
 //};
 
+BETTER_ENUM(AST_Node_Type, uint8_t,
+	Id,
+	Fun_Call,
+	Unused_Return_Fun_Call,
+	Arg_List,
+	Equation,
+	Var_Decl,
+	Assign_Decl,
+	Array_Call,
+	Dot_Access,
+	Lambda,
+	Block,
+	Scopeless_Block,
+	Def,
+	While,
+	If,
+	For,
+	Ranged_For,
+	Inline_Array,
+	Inline_Map,
+	Return,
+	File,
+	Prefix,
+	Break,
+	Continue,
+	Map_Pair,
+	Value_Range,
+	Inline_Range,
+	Do,
+	Try,
+	Catch,
+	Finally,
+	Method,
+	Attr_Decl,
+	Logical_And,
+	Logical_Or,
+	Reference,
+	Switch,
+	Case,
+	Default,
+	Noop,
+	Class,
+	Binary,
+	Arg,
+	Global_Decl,
+	Constant,
+	Compiled,
+	ControlBlock,
+	Postfix,
+	Assign_Retroactively,
+	Parallel,
+	AST_Node_Type_end
+);
+struct File_Position {
+	int line = 0;
+	int column = 0;
+
+	constexpr File_Position(int t_file_line, int t_file_column) noexcept
+		: line(t_file_line)
+		, column(t_file_column) {
+	}
+
+	constexpr File_Position() noexcept = default;
+};
+struct Parse_Location {
+	Parse_Location(std::string t_fname = "", const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
+		: start(t_start_line, t_start_col)
+		, end(t_end_line, t_end_col)
+		, filename(std::move(t_fname)) 
+	{}
+	File_Position start;
+	File_Position end;
+	std::string filename;
+};
+
+struct AST_Node {
+public:
+	struct AST_Node_Trace {
+		const AST_Node_Type identifier;
+		const std::string text;
+		Parse_Location location;
+
+		const std::string& filename() const noexcept { return location.filename; }
+
+		const File_Position& start() const noexcept { return location.start; }
+
+		const File_Position& end() const noexcept { return location.end; }
+
+		std::string pretty_print() const {
+			std::ostringstream oss;
+
+			oss << text;
+
+			for (const auto& elem : children) {
+				oss << elem.pretty_print() << ' ';
+			}
+
+			return oss.str();
+		}
+
+		std::vector<AST_Node_Trace> get_children(const AST_Node& node) {
+			const auto node_children = node.get_children();
+			return std::vector<AST_Node_Trace>(node_children.begin(), node_children.end());
+		};
+
+		AST_Node_Trace(const AST_Node& node)
+			: identifier(node.identifier)
+			, text(node.text)
+			, location(node.location)
+			, children(get_children(node)) {
+		};
+
+		std::vector<AST_Node_Trace> children;
+	};
+
+public:
+	const AST_Node_Type identifier;
+	const std::string text;
+	Parse_Location location;
+
+	const std::string& filename() const noexcept { return location.filename; }
+
+	const File_Position& start() const noexcept { return location.start; }
+
+	const File_Position& end() const noexcept { return location.end; }
+
+	std::string pretty_print() const {
+		std::ostringstream oss;
+
+		oss << text;
+
+		for (auto& elem : get_children()) {
+			oss << elem.get().pretty_print() << ' ';
+		}
+
+		return oss.str();
+	}
+
+	virtual std::vector<std::reference_wrapper<AST_Node>> get_children() const = 0;
+	// virtual Boxed_Value eval(const chaiscript::detail::Dispatch_State& t_e) const = 0;
+
+	/// Prints the contents of an AST node, including its children, recursively
+	std::string to_string(const std::string& t_prepend = "") const {
+		std::ostringstream oss;
+
+		//oss << t_prepend << "(" << ast_node_type_to_string(this->identifier) << ") " << this->text << " : " << this->location.start.line
+		//	<< ", " << this->location.start.column << '\n';
+
+		//for (auto& elem : get_children()) {
+		//	oss << elem.get().to_string(t_prepend + "  ");
+		//}
+
+		return oss.str();
+	}
+
+	virtual ~AST_Node() noexcept = default;
+	AST_Node(AST_Node&&) = default;
+	AST_Node& operator=(AST_Node&&) = delete;
+	AST_Node(const AST_Node&) = delete;
+	AST_Node& operator=(const AST_Node&) = delete;
+
+protected:
+	AST_Node(std::string t_ast_node_text, AST_Node_Type t_id, Parse_Location t_loc)
+		: identifier(t_id)
+		, text(std::move(t_ast_node_text))
+		, location(std::move(t_loc))
+	{}
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 int main() {
 	using namespace GoodLang;
 
