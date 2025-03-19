@@ -76,6 +76,17 @@ namespace GoodLang {
 			classPtr->AddFunction("-=", make_callable([](T& x, T const& y) -> void { x -= y; }));
 			classPtr->AddFunction("*=", make_callable([](T& x, T const& y) -> void { x *= y; }));
 			classPtr->AddFunction("/=", make_callable([](T& x, T const& y) -> void { if (y == 0) x = std::numeric_limits<T>::max(); else x /= y; }));
+
+			classPtr->AddFunction("++", make_callable([](Any const& a) -> Any { 
+				T& x = a.cast();	
+				x++;
+				return a;
+			}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
+			classPtr->AddFunction("--", make_callable([](Any const& a) -> Any {
+				T& x = a.cast();
+				x--;
+				return a;
+			}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
 		}
 		// Functions
 		classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));

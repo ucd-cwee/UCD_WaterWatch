@@ -142,77 +142,31 @@ public:
 //
 //};
 
-
-
-namespace GoodLang {
-	template <typename T> static bool try_remove_recursion(T const& obj) {
-		bool result{ false };
-		//while (true) {
-			auto children = GoodLang::GetChildren(obj);
-			std::deque<const GoodLang::Impl::NodeCache*> queue;
-			if (Impl::find_recursion(children, queue)) {
-				bool doDisconnection = false;
-				std::set<void*> data;
-				while (queue.size() > 0) {
-					if (queue.back()->data) {
-						if (data.find(queue.back()->data->ptr()) != data.end()) {
-							doDisconnection = true;
-						}
-						else {
-							data.emplace(queue.back()->data->ptr());
-						}
-
-						if (doDisconnection) {
-							if (queue.back()->data->TryDisconnectChild()) {
-								result = true;
-								break;
-							}
-						}
-					}
-					queue.pop_back();
-				}
-				// if (!doDisconnection) break; // something went wrong!
-
-
-				//// turn the queue into a vector
-				//std::vector< const GoodLang::Impl::NodeCache* > records; // in order of least deep to deepest
-				//while (queue.size() > 0) {
-				//	if (queue.front()->data) {
-				//		records.push_back(queue.front());
-				//	}
-				//	queue.pop_front();
-				//}
-
-				//std::set<void*> data;
-				//bool doDisconnection = false;
-				//for (auto& x : records) {
-				//	if (data.find(x->data->ptr()) != data.end()) {
-				//		// we have a loop -- start attempting disconnection.
-				//		doDisconnection = true;
-				//	}
-				//	else {
-				//		data.emplace(x->data->ptr());
-				//	}
-
-				//	if (doDisconnection) {
-				//		if (x->data->TryDisconnectChild()) {
-				//			result = true;
-				//			break;
-				//		}
-				//	}
-				//}
-				//if (!doDisconnection) break; // something went wrong!
-			}
-			//else break;
-		//}
-		return result;
-	};
-};
-
-
-
 int main() {
 	using namespace GoodLang;
+
+	if (1) {
+		auto globalScope = std::make_shared<GoodLang::Global>();
+		globalScope->SetSelf(globalScope);
+		globalScope->AddBuiltIns();
+
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 1000000, [&globalScope](int i) { // Fast(x500) 0.000581 s ... 0.00032 s ...   UNKNOWN   ... 0.000211 s ... 
+			auto scope = std::make_shared<GoodLang::Scope>(globalScope);
+			scope->SetSelf(scope);
+
+			scope->AddObj("x", std::make_shared<Any>(Units::meter()));
+			(void)scope->CallFunction("double", { scope->FindObj("x") });
+			(void)scope->CallFunction("++", { scope->FindObj("x") });
+			(void)scope->CallFunction("*", { scope->FindObj("x"), scope->FindObj("x") });
+			scope->AddObj("y", std::make_shared<Any>(scope->CallFunction("*", {scope->CallFunction("*", {scope->FindObj("x"), scope->FindObj("x")}), scope->FindObj("x")})));
+		});
+		print(Units::second(sw.Stop_s()));
+
+
+	}
+
 
 	if (1) {
 		auto globalScope = std::make_shared<GoodLang::Global>();
@@ -317,37 +271,9 @@ int main() {
 
 		auto test = Any(Var(Any(Var(Any(Var(test_vec))))));
 
-		print(ToString(GetChildren(test)));
-
-		try_remove_recursion(test);
-
-		print(ToString(GetChildren(test)));
-
-		try_remove_recursion(test);
-
-		print(ToString(GetChildren(test)));
-
-		try_remove_recursion(test);
-
-		print(ToString(GetChildren(test)));
-
-		try_remove_recursion(test);
-
-		print(ToString(GetChildren(test)));
-
-		try_remove_recursion(test);
-
-		print(ToString(GetChildren(test)));
-
-
-
-
-
-
 		try_remove_recursions(test); // removes (hopefully!) all recursion wherever possible, as "late" as possible... though it apparently doesn't always succeed. 
 
 		print(ToString(GetChildren(test)));
-
 	}	
 	if (1) {
 		Any test_vec;
@@ -1824,6 +1750,10 @@ int main() {
 						(void)std::pow(x, 2);
 						auto y{ x * x * x };
 						});
+
+
+
+
 				}
 				if (1) {
 					for (auto& val : Units::value::GetValueTypes()) {

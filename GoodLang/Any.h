@@ -711,52 +711,24 @@ namespace GoodLang {
 	namespace Impl {
 		template <typename T> struct Tag {}; // Necessary to correctly coordinate creation of functions in correct order.
 
-		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path/*, bool FoundRecursion = false*/) {			
-			//if (FoundRecursion) {
-			//	// look for the path to the start of the recursion. It should be in here. 
-			//	if (current_cache.recursiveFlag == -1) {
-			//		for (auto& child : current_cache.children) {
-			//			path.push_back(&child);
-			//			if (find_recursion(child, path, true)) {
-			//				return true;
-			//			}
-			//			path.pop_back();
-			//		}
-			//		return true;
-			//	}
-			//	else {					
-			//		return false;
-			//	}
-			//}
-			//else {
-				if (path.size() > 0) {
-					if (current_cache.recursiveFlag == 1) { // we started the final recursion search. We are looking for -1 from here on out.
-						const GoodLang::Impl::NodeCache* this_cache{ &current_cache };
-						int max_iter = 100;
-						while (this_cache && ((max_iter--) >= 0)) {
-							auto& children = this_cache->children;
-							this_cache = nullptr;
-							for (int i = 0; i < children.size(); i++) {
-								if (children[i].recursiveFlag < 0) {
-									path.push_back(this_cache = &children[i]);
-									break;
-								}
+		static const bool find_recursion(GoodLang::Impl::NodeCache const& current_cache, std::deque<const GoodLang::Impl::NodeCache*>& path) {			
+			if (path.size() > 0) {
+				if (current_cache.recursiveFlag == 1) { // we started the final recursion search. We are looking for -1 from here on out.
+					const GoodLang::Impl::NodeCache* this_cache{ &current_cache };
+					// int max_iter = 100;
+					while (this_cache) { //this_cache && ((max_iter--) >= 0)) {
+						auto& children = this_cache->children;
+						this_cache = nullptr;
+						for (int i = 0; i < children.size(); i++) {
+							if (children[i].recursiveFlag < 0) {
+								path.push_back(this_cache = &children[i]);
+								break;
 							}
 						}
-						return true; // regardless, return true. 
 					}
-					else {
-						for (auto& child : current_cache.children) {
-							path.push_back(&child);
-							if (find_recursion(child, path/*, FoundRecursion*/)) {
-								return true;
-							}
-							path.pop_back();
-						}
-					}
+					return true; // regardless, return true. 
 				}
 				else {
-					path.push_back(&current_cache);
 					for (auto& child : current_cache.children) {
 						path.push_back(&child);
 						if (find_recursion(child, path/*, FoundRecursion*/)) {
@@ -764,10 +736,20 @@ namespace GoodLang {
 						}
 						path.pop_back();
 					}
+				}
+			}
+			else {
+				path.push_back(&current_cache);
+				for (auto& child : current_cache.children) {
+					path.push_back(&child);
+					if (find_recursion(child, path/*, FoundRecursion*/)) {
+						return true;
+					}
 					path.pop_back();
 				}
-				return false;
-			//}
+				path.pop_back();
+			}
+			return false;
 		};
 
 		class ImplClass {
