@@ -227,7 +227,13 @@ namespace GoodLang {
 	public:
 		// try and find the object with the requested key.
 		std::shared_ptr<Any> GetObj(std::string const& name) const {
-			return *p_objects[name];
+			auto f = p_objects.find(name);
+			if (f != p_objects.end()) {
+				return f->second;
+			}
+			else {
+				return nullptr;
+			}
 		};
 		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
 		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj) {

@@ -739,10 +739,15 @@ namespace GoodLang {
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				// evaluate all of the children, return the result of the last child
 				int numChildren = this->children.size();
-				for (int i = 0; i < numChildren - 1; i++) {
-					this->children[i]->eval(currentScope);
+				if (numChildren > 0) {
+					for (int i = 0; i < numChildren - 1; i++) {
+						this->children[i]->eval(currentScope);
+					}
+					return this->children.back()->eval(currentScope);
 				}
-				return this->children.back()->eval(currentScope);
+				else {
+					return Any();
+				}
 			}
 		};
 
@@ -757,11 +762,15 @@ namespace GoodLang {
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				// evaluate all of the children, return the result of the last child
 				int numChildren = this->children.size();
-				
-				for (int i = 0; i < numChildren - 1; i++) {
-					this->children[i]->eval(currentScope);
+				if (numChildren > 0) {
+					for (int i = 0; i < numChildren - 1; i++) {
+						this->children[i]->eval(currentScope);
+					}
+					return this->children.back()->eval(currentScope);
 				}
-				return this->children.back()->eval(currentScope);
+				else {
+					return Any();
+				}
 			}
 		};
 
@@ -777,12 +786,69 @@ namespace GoodLang {
 				auto newScope = std::make_shared<Scope>(currentScope);
 				newScope->SetSelf(newScope);
 
-				const auto num_children = this->children.size();
-				for (size_t i = 0; i < num_children - 1; ++i) {
-					this->children[i]->eval(newScope);
+				const auto numChildren = this->children.size();
+				if (numChildren > 0) {
+					for (int i = 0; i < numChildren - 1; i++) {
+						this->children[i]->eval(currentScope);
+					}
+					return this->children.back()->eval(currentScope);
 				}
-				return this->children.back()->eval(newScope);
+				else {
+					return Any();
+				}
 			};
+		};
+
+
+
+
+		/*
+		Var x;
+		Var& x;
+		*/
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Var_Decl_AST_Node final : AST_Node_Impl<T> {
+			Var_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Var_Decl, std::move(t_loc), std::move(t_children)) 
+			{
+				/*if (this->children.size() > 0) {
+					this->potentialReturnType = ReturnType(Type_Info(), AST_Node_Type::Var_Decl, false);
+					this->children[0]->potentialReturnType.ForwardRef(this->potentialReturnType);
+				}*/
+			}
+
+			/*! Empty variable assignment:
+			  var j;
+			*/
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				const std::string& idname = this->children[0]->text;
+				currentScope->AddObj(idname, std::make_shared<Any>(Var()));
+				return currentScope->FindObj(idname);
+			}
+		};
+
+		/*
+		double& x;
+		var x = double();
+		double x;
+		*/
+		template<typename T>
+		struct Assign_Decl_AST_Node final : AST_Node_Impl<T> {
+			Assign_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children)) 
+			{
+				//this->potentialReturnType.ForwardRef(this->children[this->children.size() - 1]->potentialReturnType);
+				//this->children[0]->potentialReturnType.ForwardRef(this->children[this->children.size() - 1]->potentialReturnType);
+			}
+
+			/*! Non-Empty variable assignment:
+			  var j = 100;
+			*/
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				const std::string& idname = this->children[0]->text;
+				currentScope->AddObj(idname, std::make_shared<Any>(this->children[1]->eval(currentScope)));
+				return currentScope->FindObj(idname);
+			}
 		};
 
 		// if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node		
@@ -905,24 +971,140 @@ namespace GoodLang {
 			}
 		};
 
-		// parallel_for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Fun_Call_AST_Node : AST_Node_Impl<T> {
+			Fun_Call_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children)) {
+				assert(!this->children.empty());
+
+				// Consider (if possible) doing the look-up at compile time, rather than at script-run time.
+				// If fails, we can still allow the script to move forward, but if succeeds, the user should be rewarded with better performance and better debug info. 
+				this->return_type = user_type_shared<void>();
+			};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// chaiscript::eval::detail::Function_Push_Pop fpp(t_ss);
+
+				std::vector<Any> params{};
+
+				params.reserve(this->children[1]->children.size());
+				for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
+					params.push_back(child->eval(currentScope));
+				}
+
+				try {
+					return currentScope->CallFunction(this->children[0]->text, params);
+				}
+				catch (detail::Return_Value& rv) {
+					return rv.retval;
+				}
+			}
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Counter_AST_Node : AST_Node_Impl<T> {
+			Counter_AST_Node(int& counter)
+				: AST_Node_Impl<T>("", AST_Node_Type::Compiled, Parse_Location(), {}), count_location{ counter } {};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				count_location++;
+				return {};
+			}
+
+			int& count_location;
+		};
+
+		
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Parallel_For_AST_Node final : AST_Node_Impl<T> {
 			Parallel_For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Parallel_For, std::move(t_loc), std::move(t_children))
 			{
-				assert(this->children.size() >= 4);
-				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::While, true);
+				assert(this->children.size() == 3);
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				auto forScope = std::make_shared<Scope>(currentScope);
 				forScope->SetSelf(forScope);
 				
-				if (1) {
+				if (1) { // parallel_for (var x = START_VALUE : END_VALUE) WORK_BLOCK
+					int startPos{ 0 }, endPos{ 0 };
+					if (1) {
+						auto temp_memory = std::make_shared<Scope>(forScope);
+						temp_memory->SetSelf(temp_memory);
+						startPos = temp_memory->Cast<int>(this->children[0]->eval(temp_memory));
+						endPos = temp_memory->Cast<int>(this->children[1]->eval(temp_memory));
+					}
+					if (startPos > endPos) {
+						int temp = endPos;
+						endPos = startPos;
+						startPos = temp;
+					}
+					if (endPos > startPos) {
+						impl::context ctx;
+						impl::Dispatch(ctx,
+							endPos - startPos /* count of jobs */,
+							[&](impl::JobArgs const& _args)-> void {
+								std::pair<Any, std::shared_ptr<Scope>>& shared_memory = *((std::pair<Any, std::shared_ptr<Scope>>*)_args.sharedmemory);
+
+								if (_args.groupIndex == 0) {
+									// start of a group, so initialize the shared_memory
+									shared_memory.second = std::make_shared<Scope>(forScope);
+									shared_memory.second->SetSelf(shared_memory.second);
+
+									// call the initializer
+									shared_memory.first = this->children[0]->eval(shared_memory.second);
+									shared_memory.second->CallFunction("=", { shared_memory.first, _args.jobIndex });
+									// shared_memory.second->CallFunction("+=", { shared_memory.first, _args.jobIndex });
+								}
+								else {
+									shared_memory.second->CallFunction("++", { shared_memory.first });
+								}
+
+								// do the work
+								try {
+									auto newScope = std::make_shared<Scope>(shared_memory.second);
+									newScope->SetSelf(newScope);
+
+									this->children[2]->eval(newScope);
+								} catch (detail::Continue_Loop&) {}
+							},
+							sizeof(std::pair<Any, std::shared_ptr<Scope>>) /* size of shared memory */,
+							[&](void* p) -> void {
+								new (p) std::pair<Any, std::shared_ptr<Scope>>(); // initialize the shared memory (doesn't know the job index at this time, though)
+							},
+							[&](void* p) -> void {
+								using typeOf = std::pair<Any, std::shared_ptr<Scope>>;
+								((typeOf*)p)->~typeOf(); // destroy the shared memory
+							}
+						);
+						try {
+							impl::Wait(ctx);
+						}
+						catch (detail::Break_Loop&) {};
+					}
+				}
+				else { // parallel_for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
+					
+					// Question -- how many jobs? Need to know before dispatch.
+					// Only one way to find out. 
+
+					int num_jobs{ 0 };
+					if (1) {
+						auto scope = std::make_shared<GoodLang::Scope>(currentScope);
+						scope->SetSelf(scope);
+
+						For_AST_Node("", Parse_Location(), std::vector<AST_Node_Impl_Ptr<T>>{
+							this->children[0],
+							this->children[1],
+							this->children[2],							
+							std::make_shared<Counter_AST_Node<tracer::Noop_Tracer>>(num_jobs)							
+						}).eval(scope);
+					}
+
 					impl::context ctx;
 					impl::Dispatch(ctx,
-						int(100) /* count of jobs */,
+						num_jobs /* count of jobs */,
 						[&](impl::JobArgs const& _args)-> void {
 							auto& shared_memory = *((std::shared_ptr<Scope>*)_args.sharedmemory);
 							if (_args.groupIndex == 0) {
@@ -957,7 +1139,8 @@ namespace GoodLang {
 							new (p) std::shared_ptr<Scope>(); // initialize the shared memory (doesn't know the job index at this time, though)
 						},
 						[&](void* p) -> void {
-							((std::shared_ptr<Scope>*)p)->~std::shared_ptr<Scope>(); // destroy the shared memory
+							using typeOf = std::shared_ptr<Scope>;
+							((typeOf*)p)->~typeOf(); // destroy the shared memory
 						}
 					);
 
@@ -967,36 +1150,6 @@ namespace GoodLang {
 				}
 
 				return Any();
-			}
-		};
-
-		template<typename T = Scripting::tracer::Noop_Tracer>
-		struct Fun_Call_AST_Node : AST_Node_Impl<T> {
-			Fun_Call_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children)) {
-				assert(!this->children.empty());
-
-				// Consider (if possible) doing the look-up at compile time, rather than at script-run time.
-				// If fails, we can still allow the script to move forward, but if succeeds, the user should be rewarded with better performance and better debug info. 
-				this->return_type = user_type_shared<void>();
-			};
-
-			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-				// chaiscript::eval::detail::Function_Push_Pop fpp(t_ss);
-
-				std::vector<Any> params{};
-
-				params.reserve(this->children[1]->children.size());
-				for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
-					params.push_back(child->eval(currentScope));
-				}
-
-				try {
-					return currentScope->CallFunction(this->children[0]->text, params);
-				}
-				catch (detail::Return_Value& rv) {
-					return rv.retval;
-				}
 			}
 		};
 
@@ -1027,6 +1180,137 @@ int main() {
 		auto globalScope = std::make_shared<GoodLang::Global>();
 		globalScope->SetSelf(globalScope);
 		globalScope->AddBuiltIns();
+
+		if (1) {
+			auto scope = std::make_shared<GoodLang::Scope>(globalScope);
+			scope->SetSelf(scope);
+
+			auto block = std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+				std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Any(100))
+				})
+			});
+
+			EXPECT_EQ("100", ToString(block->eval(scope)));
+
+			EXPECT_EQ("100", ToString(scope->FindObj("x")));
+
+			auto scope2 = std::make_shared<GoodLang::Scope>(scope);
+			scope2->SetSelf(scope2);
+
+			EXPECT_EQ("100", ToString(scope2->FindObj("x")));
+		}
+
+		if (1) {
+			auto forLoop = Scripting::For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+				// Var x = 0;
+				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Any(0))
+					})
+				}),
+				// x < 1000;
+				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("<", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+							std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1000000)
+						})
+					})
+				}),
+				// x += 1;
+				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("+=", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+							std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1)
+						})
+					})
+				}),
+				// Units::meter(x);
+				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
+						})
+					})
+				})
+			});
+			
+			Stopwatch sw;
+			sw.Start();
+			(void)forLoop.eval(globalScope);
+			print(ToString(Units::second(sw.Stop_s())));
+
+		}
+
+		if (1) {
+			auto Parallel_For = Scripting::Parallel_For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+				// Var x = 0;
+				std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Any(0))
+				}),
+				// 1000000;
+				std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1000000),
+				// Units::meter(x);
+				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
+					})
+				})				
+			});
+			
+			Stopwatch sw;
+			sw.Start();
+			(void)Parallel_For.eval(globalScope);
+			print(ToString(Units::second(sw.Stop_s())));
+		}
+		else {
+			auto forLoop = Scripting::Parallel_For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+				// Var x = 0;
+				std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Any(0))
+				}),
+				// x < 1000;
+				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("<", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(100000)
+					})
+				}),
+				// x += 1;
+				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("+=", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1)
+					})
+				}),
+				// Units::meter(x);
+				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
+					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
+					})
+				})				
+			});
+			
+			Stopwatch sw;
+			sw.Start();
+			(void)forLoop.eval(globalScope);
+			print(ToString(Units::second(sw.Stop_s())));
+
+		}
+
 
 		if (1) {
 			auto constVal = Scripting::Constant_AST_Node(std::string("100"));
@@ -1095,6 +1379,14 @@ int main() {
 
 		if (1) {
 			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->SetSelf(scoped);
+
+		}
+
+		if (1) {
+			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->SetSelf(scoped);
+
 			scoped->AddObj("int", std::make_shared<Any>(100));
 			scoped->AddObj("vec", std::make_shared<Any>(std::vector<Any>{ Any(100), Any(200), Any(300) }));
 			scoped->AddObj("loop", std::make_shared<Any>(globalScope));
@@ -1102,6 +1394,8 @@ int main() {
 		}
 		if (1) {
 			auto scoped = std::make_shared<GoodLang::Scope>(globalScope);
+			scoped->SetSelf(scoped);
+
 			scoped->AddObj("stackObj", std::make_shared<Any>(stackThing("DELETE ME 2")));
 			scoped->AddObj("scoped", std::make_shared<Any>(scoped));
 

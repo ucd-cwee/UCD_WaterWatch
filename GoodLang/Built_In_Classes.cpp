@@ -1265,6 +1265,10 @@ namespace GoodLang {
 				auto name = x.TypeName();
 				return GoodLang::printf("`%s`", name.c_str());
 			}));
+			// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+			this->AddFunction("print", make_callable([](Any const& x) -> void {
+				std::cout << GoodLang::ToString(x) + "\n";
+			}));
 		}
 	};
 
