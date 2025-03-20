@@ -1299,6 +1299,10 @@ namespace GoodLang {
 
 	class AnyData {
 	public:
+		enum class Flag {
+			constant = 0
+		};
+
 		AnyData() noexcept = default;
 		AnyData(AnyData const&) = delete;
 		AnyData(AnyData&&) = delete;
@@ -1358,11 +1362,13 @@ namespace GoodLang {
 		virtual std::string ToString() const { return ""; };
 		virtual std::vector< Impl::NodeCache > GetChildren() const { return std::vector< Impl::NodeCache >{}; };
 		virtual bool TryDisconnectChild() const { return false; };
+		bool GetFlag(Flag which) const;
+		void SetFlag(Flag which, bool newV);
 
 	protected:
 		std::weak_ptr< AnyData> m_self;
 		size_t typeHash;
-
+		bool m_flags[1];
 	};	
 
 	template <typename T>
@@ -1616,6 +1622,8 @@ namespace GoodLang {
 		template<typename VType> bool IsTypeOf() const noexcept {
 			return IsTypeOf(user_type<typename std::decay_t<VType>>());
 		};
+		bool GetFlag(AnyData::Flag which) const;
+		void SetFlag(AnyData::Flag which, bool newV);
 
 #pragma region Boolean Operators
 	public:

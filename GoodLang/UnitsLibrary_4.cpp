@@ -24,10 +24,10 @@ namespace GoodLang {
 		CreateRow(peta ## Type);
 
 		CreateRow(horsepower);
-		CreateRowWithMetricPrefixes(joule);
-		CreateRowWithMetricPrefixes(calorie);
-		CreateRowWithMetricPrefixes(watt_minute);
-		CreateRowWithMetricPrefixes(watt_hour);
+		CreateRow(joule);
+		CreateRow(calorie);
+		CreateRow(watt_minute);
+		CreateRow(watt_hour);
 		CreateRow(watt_day);
 		CreateRow(british_thermal_unit);
 		CreateRow(british_thermal_unit_iso);

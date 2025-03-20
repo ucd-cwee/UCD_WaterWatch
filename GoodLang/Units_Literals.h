@@ -86,14 +86,14 @@ DerivedUnitStd(standard_gravity, acceleration, SG, Conversion<meters_per_second_
 
 // FORCE DERIVATIONS
 DerivedUnitStdWithMetricPrefixes(newton, force, N, Conversion<kilogram>(1.0)* Conversion<meters_per_second_squared>(1.0));
-DerivedUnitStdWithMetricPrefixes(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0));
+DerivedUnitStd(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0));
 DerivedUnitStd(dyne, force, dyn, Conversion <newton>(1.0 / 100000.0));
 DerivedUnitStd(kilopond, force, kp, Conversion<standard_gravity>(1.0)* Conversion<kilogram>(1.0));
 DerivedUnitStd(poundal, force, pdl, Conversion<pound>(1.0)* Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0)));
 
 // PRESSURE DERIVATIONS
 DerivedUnitStdWithMetricPrefixes(pascals, pressure, Pa, 1.0);
-DerivedUnitStdWithMetricPrefixes(bar, pressure, bar, Conversion<kilopascals>(100.0));
+DerivedUnitStd(bar, pressure, bar, Conversion<kilopascals>(100.0));
 DerivedUnitStd(atmosphere, pressure, atm, Conversion<pascals>(101325.0));
 DerivedUnitStd(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0)));
 DerivedUnitStd(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0)));
@@ -108,9 +108,9 @@ DerivedUnitStdWithMetricPrefixes(watt, power, W, 1.0);
 DerivedUnitStd(horsepower, power, hp, Conversion<watt>(7457.0 / 10.0));
 
 // ENERGY DERIVATIONS
-DerivedUnitStdWithMetricPrefixes(joule, energy, J, 1.0);
-DerivedUnitStdWithMetricPrefixes(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0));
-DerivedUnitStdWithMetricPrefixes(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0));
+DerivedUnitStd(joule, energy, J, 1.0);
+DerivedUnitStd(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0));
+DerivedUnitStd(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0));
 DerivedUnitStdWithMetricPrefixes(watt_hour, energy, Wh, Conversion<watt>(1.0)* Conversion<hour>(1.0));
 DerivedUnitStd(watt_day, energy, Wd, Conversion<watt>(1.0)* Conversion<day>(1.0));
 DerivedUnitStd(british_thermal_unit, energy, BTU, Conversion<joule>(105505585262.0 / 100000000.0));
@@ -172,7 +172,7 @@ DerivedUnitStd(shot, volume, shots, Conversion<fluid_ounce>(3.0 / 2.0));
 DerivedUnitStd(strike, volume, strikes, Conversion<bushel>(2.0));
 
 // FILLRATE DERIVATIONS
-DerivedUnitStdWithMetricPrefixes(gram_per_second, fillrate, gs, 1.0 / 1000.0);
+DerivedUnitStd(gram_per_second, fillrate, gs, 1.0 / 1000.0);
 DerivedUnitStd(metric_ton_per_second, fillrate, mTs, Conversion<metric_ton>(1.0) / Conversion<second>(1.0));
 DerivedUnitStd(metric_ton_per_minute, fillrate, mTm, Conversion<metric_ton>(1.0) / Conversion<minute>(1.0));
 DerivedUnitStd(metric_ton_per_hour, fillrate, mTh, Conversion<metric_ton>(1.0) / Conversion<hour>(1.0));

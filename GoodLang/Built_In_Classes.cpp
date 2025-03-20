@@ -498,24 +498,68 @@ namespace GoodLang {
 					return a;
 				}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef()));
 				// Reset a Var
-				classPtr->AddFunction("try_reset", make_callable([](Any const& a) -> bool {
+				this->AddFunction("try_reset", make_callable([](Any const& a) -> bool {
 					if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 						p->p_data = std::make_shared<Any>();
 						return true;
 					}
 					return false;
-				}, ParamTypes({ user_type_shared<Any>() }))); // not specifying "Var" was on-purpose.
+				}/*, ParamTypes({ user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
 				// Reset a Var
-				classPtr->AddFunction("try_reset", make_callable([](Any const& a, Any const& b) -> bool {
+				this->AddFunction("try_reset", make_callable([](Any const& a, Any const& b) -> bool {
 					if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 						p->p_data = std::make_shared<Any>(b);
 						return true;
 					}
 					return false;
-				}, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() }))); // not specifying "Var" was on-purpose.
-
+				}/*, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
+				// Reset a Var
+				this->AddFunction("reset", make_callable([self = std::weak_ptr<Class>(classPtr)](Any const& a, Any const& b) -> Any {
+					if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
+						p->p_data = std::make_shared<Any>(b);
+						return a;
+					}
+					else {
+						if (auto Self = self.lock()) {
+							return Self->CallFunction("=", { a, b });
+						}
+						else {
+							throw std::runtime_error("Out of scope");
+						}
+					}
+				}/*, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
+				// Reset a Var
+				this->AddFunction(":=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any const& a, Any const& b)->Any {
+					if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
+						p->p_data = std::make_shared<Any>(b);
+						return a;
+					}
+					else {
+						if (auto Self = self.lock()) {
+							return Self->CallFunction("=", { a, b });
+						}
+						else {
+							throw std::runtime_error("Out of scope");
+						}
+					}
+				}/*, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
+				// Reset a Var
+				this->AddFunction(":=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any const& a, Var const& b)->Any {
+					if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
+						p->p_data = b.p_data;
+						return a;
+					}
+					else {
+						if (auto Self = self.lock()) {
+							return Self->CallFunction("=", { a, b.p_data });
+						}
+						else {
+							throw std::runtime_error("Out of scope");
+						}
+					}
+				}, ParamTypes({ user_type_shared<Any>(), user_type_shared<Var>().lock()->MakeConstRef() }))); // not specifying "Var" was on-purpose.
 				// template func, Any = Var const&
-				classPtr->AddFunction("=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any& a, Var const& b)->Any {
+				this->AddFunction("=", make_callable([self = std::weak_ptr<Class>(classPtr)](Any& a, Var const& b)->Any {
 					if (auto Self = self.lock()) {
 						return Self->CallFunction("=", { a, b.p_data });
 					}
@@ -770,6 +814,9 @@ namespace GoodLang {
 					// equality
 					iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
 					iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+					
+					// (optional) distance
+					iterator_classPtr->AddFunction("-", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> size_t { return lhs - rhs; }));
 
 					// iter
 					iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
@@ -777,6 +824,12 @@ namespace GoodLang {
 						out.operator++();
 						return a;
 					}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
+					// (optional) jump
+					iterator_classPtr->AddFunction("+=", make_callable([](Any const& a, size_t diff) -> Any {
+						thisIteratorType& out = a.cast();
+						out.operator+=(diff);
+						return a;
+					}, ParamTypes({ thisIteratorTypeInfo->MakeRef(), user_type_shared<size_t>() }), thisIteratorTypeInfo->MakeRef()));
 					// get // must be implimented by the iterator
 					iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> Var {
 						std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(*makeCopy), [_lock = makeCopy](Any* p) {
@@ -785,10 +838,10 @@ namespace GoodLang {
 						return Var(toReturn);
 					}));
 				}
-				classPtr->AddFunction("begin", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+				classPtr->AddFunction("begin", make_callable([](thisType const& r)->thisType::iterator {
 					return r.begin();
 				}));
-				classPtr->AddFunction("end", make_callable([Self = classPtr->p_self](thisType const& r)->thisType::iterator {
+				classPtr->AddFunction("end", make_callable([](thisType const& r)->thisType::iterator {
 					return r.end();
 				}));
 
@@ -943,7 +996,7 @@ namespace GoodLang {
 
 					// equality
 					iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
-					iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+					iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));		
 
 					// iter
 					iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {

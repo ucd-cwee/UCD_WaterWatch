@@ -3015,6 +3015,14 @@ namespace GoodLang {
 		mutable SharedLockable<underlying> data;
 
 	public:
+		Vector() = default;
+		explicit Vector(size_t count, T defaultObj) : data(underlying(count, std::move(defaultObj))) {};
+		Vector(Vector const&) = default;
+		Vector(Vector &&) = default;
+		Vector& operator=(Vector const&) = default;
+		Vector& operator=(Vector&&) = default;
+		~Vector() = default;
+
 		void push_back(T&& V) {
 			auto shared = data.Unique();
 			shared->push_back(std::move(V));

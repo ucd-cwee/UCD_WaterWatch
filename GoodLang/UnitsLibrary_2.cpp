@@ -44,7 +44,7 @@ namespace GoodLang {
 		CreateRow(feet_per_second_squared);
 		CreateRow(standard_gravity);
 		CreateRowWithMetricPrefixes(newton);
-		CreateRowWithMetricPrefixes(pound_f);
+		CreateRow(pound_f);
 		CreateRow(dyne);
 		CreateRow(kilopond);
 		CreateRow(poundal);

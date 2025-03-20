@@ -24,7 +24,7 @@ namespace GoodLang {
 		CreateRow(peta ## Type);
 
 		CreateRowWithMetricPrefixes(pascals);
-		CreateRowWithMetricPrefixes(bar);
+		CreateRow(bar);
 		CreateRow(atmosphere);
 		CreateRow(pounds_per_square_inch);
 		CreateRow(head);

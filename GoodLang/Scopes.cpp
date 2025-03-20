@@ -448,7 +448,7 @@ namespace GoodLang {
 #endif
 
 		auto lastOfColons = objName.find_last_of("::");
-		if (lastOfColons == std::string::npos) {
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Scope> out;
 			if (TryFindNearestScopeWhere(out, [&objName](std::shared_ptr<Scope> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
@@ -493,7 +493,7 @@ namespace GoodLang {
 		objName = fixNamespace(objName);
 
 		auto lastOfColons = objName.find_last_of("::");
-		if (lastOfColons == std::string::npos) {
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindScopeWithObj(objName))) {
 				return ptr->GetObj(objName);
 			}
@@ -525,7 +525,7 @@ namespace GoodLang {
 		functionName = fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
-		if (lastOfColons == std::string::npos) {
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Namespace> out;
 			if (TryFindNearestNamespaceWhere(out, [&functionName](std::shared_ptr<Namespace> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
@@ -565,7 +565,7 @@ namespace GoodLang {
 		functionName = fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
-		if (lastOfColons == std::string::npos) {
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindNamespaceWithFunction(functionName))) {
 				return ptr->GetFunctions(functionName);
 			}
@@ -598,7 +598,7 @@ namespace GoodLang {
 		functionName = fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
-		if (lastOfColons == std::string::npos) {
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Namespace> out;
 			if (TryFindNearestNamespaceWhere(out, [&functionName, &params, &tree](std::shared_ptr<Namespace> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
@@ -638,7 +638,7 @@ namespace GoodLang {
 		functionName = fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
-		if (lastOfColons == std::string::npos) {
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindNamespaceWithFunction(functionName, params, tree))) {
 				return ptr->GetFunction(functionName, params, tree);
 			}
@@ -716,8 +716,8 @@ namespace GoodLang {
 		//	return (bool)out;
 		//defer(EmplaceCache(cache2, params, out));
 
-		size_t lastOfColons{ 0 };
-		if ((lastOfColons = functionName.find_last_of("::")) == std::string::npos) {
+		size_t lastOfColons{ functionName.find_last_of("::") };
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Scope> firstParamScopePtr{ nullptr };
 			std::shared_ptr<Scope> constructorScopePtr{ nullptr };
 

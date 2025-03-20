@@ -47,12 +47,12 @@ namespace GoodLang {
 	DerivedUnitType(feet_per_second_squared, acceleration, fps_sq, Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
 	DerivedUnitType(standard_gravity, acceleration, SG, Conversion<meters_per_second_squared>(980665.0 / 100000.0)); \
 	DerivedUnitTypeWithMetricPrefixes(newton, force, N, Conversion<kilogram>(1.0)* Conversion<meters_per_second_squared>(1.0)); \
-	DerivedUnitTypeWithMetricPrefixes(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0)); \
+	DerivedUnitType(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0)); \
 	DerivedUnitType(dyne, force, dyn, Conversion<newton>(1.0 / 100000.0)); \
 	DerivedUnitType(kilopond, force, kp, Conversion<standard_gravity>(1.0)* Conversion<kilogram>(1.0)); \
 	DerivedUnitType(poundal, force, pdl, Conversion<pound>(1.0)* Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
 	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(bar, pressure, bar, Conversion<kilopascals>(100.0)); \
+	DerivedUnitType(bar, pressure, bar, Conversion<kilopascals>(100.0)); \
 	DerivedUnitType(atmosphere, pressure, atm, Conversion<pascals>(101325.0)); \
 	DerivedUnitType(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0))); \
 	DerivedUnitType(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0))); \
@@ -61,9 +61,9 @@ namespace GoodLang {
 	DerivedUnitTypeWithMetricPrefixes(ampere_hour, charge, Ah, Conversion< ampere>(1.0)* Conversion<hour>(1.0)); \
 	DerivedUnitTypeWithMetricPrefixes(watt, power, W, 1.0); \
 	DerivedUnitType(horsepower, power, hp, Conversion<watt>(7457.0 / 10.0)); \
-	DerivedUnitTypeWithMetricPrefixes(joule, energy, J, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0)); \
+	DerivedUnitType(joule, energy, J, 1.0); \
+	DerivedUnitType(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0)); \
+	DerivedUnitType(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0)); \
 	DerivedUnitTypeWithMetricPrefixes(watt_hour, energy, Wh, Conversion<watt>(1.0)* Conversion<hour>(1.0)); \
 	DerivedUnitType(watt_day, energy, Wd, Conversion<watt>(1.0)* Conversion<day>(1.0)); \
 	DerivedUnitType(british_thermal_unit, energy, BTU, Conversion<joule>(105505585262.0 / 100000000.0)); \
@@ -113,7 +113,7 @@ namespace GoodLang {
 	DerivedUnitType(sack, volume, sacks, Conversion<bushel>(3.0)); \
 	DerivedUnitType(shot, volume, shots, Conversion<fluid_ounce>(3.0 / 2.0)); \
 	DerivedUnitType(strike, volume, strikes, Conversion<bushel>(2.0)); \
-	DerivedUnitTypeWithMetricPrefixes(gram_per_second, fillrate, gs, 1.0 / 1000.0); \
+	DerivedUnitType(gram_per_second, fillrate, gs, 1.0 / 1000.0); \
 	DerivedUnitType(metric_ton_per_second, fillrate, mTs, Conversion<metric_ton>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(metric_ton_per_minute, fillrate, mTm, Conversion<metric_ton>(1.0) / Conversion<minute>(1.0)); \
 	DerivedUnitType(metric_ton_per_hour, fillrate, mTh, Conversion<metric_ton>(1.0) / Conversion<hour>(1.0)); \

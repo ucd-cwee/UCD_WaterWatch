@@ -145,6 +145,12 @@ namespace GoodLang {
 			throw exception::bad_any_cast(GetType(), type, __LINE__);
 		}
 	};
+	bool AnyData::GetFlag(Flag which) const {
+		return m_flags[static_cast<int>(which)];
+	};
+	void AnyData::SetFlag(Flag which, bool newV) {
+		m_flags[static_cast<int>(which)] = newV;
+	};
 
 	// Any
 	Any& Any::swap(Any& rhs) noexcept {
@@ -293,6 +299,19 @@ namespace GoodLang {
 	std::shared_ptr<AnyData> Any::impl() const {
 		auto locked{ std::shared_lock(mut) };
 		return container;
+	};
+	bool Any::GetFlag(AnyData::Flag which) const {
+		if (auto m = container) {
+			return m->GetFlag(which);
+		}
+		else {
+			return false;
+		}
+	};
+	void Any::SetFlag(AnyData::Flag which, bool newV) {
+		if (auto m = container) {
+			m->SetFlag(which, newV);
+		}
 	};
 
 };

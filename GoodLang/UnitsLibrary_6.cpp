@@ -23,7 +23,7 @@ namespace GoodLang {
 		CreateRow(tera ## Type); \
 		CreateRow(peta ## Type);
 
-		CreateRowWithMetricPrefixes(gram_per_second);
+		CreateRow(gram_per_second);
 		CreateRow(metric_ton_per_second);
 		CreateRow(metric_ton_per_minute);
 		CreateRow(metric_ton_per_hour);
