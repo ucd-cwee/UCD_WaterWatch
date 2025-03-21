@@ -401,7 +401,7 @@ namespace GoodLang {
 			return nullptr;
 		}
 	};
-	std::shared_ptr<Scope> Scope::FindScopeWithObj(std::string objName) const {
+	std::shared_ptr<Scope> Scope::FindScopeWithObj(std::string objName, std::shared_ptr<Any>* found_obj) const {
 		static auto fixNamespace{ [](std::string x) -> std::string {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
@@ -419,10 +419,13 @@ namespace GoodLang {
 			if (this->p_using.size() == 0) {
 				if (this->p_children.size() == 0) {
 					if (auto objFound = GetObj(objName)) {
+						if (found_obj) {
+							*found_obj = objFound;
+						}
 						return p_self.lock();
 					}
 					if (auto p = this->p_parent.lock()) {
-						return p->FindScopeWithObj(objName);
+						return p->FindScopeWithObj(objName, found_obj);
 					}
 				}
 			}
@@ -433,9 +436,12 @@ namespace GoodLang {
 			std::shared_ptr<Scope> out;
 
 			if (TryGetCached<3>(treeV, out, objName)) {
-				if (out->TryFindNearestScopeWhere(out, [&objName](std::shared_ptr<Scope> const& namespacePtr)->bool {
+				if (out->TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
 					if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
 						if (auto objFound = ptr->GetObj(objName)) {
+							if (found_obj) {
+								*found_obj = objFound;
+							}
 							return true;
 						}
 					}
@@ -470,7 +476,7 @@ namespace GoodLang {
 			std::string Namespace = objName.substr(0, lastOfColons - 1);
 			objName = objName.substr(lastOfColons + 1);
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
-				auto out = namespacePtr->FindScopeWithObj(objName);
+				auto out = namespacePtr->FindScopeWithObj(objName, found_obj);
 				InsertCached<3>(treeV, out, objName);
 				return out;
 			}
@@ -494,8 +500,10 @@ namespace GoodLang {
 
 		auto lastOfColons = objName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
-			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindScopeWithObj(objName))) {
-				return ptr->GetObj(objName);
+			std::shared_ptr<Any> out{ nullptr };
+			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindScopeWithObj(objName, &out))) {
+				return out;
+				// return ptr->GetObj(objName);
 			}
 			else {
 				return nullptr;

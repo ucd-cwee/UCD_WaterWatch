@@ -935,6 +935,15 @@ namespace GoodLang {
 						throw std::runtime_error("Class not available");
 					}
 				}));
+				classPtr->AddFunction("emplace", make_callable([Self = classPtr->p_self](thisType& o, Any const& key, Any const& value) -> void {
+					if (auto scope = Self.lock()) {
+						auto _key = scope->Cast<size_t>(scope->CallFunction("to_hash", { key }));
+						o.get_or_insert(_key, std::pair<Var, Var>{ Var(key), Var(value) });						
+					}
+					else {
+						throw std::runtime_error("Class not available");
+					}
+				}));
 
 				// Returns a string
 				this->AddFunction("to_string", make_callable([self = std::weak_ptr<Class>(classPtr)](thisType const& x)->std::string {

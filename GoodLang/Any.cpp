@@ -4,17 +4,20 @@
 // Type_Info
 namespace GoodLang {
 	size_t Type_Info::GetHashImpl() const {
-		return impl::TypeId<void>().hash_code();
+		static size_t result{ impl::TypeId<void>().hash_code() };
+		return result;
+
 	};
 	void Type_Info::CacheHash() noexcept {
-		const_cast<size_t&>(uniqueHash) = this->GetHashImpl();
+		const_cast<size_t&>(underlyingHash) = this->GetHashImpl();
+		const_cast<size_t&>(uniqueHash) = this->underlyingHash;
 		details::hash_combine(const_cast<size_t&>(uniqueHash), (size_t)is_const(), (size_t)is_ref());
 	};
 	size_t Type_Info::GetHash() const {
 		return uniqueHash;
 	};
 	bool Type_Info::CanCast(Type_Info const& from, Type_Info const& to) {
-		if (from.GetHashImpl() == to.GetHashImpl()) { // underlying matches
+		if (from.underlyingHash == to.underlyingHash) { // underlying matches
 			// anything can convert into const T&
 			if (to.is_const() && to.is_ref()) return true;
 
@@ -241,7 +244,7 @@ namespace GoodLang {
 			}
 #ifdef AllowInlineVarTyping
 			//if (m->GetTypeHash() == VarHash) {
-			if (auto p2 = m->cast< Var>()) {
+			if (auto* p2 = m->cast< Var>()) {
 				if (!p2->p_data->IsEmpty()) {
 					return p2->p_data->Type();
 				}
@@ -271,7 +274,7 @@ namespace GoodLang {
 			}
 #ifdef AllowInlineVarTyping
 			//if (m->GetTypeHash() == VarHash) {
-			if (auto p2 = m->cast< Var>()) {
+			if (auto* p2 = m->cast< Var>()) {
 				if (!p2->p_data->IsEmpty()) {
 					return p2->p_data->TypeHash();
 				}

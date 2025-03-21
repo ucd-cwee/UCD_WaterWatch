@@ -33,6 +33,12 @@ namespace GoodLang {
 			, p_library()
 			, p_using()
 		{
+#if 1
+			// for a speed-up, attempt to convert a single random number into our desired pseudo-random string. 
+			void* pos = const_cast<void*>((const void*)p_UniqueName.c_str());
+			double* double_part = (double*)pos;
+			*double_part = std::rand();
+#else
 			static auto randN{ [](double min, double max) -> double { return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min; } };
 			for (int i = 0; i < 12; i++) {
 				if (i < 2)
@@ -44,7 +50,7 @@ namespace GoodLang {
 				else if (i < 12)
 					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
 			};
-
+#endif
 			if (auto p = p_parent.lock()) { p_namespace = p->GetNamespaceImpl(); }
 			else { p_namespace = std::dynamic_pointer_cast<Namespace>(p_self.lock()); }
 
@@ -228,7 +234,7 @@ namespace GoodLang {
 		// try and find the object with the requested key.
 		std::shared_ptr<Any> GetObj(std::string const& name) const {
 			auto f = p_objects.find(name);
-			if (f != p_objects.end()) {
+			if (f != f.end()) {
 				return f->second;
 			}
 			else {
@@ -510,7 +516,7 @@ namespace GoodLang {
 	public:
 		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> typeInfo) const;
 
-		std::shared_ptr<Scope> FindScopeWithObj(std::string objName) const;
+		std::shared_ptr<Scope> FindScopeWithObj(std::string objName, std::shared_ptr<Any>* found_obj = nullptr) const;
 		std::shared_ptr<Any> FindObj(std::string objName) const;
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName) const;

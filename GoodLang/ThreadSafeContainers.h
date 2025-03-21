@@ -1784,17 +1784,33 @@ namespace GoodLang {
 			operator bool() const { return (bool)locked; };
 		};
 
-	protected:
+	public:
 		std::unique_ptr<Arg, Deleter> data;
 		mutable std::shared_mutex lock{};
+		void EnsureDataExists() const {
+			if (!data) {
+				lock.lock();
+				if (!data) {
+					const_cast<std::unique_ptr<Arg, Deleter>&>(data) = TryInstance();
+				}
+				lock.unlock();
+			}
+		};
 
 	public:
 		auto& GetLock() const { return lock; };
 
-		[[nodiscard]] ConstObj Unique() const { if (!data) throw std::runtime_error("Bad call to Unique()"); return ConstObj(*data.get(), lock); };
-		[[nodiscard]] Obj Unique() { if (!data) throw std::runtime_error("Bad call to Unique()"); return Obj(*data.get(), lock); };
-		[[nodiscard]] SharedConstObj Shared() const { if (!data) throw std::runtime_error("Bad call to Shared()"); return SharedConstObj(*data.get(), lock); };
-		[[nodiscard]] SharedObj Shared() { if (!data) throw std::runtime_error("Bad call to Shared()"); return SharedObj(*data.get(), lock); };
+		[[nodiscard]] ConstObj Unique() const { EnsureDataExists(); return ConstObj(*data.get(), lock); };
+		[[nodiscard]] Obj Unique() { EnsureDataExists(); return Obj(*data.get(), lock); };
+		[[nodiscard]] SharedConstObj Shared() const { EnsureDataExists(); return SharedConstObj(*data.get(), lock); };
+		[[nodiscard]] SharedObj Shared() { EnsureDataExists(); return SharedObj(*data.get(), lock); };
+		
+		auto ForwardSharedLock() { 
+			return std::make_shared<std::shared_lock< decltype(lock) >>(lock);
+		};
+		auto ForwardUniqueLock() {
+			return std::make_shared<std::unique_lock< decltype(lock) >>(lock);
+		};
 
 	public:
 		SharedLockable Copy() const {
@@ -1825,16 +1841,18 @@ namespace GoodLang {
 		};
 
 	public:
-		SharedLockable() : data{ TryInstance() } {};
+		SharedLockable() : data{ /*TryInstance()*/ } {};
 		SharedLockable(Arg const& a) : data{ TryInstance(a) } {};
 		SharedLockable(std::unique_ptr<Arg, Deleter> && a) : data{ std::move(a) } {};
 		SharedLockable(const SharedLockable& r) : data{ TryInstance(*r.Shared()) } {};
 		SharedLockable& operator=(const SharedLockable& r) {
 			*Unique() = *r.Shared();
+			return *this;
 		};
 		SharedLockable(SharedLockable&& r) : data{ TryInstance(*r.Shared()) } {};
 		SharedLockable& operator=(SharedLockable&& r) {
 			*Unique() = *r.Shared();
+			return *this;
 		};
 		~SharedLockable() = default;
 
@@ -2753,16 +2771,18 @@ namespace GoodLang {
 
 			// functions
 			void Initialize(thisType* ref) {
-				auto shared = ref->data.Shared();
-				lifetime = shared.ForwardLock();
+				ref->data.EnsureDataExists();
+				lifetime = ref->data.ForwardSharedLock();
 			};
 			void ToBeginning(thisType* ref) {
-				auto shared = ref->data.Shared();
-				_ptr = shared->begin();
+				if (auto* p = ref->data.data.get()) {
+					_ptr = p->begin();
+				}
 			};
 			void ToEnd(thisType* ref) {
-				auto shared = ref->data.Shared();
-				_ptr = shared->end();
+				if (auto* p = ref->data.data.get()) {
+					_ptr = p->end();
+				}
 			};
 			void Next(thisType* ref) {
 				++_ptr;
@@ -2777,6 +2797,7 @@ namespace GoodLang {
 				return _ptr == rhs._ptr;
 			};
 			difference_type Distance(it_state const& other) const { return _ptr - other._ptr; };
+
 		};
 
 	public:
@@ -2914,8 +2935,13 @@ namespace GoodLang {
 		};
 
 		size_t size() const {
-			auto shared = data.Shared();
-			return shared->size();
+			size_t out{ 0 };
+			data.lock.lock_shared();
+			if (auto* p = data.data.get()) {
+				out = p->size();
+			}
+			data.lock.unlock_shared();
+			return out;
 		};
 		bool erase(const key_type& _Keyval) {
 			auto shared = data.Unique();
@@ -2930,8 +2956,13 @@ namespace GoodLang {
 			return shared->count(_Keyval);
 		};
 		bool empty() const {
-			auto shared = data.Shared();
-			return shared->empty();
+			bool out{ false };
+			data.lock.lock_shared();
+			if (auto* p = data.data.get()) {
+				out = p->empty();
+			}
+			data.lock.unlock_shared();
+			return out;
 		};
 
 	private:
@@ -2950,16 +2981,18 @@ namespace GoodLang {
 
 			// functions
 			void Initialize(thisType* ref) {
-				auto shared = ref->data.Shared();
-				lifetime = shared.ForwardLock();
+				ref->data.EnsureDataExists();
+				lifetime = ref->data.ForwardSharedLock();
 			};
 			void ToBeginning(thisType* ref) {
-				auto shared = ref->data.Shared();
-				_ptr = shared->begin();
+				if (auto* p = ref->data.data.get()) {
+					_ptr = p->begin();
+				}
 			};
 			void ToEnd(thisType* ref) {
-				auto shared = ref->data.Shared();
-				_ptr = shared->end();
+				if (auto* p = ref->data.data.get()) {
+					_ptr = p->end();
+				}
 			};
 			void Next(thisType* ref) {
 				++_ptr;
@@ -2978,11 +3011,13 @@ namespace GoodLang {
 	public:
 		SETUP_ITERATOR(UnorderedMap, it_state);
 		iterator find(const key_type& _Keyval) const {
-			auto iter = this->end();
 			if (auto shared = data.Shared()) {
-				iter.state._ptr = shared->find(_Keyval);
+				typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;
+				return iterator(const_cast<thisType*>(this), it_state{ shared->find(_Keyval), shared.ForwardLock() });
 			}
-			return iter;
+			else {
+				return this->end();
+			}
 		};
 
 	public:
@@ -3155,16 +3190,18 @@ namespace GoodLang {
 
 			// functions
 			void Initialize(thisType* ref) {
-				auto shared = ref->data.Shared();
-				lifetime = shared.ForwardLock();
+				ref->data.EnsureDataExists();
+				lifetime = ref->data.ForwardSharedLock();
 			};
 			void ToBeginning(thisType* ref) {
-				auto shared = ref->data.Shared();
-				_ptr = shared->begin();
+				if (auto* p = ref->data.data.get()) {
+					_ptr = p->begin();
+				}
 			};
 			void ToEnd(thisType* ref) {
-				auto shared = ref->data.Shared();
-				_ptr = shared->end();
+				if (auto* p = ref->data.data.get()) {
+					_ptr = p->end();
+				}
 			};
 			void Next(thisType* ref) {
 				++_ptr;
@@ -3357,8 +3394,8 @@ namespace GoodLang {
 
 			// functions
 			void Initialize(thisType* ref) {
-				auto shared = ref->data.Shared();
-				lifetime = shared.ForwardLock();
+				ref->data.EnsureDataExists();
+				lifetime = ref->data.ForwardSharedLock();
 			};
 			void ToBeginning(thisType* ref) {
 				auto shared = ref->data.Shared();

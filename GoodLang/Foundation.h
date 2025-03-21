@@ -77,12 +77,14 @@
 			difference_type Distance(Iterator const& other) const { return state.Distance(other.state); };   \
 		public:   \
 			Iterator() = default;   \
-			Iterator(thisType* _parent) : parent{ _parent }, state{} { Initialize(); ToBeginning(); };   \
+            Iterator(thisType* _parent, bool toBeginning = true) : parent{ _parent }, state{} { Initialize(); if (toBeginning) ToBeginning(); else ToEnd(); };   \
+			Iterator(thisType* _parent, it_state&& _state) : parent{ _parent }, state{ std::forward<it_state>(_state) } {  };   \
 			Iterator(const Iterator& rhs) = default;   \
 			Iterator(Iterator&& rhs) = default;   \
 			Iterator& operator=(const Iterator& rhs) = default;   \
 			Iterator& operator=(Iterator&& rhs) = default;   \
 			~Iterator() = default;   \
+            /*explicit operator bool() const { return state.Valid(parent); }; */  \
 			bool operator==(const Iterator& rhs) const { return state == rhs.state; };   \
 			bool operator!=(const Iterator& rhs) const { return !operator==(rhs); };   \
 			Iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) Next(); return *this; };   \
@@ -104,9 +106,12 @@
 		using const_iterator = Iterator;   \
 		Iterator begin() const {   \
 			typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;   \
-			return Iterator(const_cast<thisType*>(this));   \
+			return Iterator(const_cast<thisType*>(this), true);   \
 		};   \
-		Iterator end() const { return begin().end(); };   \
+		Iterator end() const {   \
+			typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;   \
+			return Iterator(const_cast<thisType*>(this), false);   \
+		};   \
 		Iterator cbegin() const { return begin(); };   \
 		Iterator cend() const { return end(); };
 #pragma endregion 

@@ -144,6 +144,178 @@ public:
 
 namespace GoodLang {
 	namespace Scripting {
+		template<typename Itr> static constexpr std::uint32_t hash(Itr begin, Itr end) noexcept {
+			std::uint32_t h = 0x811c9dc5;
+			while (begin != end) {
+				h = (h ^ (*begin)) * 0x01000193;
+				++begin;
+			}
+			return h;
+		};
+		template<size_t N> static constexpr std::uint32_t hash(const char(&str)[N]) noexcept { return hash(std::begin(str), std::end(str) - 1); };
+		static constexpr std::uint32_t hash(std::string_view sv) noexcept { return hash(sv.begin(), sv.end()); };
+
+		struct Operators {
+			enum class Opers {
+				equals,
+				less_than,
+				greater_than,
+				less_than_equal,
+				greater_than_equal,
+				not_equal,
+				assign_if_null,
+				assign,
+				pre_increment,
+				pre_decrement,
+				assign_product,
+				assign_sum,
+				assign_quotient,
+				assign_difference,
+				assign_bitwise_and,
+				assign_bitwise_or,
+				assign_shift_left,
+				assign_shift_right,
+				assign_remainder,
+				assign_bitwise_xor,
+				shift_left,
+				shift_right,
+				remainder,
+				bitwise_and,
+				bitwise_or,
+				bitwise_xor,
+				bitwise_complement,
+				sum,
+				quotient,
+				product,
+				difference,
+				unary_plus,
+				unary_minus,
+				invalid,
+				logical_list
+			};
+
+			constexpr static const char* to_string(Opers t_oper) noexcept {
+				constexpr const char* opers[]
+					= { "", "==", "<", ">", "<=", ">=", "!=", "?=", "", "=", "++", "--", "*=", "+=", "/=", "-=", "", "&=", "|=", "<<=", ">>=", "%=", "^=", "", "<<", ">>", "%", "&", "|", "^", "~", "", "+", "/", "*", "-", "+", "-", "", ".." };
+				return opers[static_cast<int>(t_oper)];
+			}
+
+			constexpr static Opers to_operator(std::string_view t_str, bool t_is_unary = false) noexcept {
+				const auto op_hash = hash(t_str);
+				switch (op_hash) {
+				case hash("?="): {
+					return Opers::assign_if_null;
+				}
+				case hash("=="): {
+					return Opers::equals;
+				}
+				case hash("<"): {
+					return Opers::less_than;
+				}
+				case hash(">"): {
+					return Opers::greater_than;
+				}
+				case hash("<="): {
+					return Opers::less_than_equal;
+				}
+				case hash(">="): {
+					return Opers::greater_than_equal;
+				}
+				case hash("!="): {
+					return Opers::not_equal;
+				}
+				case hash("="): {
+					return Opers::assign;
+				}
+				case hash("++"): {
+					return Opers::pre_increment;
+				}
+				case hash("--"): {
+					return Opers::pre_decrement;
+				}
+				case hash("*="): {
+					return Opers::assign_product;
+				}
+				case hash("+="): {
+					return Opers::assign_sum;
+				}
+				case hash("-="): {
+					return Opers::assign_difference;
+				}
+				case hash("&="): {
+					return Opers::assign_bitwise_and;
+				}
+				case hash("|="): {
+					return Opers::assign_bitwise_or;
+				}
+				case hash("<<="): {
+					return Opers::assign_shift_left;
+				}
+				case hash(">>="): {
+					return Opers::assign_shift_right;
+				}
+				case hash("%="): {
+					return Opers::assign_remainder;
+				}
+				case hash("^="): {
+					return Opers::assign_bitwise_xor;
+				}
+				case hash("<<"): {
+					return Opers::shift_left;
+				}
+				case hash(">>"): {
+					return Opers::shift_right;
+				}
+				case hash("%"): {
+					return Opers::remainder;
+				}
+				case hash("&"): {
+					return Opers::bitwise_and;
+				}
+				case hash("|"): {
+					return Opers::bitwise_or;
+				}
+				case hash("^"): {
+					return Opers::bitwise_xor;
+				}
+				case hash("~"): {
+					return Opers::bitwise_complement;
+				}
+				case hash("+"): {
+					return t_is_unary ? Opers::unary_plus : Opers::sum;
+				}
+				case hash("-"): {
+					return t_is_unary ? Opers::unary_minus : Opers::difference;
+				}
+				case hash("/"): {
+					return Opers::quotient;
+				}
+				case hash("*"): {
+					return Opers::product;
+				}
+				case hash(".."): {
+					return Opers::logical_list;
+				}
+				default: {
+					return Opers::invalid;
+				}
+				}
+			};
+		};
+		enum class Operator_Precedence {
+			Ternary_Cond,
+			Logical_Or,
+			Logical_And,
+			Bitwise_Or,
+			Bitwise_Xor,
+			Bitwise_And,
+			Equality,
+			Comparison,
+			Shift,
+			Addition,
+			Multiplication,
+			Prefix
+		};
 		BETTER_ENUM(AST_Node_Type, uint8_t,
 			Id,
 			Fun_Call,
@@ -210,14 +382,12 @@ namespace GoodLang {
 			constexpr File_Position() noexcept = default;
 		};
 		struct Parse_Location {
-			Parse_Location(std::string t_fname = "", const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
+			Parse_Location(const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
 				: start(t_start_line, t_start_col)
 				, end(t_end_line, t_end_col)
-				, filename(std::move(t_fname))
 			{}
 			File_Position start;
 			File_Position end;
-			std::string filename;
 		};
 		struct AST_Node {
 		public:
@@ -225,8 +395,6 @@ namespace GoodLang {
 				const AST_Node_Type identifier;
 				const std::string text;
 				Parse_Location location;
-
-				const std::string& filename() const noexcept { return location.filename; }
 
 				const File_Position& start() const noexcept { return location.start; }
 
@@ -265,7 +433,6 @@ namespace GoodLang {
 			Parse_Location location;
 			std::weak_ptr<Type_Info> return_type;
 
-			const std::string& filename() const noexcept { return location.filename; }
 			const File_Position& start() const noexcept { return location.start; }
 			const File_Position& end() const noexcept { return location.end; }
 
@@ -315,6 +482,7 @@ namespace GoodLang {
 
 		template<typename T> struct AST_Node_Impl;
 		template<typename T> using AST_Node_Impl_Ptr = typename std::shared_ptr<AST_Node_Impl<T>>;
+		using AST_NodePtr = typename std::shared_ptr<AST_Node>;
 
 		namespace exception {
 			/// Errors generated during parsing or evaluation
@@ -673,6 +841,68 @@ namespace GoodLang {
 				return Any();
 				// throw std::runtime_error("Undispatched ast_node (internal error)");
 			};
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl<T> {
+			Fold_Right_Binary_Operator_AST_Node(const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children, Any t_rhs)
+				: AST_Node_Impl<T>(t_oper, AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
+				, m_oper(Operators::to_operator(t_oper))
+				, m_rhs(std::move(t_rhs)) 
+			{}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), m_rhs });
+			};
+
+		private:
+			Operators::Opers m_oper;
+			Any m_rhs;
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Binary_Operator_AST_Node : AST_Node_Impl<T> {
+			Binary_Operator_AST_Node(const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(t_oper, AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
+				, m_oper(Operators::to_operator(t_oper)) 
+			{}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), this->children[1]->eval(currentScope) });
+			};
+
+		private:
+			Operators::Opers m_oper;
+
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct File_AST_Node final : AST_Node_Impl<T> {
+			File_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::File, std::move(t_loc), std::move(t_children)) 
+			{}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				try {
+					const auto num_children = this->children.size();
+
+					if (num_children > 0) {
+						for (size_t i = 0; i < num_children - 1; ++i) {
+							this->children[i]->eval(currentScope);
+						}
+						return this->children.back()->eval(currentScope);
+					}
+					else {
+						return {};
+					}
+				}
+				catch (const detail::Continue_Loop&) {
+					throw exception::eval_error("Unexpected `continue` statement outside of a loop");
+				}
+				catch (const detail::Break_Loop&) {
+					throw exception::eval_error("Unexpected `break` statement outside of a loop");
+				}
+			}
 		};
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
@@ -1233,9 +1463,1878 @@ namespace GoodLang {
 			}
 		};
 
+		// [0, 1, 2, 3]
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Inline_Array_AST_Node final : AST_Node_Impl<T> {
+			Inline_Array_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Array, std::move(t_loc), std::move(t_children)) {
+				// this->potentialReturnType = ReturnType(user_type<std::vector<Boxed_Value>>(), AST_Node_Type::Inline_Array, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// assumes the first child is an ArgList or Arg
+				Vector<Var> vec;
+				if (!this->children.empty()) {
+					vec.reserve(this->children[0]->children.size());
+					for (const auto& child : this->children[0]->children) {
+						vec.push_back(child->eval(currentScope));
+					}
+				}
+				return vec;
+			}
+
+		private:
+			mutable std::atomic_uint_fast32_t m_loc = { 0 };
+		};
+
+		// ["":10, 10:10, Vector():10, 20:Vector()]
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Inline_Map_AST_Node final : AST_Node_Impl<T> {
+			Inline_Map_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Map, std::move(t_loc), std::move(t_children)) {
+				// this->potentialReturnType = ReturnType(user_type<std::vector<Boxed_Value>>(), AST_Node_Type::Inline_Array, true);
+			}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// assumes the first child is an ArgList or Arg
+				Any out{ Map<size_t, std::pair<Var, Var>>() };
+				if (!this->children.empty()) {
+					for (const auto& child : this->children[0]->children) {
+						currentScope->CallFunction("emplace", { out, child->children[0]->eval(currentScope), child->children[1]->eval(currentScope) });
+					}
+				}
+				return out;
+			};
+
+		};
+
+		// return ARG
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Return_AST_Node final : AST_Node_Impl<T> {
+			Return_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Return, std::move(t_loc), std::move(t_children)) 
+			{}
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				if (this->children.size() == 0) {
+					throw detail::Return_Value{ Any() };
+				}
+				if (this->children.size() == 1) {
+					throw detail::Return_Value{ this->children[0]->eval(currentScope) };
+				}
+				else {
+					Vector<Var> vec;
+					for (const auto& child : this->children) {
+						vec.push_back(child->eval(currentScope));
+					}
+					throw detail::Return_Value{ vec };
+				}
+			}
+		};
+
+		// empty lines, comments, etc.
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Noop_AST_Node final : AST_Node_Impl<T> {
+			Noop_AST_Node(std::string t_ast_node_text, Parse_Location t_loc)
+				: AST_Node_Impl<T>(t_ast_node_text, AST_Node_Type::Noop, t_loc)
+			{};
+
+			Noop_AST_Node()
+				: AST_Node_Impl<T>("", AST_Node_Type::Noop, Parse_Location())
+			{};
+
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				// It's a no-op, that evaluates to "void"
+				return {};
+			}
+		};
+
 
 	};
 
+	namespace Scripting {
+		namespace utility {
+			struct Static_String {
+				template<size_t N>
+				constexpr Static_String(const char(&str)[N]) noexcept
+					: m_size(N - 1)
+					, data(&str[0]) {
+				}
+
+				constexpr size_t size() const noexcept { return m_size; }
+
+				constexpr const char* c_str() const noexcept { return data; }
+
+				constexpr auto begin() const noexcept { return data; }
+
+				constexpr auto end() const noexcept { return data + m_size; }
+
+				constexpr bool operator==(std::string_view other) const noexcept {
+					// return std::string_view(data, m_size) == other;
+					auto b1 = begin();
+					const auto e1 = end();
+					auto b2 = other.begin();
+					const auto e2 = other.end();
+
+					if (e1 - b1 != e2 - b2) {
+						return false;
+					}
+
+					while (b1 != e1) {
+						if (*b1 != *b2) {
+							return false;
+						}
+						++b1;
+						++b2;
+					}
+					return true;
+				}
+
+				bool operator==(const std::string& t_str) const noexcept { return std::equal(begin(), end(), std::cbegin(t_str), std::cend(t_str)); }
+
+				operator const char* () const {
+					return c_str();
+				};
+
+				const size_t m_size;
+				const char* data = nullptr;
+			};
+		}; 
+
+		namespace parser {
+			class Parser_Base {
+			public:
+				virtual AST_NodePtr parse(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) = 0;
+				virtual ~Parser_Base() = default;
+				Parser_Base() = default;
+				Parser_Base(Parser_Base&&) = default;
+				Parser_Base& operator=(Parser_Base&&) = delete;
+				Parser_Base& operator=(const Parser_Base&&) = delete;
+
+			protected:
+				Parser_Base(const Parser_Base&) = default;
+			};
+		}; // namespace parser
+
+
+		namespace detail {
+			enum Alphabet {
+				symbol_alphabet = 0,
+				keyword_alphabet,
+				int_alphabet,
+				float_alphabet,
+				x_alphabet,
+				hex_alphabet,
+				b_alphabet,
+				bin_alphabet,
+				id_alphabet,
+				white_alphabet,
+				int_suffix_alphabet,
+				float_suffix_alphabet,
+				max_alphabet,
+				lengthof_alphabet = 256
+			};
+
+			// Generic for u16, u32 and wchar
+			template<typename string_type>
+			struct Char_Parser_Helper {
+				// common for all implementations
+				static std::string u8str_from_ll(long long val) {
+					using char_type = std::string::value_type;
+
+					char_type c[2];
+					c[1] = char_type(val);
+					c[0] = char_type(val >> 8);
+
+					if (c[0] == 0) {
+						return std::string(1, c[1]); // size, character
+					}
+
+					return std::string(c, 2); // char buffer, size
+				}
+
+				static string_type str_from_ll(long long val) {
+					using target_char_type = typename string_type::value_type;
+					return string_type(1, target_char_type(val)); // size, character
+				}
+			};
+
+			// Specialization for char AKA UTF-8
+			template<> struct Char_Parser_Helper<std::string> {
+				static std::string str_from_ll(long long val) {
+					// little SFINAE trick to avoid base class
+					return Char_Parser_Helper<std::true_type>::u8str_from_ll(val);
+				}
+			};
+
+			Any const_var(Any const& rhs) {
+				Any out = rhs;
+				out.SetFlag(AnyData::Flag::constant, true);
+				return out;
+			};
+
+		} // namespace detail
+
+
+
+		namespace parser {
+			template</*typename Optimizer, */std::size_t Parse_Depth = 1024, typename Tracer = Scripting::tracer::Noop_Tracer>
+			class Parser final : public Parser_Base {
+			private:
+				template<typename string_type>
+				struct Char_Parser {
+					string_type& match;
+					using char_type = typename string_type::value_type;
+					bool is_escaped = false;
+					bool is_interpolated = false;
+					bool saw_interpolation_marker = false;
+					bool is_octal = false;
+					bool is_hex = false;
+					std::size_t unicode_size = 0;
+					const bool interpolation_allowed;
+
+					string_type octal_matches;
+					string_type hex_matches;
+
+					Char_Parser(string_type& t_match, const bool t_interpolation_allowed)
+						: match(t_match)
+						, interpolation_allowed(t_interpolation_allowed) {
+					}
+
+					Char_Parser& operator=(const Char_Parser&) = delete;
+
+					~Char_Parser() {
+						try {
+							if (is_octal) {
+								process_octal();
+							}
+
+							if (is_hex) {
+								process_hex();
+							}
+
+							if (unicode_size > 0) {
+								process_unicode();
+							}
+						}
+						catch (const std::invalid_argument&) {
+						}
+						catch (const exception::eval_error&) {
+							// Something happened with parsing, we'll catch it later?
+						}
+					}
+
+					void process_hex() {
+						if (!hex_matches.empty()) {
+							auto val = stoll(hex_matches, nullptr, 16);
+							match.push_back(char_type(val));
+						}
+						hex_matches.clear();
+						is_escaped = false;
+						is_hex = false;
+					}
+
+					void process_octal() {
+						if (!octal_matches.empty()) {
+							auto val = stoll(octal_matches, nullptr, 8);
+							match.push_back(char_type(val));
+						}
+						octal_matches.clear();
+						is_escaped = false;
+						is_octal = false;
+					}
+
+					void process_unicode() {
+						const auto ch = static_cast<uint32_t>(std::stoi(hex_matches, nullptr, 16));
+						const auto match_size = hex_matches.size();
+						hex_matches.clear();
+						is_escaped = false;
+						const auto u_size = unicode_size;
+						unicode_size = 0;
+
+						char buf[4];
+						if (u_size != match_size) {
+							throw exception::eval_error("Incomplete unicode escape sequence");
+						}
+						if (u_size == 4 && ch >= 0xD800 && ch <= 0xDFFF) {
+							throw exception::eval_error("Invalid 16 bit universal character");
+						}
+
+						if (ch < 0x80) {
+							match += static_cast<char>(ch);
+						}
+						else if (ch < 0x800) {
+							buf[0] = static_cast<char>(0xC0 | (ch >> 6));
+							buf[1] = static_cast<char>(0x80 | (ch & 0x3F));
+							match.append(buf, 2);
+						}
+						else if (ch < 0x10000) {
+							buf[0] = static_cast<char>(0xE0 | (ch >> 12));
+							buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+							buf[2] = static_cast<char>(0x80 | (ch & 0x3F));
+							match.append(buf, 3);
+						}
+						else if (ch < 0x200000) {
+							buf[0] = static_cast<char>(0xF0 | (ch >> 18));
+							buf[1] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+							buf[2] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+							buf[3] = static_cast<char>(0x80 | (ch & 0x3F));
+							match.append(buf, 4);
+						}
+						else {
+							// this must be an invalid escape sequence?
+							throw exception::eval_error("Invalid 32 bit universal character");
+						}
+					}
+
+					void parse(const char_type t_char, const int line, const int col) {
+						const bool is_octal_char = t_char >= '0' && t_char <= '7';
+
+						const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
+
+						if (is_octal) {
+							if (is_octal_char) {
+								octal_matches.push_back(t_char);
+
+								if (octal_matches.size() == 3) {
+									process_octal();
+								}
+								return;
+							}
+							else {
+								process_octal();
+							}
+						}
+						else if (is_hex) {
+							if (is_hex_char) {
+								hex_matches.push_back(t_char);
+
+								if (hex_matches.size() == 2 * sizeof(char_type)) {
+									// This rule differs from the C/C++ standard, but ChaiScript
+									// does not offer the same workaround options, and having
+									// hexadecimal sequences longer than can fit into the char
+									// type is undefined behavior anyway.
+									process_hex();
+								}
+								return;
+							}
+							else {
+								process_hex();
+							}
+						}
+						else if (unicode_size > 0) {
+							if (is_hex_char) {
+								hex_matches.push_back(t_char);
+
+								if (hex_matches.size() == unicode_size) {
+									// Format is specified to be 'slash'uABCD
+									// on collecting from A to D do parsing
+									process_unicode();
+								}
+								return;
+							}
+							else {
+								// Not a unicode anymore, try parsing any way
+								// May be someone used 'slash'uAA only
+								process_unicode();
+							}
+						}
+
+						if (t_char == '\\') {
+							if (is_escaped) {
+								match.push_back('\\');
+								is_escaped = false;
+							}
+							else {
+								is_escaped = true;
+							}
+						}
+						else {
+							if (is_escaped) {
+								if (is_octal_char) {
+									is_octal = true;
+									octal_matches.push_back(t_char);
+								}
+								else if (t_char == 'x') {
+									is_hex = true;
+								}
+								else if (t_char == 'u') {
+									unicode_size = 4;
+								}
+								else if (t_char == 'U') {
+									unicode_size = 8;
+								}
+								else {
+									switch (t_char) {
+									case ('\''):
+										match.push_back('\'');
+										break;
+									case ('\"'):
+										match.push_back('\"');
+										break;
+									case ('?'):
+										match.push_back('?');
+										break;
+									case ('a'):
+										match.push_back('\a');
+										break;
+									case ('b'):
+										match.push_back('\b');
+										break;
+									case ('f'):
+										match.push_back('\f');
+										break;
+									case ('n'):
+										match.push_back('\n');
+										break;
+									case ('r'):
+										match.push_back('\r');
+										break;
+									case ('t'):
+										match.push_back('\t');
+										break;
+									case ('v'):
+										match.push_back('\v');
+										break;
+									case ('$'):
+										match.push_back('$');
+										break;
+									default:
+										throw exception::eval_error("Unknown escaped sequence in string", File_Position(line, col), "");
+									}
+									is_escaped = false;
+								}
+							}
+							else if (interpolation_allowed && t_char == '$') {
+								saw_interpolation_marker = true;
+							}
+							else {
+								match.push_back(t_char);
+							}
+						}
+					}
+				};
+
+				static std::unordered_map<std::string_view, Any> build_constants() {
+					std::unordered_map<std::string_view, Any> out;
+					out["true"] = detail::const_var(true);
+					out["false"] = detail::const_var(false);
+					out["Infinity"] = detail::const_var(std::numeric_limits<double>::infinity());
+					out["NaN"] = detail::const_var(std::numeric_limits<double>::quiet_NaN());
+					out["nullptr"] = detail::const_var(Any());
+					out["null"] = detail::const_var(Any());
+					return out;
+				};
+				std::unordered_map<std::string_view, Any> constants = build_constants();
+
+			public:
+				struct Position {
+					constexpr Position() = default;
+
+					constexpr Position(const char* t_pos, const char* t_end) noexcept
+						: line(1)
+						, col(1)
+						, m_pos(t_pos)
+						, m_end(t_end)
+						, m_last_col(1) {
+					}
+
+					static std::string_view str(const Position& t_begin, const Position& t_end) noexcept {
+						if (t_begin.m_pos != nullptr && t_end.m_pos != nullptr) {
+							return std::string_view(t_begin.m_pos, std::size_t(std::distance(t_begin.m_pos, t_end.m_pos)));
+						}
+						else {
+							return {};
+						}
+					}
+
+					constexpr Position& operator++() noexcept {
+						if (m_pos != m_end) {
+							if (*m_pos == '\n') {
+								++line;
+								m_last_col = col;
+								col = 1;
+							}
+							else {
+								++col;
+							}
+
+							++m_pos;
+						}
+						return *this;
+					}
+
+					constexpr Position& operator--() noexcept {
+						--m_pos;
+						if (*m_pos == '\n') {
+							--line;
+							col = m_last_col;
+						}
+						else {
+							--col;
+						}
+						return *this;
+					}
+
+					constexpr Position& operator+=(size_t t_distance) noexcept {
+						*this = (*this) + t_distance;
+						return *this;
+					}
+
+					constexpr Position operator+(size_t t_distance) const noexcept {
+						Position ret(*this);
+						for (size_t i = 0; i < t_distance; ++i) {
+							++ret;
+						}
+						return ret;
+					}
+
+					constexpr Position& operator-=(size_t t_distance) noexcept {
+						*this = (*this) - t_distance;
+						return *this;
+					}
+
+					constexpr Position operator-(size_t t_distance) const noexcept {
+						Position ret(*this);
+						for (size_t i = 0; i < t_distance; ++i) {
+							--ret;
+						}
+						return ret;
+					}
+
+					constexpr bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
+
+					constexpr bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
+
+					constexpr bool has_more() const noexcept { return m_pos != m_end; }
+
+					constexpr size_t remaining() const noexcept { return static_cast<size_t>(m_end - m_pos); }
+
+					constexpr const char& operator*() const noexcept {
+						if (m_pos == m_end) {
+							return ""[0];
+						}
+						else {
+							return *m_pos;
+						}
+					}
+
+					int line = -1;
+					int col = -1;
+
+				private:
+					const char* m_pos = nullptr;
+					const char* m_end = nullptr;
+					int m_last_col = -1;
+				};
+				struct Depth_Counter {
+					static const auto max_depth = Parse_Depth;
+					Depth_Counter(Parser* t_parser) : parser(t_parser) {
+						++parser->m_current_parse_depth;
+						if (parser->m_current_parse_depth > max_depth) {
+							throw exception::eval_error("Maximum parse depth exceeded", File_Position(parser->m_position.line, parser->m_position.col), "");
+						}
+					}
+
+					~Depth_Counter() noexcept { --parser->m_current_parse_depth; }
+
+					Parser* parser;
+				};
+
+				template<typename Array2D, typename First, typename Second>
+				constexpr static void set_alphabet(Array2D& array, const First first, const Second second) noexcept {
+					auto* first_ptr = &std::get<0>(array) + static_cast<std::size_t>(first);
+					auto* second_ptr = &std::get<0>(*first_ptr) + static_cast<std::size_t>(second);
+					*second_ptr = true;
+				};
+
+				constexpr static std::array<std::array<bool, detail::lengthof_alphabet>, detail::max_alphabet> build_alphabet() noexcept {
+					std::array<std::array<bool, detail::lengthof_alphabet>, detail::max_alphabet> alphabet{};
+
+					set_alphabet(alphabet, detail::symbol_alphabet, '?');
+
+					set_alphabet(alphabet, detail::symbol_alphabet, '?');
+					set_alphabet(alphabet, detail::symbol_alphabet, '+');
+					set_alphabet(alphabet, detail::symbol_alphabet, '-');
+					set_alphabet(alphabet, detail::symbol_alphabet, '*');
+					set_alphabet(alphabet, detail::symbol_alphabet, '/');
+					set_alphabet(alphabet, detail::symbol_alphabet, '|');
+					set_alphabet(alphabet, detail::symbol_alphabet, '&');
+					set_alphabet(alphabet, detail::symbol_alphabet, '^');
+					set_alphabet(alphabet, detail::symbol_alphabet, '=');
+					set_alphabet(alphabet, detail::symbol_alphabet, '.');
+					set_alphabet(alphabet, detail::symbol_alphabet, '<');
+					set_alphabet(alphabet, detail::symbol_alphabet, '>');
+
+					for (size_t c = 'a'; c <= 'z'; ++c) {
+						set_alphabet(alphabet, detail::keyword_alphabet, c);
+					}
+					for (size_t c = 'A'; c <= 'Z'; ++c) {
+						set_alphabet(alphabet, detail::keyword_alphabet, c);
+					}
+					for (size_t c = '0'; c <= '9'; ++c) {
+						set_alphabet(alphabet, detail::keyword_alphabet, c);
+					}
+					set_alphabet(alphabet, detail::keyword_alphabet, '_');
+
+					for (size_t c = '0'; c <= '9'; ++c) {
+						set_alphabet(alphabet, detail::int_alphabet, c);
+					}
+					for (size_t c = '0'; c <= '9'; ++c) {
+						set_alphabet(alphabet, detail::float_alphabet, c);
+					}
+					set_alphabet(alphabet, detail::float_alphabet, '.');
+
+					for (size_t c = '0'; c <= '9'; ++c) {
+						set_alphabet(alphabet, detail::hex_alphabet, c);
+					}
+					for (size_t c = 'a'; c <= 'f'; ++c) {
+						set_alphabet(alphabet, detail::hex_alphabet, c);
+					}
+					for (size_t c = 'A'; c <= 'F'; ++c) {
+						set_alphabet(alphabet, detail::hex_alphabet, c);
+					}
+
+					set_alphabet(alphabet, detail::x_alphabet, 'x');
+					set_alphabet(alphabet, detail::x_alphabet, 'X');
+
+					for (size_t c = '0'; c <= '1'; ++c) {
+						set_alphabet(alphabet, detail::bin_alphabet, c);
+					}
+					set_alphabet(alphabet, detail::b_alphabet, 'b');
+					set_alphabet(alphabet, detail::b_alphabet, 'B');
+
+					for (size_t c = 'a'; c <= 'z'; ++c) {
+						set_alphabet(alphabet, detail::id_alphabet, c);
+					}
+					for (size_t c = 'A'; c <= 'Z'; ++c) {
+						set_alphabet(alphabet, detail::id_alphabet, c);
+					}
+					set_alphabet(alphabet, detail::id_alphabet, '_');
+					set_alphabet(alphabet, detail::id_alphabet, ':');
+
+					set_alphabet(alphabet, detail::white_alphabet, ' ');
+					set_alphabet(alphabet, detail::white_alphabet, '\t');
+
+					set_alphabet(alphabet, detail::int_suffix_alphabet, 'l');
+					set_alphabet(alphabet, detail::int_suffix_alphabet, 'L');
+					set_alphabet(alphabet, detail::int_suffix_alphabet, 'u');
+					set_alphabet(alphabet, detail::int_suffix_alphabet, 'U');
+
+					set_alphabet(alphabet, detail::float_suffix_alphabet, 'l');
+					set_alphabet(alphabet, detail::float_suffix_alphabet, 'L');
+					set_alphabet(alphabet, detail::float_suffix_alphabet, 'f');
+					set_alphabet(alphabet, detail::float_suffix_alphabet, 'F');
+
+					return alphabet;
+				}
+
+				struct Operator_Matches {
+					using SS = utility::Static_String;
+					 // should match the order and categories from create_operators()
+					std::array<utility::Static_String, 2> m_0{ {SS("?"), SS("?=")} };
+					std::array<utility::Static_String, 1> m_1{ {SS("||")} };
+					std::array<utility::Static_String, 1> m_2{ {SS("&&")} };
+					std::array<utility::Static_String, 1> m_3{ {SS("|")} };
+					std::array<utility::Static_String, 1> m_4{ {SS("&")} };
+					std::array<utility::Static_String, 3> m_5{ {SS("=="), SS("!="), SS("..")} };
+					std::array<utility::Static_String, 4> m_6{ {SS("<"), SS("<="), SS(">"), SS(">=")} };
+					std::array<utility::Static_String, 2> m_7{ {SS("<<"), SS(">>")} };
+					std::array<utility::Static_String, 2> m_8{ {SS("+"), SS("-")} };
+					std::array<utility::Static_String, 3> m_9{ {SS("*"), SS("/"), SS("%")} };
+					std::array<utility::Static_String, 1> m_10{ {SS("^")} };
+					std::array<utility::Static_String, 6> m_11{ {SS("++"), SS("--"), SS("-"), SS("+"), SS("!"), SS("~")} };
+
+					bool is_match(std::string_view t_str) const noexcept {
+						constexpr std::array<std::size_t, 12> groups{ { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } };
+						return std::any_of(groups.begin(), groups.end(), [&t_str, this](const std::size_t group) { return is_match(group, t_str); });
+					};
+
+					template<typename Predicate>
+					bool any_of(const std::size_t t_group, Predicate&& predicate) const {
+						auto match = [&predicate](const auto& array) { return std::any_of(array.begin(), array.end(), predicate); };
+
+						switch (t_group) {
+						case 0:
+							return match(m_0);
+						case 1:
+							return match(m_1);
+						case 2:
+							return match(m_2);
+						case 3:
+							return match(m_3);
+						case 4:
+							return match(m_4);
+						case 5:
+							return match(m_5);
+						case 6:
+							return match(m_6);
+						case 7:
+							return match(m_7);
+						case 8:
+							return match(m_8);
+						case 9:
+							return match(m_9);
+						case 10:
+							return match(m_10);
+						case 11:
+							return match(m_11);
+						default:
+							return false;
+						}
+					}
+
+					constexpr bool is_match(const std::size_t t_group, std::string_view t_str) const noexcept {
+						auto match = [&t_str](const auto& array) {
+							return std::any_of(array.begin(), array.end(), [&t_str](const auto& v) { return v == t_str; });
+						};
+
+						switch (t_group) {
+						case 0:
+							return match(m_0);
+						case 1:
+							return match(m_1);
+						case 2:
+							return match(m_2);
+						case 3:
+							return match(m_3);
+						case 4:
+							return match(m_4);
+						case 5:
+							return match(m_5);
+						case 6:
+							return match(m_6);
+						case 7:
+							return match(m_7);
+						case 8:
+							return match(m_8);
+						case 9:
+							return match(m_9);
+						case 10:
+							return match(m_10);
+						case 11:
+							return match(m_11);
+						default:
+							return false;
+						}
+					}
+				};
+
+				constexpr static std::array<Operator_Precedence, 12> create_operators() noexcept {
+					return std::array<Operator_Precedence, 12>{
+						{
+							Operator_Precedence::Ternary_Cond,
+							Operator_Precedence::Logical_Or,
+							Operator_Precedence::Logical_And,
+							Operator_Precedence::Bitwise_Or,				
+							Operator_Precedence::Bitwise_And,
+							Operator_Precedence::Equality,
+							Operator_Precedence::Comparison,
+							Operator_Precedence::Shift,
+							Operator_Precedence::Addition,
+							Operator_Precedence::Multiplication,
+							Operator_Precedence::Bitwise_Xor,
+							Operator_Precedence::Prefix
+						}
+					};
+				};
+
+			public:
+				std::size_t m_current_parse_depth{ 0 };
+				Position m_position{};
+				// std::weak_ptr<Scope> parentScope;
+				// Optimizer m_optimizer{};
+				constexpr static auto m_alphabet = build_alphabet();
+				constexpr static auto m_operators = create_operators();
+				constexpr static Operator_Matches m_operator_matches{};
+				constexpr static utility::Static_String m_multiline_comment_end{ "*/" };
+				constexpr static utility::Static_String m_multiline_comment_begin{ "/*" };
+				constexpr static utility::Static_String m_singleline_comment{ "//" };
+				constexpr static utility::Static_String m_annotation{ "#" };
+				constexpr static utility::Static_String m_cr_lf{ "\r\n" };
+
+				std::vector<AST_Node_Impl_Ptr<Tracer>> m_match_stack;
+				std::vector<AST_Node_Impl_Ptr<Tracer>> m_comment_stack;
+
+				Parser(std::shared_ptr<Scope> const& currentScope)
+					: Parser_Base{}
+					// , parentScope{ currentScope }
+				{}
+				Parser(const Parser&) = delete;
+				Parser& operator=(const Parser&) = delete;
+				Parser(Parser&&) = default;
+				Parser& operator=(Parser&&) = delete;
+
+				// std::shared_ptr<Scope> get_engine() noexcept { return parentScope.lock(); };
+				// const Optimizer& get_optimizer() noexcept const { return m_optimizer; };
+				// Optimizer& get_optimizer() noexcept { return m_optimizer; };
+
+				
+				constexpr bool char_in_alphabet(char c, detail::Alphabet a) const noexcept { return m_alphabet[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
+				
+                /// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+				bool Symbol_(const utility::Static_String& sym) noexcept {
+					const auto len = sym.size();
+					if (m_position.remaining() >= len) {
+						const char* file_pos = &(*m_position);
+						for (size_t pos = 0; pos < len; ++pos) {
+							if (sym.c_str()[pos] != file_pos[pos]) {
+								return false;
+							}
+						}
+						m_position += len;
+						return true;
+					}
+					return false;
+				};
+				/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+				bool Symbol_(const std::string_view& sym) noexcept {
+					const auto len = sym.size();
+					if (m_position.remaining() >= len) {
+						const char* file_pos = &(*m_position);
+						for (size_t pos = 0; pos < len; ++pos) {
+							if (sym[pos] != file_pos[pos]) {
+								return false;
+							}
+						}
+						m_position += len;
+						return true;
+					}
+					return false;
+				};
+				/// Reads a char from input if it matches the parameter, without skipping initial whitespace
+				bool Char_(const char c) {
+					if (m_position.has_more() && (*m_position == c)) {
+						++m_position;
+						return true;
+					}
+					else {
+						return false;
+					}
+				};
+				/// Reads an end-of-line group from input, without skipping initial whitespace
+				bool Eol_(const bool t_eos = false) {
+					bool retval = false;
+
+					if (m_position.has_more() && (Symbol_(m_cr_lf) || Char_('\n'))) {
+						retval = true;
+						//++m_position.line;
+						m_position.col = 1;
+					}
+					else if (m_position.has_more() && !t_eos && Char_(';')) {
+						retval = true;
+					}
+
+					return retval;
+				};
+				/// Reads a string from input if it matches the parameter, without skipping initial whitespace
+				bool Keyword_(const utility::Static_String& t_s) {
+					const auto len = t_s.size();
+					if (m_position.remaining() >= len) {
+						auto tmp = m_position;
+						for (size_t i = 0; tmp.has_more() && i < len; ++i) {
+							if (*tmp != t_s.c_str()[i]) {
+								return false;
+							}
+							++tmp;
+						}
+						m_position = tmp;
+						return true;
+					}
+
+					return false;
+				};
+				/// Reads the optional exponent (scientific notation) and suffix for a Float, without skipping initial whitespace
+				/// Support a form of scientific notation: 1e-5, 35.5E+8, 0.01e19
+				bool read_exponent_and_suffix_() noexcept {
+					// Support a form of scientific notation: 1e-5, 35.5E+8, 0.01e19
+					if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+						++m_position;
+						if (m_position.has_more() && ((*m_position == '-') || (*m_position == '+'))) {
+							++m_position;
+						}
+						auto exponent_pos = m_position;
+						while (m_position.has_more() && char_in_alphabet(*m_position, detail::int_alphabet)) {
+							++m_position;
+						}
+						if (m_position == exponent_pos) {
+							// Require at least one digit after the exponent
+							return false;
+						}
+					}
+
+					// Parse optional float suffix
+					while (m_position.has_more() && char_in_alphabet(*m_position, detail::float_suffix_alphabet)) {
+						++m_position;
+					}
+
+					return true;
+				};
+				/// Reads a floating point value from input, without skipping initial whitespace
+				bool Float_() noexcept {
+					if (m_position.has_more() && char_in_alphabet(*m_position, detail::float_alphabet)) {
+						while (m_position.has_more() && char_in_alphabet(*m_position, detail::int_alphabet)) {
+							++m_position;
+						}
+
+						if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+							// The exponent is valid even without any decimal in the Float (1e8, 3e-15)
+							return read_exponent_and_suffix_();
+						}
+						else if (m_position.has_more() && (*m_position == '.')) {
+							++m_position;
+							if (m_position.has_more() && char_in_alphabet(*m_position, detail::int_alphabet)) {
+								while (m_position.has_more() && char_in_alphabet(*m_position, detail::int_alphabet)) {
+									++m_position;
+								}
+								// After any decimal digits, support an optional exponent (3.7e3)
+								return read_exponent_and_suffix_();
+							}
+							else {
+								--m_position;
+							}
+						}
+					}
+					return false;
+				};
+				/// Reads a hex value from input, without skipping initial whitespace
+				bool Hex_() noexcept {
+					if (m_position.has_more() && (*m_position == '0')) {
+						++m_position;
+
+						if (m_position.has_more() && char_in_alphabet(*m_position, detail::x_alphabet)) {
+							++m_position;
+							if (m_position.has_more() && char_in_alphabet(*m_position, detail::hex_alphabet)) {
+								while (m_position.has_more() && char_in_alphabet(*m_position, detail::hex_alphabet)) {
+									++m_position;
+								}
+								while (m_position.has_more() && char_in_alphabet(*m_position, detail::int_suffix_alphabet)) {
+									++m_position;
+								}
+
+								return true;
+							}
+							else {
+								--m_position;
+							}
+						}
+						else {
+							--m_position;
+						}
+					}
+
+					return false;
+				}
+				/// Reads an integer suffix, without skipping initial whitespace
+				void IntSuffix_() {
+					while (m_position.has_more() && char_in_alphabet(*m_position, detail::int_suffix_alphabet)) {
+						++m_position;
+					}
+				}
+				/// Reads a binary value from input, without skipping initial whitespace
+				bool Binary_() {
+					if (m_position.has_more() && (*m_position == '0')) {
+						++m_position;
+
+						if (m_position.has_more() && char_in_alphabet(*m_position, detail::b_alphabet)) {
+							++m_position;
+							if (m_position.has_more() && char_in_alphabet(*m_position, detail::bin_alphabet)) {
+								while (m_position.has_more() && char_in_alphabet(*m_position, detail::bin_alphabet)) {
+									++m_position;
+								}
+								return true;
+							}
+							else {
+								--m_position;
+							}
+						}
+						else {
+							--m_position;
+						}
+					}
+
+					return false;
+				};
+
+				template<typename T> constexpr static auto parse_num(const std::string_view t_str) noexcept -> typename std::enable_if<std::is_integral<T>::value, T>::type {
+					T t = 0;
+					for (const auto c : t_str) {
+						if (c < '0' || c > '9') {
+							return t;
+						}
+						t *= 10;
+						t += c - '0';
+					}
+					return t;
+				};
+				template<typename T> static auto parse_num(const std::string_view t_str) -> typename std::enable_if<!std::is_integral<T>::value, T>::type {
+					T t = 0;
+					T base{};
+					T decimal_place = 0;
+					int exponent = 0;
+
+					for (const auto c : t_str) {
+						switch (c) {
+						case '.':
+							decimal_place = 10;
+							break;
+						case 'e':
+						case 'E':
+							exponent = 1;
+							decimal_place = 0;
+							base = t;
+							t = 0;
+							break;
+						case '-':
+							exponent = -1;
+							break;
+						case '+':
+							break;
+						case '0':
+						case '1':
+						case '2':
+						case '3':
+						case '4':
+						case '5':
+						case '6':
+						case '7':
+						case '8':
+						case '9':
+							if (decimal_place < 10) {
+								t *= 10;
+								t += static_cast<T>(c - '0');
+							}
+							else {
+								t += static_cast<T>(c - '0') / decimal_place;
+								decimal_place *= 10;
+							}
+							break;
+						default:
+							break;
+						}
+					}
+					return exponent ? base * std::pow(T(10), t * static_cast<T>(exponent)) : t;
+				};
+
+				/// Skips any multi-line or single-line comment
+				bool SkipComment() {
+					const auto start = m_position;
+					if (Symbol_(m_multiline_comment_begin)) {
+						while (m_position.has_more()) {
+							if (Symbol_(m_multiline_comment_end)) {
+								break;
+							}
+							else if (!Eol_()) {
+								++m_position;
+							}
+						}
+						std::string_view comment = Position::str(start, m_position);
+						auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
+						m_comment_stack.push_back(std::make_shared<Noop_AST_Node<Tracer>>(comment.data(), parseLoc));
+
+						return true;
+					}
+					else if (Symbol_(m_singleline_comment)) {
+						while (m_position.has_more()) {
+							if (Symbol_(m_cr_lf)) {
+								m_position -= 2;
+								break;
+							}
+							else if (Char_('\n')) {
+								--m_position;
+								break;
+							}
+							else {
+								++m_position;
+							}
+						}
+
+						std::string_view comment = Position::str(start, m_position);
+						auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
+						m_comment_stack.push_back(std::make_shared<Noop_AST_Node<Tracer>>(comment.data(), parseLoc));
+
+						return true;
+
+					}
+					else if (Symbol_(m_annotation)) {
+						while (m_position.has_more()) {
+							if (Symbol_(m_cr_lf)) {
+								m_position -= 2;
+								break;
+							}
+							else if (Char_('\n')) {
+								--m_position;
+								break;
+							}
+							else {
+								++m_position;
+							}
+						}
+						std::string_view comment = Position::str(start, m_position);
+						auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
+						m_comment_stack.push_back(std::make_shared<Noop_AST_Node<Tracer>>(comment.data(), parseLoc));
+
+						return true;
+					}
+					return false;
+				}
+				/// Skips whitespace, which means space and tab, but not cr/lf
+				/// jespada: Modified SkipWS to skip optionally CR ('\n') and/or LF+CR ("\r\n")
+				/// AlekMosingiewicz: Added exception when illegal character detected
+				bool SkipWS(bool skip_cr = false) {
+					bool retval = false;
+
+					while (m_position.has_more()) {
+						if (static_cast<unsigned char>(*m_position) > 0x7e) {
+							throw exception::eval_error("Illegal character", File_Position(m_position.line, m_position.col), "");
+						}
+						auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
+
+						if (char_in_alphabet(*m_position, detail::white_alphabet) || (skip_cr && end_line)) {
+							if (end_line) {
+								if (*m_position == '\r') {
+									// discards lf
+									++m_position;
+								}
+							}
+
+							++m_position;
+
+							retval = true;
+						}
+						else if (SkipComment()) {
+							retval = true;
+						}
+						else {
+							break;
+						}
+					}
+					return retval;
+				}
+				/// Reads until the end of the current statement
+				bool Eos() {
+					Depth_Counter dc{ this };
+					SkipWS();
+					return Eol_(true);
+				}
+				/// Reads (and potentially captures) an end-of-line group from input
+				bool Eol() {
+					Depth_Counter dc{ this };
+					SkipWS();
+					return Eol_();
+				}
+
+				/// create a node
+				template<typename T, typename... Param>
+				std::shared_ptr<AST_Node_Impl<Tracer>> make_node(std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
+					return std::make_shared<AST_Node_Impl<Tracer>, T>(
+						std::string(t_match),
+						Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col),
+						std::forward<Param>(param)...
+					);
+				};
+
+				/// Parses a floating point value
+				static Units::value buildFloat(std::string_view t_val) {
+					bool float_ = false;
+					bool long_ = false;
+
+					auto i = t_val.size();
+
+					for (; i > 0; --i) {
+						char val = t_val[i - 1];
+
+						if (val == 'f' || val == 'F') {
+							float_ = true;
+						}
+						else if (val == 'l' || val == 'L') {
+							long_ = true;
+						}
+						else {
+							break;
+						}
+					}
+
+					if (float_) {	
+						return Units::value(parse_num<float>(t_val.substr(0, i)));
+					}
+					else if (long_) {
+						return Units::value(parse_num<long double>(t_val.substr(0, i)));
+					}
+					else {
+						return Units::value(parse_num<double>(t_val.substr(0, i)));
+					}
+				}
+				/// Parses a integer value and returns a wrapped representation of it
+				static Units::value buildInt(const int base, std::string_view t_val, const bool prefixed) {
+					bool unsigned_ = false;
+					bool long_ = false;
+					bool longlong_ = false;
+
+					auto i = t_val.size();
+
+					for (; i > 0; --i) {
+						const char val = t_val[i - 1];
+
+						if (val == 'u' || val == 'U') {
+							unsigned_ = true;
+						}
+						else if (val == 'l' || val == 'L') {
+							if (long_) {
+								longlong_ = true;
+							}
+
+							long_ = true;
+						}
+						else {
+							break;
+						}
+					}
+
+					if (prefixed) {
+						t_val.remove_prefix(2);
+					}
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
+#ifdef CHAISCRIPT_CLANG
+#pragma GCC diagnostic ignored "-Wtautological-compare"
+#pragma GCC diagnostic ignored "-Wtautological-unsigned-zero-compare"
+#pragma GCC diagnostic ignored "-Wtautological-type-limit-compare"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
+
+#endif
+
+					try {
+						/// TODO fix this to use from_chars
+						auto u = std::stoll(std::string(t_val), nullptr, base);
+
+						if (!unsigned_ && !long_ && u >= std::numeric_limits<int>::min() && u <= std::numeric_limits<int>::max()) {
+							return static_cast<int>(u);
+						}
+						else if ((unsigned_ || base != 10) && !long_ && u >= std::numeric_limits<unsigned int>::min()
+							&& u <= std::numeric_limits<unsigned int>::max()) {
+							return static_cast<unsigned int>(u);
+						}
+						else if (!unsigned_ && !longlong_ && u >= std::numeric_limits<long>::min() && u <= std::numeric_limits<long>::max()) {
+							return static_cast<long>(u);
+						}
+						else if ((unsigned_ || base != 10) && !longlong_ && u >= std::numeric_limits<unsigned long>::min()
+							&& u <= std::numeric_limits<unsigned long>::max()) {
+							return static_cast<unsigned long>(u);
+						}
+						else if (!unsigned_ && u >= std::numeric_limits<long long>::min() && u <= std::numeric_limits<long long>::max()) {
+							return static_cast<long long>(u);
+						}
+						else {
+							return static_cast<unsigned long long>(u);
+						}
+					}
+					catch (const std::out_of_range&) {
+						// too big to be signed
+						try {
+							/// TODO fix this to use from_chars
+							auto u = std::stoull(std::string(t_val), nullptr, base);
+
+							if (!longlong_ && u >= std::numeric_limits<unsigned long>::min() && u <= std::numeric_limits<unsigned long>::max()) {
+								return static_cast<unsigned long>(u);
+							}
+							else {
+								return static_cast<unsigned long long>(u);
+							}
+						}
+						catch (const std::out_of_range&) {
+							// it's just simply too big
+							return std::numeric_limits<long long>::max();
+						}
+					}
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+				}
+				/// Reads a number from the input, detecting if it's an integer or floating point, without skipping initial whitespace
+				bool Num_() {
+					const auto start = m_position;
+					if (m_position.has_more() && char_in_alphabet(*m_position, detail::float_alphabet)) {
+						try {
+							if (Hex_()) {
+								auto match = Position::str(start, m_position);
+								auto bv = buildInt(16, match, true);
+								m_match_stack.emplace_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)));
+								return true;
+							}
+
+							if (Binary_()) {
+								auto match = Position::str(start, m_position);
+								auto bv = buildInt(2, match, true);
+								m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)));
+								return true;
+							}
+							if (Float_()) {
+								auto match = Position::str(start, m_position);
+								auto bv = buildFloat(match);
+								m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)));
+								return true;
+							}
+							else {
+								IntSuffix_();
+								auto match = Position::str(start, m_position);
+								if (!match.empty() && (match[0] == '0')) {
+									auto bv = buildInt(8, match, false);
+									m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)));
+								}
+								else if (!match.empty()) {
+									auto bv = buildInt(10, match, false);
+									m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)));
+								}
+								else {
+									return false;
+								}
+								return true;
+							}
+						}
+						catch (const std::invalid_argument&) {
+							// error parsing number passed in to buildFloat/buildInt
+							return false;
+						}
+					}
+					else {
+						return false;
+					}
+				};
+				/// Reads an identifier from input which conforms to C's identifier naming conventions, without skipping initial whitespace
+				bool Id_() {
+					if (m_position.has_more() && char_in_alphabet(*m_position, detail::id_alphabet)) {
+						while (m_position.has_more() && char_in_alphabet(*m_position, detail::keyword_alphabet)) {
+							++m_position;
+						}
+
+						return true;
+					}
+					else if (m_position.has_more() && (*m_position == '`')) {
+						++m_position;
+						const auto start = m_position;
+
+						while (m_position.has_more() && (*m_position != '`')) {
+							if (Eol()) {
+								throw exception::eval_error("Carriage return in identifier literal",
+									File_Position(m_position.line, m_position.col),
+									"");
+							}
+							else {
+								++m_position;
+							}
+						}
+
+						if (start == m_position) {
+							throw exception::eval_error("Missing contents of identifier literal", File_Position(m_position.line, m_position.col), "");
+						}
+						else if (!m_position.has_more()) {
+							throw exception::eval_error("Incomplete identifier literal", File_Position(m_position.line, m_position.col), "");
+						}
+
+						++m_position;
+
+						return true;
+					}
+					return false;
+				};
+
+				/// Reads (and potentially captures) an identifier from input
+				bool Id(const bool validate) {
+					Depth_Counter dc{ this };
+					SkipWS();
+					const auto start = m_position;
+					if (Id_()) {
+						auto text = Position::str(start, m_position);
+						// if (validate) { validate_object_name(text);	}
+
+						auto foundContant = constants.find(text);
+						if (foundContant != constants.end()) {
+							m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(text, start.line, start.col, foundContant->second));
+						}
+						else {
+							switch (hash(text)) {
+							case hash("__LINE__"): {
+								m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(text, start.line, start.col, detail::const_var(start.line)));
+							} break;
+								//case hash("__FILE__"): {
+								//	m_match_stack.push_back(make_node<eval::Constant_AST_Node<Tracer>>(text, start.line, start.col, detail::const_var(m_filename)));
+								//} break;
+							default: {
+								auto val = text;
+								if (*start == '`') { // 'escaped' literal, like an operator name ( e.g. `[]`(...) )
+									val = Position::str(start + 1, m_position - 1);
+								}
+								m_match_stack.push_back(make_node<Id_AST_Node<Tracer>>(val, start.line, start.col)); // e.g. "x", "Units::meter", etc.
+							} break;
+							}
+						}
+						return true;
+					}
+					else {
+						return false;
+					}
+				};
+
+				/// Reads a number from the input, detecting if it's an integer or floating point
+				bool Num() {
+					Depth_Counter dc{ this };
+					SkipWS();
+					return Num_();
+				};
+
+				/// Reads (and potentially captures) a char from input if it matches the parameter
+				bool Char(const char t_c) {
+					Depth_Counter dc{ this };
+					SkipWS();
+					return Char_(t_c);
+				};
+				/// Reads (and potentially captures) a string from input if it matches the parameter
+				bool Keyword(const utility::Static_String& t_s) {
+					Depth_Counter dc{ this };
+					SkipWS();
+					const auto start = m_position;
+					bool retval = Keyword_(t_s);
+					// ignore substring matches
+					if (retval && m_position.has_more() && char_in_alphabet(*m_position, detail::keyword_alphabet)) {
+						m_position = start;
+						retval = false;
+					}
+
+					return retval;
+				};
+				// check if the string is a valid operator
+				bool is_operator(std::string_view t_s) const noexcept { return m_operator_matches.is_match(t_s); }
+				/// Reads (and potentially captures) a symbol group from input if it matches the parameter
+				bool Symbol(const std::string_view& t_s, const bool t_disallow_prevention = false) {
+					Depth_Counter dc{ this };
+					SkipWS();
+					const auto start = m_position;
+					bool retval = Symbol_(t_s);
+
+					// ignore substring matches
+					if (retval && m_position.has_more() && (t_disallow_prevention == false) && char_in_alphabet(*m_position, detail::symbol_alphabet)) {
+						if (*m_position != '=' && is_operator(Position::str(start, m_position)) && !is_operator(Position::str(start, m_position + 1))) {
+							// don't throw this away, it's a good match and the next is not
+						}
+						else {
+							m_position = start;
+							retval = false;
+						}
+					}
+
+					return retval;
+				}
+
+				/// Reads a quoted string from input, without skipping initial whitespace
+				bool Quoted_String_() {
+					if (m_position.has_more() && (*m_position == '\"')) {
+						char prev_char = *m_position;
+						++m_position;
+
+						int in_interpolation = 0;
+						bool in_quote = false;
+
+						while (m_position.has_more() && ((*m_position != '\"') || (in_interpolation > 0) || (prev_char == '\\'))) {
+							if (!Eol_()) {
+								if (prev_char == '$' && *m_position == '{') {
+									++in_interpolation;
+								}
+								else if (prev_char != '\\' && *m_position == '"') {
+									in_quote = !in_quote;
+								}
+								else if (*m_position == '}' && !in_quote) {
+									--in_interpolation;
+								}
+
+								if (prev_char == '\\') {
+									prev_char = 0;
+								}
+								else {
+									prev_char = *m_position;
+								}
+								++m_position;
+							}
+						}
+
+						if (m_position.has_more()) {
+							++m_position;
+						}
+						else {
+							throw exception::eval_error("Unclosed quoted string", File_Position(m_position.line, m_position.col), "");
+						}
+
+						return true;
+					}
+					return false;
+				};
+
+				/// Reads (and potentially captures) a quoted string from input.  Translates escaped sequences.
+				bool Quoted_String() {
+					Depth_Counter dc{ this };
+					SkipWS();
+
+					const auto start = m_position;
+
+					if (Quoted_String_()) {
+						std::string match;
+						const auto prev_stack_top = m_match_stack.size();
+
+						bool is_interpolated = [&]() -> bool {
+							Char_Parser<std::string> cparser(match, true);
+
+							auto s = start + 1, end = m_position - 1;
+
+							while (s != end) {
+								if (cparser.saw_interpolation_marker) {
+									if (*s == '{') {
+										// We've found an interpolation point
+
+										m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, match));
+
+										if (cparser.is_interpolated) {
+											// If we've seen previous interpolation, add on instead of making a new one
+											build_match<Binary_Operator_AST_Node<Tracer>>(prev_stack_top, "+");
+										}
+
+										// We've finished with the part of the string up to this point, so clear it
+										match.clear();
+
+										std::string eval_match;
+
+										++s;
+										while ((s != end) && (*s != '}')) {
+											eval_match.push_back(*s);
+											++s;
+										}
+
+										if (*s == '}') {
+											cparser.is_interpolated = true;
+											++s;
+
+											const auto tostr_stack_top = m_match_stack.size();
+
+											m_match_stack.push_back(make_node<Id_AST_Node<Tracer>>("to_string", start.line, start.col));
+
+											const auto ev_stack_top = m_match_stack.size();
+
+											try {
+												m_match_stack.push_back(parse_instr_eval(eval_match));
+											}
+											catch (const exception::eval_error& e) {
+												throw exception::eval_error(e.what(), File_Position(start.line, start.col), "");
+											}
+
+											build_match<Arg_List_AST_Node<Tracer>>(ev_stack_top);
+											build_match<Fun_Call_AST_Node<Tracer>>(tostr_stack_top);
+											build_match<Binary_Operator_AST_Node<Tracer>>(prev_stack_top, "+");
+										}
+										else {
+											throw exception::eval_error("Unclosed in-string eval", File_Position(start.line, start.col), "");
+										}
+									}
+									else {
+										match.push_back('$');
+									}
+									cparser.saw_interpolation_marker = false;
+								}
+								else {
+									cparser.parse(*s, start.line, start.col);
+
+									++s;
+								}
+							}
+
+							if (cparser.saw_interpolation_marker) {
+								match.push_back('$');
+							}
+
+							return cparser.is_interpolated;
+						}();
+
+						m_match_stack.push_back(make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, match));
+
+						if (is_interpolated) {
+							build_match<Binary_Operator_AST_Node<Tracer>>(prev_stack_top, "+");
+						}
+
+						return true;
+					}
+					else {
+						return false;
+					}
+				}
+
+				/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
+				template<typename NodeType>
+				void build_match(size_t t_match_start, std::string t_text = "") {
+					bool is_deep = false;
+
+					Parse_Location filepos = [&]() -> Parse_Location {
+						// so we want to take everything to the right of this and make them children
+						if (t_match_start != m_match_stack.size()) {
+							is_deep = true;
+							return Parse_Location(
+								m_match_stack[t_match_start]->location.start.line,
+								m_match_stack[t_match_start]->location.start.column,
+								m_position.line,
+								m_position.col);
+						}
+						else {
+							return Parse_Location(m_position.line, m_position.col, m_position.line, m_position.col);
+						}
+					}();
+
+					std::vector<AST_Node_Impl_Ptr<Tracer>> new_children;
+
+					if (is_deep) {
+						new_children.assign(std::make_move_iterator(m_match_stack.begin() + static_cast<int>(t_match_start)),
+							std::make_move_iterator(m_match_stack.end()));
+						m_match_stack.erase(m_match_stack.begin() + static_cast<int>(t_match_start), m_match_stack.end());
+					}
+
+					// TO-DO, re-impliment the optimization and node re-ordering. 
+
+					/// \todo fix the fact that a successful match that captured no ast_nodes doesn't have any real start position
+					//m_match_stack.push_back(
+					//	m_optimizer.optimize(
+					//		std::make_shared<AST_Node_Impl<Tracer>, NodeType>(
+					//			std::move(t_text)
+					//			, std::move(filepos)
+					//			, std::move(new_children)
+					//		)
+					//	)
+					//);
+
+					m_match_stack.push_back(
+						std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(std::make_shared<NodeType>(
+							std::move(t_text)
+							, std::move(filepos)
+							, std::move(new_children)
+						))						
+					);
+
+
+				}
+
+				/// Reads a curly-brace C-style block from input
+				bool Block() {
+					Depth_Counter dc{ this };
+					bool retval = false;
+
+					const auto prev_stack_top = m_match_stack.size();
+
+					if (Char('{')) {
+						retval = true;
+
+						Statements();
+						if (!Char('}')) {
+							throw exception::eval_error("Incomplete block", File_Position(m_position.line, m_position.col), "");
+						}
+
+						if (m_match_stack.size() == prev_stack_top) {
+							m_match_stack.push_back(std::make_shared<Noop_AST_Node<Tracer>>());
+						}
+
+						build_match<Block_AST_Node<Tracer>>(prev_stack_top);
+					}
+
+					return retval;
+				};
+
+				/// Reads a variable declaration from input
+#if 0
+				bool Var_Decl(const bool t_class_context = false, const std::string& t_class_name = "") {
+					Depth_Counter dc{ this };
+					bool retval = false;
+
+					const auto prev_stack_top = m_match_stack.size();
+
+					if (t_class_context && (Keyword("attr") || Keyword("auto") || Keyword("var"))) {
+						retval = true;
+
+						m_match_stack.push_back(make_node<eval::Id_AST_Node<Tracer>>(t_class_name, m_position.line, m_position.col));
+
+						if (!Id(true)) {
+							throw exception::eval_error("Incomplete attribute declaration", File_Position(m_position.line, m_position.col), *m_filename);
+						}
+
+						build_match<Attr_Decl_AST_Node<Tracer>>(prev_stack_top);
+					}
+					else if (Keyword("auto") || Keyword("var")) {
+						retval = true;
+						if (Reference()) {
+							// we built a reference node - continue
+						}
+						else if (Id(true)) {
+							build_match<eval::Var_Decl_AST_Node<Tracer>>(prev_stack_top);
+						}
+						else {
+							throw exception::eval_error("Incomplete variable declaration ", File_Position(m_position.line, m_position.col), *m_filename);
+						}
+					}
+					else if (Keyword("global")) {
+						retval = true;
+
+						if (!(Reference() || Id(true))) {
+							throw exception::eval_error("Incomplete explicit global declaration", File_Position(m_position.line, m_position.col), *m_filename);
+						}
+
+						build_match<Global_Decl_AST_Node<Tracer>>(prev_stack_top);
+					}
+					else if (Keyword("attr")) {
+						retval = true;
+
+						if (!Id(true)) {
+							throw exception::eval_error("Incomplete attribute declaration", File_Position(m_position.line, m_position.col), *m_filename);
+						}
+						if (!Symbol("::")) {
+							throw exception::eval_error("Incomplete attribute declaration", File_Position(m_position.line, m_position.col), *m_filename);
+						}
+						if (!Id(true)) {
+							throw exception::eval_error("Missing attribute name in definition", File_Position(m_position.line, m_position.col), *m_filename);
+						}
+
+						build_match<Attr_Decl_AST_Node<Tracer>>(prev_stack_top);
+					}
+					else {
+						retval = SpecifiedType_Var_Decl();
+					}
+
+					return retval;
+				};
+#endif
+
+				bool Value() {
+					return false; 
+					/*
+					Depth_Counter dc{ this };
+					if (Var_Decl() || Dot_Fun_Array() || Prefix()) {
+						Postfix(true);
+						return true;
+					}
+					else {
+						return Postfix(false);
+					}
+					*/
+				};
+
+
+
+
+
+
+				/// Top level parser, starts parsing of all known parses
+				bool Statements(const bool t_class_allowed = false) {
+					Depth_Counter dc{ this };
+					bool retval = false;
+					bool has_more = true;
+					bool saw_eol = true;
+
+					
+					while (has_more) {
+						const auto start = m_position;
+						if (/*Def() || Try() || If() || While() || Class(t_class_allowed) || For() || Switch() || ControlBlock()*/ false) {
+							if (!saw_eol) {
+								throw exception::eval_error("Two function definitions missing line separator",
+									File_Position(start.line, start.col),
+									"");
+							}
+							has_more = true;
+							retval = true;
+							saw_eol = true;
+						}
+						else if (/* Return() || Break() || Continue() || Equation() */ false) {
+							if (!saw_eol) {
+								throw exception::eval_error("Two expressions missing line separator",
+									File_Position(start.line, start.col),
+									"");
+							}
+							has_more = true;
+							retval = true;
+							saw_eol = false;
+						}
+						else if (Block() || Eol()) {
+							has_more = true;
+							retval = true;
+							saw_eol = true;
+						}
+						else {
+							has_more = false;
+						}
+					}					
+					return retval;
+				};
+
+				AST_Node_Impl_Ptr<Tracer> parse_instr_eval(const std::string& t_input) {
+					auto last_position = m_position;
+					auto last_match_stack = std::exchange(m_match_stack, decltype(m_match_stack){});
+
+					auto retval = parse_internal(t_input);
+
+					m_position = std::move(last_position);
+
+					m_match_stack = std::move(last_match_stack);
+
+					return AST_Node_Impl_Ptr<Tracer>(dynamic_cast<AST_Node_Impl<Tracer>*>(retval.release()));
+				};
+				/// Parses the given input string, tagging parsed ast_nodes with the given m_filename.
+				AST_NodePtr parse_internal(const std::string& t_input) {
+					const auto begin = t_input.empty() ? nullptr : &t_input.front();
+					const auto end = begin == nullptr ? nullptr : begin + t_input.size();
+					m_position = Position(begin, end);
+
+					if ((t_input.size() > 1) && (t_input[0] == '#') && (t_input[1] == '!')) {
+						while (m_position.has_more() && (!Eol())) {
+							++m_position;
+						}
+					}
+
+					// top level stack        
+					if (Statements(true)) {
+						if (m_position.has_more()) {
+							throw exception::eval_error("Unparsed input", File_Position(m_position.line, m_position.col), "");
+						}
+						else {
+							// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
+							auto i = m_comment_stack.rbegin();
+							while (i != m_comment_stack.rend()) {
+								// m_match_stack.push_back(std::move(*i));
+								m_match_stack.insert(m_match_stack.begin(), std::move(*i));
+								i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
+							}
+							build_match<File_AST_Node<Tracer>>(0);
+						}
+					}
+					else {
+						m_match_stack.push_back(std::make_shared<AST_Node_Impl<Tracer>, Noop_AST_Node<Tracer>>(Noop_AST_Node()));
+					}
+
+					std::shared_ptr<AST_Node> retval = std::dynamic_pointer_cast<AST_Node>(m_match_stack.front());
+					m_match_stack.clear();
+
+					return retval;
+				};
+
+
+
+
+
+				AST_NodePtr parse(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) override {
+					return parse_internal(t_input);
+				};
+
+
+
+
+			};
+
+		}
+	};
 
 
 
@@ -1261,6 +3360,22 @@ int main() {
 		auto globalScope = std::make_shared<GoodLang::Global>();
 		globalScope->SetSelf(globalScope);
 		globalScope->AddBuiltIns();
+
+		if (1) {
+			auto parse{ Scripting::parser::Parser(globalScope) };
+			//constexpr auto a = parse.char_in_alphabet('c', Scripting::detail::Alphabet::id_alphabet);
+			//constexpr auto b = parse.char_in_alphabet(':', Scripting::detail::Alphabet::id_alphabet);
+
+			print(ToString(parse.buildFloat("100.0f")));
+			print(ToString(parse.buildInt(10, "100ll", false)));
+			print(ToString(parse.buildFloat("123.123456678l")));
+			print(ToString(parse.buildFloat("0.999e10")));
+
+
+
+		}
+
+
 
 		if (1) {
 			auto scope = std::make_shared<GoodLang::Scope>(globalScope);
@@ -1314,12 +3429,12 @@ int main() {
 				}),
 				// Units::meter(x);
 				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
+					/*std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
 						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
 						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
 							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
 						})
-					})
+					})*/
 				})
 			});
 			

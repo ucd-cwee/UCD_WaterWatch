@@ -147,12 +147,14 @@ namespace GoodLang {
 
 		Type_Info() noexcept
 			: uniqueHash(GetHashImpl())
+			, underlyingHash(0)
 			, isConst(false)
 			, isVoid(true)
 			, isRef(false)
 		{};
 		Type_Info(bool t_is_const, bool t_is_void, bool t_is_ref, bool t_is_any) noexcept
 			: uniqueHash(GetHashImpl())
+			, underlyingHash(0)
 			, isConst(t_is_const)
 			, isVoid(t_is_void)
 			, isRef(t_is_ref)
@@ -206,6 +208,7 @@ namespace GoodLang {
 		virtual bool IsBuiltInType() const;
 
 		const size_t uniqueHash;
+		const size_t underlyingHash;
 	private:
 		bool isConst;
 		bool isVoid;
@@ -224,7 +227,7 @@ namespace GoodLang {
 	public:
 		BuiltIn_Type_Info() noexcept
 			: Type_Info(false, true, false, false)
-			, m_type_info(impl::TypeId<void>())
+			, m_type_info(impl::TypeId<T>())
 		{
 			this->CacheHash();
 		};
