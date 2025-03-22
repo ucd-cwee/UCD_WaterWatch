@@ -232,37 +232,13 @@ namespace GoodLang {
 
 	public:
 		// try and find the object with the requested key.
-		std::shared_ptr<Any> GetObj(std::string const& name) const {
-			auto f = p_objects.find(name);
-			if (f != f.end()) {
-				return f->second;
-			}
-			else {
-				return nullptr;
-			}
-		};
+		std::shared_ptr<Any> GetObj(std::string const& name) const;
 		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
-		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj) {
-			return p_objects.emplace(name, obj);
-		};
+		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj);
 		// Returns true if successful.
-		bool EraseObj(std::string const& name) {
-			return p_objects.erase(name);
-		};
+		bool EraseObj(std::string const& name);
 		// Returns true if successful.
-		bool EraseObj(std::shared_ptr<Any> const& Obj) {
-			std::string key;
-			bool doErasure = false;
-			for (auto& obj : p_objects) {
-				if (obj.second == Obj) {
-					key = obj.first;
-					doErasure = true;
-					break;
-				}
-			}
-			if (doErasure) return EraseObj(key);
-			else return false;
-		};
+		bool EraseObj(std::shared_ptr<Any> const& Obj);
 
 	private:
 		std::weak_ptr<Global> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the end. 

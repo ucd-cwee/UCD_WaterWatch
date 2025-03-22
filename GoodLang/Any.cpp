@@ -215,16 +215,16 @@ namespace GoodLang {
 				}
 			}
 #ifdef AllowInlineVarTyping
-			//if (m->GetTypeHash() == VarHash) {
-			if (auto p2 = m->cast< Var>()) {
-				if (!p2->p_data->IsEmpty()) {
-					return p2->p_data->ActualType();
-				}
-				else {
-					return m->GetTypeShared();
+			if (m->GetTypeHash() == VarHash) {
+				if (auto p2 = m->cast< Var>()) {
+					if (!p2->p_data->IsEmpty()) {
+						return p2->p_data->ActualType();
+					}
+					else {
+						return m->GetTypeShared();
+					}
 				}
 			}
-			//}
 #endif
 			return m->GetTypeShared();
 		}
@@ -243,16 +243,16 @@ namespace GoodLang {
 				}
 			}
 #ifdef AllowInlineVarTyping
-			//if (m->GetTypeHash() == VarHash) {
-			if (auto* p2 = m->cast< Var>()) {
-				if (!p2->p_data->IsEmpty()) {
-					return p2->p_data->Type();
-				}
-				else {
-					return m->GetTypeShared();
+			if (m->GetTypeHash() == VarHash) {
+				if (auto* p2 = m->cast< Var>()) {
+					if (!p2->p_data->IsEmpty()) {
+						return p2->p_data->Type();
+					}
+					else {
+						return m->GetTypeShared();
+					}
 				}
 			}
-			//}
 #endif
 			return m->GetTypeShared();
 		}
@@ -273,16 +273,16 @@ namespace GoodLang {
 				}
 			}
 #ifdef AllowInlineVarTyping
-			//if (m->GetTypeHash() == VarHash) {
-			if (auto* p2 = m->cast< Var>()) {
-				if (!p2->p_data->IsEmpty()) {
-					return p2->p_data->TypeHash();
-				}
-				else {
-					return m->GetTypeHash();
+			if (m->GetTypeHash() == VarHash) {
+				if (auto* p2 = m->cast< Var>()) {
+					if (!p2->p_data->IsEmpty()) {
+						return p2->p_data->TypeHash();
+					}
+					else {
+						return m->GetTypeHash();
+					}
 				}
 			}
-			//}
 #endif
 			return m->GetTypeHash();
 		}
