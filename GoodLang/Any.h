@@ -1397,7 +1397,10 @@ namespace GoodLang {
 
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
 		virtual Type_Info const& GetType() const override { return user_type<T>(); };
-		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { return user_type_shared<T>(); };
+		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { 
+			static std::weak_ptr<Type_Info> out{ user_type_shared<T>() };
+			return out;
+		};
 		virtual void* ptr() const override { return static_cast<void*>(&const_cast<std::remove_const_t<T>&>(m_obj)); };
 		virtual std::shared_ptr<void> shared_ptr() const override {
 			if (auto p = m_self.lock()) {
@@ -1444,7 +1447,10 @@ namespace GoodLang {
 
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
 		virtual Type_Info const& GetType() const override { return user_type<T>(); };
-		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { return user_type_shared<T>(); };
+		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override {
+			static std::weak_ptr<Type_Info> out{ user_type_shared<T>() };
+			return out;
+		};
 		virtual void* ptr() const override { return const_cast<void*>((const void*)(m_obj.get())); };
 		virtual std::shared_ptr<void> shared_ptr() const override { return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(m_obj)); };
 		virtual std::string ToString() const override {

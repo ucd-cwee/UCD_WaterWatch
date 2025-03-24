@@ -2,6 +2,40 @@
 #include "Scopes.h"
 
 namespace GoodLang {
+	// try and find the object with the requested key.
+	std::shared_ptr<Any> Scope::GetObj(std::string const& name) const {
+		auto f = p_objects.find(name);
+		if (f != f.end()) {
+			return f->second;
+		}
+		else {
+			return nullptr;
+		}
+	};
+	// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
+	bool Scope::AddObj(std::string const& name, std::shared_ptr<Any> const& obj) {
+		return p_objects.emplace(name, obj);
+	};
+	// Returns true if successful.
+	bool Scope::EraseObj(std::string const& name) {
+		return p_objects.erase(name);
+	};
+	// Returns true if successful.
+	bool Scope::EraseObj(std::shared_ptr<Any> const& Obj) {
+		std::string key;
+		bool doErasure = false;
+		for (auto& obj : p_objects) {
+			if (obj.second == Obj) {
+				key = obj.first;
+				doErasure = true;
+				break;
+			}
+		}
+		if (doErasure) return EraseObj(key);
+		else return false;
+	};
+
+
 	bool Scope::AddUsing(std::weak_ptr<Namespace> namespacePtr) {
 		if (auto p = std::dynamic_pointer_cast<Scope>(namespacePtr.lock())) {
 			if (p_using.emplace(Hasher()(p), namespacePtr)) {
@@ -418,14 +452,21 @@ namespace GoodLang {
 		if (!this->IsNamespace()) {
 			if (this->p_using.size() == 0) {
 				if (this->p_children.size() == 0) {
-					if (auto objFound = GetObj(objName)) {
-						if (found_obj) {
-							*found_obj = objFound;
+					if (this->p_objects.size() == 0) {						
+						if (auto p = this->p_parent.lock()) {
+							return p->FindScopeWithObj(objName, found_obj);
 						}
-						return p_self.lock();
 					}
-					if (auto p = this->p_parent.lock()) {
-						return p->FindScopeWithObj(objName, found_obj);
+					else {
+						if (auto objFound = GetObj(objName)) {
+							if (found_obj) {
+								*found_obj = objFound;
+							}
+							return p_self.lock();
+						}
+						if (auto p = this->p_parent.lock()) {
+							return p->FindScopeWithObj(objName, found_obj);
+						}
 					}
 				}
 			}
@@ -451,19 +492,27 @@ namespace GoodLang {
 				}
 			}
 		}
+
+		if (auto objFound = this->GetObj(objName)) {
+			if (found_obj) *found_obj = objFound;	
+			InsertCached<3>(treeV, p_self.lock(), objName);
+			return p_self.lock();
+		}
+
 #endif
 
 		auto lastOfColons = objName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Scope> out;
-			if (TryFindNearestScopeWhere(out, [&objName](std::shared_ptr<Scope> const& namespacePtr)->bool {
+			if (TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
 					if (auto objFound = ptr->GetObj(objName)) {
+						if (found_obj) *found_obj = objFound;
 						return true;
 					}
 				}
 				return false;
-				})) {
+			})) {
 				InsertCached<3>(treeV, out, objName);
 				return out;
 			}
@@ -502,8 +551,10 @@ namespace GoodLang {
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Any> out{ nullptr };
 			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindScopeWithObj(objName, &out))) {
-				return out;
-				// return ptr->GetObj(objName);
+				if (out)
+					return out;
+				else
+					return ptr->GetObj(objName);
 			}
 			else {
 				return nullptr;

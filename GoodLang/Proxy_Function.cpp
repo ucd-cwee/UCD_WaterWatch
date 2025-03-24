@@ -161,9 +161,21 @@ namespace GoodLang {
 
 	// may return nullptr
 	TypeConverter::TypeConverterFunc TypeConverter::GetExistingConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
-		auto& pair = AllConversions[From][To];
-		auto locked2{ std::shared_lock(pair.first) };
-		return pair.second;
+		auto f1 = AllConversions.find(From);
+		if (f1 != AllConversions.end()) {
+			auto f2 = f1->second.find(To);
+			if (f2 != f1->second.end()) {
+				auto& pair = f2->second;
+				auto locked2{ std::shared_lock(pair.first) };
+				return pair.second;
+			}
+		}
+		return nullptr;
+
+
+		// auto& pair = AllConversions[From][To];
+		// auto locked2{ std::shared_lock(pair.first) };
+		// return pair.second;
 	};
 
 	// may return nullptr if it could not be built

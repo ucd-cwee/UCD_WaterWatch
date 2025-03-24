@@ -6016,10 +6016,10 @@ int main() {
 				// x += 1;
 				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
 					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("+=", Scripting::Parse_Location()),
+						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("++", Scripting::Parse_Location()),
 						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
-							std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1)
+							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
+							// , std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1)
 						})
 					})
 				}),
