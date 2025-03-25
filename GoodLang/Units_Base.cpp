@@ -535,7 +535,7 @@ namespace GoodLang {
 					return toReturn;
 			}
 		};
-		std::string_view value::UnitAbbreviation() const noexcept {
+		std::string value::UnitAbbreviation() const noexcept {
 			auto Data = unit_m.Shared();
 			return Abbreviation(*Data, nullptr);
 		};

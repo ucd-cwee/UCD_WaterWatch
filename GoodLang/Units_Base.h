@@ -197,7 +197,7 @@ namespace GoodLang {
 			std::string ToString() const;
 			friend std::ostream& operator<<(std::ostream& os, value const& obj);
 			std::string_view UnitName() const noexcept;
-			std::string_view UnitAbbreviation() const noexcept;
+			std::string UnitAbbreviation() const noexcept;
 			void Clear();
 
 		public: // Assignment operator

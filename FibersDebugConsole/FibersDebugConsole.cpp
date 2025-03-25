@@ -335,6 +335,7 @@ namespace GoodLang {
 			For,
 			Parallel_For,
 			Ranged_For,
+			Parallel_Ranged_For,
 			Inline_Array,
 			Inline_Map,
 			Return,
@@ -1437,7 +1438,7 @@ namespace GoodLang {
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Parallel_Ranged_For_AST_Node final : AST_Node_Impl<T> {
 			Parallel_Ranged_For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Parallel_For, std::move(t_loc), std::move(t_children))
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Parallel_Ranged_For, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() == 3);
 			}
@@ -1746,13 +1747,80 @@ namespace GoodLang {
 
 		};
 
-
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Map_Pair_AST_Node final : AST_Node_Impl<T> {
 			Map_Pair_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Map_Pair, std::move(t_loc), std::move(t_children)) 
 			{}
 		};
+
+		// Increment, and return the result. Faster than the postfix equivalent if the goal is to simply increment.
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Prefix_AST_Node final : AST_Node_Impl<T> {
+			Prefix_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Prefix, std::move(t_loc), std::move(t_children))
+				, m_oper(Operators::to_operator(this->text, true)) 
+			{}
+
+			// ++x;
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				auto var = this->children[0]->eval(currentScope);
+				return currentScope->CallFunction(this->text, { var }); // we currently do not attempt to validate -- just process the request and see what lands. 
+			};
+
+		private:
+			Operators::Opers m_oper = Operators::Opers::invalid;
+		};
+
+		template<typename T = Scripting::tracer::Noop_Tracer>
+		struct Postfix_AST_Node final : AST_Node_Impl<T> {
+			Postfix_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Postfix, std::move(t_loc), std::move(t_children))
+				, m_oper(Operators::to_operator(this->text, true)) {
+			}
+
+			// x++; 
+			// depending on the context, is either specifying the type (e.g. _ft, ull) or is modifying the underlying value (++, --)
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+				Any var(this->children[0]->eval(currentScope)); // an int, float, etc.                 
+
+				// the type is known. Short-circuit and get out fast. 
+				if (m_oper == Operators::Opers::pre_increment) {
+					auto out = var.Type().lock()->GetCopyConstructor()(var);
+					(void)currentScope->CallFunction("++", { var });
+					return out;
+				}
+				else if (m_oper == Operators::Opers::pre_decrement) {
+					auto out = var.Type().lock()->GetCopyConstructor()(var);
+					(void)currentScope->CallFunction("--", { var });
+					return out;
+				}
+				else if (m_oper == Operators::Opers::invalid) {
+					if (this->text != "" && this->text.length() >= 1) {
+						for (auto& unit_type : Units::value::GetValueTypes()) {
+							auto abbreviation = unit_type.second.UnitAbbreviation();
+							if (this->text == abbreviation) {
+								if (auto Class = currentScope->FindClass(unit_type.first)) {
+									return Class->CallFunction(Class->GetName(), { var });
+								}
+								else {
+									auto out = Any(unit_type.second);
+									currentScope->CallFunction("=", { out, var });
+									return out;
+								}
+							}
+						}
+					}
+					return var;					
+				}
+				else {
+					throw exception::eval_error("Only increment (i++) or decrement (i--) operators are supported in a postfix context, as well as custom postfixes.");
+				}
+			};
+
+			Operators::Opers m_oper = Operators::Opers::invalid;
+		};
+
 
 	};
 
@@ -5378,15 +5446,98 @@ namespace GoodLang {
 					return retval;
 				};
 
+				/// Reads a unary prefixed expression from input
+				bool Prefix(const std::shared_ptr<Scope>& currentScope) {
+					const auto prev_stack_top = m_match_stack.size();
+					using SS = utility::Static_String;
+					constexpr std::array<utility::Static_String, 6> prefix_opers{ SS{"++"}, SS{"--"}, SS{"-"}, SS{"+"}, SS{"!"}, SS{"~"} };
+					for (const auto& oper : prefix_opers) {
+						const bool is_char = oper.size() == 1;
+						if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(oper.c_str()))) {
+							if (!Operator(currentScope, m_operators.size() - 1)) {
+								throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", File_Position(m_position.line, m_position.col), "");
+							}
+							build_match<Prefix_AST_Node<Tracer>>(currentScope, prev_stack_top, oper.c_str());
+							return true;
+						}
+					}
+					return false;
+				};
+
+				bool Postfix(const std::shared_ptr<Scope>& currentScope, bool gotValueAlready) {
+					const auto prev_stack_top = m_match_stack.size();
+					const auto prev_pos = m_position;
+
+					// add support for custom post-fixes
+					// Examples: 
+					// 12_in = inch(12)
+					// 1_gal = gallon(1)
+
+					if (gotValueAlready) {
+						if (Symbol("++")) {
+							build_match<Postfix_AST_Node<Tracer>>(currentScope, prev_stack_top - 1, "++");
+							return true;
+						}
+						else if (Symbol("--")) {
+							build_match<Postfix_AST_Node<Tracer>>(currentScope, prev_stack_top - 1, "--");
+							return true;
+						}
+						else {
+							// evaluate the custom operators...
+							if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "" && m_match_stack[prev_stack_top - 1].first->identifier == AST_Node_Type::Constant) {
+								for (auto& unit_type : Units::value::GetValueTypes()) {
+									auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+									if (Symbol(abbreviation)) {
+										auto& rhs = std::dynamic_pointer_cast<Constant_AST_Node<Tracer>>(m_match_stack[prev_stack_top - 1].first)->m_value;
+										Any lhs;
+										if (auto Class = currentScope->FindClass(unit_type.first)) {
+											lhs = Class->CallFunction(Class->GetName(), { rhs });
+										}
+										else {
+											lhs = Any(unit_type.second);
+											currentScope->CallFunction("=", { lhs, rhs });
+										}
+										std::string temp = GoodLang::ToString(lhs);
+										
+										Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+										loc.end.column += abbreviation.length();
+
+										m_match_stack[prev_stack_top - 1].first = 
+											std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(
+												std::make_shared<Constant_AST_Node<Tracer>>(temp, loc, lhs)
+											);
+
+										return true;
+									}
+								}
+							}
+						}
+					}
+					else {
+						if (Id(true, currentScope)) {
+							if (Symbol("++")) {
+								build_match<Postfix_AST_Node<Tracer>>(currentScope, prev_stack_top, "++");
+								return true;
+							}
+							else if (Symbol("--")) {
+								build_match<Postfix_AST_Node<Tracer>>(currentScope, prev_stack_top, "--");
+								return true;
+							}
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+						}
+					}
+					return false;
+				}
+
 				/// Parses any of a group of 'value' style ast_node groups from input
 				bool Value(const std::shared_ptr<Scope>& currentScope) {
-					if (Var_Decl(currentScope) || Dot_Fun_Array(currentScope) /*|| Prefix(currentScope)*/) {
-						//Postfix(currentScope, true);
+					if (Var_Decl(currentScope) || Dot_Fun_Array(currentScope) || Prefix(currentScope)) {
+						Postfix(currentScope, true);
 						return true;
 					}
 					else {
-						return false;
-						// return Postfix(currentScope, false);
+						return Postfix(currentScope, false);
 					}
 				};
 
@@ -5483,7 +5634,6 @@ namespace GoodLang {
 				};
 #endif
 
-#if 1
 				/// Reads, and identifies, a short-form container initialization from input
 				bool Inline_Container(const std::shared_ptr<Scope>& currentScope) {
 					const auto prev_stack_top = m_match_stack.size();
@@ -5610,7 +5760,160 @@ namespace GoodLang {
 
 					return retval;
 				}
-#endif
+
+				/// Reads the C-style `for` conditions from input
+				bool For_Guards(const std::shared_ptr<Scope>& currentScope) {
+					if (!(Equation(currentScope) && Eol())) {
+						if (!Eol()) {
+							return false;
+						}
+						else {
+							m_match_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(), nullptr });
+						}
+					}
+
+					if (!(Equation(currentScope) && Eol())) {
+						if (!Eol()) {
+							return false;
+						}
+						else {
+							m_match_stack.push_back(ParseNode{ std::make_shared<Constant_AST_Node<Tracer>>(Any(true)), currentScope });
+						}
+					}
+
+					if (!Equation(currentScope)) {
+						m_match_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(), nullptr });
+					}
+
+					return true;
+				}
+				/// Reads the C-style `for` conditions from input
+				bool Parallel_For_Guards(const std::shared_ptr<Scope>& currentScope) {
+					if (!(Equation(currentScope) && Eol())) {
+						if (!Eol()) {
+							return false;
+						}
+						else {
+							m_match_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(), nullptr });
+						}
+					}
+
+					if (!(Equation(currentScope))) {						
+						m_match_stack.push_back(ParseNode{ std::make_shared<Constant_AST_Node<Tracer>>(Any(true)), currentScope });						
+					}
+
+					return true;
+				}
+				/// Reads the ranged `for` conditions from input
+				bool Range_Expression(const std::shared_ptr<Scope>& currentScope) {
+					// the first element will have already been captured by the For_Guards() call that preceeds it
+					return Char(':') && Equation(currentScope);
+				}
+				/// Reads a for block from input
+				bool For(const std::shared_ptr<Scope>& currentScope) {
+					bool retval = false;
+					const auto prev_stack_top = m_match_stack.size();
+
+					if (Keyword("for")) {
+						retval = true;
+
+						SkipWS(true);
+
+						if (!Char('(')) {
+							throw exception::eval_error("Incomplete 'for' expression", File_Position(m_position.line, m_position.col), "");
+						}
+
+						SkipWS(true);
+
+						bool classic_for = For_Guards(currentScope);
+						SkipWS(true);
+						if (classic_for) classic_for = classic_for && Char(')');
+						if (!classic_for) {
+							classic_for = Range_Expression(currentScope);
+							SkipWS(true);
+							if (classic_for) classic_for = classic_for && Char(')');
+
+							if (!classic_for) {
+								throw exception::eval_error("Incomplete 'for' expression", File_Position(m_position.line, m_position.col), "");
+							}
+
+							classic_for = false;
+						}
+
+						SkipWS(true);
+
+						if (!Block(currentScope)) {
+							throw exception::eval_error("Incomplete 'for' block", File_Position(m_position.line, m_position.col), "");
+						}
+
+						const auto num_children = m_match_stack.size() - prev_stack_top;
+
+						if (classic_for) {
+							if (num_children != 4) {
+								throw exception::eval_error("Incomplete 'for' expression", File_Position(m_position.line, m_position.col), "");
+							}
+							build_match<For_AST_Node<Tracer>>(currentScope, prev_stack_top);
+						}
+						else {
+							if (num_children != 3) {
+								throw exception::eval_error("Incomplete ranged-for expression", File_Position(m_position.line, m_position.col), "");
+							}
+							build_match<Ranged_For_AST_Node<Tracer>>(currentScope, prev_stack_top);
+						}
+					}
+					else if (Keyword("parallel_for")){ 
+						// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
+		                // parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
+						// parallel_for (range_declaration : range_expression) loop_statement;
+						retval = true;
+
+						SkipWS(true);
+
+						if (!Char('(')) {
+							throw exception::eval_error("Incomplete 'parallel_for' expression", File_Position(m_position.line, m_position.col), "");
+						}
+
+						SkipWS(true);
+
+						bool classic_for = Parallel_For_Guards(currentScope);
+						SkipWS(true);
+						if (classic_for) classic_for = classic_for && Char(')');
+						if (!classic_for){
+							classic_for = Range_Expression(currentScope);
+							SkipWS(true);
+							if (classic_for) classic_for = classic_for && Char(')');
+
+							if (!classic_for) {
+								throw exception::eval_error("Incomplete 'parallel_for' expression", File_Position(m_position.line, m_position.col), "");
+							}
+
+							classic_for = false;
+						}
+
+						SkipWS(true);
+
+						if (!Block(currentScope)) {
+							throw exception::eval_error("Incomplete 'parallel_for' block", File_Position(m_position.line, m_position.col), "");
+						}
+
+						const auto num_children = m_match_stack.size() - prev_stack_top;
+
+						if (classic_for) {
+							if (num_children != 3) {
+								throw exception::eval_error("Incomplete 'parallel_for' expression", File_Position(m_position.line, m_position.col), "");
+							}
+							build_match<Parallel_For_AST_Node<Tracer>>(currentScope, prev_stack_top);
+						}
+						else {
+							if (num_children != 3) {
+								throw exception::eval_error("Incomplete ranged-parallel_for expression", File_Position(m_position.line, m_position.col), "");
+							}
+							build_match<Parallel_Ranged_For_AST_Node<Tracer>>(currentScope, prev_stack_top);
+						}
+					} 
+
+					return retval;
+				}
 
 			private:
 				ParseNode parse(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) {
@@ -5675,7 +5978,7 @@ namespace GoodLang {
 
 						// TO-DO, complete impl of these evaluations:
 
-						if (/*Def(thisScope) || Try(thisScope) || */ If(thisScope) || /* While(thisScope) || Class(thisScope) || For(thisScope) || Switch(thisScope) || ControlBlock(thisScope) */ false) {
+						if (/*Def(thisScope) || Try(thisScope) || */ If(thisScope) || /* While(thisScope) || Class(thisScope) || */ For(thisScope) || /* Switch(thisScope) || ControlBlock(thisScope) */ false) {
 							if (!saw_eol) {
 								throw exception::eval_error("Two function definitions missing line separator",
 									File_Position(start.line, start.col),
@@ -5946,18 +6249,62 @@ int main() {
 			print("");
 
 
-			parsed_result = parse.Parse("0.999e10", globalScope);
+			parsed_result = parse.Parse("var i; ++i;", globalScope);
 			print(ToString(parsed_result));
 			print("");
 
 
 
-			parsed_result = parse.Parse("0.999e10", globalScope);
+			parsed_result = parse.Parse(R"start(
+				for (int i = 0; i < 100; ++i){
+					!i;
+					~i;
+				}
+			)start", globalScope);
 			print(ToString(parsed_result));
 			print("");
 
 
+			parsed_result = parse.Parse(R"start(
+				for (int& i : [0, 20, 30, 50]){
+					!i;
+					~i;
+				}
+			)start", globalScope);
+			print(ToString(parsed_result));
+			print("");
 
+
+			parsed_result = parse.Parse(R"start(
+				parallel_for (int i = 0 ; 100){
+					!i;
+					~i;
+				}
+			)start", globalScope);
+			print(ToString(parsed_result));
+			print("");
+
+
+			parsed_result = parse.Parse(R"start(
+				parallel_for (int& i : [0, 20, 30, 50]){
+					!i;
+					~i;
+				}
+			)start", globalScope);
+			print(ToString(parsed_result));
+			print("");
+
+
+			parsed_result = parse.Parse(R"start(
+				1000
+			)start", globalScope);
+			print(ToString(parsed_result));
+			print("");
+
+
+			parsed_result = parse.Parse("return 1000_ft + 1_m", globalScope);
+			print(ToString(parsed_result));
+			print("");
 
 			//constexpr auto a = parse.char_in_alphabet('c', Scripting::detail::Alphabet::id_alphabet);
 			//constexpr auto b = parse.char_in_alphabet(':', Scripting::detail::Alphabet::id_alphabet);

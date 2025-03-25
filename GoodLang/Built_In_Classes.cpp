@@ -87,7 +87,30 @@ namespace GoodLang {
 				x--;
 				return a;
 			}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
+			if constexpr (std::is_signed_v<T>) {
+				classPtr->AddFunction("-", make_callable([](Any const& a) -> T {
+					T& x = a.cast();
+					return -x;
+					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+			}
+			classPtr->AddFunction("+", make_callable([](Any const& a) -> T {
+				T& x = a.cast();
+				return +x;
+			}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+			if constexpr (std::is_integral_v<T>) {
+				classPtr->AddFunction("~", make_callable([](Any const& a) -> T {
+					T& x = a.cast();
+					return ~x;
+				}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+			}
 		}
+		else {
+			classPtr->AddFunction("!", make_callable([](bool const& a) -> bool {
+				return !a;
+			}));
+		}
+
+
 		// Functions
 		classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));
 		classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<T>::lowest(); }));
