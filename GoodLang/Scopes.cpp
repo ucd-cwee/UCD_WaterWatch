@@ -475,20 +475,25 @@ namespace GoodLang {
 		auto treeV = this->GetTypeConverterTreeVersion();
 		{
 			std::shared_ptr<Scope> out;
-
 			if (TryGetCached<3>(treeV, out, objName)) {
-				if (out->TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
-					if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
-						if (auto objFound = ptr->GetObj(objName)) {
-							if (found_obj) {
-								*found_obj = objFound;
+				if (out) {
+					if (out->TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
+						if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
+							if (auto objFound = ptr->GetObj(objName)) {
+								if (found_obj) {
+									*found_obj = objFound;
+								}
+								return true;
 							}
-							return true;
 						}
+						return false;
+						})) {
+						return out;
 					}
-					return false;
-					})) {
-					return out;
+				}
+				else {
+					// we tried this before an failed.
+					return nullptr;
 				}
 			}
 		}

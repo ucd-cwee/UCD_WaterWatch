@@ -367,6 +367,26 @@ namespace GoodLang {
 						value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 						value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 						value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+
+						value_namespace->AddFunction("++", make_callable([](Any const& a) -> Any { 
+							Units::value& out = a.cast(); out++; return a;
+						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+						value_namespace->AddFunction("--", make_callable([](Any const& a) -> Any { 
+							Units::value& out = a.cast(); out--; return a; 
+						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+						value_namespace->AddFunction("-", make_callable([](Any const& a) -> Any { 
+							Units::value& out = a.cast(); 
+							return -out;
+						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()));
+						value_namespace->AddFunction("+", make_callable([](Any const& a) -> Any { 
+							Units::value& out = a.cast(); 
+							return Units::math::abs(out);
+						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()));
+						value_namespace->AddFunction("~", make_callable([](Any const& a) -> Any { 
+							Units::value out = a.cast(); 
+							out = ~(int)(double)out;
+							return out;
+						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()));
 					}
 
 					if (1) {

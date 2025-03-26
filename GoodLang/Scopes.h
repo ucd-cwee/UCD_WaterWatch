@@ -537,7 +537,7 @@ namespace GoodLang {
 				}
 			}
 
-			auto ToClass = std::dynamic_pointer_cast<Scope>(this->FindClass(user_type_shared<T>()));
+			auto ToClass = std::dynamic_pointer_cast<Scope>(this->FindClass(ToType));
 			if (ToClass) {
 				// see if he can convert (fastest option)
 				if (auto Tree2 = ToClass->GetTypeConverterTree()) {
@@ -571,8 +571,64 @@ namespace GoodLang {
 			}
 
 			// Failure
-			throw exception::not_found_error(GetTypeName(user_type_shared<T>()));
+			throw exception::not_found_error(GetTypeName(ToType));
 		};
+		Any Cast(Any const& from, std::weak_ptr<Type_Info> const& To) const {
+			auto ToType = To.lock();
+			auto FromType = from.Type();
+
+			// see if it already matches (best option)
+			if (from.IsTypeOf(ToType)) {
+				return from;
+			}
+
+			// see if we can convert (fastest option)
+			if (auto Tree = this->GetTypeConverterTree()) {
+				if (Tree->Converts(FromType, ToType)) {
+					try {
+						return Tree->Convert(from, ToType);
+					}
+					catch (exception::bad_any_cast&) {}
+				}
+			}
+
+			auto ToClass = std::dynamic_pointer_cast<Scope>(this->FindClass(ToType));
+			if (ToClass) {
+				// see if he can convert (fastest option)
+				if (auto Tree2 = ToClass->GetTypeConverterTree()) {
+					if (Tree2->Converts(FromType, ToType)) {
+						try {
+							return Tree2->Convert(from, ToType);
+						}
+						catch (exception::bad_any_cast&) {}
+					}
+				}
+
+				// search for a function that can do it
+				if (1) {
+					std::vector<Any> params = { from };
+
+					// call a functor from our scope
+					try {
+						return this->CallFunction(ToClass->GetName(), params);
+					}
+					catch (exception::not_found_error) {}
+
+					// call a functor from their scope
+					try {
+						return ToClass->CallFunction(ToClass->GetName(), params);
+					}
+					catch (exception::not_found_error) {}
+				}
+
+				// Failure to cast From -> To
+				throw exception::bad_any_cast(FromType, ToType, __LINE__);
+			}
+
+			// Failure
+			throw exception::not_found_error(GetTypeName(ToType));
+		};
+
 
 	public:
 		virtual std::string ToString() const;
