@@ -15,69 +15,6 @@
 
 #include "../FiberTasks/Concurrent_Queue.h"
 
-//#include "../FiberTasks/Fibers.h"
-//#include "../FiberTasks/UnitsLibrary.h"
-//#include "../FiberTasks/ScriptingLanguage2.h"
-//#include <execution>
-//#include "../WaterWatchCpp/Clock.h"
-//#include "../FiberTasks/Actions2.h"
-//class stackThing {
-//public:
-//	std::string varName;
-//	fibers::Any var;
-//	bool perform_cout;
-//
-//public:
-//	stackThing() : varName(), var(), perform_cout{ true }{};
-//	stackThing(std::string const& name) : varName(name), var(), perform_cout{ true } {};
-//	template<typename T> stackThing(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
-//	template<typename T> stackThing(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
-//	template<typename T> stackThing(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
-//	stackThing(stackThing const& r) = default;
-//	stackThing(stackThing&& r) = default;
-//	stackThing& operator=(stackThing const& r) = default;
-//	stackThing& operator=(stackThing&& r) = default;
-//	~stackThing() { 
-//		if (perform_cout && (!varName.empty())) {
-//			std::cout << Units::printf("DELETING %s\n", varName.c_str());
-//		}
-//	};
-//	int length() const { return varName.length(); };
-//	std::string& get_var_name() { return varName; };
-//	bool operator==(stackThing const& a) const { return varName == a.varName; };
-//	bool operator!=(stackThing const& a) const { return varName != a.varName; };
-//};
-//class stackThing2 {
-//public:
-//	std::string varName;
-//	GoodLang::Any var;
-//	bool perform_cout;
-//
-//public:
-//	stackThing2() : varName(), var(), perform_cout{ true }{};
-//	stackThing2(std::string const& name) : varName(name), var(), perform_cout{ true } {};
-//	template<typename T> stackThing2(std::string const& name, T const& obj) : varName(name), var(obj), perform_cout{ true } {};
-//	template<typename T> stackThing2(std::string const& name, T&& obj) : varName(name), var(std::forward<T>(obj)), perform_cout{ true } {};
-//	template<typename T> stackThing2(std::string const& name, T&& obj, bool doCout) : varName(name), var(std::forward<T>(obj)), perform_cout(doCout) {};
-//	stackThing2(stackThing2 const& r) = default;
-//	stackThing2(stackThing2&& r) = default;
-//	stackThing2& operator=(stackThing2 const& r) = default;
-//	stackThing2& operator=(stackThing2&& r) = default;
-//	~stackThing2() {
-//		if (perform_cout && (!varName.empty())) {
-//			std::cout << Units::printf("DELETING %s\n", varName.c_str());
-//		}
-//	};
-//	int length() const { return varName.length(); };
-//	std::string& get_var_name() { return varName; };
-//	bool operator==(stackThing const& a) const { return varName == a.varName; };
-//	bool operator!=(stackThing const& a) const { return varName != a.varName; };
-//};
-//
-//static bool Thing() { return true; };
-//
-// *
-
 class stackThing {
 public:
 	std::string varName;
@@ -114,33 +51,6 @@ public:
 #define EXPECT_EQ(a, b) if (a != b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
-
-
-
-//class LambdaFunction {
-//public:
-//	std::map<std::string, GoodLang::Any> captures; // name for each capture must be provided
-//
-//
-//	GoodLang::Any operator()(std::shared_ptr<GoodLang::Scope> parentScope) const {
-//		if (parentScope) {
-//			auto newScope = std::make_shared< GoodLang::Scope>(parentScope);
-//			newScope->SetSelf(newScope);
-//
-//			for (auto& capture : captures) {
-//				newScope->AddObj(capture.first, std::make_shared<GoodLang::Any>(capture.second));
-//			}
-//
-//			// newScope->CallFunction();
-//
-//
-//
-//		}
-//	};
-//
-//
-//
-//};
 
 namespace GoodLang {
 	namespace Scripting {
@@ -397,11 +307,10 @@ namespace GoodLang {
 				const AST_Node_Type identifier;
 				const std::string text;
 				Parse_Location location;
+				std::vector<AST_Node_Trace> children;
 
 				const File_Position& start() const noexcept { return location.start; }
-
 				const File_Position& end() const noexcept { return location.end; }
-
 				std::string pretty_print() const {
 					std::ostringstream oss;
 
@@ -413,20 +322,16 @@ namespace GoodLang {
 
 					return oss.str();
 				}
-
 				std::vector<AST_Node_Trace> get_children(const AST_Node& node) {
 					const auto node_children = node.get_children();
 					return std::vector<AST_Node_Trace>(node_children.begin(), node_children.end());
 				};
-
 				AST_Node_Trace(const AST_Node& node)
 					: identifier(node.identifier)
 					, text(node.text)
 					, location(node.location)
 					, children(get_children(node)) {
-				};
-
-				std::vector<AST_Node_Trace> children;
+				};				
 			};
 
 		public:
@@ -460,9 +365,6 @@ namespace GoodLang {
 				oss << GoodLang::printf("%s(%s) %s : L%iC%i - L%iC%i\n",
 					t_prepend.c_str(), str.c_str(), this->text.c_str(),
 					this->location.start.line, this->location.start.column, this->location.end.line, this->location.end.column);
-
-				// oss << t_prepend << "(" << this->identifier.ToString() << ") " << this->text << " : " << this->location.start.line
-					// << ", " << this->location.start.column << '\n';
 
 				for (auto& elem : get_children()) {
 					oss << elem.get().to_string(t_prepend + "  ");
@@ -1423,7 +1325,7 @@ namespace GoodLang {
 								&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
 								&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
 							){
-								return currentScope->CallFunction(func, { currentScope, params });
+								return func->operator()({ currentScope, params });
 							}
 							else {
 								return currentScope->CallFunction(func, params);
@@ -2285,22 +2187,6 @@ namespace GoodLang {
 			};
 		}; 
 
-		namespace parser {
-			class Parser_Base {
-			public:
-				virtual AST_NodePtr parse(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) = 0;
-				virtual ~Parser_Base() = default;
-				Parser_Base() = default;
-				Parser_Base(Parser_Base&&) = default;
-				Parser_Base& operator=(Parser_Base&&) = delete;
-				Parser_Base& operator=(const Parser_Base&&) = delete;
-
-			protected:
-				Parser_Base(const Parser_Base&) = default;
-			};
-		}; // namespace parser
-
-
 		namespace detail {
 			enum Alphabet {
 				symbol_alphabet = 0,
@@ -2356,10 +2242,7 @@ namespace GoodLang {
 				out.SetFlag(AnyData::Flag::constant, true);
 				return out;
 			};
-
-		} // namespace detail
-
-
+		}; // namespace detail
 
 		namespace parser {
 			template <typename Tracer = Scripting::tracer::Noop_Tracer>
@@ -3491,7 +3374,11 @@ namespace GoodLang {
 				/// create a node
 				template<typename T, typename... Param>
 				std::shared_ptr<AST_Node_Impl<Tracer>> make_node(std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
-					auto out = std::make_shared<T>(std::string(t_match), Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col), std::forward<Param>(param)...);
+					auto out = std::make_shared<T>(
+						std::string(t_match), 
+						Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col), 
+						std::forward<Param>(param)...
+					);
 					return std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(out);
 				};
 
@@ -4448,7 +4335,6 @@ namespace GoodLang {
 
 					return true;
 				};
-
 
 				bool Dot_Fun_Array(const std::shared_ptr<Scope>& currentScope) {
 					bool retval = false;
@@ -5543,7 +5429,7 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
-				for (int i = 0 ; i < 1000000; ++i) {
+				for (int i = 0 ; i < 10000; ++i) {
 					y++;
 				}
 				return y;
@@ -5559,7 +5445,7 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
-				parallel_for (int i = 0 ; 1000000) {
+				parallel_for (int i = 0 ; 10000) {
 					y++;
 				}
 				return y;
@@ -5575,8 +5461,16 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
-				auto Lambda := [](Units::meter y){ ++y; };
-				parallel_for (int i = 0 ; 1000000) {
+				Units::foot x;
+				auto Lambda := [x](Units::meter y){ 
+					++y;
+					//return x; // to-do, optimization should look for a return in a block and remove all statements that proceed after that return within the block, since they cannot be hit.
+					
+					//++y; // e.g. this would be skipped
+					//return x; // to-do, ... then the optimization should look for a return statement as the final call and skip the throw statement (e.g. faster to not throw)
+					// e.g: "return x;" would become "x;"
+				};
+				for (int i = 0 ; i < 10000; ++i) {
 					Lambda(y);
 				}
 				return y;
@@ -5591,13 +5485,20 @@ int main() {
 
 
 
-			//constexpr auto a = parse.char_in_alphabet('c', Scripting::detail::Alphabet::id_alphabet);
-			//constexpr auto b = parse.char_in_alphabet(':', Scripting::detail::Alphabet::id_alphabet);
 
-			//print(ToString(parse.buildFloat("100.0f")));
-			//print(ToString(parse.buildInt(10, "100ll", false)));
-			//print(ToString(parse.buildFloat("123.123456678l")));
-			//print(ToString(parse.buildFloat("0.999e10")));
+
+
+			//parsed_result = parse.Parse(R"start(
+			//	int Func(int param) { return param + 1; };
+			//	return Func(0);
+			//)start", globalScope);
+			//if (1) {
+			//	Stopwatch sw;
+			//	sw.Start();
+			//	print(ToString(parsed_result.first->eval(parsed_result.second)));
+			//	print(ToString(Units::second(sw.Stop_s())) + " @ lambda-parallel-for-loop"); // 8 - 10 seconds
+			//}
+
 		}
 
 

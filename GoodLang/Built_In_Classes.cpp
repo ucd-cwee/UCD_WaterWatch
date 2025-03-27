@@ -369,10 +369,10 @@ namespace GoodLang {
 						value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 
 						value_namespace->AddFunction("++", make_callable([](Any const& a) -> Any { 
-							Units::value& out = a.cast(); out++; return a;
+							Units::value& out = a.cast(); ++out; return a;
 						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 						value_namespace->AddFunction("--", make_callable([](Any const& a) -> Any { 
-							Units::value& out = a.cast(); out--; return a; 
+							Units::value& out = a.cast(); --out; return a; 
 						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 						value_namespace->AddFunction("-", make_callable([](Any const& a) -> Any { 
 							Units::value& out = a.cast(); 
