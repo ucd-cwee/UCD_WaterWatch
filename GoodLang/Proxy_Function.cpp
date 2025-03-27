@@ -547,6 +547,20 @@ namespace GoodLang {
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+	double TypeConverter::ConversionCost_Fast(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+		if (To && To->is_any()) {
+			return 0;
+		}
+		else if (auto f = FindConverter(From, To)) {
+			return  f->cost();
+		}
+		else if (GoodLang::GetHash(From) == GoodLang::GetHash(To)) {
+			return 0;
+		}
+		return std::numeric_limits<double>::max();
+	};
+
+	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	bool TypeConverter::Converts(Any const& from, std::shared_ptr<Type_Info> const& To) {
 		return ConversionCost(from, To) != std::numeric_limits<double>::max();
 	};
@@ -633,6 +647,29 @@ namespace GoodLang {
 // Proxy_Function_Base 
 namespace GoodLang {
 	namespace details {
+		double Proxy_Function_Base::conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions) {
+			double out{ 0 };
+
+			// Quick return if the types exactly match.
+			if (t_to.size() > t_FromTypes.size()) return std::numeric_limits<double>::max();
+			// if (t_to.hash() == t_from.hash()) { return 0; } // exact match -- no conversions will happen
+
+			size_t i = 0;
+			double conversionCost;
+			for (; i < t_to.size(); ++i) {
+				conversionCost = t_conversions.ConversionCost_Fast(t_FromTypes[i], t_to[i].lock());
+				if (conversionCost == std::numeric_limits<double>::max()) {
+					return std::numeric_limits<double>::max();
+				}
+				else {
+					out += conversionCost;
+				}
+			}
+			for (; i < t_FromTypes.size(); ++i) {
+				out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
+			}
+			return out;
+		};
 		double Proxy_Function_Base::conversion_cost_fast(std::vector<Any> const& t_from, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions) {
 			double out{ 0 };
 
@@ -743,6 +780,10 @@ namespace GoodLang {
 		double Proxy_Function_Base::conversion_cost_fast(std::vector<Any> const& t_params, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, TypeConverter& t_conversions) const {
 			return Proxy_Function_Base::conversion_cost_fast(t_params, t_FromTypes, Arguments().Types(), t_conversions);
 		};
+		// Symbolic "cost" to perform the conversion. Not meant to be precise, but meant to be relative for comparison with other converters.
+		double Proxy_Function_Base::conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, TypeConverter& t_conversions) const {
+			return Proxy_Function_Base::conversion_cost_fast(t_FromTypes, Arguments().Types(), t_conversions);
+		};
 
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(const std::vector<Any>& params, TypeConverter& t_conversions) const {
@@ -838,10 +879,83 @@ namespace GoodLang {
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
+	Proxy_Function Functions::BuildMatch(std::string const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
+		static auto hasher{ std::hash<std::string>() };
+		static auto hasher2{ std::hash<ParamTypes>() };
+		if (auto func = at(functionName, Params)) {
+			// cache (or actual) found
+			if (func->m_function) {
+				return func->m_function;
+			}
+		}
+		if (1) {
+			// Three sorted groups of candidates. 
+			// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
+			std::map< size_t, std::array<std::map<double, FunctionPtr, std::less<double>>, 3>, std::greater<size_t>>
+				candidates;
+
+			// Create candidates.
+			{
+				std::vector<std::shared_ptr<Type_Info>> paramTypes;
+				for (auto& x : Params) paramTypes.push_back(x.lock());
+
+
+				auto locked{ std::shared_lock(m_mut) }; // LOCKED
+				auto& m_func_find = m_functions[hasher(functionName)];
+				for (auto& function : m_func_find.second) {
+					if (!function.second.second) continue;
+					if (!function.second.second->m_function) continue;
+					if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+					bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
+					bool isExplicitFunc = function.second.second->m_isEplicit;
+
+					auto conversionCost = function.second.second->m_function->conversion_cost_fast(paramTypes, m_typeConverters);
+					if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
+
+					if (isTemplateFunc) {
+						if (AllowTemplateInstantiation) {
+							candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
+						}
+					}
+					else {
+						if (conversionCost == 0) {
+							candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
+						}
+						else if (AllowTypeConversion && !isExplicitFunc) {
+							candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
+						}
+					}
+				}
+			}
+
+			// Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).
+			for (auto& numParams : candidates) {
+				for (auto& preference_order : numParams.second) {
+					for (auto& candidate : preference_order) {
+						if (candidate.first >= details::TypeConversionWorstCaseCost) continue;
+						if (!candidate.second) continue;
+
+						// ParamTypes ParamTypesToCache{ params };
+						Function FunctionToCache{ candidate.second->m_function };
+						FunctionToCache.m_isCached = true;
+						// if someone already beat us to it, it should return the "current" value
+						if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+							return func->m_function;
+						}
+					}
+				}
+			}
+		}
+		return nullptr;
+	};
+
+	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 	Proxy_Function Functions::BuildMatch(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
+
 		ParamTypes Params{ params };
+
 		if (auto func = at(functionName, Params)) {
 			// cache (or actual) found
 			if (func->m_function) {
@@ -895,11 +1009,11 @@ namespace GoodLang {
 						if (candidate.first >= details::TypeConversionWorstCaseCost) continue;
 						if (!candidate.second) continue;
 
-						ParamTypes ParamTypesToCache{ params };
+						// ParamTypes ParamTypesToCache{ params };
 						Function FunctionToCache{ candidate.second->m_function };
 						FunctionToCache.m_isCached = true;
 						// if someone already beat us to it, it should return the "current" value
-						if (auto func = this->emplace(functionName, ParamTypesToCache, FunctionToCache, false)) {
+						if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
 							return func->m_function;
 						}
 					}

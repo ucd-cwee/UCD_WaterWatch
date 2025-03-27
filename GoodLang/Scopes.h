@@ -341,6 +341,7 @@ namespace GoodLang {
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params);
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree);
+		virtual Proxy_Function GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree);
 
 	public:
 		std::shared_ptr<Scope> FindNearestScopeWhere(std::function<bool(std::shared_ptr<Scope> const&)> const& func) const;
@@ -501,13 +502,20 @@ namespace GoodLang {
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
 
+		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
+		Proxy_Function FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
+
 		virtual size_t GetTypeConverterTreeVersion() const;
 		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const;
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params);
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params);
 
+
+
 		std::vector<std::shared_ptr<Scope>> GetScopesForObjectSearch() const;
+
+
 
 	public: // private:
 		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const;
@@ -728,6 +736,7 @@ namespace GoodLang {
 	public:
 		virtual std::shared_ptr< Functions > GetFunctions() const override;
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const override;
+		virtual Proxy_Function GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree) override;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) override;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params) override;
 

@@ -587,6 +587,8 @@ namespace GoodLang {
 		double ConversionCost(Any const& from, std::shared_ptr<Type_Info> const& To);
 		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 		double ConversionCost_Fast(Any const& from, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To);
+		// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
+		double ConversionCost_Fast(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To);
 		// will throw an error if the conversion was impossible.
 		template<typename To_t> double ConversionCost(Any const& from) {
 			static auto to_type{ user_type_shared<To_t>().lock() };
@@ -946,6 +948,7 @@ namespace GoodLang {
 		*/
 		class Proxy_Function_Base {
 		private:
+			static double conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static double conversion_cost_fast(std::vector<Any> const& t_from, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static double conversion_cost(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static std::vector<Any> convert(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
@@ -970,6 +973,7 @@ namespace GoodLang {
 			double conversion_cost(std::vector<Any> const& t_params, TypeConverter& t_conversions) const;
 			// Symbolic "cost" to perform the conversion. Not meant to be precise, but meant to be relative for comparison with other converters.
 			double conversion_cost_fast(std::vector<Any> const& t_params, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, TypeConverter& t_conversions) const;
+			double conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, TypeConverter& t_conversions) const;
 
 			// Does want conversions -- ensure types match if possible.
 			Any operator()(const std::vector<Any>& params, TypeConverter& t_conversions) const;
@@ -4122,6 +4126,7 @@ namespace GoodLang {
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 		Proxy_Function BuildMatch(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
+		Proxy_Function BuildMatch(std::string const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
 		Any Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
 
 	};

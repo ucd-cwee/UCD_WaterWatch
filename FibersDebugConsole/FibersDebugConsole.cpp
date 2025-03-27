@@ -362,9 +362,12 @@ namespace GoodLang {
 			std::string to_string(const std::string& t_prepend = "") const {
 				std::ostringstream oss;
 				std::string str = std::string(this->identifier.ToString());
-				oss << GoodLang::printf("%s(%s) %s : L%iC%i - L%iC%i\n",
+				std::string returnType = ToString(this->return_type);
+				oss << GoodLang::printf("%s(%s) %s : L%iC%i - L%iC%i -> %s\n",
 					t_prepend.c_str(), str.c_str(), this->text.c_str(),
-					this->location.start.line, this->location.start.column, this->location.end.line, this->location.end.column);
+					this->location.start.line, this->location.start.column, this->location.end.line, this->location.end.column,
+					returnType.c_str()
+				);
 
 				for (auto& elem : get_children()) {
 					oss << elem.get().to_string(t_prepend + "  ");
@@ -751,9 +754,33 @@ namespace GoodLang {
 			};
 		};
 
+		namespace detail {
+			template<typename T>
+			bool GetTextImpl(T const& r, std::string_view& out) {
+				if (!r->text.empty()) {
+					out = r->text;
+					return true;
+				}
+				else {
+					for (auto& child : r->children) {
+						if (GetTextImpl(child, out)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			};
+		};
+		template<typename T>
+		std::string_view GetText(T const& r) {
+			std::string_view out;
+			(void)detail::GetTextImpl(r, out);
+			return out;
+		};
+
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl<T> {
-			Fold_Right_Binary_Operator_AST_Node(const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children, Any t_rhs)
+			Fold_Right_Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children, Any t_rhs)
 				: AST_Node_Impl<T>(t_oper, AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
 				, m_oper(Operators::to_operator(t_oper))
 				, m_rhs(std::move(t_rhs)) 
@@ -770,10 +797,15 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Binary_Operator_AST_Node : AST_Node_Impl<T> {
-			Binary_Operator_AST_Node(const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(t_oper, AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
 				, m_oper(Operators::to_operator(t_oper)) 
-			{}
+			{
+				//GoodLang::ParamTypes params({ this->children[0]->return_type, this->children[1]->return_type });
+				//if (Proxy_Function func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
+				//	this->return_type = func->Returns();
+				//}
+			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), this->children[1]->eval(currentScope) });
@@ -786,9 +818,11 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct File_AST_Node final : AST_Node_Impl<T> {
-			File_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			File_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::File, std::move(t_loc), std::move(t_children)) 
-			{}
+			{
+				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				try {
@@ -819,12 +853,11 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Constant_AST_Node final : public AST_Node_Impl<T> {
-			Constant_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, Any t_value)
+			Constant_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, Any t_value)
 				: AST_Node_Impl<T>(t_ast_node_text, AST_Node_Type::Constant, std::move(t_loc))
 				, m_value(std::move(t_value)) 
 			{
 				m_value.SetFlag(AnyData::Flag::constant, true);
-				//this->m_copyConstructor = &m_value.Type().lock()->GetCopyConstructor();
 				this->return_type = m_value.Type().lock()->MakeConstRef();
 			}
 
@@ -833,26 +866,24 @@ namespace GoodLang {
 				, m_value(std::move(t_value)) 
 			{
 				m_value.SetFlag(AnyData::Flag::constant, true);
-				//this->m_copyConstructor = &m_value.Type().lock()->GetCopyConstructor();
 				this->return_type = m_value.Type().lock()->MakeConstRef();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>&) const override { 
-				return m_value; // m_copyConstructor->operator()(m_value);
+				return m_value;
 			}
 
-			//std::function<Any(Any const&)>* m_copyConstructor;
 			Any m_value;
 		};
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Id_AST_Node final : AST_Node_Impl<T> {
-			Id_AST_Node(const std::string& t_ast_node_text, Parse_Location t_loc)
+			Id_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_ast_node_text, Parse_Location t_loc)
 				: AST_Node_Impl<T>(t_ast_node_text, AST_Node_Type::Id, std::move(t_loc)) 
 			{
-				// Consider (if possible) doing the look-up at compile time, rather than at script-run time.
-				// If fails, we can still allow the script to move forward, but if succeeds, the user should be rewarded with better performance and better debug info. 
-				this->return_type = user_type_shared<void>();
+				//if (auto obj = currentScope->FindObj(this->text)) {
+				//	const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+				//}
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -866,9 +897,10 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Arg_AST_Node final : AST_Node_Impl<T> {
-			Arg_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Arg_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg, std::move(t_loc), std::move(t_children))
 			{
+				//this->return_type = this->children.back()->return_type;
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -878,11 +910,11 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Arg_List_AST_Node final : AST_Node_Impl<T> {
-			Arg_List_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg_List, std::move(t_loc), std::move(t_children)) 
+			Arg_List_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg_List, std::move(t_loc), std::move(t_children))
 			{
-				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::Arg_List, true);
-			}
+				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+			};
 
 			static std::string get_arg_name(const AST_Node_Impl<T>& t_node) {
 				if (t_node.children.empty()) {
@@ -905,25 +937,6 @@ namespace GoodLang {
 				return retval;
 			}
 
-			//static std::pair<std::string, Type_Info> get_arg_type(const AST_Node_Impl<T>& t_node, const chaiscript::detail::Dispatch_State& t_ss) {
-			//	if (t_node.children.size() < 2) {
-			//		return {};
-			//	}
-			//	else {
-			//		return { t_node.children[0]->text, t_ss->get_type(t_node.children[0]->text, false) };
-			//	}
-			//}
-
-			//static dispatch::Param_Types get_arg_types(const AST_Node_Impl<T>& t_node, const chaiscript::detail::Dispatch_State& t_ss) {
-			//	chaiscript::small_vector<std::pair<std::string, Type_Info>> retval;
-
-			//	for (const auto& child : t_node.children) {
-			//		retval.push_back(get_arg_type(*child, t_ss));
-			//	}
-
-			//	return dispatch::Param_Types(std::move(retval));
-			//}
-
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				// evaluate all of the children, return the result of the last child
 				int numChildren = this->children.size();
@@ -941,10 +954,10 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Scopeless_Block_AST_Node final : AST_Node_Impl<T> {
-			Scopeless_Block_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Scopeless_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
 			{
-				// this->return_type = this->children[this->children.size() - 1]->return_type;
+				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -964,10 +977,10 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Block_AST_Node final : AST_Node_Impl<T> {
-			Block_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
 			{
-				// this->return_type = this->children[this->children.size() - 1]->return_type;
+				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -992,15 +1005,11 @@ namespace GoodLang {
 		*/
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Var_Decl_AST_Node final : AST_Node_Impl<T> {
-			Var_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Var_Decl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Var_Decl, std::move(t_loc), std::move(t_children)) 
 			{
 				assert(this->children.size() >= 1);
-
-				/*if (this->children.size() > 0) {
-					this->potentialReturnType = ReturnType(Type_Info(), AST_Node_Type::Var_Decl, false);
-					this->children[0]->potentialReturnType.ForwardRef(this->potentialReturnType);
-				}*/
+				// this->return_type = user_type_shared<Var>();
 			}
 
 			/*! Empty variable assignment:
@@ -1020,10 +1029,11 @@ namespace GoodLang {
 		*/
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct TypeID_Decl_AST_Node final : AST_Node_Impl<T> {
-			TypeID_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			TypeID_Decl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::TypeID, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() >= 1);
+				// this->return_type = user_type_shared<std::weak_ptr<Type_Info>>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1038,42 +1048,20 @@ namespace GoodLang {
 			}
 		};
 
-		namespace detail {
-			template<typename T>
-			bool GetTextImpl(T const& r, std::string_view& out) {
-				if (!r->text.empty()) {
-					out = r->text;
-					return true;
-				}
-				else {
-					for (auto& child : r->children) {
-						if (GetTextImpl(child, out)) {
-							return true;
-						}
-					}
-				}
-				return false;
-			};
-		};
-		template<typename T>
-		std::string_view GetText(T const& r) {
-			std::string_view out;
-			(void)detail::GetTextImpl(r, out);
-			return out;
-		};
-
 		/*
 		double x;
 		*/
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Assign_Retroactively_AST_Node final : AST_Node_Impl<T> {
-			Assign_Retroactively_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Assign_Retroactively_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Assign_Retroactively, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() >= 1);
 
 				type_name = std::string(GetText(this->children[0]->children[0]));//  ->text; // e.g. double, int, std::string
 				idname = std::string(GetText(this->children[1]));// ->text; // e.g. x, y, z
+
+				// if (auto Class = currentScope->FindClass(type_name))  this->return_type = Class->GetClassType();				
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1092,9 +1080,11 @@ namespace GoodLang {
 		*/
 		template<typename T>
 		struct Assign_Decl_AST_Node final : AST_Node_Impl<T> {
-			Assign_Decl_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children)) 
-			{}
+			Assign_Decl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children))
+			{
+				// this->return_type = this->children[1]->return_type;
+			};
 
 			/*! Non-Empty variable assignment:
 			  var j = 100;
@@ -1117,11 +1107,10 @@ namespace GoodLang {
 		// if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node		
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct If_AST_Node final : AST_Node_Impl<T> {
-			If_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			If_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::If, std::move(t_loc), std::move(t_children)) 
 			{
 				assert(this->children.size() >= 2); // CONDITION, IF_TRUE_BLOCK, ELSE_BLOCK
-				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::If, true);
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1149,11 +1138,10 @@ namespace GoodLang {
 		// while (Scopeless_Block_AST_Node) Block_AST_Node
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct While_AST_Node final : AST_Node_Impl<T> {
-			While_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			While_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::While, std::move(t_loc), std::move(t_children)) 
 			{
 				assert(this->children.size() >= 2);
-				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::While, true);
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1187,11 +1175,10 @@ namespace GoodLang {
 		// for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct For_AST_Node final : AST_Node_Impl<T> {
-			For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::For, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() >= 4);
-				// this->potentialReturnType = ReturnType(user_type<void>(), AST_Node_Type::While, true);
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1237,8 +1224,9 @@ namespace GoodLang {
 		// for (range_declaration : range_expression) loop_statement
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Ranged_For_AST_Node final : AST_Node_Impl<T> {
-			Ranged_For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Ranged_For, std::move(t_loc), std::move(t_children)) {
+			Ranged_For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Ranged_For, std::move(t_loc), std::move(t_children)) 
+			{
 				assert(this->children.size() == 3);
 			}
 
@@ -1297,15 +1285,38 @@ namespace GoodLang {
 		// ID(ARG_LIST)
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Fun_Call_AST_Node : AST_Node_Impl<T> {
-			Fun_Call_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children)) {
+			Fun_Call_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children)) 
+			{
 				assert(!this->children.empty());
 
-				// Consider (if possible) doing the look-up at compile time, rather than at script-run time.
-				// If fails, we can still allow the script to move forward, but if succeeds, the user should be rewarded with better performance and better debug info. 
-				this->return_type = user_type_shared<void>();
-
 				function_name = GetText(this->children[0]);
+
+				//std::vector<std::weak_ptr<Type_Info>> params;
+				//for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
+				//	params.push_back(child->return_type);
+				//}
+				//ParamTypes Params{ params };
+
+				//if (auto obj = currentScope->FindObj(function_name)) {
+				//	if (Proxy_Function func = obj->cast<Proxy_Function>()) {
+				//		this->return_type = func->Returns();
+				//	}
+				//	else {
+				//		std::vector<std::weak_ptr<Type_Info>> params2{ obj->Type() };
+				//		for (auto& x : params) params2.push_back(x);
+				//		ParamTypes Params2{ params2 };
+
+				//		if (Proxy_Function func = currentScope->FindFunction("()", Params2, *currentScope->GetTypeConverterTree())) {
+				//			this->return_type = func->Returns();
+				//		}
+				//	}
+				//}
+				//else {
+				//	if (Proxy_Function func = currentScope->FindFunction(function_name, Params, *currentScope->GetTypeConverterTree())) {
+				//		this->return_type = func->Returns();
+				//	}
+				//}
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1357,7 +1368,7 @@ namespace GoodLang {
 		// parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Parallel_For_AST_Node final : AST_Node_Impl<T> {
-			Parallel_For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Parallel_For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Parallel_For, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() == 3);
@@ -1431,7 +1442,7 @@ namespace GoodLang {
 		// parallel_for (range_declaration : range_expression) loop_statement;
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Parallel_Ranged_For_AST_Node final : AST_Node_Impl<T> {
-			Parallel_Ranged_For_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Parallel_Ranged_For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Parallel_Ranged_For, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() == 3);
@@ -1519,9 +1530,10 @@ namespace GoodLang {
 		// [0, 1, 2, 3]
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Inline_Array_AST_Node final : AST_Node_Impl<T> {
-			Inline_Array_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Array, std::move(t_loc), std::move(t_children)) {
-				// this->potentialReturnType = ReturnType(user_type<std::vector<Boxed_Value>>(), AST_Node_Type::Inline_Array, true);
+			Inline_Array_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Array, std::move(t_loc), std::move(t_children)) 
+			{
+				// this->return_type = user_type_shared<Vector<Var>>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1543,9 +1555,10 @@ namespace GoodLang {
 		// ["":10, 10:10, Vector():10, 20:Vector()]
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Inline_Map_AST_Node final : AST_Node_Impl<T> {
-			Inline_Map_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
-				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Map, std::move(t_loc), std::move(t_children)) {
-				// this->potentialReturnType = ReturnType(user_type<std::vector<Boxed_Value>>(), AST_Node_Type::Inline_Array, true);
+			Inline_Map_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Map, std::move(t_loc), std::move(t_children)) 
+			{
+				// this->return_type = user_type_shared<Map<size_t, std::pair<Var, Var>>>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1564,15 +1577,25 @@ namespace GoodLang {
 		// return ARG
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Return_AST_Node final : AST_Node_Impl<T> {
-			Return_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Return_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Return, std::move(t_loc), std::move(t_children)) 
-			{}
+			{
+				//if (this->children.size() == 0) {
+
+				//}
+				//else if (this->children.size() == 1) {
+				//	this->return_type = this->children[0]->return_type;
+				//}
+				//else {
+				//	this->return_type = user_type_shared<Vector<Var>>();
+				//}
+			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				if (this->children.size() == 0) {
 					throw detail::Return_Value{ Any() };
 				}
-				if (this->children.size() == 1) {
+				else if (this->children.size() == 1) {
 					throw detail::Return_Value{ this->children[0]->eval(currentScope) };
 				}
 				else {
@@ -1588,7 +1611,7 @@ namespace GoodLang {
 		// empty lines, comments, etc.
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Noop_AST_Node final : AST_Node_Impl<T> {
-			Noop_AST_Node(std::string t_ast_node_text, Parse_Location t_loc)
+			Noop_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc)
 				: AST_Node_Impl<T>(t_ast_node_text, AST_Node_Type::Noop, t_loc)
 			{};
 
@@ -1604,10 +1627,36 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Equation_AST_Node final : AST_Node_Impl<T> {
-			Equation_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Equation_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Equation, std::move(t_loc), std::move(t_children))
-				, m_oper(Operators::to_operator(this->text)) {
+				, m_oper(Operators::to_operator(this->text)) 
+			{
 				assert(this->children.size() == 2);
+
+				//if ((m_oper == Operators::Opers::assign_if_null) || (this->text == "?=")) {
+				//	// should actually test the return type of the first param first...
+				//	this->return_type = this->children[1]->return_type;
+				//}
+				//else {
+				//	auto lhs = this->children[0]->return_type;
+				//	auto rhs = this->children[1]->return_type;
+				//	ParamTypes params({ lhs, rhs });
+				//	if (m_oper == Operators::Opers::assign) {
+				//		if (auto func = currentScope->FindFunction("=", params, *currentScope->GetTypeConverterTree())) {
+				//			this->return_type = func->Returns();
+				//		}
+				//	}
+				//	else if (this->text == ":=") {
+				//		if (auto func = currentScope->FindFunction(":=", params, *currentScope->GetTypeConverterTree())) {
+				//			this->return_type = func->Returns();
+				//		}
+				//	}
+				//	else {
+				//		if (auto func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
+				//			this->return_type = func->Returns();
+				//		}
+				//	}
+				//}
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1650,9 +1699,10 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Logical_And_AST_Node final : AST_Node_Impl<T> {
-			Logical_And_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Logical_And_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Logical_And, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 2);
+				//this->return_type = user_type_shared<bool>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1662,9 +1712,10 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Logical_Or_AST_Node final : AST_Node_Impl<T> {
-			Logical_Or_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Logical_Or_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Logical_Or, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 2);
+				//this->return_type = user_type_shared<bool>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1674,7 +1725,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Reference_AST_Node final : AST_Node_Impl<T> {
-			Reference_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Reference_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Reference, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 1);
 			}
@@ -1688,7 +1739,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Array_Call_AST_Node final : AST_Node_Impl<T> {
-			Array_Call_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Array_Call_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Array_Call, std::move(t_loc), std::move(t_children)) 
 			{}
 
@@ -1710,7 +1761,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Dot_Access_AST_Node final : AST_Node_Impl<T> {
-			Dot_Access_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Dot_Access_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Dot_Access, std::move(t_loc), std::move(t_children))
 				, m_fun_name(((this->children[1]->identifier == AST_Node_Type::Fun_Call) || (this->children[1]->identifier == AST_Node_Type::Array_Call))
 					? this->children[1]->children[0]->text
@@ -1743,7 +1794,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Map_Pair_AST_Node final : AST_Node_Impl<T> {
-			Map_Pair_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Map_Pair_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Map_Pair, std::move(t_loc), std::move(t_children)) 
 			{}
 		};
@@ -1751,7 +1802,7 @@ namespace GoodLang {
 		// Increment, and return the result. Faster than the postfix equivalent if the goal is to simply increment.
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Prefix_AST_Node final : AST_Node_Impl<T> {
-			Prefix_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Prefix_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Prefix, std::move(t_loc), std::move(t_children))
 				, m_oper(Operators::to_operator(this->text, true)) 
 			{}
@@ -1768,7 +1819,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Postfix_AST_Node final : AST_Node_Impl<T> {
-			Postfix_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Postfix_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Postfix, std::move(t_loc), std::move(t_children))
 				, m_oper(Operators::to_operator(this->text, true)) {
 			}
@@ -1817,7 +1868,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Break_AST_Node final : AST_Node_Impl<T> {
-			Break_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Break_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Break, std::move(t_loc), std::move(t_children)) {
 			}
 
@@ -1826,7 +1877,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Continue_AST_Node final : AST_Node_Impl<T> {
-			Continue_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Continue_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Continue, std::move(t_loc), std::move(t_children)) {
 			}
 
@@ -1835,7 +1886,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Switch_AST_Node final : AST_Node_Impl<T> {
-			Switch_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Switch_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Switch, std::move(t_loc), std::move(t_children)) {
 			}
 
@@ -1876,7 +1927,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Case_AST_Node final : AST_Node_Impl<T> {
-			Case_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Case_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Case, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 2); /* how many children does it have? */
 			}
@@ -1890,7 +1941,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Default_AST_Node final : AST_Node_Impl<T> {
-			Default_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Default_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Default, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 1);
 			}
@@ -1904,7 +1955,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Do_AST_Node final : AST_Node_Impl<T> {
-			Do_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Do_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Do, std::move(t_loc), std::move(t_children)) 
 			{}
 
@@ -1931,7 +1982,7 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Try_AST_Node final : AST_Node_Impl<T> {
-			Try_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Try_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Try, std::move(t_loc), std::move(t_children)) 
 			{}
 
@@ -2042,21 +2093,21 @@ namespace GoodLang {
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Catch_AST_Node final : AST_Node_Impl<T> {
-			Catch_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Catch_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Catch, std::move(t_loc), std::move(t_children)) 
 			{}
 		};
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Finally_AST_Node final : AST_Node_Impl<T> {
-			Finally_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Finally_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Finally, std::move(t_loc), std::move(t_children)) 
 			{}
 		};
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
 		struct Lambda_AST_Node final : AST_Node_Impl<T> {
-			Lambda_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
+			Lambda_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(t_ast_node_text,
 					AST_Node_Type::Lambda,
 					std::move(t_loc),
@@ -3179,20 +3230,20 @@ namespace GoodLang {
 							if (Hex_()) {
 								auto match = Position::str(start, m_position);
 								auto bv = buildInt(16, match, true);
-								m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)), currentScope });
+								m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
 								return true;
 							}
 
 							if (Binary_()) {
 								auto match = Position::str(start, m_position);
 								auto bv = buildInt(2, match, true);
-								m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)), currentScope });
+								m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
 								return true;
 							}
 							if (Float_()) {
 								auto match = Position::str(start, m_position);
 								auto bv = buildFloat(match);
-								m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)), currentScope });
+								m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
 								return true;
 							}
 							else {
@@ -3200,11 +3251,11 @@ namespace GoodLang {
 								auto match = Position::str(start, m_position);
 								if (!match.empty() && (match[0] == '0')) {
 									auto bv = buildInt(8, match, false);
-									m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)), currentScope });
+									m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
 								}
 								else if (!match.empty()) {
 									auto bv = buildInt(10, match, false);
-									m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, std::move(bv)), currentScope });
+									m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
 								}
 								else {
 									return false;
@@ -3362,7 +3413,8 @@ namespace GoodLang {
 
 					m_match_stack.push_back(ParseNode{
 						std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(std::make_shared<NodeType>(
-							std::move(t_text)
+							currentScope
+							, std::move(t_text)
 							, std::move(filepos)
 							, std::move(new_children)
 						))
@@ -3373,8 +3425,9 @@ namespace GoodLang {
 				
 				/// create a node
 				template<typename T, typename... Param>
-				std::shared_ptr<AST_Node_Impl<Tracer>> make_node(std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
+				std::shared_ptr<AST_Node_Impl<Tracer>> make_node(const std::shared_ptr<Scope>& currentScope, std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
 					auto out = std::make_shared<T>(
+						currentScope,
 						std::string(t_match), 
 						Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col), 
 						std::forward<Param>(param)...
@@ -3397,7 +3450,7 @@ namespace GoodLang {
 						}
 						std::string_view comment = Position::str(start, m_position);
 						auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
-						m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(std::string(comment), parseLoc), nullptr });
+						m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(nullptr, std::string(comment), parseLoc), nullptr });
 
 						return true;
 					}
@@ -3418,7 +3471,7 @@ namespace GoodLang {
 
 						std::string_view comment = Position::str(start, m_position);
 						auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
-						m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(std::string(comment), parseLoc), nullptr });
+						m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(nullptr, std::string(comment), parseLoc), nullptr });
 
 						return true;
 
@@ -3439,7 +3492,7 @@ namespace GoodLang {
 						}
 						std::string_view comment = Position::str(start, m_position);
 						auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
-						m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(std::string(comment), parseLoc), nullptr });
+						m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node<Tracer>>(nullptr, std::string(comment), parseLoc), nullptr });
 
 						return true;
 					}
@@ -3533,22 +3586,22 @@ namespace GoodLang {
 
 						auto foundConstant = constants.find(text);
 						if (foundConstant != constants.end()) {
-							m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(text, start.line, start.col, foundConstant->second), currentScope });
+							m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(currentScope, text, start.line, start.col, foundConstant->second), currentScope });
 						}
 						else {
 							switch (hash(text)) {
 							case hash("__LINE__"): {
-								m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(text, start.line, start.col, detail::const_var(start.line)), currentScope });
+								m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(currentScope, text, start.line, start.col, detail::const_var(start.line)), currentScope });
 							} break;
 								//case hash("__FILE__"): {
-								//	m_match_stack.push_back(make_node<eval::Constant_AST_Node<Tracer>>(text, start.line, start.col, detail::const_var(m_filename)));
+								//	m_match_stack.push_back(make_node<eval::Constant_AST_Node<Tracer>>(currentScope, text, start.line, start.col, detail::const_var(m_filename)));
 								//} break;
 							default: {
 								auto val = text;
 								if (*start == '`') { // 'escaped' literal, like an operator name ( e.g. `[]`(...) )
 									val = Position::str(start + 1, m_position - 1);
 								}
-								m_match_stack.push_back({ make_node<Id_AST_Node<Tracer>>(val, start.line, start.col), currentScope }); // e.g. "x", "Units::meter", etc.
+								m_match_stack.push_back({ make_node<Id_AST_Node<Tracer>>(currentScope, val, start.line, start.col), currentScope }); // e.g. "x", "Units::meter", etc.
 							} break;
 							}
 						}
@@ -3583,7 +3636,7 @@ namespace GoodLang {
 									if (*s == '{') {
 										// We've found an interpolation point
 
-										m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, match), currentScope });
+										m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, match), currentScope });
 
 										if (cparser.is_interpolated) {
 											// If we've seen previous interpolation, add on instead of making a new one
@@ -3607,7 +3660,7 @@ namespace GoodLang {
 
 											const auto tostr_stack_top = m_match_stack.size();
 
-											m_match_stack.push_back({ make_node<Id_AST_Node<Tracer>>("to_string", start.line, start.col), currentScope });
+											m_match_stack.push_back({ make_node<Id_AST_Node<Tracer>>(currentScope, "to_string", start.line, start.col), currentScope });
 
 											const auto ev_stack_top = m_match_stack.size();
 
@@ -3645,7 +3698,7 @@ namespace GoodLang {
 							return cparser.is_interpolated;
 						}();
 
-						m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(match, start.line, start.col, match), currentScope });
+						m_match_stack.push_back({ make_node<Constant_AST_Node<Tracer>>(currentScope, match, start.line, start.col, match), currentScope });
 
 						if (is_interpolated) {
 							build_match<Binary_Operator_AST_Node<Tracer>>(currentScope, prev_stack_top, "+");
@@ -4077,7 +4130,7 @@ namespace GoodLang {
 
 										m_match_stack[prev_stack_top - 1].first = 
 											std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(
-												std::make_shared<Constant_AST_Node<Tracer>>(temp, loc, lhs)
+												std::make_shared<Constant_AST_Node<Tracer>>(currentScope, temp, loc, lhs)
 											);
 
 										return true;
@@ -5426,6 +5479,20 @@ int main() {
 
 
 
+			parsed_result = parse.Parse(R"start(
+				int x = 100;
+				auto lambda := [](){ 100; };
+				return "100 == ${ "100" } == ${ 100 } == ${ x } == ${ lambda() }";
+			)start", globalScope);
+			print(ToString(parsed_result));
+			print("");
+			print(ToString(parsed_result.first->eval(parsed_result.second)));
+
+
+
+
+
+
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
@@ -5500,196 +5567,6 @@ int main() {
 			//}
 
 		}
-
-
-
-		if (1) {
-			auto scope = std::make_shared<GoodLang::Scope>(globalScope);
-			scope->SetSelf(scope);
-
-			auto block = std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
-					std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Any(100))
-				})
-			});
-
-			EXPECT_EQ("100", ToString(block->eval(scope)));
-
-			EXPECT_EQ("100", ToString(scope->FindObj("x")));
-
-			auto scope2 = std::make_shared<GoodLang::Scope>(scope);
-			scope2->SetSelf(scope2);
-
-			EXPECT_EQ("100", ToString(scope2->FindObj("x")));
-		}
-
-		if (1) {
-			auto forLoop = Scripting::For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				// Var x = 0;
-				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
-						std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Any(0))
-					})
-				}),
-				// x < 1000000;
-				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("<", Scripting::Parse_Location()),
-						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
-							std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1000000)
-						})
-					})
-				}),
-				// x += 1;
-				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("++", Scripting::Parse_Location()),
-						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-							// , std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1)
-						})
-					})
-				}),
-				// Units::meter(x);
-				std::make_shared<Scripting::Scopeless_Block_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					/*std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
-						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-							std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-						})
-					})*/
-				})
-			});
-			
-			Stopwatch sw;
-			sw.Start();
-			(void)forLoop.eval(globalScope);
-			print(ToString(Units::second(sw.Stop_s())) + " @ for loop"); // 8 - 10 seconds
-		}
-
-		if (1) {
-			auto forLoop = Scripting::Ranged_For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				// Var x
-				std::make_shared<Scripting::Var_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-				}),
-				// { 100, 200, 300 };
-				std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(std::vector<int>(1000000, 0)),
-				// print(x);
-				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
-					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					    std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-					})
-				})
-			});
-
-			Stopwatch sw;
-			sw.Start();
-			(void)forLoop.eval(globalScope);
-			print(ToString(Units::second(sw.Stop_s())) + " @ for ranged int loop");
-		}
-
-		if (1) {
-			auto forLoop = Scripting::Ranged_For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				// Var x
-				std::make_shared<Scripting::Var_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-				}),
-				// { 100, 200, 300 };
-				std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(Vector<Var>(1000000, Var(Any(0)))),
-				// print(x);
-				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
-					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					    std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-					})
-				})
-			});
-
-			Stopwatch sw;
-			sw.Start();
-			(void)forLoop.eval(globalScope);
-			print(ToString(Units::second(sw.Stop_s())) + " @ for ranged Var loop");
-		}
-
-		if (1) {
-			auto Parallel_For = Scripting::Parallel_For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				// Var x = 0;
-				std::make_shared<Scripting::Assign_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location()),
-					std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(0)
-				}),
-				// 1000000;
-				std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(1000000),
-				// Units::meter(x);
-				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
-					std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-					})
-				})				
-			});
-			
-			Stopwatch sw;
-			sw.Start();
-			(void)Parallel_For.eval(globalScope);
-			print(ToString(Units::second(sw.Stop_s())) + " @ for parallel loop"); // 1 - 2 seconds
-		}
-
-		if (1) {
-			Vector<Var> temp(1000000, Var());
-			for (int i = 0; i < 1000000; i++) {
-				temp[i]->operator=(Var(Any(i)));
-			}
-
-			auto forLoop = Scripting::Parallel_Ranged_For_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				// Var x
-				std::make_shared<Scripting::Var_Decl_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-				}),
-				// { 100, 200, 300 };
-				std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(std::move(temp)),
-				// print(x);
-				std::make_shared<Scripting::Fun_Call_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
-						std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-						std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("x", Scripting::Parse_Location())
-					})
-				})
-			});
-
-			Stopwatch sw;
-			sw.Start();
-			(void)forLoop.eval(globalScope);
-			print(ToString(Units::second(sw.Stop_s())) + " @ for parallel range Var loop"); // it's beautiful and perfect. 
-		}
-
-		if (1) {
-			auto constVal = Scripting::Constant_AST_Node(std::string("100"));
-			EXPECT_EQ(user_type_shared<std::string>().lock()->MakeConstRef(), constVal.return_type);
-			EXPECT_EQ("100", ToString(constVal.eval(globalScope)));
-		}
-
-		if (1) {
-			auto function_AST_node = Scripting::Fun_Call_AST_Node("", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-				std::make_shared<Scripting::Id_AST_Node<Scripting::tracer::Noop_Tracer>>("Units::meter", Scripting::Parse_Location()),
-				std::make_shared<Scripting::Arg_List_AST_Node<Scripting::tracer::Noop_Tracer>>(
-					"", Scripting::Parse_Location(), std::vector<Scripting::AST_Node_Impl_Ptr<Scripting::tracer::Noop_Tracer>>{
-					    std::make_shared<Scripting::Constant_AST_Node<Scripting::tracer::Noop_Tracer>>(
-						    100 // literal determined from "100" written into the script
-						)
-				    }
-				)
-			});
-			EXPECT_EQ("100 m", ToString(function_AST_node.eval(globalScope)));
-		}
-
-		// GoodLang::CAS<bool, bool, bool, bool>::is_always_lock_free;
-
 
 
 

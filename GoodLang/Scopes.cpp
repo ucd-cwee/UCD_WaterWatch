@@ -293,6 +293,14 @@ namespace GoodLang {
 			return {};
 		}
 	};
+	Proxy_Function Scope::GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree) {
+		if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(GetNamespace())) {
+			return namespacePtr->GetFunction(name, params, tree);
+		}
+		else {
+			return {};
+		}
+	};
 	std::shared_ptr<Scope> Scope::FindNearestScopeWhere(std::function<bool(std::shared_ptr<Scope> const&)> const& func) const {
 		std::shared_ptr<Scope> out;
 		if (TryFindNearestScopeWhere(out, func)) {
@@ -722,6 +730,84 @@ namespace GoodLang {
 			}
 		}
 	};
+	
+	
+	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree) {
+		static auto fixNamespace{ [](std::string x) -> std::string {
+			while (x.find("::") == 0 && x.length() > 2) {
+				x = x.substr(2);
+			}
+
+			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+			return x;
+		} };
+		functionName = fixNamespace(functionName);
+
+		auto lastOfColons = functionName.find_last_of("::");
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
+			std::shared_ptr<Namespace> out;
+			if (TryFindNearestNamespaceWhere(out, [&functionName, &params, &tree](std::shared_ptr<Namespace> const& namespacePtr)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
+					if (auto func = ptr->GetFunction(functionName, params, tree)) {
+						return true;
+					}
+				}
+				return false;
+				})) {
+				return out;
+			}
+			else {
+				return nullptr;
+			}
+		}
+		else {
+			std::string Namespace = functionName.substr(0, lastOfColons - 1);
+			functionName = functionName.substr(lastOfColons + 1);
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
+				return namespacePtr->FindNamespaceWithFunction(functionName, params, tree);
+			}
+			else {
+				return nullptr;
+			}
+		}
+	};
+	Proxy_Function Scope::FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree) {
+		static auto fixNamespace{ [](std::string x) -> std::string {
+			while (x.find("::") == 0 && x.length() > 2) {
+				x = x.substr(2);
+			}
+
+			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+
+			return x;
+		} };
+		functionName = fixNamespace(functionName);
+
+		auto lastOfColons = functionName.find_last_of("::");
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
+			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindNamespaceWithFunction(functionName, params, tree))) {
+				return ptr->GetFunction(functionName, params, tree);
+			}
+			else {
+				return {};
+			}
+		}
+		else {
+			std::string Namespace = functionName.substr(0, lastOfColons - 1);
+			functionName = functionName.substr(lastOfColons + 1);
+
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
+				return namespacePtr->FindFunction(functionName, params, tree);
+			}
+			else {
+				return {};
+			}
+		}
+	};
+
+	
+	
 	size_t Scope::GetTypeConverterTreeVersion() const {
 		if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
 			return p->GetTypeConverterTreeVersion();
@@ -1034,6 +1120,9 @@ namespace GoodLang {
 			return std::shared_ptr< Functions::FunctionSort >(&f->second.second, [lockedCopy = locked](Functions::FunctionSort*) { if (!lockedCopy) { throw(std::runtime_error("ERR")); }; });
 		}
 		return nullptr;
+	};
+	Proxy_Function Namespace::GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree) {
+		return p_functions->BuildMatch(name, params, tree);
 	};
 	Proxy_Function Namespace::GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) {
 		return p_functions->BuildMatch(name, params, tree);
