@@ -25,7 +25,7 @@ namespace GoodLang {
 		friend class Class;
 		friend class Global;
 
-		Scope(std::shared_ptr<Scope> const& parent)
+		Scope(std::shared_ptr<Scope> const& parent, bool fromScope = true)
 			: p_UniqueName(" _ _ _ _ _ _")
 			, p_self()
 			, p_parent(parent)
@@ -51,18 +51,24 @@ namespace GoodLang {
 					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
 			};
 #endif
-			if (auto p = p_parent.lock()) { p_namespace = p->GetNamespaceImpl(); }
+			if (parent) { p_namespace = parent->GetNamespaceImpl(); }
 			else { p_namespace = std::dynamic_pointer_cast<Namespace>(p_self.lock()); }
 
-			if (auto p = p_parent.lock()) { p_library = p->GetLibraryImpl(); }
+			if (parent) { p_library = parent->GetLibraryImpl(); }
 			else { p_library = std::dynamic_pointer_cast<Global>(p_self.lock()); }
 
-			qualifiedNamespaceWithQualifiers = GetQualifiedNamespaceImpl(true);
-			qualifiedNamespaceWithoutQualifiers = GetQualifiedNamespaceImpl();
+			if (!parent || !fromScope) {
+				qualifiedNamespaceWithQualifiers = GetQualifiedNamespaceImpl(true);
+				qualifiedNamespaceWithoutQualifiers = GetQualifiedNamespaceImpl();
+			}
+			else {
+				qualifiedNamespaceWithQualifiers = parent->qualifiedNamespaceWithQualifiers;
+				qualifiedNamespaceWithoutQualifiers = parent->qualifiedNamespaceWithoutQualifiers;
+			}
 		};
-		Scope(std::shared_ptr<Namespace> const& parent) : Scope(std::dynamic_pointer_cast<Scope>(parent)) {};
-		Scope(std::shared_ptr<Class> const& parent) : Scope(std::dynamic_pointer_cast<Scope>(parent)) {};
-		Scope(std::shared_ptr<Global> const& parent) : Scope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		Scope(std::shared_ptr<Namespace> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
+		Scope(std::shared_ptr<Class> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
+		Scope(std::shared_ptr<Global> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
 
 		Scope(Scope const&) = default;
 		Scope(Scope&&) = default;
@@ -119,10 +125,7 @@ namespace GoodLang {
 
 			auto parent = p_parent.lock();
 
-			if (!parent) {
-				path = "::";
-			}
-			else {
+			if (parent) {
 				auto name{ GetName() };
 				if (GetUniqueQualifier) {
 					if (name == "") {
@@ -133,10 +136,16 @@ namespace GoodLang {
 					}
 				}
 				if (!name.empty()) {
-					path = parent->GetQualifiedNamespace(GetUniqueQualifier) + name + "::";
+					if (GetUniqueQualifier)
+						path = parent->qualifiedNamespaceWithQualifiers + name + "::";
+					else 
+						path = parent->qualifiedNamespaceWithoutQualifiers + name + "::";
 				}
 				else {
-					path = parent->GetQualifiedNamespace(GetUniqueQualifier);
+					if (GetUniqueQualifier)
+						path = parent->qualifiedNamespaceWithQualifiers;
+					else
+						path = parent->qualifiedNamespaceWithoutQualifiers;
 				}
 			}
 
@@ -225,6 +234,9 @@ namespace GoodLang {
 	public:
 		// if Namespace or Class or Global, returns self. Otherwise, returns the parent's Namespace. 
 		std::shared_ptr<Namespace> GetNamespace() const { return p_namespace.lock(); };
+		void SetParent_Unsafe(std::weak_ptr<Scope> const& parent) {
+			p_parent = parent;
+		};
 
 	private:
 		UnorderedMap<std::string, std::shared_ptr<Any>>
@@ -300,6 +312,7 @@ namespace GoodLang {
 
 	public:
 		bool AddChild(std::shared_ptr<Namespace> NamespacePtr);
+		bool RemoveChild_Unsafe(std::string const& namespaceName);
 
 	private:
 		virtual void RemoveStaleReferences() {
@@ -651,7 +664,6 @@ namespace GoodLang {
 			throw exception::not_found_error(GetTypeName(ToType));
 		};
 
-
 	public:
 		virtual std::string ToString() const;
 		virtual std::vector< Impl::NodeCache > GetChildren() const;
@@ -665,7 +677,7 @@ namespace GoodLang {
 		friend class Global;
 
 		Namespace(std::shared_ptr<Scope> const& parent, std::string const& Name)
-			: Scope(parent)
+			: Scope(parent, false)
 			, p_Name(Name)
 		{
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
@@ -685,6 +697,11 @@ namespace GoodLang {
 		std::string  // e.g. "", or "_NAMESPACE_NAME_", or "_CLASS_NAME_"
 			p_Name;
 	public:
+		void SetName_Unsafe(std::string const& namespaceName) {
+			p_Name = this->p_UniqueName + namespaceName;
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+		};
 
 	private:
 		UnorderedMap<std::string, std::weak_ptr<Class>> // allowed postfixes (e.g. 10_ft, where "_ft" is the key) to their desired typename. Duplicate are not allowed.
@@ -977,7 +994,7 @@ namespace GoodLang {
 			CachedObjectVersion{ 0 };
 
 		GoodLang::InterlockedLong
-			CachedTypeConverterTreeVersion{ 0 };
+			CachedTypeConverterTreeVersion{ -1 };
 		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
 			CachedTypeConverterTreeMutex{};
 
@@ -1083,12 +1100,19 @@ namespace GoodLang {
 		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) override;
 		virtual bool RecordFunction(std::string const& Name, Function const& ptr) override;
 		virtual bool RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) override;
+
+	public:
+		// Creates a temporary "fake" scope that will act as if it is a global scope, but whose changes will never effect it.
+		// Benefits from being able to share the real parent's cached functions and type conversions, which should be a significant performance boost. 
+		static std::shared_ptr<Global> CreateTemporaryGlobalChild(std::shared_ptr<Global> const& parent);
+
 	public:
 		virtual std::string ToString() const override;
 		virtual std::vector< Impl::NodeCache > GetChildren() const override;
 		virtual bool TryDisconnectChild() const override;
 	};
 
+	std::shared_ptr<Global> StartScope(std::shared_ptr<Scope> const& parent = nullptr);
 };
 
 namespace GoodLang {

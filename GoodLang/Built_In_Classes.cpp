@@ -350,7 +350,10 @@ namespace GoodLang {
 						value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
 						value_namespace->AddFunction("=", make_callable(
 							[](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a; 
-						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+						}, ParamTypes({ 
+								user_type_shared<Units::value>().lock()->MakeRef(), 
+								user_type_shared<Units::value>().lock()->MakeConstRef() 
+							}), user_type_shared<Units::value>().lock()->MakeRef()));
 
 						// Comparisons & operators
 						value_namespace->AddFunction("==", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));

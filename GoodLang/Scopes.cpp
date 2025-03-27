@@ -83,6 +83,10 @@ namespace GoodLang {
 		}
 		return false;
 	};
+	bool Scope::RemoveChild_Unsafe(std::string const& namespaceName) {
+		return p_children.erase(namespaceName);
+	};
+
 	bool Scope::TryFindNearestScopeWhere(
 		std::shared_ptr<Scope>& bestMatch,
 		std::function<bool(std::shared_ptr<Scope> const&)> const& func,
@@ -519,10 +523,10 @@ namespace GoodLang {
 						return out;
 					}
 				}
-				else {
-					// we tried this before an failed.
-					return nullptr;
-				}
+				//else {
+				//	// we tried this before an failed.
+				//	return nullptr;
+				//}
 			}
 		}
 
@@ -1730,6 +1734,10 @@ namespace GoodLang {
 	};
 	// Creates a tree of type-converter functions using the classes found with GetAllAvailableClasses()
 	void Global::CreateTypeConverterTree(std::shared_ptr<TypeConverter>& out) const {
+		if (auto parent = std::dynamic_pointer_cast<Global>(this->p_parent.lock())) {
+			parent->CreateTypeConverterTree(out);
+		}
+
 		if (auto classes = GetAllAvailableClasses()) {
 			for (auto& FoundClass : *classes) {
 				if (auto p = FoundClass.second.lock()) {
@@ -1873,6 +1881,55 @@ namespace GoodLang {
 		CachedObjectVersion++;
 		return true;
 	};
+
+	// Creates a temporary "fake" scope that will act as if it is a global scope, but whose changes will never effect it.
+	// Benefits from being able to share the real parent's cached functions and type conversions, which should be a significant performance boost. 
+	std::shared_ptr<Global> Global::CreateTemporaryGlobalChild(std::shared_ptr<Global> const& parent) {
+		std::shared_ptr<std::string> childName = std::make_shared<std::string>();
+		auto globalScope2 = std::shared_ptr<GoodLang::Global>(new GoodLang::Global(), [childName](GoodLang::Global* p) {
+			// p->RemoveChild_Unsafe(*childName);
+			delete p;
+		}); // the "fake" global
+		globalScope2->SetName_Unsafe("");
+		globalScope2->SetSelf(globalScope2);
+		// parent->AddChild(globalScope2);
+		globalScope2->SetParent_Unsafe(parent);
+		*childName = globalScope2->GetName();
+
+		return globalScope2;
+	};
+
+	std::shared_ptr<Global> StartScope(std::shared_ptr<Scope> const& parent) {
+		static thread_local std::shared_ptr<Global> globalScope{ nullptr };
+		static std::pair<std::mutex, std::shared_ptr<Global>> shared_global{};
+
+		if (parent) {
+			if (auto globalParent = std::dynamic_pointer_cast<Global>(parent->GetLibrary())) {
+				return globalParent->CreateTemporaryGlobalChild(globalParent);
+			}
+		}
+		if (1) {
+			if (!globalScope) {
+				shared_global.first.lock();
+				if (globalScope = shared_global.second) {
+					shared_global.first.unlock();
+				}
+				else {
+					globalScope = shared_global.second = std::make_shared<GoodLang::Global>();
+					shared_global.second->SetSelf(shared_global.second);
+					shared_global.second->AddBuiltIns();
+					shared_global.first.unlock();
+				}
+			}
+			return globalScope->CreateTemporaryGlobalChild(globalScope);
+		}
+		
+	};
+
+
+
+
+
 	std::string Global::ToString() const {
 		return "Global";
 	};

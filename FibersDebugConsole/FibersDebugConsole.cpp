@@ -801,10 +801,10 @@ namespace GoodLang {
 				: AST_Node_Impl<T>(t_oper, AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
 				, m_oper(Operators::to_operator(t_oper)) 
 			{
-				//GoodLang::ParamTypes params({ this->children[0]->return_type, this->children[1]->return_type });
-				//if (Proxy_Function func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
-				//	this->return_type = func->Returns();
-				//}
+				GoodLang::ParamTypes params({ this->children[0]->return_type, this->children[1]->return_type });
+				if (Proxy_Function func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
+					this->return_type = func->Returns();
+				}
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -821,7 +821,7 @@ namespace GoodLang {
 			File_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::File, std::move(t_loc), std::move(t_children)) 
 			{
-				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+				if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -900,7 +900,7 @@ namespace GoodLang {
 			Arg_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg, std::move(t_loc), std::move(t_children))
 			{
-				//this->return_type = this->children.back()->return_type;
+				this->return_type = this->children.back()->return_type;
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -913,7 +913,7 @@ namespace GoodLang {
 			Arg_List_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Arg_List, std::move(t_loc), std::move(t_children))
 			{
-				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+				if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
 			};
 
 			static std::string get_arg_name(const AST_Node_Impl<T>& t_node) {
@@ -957,7 +957,7 @@ namespace GoodLang {
 			Scopeless_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
 			{
-				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+				if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -980,7 +980,7 @@ namespace GoodLang {
 			Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
 			{
-				// if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+				if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1009,7 +1009,7 @@ namespace GoodLang {
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Var_Decl, std::move(t_loc), std::move(t_children)) 
 			{
 				assert(this->children.size() >= 1);
-				// this->return_type = user_type_shared<Var>();
+				this->return_type = user_type_shared<Var>();
 			}
 
 			/*! Empty variable assignment:
@@ -1033,7 +1033,7 @@ namespace GoodLang {
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::TypeID, std::move(t_loc), std::move(t_children))
 			{
 				assert(this->children.size() >= 1);
-				// this->return_type = user_type_shared<std::weak_ptr<Type_Info>>();
+				this->return_type = user_type_shared<std::weak_ptr<Type_Info>>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1061,7 +1061,8 @@ namespace GoodLang {
 				type_name = std::string(GetText(this->children[0]->children[0]));//  ->text; // e.g. double, int, std::string
 				idname = std::string(GetText(this->children[1]));// ->text; // e.g. x, y, z
 
-				// if (auto Class = currentScope->FindClass(type_name))  this->return_type = Class->GetClassType();				
+				if (auto Class = currentScope->FindClass(type_name)) this->return_type = Class->GetClassType();
+				else this->return_type = this->children[1]->return_type;
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1083,7 +1084,7 @@ namespace GoodLang {
 			Assign_Decl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children))
 			{
-				// this->return_type = this->children[1]->return_type;
+				this->return_type = this->children[1]->return_type;
 			};
 
 			/*! Non-Empty variable assignment:
@@ -1292,31 +1293,31 @@ namespace GoodLang {
 
 				function_name = GetText(this->children[0]);
 
-				//std::vector<std::weak_ptr<Type_Info>> params;
-				//for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
-				//	params.push_back(child->return_type);
-				//}
-				//ParamTypes Params{ params };
+				std::vector<std::weak_ptr<Type_Info>> params;
+				for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
+					params.push_back(child->return_type);
+				}
+				ParamTypes Params{ params };
 
-				//if (auto obj = currentScope->FindObj(function_name)) {
-				//	if (Proxy_Function func = obj->cast<Proxy_Function>()) {
-				//		this->return_type = func->Returns();
-				//	}
-				//	else {
-				//		std::vector<std::weak_ptr<Type_Info>> params2{ obj->Type() };
-				//		for (auto& x : params) params2.push_back(x);
-				//		ParamTypes Params2{ params2 };
+				if (auto obj = currentScope->FindObj(function_name)) {
+					if (Proxy_Function func = obj->cast<Proxy_Function>()) {
+						this->return_type = func->Returns();
+					}
+					else {
+						std::vector<std::weak_ptr<Type_Info>> params2{ obj->Type() };
+						for (auto& x : params) params2.push_back(x);
+						ParamTypes Params2{ params2 };
 
-				//		if (Proxy_Function func = currentScope->FindFunction("()", Params2, *currentScope->GetTypeConverterTree())) {
-				//			this->return_type = func->Returns();
-				//		}
-				//	}
-				//}
-				//else {
-				//	if (Proxy_Function func = currentScope->FindFunction(function_name, Params, *currentScope->GetTypeConverterTree())) {
-				//		this->return_type = func->Returns();
-				//	}
-				//}
+						if (Proxy_Function func = currentScope->FindFunction("()", Params2, *currentScope->GetTypeConverterTree())) {
+							this->return_type = func->Returns();
+						}
+					}
+				}
+				else {
+					if (Proxy_Function func = currentScope->FindFunction(function_name, Params, *currentScope->GetTypeConverterTree())) {
+						this->return_type = func->Returns();
+					}
+				}
 			};
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1336,7 +1337,7 @@ namespace GoodLang {
 								&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
 								&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
 							){
-								return func->operator()({ currentScope, params });
+								return func->operator()({ /*std::dynamic_pointer_cast<Scope>(GoodLang::StartScope(currentScope))*/ currentScope, params });
 							}
 							else {
 								return currentScope->CallFunction(func, params);
@@ -1533,7 +1534,7 @@ namespace GoodLang {
 			Inline_Array_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Array, std::move(t_loc), std::move(t_children)) 
 			{
-				// this->return_type = user_type_shared<Vector<Var>>();
+				this->return_type = user_type_shared<Vector<Var>>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1558,7 +1559,7 @@ namespace GoodLang {
 			Inline_Map_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Inline_Map, std::move(t_loc), std::move(t_children)) 
 			{
-				// this->return_type = user_type_shared<Map<size_t, std::pair<Var, Var>>>();
+				this->return_type = user_type_shared<Map<size_t, std::pair<Var, Var>>>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1580,15 +1581,15 @@ namespace GoodLang {
 			Return_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Return, std::move(t_loc), std::move(t_children)) 
 			{
-				//if (this->children.size() == 0) {
+				if (this->children.size() == 0) {
 
-				//}
-				//else if (this->children.size() == 1) {
-				//	this->return_type = this->children[0]->return_type;
-				//}
-				//else {
-				//	this->return_type = user_type_shared<Vector<Var>>();
-				//}
+				}
+				else if (this->children.size() == 1) {
+					this->return_type = this->children[0]->return_type;
+				}
+				else {
+					this->return_type = user_type_shared<Vector<Var>>();
+				}
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1633,30 +1634,29 @@ namespace GoodLang {
 			{
 				assert(this->children.size() == 2);
 
-				//if ((m_oper == Operators::Opers::assign_if_null) || (this->text == "?=")) {
-				//	// should actually test the return type of the first param first...
-				//	this->return_type = this->children[1]->return_type;
-				//}
-				//else {
-				//	auto lhs = this->children[0]->return_type;
-				//	auto rhs = this->children[1]->return_type;
-				//	ParamTypes params({ lhs, rhs });
-				//	if (m_oper == Operators::Opers::assign) {
-				//		if (auto func = currentScope->FindFunction("=", params, *currentScope->GetTypeConverterTree())) {
-				//			this->return_type = func->Returns();
-				//		}
-				//	}
-				//	else if (this->text == ":=") {
-				//		if (auto func = currentScope->FindFunction(":=", params, *currentScope->GetTypeConverterTree())) {
-				//			this->return_type = func->Returns();
-				//		}
-				//	}
-				//	else {
-				//		if (auto func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
-				//			this->return_type = func->Returns();
-				//		}
-				//	}
-				//}
+				if ((m_oper == Operators::Opers::assign_if_null) || (this->text == "?=")) {
+					// should actually test the return type of the first param first...
+					this->return_type = this->children[1]->return_type;
+				}
+				else {
+					auto lhs = this->children[0]->return_type;
+					auto rhs = this->children[1]->return_type;
+					ParamTypes params({ lhs, rhs });
+					if (m_oper == Operators::Opers::assign) {
+						this->return_type = this->children[0]->return_type;						
+					}
+					else if (this->text == ":=") {
+						this->return_type = this->children[1]->return_type;						
+					}
+					else {
+						if (auto func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
+							this->return_type = func->Returns();
+						}
+						else {
+							this->return_type = this->children[0]->return_type;
+						}
+					}
+				}
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1702,7 +1702,7 @@ namespace GoodLang {
 			Logical_And_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Logical_And, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 2);
-				//this->return_type = user_type_shared<bool>();
+				this->return_type = user_type_shared<bool>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1715,7 +1715,7 @@ namespace GoodLang {
 			Logical_Or_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Logical_Or, std::move(t_loc), std::move(t_children)) {
 				assert(this->children.size() == 2);
-				//this->return_type = user_type_shared<bool>();
+				this->return_type = user_type_shared<bool>();
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -1741,7 +1741,17 @@ namespace GoodLang {
 		struct Array_Call_AST_Node final : AST_Node_Impl<T> {
 			Array_Call_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr<T>> t_children)
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Array_Call, std::move(t_loc), std::move(t_children)) 
-			{}
+			{
+				auto lhs = this->children[0]->return_type;
+				auto rhs = this->children[1]->return_type;
+				ParamTypes params({ lhs, rhs });
+				if (auto func = currentScope->FindFunction("[]", params, *currentScope->GetTypeConverterTree())) {
+					this->return_type = func->Returns();
+				}
+				else {
+					this->return_type = user_type_shared<Var>();
+				}
+			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				try {
@@ -1765,7 +1775,10 @@ namespace GoodLang {
 				: AST_Node_Impl<T>(std::move(t_ast_node_text), AST_Node_Type::Dot_Access, std::move(t_loc), std::move(t_children))
 				, m_fun_name(((this->children[1]->identifier == AST_Node_Type::Fun_Call) || (this->children[1]->identifier == AST_Node_Type::Array_Call))
 					? this->children[1]->children[0]->text
-					: this->children[1]->text) {}
+					: this->children[1]->text) 
+			{
+
+			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				std::vector<Any> params{ this->children[0]->eval(currentScope) };
@@ -5060,101 +5073,128 @@ namespace GoodLang {
 			// out.push_back(GoodLang::GetChildren(r.load()));
 		};
 	};
-
-
-
 };
+
+
+
 
 int main() {
 	using namespace GoodLang;
 
 	if (1) {
-		auto globalScope = std::make_shared<GoodLang::Global>();
-		globalScope->SetSelf(globalScope);
-		globalScope->AddBuiltIns();
+		auto globalScope = StartScope(); // will initialize the globally shared engine as well
 
 		if (1) {
+			if (1) {
+				auto globalScope2 = StartScope(globalScope);
+				if (1) {
+					auto globalScope2_wrapper = std::make_shared<GoodLang::Scope>(globalScope2);
+					globalScope2_wrapper->SetSelf(globalScope2_wrapper);
+
+					globalScope2_wrapper->AddFunction("FooBar", make_callable([]() {  }));
+					globalScope2_wrapper->AddFunction("FooBar", make_callable([](double x) { }));
+
+					globalScope2_wrapper->CallFunction("FooBar", {});
+					globalScope2_wrapper->CallFunction("FooBar", { 100.0 });
+					globalScope2_wrapper->CallFunction("FooBar", { 100 });
+				}
+
+				globalScope2->CallFunction("FooBar", {});
+				globalScope2->CallFunction("FooBar", { 100.0 });
+				globalScope2->CallFunction("FooBar", { 100 });
+
+				globalScope2->AddObj("test", std::make_shared<Any>(200));
+
+				EXPECT_EQ("200", ToString(globalScope2->FindObj("test")));
+				EXPECT_EQ("nullptr", ToString(globalScope->FindObj("test")));
+			}
+
+			EXPECT_EQ("nullptr", ToString(globalScope->FindObj("test")));
+
+			try {
+				globalScope->CallFunction("FooBar", {});
+			} catch (...) {}
+
+
+
+
+
+
+
+
+
+
 			auto parse{ Scripting::parser::Parser2() };
 
-			auto parsed_result = parse.Parse("/* I AM A COMMENT! */ { /* COMMENT */ { /* COMMENT2 */ // COMMENT 3! \n } }", globalScope);
+			auto parsed_result = parse.Parse("/* I AM A COMMENT! */ { /* COMMENT */ { /* COMMENT2 */ // COMMENT 3! \n } }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-			parsed_result = parse.Parse("{  }", globalScope);
+			parsed_result = parse.Parse("{  }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-			parsed_result = parse.Parse("{ {}; }", globalScope);
+			parsed_result = parse.Parse("{ {}; }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-			parsed_result = parse.Parse("{ var x; }", globalScope);
+			parsed_result = parse.Parse("{ var x; }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-			parsed_result = parse.Parse("{ var& x; }", globalScope);
+			parsed_result = parse.Parse("{ var& x; }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("{ var& x; {} }", globalScope);
+			parsed_result = parse.Parse("{ var& x; {} }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("{ int x; }", globalScope);
+			parsed_result = parse.Parse("{ int x; }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("{ int& x; }", globalScope);
+			parsed_result = parse.Parse("{ int& x; }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("Units::meter x", globalScope);
+			parsed_result = parse.Parse("Units::meter x", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("\"I AM A STRING\"", globalScope);
+			parsed_result = parse.Parse("\"I AM A STRING\"", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("{ Units::meter x = 50; x += 50_ft; return x; }", globalScope);
+			parsed_result = parse.Parse("50_m = 50", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(globalScope)));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-			parsed_result = parse.Parse("{ Units::meter x = 50; x.double.int.size_t; }", globalScope);
+			parsed_result = parse.Parse("var& x = 250_m; x = 50; return x;", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
+			parsed_result = parse.Parse("{ Units::meter x = 50; x += 50_ft; return x; }", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+			print("");
 
+			parsed_result = parse.Parse("{ Units::meter x = 50; x.double.int.size_t; }", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+			print("");
 
 			parsed_result = parse.Parse(R"start(
 				{
@@ -5165,12 +5205,10 @@ int main() {
 					x.push_back(Units::meter(100)); 
 					return x;
 				}
-			)start", globalScope);
-			print(ToString(parsed_result));			
+			)start", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
 
 			parsed_result = parse.Parse(R"start(
 				{
@@ -5178,14 +5216,10 @@ int main() {
 					Map y := [ "a":10, 20:x, string("TEST"):30.0f ];
 					return y;
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				if (true) {
@@ -5193,14 +5227,10 @@ int main() {
 				}else{
 					print(20);
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				if (true) {
@@ -5215,111 +5245,72 @@ int main() {
                 else{
 
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-
-
-			parsed_result = parse.Parse("{ var& x; { return x; } }", globalScope);
+			parsed_result = parse.Parse("{ var& x; { return x; } }", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-
-			parsed_result = parse.Parse("var i; i := 100.0_s; ++i;", globalScope);
+			parsed_result = parse.Parse("var i; i := 100.0_s; ++i;", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				for (int i = 0; i < 100; ++i){
 					!i;
 					return ~i;
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				for (int& i : [0, 20, 30, 50]){
 					!i;
 					return ~i;
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				parallel_for (int i = 0 ; 100){
 					!i;
 					return ~i;
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				parallel_for (int& i : [0, 20, 30, 50]){
 					!i;
 					return ~i;
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				1000
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
 
-
-
-
-
-			parsed_result = parse.Parse("return 1000_ft + 1_m", globalScope);
+			parsed_result = parse.Parse("return 1000_ft + 1_m", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				int i = 0;
@@ -5328,14 +5319,10 @@ int main() {
 					break;
 				}
 				return i;
-			)start", globalScope);			
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				var& x = "TEST";
@@ -5347,15 +5334,10 @@ int main() {
 					default: {  }
 				};
 				return false;
-			)start", globalScope);			
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				int i = 0;
@@ -5375,15 +5357,10 @@ int main() {
 				finally { // do after the try, and catch, regardless of whether an error occured.  
 					return i;
 				}
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(				
 				float x = 0;
@@ -5391,14 +5368,10 @@ int main() {
 					return 1_ft + x + 1_ft;
 				};
 				return lambda();
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(				
 				var x := int(50);
@@ -5406,16 +5379,10 @@ int main() {
 					return 1_ft + x + 1_ft;
 				};
 				return lambda(x);
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(				
 				var x := 150_ft * 50_ft;
@@ -5423,15 +5390,10 @@ int main() {
 					return x;
 				};
 				return lambda(x);
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(				
 				var x := 0_ft;
@@ -5441,58 +5403,37 @@ int main() {
 				};
 				lambda(x);
 				return x;
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(				
 				var x := 0_ft;
 				var& lambda := (x){ x = 100; };
 				lambda(x);
 				return x;
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				var& lambda := () -> Units::meter { return 50.0f; };
 				return lambda();
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				int x = 100;
 				auto lambda := [](){ 100; };
 				return "100 == ${ "100" } == ${ 100 } == ${ x } == ${ lambda() }";
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
-			print(ToString(parsed_result.first->eval(parsed_result.second)));
-
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
@@ -5500,7 +5441,7 @@ int main() {
 					y++;
 				}
 				return y;
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -5508,23 +5449,19 @@ int main() {
 				print(ToString(Units::second(sw.Stop_s())) + " @ for-loop"); // 8 - 10 seconds
 			}
 
-
-
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
 				parallel_for (int i = 0 ; 100000) {
 					y++;
 				}
 				return y;
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
 				print(ToString(parsed_result.first->eval(parsed_result.second)));
 				print(ToString(Units::second(sw.Stop_s())) + " @ parallel-for-loop"); // 8 - 10 seconds
 			}
-
-
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
@@ -5541,31 +5478,13 @@ int main() {
 					Lambda(y);
 				}
 				return y;
-			)start", globalScope);
+			)start", StartScope(globalScope));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
 				print(ToString(parsed_result.first->eval(parsed_result.second)));
 				print(ToString(Units::second(sw.Stop_s())) + " @ lambda-parallel-for-loop"); // 8 - 10 seconds
 			}
-
-
-
-
-
-
-
-			//parsed_result = parse.Parse(R"start(
-			//	int Func(int param) { return param + 1; };
-			//	return Func(0);
-			//)start", globalScope);
-			//if (1) {
-			//	Stopwatch sw;
-			//	sw.Start();
-			//	print(ToString(parsed_result.first->eval(parsed_result.second)));
-			//	print(ToString(Units::second(sw.Stop_s())) + " @ lambda-parallel-for-loop"); // 8 - 10 seconds
-			//}
-
 		}
 
 
