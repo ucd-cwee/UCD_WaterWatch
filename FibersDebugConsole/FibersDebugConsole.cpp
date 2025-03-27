@@ -5496,7 +5496,7 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
-				for (int i = 0 ; i < 10000; ++i) {
+				for (int i = 0; i < 100000; ++i) {
 					y++;
 				}
 				return y;
@@ -5512,7 +5512,7 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
-				parallel_for (int i = 0 ; 10000) {
+				parallel_for (int i = 0 ; 100000) {
 					y++;
 				}
 				return y;
@@ -5537,7 +5537,7 @@ int main() {
 					//return x; // to-do, ... then the optimization should look for a return statement as the final call and skip the throw statement (e.g. faster to not throw)
 					// e.g: "return x;" would become "x;"
 				};
-				for (int i = 0 ; i < 10000; ++i) {
+				for (int i = 0 ; i < 100000; ++i) {
 					Lambda(y);
 				}
 				return y;

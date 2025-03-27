@@ -274,6 +274,12 @@ namespace GoodLang {
 			}
 			return false;
 		};
+		virtual bool RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
+				return p->RecordObject(Name, ptr);
+			}
+			return false;
+		};
 
 	public:
 		// allows this scope to use the children of other scopes as if they were their own.
@@ -373,49 +379,50 @@ namespace GoodLang {
 			hash_combine(seed, rest...);
 		};
 	private:
-		using CacheContainer = std::pair < std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::weak_ptr<void>>>;
-		using TemplatedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<CacheContainer>>>; // organizes multiple caches for several purposes...
-		using VersionedCacheContainer = std::pair<std::shared_mutex, concurrency::concurrent_unordered_map<size_t, std::shared_ptr<TemplatedCacheContainer>>>; // use this mutex to delete entire caches once the version is out-of-date
-		std::shared_ptr<VersionedCacheContainer>
-			SearchCache{ std::make_shared<VersionedCacheContainer>() };
+		using CacheContainer = std::pair < std::shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
+		using VersionedCacheContainer = std::pair<std::shared_mutex, std::map<size_t, std::shared_ptr<CacheContainer>>>; // use this mutex to delete entire caches once the version is out-of-date
+		using TemplatedCacheContainer = std::pair<std::shared_mutex, std::unordered_map<size_t, std::shared_ptr<VersionedCacheContainer>>>; // organizes multiple caches for several purposes...
+		std::shared_ptr<TemplatedCacheContainer>
+			SearchCache{ std::make_shared<TemplatedCacheContainer>() };
 
-		std::shared_ptr<TemplatedCacheContainer> GetVersionedCacheContainer(size_t version)const {
+		template<size_t CacheID> std::shared_ptr<VersionedCacheContainer> GetVersionedCacheContainer() const {
 			while (SearchCache) {
 				// test if exists
 				if (1) {
 					auto locked{ std::shared_lock(SearchCache->first) };
-					auto f = SearchCache->second.find(version);
+					auto f = SearchCache->second.find(CacheID);
 					if (f != SearchCache->second.end()) {
 						return f->second;
 					}
 				}
 
-				// didn't exist yet
+				// didn't exist yet -- delete everything and create new.
 				if (1) {
 					auto locked{ std::scoped_lock(SearchCache->first) };
-					auto f = SearchCache->second.find(version);
+					auto f = SearchCache->second.find(CacheID);
 					if (f != SearchCache->second.end()) {
 						return f->second;
 					}
 					else {
-						SearchCache->second.insert(std::pair<size_t, std::shared_ptr<TemplatedCacheContainer>>{ version, std::make_shared<TemplatedCacheContainer>() });
+						// SearchCache->second.clear(); // we do not delete the cache categories -- just the inner loops for versions.
+						SearchCache->second.insert(std::pair<size_t, std::shared_ptr<VersionedCacheContainer>>{ CacheID, std::make_shared<VersionedCacheContainer>() });
 					}
 				}
 			}
 			return nullptr;
 		};
-		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(size_t version)const {
-			if (auto version_container = GetVersionedCacheContainer(version)) {
+		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(size_t version) const {
+			if (std::shared_ptr<VersionedCacheContainer> version_container = GetVersionedCacheContainer<CacheID>()) {
 				// test if exists
 				if (1) {
 					auto locked{ std::shared_lock(version_container->first) };
-					auto f = version_container->second.find(CacheID);
+					auto f = version_container->second.find(version);
 					if (f != version_container->second.end()) {
 						return f->second;
 					}
 				}
 
-				// didn't exist yet
+				// didn't exist yet -- delete everything and create new.
 				if (1) {
 					auto locked{ std::scoped_lock(version_container->first) };
 					auto f = version_container->second.find(CacheID);
@@ -423,6 +430,12 @@ namespace GoodLang {
 						return f->second;
 					}
 					else {
+						int numThreads = std::max<int>(8, std::thread::hardware_concurrency());
+						if (version_container->second.size() > (numThreads * 8)) {
+							while (version_container->second.size() > numThreads) {
+								version_container->second.erase(version_container->second.begin());
+							}
+						}
 						version_container->second.insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ CacheID, std::make_shared<CacheContainer>() });
 					}
 				}
@@ -504,7 +517,8 @@ namespace GoodLang {
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
-
+		
+		virtual size_t GetObjectCacheVersion() const;
 		virtual size_t GetTypeConverterTreeVersion() const;
 		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const;
 
@@ -944,6 +958,7 @@ namespace GoodLang {
 		void CreateTypeConverterTree(std::shared_ptr<TypeConverter>& out) const;
 
 	public:
+		virtual size_t GetObjectCacheVersion() const override;
 		virtual size_t GetTypeConverterTreeVersion() const override;
 		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const override;
 
@@ -957,6 +972,9 @@ namespace GoodLang {
 
 		std::shared_ptr<TypeConverter>
 			CachedTypeConverterTree{ std::make_shared<TypeConverter>() };
+
+		GoodLang::InterlockedLong
+			CachedObjectVersion{ 0 };
 
 		GoodLang::InterlockedLong
 			CachedTypeConverterTreeVersion{ 0 };
@@ -1061,30 +1079,10 @@ namespace GoodLang {
 			}
 		};
 
-		virtual bool RecordClass(std::shared_ptr<Class> ptr) override {
-			if (Classes.emplace(Scope::Hasher()(ptr), ptr)) {
-				RecordVersion++;
-				return true;
-			}
-			return false;
-		};
-
-		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) override {
-			if (Usings.emplace(Scope::Hasher()(ptr), ptr)) {
-				RecordVersion++;
-				return true;
-			}
-			return false;
-		};
-
-		virtual bool RecordFunction(std::string const& Name, Function const& ptr) override {
-			if (Functions.emplace(std::hash<Proxy_Function>()(ptr.m_function), std::pair<std::string, std::weak_ptr<details::Proxy_Function_Base>>{ Name, ptr.m_function })) {
-				RecordVersion++;
-				return true;
-			}
-			return false;
-		};
-
+		virtual bool RecordClass(std::shared_ptr<Class> ptr) override;
+		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) override;
+		virtual bool RecordFunction(std::string const& Name, Function const& ptr) override;
+		virtual bool RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) override;
 	public:
 		virtual std::string ToString() const override;
 		virtual std::vector< Impl::NodeCache > GetChildren() const override;

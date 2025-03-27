@@ -14,11 +14,23 @@ namespace GoodLang {
 	};
 	// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
 	bool Scope::AddObj(std::string const& name, std::shared_ptr<Any> const& obj) {
-		return p_objects.emplace(name, obj);
+		if (p_objects.emplace(name, obj)) {
+			this->RecordObject(name, obj);
+			return true;
+		}
+		else {
+			return false;
+		}
 	};
 	// Returns true if successful.
 	bool Scope::EraseObj(std::string const& name) {
-		return p_objects.erase(name);
+		if (p_objects.erase(name)) {
+			this->RecordObject(name, nullptr);
+			return true;
+		}
+		else {
+			return false;
+		}
 	};
 	// Returns true if successful.
 	bool Scope::EraseObj(std::shared_ptr<Any> const& Obj) {
@@ -31,7 +43,15 @@ namespace GoodLang {
 				break;
 			}
 		}
-		if (doErasure) return EraseObj(key);
+		if (doErasure) {
+			if (EraseObj(key)) {
+				this->RecordObject(key, nullptr);
+				return true;
+			}
+			else {
+				return false;
+			}
+		}
 		else return false;
 	};
 
@@ -41,9 +61,9 @@ namespace GoodLang {
 			if (p_using.emplace(Hasher()(p), namespacePtr)) {
 				if (p->IsNamespace()) {
 					// if this "namespacePtr" belongs to our same library, then we do not care. We only care to track other libraries being used.
-					if (p->GetLibrary() != this->GetLibrary()) {
+					//if (p->GetLibrary() != this->GetLibrary()) {
 						(void)RecordUsing(std::dynamic_pointer_cast<Namespace>(p));
-					}
+					//}
 				}
 				return true;
 			}
@@ -480,7 +500,7 @@ namespace GoodLang {
 			}
 		}
 
-		auto treeV = this->GetTypeConverterTreeVersion();
+		auto treeV = this->GetObjectCacheVersion();
 		{
 			std::shared_ptr<Scope> out;
 			if (TryGetCached<3>(treeV, out, objName)) {
@@ -808,6 +828,14 @@ namespace GoodLang {
 
 	
 	
+	size_t Scope::GetObjectCacheVersion() const {
+		if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
+			return p->GetObjectCacheVersion();
+		}
+		else {
+			return 0;
+		}
+	};
 	size_t Scope::GetTypeConverterTreeVersion() const {
 		if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
 			return p->GetTypeConverterTreeVersion();
@@ -1741,6 +1769,10 @@ namespace GoodLang {
 			}
 		}
 	};
+	size_t Global::GetObjectCacheVersion() const {
+		return CachedObjectVersion.load();
+	};
+
 	size_t Global::GetTypeConverterTreeVersion() const {
 		return CachedTypeConverterTreeVersion.load();
 	};
@@ -1808,6 +1840,39 @@ namespace GoodLang {
 		return false;
 	};
 
+
+	bool Global::RecordClass(std::shared_ptr<Class> ptr) {
+		Classes.insert(Scope::Hasher()(ptr), ptr);
+		{
+			RecordVersion++;
+			CachedObjectVersion++; // new class = new search path for objects
+			return true;
+		}
+		return false;
+	};
+
+	bool Global::RecordUsing(std::shared_ptr<Namespace> ptr) {
+		Usings.insert(Scope::Hasher()(ptr), ptr);
+		{
+			RecordVersion++;
+			CachedObjectVersion++;
+			return true;
+		}
+		return false;
+	};
+
+	bool Global::RecordFunction(std::string const& Name, Function const& ptr) {
+		//if (Functions.emplace(std::hash<Proxy_Function>()(ptr.m_function), std::pair<std::string, std::weak_ptr<details::Proxy_Function_Base>>{ Name, ptr.m_function })) {
+		RecordVersion++;
+		return true;
+		//}
+		//return false;
+	};
+
+	bool Global::RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) {
+		CachedObjectVersion++;
+		return true;
+	};
 	std::string Global::ToString() const {
 		return "Global";
 	};
