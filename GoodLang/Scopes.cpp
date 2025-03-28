@@ -511,10 +511,10 @@ namespace GoodLang {
 						return out;
 					}
 				}
-				//else {
-				//	// we tried this before an failed.
-				//	return nullptr;
-				//}
+				else {
+					// we tried this before an failed.
+					return nullptr;
+				}
 			}
 		}
 
