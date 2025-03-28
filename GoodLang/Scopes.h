@@ -516,6 +516,8 @@ namespace GoodLang {
 		std::shared_ptr<Namespace> FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const;
 		std::shared_ptr<Class> FindClass(std::string const& QualifiedOrUnqualifiedNamespaceName) const;
 
+	private:
+		std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const;
 	public:
 		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> typeInfo) const;
 

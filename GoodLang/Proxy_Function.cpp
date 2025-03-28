@@ -213,7 +213,7 @@ namespace GoodLang {
 						f = AllConversions.find(smallestDistanceNode->thisVertexType);
 						if (f != AllConversions.end()) {
 							for (fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter){ auto& connection = *fSecondIter;
-							//for (const auto& connection : f->second) {
+							// for (const auto& connection : f->second) {
 							    connection.second.second.first.lock_shared();
 								if (fSecondIter->second.second.second)
 									if (!fSecondIter->second.second.second->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length

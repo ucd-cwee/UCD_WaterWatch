@@ -5445,7 +5445,7 @@ int main() {
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(parsed_result.second)));
+				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 				print(ToString(Units::second(sw.Stop_s())) + " @ for-loop"); // 8 - 10 seconds
 			}
 
@@ -5459,7 +5459,7 @@ int main() {
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(parsed_result.second)));
+				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 				print(ToString(Units::second(sw.Stop_s())) + " @ parallel-for-loop"); // 8 - 10 seconds
 			}
 
@@ -5482,8 +5482,47 @@ int main() {
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(parsed_result.second)));
+				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 				print(ToString(Units::second(sw.Stop_s())) + " @ lambda-parallel-for-loop"); // 8 - 10 seconds
+			}
+
+
+
+			parsed_result = parse.Parse(R"start(
+				parallel_for (int i = 0 ; 1000000) {
+					Units::meter x;
+					x.double;
+					x++;
+					x*x;
+					var& y = x*x*x;
+				}
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				print(ToString(Units::second(sw.Stop_s())) + " @ scripted parallel-for-loop"); // 8 - 10 seconds
+			}
+
+
+
+
+			parsed_result = parse.Parse(R"start(
+				parallel_for (int i = 0 ; 1000) {
+					parallel_for (int j = 0 ; 1000) {
+						Units::meter x;
+						x.double;
+						x++;
+						x*x;
+						var& y = x*x*x;
+					}
+				}
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				print(ToString(Units::second(sw.Stop_s())) + " @ complex test"); // 8 - 10 seconds
 			}
 		}
 
@@ -5507,7 +5546,7 @@ int main() {
 			(void)scope->CallFunction("*", { scope->FindObj("x"), scope->FindObj("x") });
 			scope->AddObj("y", std::make_shared<Any>(scope->CallFunction("*", {scope->CallFunction("*", {scope->FindObj("x"), scope->FindObj("x")}), scope->FindObj("x")})));
 		});
-		print(Units::second(sw.Stop_s()));
+		print(ToString(Units::second(sw.Stop_s())) + " @ manually crafted parallel-for-loop");
 
 
 	}

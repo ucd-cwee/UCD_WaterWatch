@@ -344,17 +344,15 @@ namespace GoodLang {
 		}
 	};
 	std::shared_ptr<Namespace> Scope::FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
 
-		QualifiedOrUnqualifiedNamespaceName = fixNamespace(QualifiedOrUnqualifiedNamespaceName);
+		fixNamespace(QualifiedOrUnqualifiedNamespaceName);
 
 		if (QualifiedOrUnqualifiedNamespaceName == "" || QualifiedOrUnqualifiedNamespaceName == "::") { return std::dynamic_pointer_cast<Namespace>(this->GetLibrary()); }
 
@@ -467,26 +465,16 @@ namespace GoodLang {
 			return nullptr;
 		}
 	};
-	std::shared_ptr<Scope> Scope::FindScopeWithObj(std::string objName, std::shared_ptr<Any>* found_obj) const {
-		static auto fixNamespace{ [](std::string x) -> std::string {
-			while (x.find("::") == 0 && x.length() > 2) {
-				x = x.substr(2);
-			}
 
-			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
-		} };
-		objName = fixNamespace(objName);
-
+	std::shared_ptr<Scope>  Scope::FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const {
 #ifdef useCachedData
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
 		if (!this->IsNamespace()) {
 			if (this->p_using.size() == 0) {
 				if (this->p_children.size() == 0) {
-					if (this->p_objects.size() == 0) {						
+					if (this->p_objects.size() == 0) {
 						if (auto p = this->p_parent.lock()) {
-							return p->FindScopeWithObj(objName, found_obj);
+							return p->FindScopeWithObjImpl(objName, found_obj);
 						}
 					}
 					else {
@@ -497,7 +485,7 @@ namespace GoodLang {
 							return p_self.lock();
 						}
 						if (auto p = this->p_parent.lock()) {
-							return p->FindScopeWithObj(objName, found_obj);
+							return p->FindScopeWithObjImpl(objName, found_obj);
 						}
 					}
 				}
@@ -531,7 +519,7 @@ namespace GoodLang {
 		}
 
 		if (auto objFound = this->GetObj(objName)) {
-			if (found_obj) *found_obj = objFound;	
+			if (found_obj) *found_obj = objFound;
 			InsertCached<3>(treeV, p_self.lock(), objName);
 			return p_self.lock();
 		}
@@ -549,7 +537,7 @@ namespace GoodLang {
 					}
 				}
 				return false;
-			})) {
+				})) {
 				InsertCached<3>(treeV, out, objName);
 				return out;
 			}
@@ -560,29 +548,38 @@ namespace GoodLang {
 		}
 		else {
 			std::string Namespace = objName.substr(0, lastOfColons - 1);
-			objName = objName.substr(lastOfColons + 1);
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
-				auto out = namespacePtr->FindScopeWithObj(objName, found_obj);
-				InsertCached<3>(treeV, out, objName);
+				auto out = namespacePtr->FindScopeWithObjImpl(objName.substr(lastOfColons + 1), found_obj);
+				InsertCached<3>(treeV, out, objName.substr(lastOfColons + 1));
 				return out;
 			}
 			else {
-				InsertCached<3>(treeV, nullptr, objName);
+				InsertCached<3>(treeV, nullptr, objName.substr(lastOfColons + 1));
 				return nullptr;
 			}
 		}
 	};
-	std::shared_ptr<Any> Scope::FindObj(std::string objName) const {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+
+	std::shared_ptr<Scope> Scope::FindScopeWithObj(std::string objName, std::shared_ptr<Any>* found_obj) const {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
-		objName = fixNamespace(objName);
+		fixNamespace(objName);
+		return FindScopeWithObjImpl(objName, found_obj);
+	};
+	std::shared_ptr<Any> Scope::FindObj(std::string objName) const {
+		static auto fixNamespace{ [](std::string& x)  {
+			while (x.find("::") == 0 && x.length() > 2) {
+				x = x.substr(2);
+			}
+
+			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+		} };
+		fixNamespace(objName);
 
 		auto lastOfColons = objName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
@@ -609,16 +606,14 @@ namespace GoodLang {
 		}
 	};
 	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName) const {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
-		functionName = fixNamespace(functionName);
+		fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
@@ -649,16 +644,14 @@ namespace GoodLang {
 		}
 	};
 	std::shared_ptr< Functions::FunctionSort > Scope::FindFunctions(std::string functionName) const {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
-		functionName = fixNamespace(functionName);
+		fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
@@ -722,16 +715,14 @@ namespace GoodLang {
 		}
 	};
 	Proxy_Function Scope::FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree) {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
-		functionName = fixNamespace(functionName);
+		fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
@@ -757,16 +748,14 @@ namespace GoodLang {
 	
 	
 	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree) {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
-		functionName = fixNamespace(functionName);
+		fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
@@ -797,16 +786,14 @@ namespace GoodLang {
 		}
 	};
 	Proxy_Function Scope::FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree) {
-		static auto fixNamespace{ [](std::string x) -> std::string {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
 
 			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-
-			return x;
 		} };
-		functionName = fixNamespace(functionName);
+		fixNamespace(functionName);
 
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
