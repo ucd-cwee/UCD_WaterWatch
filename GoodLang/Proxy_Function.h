@@ -324,68 +324,23 @@ namespace GoodLang {
 			~UncopiableSharedLock() = default;
 
 			// Exclusive ownership
-			void lock() {
+			void lock() const {
 				p_mut.lock();
-			};
-			//			bool try_lock() {
-			//#ifndef UncopiableSharedLockAsSharedMutex
-			//				long currentWriteCount = writeCount.Increment();
-			//				if (currentWriteCount != 1) {
-			//					writeCount.Decrement();
-			//					return false;
-			//				}
-			//				else {
-			//					// must now wait for the actual lock.
-			//					auto my_ticket = write_ticket.fetch_add(1, std::memory_order::memory_order_relaxed);
-			//					int spin = 0;
-			//					while (my_ticket != write_serving.load(std::memory_order::memory_order_acquire)) {
-			//						if (spin < 10)
-			//						{
-			//							_mm_pause(); // SMT thread swap can occur here
-			//						}
-			//						else
-			//						{
-			//							std::this_thread::yield(); // OS thread swap can occur here. It is important to keep it as fallback, to avoid any chance of lockup by busy wait
-			//						}
-			//						spin++;
-			//					}
-			//				}
-			//
-			//				// it is my turn to get the write access. Are the readers done? 
-			//				while (readCount.GetValue() != 0) { std::this_thread::yield(); }
-			//
-			//				return true;
-			//#else
-			//				return p_mut.try_lock();
-			//#endif
-			//			};
-			void unlock() {
+			};			
+			void unlock() const {
 				p_mut.unlock();
 			};
 
 			// Shared ownership
-			void lock_shared() {
+			void lock_shared() const {
 				p_mut.lock_shared();
-			};
-			//			bool try_lock_shared() {
-			//#ifndef UncopiableSharedLockAsSharedMutex
-			//				readCount.Increment();
-			//				// we are the final read -- go ahead and wait for the write lock before we go
-			//				while (writeCount.GetValue() != 0) {
-			//					readCount.Decrement();
-			//					return false;
-			//				}
-			//				return true;
-			//#else
-			//				return p_mut.try_lock_shared();
-			//#endif
-			//			};
-			void unlock_shared() {
+			};			
+			void unlock_shared() const {
 				p_mut.unlock_shared();
 			};
 
 		private:
-			std::shared_mutex p_mut;
+			mutable std::shared_mutex p_mut;
 		};
 
 	public:
@@ -409,12 +364,11 @@ namespace GoodLang {
 	private:
 		// All conversions, will include "real" and cached conversions.
 		typedef concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
-			concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // To
-			std::pair<UncopiableSharedLock, TypeConverterFunc> // Function (lock allows for overwriting functions)
+			concurrency::concurrent_unordered_map< size_t, // To
+			std::pair<std::shared_ptr<Type_Info>, std::pair<UncopiableSharedLock, TypeConverterFunc>> // Function (lock allows for overwriting functions)
 			>
 		> conversionTreeType;
 		conversionTreeType AllConversions;
-		UncopiableSharedLock AllConversionsLock;
 
 	public:
 		std::string print();
@@ -443,9 +397,10 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto& pair = AllConversions[From.lock()][To.lock()];
-						auto locked{ std::unique_lock(pair.first) };
-						pair.second = func;
+						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
+						auto locked{ std::unique_lock(pair.second.first) };
+						if (!pair.first) pair.first = To.lock();
+						pair.second.second = func;
 					}
 					AddDefaultConverters(From);
 				}
@@ -457,9 +412,10 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto& pair = AllConversions[From.lock()][To.lock()];
-						auto locked{ std::unique_lock(pair.first) };
-						pair.second = func;
+						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
+						auto locked{ std::unique_lock(pair.second.first) };
+						if (!pair.first) pair.first = To.lock();
+						pair.second.second = func;
 					}
 					AddDefaultConverters(From);
 				}
@@ -472,9 +428,10 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto& pair = AllConversions[From.lock()][To.lock()];
-						auto locked{ std::unique_lock(pair.first) };
-						pair.second = func;
+						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
+						auto locked{ std::unique_lock(pair.second.first) };
+						if (!pair.first) pair.first = To.lock();
+						pair.second.second = func;
 					}
 				}
 			}
@@ -484,9 +441,10 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto& pair = AllConversions[From.lock()][To.lock()];
-						auto locked{ std::unique_lock(pair.first) };
-						pair.second = func;
+						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
+						auto locked{ std::unique_lock(pair.second.first) };
+						if (!pair.first) pair.first = To.lock();
+						pair.second.second = func;
 					}
 				}
 			}
@@ -505,9 +463,10 @@ namespace GoodLang {
 					auto& From = func->from();
 					auto& To = func->to();
 					if (1) {
-						auto& pair = AllConversions[From.lock()][To.lock()];
-						auto locked{ std::unique_lock(pair.first) };
-						pair.second = func;
+						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
+						auto locked{ std::unique_lock(pair.second.first) };
+						if (!pair.first) pair.first = To.lock();
+						pair.second.second = func;
 					}
 					AddDefaultConverters(From);
 					AddDefaultConverters(To);
@@ -540,9 +499,10 @@ namespace GoodLang {
 							auto& From = func->from();
 							auto& To = func->to();
 							if (1) {
-								auto& pair = AllConversions[From.lock()][To.lock()];
-								auto locked{ std::unique_lock(pair.first) };
-								pair.second = func;
+								auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
+								auto locked{ std::unique_lock(pair.second.first) };
+								if (!pair.first) pair.first = To.lock();
+								pair.second.second = func;
 							}
 							AddDefaultConverters(From);
 							AddDefaultConverters(To);
