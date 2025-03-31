@@ -538,24 +538,6 @@ namespace GoodLang {
 					else {
 						return nullptr;
 					}
-
-					//if (out->TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
-					//	if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
-					//		if (auto objFound = ptr->GetObj(objName)) {
-					//			if (found_obj) {
-					//				*found_obj = objFound;
-					//			}
-					//			return true;
-					//		}
-					//	}
-					//	return false;
-					//})) {
-					//	return out;
-					//}
-				}
-				else {
-					// we tried this before an failed.
-					// return nullptr;
 				}
 			}
 		}
@@ -1159,6 +1141,138 @@ namespace GoodLang {
 		}
 	};
 
+	std::shared_ptr<Scope>  FunctionScope::FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const {
+#ifdef useCachedData
+		auto treeV = this->GetObjectCacheVersion();
+		{
+			std::shared_ptr<Scope> out;
+			if (TryGetCached<3>(treeV, out, objName)) {
+				if (out) {
+					if (auto objFound = out->GetObj(objName)) {
+						if (found_obj) {
+							*found_obj = objFound;
+						}
+						return out;
+					}
+					else {
+						return nullptr;
+					}
+				}
+			}
+		}
+
+		if (auto objFound = this->GetObj(objName)) {
+			if (found_obj) *found_obj = objFound;
+			InsertCached<3>(treeV, p_self.lock(), objName);
+			return p_self.lock();
+		}
+
+#endif
+
+		auto lastOfColons = objName.find_last_of("::");
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
+			std::shared_ptr<Scope> out;
+			if (TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
+					if (auto objFound = ptr->GetObj(objName)) {
+						if (found_obj) *found_obj = objFound;
+						return true;
+					}
+				}
+				return false;
+			})) {
+				InsertCached<3>(treeV, out, objName);
+				return out;
+			}
+			else {
+				InsertCached<3>(treeV, this->GetSelf(), objName);
+				return this->GetSelf();
+			}
+		}
+		else {
+			std::string Namespace = objName.substr(0, lastOfColons - 1);
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
+				auto out = namespacePtr->FindScopeWithObjImpl(objName.substr(lastOfColons + 1), found_obj);
+				InsertCached<3>(treeV, out, objName.substr(lastOfColons + 1));
+				return out;
+			}
+			else {
+				InsertCached<3>(treeV, this->GetSelf(), objName.substr(lastOfColons + 1));
+				return this->GetSelf();
+			}
+		}
+	};
+	bool FunctionScope::TryFindNearestScopeWhere(
+		std::shared_ptr<Scope>& bestMatch,
+		std::function<bool(std::shared_ptr<Scope> const&)> const& func,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+	) const {
+		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto selfPtr = this->p_self.lock();
+
+		// Prevent Duplication
+		if (checkedAll.count(selfPtr) >= 1) { return false; }
+		checkedAll.emplace(selfPtr);
+
+		// test myself			
+		if (!(checkedSelf.count(selfPtr) >= 1)) {
+			checkedSelf.emplace(selfPtr);
+			if (1) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+					if (func(p)) {
+						bestMatch = p;
+						return true;
+					}
+				}
+			}
+		}
+
+		// test my "using" namespaces and their children.
+		for (auto& childNamespace : this->p_using) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+				if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+
+		}
+
+		// Test my children themselves.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (innerChildNamespace.second) {
+					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+					if (!(checkedSelf.count(ptr) >= 1)) {
+						checkedSelf.emplace(ptr);
+						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+							if (func(p)) {
+								bestMatch = p;
+								return true;
+							}
+						}
+					}
+					else {
+						break; // we've checked this before! Quick, get out. 
+					}
+				}
+			}
+		}
+
+		// test my children's children.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+					if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	};
 
 	bool Namespace::AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists) {
 		const_cast<Function&>(function).m_function->GetSignature().Name(name);
@@ -1864,6 +1978,19 @@ namespace GoodLang {
 		return false;
 	};
 
+	std::string FunctionScope::ToString() const {
+		return "FunctionScope";
+	};
+	std::vector< Impl::NodeCache > FunctionScope::GetChildren() const {
+		return {
+			GoodLang::GetChildren(this->p_children),
+			GoodLang::GetChildren(this->p_objects)
+		};
+	};
+	bool FunctionScope::TryDisconnectChild() const {
+		return false;
+	};
+
 	std::string Namespace::ToString() const {
 		return "Namespace";
 	};
@@ -1997,6 +2124,16 @@ namespace GoodLang {
 			out = r.GetChildren();
 		};
 		void TryDisconnectChild(Tag<Scope>, Scope const& r, bool& out) {
+			out = r.TryDisconnectChild();
+		};
+
+		void ToString(Tag<FunctionScope>, FunctionScope const& r, std::string& out) {
+			out = r.ToString();
+		};
+		void GetChildren(Tag<FunctionScope>, FunctionScope const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+		void TryDisconnectChild(Tag<FunctionScope>, FunctionScope const& r, bool& out) {
 			out = r.TryDisconnectChild();
 		};
 

@@ -11,8 +11,9 @@
 // forward decl
 namespace GoodLang {
 	class Scope;
+	class FunctionScope;
 	class Namespace;
-	class Class;
+	class Class;	
 	class Global;
 
 };
@@ -21,6 +22,7 @@ namespace GoodLang {
 namespace GoodLang {
 	class Scope {
 	public:
+		friend class FunctionScope;
 		friend class Namespace;
 		friend class Class;
 		friend class Global;
@@ -53,6 +55,7 @@ namespace GoodLang {
 				qualifiedNamespaceWithoutQualifiers = parent->qualifiedNamespaceWithoutQualifiers;
 			}
 		};
+		Scope(std::shared_ptr<FunctionScope> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
 		Scope(std::shared_ptr<Namespace> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
 		Scope(std::shared_ptr<Class> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
 		Scope(std::shared_ptr<Global> const& parent, bool fromScope = true) : Scope(std::dynamic_pointer_cast<Scope>(parent), fromScope) {};
@@ -502,7 +505,7 @@ namespace GoodLang {
 		std::shared_ptr<Class> FindClass(std::string const& QualifiedOrUnqualifiedNamespaceName) const;
 
 	private:
-		std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const;
+		virtual std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const;
 		std::shared_ptr<Scope> FindScopeWithObj(std::string const& objName, std::shared_ptr<Any>* found_obj = nullptr) const;
 
 	public:
@@ -661,6 +664,35 @@ namespace GoodLang {
 
 	};
 
+	class FunctionScope : public Scope {
+	public:
+		friend class Namespace;
+		friend class Class;
+		friend class Global;
+
+		FunctionScope(std::shared_ptr<Scope> const& parent) : Scope(parent, true) {};
+		FunctionScope(std::shared_ptr<FunctionScope> const& parent) : FunctionScope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		FunctionScope(std::shared_ptr<Namespace> const& parent) : FunctionScope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		FunctionScope(std::shared_ptr<Class> const& parent) : FunctionScope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		FunctionScope(std::shared_ptr<Global> const& parent) : FunctionScope(std::dynamic_pointer_cast<Scope>(parent)) {};
+		virtual ~FunctionScope() {};
+		void SetSelf(std::shared_ptr<FunctionScope>& p) { this->p_self = std::dynamic_pointer_cast<Scope>(p); };
+
+		virtual std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const override;
+		virtual bool TryFindNearestScopeWhere(
+			std::shared_ptr<Scope>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const override;
+
+	public:
+		virtual std::string ToString() const override;
+		virtual std::vector< Impl::NodeCache > GetChildren() const override;
+		virtual bool TryDisconnectChild() const override;
+
+	};
+
 	class Namespace : public Scope {
 	public:
 		friend class Class;
@@ -674,6 +706,7 @@ namespace GoodLang {
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
+		Namespace(std::shared_ptr<FunctionScope> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
 		Namespace(std::shared_ptr<Namespace> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
 		Namespace(std::shared_ptr<Class> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
 		Namespace(std::shared_ptr<Global> const& parent, std::string const& Name) : Namespace(std::dynamic_pointer_cast<Scope>(parent), Name) {};
@@ -810,6 +843,8 @@ namespace GoodLang {
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
+		Class(std::shared_ptr<FunctionScope> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
 		Class(std::shared_ptr<Namespace> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
 			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
 		Class(std::shared_ptr<Class> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
@@ -819,6 +854,8 @@ namespace GoodLang {
 
 		Class(std::shared_ptr<Scope> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
 			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, std::vector<std::weak_ptr<Class>>{ inheritance }) {};
+		Class(std::shared_ptr<FunctionScope> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
+			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
 		Class(std::shared_ptr<Namespace> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
 			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};
 		Class(std::shared_ptr<Class> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type = user_type_shared<void>().lock(), std::weak_ptr<Class> inheritance = std::weak_ptr<Class>())
@@ -859,14 +896,14 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
-		) const;
+		) const override;
 
 		virtual bool TryFindNearestNamespaceWhere(
 			std::shared_ptr<Namespace>& bestMatch,
 			std::function<bool(std::shared_ptr<Namespace> const&)> const& func,
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
-		) const;
+		) const override;
 
 	public:
 		virtual std::string ToString() const override;
@@ -909,7 +946,7 @@ namespace GoodLang {
 		static void Part5(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
 		static void Part6(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace);
 	};
-	
+
 };
 
 // <Any, Scope> hash
@@ -1111,6 +1148,10 @@ namespace GoodLang {
 		void ToString(Tag<Scope>, Scope const& r, std::string& out);
 		void GetChildren(Tag<Scope>, Scope const& r, std::vector< NodeCache >& out);
 		void TryDisconnectChild(Tag<Scope>, Scope const& r, bool& out);
+
+		void ToString(Tag<FunctionScope>, FunctionScope const& r, std::string& out);
+		void GetChildren(Tag<FunctionScope>, FunctionScope const& r, std::vector< NodeCache >& out);
+		void TryDisconnectChild(Tag<FunctionScope>, FunctionScope const& r, bool& out);
 
 		void ToString(Tag<Namespace>, Namespace const& r, std::string& out);
 		void GetChildren(Tag<Namespace>, Namespace const& r, std::vector< NodeCache >& out);
