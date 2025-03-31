@@ -1673,7 +1673,8 @@ namespace GoodLang {
 			template <class VType> static decltype(auto) DoCast_Shared(Any* p) noexcept {
 				auto locked{ std::shared_lock(p->mut) };
 				if (p->container) {
-					return p->container->cast_shared<VType>();
+					return std::shared_ptr<VType>(static_cast<VType*>(p->container->ptr()), [P = p->container](VType*) -> void {});
+					// return p->container->cast_shared<VType>();
 				}
 				else {
 					return std::shared_ptr<VType>{ nullptr };

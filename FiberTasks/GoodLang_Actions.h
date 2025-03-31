@@ -2740,6 +2740,7 @@ namespace GoodLang {
 
 		protected:
 			virtual Any do_call(std::vector<Any> const&) const = 0;
+			virtual Any do_call(Any&) const = 0;
 			Proxy_Function_Base(GoodLang::FunctionSignature const& p_signature) : m_signature(p_signature){}
 		};
 	};
@@ -3191,6 +3192,54 @@ namespace GoodLang {
 					}
 				}
 			};
+			virtual Any do_call(Any& r) const override {
+				using argType = typename utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::arguments;
+				using returnType = typename utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
+				static constexpr auto numArgs{ std::tuple_size_v< argType > };
+
+				if constexpr (std::is_reference< returnType>::value) {
+					// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+					using refAsBaseType = typename std::remove_reference_t< returnType>;
+					using ptrType = std::shared_ptr<refAsBaseType>;
+					ptrType out;
+					Any parents = r;
+					if constexpr (numArgs == 1) {
+						out = ptrType(&F_m(
+							r.cast()
+						), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs <= 0) {
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					return out;
+				}
+				else {
+					// best-case, normal operation
+					if constexpr (std::is_same_v<returnType, void>) {
+						static Any temp;
+						if constexpr (numArgs == 1) {
+							F_m(
+								r.cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							F_m();
+						}
+						return temp;
+					}
+					else {
+						if constexpr (numArgs == 1) {
+							return F_m(
+								r.cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							return F_m();
+						}
+					}
+				}
+			};
+
 			Callable F_m;
 		};
 
@@ -3226,6 +3275,9 @@ namespace GoodLang {
 			virtual Any do_call(std::vector<Any> const& r) const override {
 				if (r.size() < 1) throw(exception::arity_error(0, 1));
 				return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
+			};
+			virtual Any do_call(Any& r) const override {				
+				return do_call_impl(r.cast<std::shared_ptr<Class>>());
 			};
 
 			auto& do_call_impl_impl(Class* o) const {
@@ -3289,6 +3341,9 @@ namespace GoodLang {
 			virtual Any do_call(std::vector<Any> const& r) const override {
 				if (r.size() < 1) throw(exception::arity_error(0, 1));
 				return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
+			};
+			virtual Any do_call(Any& r) const override {				
+				return do_call_impl(r.cast<std::shared_ptr<Class>>());
 			};
 
 			auto& do_call_impl_impl(Class* o) const {
@@ -3715,6 +3770,37 @@ namespace GoodLang {
 						}
 					}
 				};
+				virtual Any do_call(Any& r) const override {
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						Any parents = r;						
+						if constexpr (numArgs <= 0) {
+							out = ptrType(&(r.cast<Class*>()->*m_attr)(), 
+								[parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
+					}
+					else {
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;							
+							if constexpr (numArgs <= 0) {
+								(r.cast<Class*>()->*m_attr)();
+							}
+							return temp;
+						}
+						else {
+							if constexpr (numArgs <= 0) {
+								return (r.cast<Class*>()->*m_attr)();
+							}
+						}
+					}
+				};
+
 
 				R(Class::* m_attr)(T...) volatile const;
 			};
@@ -4097,6 +4183,35 @@ namespace GoodLang {
 							}
 							else if constexpr (numArgs <= 0) {
 								return (r[0].cast<Class*>()->*m_attr)();
+							}
+						}
+					}
+				};
+				virtual Any do_call(Any& r) const override {
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						Any parents = r;
+						if constexpr (numArgs <= 0) {
+							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
+					}
+					else {
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs <= 0) {
+								(r.cast<Class*>()->*m_attr)();
+							}
+							return temp;
+						}
+						else {
+							if constexpr (numArgs <= 0) {
+								return (r.cast<Class*>()->*m_attr)();
 							}
 						}
 					}
@@ -4486,6 +4601,35 @@ namespace GoodLang {
 						}
 					}
 				};
+				virtual Any do_call(Any& r) const override {
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						Any parents = r;
+						if constexpr (numArgs <= 0) {
+							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
+					}
+					else {
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs <= 0) {
+								(r.cast<Class*>()->*m_attr)();
+							}
+							return temp;
+						}
+						else {
+							if constexpr (numArgs <= 0) {
+								return (r.cast<Class*>()->*m_attr)();
+							}
+						}
+					}
+				};
 				R(Class::* m_attr)(T...) const;
 			};
 			template <typename R, typename Class, typename... T>
@@ -4871,6 +5015,35 @@ namespace GoodLang {
 						}
 					}
 				};
+				virtual Any do_call(Any& r) const override {
+					using returnType = R;
+					if constexpr (std::is_reference< returnType>::value) {
+						// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+						using refAsBaseType = typename std::remove_reference_t< returnType>;
+						using ptrType = std::shared_ptr<refAsBaseType>;
+						ptrType out;
+						Any parents = r;
+						if constexpr (numArgs <= 0) {
+							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+						}
+						return out;
+					}
+					else {
+						// best-case, normal operation
+						if constexpr (std::is_same_v<returnType, void>) {
+							static Any temp;
+							if constexpr (numArgs <= 0) {
+								(r.cast<Class*>()->*m_attr)();
+							}
+							return temp;
+						}
+						else {
+							if constexpr (numArgs <= 0) {
+								return (r.cast<Class*>()->*m_attr)();
+							}
+						}
+					}
+				};
 
 				R(Class::* m_attr)(T...);
 			};
@@ -4983,6 +5156,10 @@ namespace GoodLang {
 			// assumes conversion already happened
 			virtual Any do_call(std::vector<Any> const& r) const override {
 				if (r.size() < numArgs) throw(exception::arity_error(r.size(), numArgs));
+				return do_call_impl(r);
+			};
+			virtual Any do_call(Any& r) const override {
+				if (1 < numArgs) throw(exception::arity_error(r.size(), numArgs));
 				return do_call_impl(r);
 			};
 
@@ -5319,6 +5496,49 @@ namespace GoodLang {
 						else if constexpr (numArgs == 1) {
 							return F_m(
 								r[0].cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							return F_m();
+						}
+					}
+				}
+			};
+			Any do_call_impl(Any& r) const {
+				if constexpr (std::is_reference< R>::value) {
+					// if the return type is a reference, the parent(s) should be protected by carrying them along. 
+					using refAsBaseType = typename std::remove_reference_t< R>;
+					using ptrType = std::shared_ptr<refAsBaseType>;
+					ptrType out;
+					Any parents = r;
+					if constexpr (numArgs == 1) {
+						out = ptrType(&F_m(
+							r.cast()
+						), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					else if constexpr (numArgs <= 0) {
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { std::cout << "ERR" << std::endl; } });
+					}
+					return out;
+				}
+				else {
+					// best-case, normal operation
+					if constexpr (std::is_same_v<R, void>) {
+						static Any temp;
+						if constexpr (numArgs == 1) {
+							F_m(
+								r.cast()
+							);
+						}
+						else if constexpr (numArgs <= 0) {
+							F_m();
+						}
+						return temp;
+					}
+					else {
+						if constexpr (numArgs == 1) {
+							return F_m(
+								r.cast()
 							);
 						}
 						else if constexpr (numArgs <= 0) {

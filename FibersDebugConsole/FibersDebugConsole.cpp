@@ -889,7 +889,7 @@ namespace GoodLang {
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				if (auto obj = currentScope->FindObj(this->text)) {
-					const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+					// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
 					return obj;
 				}
 				throw exception::eval_error("Can not find object: " + this->text);				
@@ -991,9 +991,9 @@ namespace GoodLang {
 				const auto numChildren = this->children.size();
 				if (numChildren > 0) {
 					for (int i = 0; i < numChildren - 1; i++) {
-						this->children[i]->eval(currentScope);
+						this->children[i]->eval(newScope);
 					}
-					return this->children.back()->eval(currentScope);
+					return this->children.back()->eval(newScope);
 				}
 				else {
 					return Any();
@@ -1146,31 +1146,20 @@ namespace GoodLang {
 				assert(this->children.size() >= 2);
 			}
 
-			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-				Any out;
-				try {
-					while (true) {
-						auto newScope = std::make_shared<Scope>(currentScope);
-						newScope->SetSelf(newScope);
-						if (newScope->Cast<bool>(this->children[0]->eval(newScope))) {
-							try {
-								out = this->children[1]->eval(newScope);
-							}
-							catch (detail::Continue_Loop&) {
-								// we got a continue exception, which means all of the remaining
-								// loop implementation is skipped and we just need to continue to
-								// the next condition test
-							}
-						}
-						else {
-							break;
-						}
+			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {				
+				while (currentScope->Cast<bool>(this->children[0]->eval(currentScope))) {		
+					auto newScope = std::make_shared<Scope>(currentScope);
+					newScope->SetSelf(newScope);
+
+					try {
+						(void)this->children[1]->eval(newScope);
+					} 
+					catch (detail::Break_Loop&) {
+						break;
 					}
+					catch (detail::Continue_Loop&) {}					
 				}
-				catch (detail::Break_Loop&) {
-					// loop was broken intentionally
-				}
-				return out;
+				return {};
 			}
 		};
 
@@ -1184,42 +1173,33 @@ namespace GoodLang {
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-				Any out;
-
 				auto forScope = std::make_shared<Scope>(currentScope);
 				forScope->SetSelf(forScope);
 				{
 					// INIT_BLOCK
-					this->children[0]->eval(forScope); // may include declaring a variable, or nothing at all
-					try {
-						while (true) {
-							// CONDITION_BLOCK
-							Any condition_result = this->children[1]->eval(forScope);
-							// if the condition is empty / void, then we accept it as if it were true.
-							// if the condition is not empty, then it must evaluate to a boolean. 
-							if (condition_result.IsEmpty() || forScope->Cast<bool>(condition_result)) {
-								try {
-									auto newScope = std::make_shared<Scope>(forScope);
-									newScope->SetSelf(newScope);
+					if (this->children[0]->identifier != AST_Node_Type::Noop) {
+						this->children[0]->eval(forScope); // may include declaring a variable, or nothing at all
+					}
 
-									// WORK_BLOCK
-									out = this->children[3]->eval(newScope);
-								}
-								catch (detail::Continue_Loop&) {
-									// we got a continue exception, which means all of the remaining
-									// loop implementation is skipped and we just need to continue to
-									// the next condition test
-								}
-							}
-							else {
-								break;
-							}
-							// PROGRESS_BLOCK
-							this->children[2]->eval(forScope);
-						}						
-					} catch (detail::Break_Loop&) { /* loop was broken */ }
+					// CONDITION_BLOCK
+					while (this->children[1]->identifier == AST_Node_Type::Noop
+						||
+						forScope->Cast<bool>(this->children[1]->eval(forScope))
+					) {
+						auto newScope = std::make_shared<Scope>(forScope);
+						newScope->SetSelf(newScope);
+
+						try {							
+							(void)this->children[3]->eval(newScope);
+						} 
+						catch (detail::Continue_Loop&) {}							
+						catch (detail::Break_Loop&) { break; }
+
+						// PROGRESS_BLOCK
+						this->children[2]->eval(forScope);
+					}					
 				}
-				return out;
+				return {};
 			}
 		};
 
@@ -1246,12 +1226,12 @@ namespace GoodLang {
 					if (begin_func && end_func) {
 						// user-defined functions for begin() and end() were found -- this is the ideal.
 						for (
-							auto begin = forScope->CallFunction(begin_func, { range }),
-							end = forScope->CallFunction(end_func, { range });
+							auto begin = forScope->CallFunction(begin_func, range),
+							end = forScope->CallFunction(end_func, range);
 							forScope->Cast<bool>(forScope->CallFunction("!=", { begin, end }));
-							forScope->CallFunction("++", { begin })
+							forScope->CallFunction("++", begin)
 							) {
-							forScope->CallFunction(":=", { item_decl, forScope->CallFunction("get", { begin }) });
+							forScope->CallFunction(":=", { item_decl, forScope->CallFunction("get", begin) });
 							try {
 								auto innerScope = std::make_shared<Scope>(forScope);
 								innerScope->SetSelf(innerScope);
@@ -1260,7 +1240,9 @@ namespace GoodLang {
 							catch (detail::Continue_Loop&) {}
 						}
 					}
-					else {
+					else { // TO-DO, we should probably just throw an error and give-up...
+						
+
 						// try to fall-back to the built-in GetChildren function and see what we get.
 						// Note that this causes a huge lift in the memory requirements for the call due to how this recursive function works... 
 						auto cache = GoodLang::GetChildren(range).children[0];
@@ -1435,7 +1417,7 @@ namespace GoodLang {
 									shared_memory.second->CallFunction(":=", { shared_memory.first, _args.jobIndex });
 								}
 								else {
-									shared_memory.second->CallFunction("++", { shared_memory.first });
+									shared_memory.second->CallFunction("++", shared_memory.first);
 								}
 
 								// do the work
@@ -1489,8 +1471,8 @@ namespace GoodLang {
 					auto begin_func = forScope->FindFunction("begin", { range });
 					auto end_func = forScope->FindFunction("end", { range });
 					if (begin_func && end_func) {
-						Any begin = forScope->CallFunction(begin_func, { range });
-						Any end = forScope->CallFunction(end_func, { range });
+						Any begin = forScope->CallFunction(begin_func, range);
+						Any end = forScope->CallFunction(end_func, range);
 						auto& copyConstructorFunctor = begin.Type().lock()->GetCopyConstructor();
 
 						// if we can get the distance quickly, then great
@@ -1501,9 +1483,9 @@ namespace GoodLang {
 						else {
 							while (forScope->Cast<bool>(forScope->CallFunction("!=", { begin, end }))) {
 								count++;
-								forScope->CallFunction("++", { begin });
+								forScope->CallFunction("++", begin);
 							}			
-							begin = forScope->CallFunction(begin_func, { range });
+							begin = forScope->CallFunction(begin_func, range);
 						}
 
 						using shared_type = std::pair< std::pair<Any,Any>, std::shared_ptr<Scope>>;
@@ -1518,14 +1500,14 @@ namespace GoodLang {
 										iter.second->CallFunction(jumpFunction, { iter.first.first, _args.jobIndex });
 									}
 									else {
-										for (int i = 0; i < _args.jobIndex; i++) iter.second->CallFunction("++", { iter.first.first });
+										for (int i = 0; i < _args.jobIndex; i++) iter.second->CallFunction("++", iter.first.first);
 									}									
 								}
 								else {
 									// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
-									iter.second->CallFunction("++", { iter.first.first });
+									iter.second->CallFunction("++",  iter.first.first);
 								}
-								iter.second->CallFunction(":=", { iter.first.second, iter.second->CallFunction("get", { iter.first.first }) });
+								iter.second->CallFunction(":=", { iter.first.second, iter.second->CallFunction("get", iter.first.first) });
 
 								// do the work
 								try {
@@ -1857,8 +1839,8 @@ namespace GoodLang {
 
 			// ++x;
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-				auto var = this->children[0]->eval(currentScope);
-				return currentScope->CallFunction(this->text, { var }); // we currently do not attempt to validate -- just process the request and see what lands. 
+				auto temp{ this->children[0]->eval(currentScope) };
+				return currentScope->CallFunction(this->text, temp); // we currently do not attempt to validate -- just process the request and see what lands. 
 			};
 
 		private:
@@ -1880,12 +1862,12 @@ namespace GoodLang {
 				// the type is known. Short-circuit and get out fast. 
 				if (m_oper == Operators::Opers::pre_increment) {
 					auto out = var.Type().lock()->GetCopyConstructor()(var);
-					(void)currentScope->CallFunction("++", { var });
+					(void)currentScope->CallFunction("++", var);
 					return out;
 				}
 				else if (m_oper == Operators::Opers::pre_decrement) {
 					auto out = var.Type().lock()->GetCopyConstructor()(var);
-					(void)currentScope->CallFunction("--", { var });
+					(void)currentScope->CallFunction("--", var);
 					return out;
 				}
 				else if (m_oper == Operators::Opers::invalid) {
@@ -1894,7 +1876,7 @@ namespace GoodLang {
 							auto abbreviation = unit_type.second.UnitAbbreviation();
 							if (this->text == abbreviation) {
 								if (auto Class = currentScope->FindClass(unit_type.first)) {
-									return Class->CallFunction(Class->GetName(), { var });
+									return Class->CallFunction(Class->GetName(), var);
 								}
 								else {
 									auto out = Any(unit_type.second);
@@ -2238,6 +2220,8 @@ namespace GoodLang {
 					}
 				}
 
+				// NOTE: Calling ""AddObj seems to reduce performance since it makes every call to the lambda 
+				// reset the optimization cache. 
 				if (returnVoid) {
 					return GoodLang::make_callable([
 						lambda_node = m_lambda_node,
@@ -2736,7 +2720,7 @@ namespace GoodLang {
 							const Any& rhs = dynamic_cast<Constant_AST_Node<T> *>(node->children[0].get())->m_value;
 							try {
 								node = std::dynamic_pointer_cast<AST_Node_Impl<T>>(std::make_shared<Constant_AST_Node<T>>(
-									currentScope, node->text, node->location, currentScope->CallFunction(node->text, { rhs })
+									currentScope, node->text, node->location, currentScope->CallFunction(node->text, const_cast<Any&>(rhs))
 								));
 								return true;
 							}
@@ -2793,7 +2777,7 @@ namespace GoodLang {
 				};
 
 				// Try to fold a basic binary operation (e.g. +/-/*) with one constant value, to speed-up evaluation in the future
-				struct PartialFold {
+				struct PartialBinaryFold {
 					template<typename T>
 					bool optimize(AST_Node_Impl_Ptr<T>& node, const std::shared_ptr<Scope>& currentScope) {
 						// Fold right side
@@ -2859,6 +2843,66 @@ namespace GoodLang {
 					}
 				};
 
+				// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
+				struct ConstMap {
+					template<typename T>
+					bool optimize(AST_Node_Impl_Ptr<T>& node, const std::shared_ptr<Scope>& currentScope) {
+						// Fold right side
+						if (node->identifier == AST_Node_Type::Inline_Map
+							&& node->children.size() == 1
+							&& node->children[0]->identifier == AST_Node_Type::Arg_List
+						) {
+							auto& argList = *node->children.back();
+
+							bool allItemsAreConst = true;
+							for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+								if (argList.children[childIndex]->identifier == AST_Node_Type::Map_Pair) {
+									auto& map_pair = *dynamic_cast<Map_Pair_AST_Node<T>*>(argList.children[childIndex].get());
+									if (
+										(map_pair.children[0]->identifier == AST_Node_Type::Constant) &&
+										(map_pair.children[1]->identifier == AST_Node_Type::Constant)
+									) {
+										continue;
+									}
+									else {
+										allItemsAreConst = false;
+										break;
+									}								
+								}
+								else {
+									allItemsAreConst = false;
+									break;
+								}
+							}
+
+							if (allItemsAreConst) {
+								Any constArray{ Map<size_t, std::pair<Var, Var>>() };
+								if (!node->children.empty()) {
+									for (const auto& child : node->children[0]->children) {
+										auto rhs_key = child->children[0]->eval(currentScope);
+										auto rhs_val = child->children[1]->eval(currentScope);
+
+										rhs_key.SetFlag(AnyData::Flag::constant, true);
+										rhs_val.SetFlag(AnyData::Flag::constant, true);
+
+										currentScope->CallFunction("emplace", { 
+											constArray, 
+											rhs_key,
+											rhs_val
+										});
+									}
+								}
+								constArray.SetFlag(AnyData::Flag::constant, true);
+								
+								node = std::dynamic_pointer_cast<AST_Node_Impl<T>>(std::make_shared<Constant_AST_Node<T>>(
+									currentScope, node->text, node->location, std::move(constArray)
+								));
+								return true;
+							}
+						}
+						return false;
+					}
+				};
 
 				// String embedding results in a structure that may resemble:
 				//		Fun_Call -> {  Id{ to_string }, Arg_list{ Constant{} } }
@@ -2878,7 +2922,7 @@ namespace GoodLang {
 							const Any& rhs = dynamic_cast<Constant_AST_Node<T> *>(node->children[1]->children[0].get())->m_value;
 							try {
 								node = std::dynamic_pointer_cast<AST_Node_Impl<T>>(std::make_shared<Constant_AST_Node<T>>(
-									currentScope, node->text, node->location, currentScope->CallFunction("to_string", { rhs })
+									currentScope, node->text, node->location, currentScope->CallFunction("to_string", const_cast<Any&>(rhs))
 								));
 								return true;
 							}
@@ -2910,6 +2954,8 @@ namespace GoodLang {
 						return false;
 					}
 				};
+
+
 
 #if 0
 				struct Assign_Decl {
@@ -3532,13 +3578,12 @@ namespace GoodLang {
 					optimizer::PostfixFold,
 					optimizer::PrefixFold,
 					optimizer::BinaryFold,
-					optimizer::PartialFold,
+					optimizer::PartialBinaryFold,
 					optimizer::Unused_Fun_Return,
-					//optimizer::Constant_Fold,
 					optimizer::ArgListFileConstant,
 					optimizer::ToStringFunctionCallWithConstant,
 					optimizer::ConstArray,
-
+					optimizer::ConstMap,
 					optimizer::If,
 					optimizer::Return,
 					optimizer::Dead_Code,
@@ -5374,29 +5419,39 @@ namespace GoodLang {
 							// evaluate the custom operators...
 							if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "" && m_match_stack[prev_stack_top - 1].first->identifier == AST_Node_Type::Constant) {
 								// this path means the incoming value is constant and known
-								for (auto& unit_type : Units::value::GetValueTypes()) {
-									auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
-									if (Symbol(abbreviation)) {
-										auto& rhs = std::dynamic_pointer_cast<Constant_AST_Node<Tracer>>(m_match_stack[prev_stack_top - 1].first)->m_value;
-										Any lhs;
-										if (auto Class = currentScope->FindClass(unit_type.first)) {
-											lhs = Class->CallFunction(Class->GetName(), { rhs });
-										}
-										else {
-											lhs = Any(unit_type.second);
-											currentScope->CallFunction("=", { lhs, rhs });
-										}
-										std::string temp = GoodLang::ToString(lhs);
-										
-										Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
-										loc.end.column += abbreviation.length();
+								static thread_local std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, Units::value>>, std::greater_equal<int>> 
+									customOperators{};
+								if (customOperators.size() == 0) {
+									for (auto& unit_type : Units::value::GetValueTypes()) {
+										auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+										customOperators[abbreviation.length()].push_back(unit_type);
+									}
+								}
+								for (auto& abbreviation_length_to_category : customOperators) {
+									for (auto& unit_type : abbreviation_length_to_category.second) {
+										auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+										if (Symbol(abbreviation)) {
+											auto& rhs = std::dynamic_pointer_cast<Constant_AST_Node<Tracer>>(m_match_stack[prev_stack_top - 1].first)->m_value;
+											Any lhs;
+											if (auto Class = currentScope->FindClass(unit_type.first)) {
+												lhs = Class->CallFunction(Class->GetName(), rhs);
+											}
+											else {
+												lhs = Any(unit_type.second);
+												currentScope->CallFunction("=", { lhs, rhs });
+											}
+											std::string temp = GoodLang::ToString(lhs);
 
-										m_match_stack[prev_stack_top - 1].first = 
-											std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(
-												std::make_shared<Constant_AST_Node<Tracer>>(currentScope, temp, loc, lhs)
-											);
+											Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+											loc.end.column += abbreviation.length();
 
-										return true;
+											m_match_stack[prev_stack_top - 1].first =
+												std::dynamic_pointer_cast<AST_Node_Impl<Tracer>>(
+													std::make_shared<Constant_AST_Node<Tracer>>(currentScope, temp, loc, lhs)
+												);
+
+											return true;
+										}
 									}
 								}
 							}
@@ -6412,6 +6467,30 @@ int main() {
 			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
 
+			parsed_result = parse.Parse(R"start(
+				int x = 0; print(x); /* BLOCK1 */ {
+					double x = 1; print(x); /* BLOCK2 */ {
+						float x = 2; print(x); /* BLOCK3 */ {
+							Units::foot x = 3; print(x); /* BLOCK4 */ {
+								Units::meter x = 4; print(x); 
+								/* BLOCK5 */ {}
+								print(x); 
+							}
+							print(x); 
+						}
+						print(x); 
+					}
+					print(x); 
+				}
+				print(x); 
+			)start", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+			print("");
+
+
+
+
 			parsed_result = parse.Parse("(75_gal / 2_d).gallon_per_minute", StartScope(globalScope));
 			print(ToString(parsed_result));
 			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
@@ -6786,7 +6865,7 @@ int main() {
 			parsed_result = parse.Parse(R"start(
 				int x = 100;
 				auto lambda := [](){ 100; };
-				return "100 == ${ "100" } == ${ [ 100 ] } == ${ x } == ${ lambda() }";
+				return "100 == ${ "100" } == ${ [ 100 ] } == ${ [ "100":100, 100:"100" ] } == ${ x } == ${ lambda() }";
 			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
 			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
@@ -6799,7 +6878,7 @@ int main() {
 				}
 				return y;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -6814,7 +6893,7 @@ int main() {
 				}
 				return y;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -6836,7 +6915,7 @@ int main() {
 				}
 				return y;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -6855,7 +6934,7 @@ int main() {
 					var& y = x*x*x;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -6877,7 +6956,7 @@ int main() {
 					}
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -6901,7 +6980,7 @@ int main() {
 					}
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
@@ -6931,7 +7010,7 @@ int main() {
 					}
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
+			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();

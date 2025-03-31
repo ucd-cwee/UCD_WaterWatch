@@ -26,31 +26,18 @@ namespace GoodLang {
 		friend class Global;
 
 		Scope(std::shared_ptr<Scope> const& parent, bool fromScope = true)
-			: p_UniqueName(" _ _ _ _ _ _")
+			: p_UniqueName(" _ _ _ _") //  _ _
 			, p_self()
 			, p_parent(parent)
 			, p_namespace()
 			, p_library()
 			, p_using()
 		{
-#if 1
 			// for a speed-up, attempt to convert a single random number into our desired pseudo-random string. 
 			void* pos = const_cast<void*>((const void*)p_UniqueName.c_str());
 			double* double_part = (double*)pos;
 			*double_part = std::rand();
-#else
-			static auto randN{ [](double min, double max) -> double { return (((double)std::rand() / (double)RAND_MAX) * (max - min)) + min; } };
-			for (int i = 0; i < 12; i++) {
-				if (i < 2)
-					p_UniqueName[i] = (char)(int)randN((int)('A'), (int)('Z'));
-				else if (i < 6)
-					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
-				else if (i < 8)
-					p_UniqueName[i] = (char)(int)randN((int)('A'), (int)('Z'));
-				else if (i < 12)
-					p_UniqueName[i] = (char)(int)randN((int)('0'), (int)('9'));
-			};
-#endif
+
 			if (parent) { p_namespace = parent->GetNamespaceImpl(); }
 			else { p_namespace = std::dynamic_pointer_cast<Namespace>(p_self.lock()); }
 
@@ -297,11 +284,12 @@ namespace GoodLang {
 		// allows this scope to use the children of other scopes as if they were their own.
 		bool AddUsing(std::weak_ptr<Namespace> namespacePtr);
 
-	public: // private:
+	private:
 		UnorderedMap<std::string,
 		    UnorderedMap<size_t, std::shared_ptr<Namespace>>
 		> // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
-			p_children;
+			p_children{};
+
 		// the Library should know about our "Class" list
 		virtual bool RecordClass(std::shared_ptr<Class> ptr) {
 			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
@@ -310,9 +298,14 @@ namespace GoodLang {
 			return false;
 		};
 
+		std::atomic<bool>
+			is_basic_scope{ true };
+    public:
+		bool IsBasicScope() const {
+			return is_basic_scope.load();
+		};
 	public:
 		bool AddChild(std::shared_ptr<Namespace> NamespacePtr);
-		bool RemoveChild_Unsafe(std::string const& namespaceName);
 
 	private:
 		virtual void RemoveStaleReferences() {
@@ -392,68 +385,60 @@ namespace GoodLang {
 			hash_combine(seed, rest...);
 		};
 	private:
-		using CacheContainer = std::pair < std::shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
-		using VersionedCacheContainer = std::pair<std::shared_mutex, std::map<size_t, std::shared_ptr<CacheContainer>>>; // use this mutex to delete entire caches once the version is out-of-date
-		using TemplatedCacheContainer = std::pair<std::shared_mutex, std::unordered_map<size_t, std::shared_ptr<VersionedCacheContainer>>>; // organizes multiple caches for several purposes...
-		std::shared_ptr<TemplatedCacheContainer>
-			SearchCache{ std::make_shared<TemplatedCacheContainer>() };
+		using CacheContainer 
+			= std::pair < std::shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
+		using VersionedCacheContainer // use this mutex to delete entire caches once the version is out-of-date
+			= std::map<size_t, std::shared_ptr<CacheContainer>>; 
+		using TemplatedCacheContainer // organizes multiple caches for several purposes...
+			= std::vector<SharedLockable<VersionedCacheContainer>>;
+		TemplatedCacheContainer
+			SearchCache{ 4, SharedLockable<VersionedCacheContainer>() };
 
-		template<size_t CacheID> std::shared_ptr<VersionedCacheContainer> GetVersionedCacheContainer() const {
-			while (SearchCache) {
-				// test if exists
-				if (1) {
-					auto locked{ std::shared_lock(SearchCache->first) };
-					auto f = SearchCache->second.find(CacheID);
-					if (f != SearchCache->second.end()) {
-						return f->second;
-					}
-				}
-
-				// didn't exist yet -- delete everything and create new.
-				if (1) {
-					auto locked{ std::scoped_lock(SearchCache->first) };
-					auto f = SearchCache->second.find(CacheID);
-					if (f != SearchCache->second.end()) {
-						return f->second;
-					}
-					else {
-						// SearchCache->second.clear(); // we do not delete the cache categories -- just the inner loops for versions.
-						SearchCache->second.insert(std::pair<size_t, std::shared_ptr<VersionedCacheContainer>>{ CacheID, std::make_shared<VersionedCacheContainer>() });
-					}
-				}
-			}
-			return nullptr;
+		template<size_t CacheID> SharedLockable<VersionedCacheContainer>& GetVersionedCacheContainer() const {
+			return const_cast<SharedLockable<VersionedCacheContainer>&>(SearchCache[CacheID]);
 		};
 		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(size_t version) const {
-			if (std::shared_ptr<VersionedCacheContainer> version_container = GetVersionedCacheContainer<CacheID>()) {
-				// test if exists
-				if (1) {
-					auto locked{ std::shared_lock(version_container->first) };
-					auto f = version_container->second.find(version);
-					if (f != version_container->second.end()) {
-						return f->second;
-					}
-				}
+			SharedLockable<VersionedCacheContainer>& version_container = GetVersionedCacheContainer<CacheID>();
+			version_container.EnsureDataExists();
 
-				// didn't exist yet -- delete everything and create new.
-				if (1) {
-					auto locked{ std::scoped_lock(version_container->first) };
-					auto f = version_container->second.find(CacheID);
-					if (f != version_container->second.end()) {
-						return f->second;
-					}
-					else {
-						int numThreads = std::max<int>(8, std::thread::hardware_concurrency());
-						if (version_container->second.size() > (numThreads * 8)) {
-							while (version_container->second.size() > numThreads) {
-								version_container->second.erase(version_container->second.begin());
-							}
-						}
-						version_container->second.insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ CacheID, std::make_shared<CacheContainer>() });
-					}
+			// test if exists
+			if (1) {
+				version_container.lock.lock_shared();
+				auto f = version_container.data->find(version);
+				if (f != version_container.data->end()) {
+					std::shared_ptr<CacheContainer> out{ f->second };
+					version_container.lock.unlock_shared();
+					return out;
+				}
+				else {
+					version_container.lock.unlock_shared();
 				}
 			}
-			return nullptr;
+
+			// didn't exist yet -- delete old version(s) and create new version.
+			if (1) {
+				auto locked = version_container.Unique();
+				auto f = locked->find(version); // someone beat us to it
+				if (f != locked->end()) {
+					return f->second;
+				}
+				else {
+					// allow some caching of versions, in case of multithreading
+					
+					//static thread_local int numThreads{ std::max<int>(8, std::thread::hardware_concurrency()) };
+					//if (locked->size() > (numThreads * 8)) {
+					//	while (locked->size() > numThreads) {
+					//		locked->erase(locked->begin());
+					//	}
+					//}
+
+					if (locked->size() > 64) locked->erase(locked->begin());
+
+					auto out{ std::make_shared<CacheContainer>() };
+					locked->insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ version, out });
+					return out;
+				}
+			}
 		};
 		template<size_t CacheID, typename T, typename... Rest> bool TryGetCached(size_t version, std::shared_ptr<T>& out, Rest const&... rest) const {
 			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
@@ -518,10 +503,11 @@ namespace GoodLang {
 
 	private:
 		std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const;
+		std::shared_ptr<Scope> FindScopeWithObj(std::string const& objName, std::shared_ptr<Any>* found_obj = nullptr) const;
+
 	public:
 		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> typeInfo) const;
 
-		std::shared_ptr<Scope> FindScopeWithObj(std::string objName, std::shared_ptr<Any>* found_obj = nullptr) const;
 		std::shared_ptr<Any> FindObj(std::string objName) const;
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName) const;
@@ -553,16 +539,18 @@ namespace GoodLang {
 		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params) const;
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const;
 		Any CallFunction(Proxy_Function const& function, std::vector<Any> const& params) const;
+		Any CallFunction(std::string const& functionName, Any& params) const;
+		Any CallFunction(Proxy_Function const& function, Any& params) const;
 
 		template <typename T>
 		T Cast(Any const& from) const {
-			auto ToType = user_type_shared<T>();
-			auto FromType = from.Type();
-
 			// see if it already matches (best option)
-			if (from.IsTypeOf(ToType)) {
+			if (from.IsTypeOf<T>()) {
 				return from.cast<T>();
 			}
+
+			auto ToType = user_type_shared<T>();
+			auto FromType = from.Type();
 
 			// see if we can convert (fastest option)
 			if (auto Tree = this->GetTypeConverterTree()) {
@@ -682,6 +670,7 @@ namespace GoodLang {
 			: Scope(parent, false)
 			, p_Name(Name)
 		{
+			this->is_basic_scope = false;
 			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
 			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};

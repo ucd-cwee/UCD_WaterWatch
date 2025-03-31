@@ -65,6 +65,8 @@ namespace GoodLang {
 						(void)RecordUsing(std::dynamic_pointer_cast<Namespace>(p));
 					//}
 				}
+
+				is_basic_scope = false;
 				return true;
 			}
 		}
@@ -78,13 +80,12 @@ namespace GoodLang {
 				if (p->IsClass()) {
 					(void)RecordClass(std::dynamic_pointer_cast<Class>(p));
 				}
+
+				is_basic_scope = false;
 				return true;
 			}
 		}
 		return false;
-	};
-	bool Scope::RemoveChild_Unsafe(std::string const& namespaceName) {
-		return p_children.erase(namespaceName);
 	};
 
 	bool Scope::TryFindNearestScopeWhere(
@@ -360,15 +361,21 @@ namespace GoodLang {
 
 #ifdef useCachedData
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
-		if (!this->IsNamespace()) {
-			if (this->p_using.size() == 0) {
-				if (this->p_children.size() == 0) {
-					if (auto p = this->p_parent.lock()) {
-						return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
-					}
-				}
+		if (this->IsBasicScope()) {
+			if (auto p = this->p_parent.lock()) {
+				return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
 			}
 		}
+		
+		//if (!this->IsNamespace()) {
+		//	if (this->p_using.size() == 0) {
+		//		if (this->p_children.size() == 0) {
+		//			if (auto p = this->p_parent.lock()) {
+		//				return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
+		//			}
+		//		}
+		//	}
+		//}
 
 		auto treeV = this->GetTypeConverterTreeVersion();
 		if (TryGetCached<1>(treeV, out, QualifiedOrUnqualifiedNamespaceName)) {
@@ -376,15 +383,15 @@ namespace GoodLang {
 		}
 
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
-		if (!this->IsNamespace()) {
-			if (this->p_using.size() == 0) {
-				if (this->p_children.size() == 0) {
-					if (auto p = this->p_parent.lock()) {
-						return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
-					}
-				}
-			}
-		}
+		//if (!this->IsNamespace()) {
+		//	if (this->p_using.size() == 0) {
+		//		if (this->p_children.size() == 0) {
+		//			if (auto p = this->p_parent.lock()) {
+		//				return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
+		//			}
+		//		}
+		//	}
+		//}
 #endif
 
 		long long len = QualifiedOrUnqualifiedNamespaceName.length();
@@ -423,6 +430,12 @@ namespace GoodLang {
 		std::shared_ptr<Namespace> out;
 
 #ifdef useCachedData
+		if (this->IsBasicScope()) {
+			if (auto p = this->p_parent.lock()) {
+				return p->FindClass(typeInfo);
+			}
+		}
+
 		auto treeV = this->GetTypeConverterTreeVersion();
 		{
 			std::shared_ptr<Class> out2;
@@ -432,15 +445,15 @@ namespace GoodLang {
 		}
 
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
-		if (!this->IsNamespace()) {
-			if (this->p_using.size() == 0) {
-				if (this->p_children.size() == 0) {
-					if (auto p = this->p_parent.lock()) {
-						return p->FindClass(typeInfo);
-					}
-				}
-			}
-		}
+		//if (!this->IsNamespace()) {
+		//	if (this->p_using.size() == 0) {
+		//		if (this->p_children.size() == 0) {
+		//			if (auto p = this->p_parent.lock()) {
+		//				return p->FindClass(typeInfo);
+		//			}
+		//		}
+		//	}
+		//}
 #endif
 
 		if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace> const& namespacePtr)->bool {
@@ -469,51 +482,80 @@ namespace GoodLang {
 	std::shared_ptr<Scope>  Scope::FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const {
 #ifdef useCachedData
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
-		if (!this->IsNamespace()) {
-			if (this->p_using.size() == 0) {
-				if (this->p_children.size() == 0) {
-					if (this->p_objects.size() == 0) {
-						if (auto p = this->p_parent.lock()) {
-							return p->FindScopeWithObjImpl(objName, found_obj);
-						}
+		if (this->IsBasicScope()) {
+			if (this->p_objects.size() == 0) {
+				if (auto p = this->p_parent.lock()) {
+					return p->FindScopeWithObjImpl(objName, found_obj);
+				}
+			}
+			else {
+				if (auto objFound = GetObj(objName)) {
+					if (found_obj) {
+						*found_obj = objFound;
 					}
-					else {
-						if (auto objFound = GetObj(objName)) {
-							if (found_obj) {
-								*found_obj = objFound;
-							}
-							return p_self.lock();
-						}
-						if (auto p = this->p_parent.lock()) {
-							return p->FindScopeWithObjImpl(objName, found_obj);
-						}
-					}
+					return p_self.lock();
+				}
+				if (auto p = this->p_parent.lock()) {
+					return p->FindScopeWithObjImpl(objName, found_obj);
 				}
 			}
 		}
+
+		//if (!this->IsNamespace()) {
+		//	if (this->p_using.size() == 0) {
+		//		if (this->p_children.size() == 0) {
+		//			if (this->p_objects.size() == 0) {
+		//				if (auto p = this->p_parent.lock()) {
+		//					return p->FindScopeWithObjImpl(objName, found_obj);
+		//				}
+		//			}
+		//			else {
+		//				if (auto objFound = GetObj(objName)) {
+		//					if (found_obj) {
+		//						*found_obj = objFound;
+		//					}
+		//					return p_self.lock();
+		//				}
+		//				if (auto p = this->p_parent.lock()) {
+		//					return p->FindScopeWithObjImpl(objName, found_obj);
+		//				}
+		//			}
+		//		}
+		//	}
+		//}
 
 		auto treeV = this->GetObjectCacheVersion();
 		{
 			std::shared_ptr<Scope> out;
 			if (TryGetCached<3>(treeV, out, objName)) {
 				if (out) {
-					if (out->TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
-						if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
-							if (auto objFound = ptr->GetObj(objName)) {
-								if (found_obj) {
-									*found_obj = objFound;
-								}
-								return true;
-							}
+					if (auto objFound = out->GetObj(objName)) {
+						if (found_obj) {
+							*found_obj = objFound;
 						}
-						return false;
-						})) {
 						return out;
 					}
+					else {
+						return nullptr;
+					}
+
+					//if (out->TryFindNearestScopeWhere(out, [&objName, &found_obj](std::shared_ptr<Scope> const& namespacePtr)->bool {
+					//	if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
+					//		if (auto objFound = ptr->GetObj(objName)) {
+					//			if (found_obj) {
+					//				*found_obj = objFound;
+					//			}
+					//			return true;
+					//		}
+					//	}
+					//	return false;
+					//})) {
+					//	return out;
+					//}
 				}
 				else {
 					// we tried this before an failed.
-					return nullptr;
+					// return nullptr;
 				}
 			}
 		}
@@ -542,8 +584,8 @@ namespace GoodLang {
 				return out;
 			}
 			else {
-				InsertCached<3>(treeV, nullptr, objName);
-				return nullptr;
+				InsertCached<3>(treeV, this->GetSelf(), objName);
+				return this->GetSelf();
 			}
 		}
 		else {
@@ -554,21 +596,13 @@ namespace GoodLang {
 				return out;
 			}
 			else {
-				InsertCached<3>(treeV, nullptr, objName.substr(lastOfColons + 1));
-				return nullptr;
+				InsertCached<3>(treeV, this->GetSelf(), objName.substr(lastOfColons + 1));
+				return this->GetSelf();
 			}
 		}
 	};
 
-	std::shared_ptr<Scope> Scope::FindScopeWithObj(std::string objName, std::shared_ptr<Any>* found_obj) const {
-		static auto fixNamespace{ [](std::string& x) {
-			while (x.find("::") == 0 && x.length() > 2) {
-				x = x.substr(2);
-			}
-
-			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-		} };
-		fixNamespace(objName);
+	std::shared_ptr<Scope> Scope::FindScopeWithObj(std::string const& objName, std::shared_ptr<Any>* found_obj) const {
 		return FindScopeWithObjImpl(objName, found_obj);
 	};
 	std::shared_ptr<Any> Scope::FindObj(std::string objName) const {
@@ -584,7 +618,7 @@ namespace GoodLang {
 		auto lastOfColons = objName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Any> out{ nullptr };
-			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindScopeWithObj(objName, &out))) {
+			if (auto ptr = FindScopeWithObj(objName, &out)) {
 				if (out)
 					return out;
 				else
@@ -1047,15 +1081,20 @@ namespace GoodLang {
 	};
 	std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params) const {
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
-		if (!this->IsNamespace()) {
-			if (this->p_using.size() == 0) {
-				if (this->p_children.size() == 0) {
-					if (auto p = this->p_parent.lock()) {
-						return p->BuildFunction(functionName, params);
-					}
-				}
+		if (this->IsBasicScope()) {
+			if (auto p = this->p_parent.lock()) {
+				return p->BuildFunction(functionName, params);
 			}
-		}
+		}		
+		//if (!this->IsNamespace()) {
+		//	if (this->p_using.size() == 0) {
+		//		if (this->p_children.size() == 0) {
+		//			if (auto p = this->p_parent.lock()) {
+		//				return p->BuildFunction(functionName, params);
+		//			}
+		//		}
+		//	}
+		//}
 
 		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> out{ nullptr, this->GetTypeConverterTree() };
 		if (TryFindFunctionImpl(functionName, params, out.second, out.first)) {
@@ -1101,6 +1140,25 @@ namespace GoodLang {
 			throw std::runtime_error("Empty function was provided to CallFunction with direct instancing -- this shouldn't be allowed normally by design.");
 		}
 	};
+	Any Scope::CallFunction(std::string const& functionName, Any& params) const {
+		auto [func, tree] = BuildFunction(functionName, { params });
+		if (func) {
+			return call(func, params, *tree);
+		}
+		else {
+			return CallFunction(functionName, { params });
+		}
+	};
+	Any Scope::CallFunction(Proxy_Function const& func, Any& params) const {
+		auto tree{ this->GetTypeConverterTree() };
+		if (func) {
+			return call(func, params, *tree);
+		}
+		else {
+			throw std::runtime_error("Empty function was provided to CallFunction with direct instancing -- this shouldn't be allowed normally by design.");
+		}
+	};
+
 
 	bool Namespace::AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists) {
 		const_cast<Function&>(function).m_function->GetSignature().Name(name);

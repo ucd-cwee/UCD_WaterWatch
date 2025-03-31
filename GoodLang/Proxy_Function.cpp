@@ -25,8 +25,8 @@ namespace GoodLang {
 		};
 		void DaisyChained_Type_Conversion_Impl::convert_in_place(Any& t_from) const {
 			for (auto& converter : m_converters) {
-				if (auto& p = converter/*.lock()*/) {
-					p->convert_in_place(t_from);
+				if (converter) {
+					converter->convert_in_place(t_from);
 				}
 				else {
 					throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
@@ -34,10 +34,10 @@ namespace GoodLang {
 			}
 		};
 		Any DaisyChained_Type_Conversion_Impl::convert(const Any& t_from) const {
-			Any out = t_from;
+			Any out{ t_from };
 			for (auto& converter : m_converters) {
-				if (auto& p = converter/*.lock()*/) {
-					p->convert_in_place(out);
+				if (converter) {
+					converter->convert_in_place(out);
 				}
 				else {
 					throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
@@ -159,6 +159,17 @@ namespace GoodLang {
 		return out;
 	};
 
+	bool TypeConverter::ConverterExists(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+		auto f1 = AllConversions.find(From);
+		if (f1 != AllConversions.end()) {
+			auto f2 = f1->second.find(GetHash(To));
+			if (f2 != f1->second.end()) {
+				return true;
+			}
+		}
+		return false;
+	};
+
 	// may return nullptr
 	TypeConverter::TypeConverterFunc TypeConverter::GetExistingConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 		auto f1 = AllConversions.find(From);
@@ -172,9 +183,46 @@ namespace GoodLang {
 		}
 		return nullptr;
 	};
+	bool TypeConverter::TryConvertWithExistingConverter(Any& from, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {		
+		// straight look-up
+		if (true) {
+			auto f1 = AllConversions.find(From);
+			if (f1 != AllConversions.end()) {
+				auto f2 = f1->second.find(GetHash(To));
+				if (f2 != f1->second.end()) {
+					auto& pair = f2->second;
+					auto locked2{ std::shared_lock(pair.second.first) };
+					pair.second.second->convert_in_place(from);
+					return true;
+				}
+			}
+		}
+		// build (if needed) followed by straight look-up
+		if (true) {
+			EnsureConversionExists(From, To);
 
-	// may return nullptr if it could not be built
-	TypeConverter::TypeConverterFunc TypeConverter::GetOrBuildConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild) {
+			if (true) {
+				auto f1 = AllConversions.find(From);
+				if (f1 != AllConversions.end()) {
+					auto f2 = f1->second.find(GetHash(To));
+					if (f2 != f1->second.end()) {
+						auto& pair = f2->second;
+						auto locked2{ std::shared_lock(pair.second.first) };
+						pair.second.second->convert_in_place(from);
+						return true;
+					}
+				}
+			}
+		}
+		return false;		
+	};
+
+
+	void TypeConverter::EnsureConversionExists(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild){
+		if (!forceBuild) {
+			if (ConverterExists(From, To)) return;
+		}
+
 		// Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
 		// If no path is possible, returns false.
 		static auto CreateConversionPaths{ [this](
@@ -249,12 +297,6 @@ namespace GoodLang {
 				}
 				return vertices;
 			} };
-
-		if (!forceBuild) {
-			if (auto ptr = GetExistingConverter(From, To)) {
-				return ptr;
-			}
-		}
 
 		// Add conversion for From to a large variety of types...
 		if (1) {
@@ -373,8 +415,11 @@ namespace GoodLang {
 				}
 			}
 		}
+	};
 
-		// try and get our target type back ... 
+	// may return nullptr if it could not be built
+	TypeConverter::TypeConverterFunc TypeConverter::GetOrBuildConverter(std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To, bool forceBuild) {
+		EnsureConversionExists(From, To);
 		return GetExistingConverter(From, To);
 	};
 
@@ -513,40 +558,36 @@ namespace GoodLang {
 		return GetOrBuildConverter(From, To, forceBuild);
 	};
 
-	Any TypeConverter::Static_Convert(Any const& from, std::weak_ptr<Type_Info> const& To) {
-		if (To.lock()->is_any()) {
-			return from;
-		}
-		else if (from.IsTypeOf(To)) {
-			return from;
-		}
-		else return from;
+	bool TypeConverter::TryDoConversion(Any& From, std::shared_ptr<Type_Info> const& To) {
+		return TryConvertWithExistingConverter(From, From.Type().lock(), To);
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
-	Any TypeConverter::Convert(Any const& from, std::shared_ptr<Type_Info> const& To) {
-		if (To && To->is_any()) {
-			return from;
+	void TypeConverter::Convert_In_Place(Any& from, std::shared_ptr<Type_Info> const& To) {
+		if (To && To->is_any()) {}
+		else if (from.IsTypeOf(*To)) {}
+		else if (TryDoConversion(from, To)) {}
+		else {
+			throw exception::bad_any_cast(from.Type(), To, __LINE__);
 		}
-		else if (auto f = FindConverter(from.Type().lock(), To)) {
-			return f->convert(from);
-		}
-		else if (from.IsTypeOf(To)) {
-			return from;
-		}
-		throw exception::bad_any_cast(from.Type(), To, __LINE__);
 	};
+	Any TypeConverter::Convert(Any const& from, std::shared_ptr<Type_Info> const& To) {
+		Any out{ from };
+		Convert_In_Place(out, To);
+		return out; 
+	};
+
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	double TypeConverter::ConversionCost(Any const& from, std::shared_ptr<Type_Info> const& To) {
 		if (To && To->is_any()) {
 			return 0;
 		}
-		else if (auto f = FindConverter(from.Type().lock(), To)) {
-			return f->cost();
-		}
 		else if (from.IsTypeOf(To)) {
 			return 0;
+		}
+		else if (auto f = FindConverter(from.Type().lock(), To)) {
+			return f->cost();
 		}
 		return std::numeric_limits<double>::max();		
 	};
@@ -556,11 +597,11 @@ namespace GoodLang {
 		if (To && To->is_any()) {
 			return 0;
 		}
-		else if (auto f = FindConverter(From, To)) {
-			return  f->cost();
-		}
 		else if (from.IsTypeOf(To)) {
 			return 0;
+		}
+		else if (auto f = FindConverter(From, To)) {
+			return  f->cost();
 		}
 		return std::numeric_limits<double>::max();		
 	};
@@ -570,11 +611,11 @@ namespace GoodLang {
 		if (To && To->is_any()) {
 			return 0;
 		}
-		else if (auto f = FindConverter(From, To)) {
-			return  f->cost();
-		}
 		else if (GoodLang::GetHash(From) == GoodLang::GetHash(To)) {
 			return 0;
+		}
+		else if (auto f = FindConverter(From, To)) {
+			return  f->cost();
 		}
 		return std::numeric_limits<double>::max();
 	};
@@ -736,46 +777,31 @@ namespace GoodLang {
 			return out;
 		};
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
-			std::vector<Any> out;
+			std::vector<Any> out{ t_from };
 
 			if (t_to.size() > t_from.size()) throw exception::arity_error(t_to.size(), t_to.size());
 
 			out.resize(t_to.size());
 
-			size_t i = 0;
-			for (; i < t_to.size(); ++i) {
-				out[i] = t_conversions.Convert(t_from[i], t_to[i].lock());
+			
+			for (long long i = t_to.size() - 1; i >= 0; --i) {
+				t_conversions.Convert_In_Place(out[i], t_to[i].lock());
 			}
-
 			return out;
 		};
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_from, ParamTypes const& t_to) {
-			std::vector<Any> out;
-
 			if (t_to.size() > t_from.size()) throw exception::arity_error(t_to.size(), t_to.size());
-
+			std::vector<Any> out{ t_from };
 			out.resize(t_to.size());
-
-			size_t i = 0;
-			for (; i < t_to.size(); ++i) {
-				out[i] = TypeConverter::Static_Convert(t_from[i], t_to[i]);
-			}
-
 			return out;
 		};
-		std::vector<Any> Proxy_Function_Base::convert(Any& t_from, ParamTypes const& t_to) {
-			std::vector<Any> out;
-
+		Any Proxy_Function_Base::convert(Any& t_from, ParamTypes const& t_to) {
 			if (t_to.size() > 1) throw exception::arity_error(t_to.size(), t_to.size());
-
-			out.resize(t_to.size());
-
-			size_t i = 0;
-			for (; i < t_to.size(); ++i) {
-				out[i] = TypeConverter::Static_Convert(t_from, t_to[i]);
-			}
-
-			return out;
+			return t_from;
+		};
+		Any Proxy_Function_Base::convert(Any& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
+			if (t_to.size() > 1) throw exception::arity_error(t_to.size(), 1);
+			return t_conversions.Convert(t_from, t_to[0].lock());
 		};
 
 		size_t Proxy_Function_Base::hash() const {
@@ -807,23 +833,32 @@ namespace GoodLang {
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(const std::vector<Any>& params, TypeConverter& t_conversions) const {
 			if (params.size() >= NumArguments()) {
-				return do_call(convert(params, t_conversions));
+				return this->do_call(convert(params, t_conversions));
 			}
 			throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(const std::vector<Any>& params) const {
 			if (params.size() >= NumArguments()) {
-				return do_call(convert(params));
+				return this->do_call(convert(params));
 			}
 			throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(Any& params) const {
 			if (1 >= NumArguments()) {
-				return do_call(convert(params));
+				auto conversion{ convert(params) };
+				return this->do_call(conversion);
 			}
-			throw exception::arity_error(static_cast<int>(1), NumArguments());
+			throw exception::arity_error(1, NumArguments());
+		};
+		// Does want conversions -- ensure types match if possible.
+		Any Proxy_Function_Base::operator()(Any& params, TypeConverter& t_conversions) const {
+			if (1 >= NumArguments()) {
+				auto conversion{ convert(params, t_conversions) };
+				return this->do_call(conversion);
+			}
+			throw exception::arity_error(1, NumArguments());
 		};
 
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
@@ -835,17 +870,33 @@ namespace GoodLang {
 			return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types());
 		};
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
-		std::vector<Any> Proxy_Function_Base::convert(Any& t_params) const {
+		Any Proxy_Function_Base::convert(Any& t_params) const {
 			return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types());
+		};
+		Any Proxy_Function_Base::convert(Any& t_params, TypeConverter& t_conversions) const {
+			return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types(), t_conversions);
 		};
 	};
 };
 
 // Proxy Function typedef, make_callable(...), and call(...)
 namespace GoodLang {
-	Any call(Proxy_Function callable, std::vector<Any> const& inputs, TypeConverter& conversionTree) {
+	Any call(Proxy_Function callable, Any& inputs, TypeConverter& conversionTree) {
 		if (callable) {
 			return callable->operator()(inputs, conversionTree);
+		}
+		else {
+			throw exception::arity_error(1, -1);
+		}
+	};
+	Any call(Proxy_Function callable, std::vector<Any> const& inputs, TypeConverter& conversionTree) {
+		if (callable) {
+			if (inputs.size() == 1) {
+				return callable->operator()(const_cast<Any&>(inputs[0]), conversionTree);
+			}
+			else {
+				return callable->operator()(inputs, conversionTree);
+			}
 		}
 		else {
 			throw exception::arity_error(inputs.size(), -1);
