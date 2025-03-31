@@ -581,19 +581,23 @@ namespace GoodLang {
 		bool operator<=(value const& A, value const& V) {
 			return DoComparison([](Number LHS, Number RHS) -> bool {
 				return LHS <= RHS;
-				}, A, V);
+			}, A, V);
 		};
 		bool operator>(value const& A, value const& V) { return !(A <= V); };
 		bool operator>=(value const& A, value const& V) { return !(A < V); };
 		bool operator!=(value const& A, value const& V) noexcept { return !(operator==(A, V)); };
 		value& value::operator++() {
-			auto Data = this->unit_m.Unique();
-			Data->value() += Data->ratio();			
+			this->unit_m.EnsureDataExists();
+			this->unit_m.lock.lock();
+			this->unit_m.data->value() += this->unit_m.data->ratio();
+			this->unit_m.lock.unlock();
 			return *this;
 		};
 		value& value::operator--() {
-			auto Data = this->unit_m.Unique();
-			Data->value() -= Data->ratio();
+			this->unit_m.EnsureDataExists();
+			this->unit_m.lock.lock();
+			this->unit_m.data->value() -= this->unit_m.data->ratio();
+			this->unit_m.lock.unlock();
 			return *this;
 		};
 		value& value::operator+=(value const& V) {

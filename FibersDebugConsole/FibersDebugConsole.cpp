@@ -1316,13 +1316,13 @@ namespace GoodLang {
 				if (auto obj = currentScope->FindObj(function_name)) {
 					if (Proxy_Function func = obj->cast<Proxy_Function>()) {
 						if (
-							func->NumArguments() == 2//3
+							func->NumArguments() == 2
 							&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
 							&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
-							/*&& GoodLang::GetHash(func->Argument(2)) == GoodLang::GetHash(user_type_shared<AST_Node_Impl<T>>())*/
 						){
-							if constexpr (returnsValue)
+							if constexpr (returnsValue) {
 								return func->operator()({ currentScope, params });
+							}
 							else {
 								(void)func->operator()({ currentScope, params });
 								return {};
@@ -2176,6 +2176,7 @@ namespace GoodLang {
 				, m_param_names(Arg_List_AST_Node<T>::get_arg_names(*this->children[1]))
 				//, m_this_capture(has_this_capture(this->children[0]->children))
 				, m_lambda_node(t_children.back())
+				, function_default_scope(GoodLang::StartScope())
 			{
 				// need to immediately optimize the lambda node if at all possible. 
 				while (m_lambda_node->identifier == AST_Node_Type::Return) {
@@ -2220,19 +2221,17 @@ namespace GoodLang {
 					}
 				}
 
-				// NOTE: Calling ""AddObj seems to reduce performance since it makes every call to the lambda 
-				// reset the optimization cache. 
 				if (returnVoid) {
 					return GoodLang::make_callable([
 						lambda_node = m_lambda_node,
 						param_names = this->m_param_names,
-						captures
+						captures, 
+						defaultScope = this->function_default_scope
 					](
 						std::shared_ptr<Scope> currentScope,
-						std::shared_ptr<std::vector<Any>> params/*,
-						std::shared_ptr<AST_Node_Impl<T>> lambda_node*/
-						) -> Any {
-							auto function_scope = std::make_shared<Scope>(currentScope);
+						std::shared_ptr<std::vector<Any>> params
+					) -> Any {
+							auto function_scope = std::make_shared<Scope>(defaultScope);
 							function_scope->SetSelf(function_scope);
 
 							// insert the captures
@@ -2245,6 +2244,8 @@ namespace GoodLang {
 								function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)));
 							}
 
+							function_scope->SetParent_Unsafe(currentScope);
+							
 							try {
 								lambda_node->eval(function_scope);
 							}
@@ -2255,7 +2256,7 @@ namespace GoodLang {
 								}
 							}
 							return Any();
-						}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>()/*, user_type_shared<AST_Node_Impl<T>>()*/ })
+						}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() })
 					);
 				}
 				else {
@@ -2263,13 +2264,14 @@ namespace GoodLang {
 						lambda_node = m_lambda_node,
 						param_names = this->m_param_names,
 						captures,
-						thisReturnType = returnType
+						thisReturnType = returnType, 
+						defaultScope = this->function_default_scope
 					](
 						std::shared_ptr<Scope> currentScope,
 						std::shared_ptr<std::vector<Any>> params/*,
 						std::shared_ptr<AST_Node_Impl<T>> lambda_node*/
 						)->Any {
-							auto function_scope = std::make_shared<Scope>(currentScope);
+							auto function_scope = std::make_shared<Scope>(defaultScope);
 							function_scope->SetSelf(function_scope);
 
 							// insert the captures
@@ -2281,6 +2283,8 @@ namespace GoodLang {
 							for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
 								function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)));
 							}
+
+							function_scope->SetParent_Unsafe(currentScope);
 
 							Any lambda_result;
 							try {
@@ -2304,6 +2308,7 @@ namespace GoodLang {
 		private:
 			const std::vector<std::string> m_param_names;
 			const std::shared_ptr<AST_Node_Impl<T>> m_lambda_node;
+			const std::shared_ptr<Scope> function_default_scope;
 		};
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
@@ -6466,6 +6471,28 @@ int main() {
 			print(ToString(parsed_result));
 			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
+
+
+
+			// TO-DO, add a new scope/namespace type that basically allows for Functions and classes to be found from parents and higher,
+			// but prevents finding objects in higher scopes. The following example should fail, but currently doesn't:
+			parsed_result = parse.Parse(R"start(
+				var& lambda;
+				int x = 0;
+				{					
+					lambda := [](Vector y){ // x is not a variable or capture, but is still "visible" from the lambda depending on the calling scope. 
+						y.push_back(x);
+						return y;
+					};
+				}
+				return lambda([]);
+			)start", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+			print("");
+
+
+
 
 			parsed_result = parse.Parse(R"start(
 				int x = 0; print(x); /* BLOCK1 */ {

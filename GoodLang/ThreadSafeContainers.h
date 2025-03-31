@@ -2897,15 +2897,27 @@ namespace GoodLang {
 			return shared->insert(underlying::value_type(std::move(_Keyval), std::forward<_Mappedty>(_Mapval)...)).second;
 		};
 		template <class... _Mappedty> bool emplace(const key_type& _Keyval, _Mappedty&&... _Mapval) {
-			auto shared = data.Shared();
 			auto V{ underlying::value_type(_Keyval, std::forward<_Mappedty>(_Mapval)...) };
-			if (shared->insert(V).second) {
+			data.EnsureDataExists();
+			data.lock.lock_shared();
+			if (data.data->insert(V).second) {
+				data.lock.unlock_shared();
 				return true;
 			}
 			else {
-				shared->operator[](_Keyval) = std::move(V.second);
+				data.data->operator[](_Keyval) = std::move(V.second);
+				data.lock.unlock_shared();
 				return true;
 			}
+
+			//auto shared = data.Shared();			
+			//if (shared->insert(V).second) {
+			//	return true;
+			//}
+			//else {
+			//	shared->operator[](_Keyval) = std::move(V.second);
+			//	return true;
+			//}
 		};
 		typename SharedLockable<T>::SharedObj operator[](const key_type& _Keyval) {
 			auto shared = data.Shared();
