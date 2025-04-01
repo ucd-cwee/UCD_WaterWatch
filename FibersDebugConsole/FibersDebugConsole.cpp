@@ -2241,10 +2241,26 @@ namespace GoodLang {
 			}
 
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-				auto newNamespace = std::make_shared<Namespace>(currentScope, std::string(GetText(this->children[0])));
-				newNamespace->SetSelf(newNamespace);
+				// if the namespace already exists, then we should "resume" it, rather than creating a new one. 
 
-				currentScope->AddChild(newNamespace); // add the new namespace as a child
+				std::string desired_namespace = currentScope->GetQualifiedNamespace() + "::" + std::string(GetText(this->children[0]));
+
+				static auto fixNamespace{ [](std::string& x) {
+					while (x.find("::") == 0 && x.length() > 2) {
+						x = x.substr(2);
+					}
+
+					while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+				} };
+				fixNamespace(desired_namespace);
+
+				print(desired_namespace);
+				auto newNamespace = currentScope->FindNamespace(desired_namespace);
+				if (!newNamespace) {
+					newNamespace = std::make_shared<Namespace>(currentScope, std::string(GetText(this->children[0])));
+					newNamespace->SetSelf(newNamespace);
+					currentScope->AddChild(newNamespace); // add the new namespace as a child
+				}				
 
 				(void)this->children.back()->eval(newNamespace);
 
@@ -7436,10 +7452,22 @@ namespace GoodLang {
 };
 
 
+template <typename T> T Func() { return {}; };
 
 
 int main() {
 	using namespace GoodLang;
+
+	make_callable(&Func<int>);
+
+
+
+
+
+
+
+
+
 
 	if (1) {
 		auto globalScope = StartScope(); // will initialize the globally shared engine as well
@@ -7518,7 +7546,7 @@ int main() {
 					TEST::DoWork();
 					TEST::DoWork(i.double);
 					TEST::DoWork(i.int, Var(i));
-				};				
+				};
 			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
 			if (1) {
@@ -7533,11 +7561,55 @@ int main() {
 
 
 
+			parsed_result = parse.Parse(R"start(
+				Var String() { 
+					return "Static Function";
+				};				
+				auto String = [](){
+					return "Lambda Function"
+				};
+	
+				// At this point, it is ambiguous who "String" is. 
+				// It is resolved in preference of objects to functions, in order of reverse scope search.
+
+				return String();
+			)start", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+			print("");
+
+
+			parsed_result = parse.Parse(R"start(
+				auto String = [](){
+					return "Lambda Function"
+				};
+
+				{					
+					Var String() { 
+						return "Static Function";
+					};
+					return String();
+				}				
+			)start", StartScope(globalScope));
+			print(ToString(parsed_result));
+			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+			print("");
+
+
+
+
+
+
+
+
+
+
+
 			parsed_result = parse.Parse(R"start(				
 				var& x = 10;
 				var& out;
 				if (1){
-					namespace TEST {
+					namespace TEST { // resumes adding content to the same namespace called "TEST" if found, otherwise starts a new one
 						// valid static objects should reduce down to Assign_Retroactively:
 						int valid_static_object1;
 						int valid_static_object5 = 100;
@@ -7546,9 +7618,13 @@ int main() {
 						Units::foot FunctionName() { 
 							return 0;
 						};
+					};
+					namespace TEST { // resumes adding content to the same namespace called "TEST" if found, otherwise starts a new one
 						Units::foot FunctionName(float x) { 
 							return x;
 						};
+					}
+					namespace TEST { // resumes adding content to the same namespace called "TEST" if found, otherwise starts a new one
 						Units::foot FunctionName(float x, float y) { 
 							return x + y;
 						};
@@ -7568,10 +7644,7 @@ int main() {
 				}
 				catch(e) {
 					return (out[2] + 5)_m;
-				}			
-				
-
-
+				}	
 			)start", StartScope(globalScope));
 			print(ToString(parsed_result));
 			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
@@ -8023,12 +8096,12 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter y;
-				for (int i = 0; i < 1000000; ++i) {
+				for (Units::value i = 0; i < 1000000; ++i) {
 					++y;
 				}
 				return y;
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
+			print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();

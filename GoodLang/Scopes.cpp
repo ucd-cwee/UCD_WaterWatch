@@ -5,55 +5,67 @@ namespace GoodLang {
 	// try and find the object with the requested key.
 	std::shared_ptr<Any> Scope::GetObj(std::string const& name) const {
 		auto f = p_objects.find(name);
-		if (f != f.end()) {
+		if (f != p_objects.end()) {
 			return f->second;
 		}
 		else {
 			return nullptr;
 		}
+
+		//auto f = p_objects.find(name);
+		//if (f != f.end()) {
+		//	return f->second;
+		//}
+		//else {
+		//	return nullptr;
+		//}
 	};
 	// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
 	bool Scope::AddObj(std::string const& name, std::shared_ptr<Any> const& obj, bool updateObjectTree) {
-		if (p_objects.emplace(name, obj)) {
-			if (updateObjectTree) this->RecordObject(name, obj);
-			return true;
-		}
-		else {
-			return false;
-		}
+		p_objects[name] = obj;
+		if (updateObjectTree) this->RecordObject(name, obj);
+		return true;
+		
+		//if (p_objects.emplace(name, obj)) {
+		//	if (updateObjectTree) this->RecordObject(name, obj);
+		//	return true;
+		//}
+		//else {
+		//	return false;
+		//}
 	};
-	// Returns true if successful.
-	bool Scope::EraseObj(std::string const& name) {
-		if (p_objects.erase(name)) {
-			this->RecordObject(name, nullptr);
-			return true;
-		}
-		else {
-			return false;
-		}
-	};
-	// Returns true if successful.
-	bool Scope::EraseObj(std::shared_ptr<Any> const& Obj) {
-		std::string key;
-		bool doErasure = false;
-		for (auto& obj : p_objects) {
-			if (obj.second == Obj) {
-				key = obj.first;
-				doErasure = true;
-				break;
-			}
-		}
-		if (doErasure) {
-			if (EraseObj(key)) {
-				this->RecordObject(key, nullptr);
-				return true;
-			}
-			else {
-				return false;
-			}
-		}
-		else return false;
-	};
+	//// Returns true if successful.
+	//bool Scope::EraseObj(std::string const& name) {
+	//	if (p_objects.erase(name)) {
+	//		this->RecordObject(name, nullptr);
+	//		return true;
+	//	}
+	//	else {
+	//		return false;
+	//	}
+	//};
+	//// Returns true if successful.
+	//bool Scope::EraseObj(std::shared_ptr<Any> const& Obj) {
+	//	std::string key;
+	//	bool doErasure = false;
+	//	for (auto& obj : p_objects) {
+	//		if (obj.second == Obj) {
+	//			key = obj.first;
+	//			doErasure = true;
+	//			break;
+	//		}
+	//	}
+	//	if (doErasure) {
+	//		if (EraseObj(key)) {
+	//			this->RecordObject(key, nullptr);
+	//			return true;
+	//		}
+	//		else {
+	//			return false;
+	//		}
+	//	}
+	//	else return false;
+	//};
 
 
 	bool Scope::AddUsing(std::weak_ptr<Namespace> namespacePtr) {

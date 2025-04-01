@@ -1844,12 +1844,18 @@ namespace GoodLang {
 		SharedLockable() : data{ /*TryInstance()*/ } {};
 		SharedLockable(Arg const& a) : data{ TryInstance(a) } {};
 		SharedLockable(std::unique_ptr<Arg, Deleter> && a) : data{ std::move(a) } {};
-		SharedLockable(const SharedLockable& r) : data{ TryInstance(*r.Shared()) } {};
+		SharedLockable(const SharedLockable& r) : data{} {
+			r.lock.lock_shared();
+			if (r.data) {
+				data = TryInstance(*r.data);
+			}
+			r.lock.unlock_shared();
+		};
 		SharedLockable& operator=(const SharedLockable& r) {
 			*Unique() = *r.Shared();
 			return *this;
 		};
-		SharedLockable(SharedLockable&& r) : data{ TryInstance(*r.Shared()) } {};
+		SharedLockable(SharedLockable&& r) : data{ std::move(r.data) } {};
 		SharedLockable& operator=(SharedLockable&& r) {
 			*Unique() = *r.Shared();
 			return *this;

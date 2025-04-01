@@ -229,7 +229,8 @@ namespace GoodLang {
 		};
 
 	private:
-		UnorderedMap<std::string, std::shared_ptr<Any>>
+		concurrency::concurrent_unordered_map< std::string, std::shared_ptr<Any>>
+		// UnorderedMap<std::string, std::shared_ptr<Any>>
 			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
 
 	public:
@@ -238,9 +239,9 @@ namespace GoodLang {
 		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
 		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj, bool updateObjectTree = true);
 		// Returns true if successful.
-		bool EraseObj(std::string const& name);
+		// bool EraseObj(std::string const& name);
 		// Returns true if successful.
-		bool EraseObj(std::shared_ptr<Any> const& Obj);
+		// bool EraseObj(std::shared_ptr<Any> const& Obj);
 
 	private:
 		std::weak_ptr<Global> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the end. 
@@ -945,6 +946,11 @@ namespace GoodLang {
 	// Support for Units
 	class UnitsLibrary {
 	public:
+		//template <typename T>
+		//__forceinline std::shared_ptr<Units::value> Cast(std::shared_ptr<T> from) {
+		//	return std::dynamic_pointer_cast<Units::value>(std::move(from));
+		//};
+
 		template<typename T>
 		__forceinline static void AddUnit(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
 			std::string UnitName = T().UnitName().data();
@@ -965,7 +971,11 @@ namespace GoodLang {
 				// value(foot)
 				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
 					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
-				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() })), false));
+				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() }), GoodLang::user_type_shared<Units::value>().lock()->MakeConstRef()), false));
+
+				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
+					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
+				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef() }), GoodLang::user_type_shared<Units::value>().lock()->MakeRef()), false));
 			}
 		};
 

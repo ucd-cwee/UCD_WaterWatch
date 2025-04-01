@@ -54,8 +54,10 @@ namespace GoodLang {
 		template<class Callable>
 		class Custom_Type_Conversion_Impl : public Type_Conversion_Base {
 		public:
-			typedef typename utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::result_type ReturnType;
-			typedef typename std::tuple_element_t<0, typename utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::arguments> InputType;
+			typedef typename utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::result_type 
+				ReturnType;
+			typedef typename std::tuple_element_t<0, typename utilities::function_traits< typename decltype(std::function(std::declval<Callable>())) >::arguments> 
+				InputType;
 
 		public:
 			Custom_Type_Conversion_Impl(Callable t_func)
@@ -83,10 +85,10 @@ namespace GoodLang {
 			// From -> To
 			void convert_in_place(Any& t_from) const override {
 				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
-					t_from = m_func(t_from);
+					t_from.swap(m_func(t_from));
 				}
 				else {
-					t_from = m_func(t_from.cast());
+					t_from.swap(m_func(t_from.cast()));
 				}
 			};
 

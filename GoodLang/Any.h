@@ -494,21 +494,24 @@ namespace std {
 	};
 	template <> struct hash<std::shared_ptr<GoodLang::Type_Info>> {
 		std::size_t operator()(const std::shared_ptr<GoodLang::Type_Info>& k) const {
+			static auto voidHash{ GoodLang::impl::TypeId<void>().hash_code() };
 			if (k) {
 				return k->GetHash();
 			}
 			else {
-				return GoodLang::impl::TypeId<void>().hash_code();
+				return voidHash;
 			}
 		};
 	};
-	template <> struct hash<std::weak_ptr<GoodLang::Type_Info>> {
+	template <> struct hash<std::weak_ptr<GoodLang::Type_Info>> {	
 		std::size_t operator()(const std::weak_ptr<GoodLang::Type_Info>& k) const {
+			static auto voidHash{ GoodLang::impl::TypeId<void>().hash_code() };
+
 			if (auto p = k.lock()) {
 				return p->GetHash();
 			}
 			else {
-				return GoodLang::impl::TypeId<void>().hash_code();
+				return voidHash;
 			}
 		};
 	};
@@ -1548,8 +1551,9 @@ namespace GoodLang {
 			: container()
 			, mut()
 		{
-			auto locked2{ std::shared_lock(rhs.mut) };
+			rhs.mut.lock_shared();
 			container = rhs.container;
+			rhs.mut.unlock_shared();
 		};
 		Any(Any&& rhs) noexcept
 			: container(std::move(rhs.container))
@@ -1579,6 +1583,7 @@ namespace GoodLang {
 
 	public: /*! Data Assignment AFTER INIT */
 		Any& swap(Any& rhs) noexcept;
+		Any& swap(Any&& rhs) noexcept;
 		Any& operator=(const Any& rhs) noexcept;
 		Any& operator=(Any&& rhs) noexcept;
 		Any& operator=(std::nullptr_t) noexcept;

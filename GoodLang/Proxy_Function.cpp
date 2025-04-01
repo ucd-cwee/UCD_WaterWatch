@@ -840,15 +840,14 @@ namespace GoodLang {
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(const std::vector<Any>& params) const {
 			if (params.size() >= NumArguments()) {
-				return this->do_call(convert(params));
+				return this->do_call(params);
 			}
 			throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(Any& params) const {
 			if (1 >= NumArguments()) {
-				auto conversion{ convert(params) };
-				return this->do_call(conversion);
+				return this->do_call(params);
 			}
 			throw exception::arity_error(1, NumArguments());
 		};

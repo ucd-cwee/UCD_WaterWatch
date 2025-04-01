@@ -165,6 +165,11 @@ namespace GoodLang {
 		container.swap(rhs.container);
 		return *this;
 	};
+	Any& Any::swap(Any&& rhs) noexcept {
+		auto locked{ std::unique_lock(mut) };
+		container = std::move(rhs.container);
+		return *this;
+	};
 	Any& Any::operator=(const Any& rhs) noexcept {
 		if (this == &rhs) { return *this; }
 
@@ -176,9 +181,9 @@ namespace GoodLang {
 	};
 	Any& Any::operator=(Any&& rhs) noexcept {
 		auto locked{ std::unique_lock(mut) };
-		auto locked2{ std::shared_lock(rhs.mut) };
+		//auto locked2{ std::shared_lock(rhs.mut) };
 
-		container = rhs.container;
+		container = std::move(rhs.container);
 		return *this;
 	};
 	Any& Any::operator=(std::nullptr_t) noexcept { Clear(); return *this; };
@@ -235,30 +240,32 @@ namespace GoodLang {
 	std::weak_ptr<Type_Info> Any::Type() const noexcept {
 		static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
 		static auto VarHash{ GetHash(user_type<Var>()) };
-		auto locked{ std::shared_lock(mut) };
+		std::weak_ptr<Type_Info> out{ user_type_shared<void>() };
+
+		mut.lock_shared();		
 		if (std::shared_ptr<AnyData>& m = container) {
 			if (m->GetTypeHash() == DynamicTypeHash) {
-				if (auto p2 = m->cast< DynamicObject>()) {
-					return p2->m_classType;
+				if (auto* p2 = m->cast< DynamicObject>()) {
+					out = p2->m_classType;
+					mut.unlock_shared();
+					return out;
 				}
 			}
 #ifdef AllowInlineVarTyping
 			if (m->GetTypeHash() == VarHash) {
 				if (auto* p2 = m->cast< Var>()) {
 					if (!p2->p_data->IsEmpty()) {
-						return p2->p_data->Type();
-					}
-					else {
-						return m->GetTypeShared();
+						out = p2->p_data->Type();
+						mut.unlock_shared();
+						return out;
 					}
 				}
 			}
 #endif
-			return m->GetTypeShared();
+			out = m->GetTypeShared();
 		}
-		else {
-			return user_type_shared<void>();
-		}
+		mut.unlock_shared();
+		return out;		
 	};
 	size_t Any::TypeHash() const noexcept {
 		static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
@@ -277,9 +284,6 @@ namespace GoodLang {
 				if (auto* p2 = m->cast< Var>()) {
 					if (!p2->p_data->IsEmpty()) {
 						return p2->p_data->TypeHash();
-					}
-					else {
-						return m->GetTypeHash();
 					}
 				}
 			}
