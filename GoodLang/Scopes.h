@@ -236,7 +236,7 @@ namespace GoodLang {
 		// try and find the object with the requested key.
 		std::shared_ptr<Any> GetObj(std::string const& name) const;
 		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
-		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj);
+		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj, bool updateObjectTree = true);
 		// Returns true if successful.
 		bool EraseObj(std::string const& name);
 		// Returns true if successful.
@@ -338,6 +338,15 @@ namespace GoodLang {
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
 		) const;
+		virtual bool TryFindNearestScopeWhere_2(
+			std::shared_ptr<Scope>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
+			bool isExporingParent,
+			bool allowFindObject,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const;
+
 		virtual bool TryFindNearestNamespaceWhere(
 			std::shared_ptr<Namespace>& bestMatch,
 			std::function<bool(std::shared_ptr<Namespace> const&)> const& func,
@@ -395,7 +404,7 @@ namespace GoodLang {
 		using TemplatedCacheContainer // organizes multiple caches for several purposes...
 			= std::vector<SharedLockable<VersionedCacheContainer>>;
 		TemplatedCacheContainer
-			SearchCache{ 4, SharedLockable<VersionedCacheContainer>() };
+			SearchCache{ 5, SharedLockable<VersionedCacheContainer>() };
 
 		template<size_t CacheID> SharedLockable<VersionedCacheContainer>& GetVersionedCacheContainer() const {
 			return const_cast<SharedLockable<VersionedCacheContainer>&>(SearchCache[CacheID]);
@@ -518,6 +527,9 @@ namespace GoodLang {
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
+
+		std::shared_ptr<Scope> FindScopeWithObjOrFunction(std::string objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
+		bool FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
@@ -682,6 +694,15 @@ namespace GoodLang {
 		virtual bool TryFindNearestScopeWhere(
 			std::shared_ptr<Scope>& bestMatch,
 			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const override;
+
+		virtual bool TryFindNearestScopeWhere_2(
+			std::shared_ptr<Scope>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
+			bool isExporingParent,
+			bool allowFindObject,
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
 		) const override;
@@ -894,6 +915,15 @@ namespace GoodLang {
 		virtual bool TryFindNearestScopeWhere(
 			std::shared_ptr<Scope>& bestMatch,
 			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
+			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+		) const override;
+
+		virtual bool TryFindNearestScopeWhere_2(
+			std::shared_ptr<Scope>& bestMatch,
+			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
+			bool isExporingParent,
+			bool allowFindObject,
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
 			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
 		) const override;

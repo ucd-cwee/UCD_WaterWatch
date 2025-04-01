@@ -13,9 +13,9 @@ namespace GoodLang {
 		}
 	};
 	// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
-	bool Scope::AddObj(std::string const& name, std::shared_ptr<Any> const& obj) {
+	bool Scope::AddObj(std::string const& name, std::shared_ptr<Any> const& obj, bool updateObjectTree) {
 		if (p_objects.emplace(name, obj)) {
-			this->RecordObject(name, obj);
+			if (updateObjectTree) this->RecordObject(name, obj);
 			return true;
 		}
 		else {
@@ -763,6 +763,411 @@ namespace GoodLang {
 	};
 	
 	
+
+
+	bool Scope::TryFindNearestScopeWhere_2(
+		std::shared_ptr<Scope>& bestMatch,
+		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
+		bool isExporingParent,
+		bool allowFindObject,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+	) const {
+		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto selfPtr = this->p_self.lock();
+
+		// Prevent Duplication
+		if (checkedAll.count(selfPtr) >= 1) { return false; }
+		checkedAll.emplace(selfPtr);
+
+		// test myself			
+		if (!(checkedSelf.count(selfPtr) >= 1)) {
+			checkedSelf.emplace(selfPtr);
+			if (1) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+					if (func(p, isExporingParent, allowFindObject)) {
+						bestMatch = p;
+						return true;
+					}
+				}
+			}
+		}
+
+		// test my "using" namespaces and their children.
+		for (auto& childNamespace : this->p_using) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+
+		}
+
+		// test all of my parents
+		auto parentPtr = this->p_parent.lock();
+		while (parentPtr) {
+			if (!(checkedSelf.count(parentPtr) >= 1)) {
+				checkedSelf.emplace(parentPtr);
+				if (1) {
+					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
+						if (func(p, true, allowFindObject)) {
+							bestMatch = p;
+							return true;
+						}
+					}
+				}
+			}
+			else {
+				break; // we've checked this before! Quick, get out. 
+			}
+			parentPtr = parentPtr->p_parent.lock();
+		}
+
+		// Test my children themselves.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (innerChildNamespace.second) {
+					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+					if (!(checkedSelf.count(ptr) >= 1)) {
+						checkedSelf.emplace(ptr);
+						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+							if (func(p, isExporingParent, allowFindObject)) {
+								bestMatch = p;
+								return true;
+							}
+						}
+					}
+					else {
+						break; // we've checked this before! Quick, get out. 
+					}
+				}
+			}
+		}
+
+		// test my parents and their children
+		if (auto p = this->p_parent.lock()) {
+			if (p->TryFindNearestScopeWhere_2(bestMatch, func, true, allowFindObject, CheckedSelf, CheckedAll)) {
+				return true;
+			}
+		}
+
+		// test my children's children.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+					if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	};
+	bool FunctionScope::TryFindNearestScopeWhere_2(
+		std::shared_ptr<Scope>& bestMatch,
+		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
+		bool isExporingParent,
+		bool allowFindObject,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+	) const {
+		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto selfPtr = this->p_self.lock();
+
+		// Prevent Duplication
+		if (checkedAll.count(selfPtr) >= 1) { return false; }
+		checkedAll.emplace(selfPtr);
+
+		// test myself			
+		if (!(checkedSelf.count(selfPtr) >= 1)) {
+			checkedSelf.emplace(selfPtr);
+			if (1) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+					if (func(p, isExporingParent, allowFindObject)) {
+						bestMatch = p;
+						return true;
+					}
+				}
+			}
+		}
+
+		// test my "using" namespaces and their children.
+		for (auto& childNamespace : this->p_using) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+
+		}
+
+		// test all of my parents
+		auto parentPtr = this->p_parent.lock();
+		while (parentPtr) {
+			if (!(checkedSelf.count(parentPtr) >= 1)) {
+				checkedSelf.emplace(parentPtr);
+				if (1) {
+					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
+						if (func(p, true, false)) {
+							bestMatch = p;
+							return true;
+						}
+					}
+				}
+			}
+			else {
+				break; // we've checked this before! Quick, get out. 
+			}
+			parentPtr = parentPtr->p_parent.lock();
+		}
+
+		// Test my children themselves.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (innerChildNamespace.second) {
+					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+					if (!(checkedSelf.count(ptr) >= 1)) {
+						checkedSelf.emplace(ptr);
+						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+							if (func(p, isExporingParent, allowFindObject)) {
+								bestMatch = p;
+								return true;
+							}
+						}
+					}
+					else {
+						break; // we've checked this before! Quick, get out. 
+					}
+				}
+			}
+		}
+
+		// test my parents and their children
+		if (auto p = this->p_parent.lock()) {
+			if (p->TryFindNearestScopeWhere_2(bestMatch, func, true, false, CheckedSelf, CheckedAll)) {
+				return true;
+			}
+		}
+
+		// test my children's children.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+					if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	};
+	bool Class::TryFindNearestScopeWhere_2(
+		std::shared_ptr<Scope>& bestMatch,
+		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
+		bool isExporingParent,
+		bool allowFindObject,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
+		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+	) const {
+		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto selfPtr = this->p_self.lock();
+
+		// Prevent Duplication
+		if (checkedAll.count(selfPtr) >= 1) { return false; }
+		checkedAll.emplace(selfPtr);
+
+		// test myself			
+		if (!(checkedSelf.count(selfPtr) >= 1)) {
+			checkedSelf.emplace(selfPtr);
+			if (1) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+					if (func(p, isExporingParent, allowFindObject)) {
+						bestMatch = p;
+						return true;
+					}
+				}
+			}
+		}
+
+		// test my "using" namespaces and their children.
+		for (auto& childNamespace : this->p_using) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+		}
+
+		// test my inherited namespace.
+		for (auto& Parent : DerivedFrom) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(Parent.lock())) {
+				if (p->TryFindNearestScopeWhere_2(bestMatch, func, true, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
+		}
+
+		// test all of my parents
+		auto parentPtr = this->p_parent.lock();
+		while (parentPtr) {
+			if (!(checkedSelf.count(parentPtr) >= 1)) {
+				checkedSelf.emplace(parentPtr);
+				if (1) {
+					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
+						if (func(p, true, allowFindObject)) {
+							bestMatch = p;
+							return true;
+						}
+					}
+				}
+			}
+			else {
+				break; // we've checked this before! Quick, get out. 
+			}
+			parentPtr = parentPtr->p_parent.lock();
+		}
+
+		// Test my children themselves.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (innerChildNamespace.second) {
+					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+					if (!(checkedSelf.count(ptr) >= 1)) {
+						checkedSelf.emplace(ptr);
+						if (1) {
+							if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+								if (func(p, isExporingParent, allowFindObject)) {
+									bestMatch = p;
+									return true;
+								}
+							}
+						}
+					}
+					else {
+						break; // we've checked this before! Quick, get out. 
+					}
+				}
+			}
+		}
+
+		// test my parents and their children
+		if (auto p = this->p_parent.lock()) {
+			if (p->TryFindNearestScopeWhere_2(bestMatch, func, true, allowFindObject, CheckedSelf, CheckedAll)) {
+				return true;
+			}
+		}
+
+		// test my children's children.
+		for (auto& childNamespace : this->p_children) {
+			for (auto& innerChildNamespace : childNamespace.second) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+					if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	};
+
+
+	std::shared_ptr<Scope> Scope::FindScopeWithObjOrFunction(
+		std::string objName, 
+		std::vector<Any> const& params, 
+		TypeConverter& tree, 
+		std::shared_ptr<Any>* found_obj, 
+		Proxy_Function* found_function
+	) {
+		static auto fixNamespace{ [](std::string& x) {
+			while (x.find("::") == 0 && x.length() > 2) {
+				x = x.substr(2);
+			}
+
+			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+		} };
+		fixNamespace(objName);
+
+		std::shared_ptr<Scope> out;
+
+		// To-Do: figure out this cache and what is going wrong with it. 
+
+#ifdef useCachedData
+		auto paramsHash = ParamTypes::CalculateHash(params);
+		size_t treeV = 0;
+		hash_combine(treeV, this->GetTypeConverterTreeVersion(), this->GetObjectCacheVersion());
+		if (TryGetCached<4>(treeV, out, objName, paramsHash)) {
+			return out;
+		}
+		defer(if (out) InsertCachedIfNotExist<4>(treeV, out, objName, paramsHash));
+#endif
+
+		auto lastOfColons = objName.find_last_of("::");
+		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
+			
+			bool success = TryFindNearestScopeWhere_2(out, [&objName, &params, &tree, &found_obj, &found_function](std::shared_ptr<Scope> const& namespacePtr, bool isExploringParent, bool allowFindObject)->bool {
+				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
+					// always prefer objects if we are able
+					if (allowFindObject) {
+						if (auto objFound = ptr->GetObj(objName)) {
+							if (found_obj) *found_obj = objFound;
+							return true;
+						}
+					}
+					if (auto func = ptr->GetFunction(objName, params, tree)) {
+						if (found_function) *found_function = func;
+						return true;
+					}
+				}
+				return false;
+			}, false, true);			
+			if (success) {
+				// do the save
+				return out;
+			}
+			else {
+				// out = this->GetSelf();
+				return this->GetSelf();
+			}
+		}
+		else {
+			std::string Namespace = objName.substr(0, lastOfColons - 1);
+			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
+				out = namespacePtr->FindScopeWithObjOrFunction(objName.substr(lastOfColons + 1), params, tree, found_obj, found_function);
+				// do the save
+				return out;
+			}
+			else {
+				// out = this->GetSelf();
+				return this->GetSelf();
+			}
+		}
+	};
+	bool Scope::FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function) {
+		if (auto found_scope = FindScopeWithObjOrFunction(objName, params, tree, found_obj, found_function)) {
+			if (found_obj && *found_obj) return true;
+			if (found_function && *found_function) return true;
+			
+			if (auto objFound = found_scope->GetObj(objName)) {
+				if (found_obj) *found_obj = objFound;
+				return true;
+			}			
+			
+			if (auto func = found_scope->GetFunction(objName, params, tree)) {
+				if (found_function) *found_function = func;
+				return true;
+			}
+		}		
+		return false;
+	};
+
+
+
 	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree) {
 		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
