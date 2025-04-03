@@ -7452,16 +7452,155 @@ namespace GoodLang {
 };
 
 
-template <typename T> T Func() { return {}; };
+//template<class T> class weak_ptr;
+//template<class T> class shared_ptr {
+//	friend class weak_ptr<T>;
+//
+//	struct aux {
+//		GoodLang::CAS<short, short>
+//			strong_weak_count;
+//
+//		aux() : strong_weak_count(1, 0) {};
+//
+//		virtual void destroy() = 0;
+//		virtual ~aux() {} //must be polymorphic
+//	};
+//
+//	template<class U, class Deleter> struct auximpl : public aux {
+//		GoodLang::atomic_ptr<U> p;
+//		Deleter d;
+//		auximpl(U* pu, Deleter x) :p(pu), d(x) {}
+//		virtual void destroy() { if (auto* P = p.Set(nullptr)) d(P); }
+//	};
+//
+//	template<class U> struct default_deleter {
+//		void operator()(U* p) const { delete p; }
+//	};
+//	
+//	GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
+//	GoodLang::atomic_ptr<T> pt; // pointer to this data
+//
+//	void inc() {
+//		// pa->strong_weak_count
+//
+//		if (pa) ++pa->strong_count;
+//	};
+//
+//	void dec() {
+//		if (pa && (--pa->strong_count == 0)) {
+//			pa->destroy(); // destroy the main data
+//			print("DELETED DATA");
+//			if (pa->weak_count == 0) {
+//				print("DELETED MEM_BLOCK");
+//				delete pa;
+//			}			
+//		}
+//	};
+//
+//public:
+//	shared_ptr() :pa(), pt() {}
+//	shared_ptr(std::nullptr_t) :pa(), pt() {}
+//
+//	template<class U, class Deleter>
+//	shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(pu) {}
+//
+//	template<class U>
+//	explicit shared_ptr(U* pu) :pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(pu) {}
+//
+//	shared_ptr(aux* pa_p, T* pt_p) :pa(pa_p), pt(pt_p) { inc(); }
+//
+//	shared_ptr(const shared_ptr& s) :pa(s.pa), pt(s.pt) { inc(); }
+//
+//	template<class U> 
+//	shared_ptr(const shared_ptr<U>& s) : pa(s.pa), pt(s.pt) { inc(); }
+//
+//	~shared_ptr() { dec(); }
+//
+//	shared_ptr& operator=(const shared_ptr& s)
+//	{
+//		if (this != &s)
+//		{
+//			dec();
+//			pa = s.pa; pt = s.pt;
+//			inc();
+//		}
+//		return *this;
+//	}
+//
+//	T* operator->() const { return pt.load(); }
+//	T& operator*() const { return *pt; }
+//};
+//template<class T> class weak_ptr {
+//	GoodLang::atomic_ptr<typename shared_ptr<T>::aux> pa; // pointer to shared memory block
+//	GoodLang::atomic_ptr<T> pt; // pointer to this data
+//
+//	void inc() {
+//		if (pa) ++pa->weak_count;
+//	};
+//
+//	void dec() {
+//		if (pa && (--pa->weak_count == 0) && (pa->strong_count == 0)) {			
+//			pa->destroy();
+//			delete pa;
+//			print("DELETED FROM WEAK");
+//		}
+//	};
+//
+//public:
+//	weak_ptr() : pa(), pt() {}
+//	weak_ptr(std::nullptr_t) : pa(), pt() {}
+//
+//	weak_ptr(shared_ptr<T> const& r) : pa(r.pa), pt(r.pt) { inc(); };
+//	weak_ptr(const weak_ptr& r) : pa(r.pa), pt(r.pt) { inc(); };
+//	~weak_ptr() { dec(); }
+//
+//	weak_ptr& operator=(const weak_ptr& s)
+//	{
+//		if (this != &s)
+//		{
+//			dec();
+//			pa = s.pa; pt = s.pt;
+//			inc();
+//		}
+//		return *this;
+//	};
+//	shared_ptr<T> lock() {
+//		if (!expired())
+//			return shared_ptr<T>(pa, pt);
+//		else
+//			return nullptr;
+//	};
+//	bool expired() {
+//		return pa->strong_count <= 0;
+//	};
+//
+//};
+//
+
+
 
 
 int main() {
 	using namespace GoodLang;
 
-	make_callable(&Func<int>);
+	//if (1) {
+	//	auto tempPtr = shared_ptr<int>(new int(500));
 
-
-
+	//}
+	//if (1) {
+	//	auto tempPtr = shared_ptr<int>(new int(500));
+	//	auto copy = shared_ptr<int>(tempPtr);
+	//}
+	//if (1) {
+	//	auto tempPtr = shared_ptr<int>(new int(500));
+	//	auto weak_copy = weak_ptr<int>(tempPtr);
+	//	EXPECT_EQ(weak_copy.expired(), false);
+	//	auto newPtr = weak_copy.lock();
+	//	tempPtr = nullptr;
+	//	EXPECT_EQ(weak_copy.expired(), false);
+	//	newPtr = nullptr;
+	//	EXPECT_EQ(weak_copy.expired(), true);
+	//}
 
 
 
@@ -8095,7 +8234,7 @@ int main() {
 			print("");
 
 			parsed_result = parse.Parse(R"start(
-				Units::meter y;
+				Units::value y;
 				for (Units::value i = 0; i < 1000000; ++i) {
 					++y;
 				}

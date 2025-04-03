@@ -417,15 +417,25 @@ namespace GoodLang {
 			// test if exists
 			if (1) {
 				version_container.lock.lock_shared();
-				auto f = version_container.data->find(version);
-				if (f != version_container.data->end()) {
-					std::shared_ptr<CacheContainer> out{ f->second };
-					version_container.lock.unlock_shared();
-					return out;
+				if (version_container.data->size() > 0) {
+					if (1) {
+						auto f = version_container.data->rbegin();
+						if (f->first >= version) {
+							std::shared_ptr<CacheContainer> out{ f->second };
+							version_container.lock.unlock_shared();
+							return out;
+						}
+					}
+					//if (1) {
+					//	auto f = version_container.data->find(version);
+					//	if (f != version_container.data->end()) {
+					//		std::shared_ptr<CacheContainer> out{ f->second };
+					//		version_container.lock.unlock_shared();
+					//		return out;
+					//	}
+					//}
 				}
-				else {
-					version_container.lock.unlock_shared();
-				}
+				version_container.lock.unlock_shared();				
 			}
 
 			// didn't exist yet -- delete old version(s) and create new version.
@@ -445,7 +455,12 @@ namespace GoodLang {
 					//	}
 					//}
 
-					if (locked->size() > 64) locked->erase(locked->begin());
+					if (locked->size() > 64) {
+						// locked->erase(locked->begin());
+						while (locked->size() > 8) {
+							locked->erase(locked->begin());
+						}
+					}
 
 					auto out{ std::make_shared<CacheContainer>() };
 					locked->insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ version, out });
@@ -549,10 +564,10 @@ namespace GoodLang {
 
 
 	public: // private:
-		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const;
+		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash = 0) const;
 
 	public:
-		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params) const;
+		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params, size_t paramsHash = 0) const;
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const;
 		Any CallFunction(Proxy_Function const& function, std::vector<Any> const& params) const;
 		Any CallFunction(std::string const& functionName, Any& params) const;
@@ -946,10 +961,10 @@ namespace GoodLang {
 	// Support for Units
 	class UnitsLibrary {
 	public:
-		//template <typename T>
-		//__forceinline std::shared_ptr<Units::value> Cast(std::shared_ptr<T> from) {
-		//	return std::dynamic_pointer_cast<Units::value>(std::move(from));
-		//};
+		template <typename T>
+		__forceinline static Any CastToValue(std::shared_ptr<T> from) {
+			return Any(std::dynamic_pointer_cast<Units::value>(std::move(from)));
+		};
 
 		template<typename T>
 		__forceinline static void AddUnit(std::shared_ptr<Namespace> const& std_namespace, std::shared_ptr<Class> const& value_namespace) {
@@ -969,13 +984,22 @@ namespace GoodLang {
 				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), foot_namespace->GetClassType().lock()->MakeRef()), false));
 
 				// value(foot)
-				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
-					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
-				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() }), GoodLang::user_type_shared<Units::value>().lock()->MakeConstRef()), false));
-
-				value_namespace->AddFunction(value_namespace->GetName(), Function(make_callable([](Any const& from) -> std::shared_ptr<Units::value> {
-					return std::dynamic_pointer_cast<Units::value>(from.cast<std::shared_ptr<T>>());
-				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef() }), GoodLang::user_type_shared<Units::value>().lock()->MakeRef()), false));
+				value_namespace->AddFunction(
+					value_namespace->GetName(), 
+					make_callable(
+						&CastToValue<T>, 
+						ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() }), 
+						GoodLang::user_type_shared<Units::value>().lock()->MakeConstRef()
+					)
+				);
+				value_namespace->AddFunction(
+					value_namespace->GetName(), 
+					make_callable(
+						&CastToValue<T>, 
+						ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef() }), 
+						GoodLang::user_type_shared<Units::value>().lock()->MakeRef()
+					)
+				);
 			}
 		};
 

@@ -506,7 +506,6 @@ namespace std {
 	template <> struct hash<std::weak_ptr<GoodLang::Type_Info>> {	
 		std::size_t operator()(const std::weak_ptr<GoodLang::Type_Info>& k) const {
 			static auto voidHash{ GoodLang::impl::TypeId<void>().hash_code() };
-
 			if (auto p = k.lock()) {
 				return p->GetHash();
 			}
@@ -519,13 +518,16 @@ namespace std {
 
 // GetHash
 namespace GoodLang {
-	template <typename T> auto& GetHash() {
+	template <typename T> std::hash<typename details::Bare_Type<T>::type>& GetHash() {
 		static auto hasher{ std::hash<typename details::Bare_Type<T>::type>{} };
 		return hasher;
 	};
 	template <typename T> size_t GetHash(const T& a) {
 		return GetHash<T>()(a);
 	};
+	template<> size_t GetHash<Type_Info>(Type_Info const& r);
+	template<> size_t GetHash<std::shared_ptr<Type_Info>>(std::shared_ptr<Type_Info> const& r);
+	template<> size_t GetHash<std::weak_ptr<Type_Info>>(std::weak_ptr<Type_Info> const& r);
 };
 
 // Type_Info std::less, std::greater, std::equal_to
@@ -609,9 +611,10 @@ namespace GoodLang {
 	/// \code
 	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
 	/// \endcode
-	template<typename T> std::weak_ptr<Type_Info> user_type_shared() noexcept {
+	template<typename T> std::weak_ptr<Type_Info> const& user_type_shared() noexcept {
 		static std::shared_ptr<Type_Info> out{ std::dynamic_pointer_cast<Type_Info>(details::Get_Type_Info<T>::get()) };
-		return out;
+		static std::weak_ptr<Type_Info> out2{ out };
+		return out2;
 	};
 
 	/// \brief Creates a Type_Info object representing the templated type
@@ -1256,10 +1259,10 @@ namespace GoodLang {
 		* parameters during Proxy_Function execution
 		*/
 		struct arity_error : std::range_error {
-			arity_error(int t_got, int t_expected)
+			arity_error(int t_got, int t_expected, long t_lineN)
 				: std::range_error(
 					t_expected >= 0 ?
-					GoodLang::printf("Arity mismatch: function requires %i parameters, but only %i were provided", t_expected, t_got)
+					GoodLang::printf("{line %i} Arity mismatch: function requires %i parameters, but only %i were provided", t_lineN, t_expected, t_got)
 					: std::string("Function was not found")
 				)
 				, got(t_got)

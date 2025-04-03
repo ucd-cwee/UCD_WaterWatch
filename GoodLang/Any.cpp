@@ -127,7 +127,23 @@ namespace GoodLang {
 				}
 			}
 		}
-	};;
+	};
+
+	template<> size_t GetHash<Type_Info>(Type_Info const& r) {
+		return r.GetHash();
+	};
+	template<> size_t GetHash<std::shared_ptr<Type_Info>>(std::shared_ptr<Type_Info> const& r) {
+		static auto voidHash{ GoodLang::impl::TypeId<void>().hash_code() };
+		if (r) {
+			return r->GetHash();
+		}
+		else {
+			return voidHash;
+		}
+	};
+	template<> size_t GetHash<std::weak_ptr<Type_Info>>(std::weak_ptr<Type_Info> const& r) {
+		return GetHash(r.lock());
+	};
 };
 
 // Any, AnyAutoCast, DynamicObject, exceptions

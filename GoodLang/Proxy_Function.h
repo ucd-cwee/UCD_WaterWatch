@@ -1156,7 +1156,8 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 15) {
 						out = ptrType(&F_m(
@@ -1164,7 +1165,8 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast(), r[13].cast(), r[14].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 14) {
 						out = ptrType(&F_m(
@@ -1172,7 +1174,8 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast(), r[13].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 13) {
 						out = ptrType(&F_m(
@@ -1180,82 +1183,96 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 12) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 11) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 10) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 9) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 8) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 7) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 6) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 5) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 4) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 3) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 2) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 1) {
 						out = ptrType(&F_m(
 							r[0].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs <= 0) {
-						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { 
+							throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					return out;
 				}
@@ -1496,15 +1513,17 @@ namespace GoodLang {
 					ptrType out;
 					Any parents = r;
 					if constexpr (numArgs > 1) {
-						throw exception::arity_error(1, numArgs);
+						throw exception::arity_error(1, numArgs, __LINE__);
 					}
 					else if constexpr (numArgs == 1) {
 						out = ptrType(&F_m(
 							r.cast()
-						), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs); } });
+						), [parents](refAsBaseType*) { if (1 < numArgs) { 
+							throw exception::arity_error(1, numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs <= 0) {
-						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs); } });
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { 
+							throw exception::arity_error(1, numArgs, __LINE__); } });
 					}
 					return out;
 				}
@@ -1513,7 +1532,7 @@ namespace GoodLang {
 					if constexpr (std::is_same_v<returnType, void>) {
 						static Any temp;
 						if constexpr (numArgs > 1) {
-							throw exception::arity_error(1, numArgs);
+							throw exception::arity_error(1, numArgs, __LINE__);
 						}
 						else if constexpr (numArgs == 1) {
 							F_m(
@@ -1527,12 +1546,17 @@ namespace GoodLang {
 					}
 					else {
 						if constexpr (numArgs > 1) {
-							throw exception::arity_error(1, numArgs);
+							throw exception::arity_error(1, numArgs, __LINE__);
 						}
 						else if constexpr (numArgs == 1) {
-							return F_m(
-								r.cast()
-							);
+							using arg_0_Type = typename std::remove_const_t<typename std::remove_reference_t<typename std::tuple_element_t< 0, argType >>>;
+
+							if constexpr (std::is_same_v<arg_0_Type, Any>) {
+								return F_m(r);
+							}
+							else {
+								return F_m(r.cast());
+							}
 						}
 						else if constexpr (numArgs <= 0) {
 							return F_m();
@@ -1574,7 +1598,7 @@ namespace GoodLang {
 		protected:
 			// assumes conversion already happened
 			virtual Any do_call(std::vector<Any> const& r) const override {
-				if (r.size() < 1) throw(exception::arity_error(0, 1));
+				if (r.size() < 1) throw(exception::arity_error(0, 1, __LINE__));
 				return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
 			};
 			virtual Any do_call(Any& r) const override {
@@ -1640,7 +1664,7 @@ namespace GoodLang {
 		protected:
 			// assumes conversion already happened
 			virtual Any do_call(std::vector<Any> const& r) const override {
-				if (r.size() < 1) throw(exception::arity_error(0, 1));
+				if (r.size() < 1) throw(exception::arity_error(0, 1, __LINE__));
 				return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
 			};
 			// assumes conversion already happened
@@ -1744,7 +1768,7 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 15) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
@@ -1752,7 +1776,7 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast(), r[14].cast(), r[15].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 14) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
@@ -1760,7 +1784,7 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast(), r[14].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 13) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
@@ -1768,82 +1792,82 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 12) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 11) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 10) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 9) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 8) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 7) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 6) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 5) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 4) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 3) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 2) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 1) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs <= 0) {
-							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						return out;
 					}
@@ -2080,10 +2104,11 @@ namespace GoodLang {
 						ptrType out;
 						Any parents = r;
 						if constexpr (numArgs >= 1) {
-							throw exception::arity_error(1, numArgs);
+							throw exception::arity_error(1, numArgs, __LINE__);
 						}
 						else if constexpr (numArgs <= 0) {
-							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs); } });
+							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { 
+								throw exception::arity_error(1, numArgs, __LINE__); } });
 						}
 						return out;
 					}
@@ -2092,7 +2117,7 @@ namespace GoodLang {
 						if constexpr (std::is_same_v<returnType, void>) {
 							static Any temp;
 							if constexpr (numArgs >= 1) {
-								throw exception::arity_error(1, numArgs);
+								throw exception::arity_error(1, numArgs, __LINE__);
 							}
 							else if constexpr (numArgs <= 0) {
 								(r.cast<Class*>()->*m_attr)();
@@ -2101,7 +2126,7 @@ namespace GoodLang {
 						}
 						else {
 							if constexpr (numArgs >= 1) {
-								throw exception::arity_error(1, numArgs);
+								throw exception::arity_error(1, numArgs, __LINE__);
 							}
 							else if constexpr (numArgs <= 0) {
 								return (r.cast<Class*>()->*m_attr)();
@@ -2168,7 +2193,7 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 15) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
@@ -2176,7 +2201,7 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast(), r[14].cast(), r[15].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 14) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
@@ -2184,7 +2209,7 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast(), r[14].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 13) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
@@ -2192,82 +2217,82 @@ namespace GoodLang {
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
 								r[13].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 12) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 11) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast(), r[11].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 10) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast(), r[10].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 9) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
 								r[9].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 8) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 7) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast(), r[7].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 6) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast(), r[6].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 5) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
 								r[5].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 4) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 3) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast(), r[3].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 2) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast(), r[2].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs == 1) {
 							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
 								r[1].cast()
-								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+								), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						else if constexpr (numArgs <= 0) {
-							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+							out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 						}
 						return out;
 					}
@@ -2504,10 +2529,10 @@ namespace GoodLang {
 						ptrType out;
 						Any parents = r;
 						if constexpr (numArgs >= 1) {
-							throw exception::arity_error(1, numArgs);
+							throw exception::arity_error(0, numArgs, __LINE__);
 						}
 						else if constexpr (numArgs <= 0) {
-							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs); } });
+							out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs, __LINE__); } });
 						}
 						return out;
 					}
@@ -2516,7 +2541,7 @@ namespace GoodLang {
 						if constexpr (std::is_same_v<returnType, void>) {
 							static Any temp;
 							if constexpr (numArgs >= 1) {
-								throw exception::arity_error(1, numArgs);
+								throw exception::arity_error(1, numArgs, __LINE__);
 							}
 							else if constexpr (numArgs <= 0) {
 								(r.cast<Class*>()->*m_attr)();
@@ -2525,7 +2550,7 @@ namespace GoodLang {
 						}
 						else {
 							if constexpr (numArgs >= 1) {
-								throw exception::arity_error(1, numArgs);
+								throw exception::arity_error(1, numArgs, __LINE__);
 							}
 							else if constexpr (numArgs <= 0) {
 								return (r.cast<Class*>()->*m_attr)();
@@ -2615,11 +2640,11 @@ namespace GoodLang {
 		protected:
 			// assumes conversion already happened
 			virtual Any do_call(std::vector<Any> const& r) const override {
-				if (r.size() < numArgs) throw(exception::arity_error(r.size(), numArgs));
+				if (r.size() < numArgs) throw(exception::arity_error(r.size(), numArgs, __LINE__));
 				return do_call_impl(r);
 			};
 			virtual Any do_call(Any& r) const override {
-				if (1 < numArgs) throw(exception::arity_error(1, numArgs));
+				if (1 < numArgs) throw(exception::arity_error(1, numArgs, __LINE__));
 				return do_call_impl(r);
 			};
 
@@ -2636,7 +2661,7 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 15) {
 						out = ptrType(&F_m(
@@ -2644,7 +2669,7 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast(), r[13].cast(), r[14].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 14) {
 						out = ptrType(&F_m(
@@ -2652,7 +2677,7 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast(), r[13].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 13) {
 						out = ptrType(&F_m(
@@ -2660,82 +2685,82 @@ namespace GoodLang {
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
 							r[12].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 12) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 11) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast(), r[10].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 10) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast(), r[9].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 9) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
 							r[8].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 8) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 7) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast(), r[6].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 6) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast(), r[5].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 5) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
 							r[4].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 4) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 3) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast(), r[2].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 2) {
 						out = ptrType(&F_m(
 							r[0].cast(), r[1].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs == 1) {
 						out = ptrType(&F_m(
 							r[0].cast()
-						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs <= 0) {
-						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs); } });
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
 					}
 					return out;
 				}
@@ -2972,15 +2997,15 @@ namespace GoodLang {
 					ptrType out;
 					Any parents = r;
 					if constexpr (numArgs > 1) {
-						throw exception::arity_error(1, numArgs);
+						throw exception::arity_error(1, numArgs, __LINE__);
 					}
 					else if constexpr (numArgs == 1) {
 						out = ptrType(&F_m(
 							r.cast()
-						), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs); } });
+						), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs, __LINE__); } });
 					}
 					else if constexpr (numArgs <= 0) {
-						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs); } });
+						out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs, __LINE__); } });
 					}
 					return out;
 				}
@@ -2989,7 +3014,7 @@ namespace GoodLang {
 					if constexpr (std::is_same_v<R, void>) {
 						static Any temp;
 						if constexpr (numArgs > 1) {
-							throw exception::arity_error(1, numArgs);
+							throw exception::arity_error(1, numArgs, __LINE__);
 						}
 						else if constexpr (numArgs == 1) {
 							F_m(
@@ -3003,7 +3028,7 @@ namespace GoodLang {
 					}
 					else {
 						if constexpr (numArgs > 1) {
-							throw exception::arity_error(1, numArgs);
+							throw exception::arity_error(1, numArgs, __LINE__);
 						}
 						else if constexpr (numArgs == 1) {
 							return F_m(

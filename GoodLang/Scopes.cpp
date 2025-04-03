@@ -1300,10 +1300,10 @@ namespace GoodLang {
 			return false;
 		}
 	};
-	bool Scope::TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out) const {
+	bool Scope::TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash) const {
 		if (!m_conversionTree) return false;
 #ifdef useCachedData
-		auto paramsHash = ParamTypes::CalculateHash(params);
+		if (paramsHash == 0) paramsHash = ParamTypes::CalculateHash(params);
 		auto treeV = this->GetTypeConverterTreeVersion();
 		if (TryGetCached<0>(treeV, out, functionName, paramsHash)) {
 			return (bool)out;
@@ -1478,29 +1478,22 @@ namespace GoodLang {
 		}
 		return false;
 	};
-	std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params) const {
+	std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params, size_t paramsHash) const {
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
 		if (this->IsBasicScope()) {
 			if (auto p = this->p_parent.lock()) {
-				return p->BuildFunction(functionName, params);
+				return p->BuildFunction(functionName, params, paramsHash);
 			}
-		}		
-		//if (!this->IsNamespace()) {
-		//	if (this->p_using.size() == 0) {
-		//		if (this->p_children.size() == 0) {
-		//			if (auto p = this->p_parent.lock()) {
-		//				return p->BuildFunction(functionName, params);
-		//			}
-		//		}
-		//	}
-		//}
-
-		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> out{ nullptr, this->GetTypeConverterTree() };
-		if (TryFindFunctionImpl(functionName, params, out.second, out.first)) {
-			return out;
 		}
-		else {
-			return { nullptr, nullptr };
+
+		if (1) {
+			std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> out{ nullptr, this->GetTypeConverterTree() };
+			if (TryFindFunctionImpl(functionName, params, out.second, out.first, paramsHash)) {
+				return out;
+			}
+			else {
+				return { nullptr, nullptr };
+			}
 		}
 	};
 	Any Scope::CallFunction(std::string const& functionName, std::vector<Any> const& params) const {

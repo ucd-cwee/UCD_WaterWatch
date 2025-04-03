@@ -400,6 +400,71 @@ namespace GoodLang {
 						UnitsLibrary::UnitsLibrary::Part5(std_namespace, value_namespace);
 						UnitsLibrary::UnitsLibrary::Part6(std_namespace, value_namespace);
 					}
+
+					for (auto& unit_type : Units::value::GetValueTypes()) {
+						auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+						auto type_info = unit_type.first.lock();
+						if (auto Class = std_namespace->FindClass(type_info)) {
+
+							auto LambdaWrapped = [](Any const& x, Any const& y, auto ToDo) { // std::function<void(std::shared_ptr<Units::value> const&, std::shared_ptr<Units::value> const&)>
+								return ToDo(x.cast<std::shared_ptr<Units::value>>(), y.cast<std::shared_ptr<Units::value>>());
+							};
+
+							// Comparisons & operators
+							Class->AddFunction("==", make_callable([&](Any const& x, Any const& y) -> bool {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x == *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("!=", make_callable([&](Any const& x, Any const& y) -> bool {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x != *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction(">", make_callable([&](Any const& x, Any const& y) -> bool {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x > *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("<", make_callable([&](Any const& x, Any const& y) -> bool {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x < *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction(">=", make_callable([&](Any const& x, Any const& y) -> bool {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x >= *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("<=", make_callable([&](Any const& x, Any const& y) -> bool {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x <= *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("+", make_callable([&](Any const& x, Any const& y) -> Units::value {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x + *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("-", make_callable([&](Any const& x, Any const& y) -> Units::value {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x - *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("+=", make_callable([&](Any const& x, Any const& y) -> Any {
+								(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									*x += *y; 
+								}); 
+								return x;
+							}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
+							Class->AddFunction("-=", make_callable([&](Any const& x, Any const& y) -> Any {
+								(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									*x -= *y; 
+								}); 
+								return x;
+							}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
+							Class->AddFunction("++", make_callable([&](Any const& x) -> Any {
+								x.cast<std::shared_ptr<Units::value>>()->operator++();
+								return x;
+							}, ParamTypes({ type_info->MakeRef() }), type_info->MakeRef()));
+							Class->AddFunction("--", make_callable([&](Any const& x) -> Any {
+								x.cast<std::shared_ptr<Units::value>>()->operator--();
+								return x;
+							}, ParamTypes({ type_info->MakeRef() }), type_info->MakeRef()));
+							Class->AddFunction("-", make_callable([&](Any const& x) -> Units::value {
+								return x.cast<std::shared_ptr<Units::value>>()->operator-();
+							}, ParamTypes({ type_info->MakeConstRef() })));
+
+						}
+					}
+
+
+
+
 				}
 			}
 

@@ -24,26 +24,52 @@ namespace GoodLang {
 			throw std::runtime_error("DaisyChained_Type_Conversion_Impl is not bidirectional.");
 		};
 		void DaisyChained_Type_Conversion_Impl::convert_in_place(Any& t_from) const {
-			for (auto& converter : m_converters) {
-				if (converter) {
-					converter->convert_in_place(t_from);
+			switch (m_converters.size()) {
+			case 0:
+				return;
+			case 1:
+				m_converters[0]->convert_in_place(t_from);
+				return;
+			case 2:
+				t_from = m_converters[1]->convert(m_converters[0]->convert(t_from));
+				return;
+			case 3: 
+				t_from = m_converters[2]->convert(m_converters[1]->convert(m_converters[0]->convert(t_from)));
+				return;
+			case 4:
+				t_from = m_converters[3]->convert(m_converters[2]->convert(m_converters[1]->convert(m_converters[0]->convert(t_from))));
+				return;
+			default:
+				for (auto& converter : m_converters) {
+					if (converter) {
+						converter->convert_in_place(t_from);
+					} else { throw exception::bad_any_cast(this->from(), this->to(), __LINE__); }
 				}
-				else {
-					throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
-				}
+				return;
 			}
 		};
 		Any DaisyChained_Type_Conversion_Impl::convert(const Any& t_from) const {
-			Any out{ t_from };
-			for (auto& converter : m_converters) {
-				if (converter) {
-					converter->convert_in_place(out);
+			switch (m_converters.size()) {
+			case 0:
+				return {};
+			case 1:
+				return m_converters[0]->convert(t_from);
+			case 2:
+				return m_converters[1]->convert(m_converters[0]->convert(t_from));
+			case 3:
+				return m_converters[2]->convert(m_converters[1]->convert(m_converters[0]->convert(t_from)));
+			case 4:
+				return m_converters[3]->convert(m_converters[2]->convert(m_converters[1]->convert(m_converters[0]->convert(t_from))));
+			default:
+				Any out{ t_from };
+				for (auto& converter : m_converters) {
+					if (converter) {
+						converter->convert_in_place(out);
+					}
+					else { throw exception::bad_any_cast(this->from(), this->to(), __LINE__); }
 				}
-				else {
-					throw exception::bad_any_cast(this->from(), this->to(), __LINE__);
-				}
+				return out;
 			}
-			return out;
 		};
 		bool DaisyChained_Type_Conversion_Impl::bidir() const noexcept { return false; }
 		double DaisyChained_Type_Conversion_Impl::cost() const noexcept {
@@ -191,8 +217,9 @@ namespace GoodLang {
 				auto f2 = f1->second.find(GetHash(To));
 				if (f2 != f1->second.end()) {
 					auto& pair = f2->second;
-					auto locked2{ std::shared_lock(pair.second.first) };
+					pair.second.first.lock_shared();
 					pair.second.second->convert_in_place(from);
+					pair.second.first.unlock_shared();
 					return true;
 				}
 			}
@@ -207,8 +234,9 @@ namespace GoodLang {
 					auto f2 = f1->second.find(GetHash(To));
 					if (f2 != f1->second.end()) {
 						auto& pair = f2->second;
-						auto locked2{ std::shared_lock(pair.second.first) };
+						pair.second.first.lock_shared();
 						pair.second.second->convert_in_place(from);
+						pair.second.first.unlock_shared();
 						return true;
 					}
 				}
@@ -641,8 +669,10 @@ namespace GoodLang {
 	};
 	size_t ParamTypes::CalculateHash(std::vector<Any> const& params) {
 		size_t out{ 37 };
-		for (auto& x : params)
-			details::hash_combine(out, GetHash(x.Type()));
+		for (auto& x : params) {
+			// details::hash_combine(out, GetHash(x.Type()));
+			details::hash_combine(out, x.TypeHash());
+		}
 		return out;
 	};
 	bool ParamTypes::CanCast(ParamTypes const& to) const {
@@ -779,7 +809,8 @@ namespace GoodLang {
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
 			std::vector<Any> out{ t_from };
 
-			if (t_to.size() > t_from.size()) throw exception::arity_error(t_to.size(), t_to.size());
+			if (t_to.size() > t_from.size()) 
+				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
 
 			out.resize(t_to.size());
 
@@ -790,17 +821,23 @@ namespace GoodLang {
 			return out;
 		};
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_from, ParamTypes const& t_to) {
-			if (t_to.size() > t_from.size()) throw exception::arity_error(t_to.size(), t_to.size());
+			if (t_to.size() > t_from.size()) 
+				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
+
 			std::vector<Any> out{ t_from };
 			out.resize(t_to.size());
 			return out;
 		};
 		Any Proxy_Function_Base::convert(Any& t_from, ParamTypes const& t_to) {
-			if (t_to.size() > 1) throw exception::arity_error(t_to.size(), t_to.size());
+			if (t_to.size() > 1) 
+				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
+
 			return t_from;
 		};
 		Any Proxy_Function_Base::convert(Any& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
-			if (t_to.size() > 1) throw exception::arity_error(t_to.size(), 1);
+			if (t_to.size() > 1) 
+				throw exception::arity_error(t_to.size(), 1, __LINE__);
+
 			return t_conversions.Convert(t_from, t_to[0].lock());
 		};
 
@@ -835,21 +872,21 @@ namespace GoodLang {
 			if (params.size() >= NumArguments()) {
 				return this->do_call(convert(params, t_conversions));
 			}
-			throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
+			throw exception::arity_error(static_cast<int>(params.size()), NumArguments(), __LINE__);
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(const std::vector<Any>& params) const {
 			if (params.size() >= NumArguments()) {
 				return this->do_call(params);
 			}
-			throw exception::arity_error(static_cast<int>(params.size()), NumArguments());
+			throw exception::arity_error(static_cast<int>(params.size()), NumArguments(), __LINE__);
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(Any& params) const {
 			if (1 >= NumArguments()) {
 				return this->do_call(params);
 			}
-			throw exception::arity_error(1, NumArguments());
+			throw exception::arity_error(1, NumArguments(), __LINE__);
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(Any& params, TypeConverter& t_conversions) const {
@@ -857,7 +894,7 @@ namespace GoodLang {
 				auto conversion{ convert(params, t_conversions) };
 				return this->do_call(conversion);
 			}
-			throw exception::arity_error(1, NumArguments());
+			throw exception::arity_error(1, NumArguments(), __LINE__);
 		};
 
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
@@ -885,7 +922,7 @@ namespace GoodLang {
 			return callable->operator()(inputs, conversionTree);
 		}
 		else {
-			throw exception::arity_error(1, -1);
+			throw exception::arity_error(1, -1, __LINE__);
 		}
 	};
 	Any call(Proxy_Function callable, std::vector<Any> const& inputs, TypeConverter& conversionTree) {
@@ -898,7 +935,7 @@ namespace GoodLang {
 			}
 		}
 		else {
-			throw exception::arity_error(inputs.size(), -1);
+			throw exception::arity_error(inputs.size(), -1, __LINE__);
 		}
 	};
 };
