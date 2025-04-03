@@ -666,5 +666,6 @@ namespace GoodLang {
 			return whaaat;
 		};
 	};
+
 };
 

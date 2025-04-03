@@ -17,7 +17,7 @@
 
 // #include <iostream>
 
-// typenames, function_traits
+// typenames, function_traits, Compare-and-swap, atomic shared_ptr
 namespace GoodLang {
 	namespace utilities {
 		template<typename T> struct count_arg;
@@ -57,6 +57,756 @@ namespace GoodLang {
 
 		template <typename T>
 		constexpr bool is_std_stringable_v = is_std_stringable<T>::value;
+	};
+
+	namespace cas_impl {
+		template<typename... Args> struct UnionDetails {
+		public:
+			using byte = unsigned char;
+			template<int N> using NthTypeOf = typename std::remove_const<typename std::remove_reference<typename std::tuple_element<N, std::tuple<Args...>>::type>::type>::type;
+			static constexpr size_t num_parameters = sizeof...(Args);
+			template<int N>	static constexpr size_t SizeOfFirstN() {
+				size_t d(0);
+				if constexpr (num_parameters >= 1 && N >= 1) {
+					d += sizeof(NthTypeOf<0>);
+				}
+				if constexpr (num_parameters >= 2 && N >= 2) {
+					d += sizeof(NthTypeOf<1>);
+				}
+				if constexpr (num_parameters >= 3 && N >= 3) {
+					d += sizeof(NthTypeOf<2>);
+				}
+				if constexpr (num_parameters >= 4 && N >= 4) {
+					d += sizeof(NthTypeOf<3>);
+				}
+				if constexpr (num_parameters >= 5 && N >= 5) {
+					d += sizeof(NthTypeOf<4>);
+				}
+				if constexpr (num_parameters >= 6 && N >= 6) {
+					d += sizeof(NthTypeOf<5>);
+				}
+				if constexpr (num_parameters >= 7 && N >= 7) {
+					d += sizeof(NthTypeOf<6>);
+				}
+				if constexpr (num_parameters >= 8 && N >= 8) {
+					d += sizeof(NthTypeOf<7>);
+				}
+				if constexpr (num_parameters >= 9 && N >= 9) {
+					d += sizeof(NthTypeOf<8>);
+				}
+				if constexpr (num_parameters >= 10 && N >= 10) {
+					d += sizeof(NthTypeOf<9>);
+				}
+				if constexpr (num_parameters >= 11 && N >= 11) {
+					d += sizeof(NthTypeOf<10>);
+				}
+				if constexpr (num_parameters >= 12 && N >= 12) {
+					d += sizeof(NthTypeOf<11>);
+				}
+				if constexpr (num_parameters >= 13 && N >= 13) {
+					d += sizeof(NthTypeOf<12>);
+				}
+				if constexpr (num_parameters >= 13 && N >= 14) {
+					d += sizeof(NthTypeOf<13>);
+				}
+				if constexpr (num_parameters >= 14 && N >= 15) {
+					d += sizeof(NthTypeOf<14>);
+				}
+				if constexpr (num_parameters >= 15 && N >= 16) {
+					d += sizeof(NthTypeOf<15>);
+				}
+				return d;
+			};
+			static constexpr size_t SizeOfAll() {
+				return SizeOfFirstN<num_parameters>();
+			};
+			static constexpr size_t sizeOfArgs = SizeOfAll();
+		private:
+			static constexpr size_t bitOffset_0 = SizeOfFirstN<0>();
+			static constexpr size_t bitOffset_1 = SizeOfFirstN<1>();
+			static constexpr size_t bitOffset_2 = SizeOfFirstN<2>();
+			static constexpr size_t bitOffset_3 = SizeOfFirstN<3>();
+			static constexpr size_t bitOffset_4 = SizeOfFirstN<4>();
+			static constexpr size_t bitOffset_5 = SizeOfFirstN<5>();
+			static constexpr size_t bitOffset_6 = SizeOfFirstN<6>();
+			static constexpr size_t bitOffset_7 = SizeOfFirstN<7>();
+			static constexpr size_t bitOffset_8 = SizeOfFirstN<8>();
+			static constexpr size_t bitOffset_9 = SizeOfFirstN<9>();
+			static constexpr size_t bitOffset_10 = SizeOfFirstN<10>();
+			static constexpr size_t bitOffset_11 = SizeOfFirstN<11>();
+			static constexpr size_t bitOffset_12 = SizeOfFirstN<12>();
+			static constexpr size_t bitOffset_13 = SizeOfFirstN<13>();
+			static constexpr size_t bitOffset_14 = SizeOfFirstN<14>();
+			static constexpr size_t bitOffset_15 = SizeOfFirstN<15>();
+		public:
+			template <int N> static NthTypeOf<N>* PtrAt(byte* data) { return static_cast<NthTypeOf<N>*>(static_cast<void*>(&data[SizeOfFirstN<N>()])); };
+
+		};
+		template <typename type1, typename type2, typename type3, typename type4> class CAS4 {
+		private:
+			using wrapperDetails = UnionDetails<type1, type2, type3, type4>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+				type2& b() {
+					return *wrapperDetails::PtrAt<1>(&data[0]);
+				};
+				type3& c() {
+					return *wrapperDetails::PtrAt<2>(&data[0]);
+				};
+				type4& d() {
+					return *wrapperDetails::PtrAt<3>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A, type2 B = {}, type3 C = {}, type4 D = {}) {
+					a() = A;
+					b() = B;
+					c() = C;
+					d() = D;
+				};
+			};
+
+		public:
+			CAS4(type1 a = {}, type2 b = {}, type3 c = {}, type4 d = {}) : read_write(Data(a, b, c, d)) {};
+			CAS4(Data const& RHS) : read_write(RHS) {};
+			CAS4(CAS4 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS4(CAS4&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS4& operator=(CAS4 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS4& operator=(CAS4&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS4() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+		template <typename type1, typename type2, typename type3> class CAS3 {
+		private:
+			using wrapperDetails = UnionDetails<type1, type2, type3>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+				type2& b() {
+					return *wrapperDetails::PtrAt<1>(&data[0]);
+				};
+				type3& c() {
+					return *wrapperDetails::PtrAt<2>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A, type2 B = {}, type3 C = {}) {
+					a() = A;
+					b() = B;
+					c() = C;
+				};
+			};
+
+		public:
+			CAS3(type1 a = {}, type2 b = {}, type3 c = {}) : read_write(Data(a, b, c)) {};
+			CAS3(Data const& RHS) : read_write(RHS) {};
+			CAS3(CAS3 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS3(CAS3&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS3& operator=(CAS3 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS3& operator=(CAS3&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS3() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+		template <typename type1, typename type2> class CAS2 {
+		private:
+			using wrapperDetails = UnionDetails<type1, type2>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+				type2& b() {
+					return *wrapperDetails::PtrAt<1>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A, type2 B = {}) {
+					a() = A;
+					b() = B;
+				};
+			};
+		public:
+			CAS2(type1 a = {}, type2 b = {}) : read_write(Data(a, b)) {};
+			CAS2(Data const& RHS) : read_write(RHS) {};
+			CAS2(CAS2 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS2(CAS2&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS2& operator=(CAS2 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS2& operator=(CAS2&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS2() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+		template <typename type1> class CAS1 {
+		private:
+			using wrapperDetails = UnionDetails<type1>;
+		public:
+			struct Data {
+			protected:
+				typename wrapperDetails::byte data[wrapperDetails::sizeOfArgs];
+
+			public:
+				type1& a() {
+					return *wrapperDetails::PtrAt<0>(&data[0]);
+				};
+
+				Data() = default;
+				~Data() = default;
+				Data(type1 A) {
+					a() = A;
+				};
+			};
+
+		public:
+			CAS1(type1 a = {}) : read_write(Data(a)) {};
+			CAS1(Data const& RHS) : read_write(RHS) {};
+			CAS1(CAS1 const& RHS) : read_write(RHS.read_write.load()) {};
+			CAS1(CAS1&& RHS) : read_write(RHS.read_write.load()) {};
+			CAS1& operator=(CAS1 const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			CAS1& operator=(CAS1&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+			~CAS1() = default;
+
+			void store(Data const& RHS) {
+				read_write.store(RHS);
+			};
+			Data load() const {
+				return read_write.load();
+			};
+			Data exchange(Data const& RHS) {
+				return read_write.exchange(RHS);
+			};
+			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_strong(_Expected, _Desired);
+			};
+			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+				return read_write.compare_exchange_weak(_Expected, _Desired);
+			};
+
+		private:
+			std::atomic < Data > read_write;
+			static_assert(decltype(read_write)::is_always_lock_free);
+		public:
+			static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		};
+	};
+
+	/// <summary>
+	/// Single-word compare-and-swap wrapper for multiple types that fit within the size of a uint64_t, like 4 shorts or 2 ints. 
+	/// </summary>
+	/// <typeparam name="...Args"></typeparam>
+	template <typename... Args> class CAS {
+	private:
+		using wrapperDetails = cas_impl::UnionDetails<Args...>;
+		static_assert(wrapperDetails::num_parameters >= 1);
+		static_assert(wrapperDetails::num_parameters <= 4);
+
+		static auto TypeTest() {
+			if constexpr (wrapperDetails::num_parameters == 1) {
+				return cas_impl::CAS1<Args...>();
+			}
+			else if constexpr (wrapperDetails::num_parameters == 2) {
+				return cas_impl::CAS2<Args...>();
+			}
+			else if constexpr (wrapperDetails::num_parameters == 3) {
+				return cas_impl::CAS3<Args...>();
+			}
+			else if constexpr (wrapperDetails::num_parameters == 4) {
+				return cas_impl::CAS4<Args...>();
+			}
+		};
+		typedef typename GoodLang::utilities::function_traits<decltype(std::function(&TypeTest)) >::result_type thisType;
+		typename thisType read_write;
+
+	public:
+		using Data = typename thisType::Data;
+		static constexpr bool is_always_lock_free{ decltype(read_write)::is_always_lock_free };
+		static constexpr size_t TupleSize() {
+			if constexpr (wrapperDetails::num_parameters == 1) {
+				return 1;
+			}
+			else if constexpr (wrapperDetails::num_parameters == 2) {
+				return 2;
+			}
+			else if constexpr (wrapperDetails::num_parameters == 3) {
+				return 3;
+			}
+			else if constexpr (wrapperDetails::num_parameters == 4) {
+				return 4;
+			}
+		};
+
+		CAS() : read_write() {};
+		CAS(Data const& RHS) : read_write(RHS) {};
+		CAS(CAS const& RHS) : read_write(RHS.read_write.load()) {};
+		CAS(CAS&& RHS) : read_write(RHS.read_write.load()) {};
+		CAS& operator=(CAS const& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+		CAS& operator=(CAS&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
+		~CAS() = default;
+
+		void store(Data const& RHS) {
+			read_write.store(RHS);
+		};
+		Data load() const {
+			return read_write.load();
+		};
+		Data exchange(Data const& RHS) {
+			return read_write.exchange(RHS);
+		};
+		bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
+			return read_write.compare_exchange_strong(_Expected, _Desired);
+		};
+		bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
+			return read_write.compare_exchange_weak(_Expected, _Desired);
+		};
+
+	};
+
+	/// <summary>
+	/// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
+	template< typename T> struct atomic_ptr {
+	private:
+		static void* Sys_InterlockedExchangePointer(void*& ptr, void* exchange) {
+			return InterlockedExchangePointer(&ptr, exchange);
+		};
+		static void* Sys_InterlockedCompareExchangePointer(void*& ptr, void* comparand, void* exchange) {
+			return InterlockedCompareExchangePointer(&ptr, exchange, comparand);
+		};
+
+	public:
+		constexpr atomic_ptr() noexcept : ptr(nullptr) {}
+		constexpr atomic_ptr(T* newSource) noexcept : ptr(newSource) {}
+		constexpr atomic_ptr(const atomic_ptr& other) noexcept : ptr(other.ptr) {};
+		atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
+		atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
+		~atomic_ptr() { ptr = nullptr; };
+
+		explicit operator bool() { return ptr; };
+		explicit operator bool() const { return ptr; };
+
+		operator T* () noexcept { return ptr; };
+		operator const T* () const noexcept { return ptr; };
+
+		/* atomically sets the pointer and returns the previous pointer value */
+		T* Set(T* newPtr) noexcept {
+			return static_cast<T*>(Sys_InterlockedExchangePointer((void*&)ptr, static_cast<void*>(newPtr)));
+		};
+		bool TrySet(T* newPtr, T*& oldPtr) noexcept {
+			T* PREV_VAL = this->load();
+			if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
+				oldPtr = PREV_VAL;
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
+		bool TrySet(T* newPtr, atomic_ptr<T>& oldPtr) noexcept {
+			T* PREV_VAL = this->load();
+			if (this->CompareExchange(PREV_VAL, newPtr) == PREV_VAL) {
+				oldPtr = PREV_VAL;
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
+
+		/* atomically sets the pointer to 'newPtr' only if the previous pointer is equal to 'comparePtr' */
+		T* CompareExchange(T* comparePtr, T* newPtr) noexcept {
+			return static_cast<T*>(Sys_InterlockedCompareExchangePointer((void*&)ptr, static_cast<void*>(comparePtr), static_cast<void*>(newPtr)));
+		};
+
+		T* operator->() noexcept { return Get(); };
+		const T* operator->() const noexcept { return Get(); };
+		T* Get() noexcept { return ptr; };
+		T* Get() const noexcept { return ptr; };
+		T* load() noexcept { return Get(); };
+		T* load() const noexcept { return Get(); };
+
+	protected:
+		T* ptr;
+	};
+
+	template<class T> class weak_ptr; // forward-decl
+
+	/// <summary>
+	/// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
+	/// </summary>
+	/// <returns></returns>
+	template<class T> class shared_ptr {
+		friend class weak_ptr<T>;
+
+		struct aux {
+			GoodLang::CAS<short, short, short, short>
+				strong_weak_count;
+
+			aux() : strong_weak_count({ 1, 0, 0, 0 }) {};
+
+			//GoodLang::InterlockedLong strong{ 1 };
+			//GoodLang::InterlockedLong weak{ 0 };
+
+			//long IncWeak() {
+			//	return weak.Increment();
+			//};
+			//long IncStrong() {
+			//	return strong.Increment();
+			//};
+			//long DecWeak() {
+			//	return weak.Decrement();
+			//};
+			//long DecStrong() {
+			//	return strong.Decrement();
+			//};
+
+			virtual void* ptr() const = 0;
+			virtual void destroy() = 0;
+			virtual ~aux() {} //must be polymorphic
+		};
+
+		template<class U, class Deleter> struct auximpl : public aux {
+			GoodLang::atomic_ptr<U> p; // implimented like this to allow for multiple calls to destroy without double-destroying. 
+			Deleter d;
+			auximpl(U* pu, Deleter x) : aux(), p(pu), d(x) {}
+
+			virtual void* ptr() const override {
+				return static_cast<void*>(p.load());
+			};
+			virtual void destroy() override { if (auto* P = p.Set(nullptr)) d(P); }
+		};
+
+		template<class U> struct default_deleter {
+			void operator()(U* p) const { delete p; };
+		};
+
+		GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
+
+		static aux* inc(GoodLang::atomic_ptr<aux> const& pa) {
+			//while (auto* ptr = pa.load()) {
+			//	ptr->IncStrong();
+			//	return ptr;
+			//}
+			//return nullptr;
+
+			aux*
+				pa_ptr;
+			typename GoodLang::CAS<short, short, short, short>::Data
+				previous, copy;
+			while (pa_ptr = pa.load()) {
+				previous = pa_ptr->strong_weak_count.load();
+				while (!previous.d()) {
+					std::memcpy(&copy, &previous, sizeof(copy)); // copy = previous;
+					++copy.a();
+					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy)) {
+						break;
+					}
+					else {
+						previous = pa_ptr->strong_weak_count.load();
+					}
+				}
+				if (previous.d() || previous.c()) {
+					continue; // try again
+				}
+				else {
+					return pa_ptr;
+				}
+			}
+			return nullptr;
+		};
+		static void dec(aux* pa_ptr) {
+			//if (pa_ptr) {
+			//	if (pa_ptr->DecStrong() == 0) {
+			//		pa_ptr->destroy();
+			//		if (pa_ptr->weak == 0) {
+			//			delete pa_ptr;
+			//		}
+			//	}
+			//}
+
+			typename GoodLang::CAS<short, short, short, short>::Data
+				previous, copy;
+			bool
+				ToDeleteData, ToDeleteMemBlock;
+			if (pa_ptr) {
+				previous = pa_ptr->strong_weak_count.load();
+				while (!previous.d()) {
+					std::memcpy(&copy, &previous, sizeof(copy)); // copy = previous;
+					copy.c() = copy.c() || (ToDeleteData = (0 == --copy.a()));
+					copy.d() = copy.d() || (ToDeleteMemBlock = ToDeleteData && (previous.b() == 0));
+					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy)) {
+						break;
+					}
+					else {
+						previous = pa_ptr->strong_weak_count.load();
+					}
+				}
+				if (!previous.d()) {
+					if ((!previous.c()) && ToDeleteData) {
+						pa_ptr->destroy();
+					}
+					if (ToDeleteMemBlock) {
+						delete pa_ptr;
+					}
+				}
+			}
+		};
+
+		explicit shared_ptr(aux* p) : pa(p) {}
+	public:
+		shared_ptr() :pa() {}
+		shared_ptr(std::nullptr_t) : pa() {}
+
+		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)) {}
+		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())) {}
+
+		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(shared_ptr::inc(s.pa)) {};
+		shared_ptr(shared_ptr<T> const& s) : pa(shared_ptr::inc(s.pa)) {};
+
+		~shared_ptr() { shared_ptr::dec(pa.load()); }
+
+		shared_ptr& operator=(const shared_ptr& s) {
+			if (this != &s) {
+				shared_ptr::dec(pa.Set(shared_ptr::inc(s.pa)));
+			}
+			return *this;
+		};
+		template<class U> shared_ptr& operator=(const shared_ptr<U>& s) {
+			if (this != &s) {
+				shared_ptr::dec(pa.Set(shared_ptr::inc(s.pa)));
+			}
+			return *this;
+		};
+		shared_ptr& operator=(std::nullptr_t) {
+			shared_ptr::dec(pa.Set(nullptr));
+			return *this;
+		};
+
+		operator bool() const {
+			//if (auto* pa_ptr = pa.load()) {
+			//	return pa_ptr->strong.load() > 0;
+			//}
+			//return false;
+
+			auto* pa_ptr = pa.load();
+			if (pa_ptr) {
+				auto previous = pa_ptr->strong_weak_count.load();
+				return !previous.c();
+			}
+			else {
+				return false;
+			}
+		};
+
+		T* get() const {
+			auto* pa_ptr = pa.load();
+			if (pa_ptr) {
+				return static_cast<T*>(pa_ptr->ptr());
+			}
+			else {
+				return nullptr;
+			}
+		};
+		T* operator->() const {
+			return get();
+		};
+		T& operator*() const {
+			return *get();
+		};
+	};
+
+	/// <summary>
+	/// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
+	/// </summary>
+	/// <returns></returns>
+	template<class T> class weak_ptr {
+		GoodLang::atomic_ptr<typename shared_ptr<T>::aux> pa; // pointer to shared memory block
+		static typename shared_ptr<T>::aux* inc(GoodLang::atomic_ptr<typename shared_ptr<T>::aux> const& pa) {
+			//while (auto ptr = pa.load()) {
+			//	ptr->IncWeak();
+			//	return ptr;
+			//}
+			//return nullptr;
+
+
+
+			while (auto pa_ptr = pa.load()) {
+				auto previous = pa_ptr->strong_weak_count.load();
+				while (!previous.d()) {
+					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, { previous.a(), previous.b() + 1, previous.c(), previous.d() })) {
+						break;
+					}
+					else {
+						previous = pa_ptr->strong_weak_count.load();
+					}
+				}
+				if (previous.d()) {
+					continue;
+				}
+				else {
+					return pa_ptr;
+				}
+			}
+			return nullptr;
+		};
+		static void dec(typename shared_ptr<T>::aux* pa_ptr) {
+			//if (pa_ptr) {
+			//	if (pa_ptr->DecWeak() == 0) {
+			//		// we are the last weak
+			//		if (pa_ptr->strong == 0) {
+			//			// and we are the last strong
+			//			pa_ptr->destroy();
+			//			delete pa_ptr;
+			//		}
+			//	}			
+			//}
+
+			if (pa_ptr) {
+				auto previous = pa_ptr->strong_weak_count.load();
+				short ToDeleteData = 0;
+				short ToDeleteMemBlock = 0;
+				while (!previous.d()) {
+					ToDeleteData = (previous.a() == 0);
+					ToDeleteMemBlock = ToDeleteData && (previous.b() == 1);
+					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, { previous.a(), previous.b() - 1, previous.c() || ToDeleteData, previous.d() || ToDeleteMemBlock })) {
+						break;
+					}
+					else {
+						previous = pa_ptr->strong_weak_count.load();
+					}
+				}
+				if (!previous.d()) {
+					if ((!previous.c()) && ToDeleteData) {
+						pa_ptr->destroy();
+					}
+					if (ToDeleteMemBlock) {
+						delete pa_ptr;
+					}
+				}
+			}
+		};
+
+	public:
+		weak_ptr() : pa() {}
+		weak_ptr(std::nullptr_t) : pa() {}
+		weak_ptr(shared_ptr<T> const& r) : pa(inc(r.pa)) {};
+		weak_ptr(const weak_ptr& r) : pa(inc(r.pa)) {};
+		~weak_ptr() { dec(pa.load()); }
+
+		operator bool() const {
+			return !expired();
+		};
+
+		weak_ptr& operator=(const weak_ptr& s) {
+			if (this != &s) {
+				dec(pa.Set(inc(s.pa)));
+			}
+			return *this;
+		};
+		weak_ptr& operator=(std::nullptr_t) {
+			dec(pa.Set(nullptr));
+			return *this;
+		};
+
+		shared_ptr<T> lock() {
+			return shared_ptr<T>(shared_ptr<T>::inc(pa));
+		};
+		bool expired() {
+			//if (auto* pa_ptr = pa.load()) {
+			//	return pa_ptr->strong.load() == 0;
+			//}
+			//return true;
+
+			auto* pa_ptr = pa.load();
+			if (pa_ptr) {
+				auto previous = pa_ptr->strong_weak_count.load();
+				return previous.c();
+			}
+			else {
+				return true;
+			}
+		};
 	};
 };
 
