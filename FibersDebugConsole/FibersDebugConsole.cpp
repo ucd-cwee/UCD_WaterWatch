@@ -7451,7 +7451,370 @@ namespace GoodLang {
 	};
 };
 
+
+
+
+
+namespace TEST {
+	class CAS {
+	public:
+		using type1 = short;
+		using type2 = short;
+		using type3 = short;
+		using type4 = short;
+
+	private:
+		static constexpr size_t offset0 = 0;
+		static constexpr size_t offset1 = offset0 + sizeof(type1);
+		static constexpr size_t offset2 = offset1 + sizeof(type2);
+		static constexpr size_t offset3 = offset2 + sizeof(type3);
+
+	public:
+		struct Data {
+		public:
+			uint64_t data;
+
+			type1& a() {
+				return *reinterpret_cast<type1*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset0);
+			};
+			type2& b() {
+				return *reinterpret_cast<type2*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset1);
+			};
+			type3& c() {
+				return *reinterpret_cast<type3*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset2);
+			};
+			type4& d() {
+				return *reinterpret_cast<type4*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset3);
+			};
+
+			Data() = default;
+			~Data() = default;
+			Data(type1 A, type2 B = 0, type3 C = 0, type4 D = 0) {
+				a() = std::move(A);
+				b() = std::move(B);
+				c() = std::move(C);
+				d() = std::move(D);
+			};
+		};
+
+	public:
+		CAS(type1 a = 0, type2 b = 0, type3 c = 0, type4 d = 0) : 
+			read_write({ a, b, c, d }) {};
+		CAS(CAS const& RHS) : 
+			read_write(RHS.read_write) {};
+		CAS(CAS&& RHS) : 
+			read_write(std::move(RHS.read_write)) {};
+		CAS& operator=(CAS const& RHS) { 
+			(void)InterlockedExchangeNoFence(&read_write.data, RHS.read_write.data);
+			return *this; 
+		};
+		CAS& operator=(CAS&& RHS) { 
+			(void)InterlockedExchangeNoFence(&read_write.data, RHS.read_write.data);
+			return *this; 
+		};
+		~CAS() = default;
+
+		void store(Data const RHS) {
+			(void)InterlockedExchangeNoFence(&read_write.data, std::move(RHS.data));
+		};
+		Data exchange(Data const RHS) {
+			Data out;
+			out.data = InterlockedExchangeNoFence(&read_write.data, std::move(RHS.data));
+			return out;
+		};
+		bool compare_exchange_strong(Data& _Expected, uint64_t _Desired) {
+			return _Expected.data == InterlockedCompareExchangeNoFence(&read_write.data, _Desired, _Expected.data);
+		};
+		bool compare_exchange_weak(Data& _Expected, uint64_t _Desired) {
+			return _Expected.data == InterlockedCompareExchangeNoFence(&read_write.data, _Desired, _Expected.data);
+		};
+
+		Data read_write;
+	};
+
+	template<class T> class weak_ptr; // forward-decl
+
+	namespace details {
+		class shared_ptr_base {
+		public:
+			struct aux {
+				TEST::CAS strong_weak_count;
+
+				aux() : strong_weak_count(1, 0, 0, 0) {};
+
+				virtual void* ptr() const = 0;
+				virtual void destroy() = 0;
+				virtual ~aux() {} //must be polymorphic
+			};
+
+			template<class U, class Deleter> struct auximpl : public aux {
+				// GoodLang::atomic_ptr<U> p;
+				U* p;
+				Deleter d;
+				auximpl(U* pu, Deleter x) : aux(), p(pu), d(x) {}
+
+				virtual void* ptr() const override {
+					// return static_cast<void*>(p.load());
+					return static_cast<void*>(p);
+				};
+				virtual void destroy() override {
+					// if (auto* P = p.Set(nullptr)) d(P);
+					d(p);
+
+				};
+			};
+
+			template<class U> struct default_deleter {
+				void operator()(U* p) const { delete p; };
+			};
+
+			static aux* inc(GoodLang::atomic_ptr<aux> const& pa) {
+				aux*
+					pa_ptr;
+				typename decltype(aux::strong_weak_count)::Data
+					previous, copy;
+				while (pa_ptr = pa.load()) {
+					copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+					while (!previous.d()) {						
+						++copy.a();
+						if (pa_ptr->strong_weak_count.compare_exchange_strong(previous, copy.data)) {
+							break;
+						}
+						else {
+							copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+						}
+					}
+					if (previous.d() || previous.c()) {
+						continue; // try again
+					}
+					else {
+						return pa_ptr;
+					}
+				}
+				return nullptr;
+			};
+
+			static void dec(aux* pa_ptr) {
+				typename decltype(aux::strong_weak_count)::Data
+					previous, copy;
+				bool
+					ToDeleteData, ToDeleteMemBlock;
+				if (pa_ptr) {
+					copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+					while (!previous.d()) {
+						copy.c() = copy.c() || (ToDeleteData = (0 == --copy.a()));
+						copy.d() = copy.d() || (ToDeleteMemBlock = ToDeleteData && (previous.b() == 0));
+						if (pa_ptr->strong_weak_count.compare_exchange_strong(previous, copy.data)) {
+							break;
+						}
+						else {
+							copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+						}
+					}
+					if (!previous.d()) {
+						if ((!previous.c()) && ToDeleteData) {
+							pa_ptr->destroy();
+						}
+						if (ToDeleteMemBlock) {
+							delete pa_ptr;
+						}
+					}
+				}
+			};
+		};
+	};
+
+	/// <summary>
+	/// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
+	/// </summary>
+	/// <returns></returns>
+	template<class T> class shared_ptr : public details::shared_ptr_base {
+		friend class weak_ptr<T>;
+		GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
+		GoodLang::atomic_ptr<T> pt;
+		explicit shared_ptr(aux* p) : pa(p) {};
+	public:
+		shared_ptr() :pa(nullptr), pt(nullptr) {};
+		shared_ptr(std::nullptr_t) : pa(nullptr), pt(nullptr) {};
+		shared_ptr(shared_ptr<T> const& s) : pa(shared_ptr::inc(s.pa)), pt(nullptr) { 
+			if (auto* pa_ptr = pa.load()) pt = reinterpret_cast<T*>(pa_ptr->ptr());
+		};
+		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(shared_ptr::inc(s.pa)), pt(nullptr) {
+			if (auto* pa_ptr = pa.load()) pt = reinterpret_cast<T*>(pa_ptr->ptr());
+		};
+		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(reinterpret_cast<T*>(pu)) {};
+		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(reinterpret_cast<T*>(pu)) {};
+		~shared_ptr() { shared_ptr::dec(pa.load()); };
+
+		shared_ptr& operator=(const shared_ptr& s) {
+			if (this != &s) {
+				pt = nullptr;
+				shared_ptr::dec(pa.Set(shared_ptr::inc(s.pa)));
+			}
+			return *this;
+		};
+		template<class U> shared_ptr& operator=(const shared_ptr<U>& s) {
+			if (this != &s) {
+				pt = nullptr;
+				shared_ptr::dec(pa.Set(shared_ptr::inc(s.pa)));
+			}
+			return *this;
+		};
+		shared_ptr& operator=(std::nullptr_t) {
+			pt = nullptr;
+			shared_ptr::dec(pa.Set(nullptr));
+			return *this;
+		};
+
+		operator bool() const {
+			if (pt) {
+				return true;
+			}
+			else {
+				if (auto* pa_ptr = pa.load()) {
+					auto previous = pa_ptr->strong_weak_count.read_write;
+					return !previous.c();
+				}
+				else
+					return false;
+			}
+		};
+
+		T* get() const {
+			T* out;
+			if (out = pt.load()) {}
+			else {
+				if (auto* pa_ptr = pa.load())
+					out = reinterpret_cast<T*>(pa_ptr->ptr());
+				else
+					out = nullptr;
+			}
+			return out;
+		};
+		T* operator->() const { return get(); };
+		T& operator*() const { return *get(); };
+	};
+
+	/// <summary>
+	/// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
+	/// </summary>
+	/// <returns></returns>
+	template<class T> class weak_ptr {
+		GoodLang::atomic_ptr<typename shared_ptr<T>::aux> pa; // pointer to shared memory block
+		static typename shared_ptr<T>::aux* inc(GoodLang::atomic_ptr<typename shared_ptr<T>::aux> const& pa) {
+			using F = typename shared_ptr<T>::aux; 
+			typename decltype(F::strong_weak_count)::Data
+				previous, copy;
+			
+			while (auto pa_ptr = pa.load()) {
+				copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+				while (!previous.d()) {
+					++copy.b();
+					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy.data)) {
+						break;
+					}
+					else {
+						copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+					}
+				}
+				if (previous.d()) {
+					continue;
+				}
+				else {
+					return pa_ptr;
+				}
+			}
+			return nullptr;
+		};
+		static void dec(typename shared_ptr<T>::aux* pa_ptr) {
+			using F = typename shared_ptr<T>::aux;
+			typename decltype(F::strong_weak_count)::Data
+				previous, copy;
+
+			if (pa_ptr) {
+				copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+				short ToDeleteData = 0;
+				short ToDeleteMemBlock = 0;
+				while (!previous.d()) {
+					ToDeleteData = (previous.a() == 0);
+					ToDeleteMemBlock = ToDeleteData && (previous.b() == 1);
+
+					--copy.b();
+					copy.c() = previous.c() || ToDeleteData;
+					copy.d() = previous.d() || ToDeleteMemBlock;
+
+					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy.data)) {
+						break;
+					}
+					else {
+						copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
+					}
+				}
+				if (!previous.d()) {
+					if ((!previous.c()) && ToDeleteData) {
+						pa_ptr->destroy();
+					}
+					if (ToDeleteMemBlock) {
+						delete pa_ptr;
+					}
+				}
+			}
+		};
+
+	public:
+		weak_ptr() : pa() {}
+		weak_ptr(std::nullptr_t) : pa() {}
+		weak_ptr(shared_ptr<T> const& r) : pa(inc(r.pa)) {};
+		weak_ptr(const weak_ptr& r) : pa(inc(r.pa)) {};
+		~weak_ptr() { dec(pa.load()); }
+
+		operator bool() const {
+			return !expired();
+		};
+
+		weak_ptr& operator=(const weak_ptr& s) {
+			if (this != &s) {
+				dec(pa.Set(inc(s.pa)));
+			}
+			return *this;
+		};
+		weak_ptr& operator=(std::nullptr_t) {
+			dec(pa.Set(nullptr));
+			return *this;
+		};
+
+		shared_ptr<T> lock() {
+			return shared_ptr<T>(shared_ptr<T>::inc(pa));
+		};
+		bool expired() {
+			auto* pa_ptr = pa.load();
+			if (pa_ptr) {
+				auto previous = pa_ptr->strong_weak_count.read_write;
+				return previous.c();
+			}
+			else {
+				return true;
+			}
+		};
+	};
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
 int main() {
+	// pre-warm the heap
+	for (int i = 0; i < 100000; i++) delete (new int(5));
+
 	using namespace GoodLang;
 
 	if (1) {
@@ -7473,15 +7836,51 @@ int main() {
 		EXPECT_EQ(weak_copy.expired(), true);
 	}
 	
+	if (1) {
+		auto tempPtr = TEST::shared_ptr<stackThing>(new stackThing("TEMP2"));
+
+	}
+	if (1) {
+		auto tempPtr = TEST::shared_ptr<stackThing>(new stackThing("TEMP2"));
+		auto copy = TEST::shared_ptr<stackThing>(tempPtr);
+	}
+	if (1) {
+		auto tempPtr = TEST::shared_ptr<stackThing>(new stackThing("TEMP2"));
+		auto weak_copy = TEST::weak_ptr(tempPtr);
+		EXPECT_EQ(weak_copy.expired(), false);
+		auto newPtr = weak_copy.lock();
+		tempPtr = nullptr;
+		EXPECT_EQ(weak_copy.expired(), false);
+		newPtr = nullptr;
+		EXPECT_EQ(weak_copy.expired(), true);
+	}
+
+
+
 	
-	
+	if (1) {
+		GoodLang::InterlockedLong count{ 0 };
+		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
+
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 10000000, [&](int i) {
+			TEST::shared_ptr<stackThing> copied{ tempPtr };
+			if (copied) {
+				(void)copied->get_var_name();
+				++count;
+			}
+			tempPtr = TEST::shared_ptr<stackThing>(new stackThing());
+			});
+		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr @ " + ToString(count));
+	}	
 	if (1) {
 		GoodLang::InterlockedLong count{ 0 };
 		shared_ptr<stackThing> tempPtr{ new stackThing() };
 
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [&](int i){
+		parallel::For(0, 10000000, [&](int i){
 			shared_ptr<stackThing> copied{ tempPtr };
 			if (copied) {
 				(void)copied->get_var_name();
@@ -7491,14 +7890,14 @@ int main() {
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr @ " + ToString(count));
 	}	
-	if (1) {
+	if (0) {
 		GoodLang::InterlockedLong count{ 0 };
 		GoodLang::SharedLockable< std::shared_ptr<stackThing> > 
 			tempPtr{ std::shared_ptr<stackThing>(new stackThing()) };
 
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
+		parallel::For(0, 10000000, [&](int i) {
 			std::shared_ptr<stackThing> copied{ tempPtr.load() };
 			if (copied) {
 				(void)copied->get_var_name();
@@ -7508,7 +7907,7 @@ int main() {
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ coarse-grained locking std::shared_ptr @ " + ToString(count));
 	}
-	if (1) {
+	if (0) {
 		GoodLang::InterlockedLong count{ 0 };
 		GoodLang::SharedLockable< std::shared_ptr<stackThing> >
 			tempPtr{ std::shared_ptr<stackThing>(new stackThing()) };
@@ -7531,7 +7930,7 @@ int main() {
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ fine-grained locking std::shared_ptr @ " + ToString(count));
 	}
-	if (1) {
+	if (0) {
 		GoodLang::InterlockedLong count{ 0 };
 		std::shared_ptr<stackThing>
 			tempPtr{ std::shared_ptr<stackThing>(new stackThing()) };
@@ -7555,13 +7954,29 @@ int main() {
 			});
 		print(ToString(Units::second(sw.Stop_s())) + " @ fine-grained std::mutex locking std::shared_ptr @ " + ToString(count));
 	}
+	print("");
+
+	if (1) {
+		GoodLang::InterlockedLong count{ 0 };
+		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
+
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 10000000, [&](int i) {
+			TEST::shared_ptr<stackThing> copied{ tempPtr };
+			(void)copied->get_var_name();
+			++count;
+			tempPtr = TEST::shared_ptr<stackThing>(new stackThing());
+		});
+		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr (no check) @ " + ToString(count));
+	}
 	if (1) {
 		GoodLang::InterlockedLong count{ 0 };
 		shared_ptr<stackThing> tempPtr{ new stackThing() };
 
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
+		parallel::For(0, 10000000, [&](int i) {
 			shared_ptr<stackThing> copied{ tempPtr };
 			(void)copied->get_var_name();
 			++count;			
@@ -7569,13 +7984,24 @@ int main() {
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr (no check) @ " + ToString(count));
 	}
+	print("");
 
+	if (1) {
+		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
+
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 1000000000, [&](int i) {
+			(void)tempPtr->get_var_name();
+		});
+		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr BASIC INDEXING");
+	}
 	if (1) {
 		shared_ptr<stackThing> tempPtr{ new stackThing() };
 
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
+		parallel::For(0, 1000000000, [&](int i) {
 			(void)tempPtr->get_var_name();
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr BASIC INDEXING");
@@ -7585,12 +8011,24 @@ int main() {
 
 		Stopwatch sw;
 		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
+		parallel::For(0, 1000000000, [&](int i) {
 			(void)tempPtr->get_var_name();
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr BASIC INDEXING");
 	}
+	print("");
 
+	if (1) {
+		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
+
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 1000000, [&](int i) {
+			TEST::shared_ptr<stackThing> copied{ tempPtr };
+			(void)copied->get_var_name();
+			});
+		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr COPY THEN BASIC INDEXING");
+	}
 	if (1) {
 		shared_ptr<stackThing> tempPtr{ new stackThing()};
 
@@ -7613,7 +8051,23 @@ int main() {
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr COPY THEN BASIC INDEXING");
 	}
+	print("");
 
+	if (1) {
+		GoodLang::InterlockedLong count{ 0 };
+		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
+		auto weak_copy = TEST::weak_ptr(tempPtr);
+		Stopwatch sw;
+		sw.Start();
+		parallel::For(0, 1000000, [&](int i) {
+			TEST::shared_ptr<stackThing> copied{ weak_copy.lock() };
+			if (copied) {
+				(void)copied->get_var_name();
+				count++;
+			}
+		});
+		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr WeakPtr Test @ " + ToString(count));
+	}
 	if (1) {
 		GoodLang::InterlockedLong count{ 0 };
 		shared_ptr<stackThing> tempPtr{ new stackThing() };

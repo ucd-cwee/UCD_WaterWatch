@@ -144,7 +144,12 @@ namespace GoodLang {
 		};
 		template <typename type1, typename type2, typename type3, typename type4> class CAS4 {
 		private:
-			using wrapperDetails = UnionDetails<type1, type2, type3, type4>;
+			using wrapperDetails = typename UnionDetails<type1, type2, type3, type4>;
+			static constexpr size_t offset0 = 0;
+			static constexpr size_t offset1 = offset0 + sizeof(type1);
+			static constexpr size_t offset2 = offset1 + sizeof(type2);
+			static constexpr size_t offset3 = offset2 + sizeof(type3);
+
 		public:
 			struct Data {
 			protected:
@@ -152,25 +157,25 @@ namespace GoodLang {
 
 			public:
 				type1& a() {
-					return *wrapperDetails::PtrAt<0>(&data[0]);
+					return *reinterpret_cast<type1*>(&data[offset0]);
 				};
 				type2& b() {
-					return *wrapperDetails::PtrAt<1>(&data[0]);
+					return *reinterpret_cast<type2*>(&data[offset1]);
 				};
 				type3& c() {
-					return *wrapperDetails::PtrAt<2>(&data[0]);
+					return *reinterpret_cast<type3*>(&data[offset2]);
 				};
 				type4& d() {
-					return *wrapperDetails::PtrAt<3>(&data[0]);
+					return *reinterpret_cast<type4*>(&data[offset3]);
 				};
 
 				Data() = default;
 				~Data() = default;
 				Data(type1 A, type2 B = {}, type3 C = {}, type4 D = {}) {
-					a() = A;
-					b() = B;
-					c() = C;
-					d() = D;
+					a() = std::move(A);
+					b() = std::move(B);
+					c() = std::move(C);
+					d() = std::move(D);
 				};
 			};
 
@@ -183,20 +188,20 @@ namespace GoodLang {
 			CAS4& operator=(CAS4&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
 			~CAS4() = default;
 
-			void store(Data const& RHS) {
-				read_write.store(RHS);
+			void store(Data const RHS) {
+				read_write.store(std::move(RHS), std::memory_order::memory_order_release);
 			};
 			Data load() const {
-				return read_write.load();
+				return read_write.load(std::memory_order::memory_order_relaxed);
 			};
-			Data exchange(Data const& RHS) {
-				return read_write.exchange(RHS);
+			Data exchange(Data const RHS) {
+				return read_write.exchange(std::move(RHS), std::memory_order_release);
 			};
-			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_strong(_Expected, _Desired);
+			bool compare_exchange_strong(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_strong(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
-			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_weak(_Expected, _Desired);
+			bool compare_exchange_weak(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_weak(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
 
 		private:
@@ -242,20 +247,20 @@ namespace GoodLang {
 			CAS3& operator=(CAS3&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
 			~CAS3() = default;
 
-			void store(Data const& RHS) {
-				read_write.store(RHS);
+			void store(Data const RHS) {
+				read_write.store(std::move(RHS), std::memory_order::memory_order_release);
 			};
 			Data load() const {
-				return read_write.load();
+				return read_write.load(std::memory_order::memory_order_relaxed);
 			};
-			Data exchange(Data const& RHS) {
-				return read_write.exchange(RHS);
+			Data exchange(Data const RHS) {
+				return read_write.exchange(std::move(RHS), std::memory_order_release);
 			};
-			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_strong(_Expected, _Desired);
+			bool compare_exchange_strong(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_strong(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
-			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_weak(_Expected, _Desired);
+			bool compare_exchange_weak(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_weak(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
 
 		private:
@@ -296,20 +301,20 @@ namespace GoodLang {
 			CAS2& operator=(CAS2&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
 			~CAS2() = default;
 
-			void store(Data const& RHS) {
-				read_write.store(RHS);
+			void store(Data const RHS) {
+				read_write.store(std::move(RHS), std::memory_order::memory_order_release);
 			};
 			Data load() const {
-				return read_write.load();
+				return read_write.load(std::memory_order::memory_order_relaxed);
 			};
-			Data exchange(Data const& RHS) {
-				return read_write.exchange(RHS);
+			Data exchange(Data const RHS) {
+				return read_write.exchange(std::move(RHS), std::memory_order_release);
 			};
-			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_strong(_Expected, _Desired);
+			bool compare_exchange_strong(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_strong(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
-			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_weak(_Expected, _Desired);
+			bool compare_exchange_weak(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_weak(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
 
 		private:
@@ -347,20 +352,20 @@ namespace GoodLang {
 			CAS1& operator=(CAS1&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
 			~CAS1() = default;
 
-			void store(Data const& RHS) {
-				read_write.store(RHS);
+			void store(Data const RHS) {
+				read_write.store(std::move(RHS), std::memory_order::memory_order_release);
 			};
 			Data load() const {
-				return read_write.load();
+				return read_write.load(std::memory_order::memory_order_relaxed);
 			};
-			Data exchange(Data const& RHS) {
-				return read_write.exchange(RHS);
+			Data exchange(Data const RHS) {
+				return read_write.exchange(std::move(RHS), std::memory_order_release);
 			};
-			bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_strong(_Expected, _Desired);
+			bool compare_exchange_strong(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_strong(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
-			bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
-				return read_write.compare_exchange_weak(_Expected, _Desired);
+			bool compare_exchange_weak(Data& _Expected, const Data _Desired) {
+				return read_write.compare_exchange_weak(_Expected, std::move(_Desired), std::memory_order::memory_order_acq_rel);
 			};
 
 		private:
@@ -424,22 +429,21 @@ namespace GoodLang {
 		CAS& operator=(CAS&& RHS) { read_write.store(RHS.read_write.load()); return *this; };
 		~CAS() = default;
 
-		void store(Data const& RHS) {
-			read_write.store(RHS);
+		void store(Data const RHS) {
+			read_write.store(std::move(RHS));
 		};
 		Data load() const {
 			return read_write.load();
 		};
-		Data exchange(Data const& RHS) {
-			return read_write.exchange(RHS);
+		Data exchange(Data const RHS) {
+			return read_write.exchange(std::move(RHS));
 		};
-		bool compare_exchange_strong(Data& _Expected, const Data& _Desired) {
-			return read_write.compare_exchange_strong(_Expected, _Desired);
+		bool compare_exchange_strong(Data& _Expected, const Data _Desired) {
+			return read_write.compare_exchange_strong(_Expected, std::move(_Desired));
 		};
-		bool compare_exchange_weak(Data& _Expected, const Data& _Desired) {
-			return read_write.compare_exchange_weak(_Expected, _Desired);
+		bool compare_exchange_weak(Data& _Expected, const Data _Desired) {
+			return read_write.compare_exchange_weak(_Expected, std::move(_Desired));
 		};
-
 	};
 
 	/// <summary>
@@ -512,139 +516,115 @@ namespace GoodLang {
 
 	template<class T> class weak_ptr; // forward-decl
 
+	namespace details {
+		class shared_ptr_base {
+		public:
+			struct aux {
+				GoodLang::CAS<short, short, short, short>
+					strong_weak_count;
+
+				aux() : strong_weak_count({ 1, 0, 0, 0 }) {};
+
+				virtual void* ptr() const = 0;
+				virtual void destroy() = 0;
+				virtual ~aux() {} //must be polymorphic
+			};
+
+			template<class U, class Deleter> struct auximpl : public aux {
+				// GoodLang::atomic_ptr<U> p;
+				U* p;
+				Deleter d;
+				auximpl(U* pu, Deleter x) : aux(), p(pu), d(x) {}
+
+				virtual void* ptr() const override {
+					// return static_cast<void*>(p.load());
+					return static_cast<void*>(p);
+				};
+				virtual void destroy() override {
+					// if (auto* P = p.Set(nullptr)) d(P);
+					d(p);
+
+				};
+			};
+
+			template<class U> struct default_deleter {
+				void operator()(U* p) const { delete p; };
+			};
+
+			static aux* inc(GoodLang::atomic_ptr<aux> const& pa) {
+				aux*
+					pa_ptr;
+				typename GoodLang::CAS<short, short, short, short>::Data
+					previous, copy;
+				while (pa_ptr = pa.load()) {
+					previous = pa_ptr->strong_weak_count.load();
+					while (!previous.d()) {
+						std::memcpy(&copy, &previous, sizeof(copy)); // copy = previous;
+						++copy.a();
+						if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy)) {
+							break;
+						}
+						else {
+							previous = pa_ptr->strong_weak_count.load();
+						}
+					}
+					if (previous.d() || previous.c()) {
+						continue; // try again
+					}
+					else {
+						return pa_ptr;
+					}
+				}
+				return nullptr;
+			};
+
+			static void dec(aux* pa_ptr) {
+				typename GoodLang::CAS<short, short, short, short>::Data
+					previous, copy;
+				bool
+					ToDeleteData, ToDeleteMemBlock;
+				if (pa_ptr) {
+					previous = pa_ptr->strong_weak_count.load();
+					while (!previous.d()) {
+						std::memcpy(&copy, &previous, sizeof(copy)); // copy = previous;
+						copy.c() = copy.c() || (ToDeleteData = (0 == --copy.a()));
+						copy.d() = copy.d() || (ToDeleteMemBlock = ToDeleteData && (previous.b() == 0));
+						if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy)) {
+							break;
+						}
+						else {
+							previous = pa_ptr->strong_weak_count.load();
+						}
+					}
+					if (!previous.d()) {
+						if ((!previous.c()) && ToDeleteData) {
+							pa_ptr->destroy();
+						}
+						if (ToDeleteMemBlock) {
+							delete pa_ptr;
+						}
+					}
+				}
+			};
+		};
+	};
+
 	/// <summary>
 	/// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
 	/// </summary>
 	/// <returns></returns>
-	template<class T> class shared_ptr {
-		friend class weak_ptr<T>;
-
-		struct aux {
-			GoodLang::CAS<short, short, short, short>
-				strong_weak_count;
-
-			aux() : strong_weak_count({ 1, 0, 0, 0 }) {};
-
-			//GoodLang::InterlockedLong strong{ 1 };
-			//GoodLang::InterlockedLong weak{ 0 };
-
-			//long IncWeak() {
-			//	return weak.Increment();
-			//};
-			//long IncStrong() {
-			//	return strong.Increment();
-			//};
-			//long DecWeak() {
-			//	return weak.Decrement();
-			//};
-			//long DecStrong() {
-			//	return strong.Decrement();
-			//};
-
-			virtual void* ptr() const = 0;
-			virtual void destroy() = 0;
-			virtual ~aux() {} //must be polymorphic
-		};
-
-		template<class U, class Deleter> struct auximpl : public aux {
-			GoodLang::atomic_ptr<U> p; // implimented like this to allow for multiple calls to destroy without double-destroying. 
-			Deleter d;
-			auximpl(U* pu, Deleter x) : aux(), p(pu), d(x) {}
-
-			virtual void* ptr() const override {
-				return static_cast<void*>(p.load());
-			};
-			virtual void destroy() override { if (auto* P = p.Set(nullptr)) d(P); }
-		};
-
-		template<class U> struct default_deleter {
-			void operator()(U* p) const { delete p; };
-		};
-
+	template<class T> class shared_ptr : public details::shared_ptr_base {
+		friend class weak_ptr<T>;		
 		GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
-
-		static aux* inc(GoodLang::atomic_ptr<aux> const& pa) {
-			//while (auto* ptr = pa.load()) {
-			//	ptr->IncStrong();
-			//	return ptr;
-			//}
-			//return nullptr;
-
-			aux*
-				pa_ptr;
-			typename GoodLang::CAS<short, short, short, short>::Data
-				previous, copy;
-			while (pa_ptr = pa.load()) {
-				previous = pa_ptr->strong_weak_count.load();
-				while (!previous.d()) {
-					std::memcpy(&copy, &previous, sizeof(copy)); // copy = previous;
-					++copy.a();
-					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy)) {
-						break;
-					}
-					else {
-						previous = pa_ptr->strong_weak_count.load();
-					}
-				}
-				if (previous.d() || previous.c()) {
-					continue; // try again
-				}
-				else {
-					return pa_ptr;
-				}
-			}
-			return nullptr;
-		};
-		static void dec(aux* pa_ptr) {
-			//if (pa_ptr) {
-			//	if (pa_ptr->DecStrong() == 0) {
-			//		pa_ptr->destroy();
-			//		if (pa_ptr->weak == 0) {
-			//			delete pa_ptr;
-			//		}
-			//	}
-			//}
-
-			typename GoodLang::CAS<short, short, short, short>::Data
-				previous, copy;
-			bool
-				ToDeleteData, ToDeleteMemBlock;
-			if (pa_ptr) {
-				previous = pa_ptr->strong_weak_count.load();
-				while (!previous.d()) {
-					std::memcpy(&copy, &previous, sizeof(copy)); // copy = previous;
-					copy.c() = copy.c() || (ToDeleteData = (0 == --copy.a()));
-					copy.d() = copy.d() || (ToDeleteMemBlock = ToDeleteData && (previous.b() == 0));
-					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy)) {
-						break;
-					}
-					else {
-						previous = pa_ptr->strong_weak_count.load();
-					}
-				}
-				if (!previous.d()) {
-					if ((!previous.c()) && ToDeleteData) {
-						pa_ptr->destroy();
-					}
-					if (ToDeleteMemBlock) {
-						delete pa_ptr;
-					}
-				}
-			}
-		};
-
-		explicit shared_ptr(aux* p) : pa(p) {}
+		explicit shared_ptr(aux* p) : pa(p) {};
 	public:
-		shared_ptr() :pa() {}
-		shared_ptr(std::nullptr_t) : pa() {}
-
-		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)) {}
-		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())) {}
-
-		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(shared_ptr::inc(s.pa)) {};
+		shared_ptr() :pa() {};
+		shared_ptr(std::nullptr_t) : pa() {};
 		shared_ptr(shared_ptr<T> const& s) : pa(shared_ptr::inc(s.pa)) {};
-
-		~shared_ptr() { shared_ptr::dec(pa.load()); }
+		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(shared_ptr::inc(s.pa)) {};
+		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)) {};
+		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())) {};
+		~shared_ptr() { shared_ptr::dec(pa.load()); };
 
 		shared_ptr& operator=(const shared_ptr& s) {
 			if (this != &s) {
@@ -664,11 +644,6 @@ namespace GoodLang {
 		};
 
 		operator bool() const {
-			//if (auto* pa_ptr = pa.load()) {
-			//	return pa_ptr->strong.load() > 0;
-			//}
-			//return false;
-
 			auto* pa_ptr = pa.load();
 			if (pa_ptr) {
 				auto previous = pa_ptr->strong_weak_count.load();
@@ -703,14 +678,6 @@ namespace GoodLang {
 	template<class T> class weak_ptr {
 		GoodLang::atomic_ptr<typename shared_ptr<T>::aux> pa; // pointer to shared memory block
 		static typename shared_ptr<T>::aux* inc(GoodLang::atomic_ptr<typename shared_ptr<T>::aux> const& pa) {
-			//while (auto ptr = pa.load()) {
-			//	ptr->IncWeak();
-			//	return ptr;
-			//}
-			//return nullptr;
-
-
-
 			while (auto pa_ptr = pa.load()) {
 				auto previous = pa_ptr->strong_weak_count.load();
 				while (!previous.d()) {
@@ -731,17 +698,6 @@ namespace GoodLang {
 			return nullptr;
 		};
 		static void dec(typename shared_ptr<T>::aux* pa_ptr) {
-			//if (pa_ptr) {
-			//	if (pa_ptr->DecWeak() == 0) {
-			//		// we are the last weak
-			//		if (pa_ptr->strong == 0) {
-			//			// and we are the last strong
-			//			pa_ptr->destroy();
-			//			delete pa_ptr;
-			//		}
-			//	}			
-			//}
-
 			if (pa_ptr) {
 				auto previous = pa_ptr->strong_weak_count.load();
 				short ToDeleteData = 0;
@@ -793,11 +749,6 @@ namespace GoodLang {
 			return shared_ptr<T>(shared_ptr<T>::inc(pa));
 		};
 		bool expired() {
-			//if (auto* pa_ptr = pa.load()) {
-			//	return pa_ptr->strong.load() == 0;
-			//}
-			//return true;
-
 			auto* pa_ptr = pa.load();
 			if (pa_ptr) {
 				auto previous = pa_ptr->strong_weak_count.load();
