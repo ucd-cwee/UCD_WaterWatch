@@ -1,5 +1,6 @@
 #pragma once
 #include "Any.h"
+#include <array>
 
 // Type_Info
 namespace GoodLang {
@@ -143,6 +144,188 @@ namespace GoodLang {
 	};
 	template<> size_t GetHash<std::weak_ptr<Type_Info>>(std::weak_ptr<Type_Info> const& r) {
 		return GetHash(r.lock());
+	};
+};
+
+// shared_ptr
+namespace GoodLang {
+	// std::numeric_limits<unsigned short>::max() and 512 give similar performance metrics.
+	// 255 and less tend to get caught in a constriction with heavy loads. 
+	static std::array<std::atomic<long>, 512> locks; // 128, 1000, 10000, std::numeric_limits<unsigned short>::max()
+	static size_t PtrToIndex(shared_ptr_base::aux* const& ptr) {
+		if constexpr (locks.size() == std::numeric_limits<unsigned short>::max()) {
+			return reinterpret_cast<unsigned short&>(const_cast<shared_ptr_base::aux*&>(ptr));
+		}
+		else if constexpr (locks.size() == std::numeric_limits<unsigned char>::max()) {
+			return reinterpret_cast<unsigned char&>(const_cast<shared_ptr_base::aux*&>(ptr));
+		}
+		//if constexpr (locks.size() >= 10000) {
+		//	return (((reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr))) >> 4) % 321) + (((reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr))) << 4) % 9678);
+		//}
+		//else if constexpr (locks.size() >= 1000) {
+		//	return reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr)) % 10000 >> 4;
+		//}
+		else {
+			return (reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr)) >> 5) % locks.size();
+		}
+	};
+
+	void shared_ptr_base::PreventDeletion(aux* const& ptr) {
+		if (ptr) locks[PtrToIndex(ptr)].fetch_add(1, std::memory_order::memory_order_relaxed);
+	};
+	void shared_ptr_base::AllowDeletion(aux* const& ptr) {
+		if (ptr) locks[PtrToIndex(ptr)].fetch_add(-1, std::memory_order::memory_order_acq_rel);
+	};
+	// requires that the ptr is NOT already locked through PreventDeletion
+	void shared_ptr_base::DoDeletion(aux* const& ptr) {
+		if (ptr) {
+			auto& lock = locks[PtrToIndex(ptr)];
+			while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo			
+			delete ptr;
+			lock.fetch_add(-1, std::memory_order::memory_order_relaxed); // undo
+		}
+	};
+	// requires that the ptr is NOT already locked through PreventDeletion
+	void shared_ptr_base::DoDestroyOrDelete(aux* const& ptr, bool Destroy, bool Delete) {
+		if (ptr) {
+			if (Destroy) {
+				//auto& lock = locks[reinterpret_cast<internal_lock_type&>(const_cast<aux*&>(ptr))];
+				//while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo				
+				//lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo
+				ptr->destroy();
+				if (Delete) delete ptr;
+			}
+			else {
+				auto& lock = locks[PtrToIndex(ptr)];
+				while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo				
+				if (Delete) delete ptr;
+				lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo
+			}
+		}
+	};
+
+	// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
+	shared_ptr_base::aux* shared_ptr_base::inc(GoodLang::atomic_ptr<aux> const& pa) {
+		aux
+			* pa_ptr{ nullptr },
+			* out{ nullptr };
+		long long
+			read;
+
+		while (pa_ptr = pa.load()) {
+			// prevent its deletion while we work on it. This does not access it, it simply locks the region the pointer belongs to, HOPING to prevent collisions. 
+			PreventDeletion(pa_ptr);
+			if (pa_ptr == (out = pa.load())) {
+				if (pa_ptr) {
+					read = pa_ptr->Strong_Weak_Destroy_Delete.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // increments the strong count, regardless of the others
+					if (
+						(reinterpret_cast<short*>(&read)[0] >= 0)
+						&& (reinterpret_cast<long*>(&read)[1] == 0)
+						// && (reinterpret_cast<short*>(&read)[2] == 0)
+						// && (reinterpret_cast<short*>(&read)[3] == 0)
+						) { // if NOT being destroyed or deleted...
+						return out; // remember - I am still locked from deletion.
+					}
+					else {
+						pa_ptr->Strong_Weak_Destroy_Delete.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- exit immediately.
+					}
+				}
+			}
+			AllowDeletion(pa_ptr);
+		}
+		return nullptr;
+	};
+	// ASSUMES THAT THE PTR COMES IN LOCKED.
+	void shared_ptr_base::dec(aux* pa_ptr) {
+		long long
+			read,
+			planned;
+
+		if (pa_ptr) {
+			read = pa_ptr->Strong_Weak_Destroy_Delete.fetch_add(-1, std::memory_order::memory_order_acq_rel) - 1;
+			if ((reinterpret_cast<short*>(&read)[0] < 0) || reinterpret_cast<short*>(&read)[2] || reinterpret_cast<short*>(&read)[3]) {
+				// too late! 
+				AllowDeletion(pa_ptr);
+			}
+			else {
+				if (reinterpret_cast<short*>(&read)[0] == 0) {
+					planned = read;
+
+					reinterpret_cast<short*>(&planned)[0] = -1;
+					reinterpret_cast<short*>(&planned)[2] = 1;
+					if (reinterpret_cast<short*>(&planned)[1] == 0) {
+						// flag that we plan on deleting the mem_block!
+						reinterpret_cast<short*>(&planned)[3] = 1;
+					}
+					if (pa_ptr->Strong_Weak_Destroy_Delete.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) { // success!
+						AllowDeletion(pa_ptr);
+						if ((reinterpret_cast<short*>(&planned)[2] == 1) || (reinterpret_cast<short*>(&planned)[3] == 1))
+							DoDestroyOrDelete(
+								pa_ptr,
+								reinterpret_cast<short*>(&planned)[2] == 1,
+								reinterpret_cast<short*>(&planned)[3] == 1
+							);
+						return;
+					}
+				}
+				// still good
+				AllowDeletion(pa_ptr);
+			}
+		}
+	};
+	// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
+	shared_ptr_base::aux* shared_ptr_base::inc_weak(GoodLang::atomic_ptr<aux> const& pa) {
+		aux
+			* pa_ptr{ nullptr },
+			* pa_ptr_copy{ nullptr },
+			* out{ nullptr };
+		long long
+			read,
+			planned;
+
+		while (pa_ptr_copy = pa_ptr = pa.load()) {
+			// prevent its deletion while we work on it. This does not access it, it simply locks the region the pointer belongs to, HOPING to prevent collisions. 
+			PreventDeletion(pa_ptr_copy);
+			if (pa_ptr_copy == (out = pa_ptr = pa.load())) {
+				if (pa_ptr) {
+					planned = read = pa_ptr->Strong_Weak_Destroy_Delete.load(std::memory_order::memory_order_relaxed);
+					if (!reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
+						// add to the weak count
+						++reinterpret_cast<short*>(&planned)[1];
+						if (pa_ptr->Strong_Weak_Destroy_Delete.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) { // success!
+							return out; // remember - I am still locked from deletion.
+						}
+					}
+				}
+			}
+			AllowDeletion(pa_ptr_copy);
+		}
+		return nullptr;
+	};
+	// ASSUMES THAT THE PTR COMES IN LOCKED.
+	void shared_ptr_base::dec_weak(aux* pa_ptr) {
+		long long
+			read,
+			planned;
+
+		if (pa_ptr) {
+			planned = read = pa_ptr->Strong_Weak_Destroy_Delete.load(std::memory_order::memory_order_relaxed);
+			if (!reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
+				--reinterpret_cast<short*>(&planned)[1];
+				if (reinterpret_cast<short*>(&planned)[1] == 0) {
+					// flag that we plan on deleting the mem_block!
+					reinterpret_cast<short*>(&planned)[3] = 1;
+				}
+				if (pa_ptr->Strong_Weak_Destroy_Delete.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) { // success!
+					AllowDeletion(pa_ptr);
+					if (reinterpret_cast<short*>(&planned)[3] == 1) {
+						DoDeletion(pa_ptr);
+					}
+					return;
+				}
+			}
+			AllowDeletion(pa_ptr);
+		}
 	};
 };
 

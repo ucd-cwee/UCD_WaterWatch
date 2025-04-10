@@ -87,14 +87,19 @@ namespace GoodLang {
 	bool Scope::AddChild(std::shared_ptr<Namespace> NamespacePtr) {
 		if (auto p = std::dynamic_pointer_cast<Scope>(NamespacePtr)) {
 			auto name = p->GetName();
-			auto ptr = p_children.get_or_insert(name, UnorderedMap<size_t, std::shared_ptr<Namespace>>());
-			if (ptr->emplace(Hasher()(NamespacePtr), NamespacePtr)) {
+
+			auto ptr = p_children.get_or_insert(name, NamespacePtr);
+			if (*ptr == NamespacePtr) {
+				// it was inserted! 
 				if (p->IsClass()) {
 					(void)RecordClass(std::dynamic_pointer_cast<Class>(p));
 				}
-
 				is_basic_scope = false;
 				return true;
+			}
+			else {
+				// it was not inserted!
+				return false;
 			}
 		}
 		return false;
@@ -159,21 +164,19 @@ namespace GoodLang {
 
 		// Test my children themselves.
 		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-							if (func(p)) {
-								bestMatch = p;
-								return true;
-							}
-						}						
-					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
+			if (childNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(childNamespace.second);
+				if (!(checkedSelf.count(ptr) >= 1)) {
+					checkedSelf.emplace(ptr);
+					if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+						if (func(p)) {
+							bestMatch = p;
+							return true;
+						}
+					}						
+				}
+				else {
+					break; // we've checked this before! Quick, get out. 
 				}
 			}			
 		}
@@ -186,14 +189,12 @@ namespace GoodLang {
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
-				}				
-			}			
+		for (auto& innerChildNamespace : this->p_children) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}
 		}
 
 		return false;
@@ -255,27 +256,24 @@ namespace GoodLang {
 		}
 
 		// Test my children themselves.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (ptr->IsNamespace()) {
-							if (auto p = std::dynamic_pointer_cast<Namespace>(ptr)) {
-								if (func(p)) {
-									bestMatch = p;
-									return true;
-								}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(ptr) >= 1)) {
+					checkedSelf.emplace(ptr);
+					if (ptr->IsNamespace()) {
+						if (auto p = std::dynamic_pointer_cast<Namespace>(ptr)) {
+							if (func(p)) {
+								bestMatch = p;
+								return true;
 							}
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
+				}
+				else {
+					break; // we've checked this before! Quick, get out. 
 				}
 			}
-			
 		}
 
 		// test my parents and their children
@@ -286,14 +284,12 @@ namespace GoodLang {
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
-				}				
-			}			
+		for (auto& innerChildNamespace : this->p_children) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}					
 		}
 
 		return false;
@@ -322,9 +318,9 @@ namespace GoodLang {
 			return {};
 		}
 	};
-	Proxy_Function Scope::GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) {
+	Proxy_Function Scope::GetFunction(std::string const& name, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree) {
 		if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(GetNamespace())) {
-			return namespacePtr->GetFunction(name, params, tree);
+			return namespacePtr->GetFunction(name, params, Params, tree);
 		}
 		else {
 			return {};
@@ -702,7 +698,7 @@ namespace GoodLang {
 			}
 		}
 	};
-	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree) {
+	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree) {
 		static auto fixNamespace{ [](std::string x) -> std::string {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
@@ -717,9 +713,9 @@ namespace GoodLang {
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
 			std::shared_ptr<Namespace> out;
-			if (TryFindNearestNamespaceWhere(out, [&functionName, &params, &tree](std::shared_ptr<Namespace> const& namespacePtr)->bool {
+			if (TryFindNearestNamespaceWhere(out, [&functionName, &params, &Params, &tree](std::shared_ptr<Namespace> const& namespacePtr)->bool {
 				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
-					if (auto func = ptr->GetFunction(functionName, params, tree)) {
+					if (auto func = ptr->GetFunction(functionName, params, Params, tree)) {
 						return true;
 					}
 				}
@@ -735,7 +731,7 @@ namespace GoodLang {
 			std::string Namespace = functionName.substr(0, lastOfColons - 1);
 			functionName = functionName.substr(lastOfColons + 1);
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
-				return namespacePtr->FindNamespaceWithFunction(functionName, params, tree);
+				return namespacePtr->FindNamespaceWithFunction(functionName, params, Params, tree);
 			}
 			else {
 				return nullptr;
@@ -754,8 +750,9 @@ namespace GoodLang {
 
 		auto lastOfColons = functionName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
-			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindNamespaceWithFunction(functionName, params, tree))) {
-				return ptr->GetFunction(functionName, params, tree);
+			ParamTypes Params{ params };
+			if (auto ptr = std::dynamic_pointer_cast<Scope>(FindNamespaceWithFunction(functionName, params, Params, tree))) {
+				return ptr->GetFunction(functionName, params, Params, tree);
 			}
 			else {
 				return {};
@@ -774,30 +771,29 @@ namespace GoodLang {
 		}
 	};
 	
-	
-
-
 	bool Scope::TryFindNearestScopeWhere_2(
 		std::shared_ptr<Scope>& bestMatch,
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 		bool isExporingParent,
 		bool allowFindObject,
-		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
-		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+		std::unordered_set< Scope*, custom_hash > const& CheckedSelf,
+		std::unordered_set< Scope*, custom_hash > const& CheckedAll
 	) const {
-		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
-		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto& checkedSelf = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedAll);
 		auto selfPtr = this->p_self.lock();
 
 		// Prevent Duplication
-		if (checkedAll.count(selfPtr) >= 1) { return false; }
-		checkedAll.emplace(selfPtr);
+		if (checkedAll.count(selfPtr.get()) >= 1) { return false; }
+		checkedAll.emplace(selfPtr.get());
+
+		std::shared_ptr<Scope> p;
 
 		// test myself			
-		if (!(checkedSelf.count(selfPtr) >= 1)) {
-			checkedSelf.emplace(selfPtr);
+		if (!(checkedSelf.count(selfPtr.get()) >= 1)) {
+			checkedSelf.emplace(selfPtr.get());
 			if (1) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+				if (p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
 					if (func(p, isExporingParent, allowFindObject)) {
 						bestMatch = p;
 						return true;
@@ -808,7 +804,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
 				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -819,16 +815,14 @@ namespace GoodLang {
 		// test all of my parents
 		auto parentPtr = this->p_parent.lock();
 		while (parentPtr) {
-			if (!(checkedSelf.count(parentPtr) >= 1)) {
-				checkedSelf.emplace(parentPtr);
-				if (1) {
-					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
-						if (func(p, true, allowFindObject)) {
-							bestMatch = p;
-							return true;
-						}
+			if (!(checkedSelf.count(parentPtr.get()) >= 1)) {
+				checkedSelf.emplace(parentPtr.get());
+				if (p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
+					if (func(p, true, allowFindObject)) {
+						bestMatch = p;
+						return true;
 					}
-				}
+				}				
 			}
 			else {
 				break; // we've checked this before! Quick, get out. 
@@ -837,42 +831,38 @@ namespace GoodLang {
 		}
 
 		// Test my children themselves.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-							if (func(p, isExporingParent, allowFindObject)) {
-								bestMatch = p;
-								return true;
-							}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(p.get()) >= 1)) {
+					checkedSelf.emplace(p.get());
+					if (p) {
+						if (func(p, isExporingParent, allowFindObject)) {
+							bestMatch = p;
+							return true;
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
 				}
-			}
+				else {
+					break; // we've checked this before! Quick, get out. 
+				}
+			}			
 		}
 
 		// test my parents and their children
-		if (auto p = this->p_parent.lock()) {
+		if (p = this->p_parent.lock()) {
 			if (p->TryFindNearestScopeWhere_2(bestMatch, func, true, allowFindObject, CheckedSelf, CheckedAll)) {
 				return true;
 			}
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
-						return true;
-					}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
 				}
-			}
+			}			
 		}
 
 		return false;
@@ -882,20 +872,20 @@ namespace GoodLang {
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 		bool isExporingParent,
 		bool allowFindObject,
-		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
-		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+		std::unordered_set< Scope*, custom_hash > const& CheckedSelf,
+		std::unordered_set< Scope*, custom_hash > const& CheckedAll
 	) const {
-		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
-		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto& checkedSelf = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedAll);
 		auto selfPtr = this->p_self.lock();
 
 		// Prevent Duplication
-		if (checkedAll.count(selfPtr) >= 1) { return false; }
-		checkedAll.emplace(selfPtr);
+		if (checkedAll.count(selfPtr.get()) >= 1) { return false; }
+		checkedAll.emplace(selfPtr.get());
 
 		// test myself			
-		if (!(checkedSelf.count(selfPtr) >= 1)) {
-			checkedSelf.emplace(selfPtr);
+		if (!(checkedSelf.count(selfPtr.get()) >= 1)) {
+			checkedSelf.emplace(selfPtr.get());
 			if (1) {
 				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
 					if (func(p, isExporingParent, allowFindObject)) {
@@ -919,8 +909,8 @@ namespace GoodLang {
 		// test all of my parents
 		auto parentPtr = this->p_parent.lock();
 		while (parentPtr) {
-			if (!(checkedSelf.count(parentPtr) >= 1)) {
-				checkedSelf.emplace(parentPtr);
+			if (!(checkedSelf.count(parentPtr.get()) >= 1)) {
+				checkedSelf.emplace(parentPtr.get());
 				if (1) {
 					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
 						if (func(p, true, false)) {
@@ -937,24 +927,22 @@ namespace GoodLang {
 		}
 
 		// Test my children themselves.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-							if (func(p, isExporingParent, allowFindObject)) {
-								bestMatch = p;
-								return true;
-							}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(ptr.get()) >= 1)) {
+					checkedSelf.emplace(ptr.get());
+					if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+						if (func(p, isExporingParent, allowFindObject)) {
+							bestMatch = p;
+							return true;
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
 				}
-			}
+				else {
+					break; // we've checked this before! Quick, get out. 
+				}
+			}			
 		}
 
 		// test my parents and their children
@@ -965,14 +953,12 @@ namespace GoodLang {
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
-						return true;
-					}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
 				}
-			}
+			}			
 		}
 
 		return false;
@@ -982,20 +968,20 @@ namespace GoodLang {
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 		bool isExporingParent,
 		bool allowFindObject,
-		std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf,
-		std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll
+		std::unordered_set< Scope*, custom_hash > const& CheckedSelf,
+		std::unordered_set< Scope*, custom_hash > const& CheckedAll
 	) const {
-		auto& checkedSelf = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedSelf);
-		auto& checkedAll = const_cast<std::unordered_set< std::shared_ptr<Scope> >&>(CheckedAll);
+		auto& checkedSelf = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedSelf);
+		auto& checkedAll = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedAll);
 		auto selfPtr = this->p_self.lock();
 
 		// Prevent Duplication
-		if (checkedAll.count(selfPtr) >= 1) { return false; }
-		checkedAll.emplace(selfPtr);
+		if (checkedAll.count(selfPtr.get()) >= 1) { return false; }
+		checkedAll.emplace(selfPtr.get());
 
 		// test myself			
-		if (!(checkedSelf.count(selfPtr) >= 1)) {
-			checkedSelf.emplace(selfPtr);
+		if (!(checkedSelf.count(selfPtr.get()) >= 1)) {
+			checkedSelf.emplace(selfPtr.get());
 			if (1) {
 				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
 					if (func(p, isExporingParent, allowFindObject)) {
@@ -1027,8 +1013,8 @@ namespace GoodLang {
 		// test all of my parents
 		auto parentPtr = this->p_parent.lock();
 		while (parentPtr) {
-			if (!(checkedSelf.count(parentPtr) >= 1)) {
-				checkedSelf.emplace(parentPtr);
+			if (!(checkedSelf.count(parentPtr.get()) >= 1)) {
+				checkedSelf.emplace(parentPtr.get());
 				if (1) {
 					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
 						if (func(p, true, allowFindObject)) {
@@ -1045,26 +1031,25 @@ namespace GoodLang {
 		}
 
 		// Test my children themselves.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (1) {
-							if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-								if (func(p, isExporingParent, allowFindObject)) {
-									bestMatch = p;
-									return true;
-								}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(ptr.get()) >= 1)) {
+					checkedSelf.emplace(ptr.get());
+					if (1) {
+						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+							if (func(p, isExporingParent, allowFindObject)) {
+								bestMatch = p;
+								return true;
 							}
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
+				}
+				else {
+					break; // we've checked this before! Quick, get out. 
 				}
 			}
+			
 		}
 
 		// test my parents and their children
@@ -1075,14 +1060,12 @@ namespace GoodLang {
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
-						return true;
-					}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
+					return true;
 				}
-			}
+			}			
 		}
 
 		return false;
@@ -1092,6 +1075,7 @@ namespace GoodLang {
 	std::shared_ptr<Scope> Scope::FindScopeWithObjOrFunction(
 		std::string objName, 
 		std::vector<Any> const& params, 
+		ParamTypes const& Params, 
 		TypeConverter& tree, 
 		std::shared_ptr<Any>* found_obj, 
 		Proxy_Function* found_function
@@ -1108,9 +1092,8 @@ namespace GoodLang {
 		std::shared_ptr<Scope> out;
 
 		// To-Do: figure out this cache and what is going wrong with it. 
-
 #ifdef useCachedData
-		auto paramsHash = ParamTypes::CalculateHash(params);
+		auto paramsHash = Params.hash();
 		size_t treeV = 0;
 		hash_combine(treeV, this->GetTypeConverterTreeVersion(), this->GetObjectCacheVersion());
 		if (TryGetCached<4>(treeV, out, objName, paramsHash)) {
@@ -1121,9 +1104,18 @@ namespace GoodLang {
 
 		auto lastOfColons = objName.find_last_of("::");
 		if ((lastOfColons == std::string::npos) || (lastOfColons == 0)) {
-			
-			bool success = TryFindNearestScopeWhere_2(out, [&objName, &params, &tree, &found_obj, &found_function](std::shared_ptr<Scope> const& namespacePtr, bool isExploringParent, bool allowFindObject)->bool {
-				if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
+			// if I am a scope, with no objects, no using statements, and no children, then there's no point in asking me any of this. 
+			if (this->is_basic_scope) {
+				if (this->p_objects.size() == 0) {
+					if (auto parent = this->p_parent.lock()) {
+						out = parent->FindScopeWithObjOrFunction(objName, params, Params, tree, found_obj, found_function);
+						return out;
+					}
+				}
+			}
+
+			bool success = TryFindNearestScopeWhere_2(out, [&objName, &params, &Params, &tree, &found_obj, &found_function](std::shared_ptr<Scope> const& ptr, bool isExploringParent, bool allowFindObject)->bool {
+				if (ptr) {
 					// always prefer objects if we are able
 					if (allowFindObject) {
 						if (auto objFound = ptr->GetObj(objName)) {
@@ -1131,7 +1123,7 @@ namespace GoodLang {
 							return true;
 						}
 					}
-					if (auto func = ptr->GetFunction(objName, params, tree)) {
+					if (auto func = ptr->GetFunction(objName, params, Params, tree)) {
 						if (found_function) *found_function = func;
 						return true;
 					}
@@ -1150,7 +1142,7 @@ namespace GoodLang {
 		else {
 			std::string Namespace = objName.substr(0, lastOfColons - 1);
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(Namespace))) {
-				out = namespacePtr->FindScopeWithObjOrFunction(objName.substr(lastOfColons + 1), params, tree, found_obj, found_function);
+				out = namespacePtr->FindScopeWithObjOrFunction(objName.substr(lastOfColons + 1), params, Params, tree, found_obj, found_function);
 				// do the save
 				return out;
 			}
@@ -1161,7 +1153,9 @@ namespace GoodLang {
 		}
 	};
 	bool Scope::FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function) {
-		if (auto found_scope = FindScopeWithObjOrFunction(objName, params, tree, found_obj, found_function)) {
+		ParamTypes Params{ params };
+		if (auto found_scope = FindScopeWithObjOrFunction(objName, params, Params, tree, found_obj, found_function)) {			
+
 			if (found_obj && *found_obj) return true;
 			if (found_function && *found_function) return true;
 			
@@ -1170,7 +1164,7 @@ namespace GoodLang {
 				return true;
 			}			
 			
-			if (auto func = found_scope->GetFunction(objName, params, tree)) {
+			if (auto func = found_scope->GetFunction(objName, params, Params, tree)) {
 				if (found_function) *found_function = func;
 				return true;
 			}
@@ -1251,14 +1245,17 @@ namespace GoodLang {
 	};
 
 	
-	
 	size_t Scope::GetObjectCacheVersion() const {
-		if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
-			return p->GetObjectCacheVersion();
+		// Theory: combine the hash for this scope and its parents
+		if (auto p = this->p_parent.lock()) {
+			size_t seed{ 0 };
+			details::hash_combine(seed, CachedObjectVersion.load(), p->GetObjectCacheVersion());
+			return seed;
 		}
 		else {
-			return 0;
+			return CachedObjectVersion.load();
 		}
+		// return CachedObjectVersion.load();
 	};
 	size_t Scope::GetTypeConverterTreeVersion() const {
 		if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
@@ -1268,19 +1265,19 @@ namespace GoodLang {
 			return 0;
 		}
 	};
-	std::shared_ptr<TypeConverter> Scope::GetTypeConverterTree() const {
+	GoodLang::shared_ptr<TypeConverter>& Scope::GetTypeConverterTree() const {
 		if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
 			return p->GetTypeConverterTree();
 		}
 		else {
-			return nullptr;
+			throw std::runtime_error("Cannot capture conversion tree without a global scope.");
 		}
 	};
-	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params) {
-		return FindNamespaceWithFunction(functionName, params, *GetTypeConverterTree());
+	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, ParamTypes const& Params) {
+		return FindNamespaceWithFunction(functionName, params, Params , *GetTypeConverterTree());
 	};
 	Proxy_Function Scope::FindFunction(std::string functionName, std::vector<Any> const& params) {
-		auto tree = GetTypeConverterTree();
+		auto& tree = GetTypeConverterTree();
 		return FindFunction(functionName, params, *tree);
 	};
 	std::vector<std::shared_ptr<Scope>> Scope::GetScopesForObjectSearch() const {
@@ -1300,10 +1297,10 @@ namespace GoodLang {
 			return false;
 		}
 	};
-	bool Scope::TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash) const {
+	bool Scope::TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, ParamTypes const& Params, GoodLang::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash) const {
 		if (!m_conversionTree) return false;
 #ifdef useCachedData
-		if (paramsHash == 0) paramsHash = ParamTypes::CalculateHash(params);
+		if (paramsHash == 0) paramsHash = Params.hash();
 		auto treeV = this->GetTypeConverterTreeVersion();
 		if (TryGetCached<0>(treeV, out, functionName, paramsHash)) {
 			return (bool)out;
@@ -1337,10 +1334,10 @@ namespace GoodLang {
 				// While we normally try to minimize the conversion cost, 
 				if (firstParamScopePtr) {
 #if 1
-					(void)firstParamScopePtr->FindNearestNamespaceWhere([&sort, &functionName, &params, &m_conversionTree](std::shared_ptr<Namespace> const& namespace_ptr) -> bool {
+					(void)firstParamScopePtr->FindNearestNamespaceWhere([&sort, &functionName, &params, &Params, &m_conversionTree](std::shared_ptr<Namespace> const& namespace_ptr) -> bool {
 						if (auto scope = std::dynamic_pointer_cast<Scope>(namespace_ptr)) {
 							if (auto ptr = scope->GetFunctions()) {
-								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+								if (auto func = ptr->BuildMatch(functionName, params, Params, *m_conversionTree, false, true)) {
 									auto cost = func->conversion_cost(params, *m_conversionTree);
 									if (cost < details::TypeConversionWorstCaseCost) {
 										sort.emplace(cost, func);
@@ -1364,10 +1361,10 @@ namespace GoodLang {
 				}
 
 				// try to find the function from nearby scopes... 
-				(void)FindNearestNamespaceWhere([&sort, &functionName, &params, &m_conversionTree](std::shared_ptr<Namespace> const& namespace_ptr) -> bool {
+				(void)FindNearestNamespaceWhere([&sort, &functionName, &params, &Params, &m_conversionTree](std::shared_ptr<Namespace> const& namespace_ptr) -> bool {
 					if (auto scope = std::dynamic_pointer_cast<Scope>(namespace_ptr)) {
 						if (auto ptr = scope->GetFunctions()) {
-							if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+							if (auto func = ptr->BuildMatch(functionName, params, Params, *m_conversionTree, false, true)) {
 								auto cost = func->conversion_cost(params, *m_conversionTree);
 								if (cost < details::TypeConversionWorstCaseCost) {
 									sort.emplace(cost + 1, func);
@@ -1383,7 +1380,7 @@ namespace GoodLang {
 				if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
 					// Is there a pre-defined constructor that this could work with?
 					if (auto functions = constructorScopePtr->GetFunctions()) {
-						if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, false, true)) {
+						if (auto func = functions->BuildMatch(functionName, params, Params, *m_conversionTree, false, true)) {
 							auto cost = func->conversion_cost(params, *m_conversionTree);
 							if (cost < details::TypeConversionWorstCaseCost) {
 								sort.emplace(cost + 2, func);
@@ -1406,7 +1403,7 @@ namespace GoodLang {
 				for (auto& scope : GetScopesForObjectSearch()) {
 					if (scope) {
 						if (auto ptr = scope->GetFunctions()) {
-							if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+							if (auto func = ptr->BuildMatch(functionName, params, Params, *m_conversionTree, true, true)) {
 								auto cost = func->conversion_cost(params, *m_conversionTree);
 								if (cost < details::TypeConversionWorstCaseCost) {
 									sort.emplace(cost + 3, func);
@@ -1419,7 +1416,7 @@ namespace GoodLang {
 					for (auto& scope : firstParamScopePtr->GetScopesForObjectSearch()) {
 						if (scope) {
 							if (auto ptr = scope->GetFunctions()) {
-								if (auto func = ptr->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+								if (auto func = ptr->BuildMatch(functionName, params, Params, *m_conversionTree, true, true)) {
 									auto cost = func->conversion_cost(params, *m_conversionTree);
 									if (cost < details::TypeConversionWorstCaseCost) {
 										sort.emplace(cost + 4, func);
@@ -1433,7 +1430,7 @@ namespace GoodLang {
 				if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
 					// Is there a pre-defined constructor that this could work with?
 					if (auto functions = constructorScopePtr->GetFunctions()) {
-						if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+						if (auto func = functions->BuildMatch(functionName, params, Params, *m_conversionTree, true, true)) {
 							auto cost = func->conversion_cost(params, *m_conversionTree);
 							if (cost < details::TypeConversionWorstCaseCost) {
 								sort.emplace(cost + 5, func);
@@ -1453,7 +1450,7 @@ namespace GoodLang {
 			if (1) {
 				if (constructorScopePtr) {
 					if (auto functions = constructorScopePtr->GetFunctions()) {
-						if (auto func = functions->BuildMatch(functionName, params, *m_conversionTree, true, true)) {
+						if (auto func = functions->BuildMatch(functionName, params, Params, *m_conversionTree, true, true)) {
 							if (func->conversion_cost(params, *m_conversionTree) < details::TypeConversionWorstCaseCost) {
 								out = func;
 								return true;
@@ -1468,7 +1465,7 @@ namespace GoodLang {
 			std::string scopeName{ functionName.substr(0, lastOfColons - 1) };
 
 			if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(FindNamespace(scopeName))) {
-				if (namespacePtr->TryFindFunctionImpl(functionNameActual, params, m_conversionTree, out)) {
+				if (namespacePtr->TryFindFunctionImpl(functionNameActual, params, Params, m_conversionTree, out, Params.hash())) {
 					return true;
 				}
 				else {
@@ -1478,28 +1475,28 @@ namespace GoodLang {
 		}
 		return false;
 	};
-	std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params, size_t paramsHash) const {
+	std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash) const {
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
 		if (this->IsBasicScope()) {
 			if (auto p = this->p_parent.lock()) {
-				return p->BuildFunction(functionName, params, paramsHash);
+				return p->BuildFunction(functionName, params, Params, paramsHash);
 			}
 		}
 
 		if (1) {
-			std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> out{ nullptr, this->GetTypeConverterTree() };
-			if (TryFindFunctionImpl(functionName, params, out.second, out.first, paramsHash)) {
+			std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> out{ nullptr, this->GetTypeConverterTree() };
+			if (TryFindFunctionImpl(functionName, params, Params, out.second, out.first, paramsHash)) {
 				return out;
 			}
 			else {
-				return { nullptr, nullptr };
+				return out;
 			}
 		}
 	};
 	Any Scope::CallFunction(std::string const& functionName, std::vector<Any> const& params) const {
-		auto [func, tree] = BuildFunction(functionName, params);
+		auto [func, tree] = BuildFunction(functionName, params, ParamTypes(params));
 		if (func) {
-			return call(func, params, *tree);
+			return call(func, params, *tree.get());
 		}
 		else {
 			// function was not found with the given params
@@ -1524,7 +1521,7 @@ namespace GoodLang {
 		}
 	};
 	Any Scope::CallFunction(Proxy_Function const& func, std::vector<Any> const& params) const {
-		auto tree{ this->GetTypeConverterTree() };
+		auto& tree{ this->GetTypeConverterTree() };
 		if (func) {
 			return call(func, params, *tree);
 		}
@@ -1533,16 +1530,16 @@ namespace GoodLang {
 		}
 	};
 	Any Scope::CallFunction(std::string const& functionName, Any& params) const {
-		auto [func, tree] = BuildFunction(functionName, { params });
+		auto [func, tree] = BuildFunction(functionName, { params }, ParamTypes({ params.Type() }));
 		if (func) {
-			return call(func, params, *tree);
+			return call(func, params, *tree.get());
 		}
 		else {
 			return CallFunction(functionName, { params });
 		}
 	};
 	Any Scope::CallFunction(Proxy_Function const& func, Any& params) const {
-		auto tree{ this->GetTypeConverterTree() };
+		auto& tree{ this->GetTypeConverterTree() };
 		if (func) {
 			return call(func, params, *tree);
 		}
@@ -1650,35 +1647,31 @@ namespace GoodLang {
 		}
 
 		// Test my children themselves.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-							if (func(p)) {
-								bestMatch = p;
-								return true;
-							}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(ptr) >= 1)) {
+					checkedSelf.emplace(ptr);
+					if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+						if (func(p)) {
+							bestMatch = p;
+							return true;
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
 				}
-			}
+				else {
+					break; // we've checked this before! Quick, get out. 
+				}
+			}			
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
 				}
-			}
+			}			
 		}
 
 		return false;
@@ -1694,12 +1687,12 @@ namespace GoodLang {
 			if (function.m_function->Arguments().size() == 1) {
 				if (auto inputClass = std::dynamic_pointer_cast<Scope>(this->FindClass(function.m_function->Arguments().Types()[0]))) {
 					try {
-						auto tree = this->GetTypeConverterTree();
-						if (auto func = inputClass->GetFunction(inputClass->GetName(), {}, *tree)) {
-							if (auto inputParamImpl = func->operator()({}, *tree)) {
+						//auto& tree = this->GetTypeConverterTree();
+						//if (auto func = inputClass->GetFunction(inputClass->GetName(), {}, *tree)) {
+							//if (auto inputParamImpl = func->operator()({}, *tree)) {
 								return (bool)p_functions->emplace(name, function, overrideIfAlreadyExists);
-							}
-						}
+							//}
+						//}
 					}
 					catch (...) {}
 
@@ -1725,12 +1718,12 @@ namespace GoodLang {
 	Proxy_Function Namespace::GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree) {
 		return p_functions->BuildMatch(name, params, tree);
 	};
-	Proxy_Function Namespace::GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) {
-		return p_functions->BuildMatch(name, params, tree);
+	Proxy_Function Namespace::GetFunction(std::string const& name, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree) {
+		return p_functions->BuildMatch(name, params, Params, tree);
 	};
 	Proxy_Function Namespace::GetFunction(std::string const& name, std::vector<Any> const& params) {
-		auto tree = GetTypeConverterTree();
-		return GetFunction(name, params, *tree);
+		auto& tree = GetTypeConverterTree();
+		return GetFunction(name, params, ParamTypes(params), *tree);
 	};
 
 
@@ -2021,24 +2014,22 @@ namespace GoodLang {
 		}
 
 		// Test my children themselves.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (1) {
-							if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-								if (func(p)) {
-									bestMatch = p;
-									return true;
-								}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(ptr) >= 1)) {
+					checkedSelf.emplace(ptr);
+					if (1) {
+						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
+							if (func(p)) {
+								bestMatch = p;
+								return true;
 							}
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
+				}
+				else {
+					break; // we've checked this before! Quick, get out. 
 				}
 			}			
 		}
@@ -2051,14 +2042,12 @@ namespace GoodLang {
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-					if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-						return true;
-					}
-				}				
-			}			
+		for (auto& innerChildNamespace : this->p_children) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+					return true;
+				}
+			}						
 		}
 
 		return false;
@@ -2131,26 +2120,24 @@ namespace GoodLang {
 		}
 
 		// test my children themselves
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-					if (!(checkedSelf.count(ptr) >= 1)) {
-						checkedSelf.emplace(ptr);
-						if (ptr->IsNamespace()) {
-							if (auto p = std::dynamic_pointer_cast<Namespace>(ptr)) {
-								if (func(p)) {
-									bestMatch = p;
-									return true;
-								}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!(checkedSelf.count(ptr) >= 1)) {
+					checkedSelf.emplace(ptr);
+					if (ptr->IsNamespace()) {
+						if (auto p = std::dynamic_pointer_cast<Namespace>(ptr)) {
+							if (func(p)) {
+								bestMatch = p;
+								return true;
 							}
 						}
 					}
-					else {
-						break; // we've checked this before! Quick, get out. 
-					}
 				}
-			}			
+				else {
+					break; // we've checked this before! Quick, get out. 
+				}
+			}						
 		}
 
 		// test my parents and their children
@@ -2161,16 +2148,14 @@ namespace GoodLang {
 		}
 
 		// test my children's children.
-		for (auto& childNamespace : this->p_children) {
-			for (auto& innerChildNamespace : childNamespace.second) {
-				if (innerChildNamespace.second) {
-					if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
-						if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
-							return true;
-						}
+		for (auto& innerChildNamespace : this->p_children) {
+			if (innerChildNamespace.second) {
+				if (auto p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second)) {
+					if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
+						return true;
 					}
 				}
-			}			
+			}						
 		}
 
 		return false;
@@ -2302,7 +2287,7 @@ namespace GoodLang {
 		}
 	};
 	// Creates a tree of type-converter functions using the classes found with GetAllAvailableClasses()
-	void Global::CreateTypeConverterTree(std::shared_ptr<TypeConverter>& out) const {
+	void Global::CreateTypeConverterTree(GoodLang::shared_ptr<TypeConverter>& out) const {
 		if (auto parent = std::dynamic_pointer_cast<Global>(this->p_parent.lock())) {
 			parent->CreateTypeConverterTree(out);
 		}
@@ -2346,27 +2331,22 @@ namespace GoodLang {
 			}
 		}
 	};
-	size_t Global::GetObjectCacheVersion() const {
-		return CachedObjectVersion.load();
-	};
 
 	size_t Global::GetTypeConverterTreeVersion() const {
 		return CachedTypeConverterTreeVersion.load();
 	};
-	std::shared_ptr<TypeConverter> Global::GetTypeConverterTree() const {
+	GoodLang::shared_ptr<TypeConverter>& Global::GetTypeConverterTree() const {
 		auto oldVersion = CachedTypeConverterTreeVersion.load();
 		if (oldVersion != RecordVersion) {
-			auto guard{ std::scoped_lock(const_cast<Global*>(this)->CachedTypeConverterTreeMutex) };
 			if (const_cast<Global*>(this)->CachedTypeConverterTreeVersion.CompareExchange(oldVersion, RecordVersion.GetValue())) {
-				auto tree = std::make_shared<TypeConverter>();
+				auto tree = GoodLang::make_shared<TypeConverter>();
 				CreateTypeConverterTree(tree);
 				return const_cast<Global*>(this)->CachedTypeConverterTree = tree;
 			}
 		}
 
 		if (1) {
-			auto guard{ std::shared_lock(const_cast<Global*>(this)->CachedTypeConverterTreeMutex) };
-			return CachedTypeConverterTree;
+			return const_cast<GoodLang::shared_ptr<TypeConverter>&>(CachedTypeConverterTree);
 		}
 	};
 
@@ -2457,11 +2437,6 @@ namespace GoodLang {
 		return true;
 		//}
 		//return false;
-	};
-
-	bool Global::RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) {
-		CachedObjectVersion++;
-		return true;
 	};
 
 	// Creates a temporary "fake" scope that will act as if it is a global scope, but whose changes will never effect it.
