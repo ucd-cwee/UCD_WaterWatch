@@ -17,11 +17,7 @@
 #include <set>
 #include <concurrent_unordered_set.h>
 #include <stack>
-
 #include "../FiberTasks/Concurrent_Queue.h"
-
-// #include <boost/math/constants/constants.hpp>
-// #include <boost/multiprecision/cpp_dec_float.hpp>
 
 namespace GoodLang {
 	namespace utilities {
@@ -1048,7 +1044,6 @@ namespace GoodLang {
 			out = r.GetChildren();
 		};
 	};
-
 
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< atomic_ptr<Args...> >, atomic_ptr<Args...> const& r, std::string& out) {

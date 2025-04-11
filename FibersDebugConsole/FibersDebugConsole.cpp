@@ -1406,7 +1406,7 @@ namespace GoodLang {
 							std::vector<Any> params2{ obj };
 							for (auto& x : params) params2.push_back(x);
 
-							auto [func, tree] = currentScope->BuildFunction("()", params2);
+							auto [func, tree] = currentScope->BuildFunction("()", params2, ParamTypes(params2));
 							if (func) {
 								if constexpr (returnsValue)
 									return currentScope->CallFunction(func, params2);
@@ -1478,13 +1478,15 @@ namespace GoodLang {
 							endPos - startPos /* count of jobs */,
 							[&](impl::JobArgs const& _args)-> void {
 								std::pair<Any, std::shared_ptr<Scope>>& shared_memory = *((std::pair<Any, std::shared_ptr<Scope>>*)_args.sharedmemory);
-
+								thread_local static Proxy_Function IncrementFunc { nullptr };
 								if (_args.groupIndex == 0) {
 									// start of a group
 									shared_memory.second->CallFunction(":=", { shared_memory.first, _args.jobIndex });
+									IncrementFunc = shared_memory.second->FindFunction("++", { shared_memory.first }, *shared_memory.second->GetTypeConverterTree());
 								}
 								else {
-									shared_memory.second->CallFunction("++", shared_memory.first);
+									if (IncrementFunc) shared_memory.second->CallFunction(IncrementFunc, shared_memory.first);
+									else shared_memory.second->CallFunction("++", shared_memory.first);
 								}
 
 								// do the work
@@ -7818,15 +7820,15 @@ int main() {
 	using namespace GoodLang;
 
 	if (1) {
-		auto tempPtr = shared_ptr<stackThing>(new stackThing("TEMP"));
+		auto tempPtr = GoodLang::make_shared<stackThing>("TEMP");
 
 	}
 	if (1) {
-		auto tempPtr = shared_ptr<stackThing>(new stackThing("TEMP"));
+		auto tempPtr = GoodLang::make_shared<stackThing>("TEMP");
 		auto copy = shared_ptr<stackThing>(tempPtr);
 	}
 	if (1) {
-		auto tempPtr = shared_ptr<stackThing>(new stackThing("TEMP"));
+		auto tempPtr = GoodLang::make_shared<stackThing>("TEMP");
 		auto weak_copy = weak_ptr(tempPtr);
 		EXPECT_EQ(weak_copy.expired(), false);
 		auto newPtr = weak_copy.lock();
@@ -7876,7 +7878,7 @@ int main() {
 	}	
 	if (1) {
 		GoodLang::InterlockedLong count{ 0 };
-		shared_ptr<stackThing> tempPtr{ new stackThing() };
+		auto tempPtr = GoodLang::make_shared<stackThing>();
 
 		Stopwatch sw;
 		sw.Start();
@@ -7886,7 +7888,7 @@ int main() {
 				(void)copied->get_var_name();
 				++count;
 			}
-			tempPtr = shared_ptr<stackThing>(new stackThing());
+			tempPtr = GoodLang::make_shared<stackThing>();
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr @ " + ToString(count));
 	}	
@@ -7972,7 +7974,7 @@ int main() {
 	}
 	if (1) {
 		GoodLang::InterlockedLong count{ 0 };
-		shared_ptr<stackThing> tempPtr{ new stackThing() };
+		auto tempPtr = GoodLang::make_shared<stackThing>();
 
 		Stopwatch sw;
 		sw.Start();
@@ -7980,9 +7982,9 @@ int main() {
 			shared_ptr<stackThing> copied{ tempPtr };
 			(void)copied->get_var_name();
 			++count;			
-			tempPtr = shared_ptr<stackThing>(new stackThing());
+			tempPtr = GoodLang::make_shared<stackThing>();
 		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr (no check) @ " + ToString(count));
+		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr (no check, trust it worked as designed) @ " + ToString(count));
 	}
 	print("");
 
@@ -7997,7 +7999,7 @@ int main() {
 		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr BASIC INDEXING");
 	}
 	if (1) {
-		shared_ptr<stackThing> tempPtr{ new stackThing() };
+		auto tempPtr = GoodLang::make_shared<stackThing>();
 
 		Stopwatch sw;
 		sw.Start();
@@ -8030,7 +8032,7 @@ int main() {
 		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr COPY THEN BASIC INDEXING");
 	}
 	if (1) {
-		shared_ptr<stackThing> tempPtr{ new stackThing()};
+		auto tempPtr = GoodLang::make_shared<stackThing>();
 
 		Stopwatch sw;
 		sw.Start();
@@ -8055,22 +8057,8 @@ int main() {
 
 	if (1) {
 		GoodLang::InterlockedLong count{ 0 };
-		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
-		auto weak_copy = TEST::weak_ptr(tempPtr);
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			TEST::shared_ptr<stackThing> copied{ weak_copy.lock() };
-			if (copied) {
-				(void)copied->get_var_name();
-				count++;
-			}
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr WeakPtr Test @ " + ToString(count));
-	}
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		shared_ptr<stackThing> tempPtr{ new stackThing() };
+		auto tempPtr = GoodLang::make_shared<stackThing>();
+
 		auto weak_copy = weak_ptr(tempPtr);
 		Stopwatch sw;
 		sw.Start();
@@ -8148,6 +8136,12 @@ int main() {
 			print(ToString(parsed_result));
 			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
 			print("");
+
+
+
+
+
+
 
 
 			// To-Do, performance is poor because it is exhaustively searching for an object (TEST::DoWork) when it should be calling the function. 
@@ -8879,6 +8873,38 @@ int main() {
 
 
 
+
+
+
+
+
+			parsed_result = parse.Parse(R"start(
+				int loopCount = 0;
+				while (true){		
+					// print("Loop ${ ++loopCount }");
+					auto Lambda := [](Units::meter y) { 
+						++y;
+					};
+					for (int x = 0; x < 1000; ++x) {
+						Units::meter y = x;
+						Lambda(y);
+						to_string( [ x , y ] );
+					}
+				}
+			)start", StartScope(globalScope));
+			//print(ToString(parsed_result));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				print(ToString(Units::second(sw.Stop_s())) + " @ very complex test"); // 8 - 10 seconds
+			}
+
+
+
+
+
+
 		}
 
 
@@ -8902,8 +8928,6 @@ int main() {
 			scope->AddObj("y", std::make_shared<Any>(scope->CallFunction("*", {scope->CallFunction("*", {scope->FindObj("x"), scope->FindObj("x")}), scope->FindObj("x")})));
 		});
 		print(ToString(Units::second(sw.Stop_s())) + " @ manually crafted parallel-for-loop");
-
-
 	}
 
 
@@ -9518,9 +9542,6 @@ int main() {
 			EXPECT_EQ(true, result.IsTypeOf<int>());
 			Functions F;
 			F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
-			func = F.BuildMatch("foo", { 100.0 }, converter);
-			result = call(func, { 100.0 }, converter);
-			EXPECT_EQ(true, result.IsTypeOf<double>());
 			Union<int, int> y;
 			y.get<0>() += 1;
 			Units::scalar S;

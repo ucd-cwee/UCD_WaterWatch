@@ -278,10 +278,13 @@ namespace GoodLang {
 			return false;
 		};
 		virtual bool RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
-				return p->RecordObject(Name, ptr);
-			}
-			return false;
+			this->CachedObjectVersion.Increment();
+			return true;
+
+			//if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
+			//	return p->RecordObject(Name, ptr);
+			//}
+			//return false;
 		};
 
 	public:
@@ -289,9 +292,8 @@ namespace GoodLang {
 		bool AddUsing(std::weak_ptr<Namespace> namespacePtr);
 
 	private:
-		UnorderedMap<std::string,
-		    UnorderedMap<size_t, std::shared_ptr<Namespace>>
-		> // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
+		UnorderedMap<std::string, std::shared_ptr<Namespace>>
+	    // children namespaces - may be classes or namespaces. By this design, imported namespaces may be "unloaded" on scope unloading, which is on purpose.
 			p_children{};
 
 		// the Library should know about our "Class" list
@@ -333,6 +335,22 @@ namespace GoodLang {
 			}
 		};
 
+		struct custom_hash {
+			static uint64_t splitmix64(uint64_t x) {
+				// http://xorshift.di.unimi.it/splitmix64.c
+				x += 0x9e3779b97f4a7c15;
+				x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9;
+				x = (x ^ (x >> 27)) * 0x94d049bb133111eb;
+				return x ^ (x >> 31);
+			}
+
+			size_t operator()(Scope* x) const {
+				static const uint64_t FIXED_RANDOM = std::chrono::steady_clock::now().time_since_epoch().count();
+				return splitmix64(reinterpret_cast<uint64_t&>(x) + FIXED_RANDOM);
+			}
+		};
+
+
 		virtual bool TryFindNearestScopeWhere(
 			std::shared_ptr<Scope>& bestMatch,
 			std::function<bool(std::shared_ptr<Scope> const&)> const& func,
@@ -344,8 +362,8 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 			bool isExporingParent,
 			bool allowFindObject,
-			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
-			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+			std::unordered_set< Scope*, custom_hash > const& CheckedSelf = {},
+			std::unordered_set< Scope*, custom_hash > const& CheckedAll = {}
 		) const;
 
 		virtual bool TryFindNearestNamespaceWhere(
@@ -365,7 +383,7 @@ namespace GoodLang {
 		virtual std::shared_ptr< Functions > GetFunctions() const;
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params);
-		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree);
+		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree);
 		virtual Proxy_Function GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree);
 
 	public:
@@ -532,7 +550,9 @@ namespace GoodLang {
 	private:
 		virtual std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const;
 		std::shared_ptr<Scope> FindScopeWithObj(std::string const& objName, std::shared_ptr<Any>* found_obj = nullptr) const;
-
+		
+		GoodLang::InterlockedLong
+			CachedObjectVersion{ 0 };
 	public:
 		std::shared_ptr<Class> FindClass(std::weak_ptr<Type_Info> typeInfo) const;
 
@@ -541,10 +561,10 @@ namespace GoodLang {
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName) const;
 		std::shared_ptr< Functions::FunctionSort > FindFunctions(std::string functionName) const;
 
-		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
+		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
 
-		std::shared_ptr<Scope> FindScopeWithObjOrFunction(std::string objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
+		std::shared_ptr<Scope> FindScopeWithObjOrFunction(std::string objName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
 		bool FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
@@ -552,9 +572,9 @@ namespace GoodLang {
 		
 		virtual size_t GetObjectCacheVersion() const;
 		virtual size_t GetTypeConverterTreeVersion() const;
-		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const;
+		virtual GoodLang::shared_ptr<TypeConverter>& GetTypeConverterTree() const;
 
-		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params);
+		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, ParamTypes const& Params);
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params);
 
 
@@ -564,10 +584,10 @@ namespace GoodLang {
 
 
 	public: // private:
-		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, std::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash = 0) const;
+		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, ParamTypes const& Params, GoodLang::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash = 0) const;
 
 	public:
-		std::pair<Proxy_Function, std::shared_ptr<TypeConverter>> BuildFunction(std::string const& functionName, std::vector<Any> const& params, size_t paramsHash = 0) const;
+		std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> BuildFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash = 0) const;
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const;
 		Any CallFunction(Proxy_Function const& function, std::vector<Any> const& params) const;
 		Any CallFunction(std::string const& functionName, Any& params) const;
@@ -719,8 +739,8 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 			bool isExporingParent,
 			bool allowFindObject,
-			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
-			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+			std::unordered_set< Scope*, custom_hash > const& CheckedSelf = {},
+			std::unordered_set< Scope*, custom_hash > const& CheckedAll = {}
 		) const override;
 
 	public:
@@ -829,7 +849,7 @@ namespace GoodLang {
 		virtual std::shared_ptr< Functions > GetFunctions() const override;
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const override;
 		virtual Proxy_Function GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree) override;
-		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, TypeConverter& tree) override;
+		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree) override;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params) override;
 
 	public:
@@ -940,8 +960,8 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 			bool isExporingParent,
 			bool allowFindObject,
-			std::unordered_set< std::shared_ptr<Scope> > const& CheckedSelf = {},
-			std::unordered_set< std::shared_ptr<Scope> > const& CheckedAll = {}
+			std::unordered_set< Scope*, custom_hash > const& CheckedSelf = {},
+			std::unordered_set< Scope*, custom_hash > const& CheckedAll = {}
 		) const override;
 
 		virtual bool TryFindNearestNamespaceWhere(
@@ -1064,12 +1084,11 @@ namespace GoodLang {
 
 	public:
 		// Creates a tree of type-converter functions using the classes found with GetAllAvailableClasses()
-		void CreateTypeConverterTree(std::shared_ptr<TypeConverter>& out) const;
+		void CreateTypeConverterTree(GoodLang::shared_ptr<TypeConverter>& out) const;
 
 	public:
-		virtual size_t GetObjectCacheVersion() const override;
 		virtual size_t GetTypeConverterTreeVersion() const override;
-		virtual std::shared_ptr<TypeConverter> GetTypeConverterTree() const override;
+		virtual GoodLang::shared_ptr<TypeConverter>& GetTypeConverterTree() const override;
 
 	private:
 		UnorderedMap<size_t, std::weak_ptr<Class>> // collection of all classes that are added as "children" of this library
@@ -1079,16 +1098,11 @@ namespace GoodLang {
 		UnorderedMap<size_t, std::pair<std::string, std::weak_ptr<details::Proxy_Function_Base>>> // collection of all namespaces that are added being "used" by this library
 			Functions;
 
-		std::shared_ptr<TypeConverter>
-			CachedTypeConverterTree{ std::make_shared<TypeConverter>() };
-
-		GoodLang::InterlockedLong
-			CachedObjectVersion{ 0 };
+		GoodLang::shared_ptr<TypeConverter>
+			CachedTypeConverterTree{ GoodLang::make_shared<TypeConverter>() };
 
 		GoodLang::InterlockedLong
 			CachedTypeConverterTreeVersion{ -1 };
-		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
-			CachedTypeConverterTreeMutex{};
 
 		std::shared_ptr<std::unordered_map<size_t, std::weak_ptr<Class>>>
 			CachedClassList{ std::make_shared<std::unordered_map<size_t, std::weak_ptr<Class>>>() };
@@ -1191,7 +1205,6 @@ namespace GoodLang {
 		virtual bool RecordClass(std::shared_ptr<Class> ptr) override;
 		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) override;
 		virtual bool RecordFunction(std::string const& Name, Function const& ptr) override;
-		virtual bool RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) override;
 
 	public:
 		// Creates a temporary "fake" scope that will act as if it is a global scope, but whose changes will never effect it.
