@@ -198,6 +198,7 @@
     <ClInclude Include="Units_Base.h" />
     <ClInclude Include="Units_Literals.h" />
     <ClInclude Include="Units_Instances.h" />
+    <ClInclude Include="veque.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

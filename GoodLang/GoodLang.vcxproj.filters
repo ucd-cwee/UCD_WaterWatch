@@ -109,5 +109,8 @@
     <ClInclude Include="LanguageCommon.h">
       <Filter>Language Resources</Filter>
     </ClInclude>
+    <ClInclude Include="veque.hpp">
+      <Filter>Language Resources</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

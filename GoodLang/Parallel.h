@@ -43,16 +43,20 @@ namespace GoodLang {
 
 		template <typename T> class Queue {
 		public:
+			// moodycamel::ConcurrentQueue<T> queue;
+
 			std::deque<T> queue;
 			std::mutex locker;
 
 			__forceinline void push(T&& item) {
 				std::scoped_lock lock(locker);
 				queue.push_back(std::forward<T>(item));
+				// queue.push(std::move(item));
 			};
 			__forceinline void push(const T& item) {
 				std::scoped_lock lock(locker);
 				queue.push_back(item);
+				// queue.push(item);
 			};
 			__forceinline bool try_pop(T& item) {
 				std::scoped_lock lock(locker);
@@ -60,25 +64,7 @@ namespace GoodLang {
 				item = std::move(queue.front());
 				queue.pop_front();
 				return true;
-			};
-			__forceinline bool front(T& item) {
-				std::scoped_lock lock(locker);
-				if (queue.empty()) return false;
-				item = std::move(queue.front());
-				return true;
-			};
-			__forceinline bool try_pop_back(T& item) {
-				std::scoped_lock lock(locker);
-				if (queue.empty()) return false;
-				item = std::move(queue.back());
-				queue.pop_back();
-				return true;
-			};
-			__forceinline bool back(T& item) {
-				std::scoped_lock lock(locker);
-				if (queue.empty()) return false;
-				item = std::move(queue.back());
-				return true;
+				// return queue.try_pop(item);
 			};
 
 			Queue() = default;

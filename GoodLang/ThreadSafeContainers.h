@@ -18,6 +18,7 @@
 #include <concurrent_unordered_set.h>
 #include <stack>
 #include "../FiberTasks/Concurrent_Queue.h"
+#include "veque.hpp"
 
 namespace GoodLang {
 	namespace utilities {
@@ -3173,6 +3174,77 @@ namespace GoodLang {
 		template <typename... Args> __forceinline void GetChildren(Tag<UnorderedSet<Args...>>, UnorderedSet<Args...> const& r, std::vector< NodeCache >& out) {
 			out = r.GetChildren();
 		};
+	};
+
+	namespace details {
+		// single-threaded flat set
+		template <typename T> class flat_set {
+		private:
+			veque::veque<T> queue; 
+		public:
+			auto emplace(T const& item) {
+				return queue.insert(
+					std::upper_bound(queue.begin(), queue.end(), item),
+					item
+				);
+			};
+			void clear() { 
+				queue.clear();
+			};
+			void emplace_fast(T&& val) {
+				queue.push_back(std::move(val));
+			};
+			void emplace_fast(T const& val) {
+				queue.push_back(val);
+			};
+			bool contains_fast(T const& find) { 
+				for (auto& x : queue) {
+					if (x == find) {
+						return true;
+					}
+				}
+				return false;
+			};
+			bool contains(T const& v) {
+				return std::binary_search(queue.begin(), queue.end(), v);
+			};
+			bool contains(T && v) {
+				return std::binary_search(queue.begin(), queue.end(), std::move(v));
+			};
+		};
+#if 0
+		// single-threaded flat set
+		template <typename K, typename T> class flat_map {
+		public:
+			typedef std::pair<const K, T> value;
+
+			veque::veque<std::pair<const K, T>> queue;
+		public:
+			auto emplace(K const& k, T const& v) {
+				value val{ k, v };
+				return queue.insert(
+					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) { 
+						return x.first < y.first;
+					}),
+					val
+				);
+			};
+			void clear() {
+				queue.clear();
+			};
+			bool contains(K const& v) const {
+				return std::binary_search(queue.begin(), queue.end(), std::pair<const K, T>{ v, {} }, [](value const& x, value const& y) {
+					return x.first < y.first;
+				});
+			};
+			auto begin() const {
+				return queue.begin();
+			};
+			auto end() const {
+				return queue.begin();
+			};
+		};
+#endif
 	};
 
 	/// <summary>

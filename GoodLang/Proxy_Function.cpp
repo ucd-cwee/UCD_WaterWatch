@@ -927,7 +927,7 @@ namespace GoodLang {
 		return nullptr;
 	};
 	Functions::FunctionPtr Functions::operator()(std::string const& key, ParamTypes const& params) const {
-		auto locked{ std::shared_lock(m_mut) };
+		// auto locked{ std::shared_lock(m_mut) };
 		return at_unsafe(key, params);
 	};
 	Functions::FunctionPtr Functions::at(std::string const& key, ParamTypes const& params) const {
@@ -938,20 +938,20 @@ namespace GoodLang {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
 
-		auto locked{ std::unique_lock(m_mut) };
+		// auto locked{ std::unique_lock(m_mut) };
 		auto& ptr = m_functions[hasher(key)].second[hasher2(params)].second;
 		if (!ptr || (ptr && replaceIfAlreadyExists))
-			ptr = std::make_shared<Function>(func);
+			ptr = GoodLang::make_shared<Function>(func);
 		return ptr;
 	};
 	Functions::FunctionPtr Functions::emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists) {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
 
-		auto locked{ std::unique_lock(m_mut) };
+		// auto locked{ std::unique_lock(m_mut) };
 		auto& ptr = m_functions[hasher(key)].second[hasher2(func.m_function->Arguments().Types())].second;
 		if (!ptr || (ptr && replaceIfAlreadyExists))
-			ptr = std::make_shared<Function>(func);
+			ptr = GoodLang::make_shared<Function>(func);
 		return ptr;
 	};
 
@@ -977,7 +977,7 @@ namespace GoodLang {
 				for (auto& x : Params) paramTypes.push_back(x.lock());
 
 
-				auto locked{ std::shared_lock(m_mut) }; // LOCKED
+				// auto locked{ std::shared_lock(m_mut) }; // LOCKED
 				auto& m_func_find = m_functions[hasher(functionName)];
 				for (auto& function : m_func_find.second) {
 					if (!function.second.second) continue;
@@ -1049,7 +1049,7 @@ namespace GoodLang {
 				std::vector<std::shared_ptr<Type_Info>> paramTypes;
 				for (auto& x : Params) paramTypes.push_back(x.lock());
 
-				auto locked{ std::shared_lock(m_mut) }; // LOCKED
+				// auto locked{ std::shared_lock(m_mut) }; // LOCKED
 				auto& m_func_find = m_functions[hasher(functionName)];
 				for (auto& function : m_func_find.second) {
 					if (!function.second.second) continue;

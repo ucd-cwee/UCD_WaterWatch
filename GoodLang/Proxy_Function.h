@@ -3479,37 +3479,37 @@ namespace GoodLang {
 	public:
 		Functions() = default;
 		Functions(Functions const& rhs) {
-			auto locked2{ std::shared_lock(rhs.m_mut) };
+			//auto locked2{ std::shared_lock(rhs.m_mut) };
 			m_functions = rhs.m_functions;
 		};
 		Functions(Functions&& rhs) {
-			auto locked2{ std::unique_lock(rhs.m_mut) };
+			//auto locked2{ std::unique_lock(rhs.m_mut) };
 			m_functions = std::move(rhs.m_functions);
 		};
 		Functions& operator=(Functions const& rhs) {
-			auto locked{ std::unique_lock(m_mut) };
-			auto locked2{ std::shared_lock(rhs.m_mut) };
+			//auto locked{ std::unique_lock(m_mut) };
+			//auto locked2{ std::shared_lock(rhs.m_mut) };
 			m_functions = rhs.m_functions;
 		};
 		Functions& operator=(Functions&& rhs) {
-			auto locked{ std::unique_lock(m_mut) };
-			auto locked2{ std::unique_lock(rhs.m_mut) };
+			//auto locked{ std::unique_lock(m_mut) };
+			//auto locked2{ std::unique_lock(rhs.m_mut) };
 			m_functions = std::move(rhs.m_functions);
 		};
 		~Functions() = default;
 
 	public:
-		typedef std::shared_ptr<Function> 
+		typedef GoodLang::shared_ptr<Function> 
 			FunctionPtr;
-		typedef std::unordered_map< size_t, std::pair<ParamTypes, FunctionPtr>> 
+		typedef concurrency::concurrent_unordered_map< size_t, std::pair<ParamTypes, FunctionPtr>>
 			FunctionSort; // key may NOT be the function's underlying params, but just params that were previously searched... 
-		typedef std::unordered_map< size_t, std::pair<std::string, FunctionSort> >
+		typedef concurrency::concurrent_unordered_map< size_t, std::pair<std::string, FunctionSort> >
 			FunctionMap;
 
 		FunctionMap 
 			m_functions;
-		mutable std::shared_mutex 
-			m_mut{};
+		// mutable std::shared_mutex 
+			// m_mut{};
 
 	private:
 		FunctionPtr at_unsafe(std::string const& key, ParamTypes const& params) const;

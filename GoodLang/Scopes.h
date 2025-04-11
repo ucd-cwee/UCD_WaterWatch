@@ -362,8 +362,8 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 			bool isExporingParent,
 			bool allowFindObject,
-			std::unordered_set< Scope*, custom_hash > const& CheckedSelf = {},
-			std::unordered_set< Scope*, custom_hash > const& CheckedAll = {}
+			GoodLang::details::flat_set< Scope* > const& CheckedSelf = {},
+			GoodLang::details::flat_set< Scope* > const& CheckedAll = {}
 		) const;
 
 		virtual bool TryFindNearestNamespaceWhere(
@@ -739,8 +739,8 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 			bool isExporingParent,
 			bool allowFindObject,
-			std::unordered_set< Scope*, custom_hash > const& CheckedSelf = {},
-			std::unordered_set< Scope*, custom_hash > const& CheckedAll = {}
+			GoodLang::details::flat_set< Scope* > const& CheckedSelf = {},
+			GoodLang::details::flat_set< Scope* > const& CheckedAll = {}
 		) const override;
 
 	public:
@@ -960,8 +960,8 @@ namespace GoodLang {
 			std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 			bool isExporingParent,
 			bool allowFindObject,
-			std::unordered_set< Scope*, custom_hash > const& CheckedSelf = {},
-			std::unordered_set< Scope*, custom_hash > const& CheckedAll = {}
+			GoodLang::details::flat_set< Scope* > const& CheckedSelf = {},
+			GoodLang::details::flat_set< Scope* > const& CheckedAll = {}
 		) const override;
 
 		virtual bool TryFindNearestNamespaceWhere(

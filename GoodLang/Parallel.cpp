@@ -570,8 +570,9 @@ namespace GoodLang {
 			long long groupCount;
 			switch (wait_depth) {
 			case 0: groupCount = internal_state.numThreads << 3; break;
-			case 1: groupCount = internal_state.numThreads << 0; break;
-			default: groupCount = internal_state.numThreads >> wait_depth; break;
+			// case 1: groupCount = internal_state.numThreads << 0; break;
+			// default: groupCount = internal_state.numThreads >> wait_depth; break;
+			default: groupCount = 1; break;
 			}
 			groupCount = std::max<long long>(1, std::min<long long>(jobCount, groupCount));
 			long long groupSize = jobCount / groupCount;
@@ -644,8 +645,9 @@ namespace GoodLang {
 			long long groupCount;
 			switch (wait_depth) {
 			case 0: groupCount = internal_state.numThreads << 3; break;
-			case 1: groupCount = internal_state.numThreads << 0; break;
-			default: groupCount = internal_state.numThreads >> wait_depth; break;
+			//case 1: groupCount = internal_state.numThreads << 0; break;
+			//default: groupCount = internal_state.numThreads >> wait_depth; break;
+			default: groupCount = 1; break;
 			}
 			groupCount = std::max<long long>(1, std::min<long long>(jobCount, groupCount));
 			long long groupSize = jobCount / groupCount;

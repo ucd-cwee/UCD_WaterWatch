@@ -1,5 +1,6 @@
 #pragma once 
 #include "Scopes.h"
+#include <boost/unordered_set.hpp>
 
 namespace GoodLang {
 	// try and find the object with the requested key.
@@ -776,30 +777,28 @@ namespace GoodLang {
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 		bool isExporingParent,
 		bool allowFindObject,
-		std::unordered_set< Scope*, custom_hash > const& CheckedSelf,
-		std::unordered_set< Scope*, custom_hash > const& CheckedAll
+		GoodLang::details::flat_set< Scope* > const& CheckedSelf,
+		GoodLang::details::flat_set< Scope* > const& CheckedAll
 	) const {
-		auto& checkedSelf = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedSelf);
-		auto& checkedAll = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedAll);
+		auto& checkedSelf = const_cast<GoodLang::details::flat_set< Scope* >&>(CheckedSelf);
+		auto& checkedAll = const_cast<GoodLang::details::flat_set< Scope* >&>(CheckedAll);
 		auto selfPtr = this->p_self.lock();
 
 		// Prevent Duplication
-		if (checkedAll.count(selfPtr.get()) >= 1) { return false; }
+		if (checkedAll.contains(selfPtr.get())) { return false; }
 		checkedAll.emplace(selfPtr.get());
 
 		std::shared_ptr<Scope> p;
 
 		// test myself			
-		if (!(checkedSelf.count(selfPtr.get()) >= 1)) {
+		if (!checkedSelf.contains(selfPtr.get())) {
 			checkedSelf.emplace(selfPtr.get());
-			if (1) {
-				if (p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
-					if (func(p, isExporingParent, allowFindObject)) {
-						bestMatch = p;
-						return true;
-					}
+			if (p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+				if (func(p, isExporingParent, allowFindObject)) {
+					bestMatch = p;
+					return true;
 				}
-			}
+			}			
 		}
 
 		// test my "using" namespaces and their children.
@@ -815,7 +814,7 @@ namespace GoodLang {
 		// test all of my parents
 		auto parentPtr = this->p_parent.lock();
 		while (parentPtr) {
-			if (!(checkedSelf.count(parentPtr.get()) >= 1)) {
+			if (!checkedSelf.contains(parentPtr.get())) {
 				checkedSelf.emplace(parentPtr.get());
 				if (p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
 					if (func(p, true, allowFindObject)) {
@@ -833,12 +832,12 @@ namespace GoodLang {
 		// Test my children themselves.
 		for (auto& innerChildNamespace : this->p_children) {
 			if (innerChildNamespace.second) {
-				p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-				if (!(checkedSelf.count(p.get()) >= 1)) {
-					checkedSelf.emplace(p.get());
-					if (p) {
-						if (func(p, isExporingParent, allowFindObject)) {
-							bestMatch = p;
+				// p = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!checkedSelf.contains(innerChildNamespace.second.get())) {
+					checkedSelf.emplace(innerChildNamespace.second.get());
+					if (innerChildNamespace.second) {
+						if (func(innerChildNamespace.second, isExporingParent, allowFindObject)) {
+							bestMatch = innerChildNamespace.second;
 							return true;
 						}
 					}
@@ -872,28 +871,26 @@ namespace GoodLang {
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 		bool isExporingParent,
 		bool allowFindObject,
-		std::unordered_set< Scope*, custom_hash > const& CheckedSelf,
-		std::unordered_set< Scope*, custom_hash > const& CheckedAll
+		GoodLang::details::flat_set< Scope* > const& CheckedSelf,
+		GoodLang::details::flat_set< Scope* > const& CheckedAll
 	) const {
-		auto& checkedSelf = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedSelf);
-		auto& checkedAll = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedAll);
+		auto& checkedSelf = const_cast<GoodLang::details::flat_set< Scope* >&>(CheckedSelf);
+		auto& checkedAll = const_cast<GoodLang::details::flat_set< Scope* >&>(CheckedAll);
 		auto selfPtr = this->p_self.lock();
 
 		// Prevent Duplication
-		if (checkedAll.count(selfPtr.get()) >= 1) { return false; }
+		if (checkedAll.contains(selfPtr.get())) { return false; }
 		checkedAll.emplace(selfPtr.get());
 
 		// test myself			
-		if (!(checkedSelf.count(selfPtr.get()) >= 1)) {
+		if (!checkedSelf.contains(selfPtr.get())) {
 			checkedSelf.emplace(selfPtr.get());
-			if (1) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
-					if (func(p, isExporingParent, allowFindObject)) {
-						bestMatch = p;
-						return true;
-					}
+			if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+				if (func(p, isExporingParent, allowFindObject)) {
+					bestMatch = p;
+					return true;
 				}
-			}
+			}			
 		}
 
 		// test my "using" namespaces and their children.
@@ -909,16 +906,14 @@ namespace GoodLang {
 		// test all of my parents
 		auto parentPtr = this->p_parent.lock();
 		while (parentPtr) {
-			if (!(checkedSelf.count(parentPtr.get()) >= 1)) {
+			if (!checkedSelf.contains(parentPtr.get())) {
 				checkedSelf.emplace(parentPtr.get());
-				if (1) {
-					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
-						if (func(p, true, false)) {
-							bestMatch = p;
-							return true;
-						}
+				if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
+					if (func(p, true, false)) {
+						bestMatch = p;
+						return true;
 					}
-				}
+				}				
 			}
 			else {
 				break; // we've checked this before! Quick, get out. 
@@ -929,12 +924,12 @@ namespace GoodLang {
 		// Test my children themselves.
 		for (auto& innerChildNamespace : this->p_children) {
 			if (innerChildNamespace.second) {
-				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-				if (!(checkedSelf.count(ptr.get()) >= 1)) {
-					checkedSelf.emplace(ptr.get());
-					if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-						if (func(p, isExporingParent, allowFindObject)) {
-							bestMatch = p;
+				// auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!checkedSelf.contains(innerChildNamespace.second.get())) {
+					checkedSelf.emplace(innerChildNamespace.second.get());
+					if (innerChildNamespace.second) {
+						if (func(innerChildNamespace.second, isExporingParent, allowFindObject)) {
+							bestMatch = innerChildNamespace.second;
 							return true;
 						}
 					}
@@ -968,28 +963,26 @@ namespace GoodLang {
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
 		bool isExporingParent,
 		bool allowFindObject,
-		std::unordered_set< Scope*, custom_hash > const& CheckedSelf,
-		std::unordered_set< Scope*, custom_hash > const& CheckedAll
+		GoodLang::details::flat_set< Scope* > const& CheckedSelf,
+		GoodLang::details::flat_set< Scope* > const& CheckedAll
 	) const {
-		auto& checkedSelf = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedSelf);
-		auto& checkedAll = const_cast<std::unordered_set< Scope*, custom_hash >&>(CheckedAll);
+		auto& checkedSelf = const_cast<GoodLang::details::flat_set< Scope* >&>(CheckedSelf);
+		auto& checkedAll = const_cast<GoodLang::details::flat_set< Scope* >&>(CheckedAll);
 		auto selfPtr = this->p_self.lock();
 
 		// Prevent Duplication
-		if (checkedAll.count(selfPtr.get()) >= 1) { return false; }
+		if (checkedAll.contains(selfPtr.get())) { return false; }
 		checkedAll.emplace(selfPtr.get());
 
 		// test myself			
-		if (!(checkedSelf.count(selfPtr.get()) >= 1)) {
+		if (!checkedSelf.contains(selfPtr.get())) {
 			checkedSelf.emplace(selfPtr.get());
-			if (1) {
-				if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
-					if (func(p, isExporingParent, allowFindObject)) {
-						bestMatch = p;
-						return true;
-					}
+			if (auto p = std::dynamic_pointer_cast<Scope>(selfPtr)) {
+				if (func(p, isExporingParent, allowFindObject)) {
+					bestMatch = p;
+					return true;
 				}
-			}
+			}			
 		}
 
 		// test my "using" namespaces and their children.
@@ -1013,16 +1006,14 @@ namespace GoodLang {
 		// test all of my parents
 		auto parentPtr = this->p_parent.lock();
 		while (parentPtr) {
-			if (!(checkedSelf.count(parentPtr.get()) >= 1)) {
+			if (!checkedSelf.contains(parentPtr.get())) {
 				checkedSelf.emplace(parentPtr.get());
-				if (1) {
-					if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
-						if (func(p, true, allowFindObject)) {
-							bestMatch = p;
-							return true;
-						}
+				if (auto p = std::dynamic_pointer_cast<Scope>(parentPtr)) {
+					if (func(p, true, allowFindObject)) {
+						bestMatch = p;
+						return true;
 					}
-				}
+				}				
 			}
 			else {
 				break; // we've checked this before! Quick, get out. 
@@ -1033,17 +1024,15 @@ namespace GoodLang {
 		// Test my children themselves.
 		for (auto& innerChildNamespace : this->p_children) {
 			if (innerChildNamespace.second) {
-				auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
-				if (!(checkedSelf.count(ptr.get()) >= 1)) {
-					checkedSelf.emplace(ptr.get());
-					if (1) {
-						if (auto p = std::dynamic_pointer_cast<Scope>(ptr)) {
-							if (func(p, isExporingParent, allowFindObject)) {
-								bestMatch = p;
-								return true;
-							}
+				// auto ptr = std::dynamic_pointer_cast<Scope>(innerChildNamespace.second);
+				if (!checkedSelf.contains(innerChildNamespace.second.get())) {
+					checkedSelf.emplace(innerChildNamespace.second.get());
+					if (innerChildNamespace.second) {
+						if (func(innerChildNamespace.second, isExporingParent, allowFindObject)) {
+							bestMatch = innerChildNamespace.second;
+							return true;
 						}
-					}
+					}					
 				}
 				else {
 					break; // we've checked this before! Quick, get out. 
@@ -1708,10 +1697,10 @@ namespace GoodLang {
 	std::shared_ptr< Functions::FunctionSort > Namespace::GetFunctions(std::string const& name) const {
 		static auto hasher{ std::hash<std::string>() };
 		// movable shared lock
-		auto locked{ std::make_shared< std::shared_lock<std::shared_mutex> >(p_functions->m_mut) };
+		// auto locked{ std::make_shared< std::shared_lock<std::shared_mutex> >(p_functions->m_mut) };
 		auto f = p_functions->m_functions.find(hasher(name));
 		if (f != p_functions->m_functions.end()) {
-			return std::shared_ptr< Functions::FunctionSort >(&f->second.second, [lockedCopy = locked](Functions::FunctionSort*) { if (!lockedCopy) { throw(std::runtime_error("ERR")); }; });
+			return std::shared_ptr< Functions::FunctionSort >(&f->second.second, [/*lockedCopy = locked*/](Functions::FunctionSort*) { /*if (!lockedCopy) { throw(std::runtime_error("ERR")); };*/ });
 		}
 		return nullptr;
 	};
