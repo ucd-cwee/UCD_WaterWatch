@@ -1341,9 +1341,21 @@ namespace GoodLang {
 	/// \code
 	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
 	/// \endcode
-	template<typename T> std::weak_ptr<Type_Info> const& user_type_shared() noexcept {
+	template<typename T> std::shared_ptr<Type_Info> const& user_type_shared_ptr() noexcept {
 		static std::shared_ptr<Type_Info> out{ std::dynamic_pointer_cast<Type_Info>(details::Get_Type_Info<T>::get()) };
-		static std::weak_ptr<Type_Info> out2{ out };
+		return out;
+	};
+
+	/// \brief Creates a Type_Info object representing the templated type
+	/// \tparam T Type of object to get a Type_Info for
+	/// \return Type_Info for T
+	///
+	/// \b Example:
+	/// \code
+	/// chaiscript::Type_Info ti = chaiscript::user_type<int>();
+	/// \endcode
+	template<typename T> std::weak_ptr<Type_Info> const& user_type_shared() noexcept {
+		static std::weak_ptr<Type_Info> out2{ user_type_shared_ptr<T>() };
 		return out2;
 	};
 
@@ -2058,6 +2070,7 @@ namespace GoodLang {
 		virtual bool CanCast(Type_Info const& to_type) const;
 		virtual Type_Info const& GetType() const;
 		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const;
+		virtual std::shared_ptr<Type_Info> const& GetTypeSharedPtr() const;
 		virtual void* ptr() const;
 		virtual std::shared_ptr<void> shared_ptr() const;
 		template<typename ToType> std::shared_ptr<ToType> cast_shared() const {
@@ -2134,8 +2147,10 @@ namespace GoodLang {
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
 		virtual Type_Info const& GetType() const override { return user_type<T>(); };
 		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override { 
-			static std::weak_ptr<Type_Info> out{ user_type_shared<T>() };
-			return out;
+			return user_type_shared<T>();
+		};
+		virtual std::shared_ptr<Type_Info> const& GetTypeSharedPtr() const override {
+			return user_type_shared_ptr<T>();
 		};
 		virtual void* ptr() const override { return static_cast<void*>(&const_cast<std::remove_const_t<T>&>(m_obj)); };
 		virtual std::shared_ptr<void> shared_ptr() const override {
@@ -2184,8 +2199,10 @@ namespace GoodLang {
 		virtual bool CanCast(Type_Info const& to_type) const override { return GetType().CanCast(to_type); };
 		virtual Type_Info const& GetType() const override { return user_type<T>(); };
 		virtual std::weak_ptr<Type_Info> const& GetTypeShared() const override {
-			static std::weak_ptr<Type_Info> out{ user_type_shared<T>() };
-			return out;
+			return user_type_shared<T>();
+		};
+		virtual std::shared_ptr<Type_Info> const& GetTypeSharedPtr() const override {
+			return user_type_shared_ptr<T>();
 		};
 		virtual void* ptr() const override { return const_cast<void*>((const void*)(m_obj.get())); };
 		virtual std::shared_ptr<void> shared_ptr() const override { return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(m_obj)); };
@@ -2363,6 +2380,7 @@ namespace GoodLang {
 		// DynamicObjects can "present" as one class but actually be another. This checks the ACTUAL class, not the presenting class.
 		std::weak_ptr<Type_Info> ActualType() const noexcept;
 		std::weak_ptr<Type_Info> Type() const noexcept;
+		std::shared_ptr<Type_Info> TypePtr() const noexcept;
 		size_t TypeHash() const noexcept;
 		bool IsTypeOf(std::weak_ptr<Type_Info> const& targetType) const noexcept;
 		bool IsTypeOf(Type_Info const& targetType) const noexcept;

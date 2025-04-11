@@ -151,7 +151,7 @@ namespace GoodLang {
 namespace GoodLang {
 	// std::numeric_limits<unsigned short>::max() and 512 give similar performance metrics.
 	// 255 and less tend to get caught in a constriction with heavy loads. 
-	static std::array<std::atomic<long>, 512> locks; // 128, 1000, 10000, std::numeric_limits<unsigned short>::max()
+	static std::array<std::atomic<long>, std::numeric_limits<unsigned short>::max()/*512*/> locks; // 128, 1000, 10000, std::numeric_limits<unsigned short>::max()
 	static size_t PtrToIndex(shared_ptr_base::aux* const& ptr) {
 		if constexpr (locks.size() == std::numeric_limits<unsigned short>::max()) {
 			return reinterpret_cast<unsigned short&>(const_cast<shared_ptr_base::aux*&>(ptr));
@@ -159,12 +159,6 @@ namespace GoodLang {
 		else if constexpr (locks.size() == std::numeric_limits<unsigned char>::max()) {
 			return reinterpret_cast<unsigned char&>(const_cast<shared_ptr_base::aux*&>(ptr));
 		}
-		//if constexpr (locks.size() >= 10000) {
-		//	return (((reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr))) >> 4) % 321) + (((reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr))) << 4) % 9678);
-		//}
-		//else if constexpr (locks.size() >= 1000) {
-		//	return reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr)) % 10000 >> 4;
-		//}
 		else {
 			return (reinterpret_cast<size_t&>(const_cast<shared_ptr_base::aux*&>(ptr)) >> 5) % locks.size();
 		}
@@ -189,11 +183,11 @@ namespace GoodLang {
 	void shared_ptr_base::DoDestroyOrDelete(aux* const& ptr, bool Destroy, bool Delete) {
 		if (ptr) {
 			if (Destroy) {
-				//auto& lock = locks[reinterpret_cast<internal_lock_type&>(const_cast<aux*&>(ptr))];
-				//while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo				
-				//lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo
 				ptr->destroy();
+				auto& lock = locks[PtrToIndex(ptr)];
+				while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo				
 				if (Delete) delete ptr;
+				lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo
 			}
 			else {
 				auto& lock = locks[PtrToIndex(ptr)];
@@ -339,7 +333,12 @@ namespace GoodLang {
 	size_t AnyData::GetTypeHash() const { return typeHash; };
 	bool AnyData::CanCast(Type_Info const& to_type) const { return false; };
 	Type_Info const& AnyData::GetType() const { return user_type<void>(); };
-	std::weak_ptr<Type_Info> const& AnyData::GetTypeShared() const { return user_type_shared<void>(); };
+	std::weak_ptr<Type_Info> const& AnyData::GetTypeShared() const { 
+		return user_type_shared<void>(); 
+	};
+	std::shared_ptr<Type_Info> const& AnyData::GetTypeSharedPtr() const { 
+		return user_type_shared_ptr<void>();
+	};
 	void* AnyData::ptr() const { return nullptr; };
 	std::shared_ptr<void> AnyData::shared_ptr() const { return nullptr; };
 	void AnyData::ThrowIfNot(Type_Info const& type) const {
@@ -409,8 +408,8 @@ namespace GoodLang {
 		}
 	};
 	std::weak_ptr<Type_Info> Any::ActualType() const noexcept {
-		static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
-		static auto VarHash{ GetHash(user_type<Var>()) };
+		static auto DynamicTypeHash{ user_type_shared_ptr<DynamicObject>()->GetHash() };
+		static auto VarHash{ user_type_shared_ptr<Var>()->GetHash() };
 		auto locked{ std::shared_lock(mut) };
 		if (std::shared_ptr<AnyData>& m = container) {
 			if (m->GetTypeHash() == DynamicTypeHash) {
@@ -437,8 +436,8 @@ namespace GoodLang {
 		}
 	};
 	std::weak_ptr<Type_Info> Any::Type() const noexcept {
-		static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
-		static auto VarHash{ GetHash(user_type<Var>()) };
+		static auto DynamicTypeHash{ user_type_shared_ptr<DynamicObject>()->GetHash() };
+		static auto VarHash{ user_type_shared_ptr<Var>()->GetHash() };
 		std::weak_ptr<Type_Info> out{ user_type_shared<void>() };
 
 		mut.lock_shared();		
@@ -466,9 +465,39 @@ namespace GoodLang {
 		mut.unlock_shared();
 		return out;		
 	};
+	std::shared_ptr<Type_Info> Any::TypePtr() const noexcept {
+		static auto DynamicTypeHash{ user_type_shared_ptr<DynamicObject>()->GetHash() };
+		static auto VarHash{ user_type_shared_ptr<Var>()->GetHash() };
+		std::shared_ptr<Type_Info> out{ user_type_shared_ptr<void>() };
+
+		mut.lock_shared();
+		if (std::shared_ptr<AnyData>& m = container) {
+			if (m->GetTypeHash() == DynamicTypeHash) {
+				if (auto* p2 = m->cast< DynamicObject>()) {
+					out = p2->m_classType.lock();
+					mut.unlock_shared();
+					return out;
+				}
+			}
+#ifdef AllowInlineVarTyping
+			if (m->GetTypeHash() == VarHash) {
+				if (auto* p2 = m->cast< Var>()) {
+					if (!p2->p_data->IsEmpty()) {
+						out = p2->p_data->TypePtr();
+						mut.unlock_shared();
+						return out;
+					}
+				}
+			}
+#endif
+			out = m->GetTypeSharedPtr();
+		}
+		mut.unlock_shared();
+		return out;
+	};
 	size_t Any::TypeHash() const noexcept {
-		static auto DynamicTypeHash{ GetHash(user_type<DynamicObject>()) };
-		static auto VarHash{ GetHash(user_type<Var>()) };
+		static auto DynamicTypeHash{ user_type_shared_ptr<DynamicObject>()->GetHash() };
+		static auto VarHash{ user_type_shared_ptr<Var>()->GetHash() };
 		auto locked{ std::shared_lock(mut) };
 		if (std::shared_ptr<AnyData>& m = container) {
 			if (m->GetTypeHash() == DynamicTypeHash) {
@@ -495,12 +524,10 @@ namespace GoodLang {
 		}
 	};
 	bool Any::IsTypeOf(std::weak_ptr<Type_Info> const& targetType) const noexcept {
-		static auto hasher{ std::hash<std::weak_ptr<Type_Info>>() };
-		return TypeHash() == hasher(targetType);
+		return TypeHash() == GetHash(targetType);
 	};
 	bool Any::IsTypeOf(Type_Info const& targetType) const noexcept {
-		static auto hasher{ std::hash<Type_Info>() };
-		return TypeHash() == hasher(targetType);
+		return TypeHash() == GetHash(targetType);
 	};
 	std::shared_ptr<AnyData> Any::impl() const {
 		auto locked{ std::shared_lock(mut) };

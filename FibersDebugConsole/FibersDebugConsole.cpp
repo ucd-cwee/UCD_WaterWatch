@@ -368,8 +368,10 @@ namespace GoodLang {
 				std::ostringstream oss;
 				std::string str = std::string(this->identifier.ToString());
 				std::string returnType = ToString(this->return_type);
-				oss << GoodLang::printf("%s(%s) %s : L%iC%i - L%iC%i -> %s\n",
-					t_prepend.c_str(), str.c_str(), this->text.c_str(),
+				std::string TimeSpentEvaling = ToString(this->TimeSpent_Total());
+
+				oss << GoodLang::printf("%s(%s) [%s] %s : L%iC%i - L%iC%i -> %s\n",
+					t_prepend.c_str(), str.c_str(), TimeSpentEvaling.c_str(), this->text.c_str(),
 					this->location.start.line, this->location.start.column, this->location.end.line, this->location.end.column,
 					returnType.c_str()
 				);
@@ -386,7 +388,12 @@ namespace GoodLang {
 			AST_Node& operator=(AST_Node&&) = delete;
 			AST_Node(const AST_Node&) = delete;
 			AST_Node& operator=(const AST_Node&) = delete;
-
+			virtual Units::second TimeSpent_Total() const {
+				return 0;
+			};
+			virtual Units::second TimeSpent_Self() const {
+				return 0;
+			};
 		protected:
 			AST_Node(std::string t_ast_node_text, AST_Node_Type t_id, Parse_Location t_loc)
 				: identifier(t_id)
@@ -718,6 +725,8 @@ namespace GoodLang {
 				std::vector<AST_Node_Impl_Ptr<T>> t_children = std::vector<AST_Node_Impl_Ptr<T>>())
 				: AST_Node(std::move(t_ast_node_text), t_id, std::move(t_loc))
 				, children(std::move(t_children))
+				, time_spent_during_eval{ 0 }
+				, num_evals{ 0 }
 			{};
 
 			std::vector<std::reference_wrapper<AST_Node>> get_children() const override final {
@@ -730,6 +739,14 @@ namespace GoodLang {
 			};
 
 			Any eval(std::shared_ptr<Scope> const& currentScope) const override final {
+				Stopwatch sw;
+				sw.Start();
+
+				InterlockedIncrementAcquire64(&num_evals);				
+				defer(
+				    InterlockedAddAcquire64(&time_spent_during_eval, sw.Stop());					
+				);
+
 				try {
 					// T::trace(currentScope, this);
 					return eval_internal(currentScope);
@@ -750,6 +767,19 @@ namespace GoodLang {
 				}
 			}
 
+			Units::second TimeSpent_Total() const override {
+				Units::second out = Units::nanosecond(time_spent_during_eval);
+				for (auto& child : children) {
+					out += child->TimeSpent_Total();
+				}
+				return out;
+			};
+			Units::second TimeSpent_Self() const override {
+				return Units::nanosecond(time_spent_during_eval) / std::max<long long>(1, num_evals);
+			};
+
+			mutable __int64 time_spent_during_eval;
+			mutable __int64 num_evals;
 			std::vector<AST_Node_Impl_Ptr<T>> children;
 
 		protected:
@@ -1373,11 +1403,11 @@ namespace GoodLang {
 				for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
 					params.push_back(child->eval(currentScope));
 				}
-
+				ParamTypes Params{ params };
 				auto tree = currentScope->GetTypeConverterTree();
 				std::shared_ptr<Any> obj;
 				Proxy_Function found_function;
-				if (currentScope->FindObjOrFunction(function_name, params, *tree, &obj, &found_function)) {
+				if (currentScope->FindObjOrFunction(function_name, params, Params, *tree, &obj, &found_function)) {
 					if (obj) {
 						if (Proxy_Function func = obj->cast<Proxy_Function>()) {
 							if (
@@ -1478,15 +1508,15 @@ namespace GoodLang {
 							endPos - startPos /* count of jobs */,
 							[&](impl::JobArgs const& _args)-> void {
 								std::pair<Any, std::shared_ptr<Scope>>& shared_memory = *((std::pair<Any, std::shared_ptr<Scope>>*)_args.sharedmemory);
-								thread_local static Proxy_Function IncrementFunc { nullptr };
+								// thread_local static Proxy_Function IncrementFunc { nullptr };
 								if (_args.groupIndex == 0) {
 									// start of a group
 									shared_memory.second->CallFunction(":=", { shared_memory.first, _args.jobIndex });
-									IncrementFunc = shared_memory.second->FindFunction("++", { shared_memory.first }, *shared_memory.second->GetTypeConverterTree());
+									//IncrementFunc = shared_memory.second->FindFunction("++", { shared_memory.first }, *shared_memory.second->GetTypeConverterTree());
 								}
 								else {
-									if (IncrementFunc) shared_memory.second->CallFunction(IncrementFunc, shared_memory.first);
-									else shared_memory.second->CallFunction("++", shared_memory.first);
+									//if (IncrementFunc) shared_memory.second->CallFunction(IncrementFunc, shared_memory.first); else 
+									shared_memory.second->CallFunction("++", shared_memory.first);
 								}
 
 								// do the work
@@ -7453,646 +7483,12 @@ namespace GoodLang {
 	};
 };
 
-
-
-
-
-namespace TEST {
-	class CAS {
-	public:
-		using type1 = short;
-		using type2 = short;
-		using type3 = short;
-		using type4 = short;
-
-	private:
-		static constexpr size_t offset0 = 0;
-		static constexpr size_t offset1 = offset0 + sizeof(type1);
-		static constexpr size_t offset2 = offset1 + sizeof(type2);
-		static constexpr size_t offset3 = offset2 + sizeof(type3);
-
-	public:
-		struct Data {
-		public:
-			uint64_t data;
-
-			type1& a() {
-				return *reinterpret_cast<type1*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset0);
-			};
-			type2& b() {
-				return *reinterpret_cast<type2*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset1);
-			};
-			type3& c() {
-				return *reinterpret_cast<type3*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset2);
-			};
-			type4& d() {
-				return *reinterpret_cast<type4*>(&reinterpret_cast<unsigned char*>(&data)[0] + offset3);
-			};
-
-			Data() = default;
-			~Data() = default;
-			Data(type1 A, type2 B = 0, type3 C = 0, type4 D = 0) {
-				a() = std::move(A);
-				b() = std::move(B);
-				c() = std::move(C);
-				d() = std::move(D);
-			};
-		};
-
-	public:
-		CAS(type1 a = 0, type2 b = 0, type3 c = 0, type4 d = 0) : 
-			read_write({ a, b, c, d }) {};
-		CAS(CAS const& RHS) : 
-			read_write(RHS.read_write) {};
-		CAS(CAS&& RHS) : 
-			read_write(std::move(RHS.read_write)) {};
-		CAS& operator=(CAS const& RHS) { 
-			(void)InterlockedExchangeNoFence(&read_write.data, RHS.read_write.data);
-			return *this; 
-		};
-		CAS& operator=(CAS&& RHS) { 
-			(void)InterlockedExchangeNoFence(&read_write.data, RHS.read_write.data);
-			return *this; 
-		};
-		~CAS() = default;
-
-		void store(Data const RHS) {
-			(void)InterlockedExchangeNoFence(&read_write.data, std::move(RHS.data));
-		};
-		Data exchange(Data const RHS) {
-			Data out;
-			out.data = InterlockedExchangeNoFence(&read_write.data, std::move(RHS.data));
-			return out;
-		};
-		bool compare_exchange_strong(Data& _Expected, uint64_t _Desired) {
-			return _Expected.data == InterlockedCompareExchangeNoFence(&read_write.data, _Desired, _Expected.data);
-		};
-		bool compare_exchange_weak(Data& _Expected, uint64_t _Desired) {
-			return _Expected.data == InterlockedCompareExchangeNoFence(&read_write.data, _Desired, _Expected.data);
-		};
-
-		Data read_write;
-	};
-
-	template<class T> class weak_ptr; // forward-decl
-
-	namespace details {
-		class shared_ptr_base {
-		public:
-			struct aux {
-				TEST::CAS strong_weak_count;
-
-				aux() : strong_weak_count(1, 0, 0, 0) {};
-
-				virtual void* ptr() const = 0;
-				virtual void destroy() = 0;
-				virtual ~aux() {} //must be polymorphic
-			};
-
-			template<class U, class Deleter> struct auximpl : public aux {
-				// GoodLang::atomic_ptr<U> p;
-				U* p;
-				Deleter d;
-				auximpl(U* pu, Deleter x) : aux(), p(pu), d(x) {}
-
-				virtual void* ptr() const override {
-					// return static_cast<void*>(p.load());
-					return static_cast<void*>(p);
-				};
-				virtual void destroy() override {
-					// if (auto* P = p.Set(nullptr)) d(P);
-					d(p);
-
-				};
-			};
-
-			template<class U> struct default_deleter {
-				void operator()(U* p) const { delete p; };
-			};
-
-			static aux* inc(GoodLang::atomic_ptr<aux> const& pa) {
-				aux*
-					pa_ptr;
-				typename decltype(aux::strong_weak_count)::Data
-					previous, copy;
-				while (pa_ptr = pa.load()) {
-					copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-					while (!previous.d()) {						
-						++copy.a();
-						if (pa_ptr->strong_weak_count.compare_exchange_strong(previous, copy.data)) {
-							break;
-						}
-						else {
-							copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-						}
-					}
-					if (previous.d() || previous.c()) {
-						continue; // try again
-					}
-					else {
-						return pa_ptr;
-					}
-				}
-				return nullptr;
-			};
-
-			static void dec(aux* pa_ptr) {
-				typename decltype(aux::strong_weak_count)::Data
-					previous, copy;
-				bool
-					ToDeleteData, ToDeleteMemBlock;
-				if (pa_ptr) {
-					copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-					while (!previous.d()) {
-						copy.c() = copy.c() || (ToDeleteData = (0 == --copy.a()));
-						copy.d() = copy.d() || (ToDeleteMemBlock = ToDeleteData && (previous.b() == 0));
-						if (pa_ptr->strong_weak_count.compare_exchange_strong(previous, copy.data)) {
-							break;
-						}
-						else {
-							copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-						}
-					}
-					if (!previous.d()) {
-						if ((!previous.c()) && ToDeleteData) {
-							pa_ptr->destroy();
-						}
-						if (ToDeleteMemBlock) {
-							delete pa_ptr;
-						}
-					}
-				}
-			};
-		};
-	};
-
-	/// <summary>
-	/// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
-	/// </summary>
-	/// <returns></returns>
-	template<class T> class shared_ptr : public details::shared_ptr_base {
-		friend class weak_ptr<T>;
-		GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
-		GoodLang::atomic_ptr<T> pt;
-		explicit shared_ptr(aux* p) : pa(p) {};
-	public:
-		shared_ptr() :pa(nullptr), pt(nullptr) {};
-		shared_ptr(std::nullptr_t) : pa(nullptr), pt(nullptr) {};
-		shared_ptr(shared_ptr<T> const& s) : pa(shared_ptr::inc(s.pa)), pt(nullptr) { 
-			if (auto* pa_ptr = pa.load()) pt = reinterpret_cast<T*>(pa_ptr->ptr());
-		};
-		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(shared_ptr::inc(s.pa)), pt(nullptr) {
-			if (auto* pa_ptr = pa.load()) pt = reinterpret_cast<T*>(pa_ptr->ptr());
-		};
-		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(reinterpret_cast<T*>(pu)) {};
-		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(reinterpret_cast<T*>(pu)) {};
-		~shared_ptr() { shared_ptr::dec(pa.load()); };
-
-		shared_ptr& operator=(const shared_ptr& s) {
-			if (this != &s) {
-				pt = nullptr;
-				shared_ptr::dec(pa.Set(shared_ptr::inc(s.pa)));
-			}
-			return *this;
-		};
-		template<class U> shared_ptr& operator=(const shared_ptr<U>& s) {
-			if (this != &s) {
-				pt = nullptr;
-				shared_ptr::dec(pa.Set(shared_ptr::inc(s.pa)));
-			}
-			return *this;
-		};
-		shared_ptr& operator=(std::nullptr_t) {
-			pt = nullptr;
-			shared_ptr::dec(pa.Set(nullptr));
-			return *this;
-		};
-
-		operator bool() const {
-			if (pt) {
-				return true;
-			}
-			else {
-				if (auto* pa_ptr = pa.load()) {
-					auto previous = pa_ptr->strong_weak_count.read_write;
-					return !previous.c();
-				}
-				else
-					return false;
-			}
-		};
-
-		T* get() const {
-			T* out;
-			if (out = pt.load()) {}
-			else {
-				if (auto* pa_ptr = pa.load())
-					out = reinterpret_cast<T*>(pa_ptr->ptr());
-				else
-					out = nullptr;
-			}
-			return out;
-		};
-		T* operator->() const { return get(); };
-		T& operator*() const { return *get(); };
-	};
-
-	/// <summary>
-	/// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
-	/// </summary>
-	/// <returns></returns>
-	template<class T> class weak_ptr {
-		GoodLang::atomic_ptr<typename shared_ptr<T>::aux> pa; // pointer to shared memory block
-		static typename shared_ptr<T>::aux* inc(GoodLang::atomic_ptr<typename shared_ptr<T>::aux> const& pa) {
-			using F = typename shared_ptr<T>::aux; 
-			typename decltype(F::strong_weak_count)::Data
-				previous, copy;
-			
-			while (auto pa_ptr = pa.load()) {
-				copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-				while (!previous.d()) {
-					++copy.b();
-					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy.data)) {
-						break;
-					}
-					else {
-						copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-					}
-				}
-				if (previous.d()) {
-					continue;
-				}
-				else {
-					return pa_ptr;
-				}
-			}
-			return nullptr;
-		};
-		static void dec(typename shared_ptr<T>::aux* pa_ptr) {
-			using F = typename shared_ptr<T>::aux;
-			typename decltype(F::strong_weak_count)::Data
-				previous, copy;
-
-			if (pa_ptr) {
-				copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-				short ToDeleteData = 0;
-				short ToDeleteMemBlock = 0;
-				while (!previous.d()) {
-					ToDeleteData = (previous.a() == 0);
-					ToDeleteMemBlock = ToDeleteData && (previous.b() == 1);
-
-					--copy.b();
-					copy.c() = previous.c() || ToDeleteData;
-					copy.d() = previous.d() || ToDeleteMemBlock;
-
-					if (pa_ptr->strong_weak_count.compare_exchange_weak(previous, copy.data)) {
-						break;
-					}
-					else {
-						copy.data = previous.data = pa_ptr->strong_weak_count.read_write.data;
-					}
-				}
-				if (!previous.d()) {
-					if ((!previous.c()) && ToDeleteData) {
-						pa_ptr->destroy();
-					}
-					if (ToDeleteMemBlock) {
-						delete pa_ptr;
-					}
-				}
-			}
-		};
-
-	public:
-		weak_ptr() : pa() {}
-		weak_ptr(std::nullptr_t) : pa() {}
-		weak_ptr(shared_ptr<T> const& r) : pa(inc(r.pa)) {};
-		weak_ptr(const weak_ptr& r) : pa(inc(r.pa)) {};
-		~weak_ptr() { dec(pa.load()); }
-
-		operator bool() const {
-			return !expired();
-		};
-
-		weak_ptr& operator=(const weak_ptr& s) {
-			if (this != &s) {
-				dec(pa.Set(inc(s.pa)));
-			}
-			return *this;
-		};
-		weak_ptr& operator=(std::nullptr_t) {
-			dec(pa.Set(nullptr));
-			return *this;
-		};
-
-		shared_ptr<T> lock() {
-			return shared_ptr<T>(shared_ptr<T>::inc(pa));
-		};
-		bool expired() {
-			auto* pa_ptr = pa.load();
-			if (pa_ptr) {
-				auto previous = pa_ptr->strong_weak_count.read_write;
-				return previous.c();
-			}
-			else {
-				return true;
-			}
-		};
-	};
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
 int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
 
 	using namespace GoodLang;
-
-	if (1) {
-		auto tempPtr = GoodLang::make_shared<stackThing>("TEMP");
-
-	}
-	if (1) {
-		auto tempPtr = GoodLang::make_shared<stackThing>("TEMP");
-		auto copy = shared_ptr<stackThing>(tempPtr);
-	}
-	if (1) {
-		auto tempPtr = GoodLang::make_shared<stackThing>("TEMP");
-		auto weak_copy = weak_ptr(tempPtr);
-		EXPECT_EQ(weak_copy.expired(), false);
-		auto newPtr = weak_copy.lock();
-		tempPtr = nullptr;
-		EXPECT_EQ(weak_copy.expired(), false);
-		newPtr = nullptr;
-		EXPECT_EQ(weak_copy.expired(), true);
-	}
-	
-	if (1) {
-		auto tempPtr = TEST::shared_ptr<stackThing>(new stackThing("TEMP2"));
-
-	}
-	if (1) {
-		auto tempPtr = TEST::shared_ptr<stackThing>(new stackThing("TEMP2"));
-		auto copy = TEST::shared_ptr<stackThing>(tempPtr);
-	}
-	if (1) {
-		auto tempPtr = TEST::shared_ptr<stackThing>(new stackThing("TEMP2"));
-		auto weak_copy = TEST::weak_ptr(tempPtr);
-		EXPECT_EQ(weak_copy.expired(), false);
-		auto newPtr = weak_copy.lock();
-		tempPtr = nullptr;
-		EXPECT_EQ(weak_copy.expired(), false);
-		newPtr = nullptr;
-		EXPECT_EQ(weak_copy.expired(), true);
-	}
-
-
-
-	
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i) {
-			TEST::shared_ptr<stackThing> copied{ tempPtr };
-			if (copied) {
-				(void)copied->get_var_name();
-				++count;
-			}
-			tempPtr = TEST::shared_ptr<stackThing>(new stackThing());
-			});
-		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr @ " + ToString(count));
-	}	
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		auto tempPtr = GoodLang::make_shared<stackThing>();
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i){
-			shared_ptr<stackThing> copied{ tempPtr };
-			if (copied) {
-				(void)copied->get_var_name();
-				++count;
-			}
-			tempPtr = GoodLang::make_shared<stackThing>();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr @ " + ToString(count));
-	}	
-	if (0) {
-		GoodLang::InterlockedLong count{ 0 };
-		GoodLang::SharedLockable< std::shared_ptr<stackThing> > 
-			tempPtr{ std::shared_ptr<stackThing>(new stackThing()) };
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i) {
-			std::shared_ptr<stackThing> copied{ tempPtr.load() };
-			if (copied) {
-				(void)copied->get_var_name();
-				++count;
-			}
-			tempPtr = std::shared_ptr<stackThing>(new stackThing());
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ coarse-grained locking std::shared_ptr @ " + ToString(count));
-	}
-	if (0) {
-		GoodLang::InterlockedLong count{ 0 };
-		GoodLang::SharedLockable< std::shared_ptr<stackThing> >
-			tempPtr{ std::shared_ptr<stackThing>(new stackThing()) };
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			tempPtr.lock.lock_shared();
-			std::shared_ptr<stackThing> copied{ *tempPtr.data };
-			tempPtr.lock.unlock_shared();
-
-			if (copied) {
-				(void)copied->get_var_name();
-				++count;
-			}
-			
-			tempPtr.lock.lock();
-			*tempPtr.data = std::shared_ptr<stackThing>(new stackThing());
-			tempPtr.lock.unlock();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ fine-grained locking std::shared_ptr @ " + ToString(count));
-	}
-	if (0) {
-		GoodLang::InterlockedLong count{ 0 };
-		std::shared_ptr<stackThing>
-			tempPtr{ std::shared_ptr<stackThing>(new stackThing()) };
-		std::mutex mut;
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			mut.lock();
-			std::shared_ptr<stackThing> copied{ tempPtr };
-			mut.unlock();
-
-			if (copied) {
-				(void)copied->get_var_name();
-				++count;
-			}
-
-			mut.lock();
-			tempPtr = std::shared_ptr<stackThing>(new stackThing());
-			mut.unlock();
-			});
-		print(ToString(Units::second(sw.Stop_s())) + " @ fine-grained std::mutex locking std::shared_ptr @ " + ToString(count));
-	}
-	print("");
-
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i) {
-			TEST::shared_ptr<stackThing> copied{ tempPtr };
-			(void)copied->get_var_name();
-			++count;
-			tempPtr = TEST::shared_ptr<stackThing>(new stackThing());
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr (no check) @ " + ToString(count));
-	}
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		auto tempPtr = GoodLang::make_shared<stackThing>();
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 10000000, [&](int i) {
-			shared_ptr<stackThing> copied{ tempPtr };
-			(void)copied->get_var_name();
-			++count;			
-			tempPtr = GoodLang::make_shared<stackThing>();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr (no check, trust it worked as designed) @ " + ToString(count));
-	}
-	print("");
-
-	if (1) {
-		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000000, [&](int i) {
-			(void)tempPtr->get_var_name();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr BASIC INDEXING");
-	}
-	if (1) {
-		auto tempPtr = GoodLang::make_shared<stackThing>();
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000000, [&](int i) {
-			(void)tempPtr->get_var_name();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr BASIC INDEXING");
-	}
-	if (1) {
-		std::shared_ptr<stackThing> tempPtr{ new stackThing()};
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000000, [&](int i) {
-			(void)tempPtr->get_var_name();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr BASIC INDEXING");
-	}
-	print("");
-
-	if (1) {
-		TEST::shared_ptr<stackThing> tempPtr{ new stackThing() };
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			TEST::shared_ptr<stackThing> copied{ tempPtr };
-			(void)copied->get_var_name();
-			});
-		print(ToString(Units::second(sw.Stop_s())) + " @ TEST::atomic_shared_ptr COPY THEN BASIC INDEXING");
-	}
-	if (1) {
-		auto tempPtr = GoodLang::make_shared<stackThing>();
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			shared_ptr<stackThing> copied{ tempPtr };
-			(void)copied->get_var_name();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr COPY THEN BASIC INDEXING");
-	}
-	if (1) {
-		std::shared_ptr<stackThing> tempPtr{ new stackThing()};
-
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			std::shared_ptr<stackThing> copied{ tempPtr };
-			(void)copied->get_var_name();
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr COPY THEN BASIC INDEXING");
-	}
-	print("");
-
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		auto tempPtr = GoodLang::make_shared<stackThing>();
-
-		auto weak_copy = weak_ptr(tempPtr);
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			shared_ptr<stackThing> copied{ weak_copy.lock() };
-			if (copied) {
-				(void)copied->get_var_name();
-				count++;
-			}
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ atomic_shared_ptr WeakPtr Test @ " + ToString(count));
-	}
-	if (1) {
-		GoodLang::InterlockedLong count{ 0 };
-		std::shared_ptr<stackThing> tempPtr{ new stackThing() };
-		auto weak_copy = std::weak_ptr(tempPtr);
-		Stopwatch sw;
-		sw.Start();
-		parallel::For(0, 1000000, [&](int i) {
-			std::shared_ptr<stackThing> copied{ weak_copy.lock() };
-			if (copied) {
-				(void)copied->get_var_name();
-				count++;
-			}
-		});
-		print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr WeakPtr Test @ " + ToString(count));
-	}
-
-
-
-
-
-
-
+		
 	if (1) {
 		auto globalScope = StartScope(); // will initialize the globally shared engine as well
 
@@ -8127,28 +7523,16 @@ int main() {
 				globalScope->CallFunction("FooBar", {});
 			} catch (...) {}
 
-
-
-
 			auto parse{ Scripting::parser::Parser2() };
 
 			auto parsed_result = parse.Parse("/* I AM A COMMENT! */ { /* COMMENT */ { /* COMMENT2 */ // COMMENT 3! \n } }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
-
-
-
-
-
-			// To-Do, performance is poor because it is exhaustively searching for an object (TEST::DoWork) when it should be calling the function. 
-			// Need to allow for simultaneous testing of objects and functions, prefering objects, whichever is found based on depth
-			// while respecting the limits of the object search (based on the parent), switching from on search format to another. 
-			// May be slightly complex. 
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				namespace TEST {
@@ -8178,18 +7562,13 @@ int main() {
 					TEST::DoWork(i.int, Var(i));
 				};
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-				print(ToString(Units::second(sw.Stop_s())) + " @ namespaced parallel-for-loop"); // 8 - 10 seconds
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
 			}
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				Var String() { 
@@ -8204,10 +7583,13 @@ int main() {
 
 				return String();
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				auto String = [](){
@@ -8221,19 +7603,13 @@ int main() {
 					return String();
 				}				
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
-
-
-
-
-
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				var& x = 10;
@@ -8276,14 +7652,13 @@ int main() {
 					return (out[2] + 5)_m;
 				}	
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				if (int x = 50_ft){
@@ -8292,15 +7667,13 @@ int main() {
 					return false;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
-
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				var& lambda;
@@ -8313,12 +7686,13 @@ int main() {
 				}
 				return lambda([]);
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				int x = 0; print(x); /* BLOCK1 */ {
@@ -8337,87 +7711,148 @@ int main() {
 				}
 				print(x); 
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("(75_gal / 2_d).gallon_per_minute", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("(75_gal / 2_d)_gpm", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{  }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ {}; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ var x; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ var& x; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ var& x; {} }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ int x; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ int& x; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("Units::meter x", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("\"I AM A STRING\"", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("50_m = 50", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(globalScope)));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("var& x = 250_m; x = 50; return x;", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ Units::meter x = 50; x += 50_ft; return x; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ Units::meter x = 50; x.double.int.size_t; }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				{
@@ -8429,9 +7864,13 @@ int main() {
 					return x;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 					[
@@ -8443,9 +7882,13 @@ int main() {
 						__LINE__
 					];			
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				{
@@ -8454,9 +7897,13 @@ int main() {
 					return y;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				if (true) {
@@ -8465,9 +7912,13 @@ int main() {
 					print(20);
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				if (true) {
@@ -8483,19 +7934,31 @@ int main() {
 
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("{ var& x; { return x; } }", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("var i; i := 100.0_s; ++i;", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				for (int i = 0; i < 100; ++i){
@@ -8503,9 +7966,13 @@ int main() {
 					return ~i;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				for (int& i : [0, 20, 30, 50]){
@@ -8513,9 +7980,13 @@ int main() {
 					return ~i;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				parallel_for (int i = 0 ; 100){
@@ -8523,9 +7994,13 @@ int main() {
 					return ~i;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				parallel_for (int& i : [0, 20, 30, 50]){
@@ -8533,21 +8008,33 @@ int main() {
 					return ~i;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				1000
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse("return 1000_ft + 1_m", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				int i = 0;
@@ -8557,9 +8044,13 @@ int main() {
 				}
 				return i;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				var& x = "TEST";
@@ -8572,11 +8063,13 @@ int main() {
 				};
 				return false;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				switch (12_in) {
@@ -8587,11 +8080,13 @@ int main() {
 					default: { return Units::meter(12_in);  }
 				};
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				Units::meter x = 100_ft;
@@ -8612,12 +8107,13 @@ int main() {
 
 				return false;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
-
-
-
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				int i = 0;
@@ -8638,9 +8134,13 @@ int main() {
 					return i;
 				}
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				float x = 0;
@@ -8649,9 +8149,13 @@ int main() {
 				};
 				return lambda();
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				var x := int(50);
@@ -8660,9 +8164,13 @@ int main() {
 				};
 				return lambda(x);
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				var x := 150_ft * 50_ft;
@@ -8671,9 +8179,13 @@ int main() {
 				};
 				return lambda(x);
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				var x := 0_ft;
@@ -8684,9 +8196,13 @@ int main() {
 				lambda(x);
 				return x;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(				
 				var x := 0_ft;
@@ -8694,35 +8210,51 @@ int main() {
 				lambda(x);
 				return x;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				var& lambda := () -> Units::meter { return 50.0f; }; // specifies the lambda will return a meter, regardless of the output.
 				return lambda();
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 
 			parsed_result = parse.Parse(R"start(
 				var& lambda := () -> void { 50.0f; return; }; // specifies the lambda will return void. This lambda will no longer support return statements with values. 
 				lambda(); // cannot return a void obj.
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				int x = 100;
 				auto lambda := [](){ 100; };
 				return "100 == ${ "100" } == ${ [ 100 ] } == ${ [ "100":100, 100:"100" ] } == ${ x } == ${ lambda() }";
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
-			std::cout << "\t -> \t";  print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-			print("");
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 			parsed_result = parse.Parse(R"start(
 				Units::value y;
@@ -8731,12 +8263,13 @@ int main() {
 				}
 				return y;
 			)start", StartScope(globalScope));
-			print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-				print(ToString(Units::second(sw.Stop_s())) + " @ for-loop"); // 8 - 10 seconds
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
+				print(ToString(Units::second(sw.Stop_s())) + " @ for loop"); // 8 - 10 seconds
 			}
 
 			parsed_result = parse.Parse(R"start(
@@ -8746,12 +8279,13 @@ int main() {
 				}
 				return y;
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-				print(ToString(Units::second(sw.Stop_s())) + " @ parallel-for-loop"); // 8 - 10 seconds
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
+				print(ToString(Units::second(sw.Stop_s())) + " @ parallel_for loop"); // 8 - 10 seconds
 			}
 
 			parsed_result = parse.Parse(R"start(
@@ -8768,12 +8302,13 @@ int main() {
 				}
 				return y;
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-				print(ToString(Units::second(sw.Stop_s())) + " @ lambda-parallel-for-loop"); // 8 - 10 seconds
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
+				print(ToString(Units::second(sw.Stop_s())) + " @ lambda parallel_for loop"); // 8 - 10 seconds
 			}
 
 
@@ -8787,12 +8322,13 @@ int main() {
 					var& y = x*x*x;
 				}
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
-				print(ToString(Units::second(sw.Stop_s())) + " @ scripted parallel-for-loop"); // 8 - 10 seconds
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
+				print(ToString(Units::second(sw.Stop_s())) + " @ scripted parallel_for loop"); // 8 - 10 seconds
 			}
 
 
@@ -8809,11 +8345,12 @@ int main() {
 					}
 				}
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ complex test"); // 8 - 10 seconds
 			}
 
@@ -8833,11 +8370,12 @@ int main() {
 					}
 				}
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ complex complex test"); // 8 - 10 seconds
 			}
 
@@ -8863,11 +8401,12 @@ int main() {
 					}
 				}
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ very complex test"); // 8 - 10 seconds
 			}
 
@@ -8880,23 +8419,26 @@ int main() {
 
 			parsed_result = parse.Parse(R"start(
 				int loopCount = 0;
-				while (true){		
-					// print("Loop ${ ++loopCount }");
+				while (true){ // loopCount < 10000
+					if ((++loopCount % 1000) == 0) {
+						print("Loop ${ loopCount }");
+					}
 					auto Lambda := [](Units::meter y) { 
 						++y;
 					};
-					for (int x = 0; x < 1000; ++x) {
+					parallel_for (int x = 0; 1000) {
 						Units::meter y = x;
 						Lambda(y);
 						to_string( [ x , y ] );
 					}
 				}
 			)start", StartScope(globalScope));
-			//print(ToString(parsed_result));
 			if (1) {
 				Stopwatch sw;
 				sw.Start();
-				print(ToString(parsed_result.first->eval(StartScope(globalScope))));
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ very complex test"); // 8 - 10 seconds
 			}
 

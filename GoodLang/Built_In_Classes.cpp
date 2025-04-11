@@ -102,6 +102,9 @@ namespace GoodLang {
 					T& x = a.cast();
 					return ~x;
 				}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+				classPtr->AddFunction("%", make_callable([](T const& x, T const& y) -> T {
+					return x % y;
+				}));
 			}
 		}
 		else {
@@ -370,6 +373,9 @@ namespace GoodLang {
 						value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 						value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 						value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+						value_namespace->AddFunction("%", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { 
+							return x - (y * Units::math::floor(x / y));
+						}));
 
 						value_namespace->AddFunction("++", make_callable([](Any const& a) -> Any { 
 							Units::value& out = a.cast(); ++out; return a;
@@ -435,6 +441,10 @@ namespace GoodLang {
 							Class->AddFunction("-", make_callable([&](Any const& x, Any const& y) -> Units::value {
 								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 									return *x - *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("%", make_callable([&](Any const& x, Any const& y) -> Units::value {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return *x - (*y * Units::math::floor(*x / *y));
+								}); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
 							Class->AddFunction("+=", make_callable([&](Any const& x, Any const& y) -> Any {
 								(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 									*x += *y; 
@@ -870,10 +880,10 @@ namespace GoodLang {
 						std::string r;
 						for (auto& i : x) {
 							if (r.empty())
-								r = Self->Cast<std::string>(Self->CallFunction("to_string", { i.p_data }));
+								r = Self->Cast<std::string>(Self->CallFunction("to_string", *i.p_data));
 							else {
 								r += ", ";
-								r += Self->Cast<std::string>(Self->CallFunction("to_string", { i.p_data }));
+								r += Self->Cast<std::string>(Self->CallFunction("to_string", *i.p_data));
 							}
 						}
 						return GoodLang::printf("[%s]", r.c_str());
@@ -888,10 +898,10 @@ namespace GoodLang {
 						size_t o{ 0 };
 						for (auto& i : x) {
 							if (o == 0) {
-								o = Self->Cast<size_t>(Self->CallFunction("to_hash", { i.p_data }));
+								o = Self->Cast<size_t>(Self->CallFunction("to_hash", *i.p_data));
 							}
 							else {
-								Scope::hash_combine( o, Self->Cast<size_t>(Self->CallFunction("to_hash", { i.p_data })) );
+								Scope::hash_combine(o, Self->Cast<size_t>(Self->CallFunction("to_hash", *i.p_data)));
 							}
 						}
 						return o;

@@ -558,7 +558,7 @@ namespace GoodLang {
 	};
 
 	bool TypeConverter::TryDoConversion(Any& From, std::shared_ptr<Type_Info> const& To) {
-		return TryConvertWithExistingConverter(From, From.Type().lock(), To);
+		return TryConvertWithExistingConverter(From, From.TypePtr(), To);
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -784,7 +784,6 @@ namespace GoodLang {
 				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
 
 			out.resize(t_to.size());
-
 			
 			for (long long i = t_to.size() - 1; i >= 0; --i) {
 				t_conversions.Convert_In_Place(out[i], t_to[i].lock());
@@ -1051,6 +1050,7 @@ namespace GoodLang {
 
 				// auto locked{ std::shared_lock(m_mut) }; // LOCKED
 				auto& m_func_find = m_functions[hasher(functionName)];
+				double conversionCost;
 				for (auto& function : m_func_find.second) {
 					if (!function.second.second) continue;
 					if (!function.second.second->m_function) continue;
@@ -1058,8 +1058,36 @@ namespace GoodLang {
 					bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
 					bool isExplicitFunc = function.second.second->m_isEplicit;
 
-					auto conversionCost = function.second.second->m_function->conversion_cost_fast(params, paramTypes, m_typeConverters);
+					// NOTE: if the hash for Params and function.second.second->m_function-> Arguments().Types() match, doesn't that mean the types inside exactly match?
+					if ((0 == Params.size()) && (0 == function.second.second->m_function->Arguments().Types().size())) {
+						// both have a matching size...
+						conversionCost = 0;
+					}
+					else if (Params.hash() == function.second.second->m_function->Arguments().Types().hash()) {
+						conversionCost = 0;
+					}
+					else {
+						conversionCost = function.second.second->m_function->conversion_cost_fast(params, paramTypes, m_typeConverters);
+					}
+
 					if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
+
+					// try to early exit...
+					if (Params.size() == function.second.second->m_function->Arguments().size()) {
+						if (!isTemplateFunc) {
+							if (conversionCost == 0) {
+								if (function.second.second) {
+									// ParamTypes ParamTypesToCache{ params };
+									Function FunctionToCache{ function.second.second->m_function };
+									FunctionToCache.m_isCached = true;
+									// if someone already beat us to it, it should return the "current" value
+									if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+										return func->m_function;
+									}
+								}
+							}
+						}
+					}
 
 					if (isTemplateFunc) {
 						if (AllowTemplateInstantiation) {

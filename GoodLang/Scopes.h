@@ -423,7 +423,7 @@ namespace GoodLang {
 		using TemplatedCacheContainer // organizes multiple caches for several purposes...
 			= std::vector<SharedLockable<VersionedCacheContainer>>;
 		TemplatedCacheContainer
-			SearchCache{ 5, SharedLockable<VersionedCacheContainer>() };
+			SearchCache{ 6, SharedLockable<VersionedCacheContainer>() };
 
 		template<size_t CacheID> SharedLockable<VersionedCacheContainer>& GetVersionedCacheContainer() const {
 			return const_cast<SharedLockable<VersionedCacheContainer>&>(SearchCache[CacheID]);
@@ -444,14 +444,6 @@ namespace GoodLang {
 							return out;
 						}
 					}
-					//if (1) {
-					//	auto f = version_container.data->find(version);
-					//	if (f != version_container.data->end()) {
-					//		std::shared_ptr<CacheContainer> out{ f->second };
-					//		version_container.lock.unlock_shared();
-					//		return out;
-					//	}
-					//}
 				}
 				version_container.lock.unlock_shared();				
 			}
@@ -465,21 +457,12 @@ namespace GoodLang {
 				}
 				else {
 					// allow some caching of versions, in case of multithreading
-					
-					//static thread_local int numThreads{ std::max<int>(8, std::thread::hardware_concurrency()) };
-					//if (locked->size() > (numThreads * 8)) {
-					//	while (locked->size() > numThreads) {
-					//		locked->erase(locked->begin());
-					//	}
-					//}
-
 					if (locked->size() > 64) {
 						// locked->erase(locked->begin());
 						while (locked->size() > 8) {
 							locked->erase(locked->begin());
 						}
 					}
-
 					auto out{ std::make_shared<CacheContainer>() };
 					locked->insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ version, out });
 					return out;
@@ -565,7 +548,7 @@ namespace GoodLang {
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
 
 		std::shared_ptr<Scope> FindScopeWithObjOrFunction(std::string objName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
-		bool FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
+		bool FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);

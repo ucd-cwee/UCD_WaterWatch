@@ -3,6 +3,7 @@
 #include "Foundation.h"
 #include "Any.h"
 #include <optional>
+#include <iostream>
 
 // Type_Conversion_Base, its impl's, & TypeConverter wrapper
 namespace GoodLang {
@@ -609,11 +610,10 @@ namespace GoodLang {
 			: uniquehash{}
 			, m_types(std::make_shared<std::vector<std::weak_ptr<Type_Info>>>(params.size(), std::weak_ptr<Type_Info>()))
 		{
-			for (int i = params.size() - 1; i >= 0; i--) m_types->at(i) = params[i].ActualType();
-			uniquehash = CalculateHash(*m_types);
-			for (auto& type : *m_types) if (auto ptr = type.lock()) if (ptr->is_any()/*MakeBase() == user_type_shared<Any>()*/) {
-				isTemplate = true;
-				break;
+			uniquehash = 37;
+			for (int i = params.size() - 1; i >= 0; i--) {
+				m_types->at(i) = params[i].ActualType();
+				details::hash_combine(uniquehash, params[i].TypeHash());
 			}
 		};
 		ParamTypes(ParamTypes const&) = default;
