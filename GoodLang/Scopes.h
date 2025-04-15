@@ -548,7 +548,9 @@ namespace GoodLang {
 		Proxy_Function FindFunction(std::string functionName, std::vector<Any> const& params, TypeConverter& tree);
 
 		std::shared_ptr<Scope> FindScopeWithObjOrFunction(std::string objName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
+		std::shared_ptr<Scope> FindScopeWithObjOrFunction(std::string objName, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
 		bool FindObjOrFunction(std::string const& objName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
+		bool FindObjOrFunction(std::string const& objName, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function);
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);

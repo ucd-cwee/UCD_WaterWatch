@@ -1370,29 +1370,32 @@ namespace GoodLang {
 
 				std::vector<std::weak_ptr<Type_Info>> params;
 				for (const AST_Node_Impl_Ptr<T>& child : this->children[1]->children) {
-					params.push_back(child->return_type);
-				}
-				ParamTypes Params{ params };
-
-				if (auto obj = currentScope->FindObj(function_name)) {
-					if (Proxy_Function func = obj->cast<Proxy_Function>()) {
-						this->return_type = func->Returns();
+					if (std::shared_ptr<Type_Info> Type = child->return_type.lock()) {
+						if (Type->is_any() || Type->is_void()) { // return_types should be known at compile time to support caching functions during compilation.
+							return;
+						}
+						params.push_back(Type);
 					}
 					else {
-						std::vector<std::weak_ptr<Type_Info>> params2{ obj->Type() };
-						for (auto& x : params) params2.push_back(x);
-						ParamTypes Params2{ params2 };
+						return;
+					}
+				}
+				ParamTypes Params{ params };
+				std::shared_ptr<Any> obj;
+				Proxy_Function found_function;
 
-						if (Proxy_Function func = currentScope->FindFunction("()", Params2, *currentScope->GetTypeConverterTree())) {
-							this->return_type = func->Returns();
+				if (currentScope->FindObjOrFunction(function_name, Params, *currentScope->GetTypeConverterTree(), &obj, &found_function)) {
+					if (obj) {
+						if (Proxy_Function func = obj->cast<Proxy_Function>()) {
+							Function = func;
 						}
 					}
-				}
-				else {
-					if (Proxy_Function func = currentScope->FindFunction(function_name, Params, *currentScope->GetTypeConverterTree())) {
-						this->return_type = func->Returns();
+					else if (found_function) {
+						Function = found_function;
 					}
 				}
+				
+				if (auto func = Function.lock()) this->return_type = func->Returns();
 			};
 
 			template <bool returnsValue>
@@ -1404,64 +1407,94 @@ namespace GoodLang {
 					params.push_back(child->eval(currentScope));
 				}
 				ParamTypes Params{ params };
-				auto tree = currentScope->GetTypeConverterTree();
-				std::shared_ptr<Any> obj;
-				Proxy_Function found_function;
-				if (currentScope->FindObjOrFunction(function_name, params, Params, *tree, &obj, &found_function)) {
-					if (obj) {
-						if (Proxy_Function func = obj->cast<Proxy_Function>()) {
-							if (
-								func->NumArguments() == 2
-								&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
-								&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
-								) {
-								if constexpr (returnsValue) {
-									return func->operator()({ currentScope, params });
-								}
-								else {
-									(void)func->operator()({ currentScope, params });
-									return {};
-								}
+				
+				if (auto func = Function.lock()) {
+					{
+						if (
+							func->NumArguments() == 2
+							&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
+							&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
+							) {
+							if constexpr (returnsValue) {
+								return func->operator()({ currentScope, params });
 							}
 							else {
-								if constexpr (returnsValue)
-									return currentScope->CallFunction(func, params);
-								else {
-									(void)currentScope->CallFunction(func, params);
-									return {};
-								}
+								(void)func->operator()({ currentScope, params });
+								return {};
 							}
 						}
-						if (1) {
-							std::vector<Any> params2{ obj };
-							for (auto& x : params) params2.push_back(x);
-
-							auto [func, tree] = currentScope->BuildFunction("()", params2, ParamTypes(params2));
-							if (func) {
-								if constexpr (returnsValue)
-									return currentScope->CallFunction(func, params2);
-								else {
-									(void)currentScope->CallFunction(func, params2);
-									return {};
-								}
-							}
-						}
-					}
-					else if (found_function) {
-						if constexpr (returnsValue)
-							return currentScope->CallFunction(function_name/*found_function*/, params);
 						else {
-							(void)currentScope->CallFunction(function_name/*found_function*/, params);
-							return {};
+							if constexpr (returnsValue)
+								return currentScope->CallFunction(func, params);
+							else {
+								(void)currentScope->CallFunction(func, params);
+								return {};
+							}
 						}
 					}
 				}
-				throw exception::eval_error("Can not find requested object or function: " + function_name);
-			}
+
+				if (1) {
+					auto tree = currentScope->GetTypeConverterTree();
+					std::shared_ptr<Any> obj;
+					Proxy_Function found_function;
+					if (currentScope->FindObjOrFunction(function_name, params, Params, *tree, &obj, &found_function)) {
+						if (obj) {
+							if (Proxy_Function func = obj->cast<Proxy_Function>()) {
+								if (
+									func->NumArguments() == 2
+									&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
+									&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
+									) {
+									if constexpr (returnsValue) {
+										return func->operator()({ currentScope, params });
+									}
+									else {
+										(void)func->operator()({ currentScope, params });
+										return {};
+									}
+								}
+								else {
+									if constexpr (returnsValue)
+										return currentScope->CallFunction(func, params);
+									else {
+										(void)currentScope->CallFunction(func, params);
+										return {};
+									}
+								}
+							}
+							if (1) {
+								std::vector<Any> params2{ obj };
+								for (auto& x : params) params2.push_back(x);
+
+								auto [func, tree] = currentScope->BuildFunction("()", params2, ParamTypes(params2));
+								if (func) {
+									if constexpr (returnsValue)
+										return currentScope->CallFunction(func, params2);
+									else {
+										(void)currentScope->CallFunction(func, params2);
+										return {};
+									}
+								}
+							}
+						}
+						else if (found_function) {
+							if constexpr (returnsValue)
+								return currentScope->CallFunction(function_name/*found_function*/, params);
+							else {
+								(void)currentScope->CallFunction(function_name/*found_function*/, params);
+								return {};
+							}
+						}
+					}
+					throw exception::eval_error("Can not find requested object or function: " + function_name);
+				}				
+			};
 			Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 				return do_eval_internal<true>(currentScope);
 			};
 			std::string function_name;
+			std::weak_ptr<details::Proxy_Function_Base> Function;
 		};
 
 		template<typename T = Scripting::tracer::Noop_Tracer>
@@ -1504,41 +1537,49 @@ namespace GoodLang {
 					}
 					if (endPos > startPos) {
 						impl::context ctx;
+						using DateStorageType = GoodLang::Union<Any, std::shared_ptr<Scope>, std::weak_ptr<details::Proxy_Function_Base>>;
 						impl::Dispatch(ctx,
 							endPos - startPos /* count of jobs */,
 							[&](impl::JobArgs const& _args)-> void {
-								std::pair<Any, std::shared_ptr<Scope>>& shared_memory = *((std::pair<Any, std::shared_ptr<Scope>>*)_args.sharedmemory);
-								// thread_local static Proxy_Function IncrementFunc { nullptr };
+								DateStorageType& shared_memory
+									= *((DateStorageType*)_args.sharedmemory);
 								if (_args.groupIndex == 0) {
 									// start of a group
-									shared_memory.second->CallFunction(":=", { shared_memory.first, _args.jobIndex });
-									//IncrementFunc = shared_memory.second->FindFunction("++", { shared_memory.first }, *shared_memory.second->GetTypeConverterTree());
+									shared_memory.get<1>()->CallFunction(":=", { shared_memory.get<0>(), _args.jobIndex });
 								}
 								else {
-									//if (IncrementFunc) shared_memory.second->CallFunction(IncrementFunc, shared_memory.first); else 
-									shared_memory.second->CallFunction("++", shared_memory.first);
+									//if (auto func = shared_memory.get<2>().lock()) 
+									//	shared_memory.get<1>()->CallFunction(func, shared_memory.get<0>());
+									//else 
+										shared_memory.get<1>()->CallFunction("++", shared_memory.get<0>());
 								}
 
 								// do the work
 								try {
-									auto newScope = std::make_shared<Scope>(shared_memory.second);
+									auto newScope = std::make_shared<Scope>(shared_memory.get<1>());
 									newScope->SetSelf(newScope);
 
 									this->children[2]->eval(newScope);
 								} catch (detail::Continue_Loop&) {}
 							},
-							sizeof(std::pair<Any, std::shared_ptr<Scope>>) /* size of shared memory */,
+							sizeof(DateStorageType) /* size of shared memory */,
 							[&](void* p) -> void {
-								new (p) std::pair<Any, std::shared_ptr<Scope>>{ Any{}, std::make_shared<Scope>(forScope) }; // initialize the shared memory
-								std::pair<Any, std::shared_ptr<Scope>>& iter = *static_cast<std::pair<Any, std::shared_ptr<Scope>>*>(p);
-								iter.second->SetSelf(iter.second);
-								iter.first = this->children[0]->eval(iter.second);
-								//auto& copyConstructorFunctor = iter.first.Type().lock()->GetCopyConstructor();	
-								//iter.second->CallFunction(":=", { iter.first, copyConstructorFunctor(iter.first) });
+								new (p) DateStorageType{
+									Any{}, 
+									std::make_shared<Scope>(forScope), 
+									Proxy_Function{}
+								}; // initialize the shared memory
+								DateStorageType& iter =
+									*static_cast<DateStorageType*>(p);
+								iter.get<1>()->SetSelf(iter.get<1>());
+								iter.get<0>() = this->children[0]->eval(iter.get<1>()); // e.g. int x = 0 or var& x = 0
+								//if (auto Type = iter.get<0>().TypePtr()) {
+								//	if (Type->is_any() || Type->is_void()) { }
+								//	else iter.get<2>() = iter.get<1>()->FindFunction("++", { iter.get<0>() }, *iter.get<1>()->GetTypeConverterTree());							
+								//}
 							},
 							[&](void* p) -> void {
-								using typeOf = std::pair<Any, std::shared_ptr<Scope>>;
-								((typeOf*)p)->~typeOf(); // destroy the shared memory
+								((DateStorageType*)p)->~DateStorageType(); // destroy the shared memory
 							}
 						);
 						try {
@@ -2504,7 +2545,7 @@ namespace GoodLang {
 				struct Dead_Code {
 					template<typename T>
 					bool optimize(AST_Node_Impl_Ptr<T>& node, const std::shared_ptr<Scope>& currentScope) {
-						if (node->identifier == AST_Node_Type::Block) {
+						if ((node->identifier == AST_Node_Type::Block) || (node->identifier == AST_Node_Type::Scopeless_Block)) {
 							std::vector<size_t> keepers;
 							const auto num_children = node->children.size();
 							keepers.reserve(num_children);
@@ -2639,6 +2680,14 @@ namespace GoodLang {
 										node->location,
 										std::move(node->children)
 									));
+									return true;
+								}
+							}
+						}
+						else if (node->identifier == AST_Node_Type::Scopeless_Block) {
+							if (!contains_var_decl_in_scope(*node)) {
+								if (node->children.size() == 1) {
+									node = std::move(node->children[0]);
 									return true;
 								}
 							}
@@ -3010,309 +3059,103 @@ namespace GoodLang {
 					}
 				};
 
-#if 0
-				struct Assign_Decl {
+				// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
+				struct ForLoopSignature {
 					template<typename T>
-					auto optimize(eval::AST_Node_Impl_Ptr<T> node) {
-						if ((node->identifier == AST_Node_Type::Equation) && node->children.size() == 2
-							&& node->children[0]->identifier == AST_Node_Type::Var_Decl) {
-							if (node->text == "=") {
-								AUTO prtPtr = node->children[1]->potentialReturnType;
-								chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-								new_children.push_back(std::move(node->children[0]->children[0]));
-								new_children.push_back(std::move(node->children[1]));
-								AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Assign_Decl_AST_Node<T>>(node->text,
-									node->location,
-									std::move(new_children));
-								eq->potentialReturnType.ForwardRef(prtPtr);
-								return eq;
-							}
-							else if (node->text == "?=") {
-								AUTO prtPtr = node->children[1]->potentialReturnType;
-								chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-								new_children.push_back(std::move(node->children[0]->children[0]));
-								new_children.push_back(std::move(node->children[1]));
-								AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Assign_Decl_IfNotDef_AST_Node<T>>(node->text,
-									node->location,
-									std::move(new_children));
-								eq->potentialReturnType.ForwardRef(prtPtr);
-								return eq;
-							}
-						}
-						else if ((node->identifier == AST_Node_Type::Equation) && node->children.size() == 2
-							&& node->children[0]->identifier == AST_Node_Type::Reference) {
-							if (node->text == "=") {
-								AUTO prtPtr = node->children[1]->potentialReturnType;
-								chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-								new_children.push_back(std::move(node->children[0]->children[0]));
-								new_children.push_back(std::move(node->children[1]));
-								AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Assign_Decl_AST_Node<T>>(node->text,
-									node->location,
-									std::move(new_children));
-								eq->potentialReturnType.ForwardRef(prtPtr);
-								return eq;
-							}
-							else if (node->text == "?=") {
-								AUTO prtPtr = node->children[1]->potentialReturnType;
-								chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-								new_children.push_back(std::move(node->children[0]->children[0]));
-								new_children.push_back(std::move(node->children[1]));
-								AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Assign_Decl_IfNotDef_AST_Node<T>>(node->text,
-									node->location,
-									std::move(new_children));
-								eq->potentialReturnType.ForwardRef(prtPtr);
-								return eq;
-							}
-						}
-						return node;
-					}
-				};
-
-				struct Retro_Assign_Decl {
-					template<typename T>
-					auto optimize(eval::AST_Node_Impl_Ptr<T> node) {
-						if ((node->identifier == AST_Node_Type::Equation) && node->children.size() == 2) {
-							if (node->children[0]->identifier == AST_Node_Type::Assign_Retroactively) {
-								if (node->children[0]->children[0]->identifier == AST_Node_Type::Fun_Call) {
-									std::string eqText = node->text;
-									if (eqText == "?=") {
-										eqText = "=";
-									}
-
-									if (node->children[0]->children[1]->identifier == AST_Node_Type::Reference) {
-										// { Equation<"=">(Ref, FunCall); Equation<"=">(Id, UNKNOWN); }
-
-										AUTO IdNode = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Id_AST_Node<T>>(
-											node->children[0]->children[1]->children[0]->text,
-											node->children[0]->children[1]->children[0]->location
-											);
-										IdNode->potentialReturnType.ForwardRef(node->children[0]->children[0]->potentialReturnType);
-
-										chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> block_children;
-										{
-											chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-											new_children.push_back(std::move(node->children[0]->children[1]));
-											new_children.push_back(std::move(node->children[0]->children[0]));
-											auto prtPtr = new_children[1]->potentialReturnType;
-											AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Equation_AST_Node<T>>("=",
-												node->location,
-												std::move(new_children));
-											eq->potentialReturnType.ForwardRef(prtPtr);
-											block_children.push_back(std::move(eq));
-										}
-										{
-											chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-											new_children.push_back(std::move(IdNode));
-											new_children.push_back(std::move(node->children[1]));
-											auto prtPtr = new_children[0]->potentialReturnType;
-											AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Equation_AST_Node<T>>(eqText,
-												node->location,
-												std::move(new_children));
-											eq->potentialReturnType.ForwardRef(prtPtr);
-											block_children.push_back(std::move(eq));
-										}
-										return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Block_AST_Node<T>>("",
-											node->location,
-											std::move(block_children));
-									}
-									else if (node->children[0]->children[1]->identifier == AST_Node_Type::Var_Decl) {
-										// { Equation<"=">(Var_Decl, FunCall); Equation<"=">(Id, UNKNOWN); }
-
-										AUTO IdNode = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Id_AST_Node<T>>(
-											node->children[0]->children[1]->children[0]->text,
-											node->children[0]->children[1]->children[0]->location
-											);
-										IdNode->potentialReturnType.ForwardRef(node->children[0]->children[0]->potentialReturnType);
-
-										chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> block_children;
-										{
-											chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-											new_children.push_back(std::move(node->children[0]->children[1]));
-											new_children.push_back(std::move(node->children[0]->children[0]));
-											auto prtPtr = new_children[1]->potentialReturnType;
-											AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Equation_AST_Node<T>>("=",
-												node->location,
-												std::move(new_children));
-											eq->potentialReturnType.ForwardRef(prtPtr);
-											block_children.push_back(std::move(eq));
-										}
-										{
-											chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-											new_children.push_back(std::move(IdNode));
-											new_children.push_back(std::move(node->children[1]));
-											auto prtPtr = new_children[0]->potentialReturnType;
-											AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Equation_AST_Node<T>>(eqText,
-												node->location,
-												std::move(new_children));
-											eq->potentialReturnType.ForwardRef(prtPtr);
-											block_children.push_back(std::move(eq));
-										}
-										return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Block_AST_Node<T>>("",
-											node->location,
-											std::move(block_children));
-									}
-								}
-							}
-						}
-						if ((node->identifier == AST_Node_Type::Assign_Retroactively) && node->children.size() == 2) {
-							if (node->children[0]->identifier == AST_Node_Type::Fun_Call) {
-								if (node->children[1]->identifier == AST_Node_Type::Reference) {
-									chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-									new_children.push_back(std::move(node->children[1]));
-									new_children.push_back(std::move(node->children[0]));
-									auto prtPtr = new_children[0]->potentialReturnType;
-									AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Equation_AST_Node<T>>("=",
-										node->location,
-										std::move(new_children));
-									eq->potentialReturnType.ForwardRef(prtPtr);
-									return std::move(eq);
-								}
-								else if (node->children[1]->identifier == AST_Node_Type::Var_Decl) {
-									chaiscript::small_vector<eval::AST_Node_Impl_Ptr<T>> new_children;
-									new_children.push_back(std::move(node->children[1]));
-									new_children.push_back(std::move(node->children[0]));
-									auto prtPtr = new_children[0]->potentialReturnType;
-									AUTO eq = chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Equation_AST_Node<T>>("=",
-										node->location,
-										std::move(new_children));
-									eq->potentialReturnType.ForwardRef(prtPtr);
-									return std::move(eq);
-								}
-							}
-						}
-						return node;
-					}
-				};
-
-
-
-
-
-				struct Constant_Fold {
-					template<typename T>
-					auto optimize(eval::AST_Node_Impl_Ptr<T> node) {
-						if (node->identifier == AST_Node_Type::Prefix && node->children.size() == 1 && node->children[0]->identifier == AST_Node_Type::Constant) {
-							try {
-								const auto& oper = node->text;
-								const auto parsed = Operators::to_operator(oper, true);
-								const auto lhs = dynamic_cast<const eval::Constant_AST_Node<T> *>(node->children[0].get())->m_value;
-								const auto match = oper + node->children[0]->text;
-
-								if (parsed != Operators::Opers::invalid && parsed != Operators::Opers::bitwise_and && lhs.get_type_info().is_arithmetic()) {
-									const auto val = Boxed_Number::do_oper(parsed, lhs);
-									return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Constant_AST_Node<T>>(std::move(match),
-										node->location,
-										std::move(val));
-								}
-								else if (lhs.get_type_info().bare_equal_type_info(typeid(bool)) && oper == "!") {
-									return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Constant_AST_Node<T>>(std::move(match),
-										node->location,
-										Boxed_Value(!boxed_cast<bool>(lhs)));
-								}
-							}
-							catch (const std::exception&) {
-								// failure to fold, that's OK
-							}
-						}
-						else if (node->identifier == AST_Node_Type::Postfix && node->children.size() == 1 && node->children[0]->identifier == AST_Node_Type::Constant) {
-							try {
-								const auto& oper = node->text;
-								const auto parsed = Operators::to_operator(oper, true);
-								const auto lhs = dynamic_cast<const eval::Constant_AST_Node<T> *>(node->children[0].get())->m_value;
-								const auto match = node->children[0]->text + oper;
-
-								if (parsed != Operators::Opers::invalid) { // invalid indicates a custom postfix
-									// postfix increment or decrement will always return the lhs value; 
-									return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Constant_AST_Node<T>>(std::move(match), node->location, lhs);
-								}
-							}
-							catch (const std::exception&) {
-								// failure to fold, that's OK
-							}
-						}
-						else if ((node->identifier == AST_Node_Type::Logical_And || node->identifier == AST_Node_Type::Logical_Or)
-							&& node->children.size() == 2 && node->children[0]->identifier == AST_Node_Type::Constant
-							&& node->children[1]->identifier == AST_Node_Type::Constant) {
-							try {
-								const auto lhs = dynamic_cast<const eval::Constant_AST_Node<T> &>(*node->children[0]).m_value;
-								const auto rhs = dynamic_cast<const eval::Constant_AST_Node<T> &>(*node->children[1]).m_value;
-								if (lhs.get_type_info().bare_equal_type_info(typeid(bool)) && rhs.get_type_info().bare_equal_type_info(typeid(bool))) {
-									const auto match = node->children[0]->text + " " + node->text + " " + node->children[1]->text;
-									const auto val = [lhs_val = boxed_cast<bool>(lhs), rhs_val = boxed_cast<bool>(rhs), id = node->identifier]{
-										if (id == AST_Node_Type::Logical_And) {
-										return Boxed_Value(lhs_val && rhs_val);
-										}
-										else {
-										return Boxed_Value(lhs_val || rhs_val);
-										}
-									}();
-
-									return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Constant_AST_Node<T>>(std::move(match),
-										node->location,
-										std::move(val));
-								}
-							}
-							catch (const std::exception&) {
-								// failure to fold, that's OK
-							}
-						}
-						else if (node->identifier == AST_Node_Type::Binary && node->children.size() == 2
-							&& node->children[0]->identifier == AST_Node_Type::Constant && node->children[1]->identifier == AST_Node_Type::Constant) {
-							try {
-								const auto& oper = node->text;
-								const auto parsed = Operators::to_operator(oper);
-								if (parsed != Operators::Opers::invalid) {
-									const auto lhs = dynamic_cast<const eval::Constant_AST_Node<T> &>(*node->children[0]).m_value;
-									const auto rhs = dynamic_cast<const eval::Constant_AST_Node<T> &>(*node->children[1]).m_value;
-									if (lhs.get_type_info().is_arithmetic() && rhs.get_type_info().is_arithmetic()) {
-										const auto val = Boxed_Number::do_oper(parsed, lhs, rhs);
-										const auto match = node->children[0]->text + " " + oper + " " + node->children[1]->text;
-										return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Constant_AST_Node<T>>(std::move(match),
-											node->location,
-											std::move(val));
-									}
-								}
-							}
-							catch (const std::exception&) {
-								// failure to fold, that's OK
-							}
-						}
-						else if (node->identifier == AST_Node_Type::Fun_Call && node->children.size() == 2
-							&& node->children[0]->identifier == AST_Node_Type::Id && node->children[1]->identifier == AST_Node_Type::Arg_List
-							&& node->children[1]->children.size() == 1 && node->children[1]->children[0]->identifier == AST_Node_Type::Constant) {
-							const auto arg = dynamic_cast<const eval::Constant_AST_Node<T> &>(*node->children[1]->children[0]).m_value;
-							if (arg.get_type_info().is_arithmetic()) {
-								const auto& fun_name = node->children[0]->text;
-
-								const auto make_constant = [&node, &fun_name](auto val) {
-									const auto match = fun_name + "(" + node->children[1]->children[0]->text + ")";
-									return chaiscript::make_unique<eval::AST_Node_Impl<T>, eval::Constant_AST_Node<T>>(std::move(match),
-										node->location,
-										const_var(val));
+					bool optimize(AST_Node_Impl_Ptr<T>& node, const std::shared_ptr<Scope>& currentScope) {
+						if (node->identifier == AST_Node_Type::For
+							&& node->children.size() >= 4
+						) {
+							// x++ into ++x;
+							if (node->children[2]->identifier == AST_Node_Type::Postfix) { // x++
+								switch (hash(GetText(node->children[2]))) {
+								case hash("++"):
+									node->children[2] = std::dynamic_pointer_cast<AST_Node_Impl<T>>(std::make_shared<Prefix_AST_Node<T>>(
+										currentScope, "++", node->children[2]->location, std::move(node->children[2]->children)
+									));
+									return true;
+								case hash("--"):
+									node->children[2] = std::dynamic_pointer_cast<AST_Node_Impl<T>>(std::make_shared<Prefix_AST_Node<T>>(
+										currentScope, "--", node->children[2]->location, std::move(node->children[2]->children)
+									));
+									return true;
+								default:
+									return false;
 								};
+							} 
 
-								if (fun_name == "double") {
-									return make_constant(Boxed_Number(arg).get_as<double>());
-								}
-								else if (fun_name == "int") {
-									return make_constant(Boxed_Number(arg).get_as<int>());
-								}
-								else if (fun_name == "float") {
-									return make_constant(Boxed_Number(arg).get_as<float>());
-								}
-								else if (fun_name == "long") {
-									return make_constant(Boxed_Number(arg).get_as<long>());
-								}
-								else if (fun_name == "size_t") {
-									return make_constant(Boxed_Number(arg).get_as<size_t>());
+#if 0
+							// option 1: complete, 100% unroll. We know all of the parts and should execute them inline. 
+							if (
+								node->children[0]->identifier == AST_Node_Type::Assign_Retroactively // var& x = 0
+								&&
+								(node->children[2]->identifier == AST_Node_Type::Prefix) // ++x
+								&&
+								node->children[1]->identifier == AST_Node_Type::BinaryFoldRight // x < 0
+							) {
+								if (std::string varName = GetText(node->children[0]->children[1]); !varName.empty()) { // var decl name
+									if (std::string incrementVarName = GetText(node->children[2]->children[0]); incrementVarName == varName) {	// prefix var name									
+										if (std::shared_ptr<Class> varClass = currentScope->FindClass(node->children[0]->return_type)) {
+											if (node->children[0]->children[2]->identifier == AST_Node_Type::Constant) {
+												try {
+													Any ForLoopVariable = varClass->CallFunction(varClass->GetName(), {}); // int x;
+													(void)varClass->CallFunction("=", { ForLoopVariable, dynamic_cast<Constant_AST_Node<T>*>(node->children[0]->children[2].get())->m_value }); // x = 0;
+
+													
+
+
+
+
+
+
+
+
+												}
+												catch (...) {
+													return false;
+												}
+											}
+											
+											
+
+
+
+
+											// Creating a variable and modifying it from the forloop statement. Are we checking against it in a standard and expected way?
+											switch (hash(GetText(node->children[1]))) {
+											case hash("<"): // for (var x; x < {}; {}x)...
+
+
+												break;
+											case hash("<="): // for (var x; x <= {}; {}x)...
+
+
+												break;
+											case hash(">"): // for (var x; x > {}; {}x)...
+
+
+												break;
+											case hash(">="): // for (var x; x >= {}; {}x)...
+
+
+												break;
+											default:
+												return false;
+												break;
+											}
+										}
+									}
 								}
 							}
-						}
+#endif
 
-						return node;
-					}
+						}
+						return false;
+					};
 				};
 
+
+#if 0
 				struct While_Loop {
 					template<typename T>
 					auto optimize(eval::AST_Node_Impl_Ptr<T> node) {
@@ -3641,6 +3484,7 @@ namespace GoodLang {
 					optimizer::If,
 					optimizer::Return,
 					optimizer::Dead_Code,
+					optimizer::ForLoopSignature,
 					optimizer::Block/*,*/
 					//optimizer::While_Loop,
 					//optimizer::For_Loop,
@@ -7541,19 +7385,19 @@ int main() {
 						x.double;
 						x++;
 						x*x;
-						var& y = x*x*x;						
+						var& y = x % x ^ x.double;						
 					};
 					void DoWork(int x){
 						x.double;
 						x++;
 						x*x;
-						var& y = x*x*x;
+						var& y = x * x ^ x.double;
 					};
 					void DoWork(int x, int y){
 						x.double;
 						x++;
 						x*x;
-						y = x*x*x;
+						x ^ (x % x).double;
 					};
 				};
 				for (int i = 0; i < 1000; ++i) {
@@ -7961,7 +7805,7 @@ int main() {
 			}
 
 			parsed_result = parse.Parse(R"start(
-				for (int i = 0; i < 100; ++i){
+				for (int i = 0; i < 100; i++){
 					!i;
 					return ~i;
 				}
@@ -8257,6 +8101,28 @@ int main() {
 			}
 
 			parsed_result = parse.Parse(R"start(
+				Vector thingy = [ 55_ft ];				
+				for (auto x = 0; x < 60; x++){
+					// do some maths real fast...
+					thingy[0] += ( x )_ft;
+					for (int y = x; y >= 0; --y){
+						--thingy[0];
+					}
+					while (true){ break; }
+					DateTime::Now();
+				}
+				return thingy[0];
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				//print(ToString(parsed_result));
+				print(ToString(result));
+				print(ToString(Units::second(sw.Stop_s())) + " @ for 60 basic game logic loops. Targetting < 1_s"); // 8 - 10 seconds
+			}
+
+			parsed_result = parse.Parse(R"start(
 				Units::value y;
 				for (Units::value i = 0; i < 1000000; ++i) {
 					++y;
@@ -8267,7 +8133,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ for loop"); // 8 - 10 seconds
 			}
@@ -8283,7 +8149,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ parallel_for loop"); // 8 - 10 seconds
 			}
@@ -8306,7 +8172,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ lambda parallel_for loop"); // 8 - 10 seconds
 			}
@@ -8326,7 +8192,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ scripted parallel_for loop"); // 8 - 10 seconds
 			}
@@ -8349,7 +8215,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ complex test"); // 8 - 10 seconds
 			}
@@ -8374,7 +8240,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ complex complex test"); // 8 - 10 seconds
 			}
@@ -8405,17 +8271,10 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ very complex test"); // 8 - 10 seconds
 			}
-
-
-
-
-
-
-
 
 			parsed_result = parse.Parse(R"start(
 				int loopCount = 0;
@@ -8437,7 +8296,7 @@ int main() {
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
+				//print(ToString(parsed_result));
 				print(ToString(result));
 				print(ToString(Units::second(sw.Stop_s())) + " @ very complex test"); // 8 - 10 seconds
 			}

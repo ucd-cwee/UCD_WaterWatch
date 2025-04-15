@@ -71,11 +71,13 @@ namespace GoodLang {
 		classPtr->AddFunction("-", make_callable([](T const& x, T const& y) -> T { return x - y; }));
 		classPtr->AddFunction("*", make_callable([](T const& x, T const& y) -> T { return x * y; }));
 		if constexpr (!std::is_same_v<bool, T>) {
+			classPtr->AddFunction("^", make_callable([](T const& x, T const& y) -> T { return std::pow(x, y); }));
 			classPtr->AddFunction("/", make_callable([](T const& x, T const& y) -> T { if (y == 0) return std::numeric_limits<T>::max(); else return x / y; }));
 			classPtr->AddFunction("+=", make_callable([](T& x, T const& y) -> void { x += y; }));
 			classPtr->AddFunction("-=", make_callable([](T& x, T const& y) -> void { x -= y; }));
 			classPtr->AddFunction("*=", make_callable([](T& x, T const& y) -> void { x *= y; }));
 			classPtr->AddFunction("/=", make_callable([](T& x, T const& y) -> void { if (y == 0) x = std::numeric_limits<T>::max(); else x /= y; }));
+			classPtr->AddFunction("^=", make_callable([](T& x, T const& y) -> void { x = std::pow(x, y); }));
 
 			classPtr->AddFunction("++", make_callable([](Any const& a) -> Any { 
 				T& x = a.cast();	
@@ -113,7 +115,6 @@ namespace GoodLang {
 			}));
 		}
 
-
 		// Functions
 		classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));
 		classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<T>::lowest(); }));
@@ -125,7 +126,6 @@ namespace GoodLang {
 			if constexpr (std::is_floating_point_v<T>) {
 				classPtr->AddFunction("to_hash", make_callable([](T const& o) -> size_t { size_t out{ 37 }; details::hash_combine(out, (double)o); return out; }));
 			}
-
 		}
 	};
 
@@ -376,6 +376,14 @@ namespace GoodLang {
 						value_namespace->AddFunction("%", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { 
 							return x - (y * Units::math::floor(x / y));
 						}));
+						value_namespace->AddFunction("^", make_callable([](Units::value const& x, Units::value const& y) -> Units::value {
+							return x.pow(y);
+						}));
+						value_namespace->AddFunction("^=", make_callable([](Any const& a, Units::value const& b) -> Any { 
+							Units::value& out = a.cast(); 
+							out = out.pow(b); 
+							return a; 
+						}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 
 						value_namespace->AddFunction("++", make_callable([](Any const& a) -> Any { 
 							Units::value& out = a.cast(); ++out; return a;
@@ -445,6 +453,10 @@ namespace GoodLang {
 								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 									return *x - (*y * Units::math::floor(*x / *y));
 								}); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
+							Class->AddFunction("^", make_callable([&](Any const& x, Any const& y) -> Units::value {
+								return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									return x->pow(*y);
+								}); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
 							Class->AddFunction("+=", make_callable([&](Any const& x, Any const& y) -> Any {
 								(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 									*x += *y; 
@@ -455,6 +467,12 @@ namespace GoodLang {
 								(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 									*x -= *y; 
 								}); 
+								return x;
+							}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
+							Class->AddFunction("^=", make_callable([&](Any const& x, Any const& y) -> Any {
+								(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
+									*x = x->pow(*y);
+								});
 								return x;
 							}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
 							Class->AddFunction("++", make_callable([&](Any const& x) -> Any {
@@ -468,6 +486,9 @@ namespace GoodLang {
 							Class->AddFunction("-", make_callable([&](Any const& x) -> Units::value {
 								return x.cast<std::shared_ptr<Units::value>>()->operator-();
 							}, ParamTypes({ type_info->MakeConstRef() })));
+							//Class->AddFunction("to_string", make_callable([](Any const& x) -> std::string {
+							//	return x.cast<std::shared_ptr<Units::value>>()->ToString();
+							//}));
 
 						}
 					}

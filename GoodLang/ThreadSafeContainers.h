@@ -3212,14 +3212,22 @@ namespace GoodLang {
 				return std::binary_search(queue.begin(), queue.end(), std::move(v));
 			};
 		};
-#if 0
-		// single-threaded flat set
+#if 1
+		// single-threaded flat map (e.g. equal to std::map, but faster for small collections)
 		template <typename K, typename T> class flat_map {
 		public:
 			typedef std::pair<const K, T> value;
-
-			veque::veque<std::pair<const K, T>> queue;
+			veque::veque<std::pair<K, T>> queue;
 		public:
+			auto insert(std::pair<K, T> && v) {
+				value val{ std::move(v) };
+				return queue.insert(
+					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
+						return x.first < y.first;
+					}),
+					val
+				);
+			};
 			auto emplace(K const& k, T const& v) {
 				value val{ k, v };
 				return queue.insert(
@@ -3229,19 +3237,88 @@ namespace GoodLang {
 					val
 				);
 			};
+			auto emplace(K const& k, T && v) {
+				value val{ k, std::move(v) };
+				return queue.insert(
+					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
+						return x.first < y.first;
+						}),
+					val
+							);
+			};
 			void clear() {
 				queue.clear();
 			};
-			bool contains(K const& v) const {
-				return std::binary_search(queue.begin(), queue.end(), std::pair<const K, T>{ v, {} }, [](value const& x, value const& y) {
+			bool contains(K const& k) const {
+				return std::binary_search(queue.begin(), queue.end(), value{ k, {} }, [](value const& x, value const& y) {
 					return x.first < y.first;
 				});
+			};
+			T& operator[](K const& k) {
+				value val{ k, {} };
+				return queue.insert(
+					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
+						return x.first < y.first;
+					}),
+					val
+				)->second;
+			};
+			T& at(K const& k) const {
+				value val{ k, {} };
+				return std::lower_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
+					return x.first < y.first;
+				})->second;
+			};
+			auto find(K const& k) const {
+				value val{ k, {} };
+				return std::lower_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
+					return x.first < y.first;
+				});
+			};
+			auto erase(typename veque::veque<std::pair<const K, T>>::iterator const& iter) {
+				return queue.erase(iter);
+			};
+			auto pop_front() {
+				queue.pop_front();
+			};
+			auto pop_front(size_t n) {
+				queue.erase(queue.begin(), queue.begin() + n);
+			};
+			auto pop_back() {
+				queue.pop_front();
+			};
+			size_t size() const {
+				return queue.size();
+			};
+			auto begin() {
+				return queue.begin();
+			};
+			auto end() {
+				return queue.end();
+			};
+			auto cbegin() const {
+				return queue.cbegin();
+			};
+			auto cend() const {
+				return queue.cend();
 			};
 			auto begin() const {
 				return queue.begin();
 			};
 			auto end() const {
-				return queue.begin();
+				return queue.end();
+			};
+			auto rbegin() {
+				return queue.rbegin();
+			};
+			auto rend() {
+				return queue.rend();
+			};
+			auto rbegin() const {
+				return queue.rbegin();
+			};
+			auto rend() const {
+				return queue.rend();
 			};
 		};
 #endif
