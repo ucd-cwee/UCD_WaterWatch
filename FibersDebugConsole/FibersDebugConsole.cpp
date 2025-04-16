@@ -1409,27 +1409,25 @@ namespace GoodLang {
 				ParamTypes Params{ params };
 				
 				if (auto func = Function.lock()) {
-					{
-						if (
-							func->NumArguments() == 2
-							&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
-							&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
-							) {
-							if constexpr (returnsValue) {
-								return func->operator()({ currentScope, params });
-							}
-							else {
-								(void)func->operator()({ currentScope, params });
-								return {};
-							}
+					if (
+						func->NumArguments() == 2
+						&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
+						&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
+						) {
+						if constexpr (returnsValue) {
+							return func->operator()({ currentScope, params });
 						}
 						else {
-							if constexpr (returnsValue)
-								return currentScope->CallFunction(func, params);
-							else {
-								(void)currentScope->CallFunction(func, params);
-								return {};
-							}
+							(void)func->operator()({ currentScope, params });
+							return {};
+						}
+					}
+					else {
+						if constexpr (returnsValue)
+							return currentScope->CallFunction(func, params);
+						else {
+							(void)currentScope->CallFunction(func, params);
+							return {};
 						}
 					}
 				}
@@ -1480,9 +1478,9 @@ namespace GoodLang {
 						}
 						else if (found_function) {
 							if constexpr (returnsValue)
-								return currentScope->CallFunction(function_name/*found_function*/, params);
+								return currentScope->CallFunction(function_name, params); 
 							else {
-								(void)currentScope->CallFunction(function_name/*found_function*/, params);
+								(void)currentScope->CallFunction(function_name, params);
 								return {};
 							}
 						}
@@ -7327,6 +7325,483 @@ namespace GoodLang {
 	};
 };
 
+
+
+class fast_shared_mutex {
+private:
+	mutable std::atomic<long> mut{ 0 };
+
+public:
+	void unlock() const {
+		mut.fetch_add(1000);
+	};
+	void lock() const {
+		if (mut.fetch_sub(1000) > 0) {
+			unlock();
+			while (mut.fetch_sub(1000) > 0) {
+				unlock();
+			}
+		}
+	};
+
+	void unlock_shared() const {
+		--mut;
+	};
+	void lock_shared() const {
+		if (++mut <= 0) {
+			unlock_shared();
+			while (++mut <= 0) {
+				unlock_shared();
+			}
+		}
+	};
+
+};
+
+
+template<class KeyType, class ValueType> class flat_map {
+public:
+	typedef std::vector<ValueType>	ValueList;
+	typedef std::vector<KeyType>	KeyList;
+
+protected:
+	mutable std::shared_mutex // fast_shared_mutex // 
+		lock;
+	mutable KeyList		
+		times;			// knot Times
+	mutable ValueList	
+		values;			// knot Values	
+
+	size_t	
+		UnsafeIndexForTime(const KeyType& time, long& hint) const {
+		
+		int currentIndex = hint;
+
+		if (times.size() <= 0) 
+			return 0; // there is no other data...
+		
+		int len, mid, offset;
+		bool res;
+
+		if (currentIndex >= 0 && currentIndex < times.size()) {
+			// use the cached index if it is still valid
+			if (currentIndex == 0) {
+				if (time <= times[currentIndex]) {
+					return currentIndex; // no change
+				}
+			}
+			else if (currentIndex == times.size()) {
+				if (time > times[currentIndex - 1]) {
+					return currentIndex; // no change
+				}
+			}
+			else if ((time > times[currentIndex - 1]) && (time <= times[currentIndex])) {
+				return currentIndex; // no change
+			}
+			else if ((time > times[currentIndex]) && ((currentIndex + 1 == times.size()) || (time <= times[currentIndex + 1]))) {
+				// use the next index
+				currentIndex++;
+				InterlockedExchange(&hint, currentIndex);
+				return currentIndex;
+			}
+		}
+
+		len = times.size();
+		// test the start and end of the list quickly
+		if (len != 0) {
+			if (times[0] > time) {
+				currentIndex = 0;
+				InterlockedExchange(&hint, currentIndex);
+				return currentIndex;
+			}
+			if (times[len - 1] < time) {
+				currentIndex = len;
+				InterlockedExchange(&hint, currentIndex);
+				return currentIndex;
+			}
+		}
+
+		// use binary search to find the index for the given time	
+		mid = len;
+		offset = 0;
+		res = false;
+		KeyType* sample;
+		while (mid > 0) {
+			mid = len >> 1;
+			sample = &times[offset + mid];
+			if (time >= *sample) {
+				offset += mid;
+				if (time == *sample) {
+					currentIndex = offset;
+					InterlockedExchange(&hint, currentIndex);
+					return currentIndex;
+				}
+				res = true;
+			}
+			else {
+				res = false;
+			}
+			len -= mid;
+		}
+		currentIndex = offset + (int)res;
+		InterlockedExchange(&hint, currentIndex);
+		return currentIndex;
+	};
+	size_t			
+		InsertPair(const KeyType& time, const ValueType& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
+		long i = 0;
+		if (unique) {
+			std::unique_lock locked{ lock }; {
+				i = UnsafeIndexForTime(time, i = -1);
+				if (((i != 0) && (i < values.size()) && (times[i] == time))) {
+					if (!InsertOnlyIfDoesNotExist)
+						values[i] = valueIN;
+				}
+				else if (values.size() == 0 || i >= values.size()) {
+					times.push_back(time);
+					values.push_back(valueIN);
+				}
+				else if ((times.size() != 0) && times[0] != time) {
+					times.insert(times.begin() + i, time);
+					values.insert(values.begin() + i, valueIN);
+				}
+				else {
+					if (!InsertOnlyIfDoesNotExist)
+						values[0] = valueIN;
+					i = 0;
+				}
+			} 		
+			return i;
+		}
+		else {
+			std::unique_lock locked{ lock }; {
+				i = UnsafeIndexForTime(time, i = -1);
+				if (values.size() == 0 || i >= values.size()) {
+					times.push_back(time);
+					values.push_back(valueIN);
+				}
+				else {
+					times.insert(times.begin() + i, time);
+					values.insert(values.begin() + i, valueIN);
+				}
+			} 
+			return i;
+		}
+	};
+
+public:
+	flat_map() = default;
+	flat_map(flat_map const& rhs) {
+		std::shared_lock locked{ rhs.lock };
+		times = rhs.times;
+		values = rhs.values;
+	};
+	flat_map(flat_map&& rhs) : times{ std::move(rhs.times) }, values{ std::move(rhs.values) } {};
+	flat_map& operator=(flat_map const& rhs) {
+		if (this == &rhs) return *this;
+		std::scoped_lock locked1{ lock };
+		std::shared_lock locked2{ rhs.lock }; 
+		times = rhs.times;
+		values = rhs.values;
+		return *this;
+	};
+	flat_map& operator=(flat_map && rhs) {
+		if (this == &rhs) return *this;
+		std::scoped_lock locked1{ lock };
+		std::shared_lock locked2{ rhs.lock };
+		times = rhs.times;
+		values = rhs.values;
+		return *this;
+	};
+	~flat_map() = default;
+
+	size_t	        
+		size() const {
+		int out;
+		std::shared_lock locked{ lock };
+		out = values.size();
+		return out;
+	};
+	std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> 
+		at_index_unsafe(size_t index) const {
+		return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{
+			std::ref(times[index]),
+			std::ref(values[index])
+		};
+	};
+	std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> 
+		at_index(size_t index) const {
+		std::shared_lock locked{ lock };
+		return at_index_unsafe(index);
+	};
+	size_t			
+		get_index(const KeyType& time) const {
+		long out;
+		std::shared_lock locked{ lock };
+		out = UnsafeIndexForTime(time, out = -1);
+		return out;
+	};
+	std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+		insert(const KeyType& time, const ValueType& value) {
+		return at_index(InsertPair(time, value, true, true));
+	};
+	std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+		emplace(const KeyType& time, const ValueType& value) {
+		return at_index(InsertPair(time, value, true, false));
+	};
+
+	ValueType& lower_bound(const KeyType& time, long& hint) const {
+		std::shared_lock locked{ lock };
+		long i = UnsafeIndexForTime(time, hint);
+		size_t sz = values.size();
+		if (sz == 0) {
+			throw std::range_error("Could not find " + GoodLang::ToString(time));
+		}
+		if (i >= sz) {
+			return values[sz - 1];
+		}
+		else {
+			return values[i];
+		}
+	};
+	ValueType& at(const KeyType& time, long& hint) const {
+		std::shared_lock locked{ lock };
+		long i = UnsafeIndexForTime(time, hint);
+		size_t sz = values.size();
+		if (sz == 0) {
+			throw std::range_error("Could not find " + GoodLang::ToString(time));
+		}
+		if (i >= sz) {
+			if (times[sz - 1] == time) {
+				return values[sz - 1];
+			}
+		}
+		else {
+			if (times[i] == time) {
+				return values[i];
+			}
+		}
+		throw std::range_error("Could not find " + GoodLang::ToString(time));
+	};
+	ValueType* find(const KeyType& time, long& hint) const {
+		std::shared_lock locked{ lock };
+		size_t sz = values.size();
+		if (sz == 0) {
+			return nullptr;
+		}
+		long i = UnsafeIndexForTime(time, hint);
+		if (i >= sz) {
+			if (times[sz - 1] == time) {
+				return &values[sz - 1];
+			}
+		}
+		else {
+			if (times[i] == time) {
+				return &values[i];
+			}
+		}
+		return nullptr;
+	};
+
+	ValueType& lower_bound(const KeyType& time) const {
+		std::shared_lock locked{ lock }; 
+		long i;
+		i = UnsafeIndexForTime(time, i = -1);
+		size_t sz = values.size();
+		if (sz == 0) {
+			throw std::range_error("Could not find " + GoodLang::ToString(time));
+		}
+		if (i >= sz) {
+			return values[sz - 1];
+		}
+		else {
+			return values[i];
+		}
+	};
+	ValueType& at(const KeyType& time) const {
+		std::shared_lock locked{ lock };
+		long i;
+		i = UnsafeIndexForTime(time, i = -1);
+		size_t sz = values.size();
+		if (sz == 0) {
+			throw std::range_error("Could not find " + GoodLang::ToString(time));
+		}
+		if (i >= sz) {
+			if (times[sz - 1] == time) {
+				return values[sz - 1];
+			}
+		}
+		else {
+			if (times[i] == time) {
+				return values[i];
+			}
+		}
+		throw std::range_error("Could not find " + GoodLang::ToString(time));
+	};
+	ValueType* find(const KeyType& time) const {
+		std::shared_lock locked{ lock };
+		size_t sz = values.size();
+		if (sz == 0){
+			return nullptr;
+		}
+		long i;
+		i = UnsafeIndexForTime(time, i = -1);
+		if (i >= sz) {
+			if (times[sz - 1] == time) {
+				return &values[sz - 1];
+			}
+		}
+		else {
+			if (times[i] == time) {
+				return &values[i];
+			}
+		}
+		return nullptr;
+	};
+	ValueType& operator[](const KeyType& time) {
+		if (auto* f = find(time)) {
+			return *f;
+		}
+		else {
+			return insert(time, {}).second.get();
+		}
+	};
+	template <typename Func>
+	ValueType& get_or_make(const KeyType& time, Func func) {
+		if (auto* f = find(time)) {
+			return *f;
+		}
+		else {
+			return insert(time, func()).second.get();
+		}
+	};
+};
+
+// std::string to a colleciton of maps with given params. (E.g. first sorted by strings)
+class FunctionsMap {
+public:
+	using ParamsToFunctionMap = flat_map<size_t, GoodLang::Union<GoodLang::shared_ptr<GoodLang::ParamTypes>, GoodLang::shared_ptr<GoodLang::Proxy_Function>>>;
+	using StringToParamsMap = flat_map<size_t, GoodLang::Union<GoodLang::shared_ptr<std::string>, ParamsToFunctionMap>>;
+
+private:	
+	static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1);
+	static constexpr size_t CharToIndex(char firstChar) {
+		if (firstChar >= 'a') {
+			return ((int)firstChar - (int)('a')) + 26;
+		}
+		else {
+			return (int)firstChar - (int)('A');
+		}
+	};
+
+	std::array< StringToParamsMap, numV> FirstCharToFunctionNameMap;
+
+public:
+	// inserts if not exists. Faster than emplacing.
+	bool insert(GoodLang::Proxy_Function const& func, GoodLang::ParamTypes const& params, std::string_view const& name) {
+		if (func && (name.size() > 0)) {
+			StringToParamsMap& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+			ParamsToFunctionMap* Map{ nullptr };
+			auto nameHash{ GoodLang::GetHash(name) };
+			auto paramHash{ params.hash() };
+			if (!Map) {
+				auto& F = map.get_or_make(nameHash, [&]()->GoodLang::Union<GoodLang::shared_ptr<std::string>, ParamsToFunctionMap> {
+					return GoodLang::Union<GoodLang::shared_ptr<std::string>, ParamsToFunctionMap>{
+						GoodLang::make_shared<std::string>(name), ParamsToFunctionMap()
+					};
+				});
+				Map = &F.get<1>();
+			}
+			if (Map) {
+				auto& F = Map->get_or_make(paramHash, [&]() -> GoodLang::Union<GoodLang::shared_ptr<GoodLang::ParamTypes>, GoodLang::shared_ptr<GoodLang::Proxy_Function>> {
+					return GoodLang::Union<GoodLang::shared_ptr<GoodLang::ParamTypes>, GoodLang::shared_ptr<GoodLang::Proxy_Function>>{
+						GoodLang::make_shared<GoodLang::ParamTypes>(params),
+							GoodLang::make_shared<GoodLang::Proxy_Function>(func)
+					};
+				});
+				return true;
+			}
+			throw std::exception("Could not evaluate the string to a function map");
+		}
+		return false;
+	};
+	
+	// emplace a function, and override an existing function if necessary. Slower than inserting. 
+	bool emplace(GoodLang::Proxy_Function const& func, GoodLang::ParamTypes const& params, std::string_view const& name) {
+		if (func && (name.size() > 0)) {
+			StringToParamsMap& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+			ParamsToFunctionMap* Map{ nullptr };
+			auto nameHash{ GoodLang::GetHash(name) };
+			auto paramHash{ params.hash() };
+			if (!Map) {
+				auto& F = map.get_or_make(nameHash, [&]()->GoodLang::Union<GoodLang::shared_ptr<std::string>, ParamsToFunctionMap> {
+					return GoodLang::Union<GoodLang::shared_ptr<std::string>, ParamsToFunctionMap>{
+						GoodLang::make_shared<std::string>(name), ParamsToFunctionMap()
+					};
+				});
+				Map = &F.get<1>();
+			}
+			if (Map) {
+				auto& F = Map->get_or_make(paramHash, [&]() -> GoodLang::Union<GoodLang::shared_ptr<GoodLang::ParamTypes>, GoodLang::shared_ptr<GoodLang::Proxy_Function>> {
+					return GoodLang::Union<GoodLang::shared_ptr<GoodLang::ParamTypes>, GoodLang::shared_ptr<GoodLang::Proxy_Function>>{
+						GoodLang::make_shared<GoodLang::ParamTypes>(params),
+						GoodLang::make_shared<GoodLang::Proxy_Function>(func)
+					};
+				});				
+				F.get<1>() = GoodLang::make_shared<GoodLang::Proxy_Function>(func);				
+				return true;
+			}
+			throw std::exception("Could not evaluate the string to a function map");
+		}
+		return false;
+	};
+
+	// Get a function (if it exists!)
+	GoodLang::Proxy_Function at(GoodLang::ParamTypes const& params, std::string_view const& name) {
+		if (name.size() > 0) {
+			StringToParamsMap& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+			ParamsToFunctionMap* Map{ nullptr };
+			auto nameHash{ GoodLang::GetHash(name) };
+			auto paramHash{ params.hash() };
+			if (!Map) {
+				auto f = map.find(nameHash);
+				if (f) {
+					Map = &f->get<1>();
+				}
+			}
+			if (Map) {
+				auto f = Map->find(paramHash);
+				if (f && f->get<1>()) {
+					return *f->get<1>();
+				}
+			}
+		}
+		return nullptr;
+	};
+	GoodLang::Proxy_Function at(GoodLang::ParamTypes const& params, std::string_view const& name, long long* hint) {
+		if (name.size() > 0) {
+			StringToParamsMap& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+			ParamsToFunctionMap* Map{ nullptr };
+			auto nameHash{ GoodLang::GetHash(name) };
+			auto paramHash{ params.hash() };
+			if (!Map) {
+				auto f = map.find(nameHash, reinterpret_cast<long*>(hint)[0]);
+				if (f) {
+					Map = &f->get<1>();
+				}
+			}
+			if (Map) {
+				auto f = Map->find(paramHash, reinterpret_cast<long*>(hint)[1]);
+				if (f && f->get<1>()) {
+					return *f->get<1>();
+				}				
+			}
+		}
+		return nullptr;
+	};
+
+};
+
 int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
@@ -7334,6 +7809,153 @@ int main() {
 	using namespace GoodLang;
 		
 	if (1) {
+		if (1) {
+			Stopwatch sw;
+			sw.Start();
+			if (1) {
+				GoodLang::Functions funcs;
+				auto func = make_callable([]() {});
+				parallel::For(0, 1000000, [&](int i) {
+					funcs.emplace("to_string", func, false);
+					funcs.emplace("int", func, false);
+					funcs.emplace("double", func, false);
+				});
+			}
+			print(ToString(Units::second(sw.Stop_s())) + " @ insert w/ Functions");
+		}
+		if (1) {
+			Stopwatch sw;
+			sw.Start();
+			if (1) {
+				FunctionsMap funcs;
+				auto func = make_callable([]() {});
+				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
+					funcs.insert(func, func->Arguments().Types(), "to_string");
+					funcs.insert(func, func->Arguments().Types(), "int");
+					funcs.insert(func, func->Arguments().Types(), "double");
+				});
+			}
+			print(ToString(Units::second(sw.Stop_s())) + " @ insert w/ FunctionsMap");
+		}
+
+		if (1) {
+			Stopwatch sw;
+			sw.Start();
+			if (1) {
+				GoodLang::Functions funcs;
+				auto func = make_callable([]() {});
+				auto func2 = make_callable([](int j, double b) {});
+				auto func3 = make_callable([](int i, double j) {});
+
+				parallel::For(0, 1000000, [&](int i) {
+					funcs.emplace("to_string", func, false);
+					funcs.emplace("int", func, false);
+					funcs.emplace("double", func, false);
+
+					funcs.emplace("to_string", func2, false);
+					funcs.emplace("int", func2, false);
+					funcs.emplace("double", func2, false);
+
+					funcs.emplace("to_string", func3, false);
+					funcs.emplace("int", func3, false);
+					funcs.emplace("double", func3, false);
+
+					(void)funcs.at("to_string", {});
+					(void)funcs.at("int", {});
+					(void)funcs.at("double", {});
+				});
+			}
+			print(ToString(Units::second(sw.Stop_s())) + " @ insert & search w/ Functions");
+		}
+		if (1) {
+			Stopwatch sw;
+			sw.Start();
+			if (1) {
+				FunctionsMap funcs;
+				auto func = make_callable([]() {});
+				auto func2 = make_callable([](int j, int b) {});
+				auto func3 = make_callable([](int i, double j) {});
+
+				long long hints[3]{ -1, -1, -1 };
+				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i) {// 
+					funcs.insert(func, func->Arguments().Types(), "to_string");
+					funcs.insert(func, func->Arguments().Types(), "int");
+					funcs.insert(func, func->Arguments().Types(), "double");
+
+					funcs.insert(func2, func2->Arguments().Types(), "to_string");
+					funcs.insert(func2, func2->Arguments().Types(), "int");
+					funcs.insert(func2, func2->Arguments().Types(), "double");
+
+					funcs.insert(func3, func3->Arguments().Types(), "to_string");
+					funcs.insert(func3, func3->Arguments().Types(), "int");
+					funcs.insert(func3, func3->Arguments().Types(), "double");
+
+					//(void)funcs.at({}, "to_string", &hints[0]);
+					//(void)funcs.at({}, "int", &hints[1]);
+					//(void)funcs.at({}, "double", &hints[2]);
+				});
+			}
+			print(ToString(Units::second(sw.Stop_s())) + " @ insert & search w/ FunctionsMap");
+		}
+
+		if (1) {
+			Stopwatch sw;
+			sw.Start();
+			if (1) {
+				GoodLang::Functions funcs;
+				auto func = make_callable([]() {});
+				funcs.emplace("to_string", func, false);
+				funcs.emplace("int", func, false);
+				funcs.emplace("double", func, false);
+
+				auto func2 = make_callable([](int i, int j) {});
+				funcs.emplace("to_string", func2, false);
+				funcs.emplace("int", func2, false);
+				funcs.emplace("double", func2, false);
+
+				auto func3 = make_callable([](int i, double j) {});
+				funcs.emplace("to_string", func3, false);
+				funcs.emplace("int", func3, false);
+				funcs.emplace("double", func3, false);
+
+				parallel::For(0, 1000000, [&](int i) {
+					(void)funcs.at("to_string", {});
+					(void)funcs.at("int", {});
+					(void)funcs.at("double", {});
+				});
+			}
+			print(ToString(Units::second(sw.Stop_s())) + " @ search w/ Functions");
+		}
+		if (1) {
+			Stopwatch sw;
+			sw.Start();
+			if (1) {
+				FunctionsMap funcs;
+				long long hints[3]{ -1, -1, -1 };
+				auto func = make_callable([]() {});
+				funcs.insert(func, func->Arguments().Types(), "to_string");
+				funcs.insert(func, func->Arguments().Types(), "int");
+				funcs.insert(func, func->Arguments().Types(), "double");
+
+				auto func2 = make_callable([](int i, int j) {});
+				funcs.insert(func2, func2->Arguments().Types(), "to_string");
+				funcs.insert(func2, func2->Arguments().Types(), "int");
+				funcs.insert(func2, func2->Arguments().Types(), "double");
+
+				auto func3 = make_callable([](int i, double j) {});
+				funcs.insert(func3, func3->Arguments().Types(), "to_string");
+				funcs.insert(func3, func3->Arguments().Types(), "int");
+				funcs.insert(func3, func3->Arguments().Types(), "double");
+
+				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i) {// 
+					(void)funcs.at({}, "to_string", &hints[0]);
+					(void)funcs.at({}, "int", &hints[1]);
+					(void)funcs.at({}, "double", &hints[2]);
+				});
+			}
+			print(ToString(Units::second(sw.Stop_s())) + " @ search w/ FunctionsMap");
+		}
+		
 		auto globalScope = StartScope(); // will initialize the globally shared engine as well
 
 		if (1) {
