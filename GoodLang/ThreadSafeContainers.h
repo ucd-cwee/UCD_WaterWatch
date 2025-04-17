@@ -3212,116 +3212,394 @@ namespace GoodLang {
 				return std::binary_search(queue.begin(), queue.end(), std::move(v));
 			};
 		};
-#if 1
-		// single-threaded flat map (e.g. equal to std::map, but faster for small collections)
-		template <typename K, typename T> class flat_map {
+
+		// a fast alternative to the std::shared_mutex when prioritizing readers over writers. 
+		class fast_shared_mutex {
+		private:
+			mutable std::atomic<long long> mut{ 0 }; // Read, Write
+
 		public:
-			typedef std::pair<const K, T> value;
-			veque::veque<std::pair<K, T>> queue;
-		public:
-			auto insert(std::pair<K, T> && v) {
-				value val{ std::move(v) };
-				return queue.insert(
-					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
-						return x.first < y.first;
-					}),
-					val
-				);
+			bool try_lock() const {
+				thread_local long long read, planned;
+
+				read = planned = mut.load(std::memory_order::memory_order_relaxed);
+				if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
+					if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
+						if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+							return true; // success!
+						}
+					}
+				}
+				return false;
 			};
-			auto emplace(K const& k, T const& v) {
-				value val{ k, v };
-				return queue.insert(
-					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) { 
-						return x.first < y.first;
-					}),
-					val
-				);
+			void unlock() const {
+				thread_local long long read, planned;
+				while (true) {
+					read = planned = mut.load(std::memory_order::memory_order_relaxed);
+					--reinterpret_cast<short*>(&planned)[1];
+					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+						break; // success!
+					}
+				}
 			};
-			auto emplace(K const& k, T && v) {
-				value val{ k, std::move(v) };
-				return queue.insert(
-					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
-						return x.first < y.first;
-						}),
-					val
-							);
+			void lock() const {
+				while (!try_lock()) {}
 			};
-			void clear() {
-				queue.clear();
+
+			bool try_lock_shared() const {
+				thread_local long long read;
+				read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+				if (
+					(reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
+					&& (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
+					) {
+					return true;
+				}
+				else {
+					mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+					return false;
+				}
 			};
-			bool contains(K const& k) const {
-				return std::binary_search(queue.begin(), queue.end(), value{ k, {} }, [](value const& x, value const& y) {
-					return x.first < y.first;
-				});
+			void unlock_shared() const {
+				mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
 			};
-			T& operator[](K const& k) {
-				value val{ k, {} };
-				return queue.insert(
-					std::upper_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
-						return x.first < y.first;
-					}),
-					val
-				)->second;
-			};
-			T& at(K const& k) const {
-				value val{ k, {} };
-				return std::lower_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
-					return x.first < y.first;
-				})->second;
-			};
-			auto find(K const& k) const {
-				value val{ k, {} };
-				return std::lower_bound(queue.begin(), queue.end(), val, [](value const& x, value const& y) {
-					return x.first < y.first;
-				});
-			};
-			auto erase(typename veque::veque<std::pair<const K, T>>::iterator const& iter) {
-				return queue.erase(iter);
-			};
-			auto pop_front() {
-				queue.pop_front();
-			};
-			auto pop_front(size_t n) {
-				queue.erase(queue.begin(), queue.begin() + n);
-			};
-			auto pop_back() {
-				queue.pop_front();
-			};
-			size_t size() const {
-				return queue.size();
-			};
-			auto begin() {
-				return queue.begin();
-			};
-			auto end() {
-				return queue.end();
-			};
-			auto cbegin() const {
-				return queue.cbegin();
-			};
-			auto cend() const {
-				return queue.cend();
-			};
-			auto begin() const {
-				return queue.begin();
-			};
-			auto end() const {
-				return queue.end();
-			};
-			auto rbegin() {
-				return queue.rbegin();
-			};
-			auto rend() {
-				return queue.rend();
-			};
-			auto rbegin() const {
-				return queue.rbegin();
-			};
-			auto rend() const {
-				return queue.rend();
+			void lock_shared() const {
+				while (!try_lock_shared()) {}
 			};
 		};
-#endif
+
+		// fast, thread-safe sorted map. 
+		template<class KeyType, class ValueType> class flat_map {
+		public:
+			typedef std::vector<ValueType>	ValueList;
+			typedef std::vector<KeyType>	KeyList;
+
+		protected:
+			mutable fast_shared_mutex
+				lock;
+			mutable KeyList
+				times;			// knot Times
+			mutable ValueList
+				values;			// knot Values	
+
+			size_t
+				UnsafeIndexForTime(const KeyType& time, long& hint) const {
+
+				int currentIndex = hint;
+
+				if (times.size() <= 0)
+					return 0; // there is no other data...
+
+				int len, mid, offset;
+				bool res;
+
+				if (currentIndex >= 0 && currentIndex < times.size()) {
+					// use the cached index if it is still valid
+					if (currentIndex == 0) {
+						if (time <= times[currentIndex]) {
+							return currentIndex; // no change
+						}
+					}
+					else if (currentIndex == times.size()) {
+						if (time > times[currentIndex - 1]) {
+							return currentIndex; // no change
+						}
+					}
+					else if ((time > times[currentIndex - 1]) && (time <= times[currentIndex])) {
+						return currentIndex; // no change
+					}
+					else if ((time > times[currentIndex]) && ((currentIndex + 1 == times.size()) || (time <= times[currentIndex + 1]))) {
+						// use the next index
+						currentIndex++;
+						InterlockedExchange(&hint, currentIndex);
+						return currentIndex;
+					}
+				}
+
+				len = times.size();
+				// test the start and end of the list quickly
+				if (len != 0) {
+					if (times[0] > time) {
+						currentIndex = 0;
+						InterlockedExchange(&hint, currentIndex);
+						return currentIndex;
+					}
+					if (times[len - 1] < time) {
+						currentIndex = len;
+						InterlockedExchange(&hint, currentIndex);
+						return currentIndex;
+					}
+				}
+
+				// use binary search to find the index for the given time	
+				mid = len;
+				offset = 0;
+				res = false;
+				KeyType* sample;
+				while (mid > 0) {
+					mid = len >> 1;
+					sample = &times[offset + mid];
+					if (time >= *sample) {
+						offset += mid;
+						if (time == *sample) {
+							currentIndex = offset;
+							InterlockedExchange(&hint, currentIndex);
+							return currentIndex;
+						}
+						res = true;
+					}
+					else {
+						res = false;
+					}
+					len -= mid;
+				}
+				currentIndex = offset + (int)res;
+				InterlockedExchange(&hint, currentIndex);
+				return currentIndex;
+			};
+			size_t
+				InsertPair(const KeyType& time, const ValueType& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
+				long i = 0;
+				if (unique) {
+					std::unique_lock locked{ lock }; {
+						i = UnsafeIndexForTime(time, i = -1);
+						if (((i != 0) && (i < values.size()) && (times[i] == time))) {
+							if (!InsertOnlyIfDoesNotExist)
+								values[i] = valueIN;
+						}
+						else if (values.size() == 0 || i >= values.size()) {
+							times.push_back(time);
+							values.push_back(valueIN);
+						}
+						else if ((times.size() != 0) && times[0] != time) {
+							times.insert(times.begin() + i, time);
+							values.insert(values.begin() + i, valueIN);
+						}
+						else {
+							if (!InsertOnlyIfDoesNotExist)
+								values[0] = valueIN;
+							i = 0;
+						}
+					}
+					return i;
+				}
+				else {
+					std::unique_lock locked{ lock }; {
+						i = UnsafeIndexForTime(time, i = -1);
+						if (values.size() == 0 || i >= values.size()) {
+							times.push_back(time);
+							values.push_back(valueIN);
+						}
+						else {
+							times.insert(times.begin() + i, time);
+							values.insert(values.begin() + i, valueIN);
+						}
+					}
+					return i;
+				}
+			};
+
+		public:
+			flat_map() = default;
+			flat_map(flat_map const& rhs) {
+				std::shared_lock locked{ rhs.lock };
+				times = rhs.times;
+				values = rhs.values;
+			};
+			flat_map(flat_map&& rhs) : times{ std::move(rhs.times) }, values{ std::move(rhs.values) } {};
+			flat_map& operator=(flat_map const& rhs) {
+				if (this == &rhs) return *this;
+				std::scoped_lock locked1{ lock };
+				std::shared_lock locked2{ rhs.lock };
+				times = rhs.times;
+				values = rhs.values;
+				return *this;
+			};
+			flat_map& operator=(flat_map&& rhs) {
+				if (this == &rhs) return *this;
+				std::scoped_lock locked1{ lock };
+				std::shared_lock locked2{ rhs.lock };
+				times = rhs.times;
+				values = rhs.values;
+				return *this;
+			};
+			~flat_map() = default;
+
+			size_t
+				size() const {
+				int out;
+				std::shared_lock locked{ lock };
+				out = values.size();
+				return out;
+			};
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				at_index_unsafe(size_t index) const {
+				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{
+					std::ref(times[index]),
+						std::ref(values[index])
+				};
+			};
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				at_index(size_t index) const {
+				std::shared_lock locked{ lock };
+				return at_index_unsafe(index);
+			};
+			size_t
+				get_index(const KeyType& time) const {
+				long out;
+				std::shared_lock locked{ lock };
+				out = UnsafeIndexForTime(time, out = -1);
+				return out;
+			};
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				insert(const KeyType& time, const ValueType& value) {
+				return at_index(InsertPair(time, value, true, true));
+			};
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				emplace(const KeyType& time, const ValueType& value) {
+				return at_index(InsertPair(time, value, true, false));
+			};
+
+			ValueType& lower_bound(const KeyType& time, long& hint) const {
+				std::shared_lock locked{ lock };
+				long i = UnsafeIndexForTime(time, hint);
+				size_t sz = values.size();
+				if (sz == 0) {
+					throw std::range_error("Could not find " + GoodLang::ToString(time));
+				}
+				if (i >= sz) {
+					return values[sz - 1];
+				}
+				else {
+					return values[i];
+				}
+			};
+			ValueType& at(const KeyType& time, long& hint) const {
+				std::shared_lock locked{ lock };
+				long i = UnsafeIndexForTime(time, hint);
+				size_t sz = values.size();
+				if (sz == 0) {
+					throw std::range_error("Could not find " + GoodLang::ToString(time));
+				}
+				if (i >= sz) {
+					if (times[sz - 1] == time) {
+						return values[sz - 1];
+					}
+				}
+				else {
+					if (times[i] == time) {
+						return values[i];
+					}
+				}
+				throw std::range_error("Could not find " + GoodLang::ToString(time));
+			};
+			ValueType* find(const KeyType& time, long& hint) const {
+				std::shared_lock locked{ lock };
+				size_t sz = values.size();
+				if (sz == 0) {
+					return nullptr;
+				}
+				long i = UnsafeIndexForTime(time, hint);
+				if (i >= sz) {
+					if (times[sz - 1] == time) {
+						return &values[sz - 1];
+					}
+				}
+				else {
+					if (times[i] == time) {
+						return &values[i];
+					}
+				}
+				return nullptr;
+			};
+
+			ValueType& lower_bound(const KeyType& time) const {
+				std::shared_lock locked{ lock };
+				long i;
+				i = UnsafeIndexForTime(time, i = -1);
+				size_t sz = values.size();
+				if (sz == 0) {
+					throw std::range_error("Could not find " + GoodLang::ToString(time));
+				}
+				if (i >= sz) {
+					return values[sz - 1];
+				}
+				else {
+					return values[i];
+				}
+			};
+			ValueType& at(const KeyType& time) const {
+				std::shared_lock locked{ lock };
+				long i;
+				i = UnsafeIndexForTime(time, i = -1);
+				size_t sz = values.size();
+				if (sz == 0) {
+					throw std::range_error("Could not find " + GoodLang::ToString(time));
+				}
+				if (i >= sz) {
+					if (times[sz - 1] == time) {
+						return values[sz - 1];
+					}
+				}
+				else {
+					if (times[i] == time) {
+						return values[i];
+					}
+				}
+				throw std::range_error("Could not find " + GoodLang::ToString(time));
+			};
+			ValueType* find(const KeyType& time) const {
+				std::shared_lock locked{ lock };
+				size_t sz = values.size();
+				if (sz == 0) {
+					return nullptr;
+				}
+				long i;
+				i = UnsafeIndexForTime(time, i = -1);
+				if (i >= sz) {
+					if (times[sz - 1] == time) {
+						return &values[sz - 1];
+					}
+				}
+				else {
+					if (times[i] == time) {
+						return &values[i];
+					}
+				}
+				return nullptr;
+			};
+			ValueType& operator[](const KeyType& time) {
+				if (auto* f = find(time)) {
+					return *f;
+				}
+				else {
+					return insert(time, {}).second.get();
+				}
+			};
+			template <typename Func>
+			ValueType& get_or_make(const KeyType& time, Func func, bool* ExistedAlready = nullptr) {
+				if (auto* f = find(time)) {
+					if (ExistedAlready) *ExistedAlready = true;
+					return *f;
+				}
+				else {
+					if (ExistedAlready) *ExistedAlready = false;
+					return insert(time, func()).second.get();
+				}
+			};
+
+			bool Visit(std::function<bool(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> const&)> const& Func) const {
+				std::shared_lock locked{ lock };
+				for (size_t i = 0, sz = values.size(); i < sz; ++i) {
+					if (Func(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(times[i]), std::ref(values[i]) })) {
+						return true;
+					}
+				}
+				return false;
+			};
+
+		};
+
 	};
 
 	/// <summary>
