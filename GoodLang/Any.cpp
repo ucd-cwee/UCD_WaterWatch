@@ -151,7 +151,7 @@ namespace GoodLang {
 namespace GoodLang {
 	// std::numeric_limits<unsigned short>::max() and 512 give similar performance metrics.
 	// 255 and less tend to get caught in a constriction with heavy loads. 
-	static std::array<std::atomic<long>, std::numeric_limits<unsigned short>::max()/*512*/> locks; // 128, 1000, 10000, std::numeric_limits<unsigned short>::max()
+	static std::array<GoodLang::fast_boolean_mutex, 512> locks; // 128, 1000, 10000, std::numeric_limits<unsigned short>::max()
 	static size_t PtrToIndex(shared_ptr_base::aux* const& ptr) {
 		if constexpr (locks.size() == std::numeric_limits<unsigned short>::max()) {
 			return reinterpret_cast<unsigned short&>(const_cast<shared_ptr_base::aux*&>(ptr));
@@ -165,18 +165,18 @@ namespace GoodLang {
 	};
 
 	void shared_ptr_base::PreventDeletion(aux* const& ptr) {
-		if (ptr) locks[PtrToIndex(ptr)].fetch_add(1, std::memory_order::memory_order_relaxed);
+		if (ptr) locks[PtrToIndex(ptr)].lock_shared();
 	};
 	void shared_ptr_base::AllowDeletion(aux* const& ptr) {
-		if (ptr) locks[PtrToIndex(ptr)].fetch_add(-1, std::memory_order::memory_order_acq_rel);
+		if (ptr) locks[PtrToIndex(ptr)].unlock_shared();
 	};
 	// requires that the ptr is NOT already locked through PreventDeletion
 	void shared_ptr_base::DoDeletion(aux* const& ptr) {
 		if (ptr) {
 			auto& lock = locks[PtrToIndex(ptr)];
-			while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo			
+			lock.lock();
 			delete ptr;
-			lock.fetch_add(-1, std::memory_order::memory_order_relaxed); // undo
+			lock.unlock();
 		}
 	};
 	// requires that the ptr is NOT already locked through PreventDeletion
@@ -184,16 +184,18 @@ namespace GoodLang {
 		if (ptr) {
 			if (Destroy) {
 				ptr->destroy();
-				auto& lock = locks[PtrToIndex(ptr)];
-				while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo				
-				if (Delete) delete ptr;
-				lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo
+				if (Delete) {
+					auto& lock = locks[PtrToIndex(ptr)];
+					lock.lock();
+					delete ptr;
+					lock.unlock();
+				}
 			}
-			else {
+			else if (Delete) {
 				auto& lock = locks[PtrToIndex(ptr)];
-				while (lock.fetch_add(1, std::memory_order::memory_order_relaxed) != 0) lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo				
-				if (Delete) delete ptr;
-				lock.fetch_add(-1, std::memory_order::memory_order_acq_rel); // undo
+				lock.lock();
+				delete ptr;
+				lock.unlock();
 			}
 		}
 	};

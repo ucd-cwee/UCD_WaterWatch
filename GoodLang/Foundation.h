@@ -53,6 +53,7 @@
 #include <winnt.h>
 #include <functional>
 #include <typeinfo>
+#include <atomic>
 
 #pragma endregion
 
@@ -524,7 +525,7 @@ namespace GoodLang {
 	Generally speaking, out-performs std::mutex under most conditions. */
 	class mutex {
 	private:
-		using mutexHandle_t =   RTL_CRITICAL_SECTION;;
+		using mutexHandle_t = RTL_CRITICAL_SECTION;;
 		static void				Sys_MutexCreate(mutexHandle_t& handle) noexcept { InitializeCriticalSection(&handle); };
 		static void				Sys_MutexDestroy(mutexHandle_t& handle) noexcept { DeleteCriticalSection(&handle); };
 		static void				Sys_MutexLock(mutexHandle_t& handle) noexcept { EnterCriticalSection(&handle); };
@@ -555,6 +556,118 @@ namespace GoodLang {
 
 	};
 
+	// a fast alternative to the std::shared_mutex when prioritizing readers over writers. 
+	class fast_shared_mutex {
+	private:
+		mutable std::atomic<long long> mut{ 0 }; // Read, Write
+
+	public:
+		bool try_lock() const {
+			thread_local long long read, planned;
+
+			read = planned = mut.load(std::memory_order::memory_order_relaxed);
+			if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
+				if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
+					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+						return true; // success!
+					}
+				}
+			}
+			return false;
+		};
+		void unlock() const {
+			thread_local long long read, planned;
+			while (true) {
+				read = planned = mut.load(std::memory_order::memory_order_relaxed);
+				--reinterpret_cast<short*>(&planned)[1];
+				if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+					break; // success!
+				}
+			}
+		};
+		void lock() const {
+			while (!try_lock()) {}
+		};
+
+		bool try_lock_shared() const {
+			thread_local long long read;
+			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+			if (
+				(reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
+				&& (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
+				) {
+				return true;
+			}
+			else {
+				mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+				return false;
+			}
+		};
+		void unlock_shared() const {
+			mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
+		};
+		void lock_shared() const {
+			while (!try_lock_shared()) {}
+		};
+	};
+	
+	// Allows readers or writers exclusive access to a critical section, but not both at the same time. 
+	class fast_boolean_mutex {
+	private:
+		mutable std::atomic<long long> mut{ 0 }; // Read, Write
+
+	public:
+		bool try_lock() const {
+			thread_local long long read, planned;
+
+			read = planned = mut.load(std::memory_order::memory_order_relaxed);
+			if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
+				if (++reinterpret_cast<short*>(&planned)[1] >= 1) { //  we are allowed to write with other writers...
+					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+						return true; // success!
+					}
+				}
+			}
+			return false;
+		};
+		void unlock() const {
+			thread_local long long read, planned;
+			while (true) {
+				read = planned = mut.load(std::memory_order::memory_order_relaxed);
+				--reinterpret_cast<short*>(&planned)[1];
+				if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+					break; // success!
+				}
+			}
+		};
+		void lock() const {
+			while (!try_lock()) {}
+		};
+
+		bool try_lock_shared() const {
+			thread_local long long read;
+			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+			if (
+				(reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
+				&& (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
+				) {
+				return true;
+			}
+			else {
+				mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+				return false;
+			}
+		};
+		void unlock_shared() const {
+			mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
+		};
+		void lock_shared() const {
+			while (!try_lock_shared()) {}
+		};
+	};
+#if 1
+	using shared_mutex = fast_shared_mutex;
+#else
 	/* mutex which allows multiple readers OR one writer to access a critical section at the same time. */
 	class shared_mutex {
 	public:
@@ -628,6 +741,7 @@ namespace GoodLang {
 		};
 
 	};
+#endif
 
 	class ExceptionHandling {
 	public:

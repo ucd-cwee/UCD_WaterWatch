@@ -3213,61 +3213,6 @@ namespace GoodLang {
 			};
 		};
 
-		// a fast alternative to the std::shared_mutex when prioritizing readers over writers. 
-		class fast_shared_mutex {
-		private:
-			mutable std::atomic<long long> mut{ 0 }; // Read, Write
-
-		public:
-			bool try_lock() const {
-				thread_local long long read, planned;
-
-				read = planned = mut.load(std::memory_order::memory_order_relaxed);
-				if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
-					if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
-						if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-							return true; // success!
-						}
-					}
-				}
-				return false;
-			};
-			void unlock() const {
-				thread_local long long read, planned;
-				while (true) {
-					read = planned = mut.load(std::memory_order::memory_order_relaxed);
-					--reinterpret_cast<short*>(&planned)[1];
-					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-						break; // success!
-					}
-				}
-			};
-			void lock() const {
-				while (!try_lock()) {}
-			};
-
-			bool try_lock_shared() const {
-				thread_local long long read;
-				read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
-				if (
-					(reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
-					&& (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
-					) {
-					return true;
-				}
-				else {
-					mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
-					return false;
-				}
-			};
-			void unlock_shared() const {
-				mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
-			};
-			void lock_shared() const {
-				while (!try_lock_shared()) {}
-			};
-		};
-
 		// fast, thread-safe sorted map. 
 		template<class KeyType, class ValueType> class flat_map {
 		public:
@@ -3460,7 +3405,8 @@ namespace GoodLang {
 				return at_index(InsertPair(time, value, true, false));
 			};
 
-			ValueType& lower_bound(const KeyType& time, long& hint) const {
+			ValueType& 
+				lower_bound(const KeyType& time, long& hint) const {
 				std::shared_lock locked{ lock };
 				long i = UnsafeIndexForTime(time, hint);
 				size_t sz = values.size();
@@ -3474,7 +3420,8 @@ namespace GoodLang {
 					return values[i];
 				}
 			};
-			ValueType& at(const KeyType& time, long& hint) const {
+			ValueType& 
+				at(const KeyType& time, long& hint) const {
 				std::shared_lock locked{ lock };
 				long i = UnsafeIndexForTime(time, hint);
 				size_t sz = values.size();
@@ -3493,7 +3440,8 @@ namespace GoodLang {
 				}
 				throw std::range_error("Could not find " + GoodLang::ToString(time));
 			};
-			ValueType* find(const KeyType& time, long& hint) const {
+			ValueType* 
+				find(const KeyType& time, long& hint) const {
 				std::shared_lock locked{ lock };
 				size_t sz = values.size();
 				if (sz == 0) {
@@ -3513,7 +3461,8 @@ namespace GoodLang {
 				return nullptr;
 			};
 
-			ValueType& lower_bound(const KeyType& time) const {
+			ValueType& 
+				lower_bound(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				long i;
 				i = UnsafeIndexForTime(time, i = -1);
@@ -3528,7 +3477,8 @@ namespace GoodLang {
 					return values[i];
 				}
 			};
-			ValueType& at(const KeyType& time) const {
+			ValueType& 
+				at(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				long i;
 				i = UnsafeIndexForTime(time, i = -1);
@@ -3548,7 +3498,8 @@ namespace GoodLang {
 				}
 				throw std::range_error("Could not find " + GoodLang::ToString(time));
 			};
-			ValueType* find(const KeyType& time) const {
+			ValueType* 
+				find(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				size_t sz = values.size();
 				if (sz == 0) {
@@ -3568,7 +3519,8 @@ namespace GoodLang {
 				}
 				return nullptr;
 			};
-			ValueType& operator[](const KeyType& time) {
+			ValueType& 
+				operator[](const KeyType& time) {
 				if (auto* f = find(time)) {
 					return *f;
 				}
@@ -3576,8 +3528,8 @@ namespace GoodLang {
 					return insert(time, {}).second.get();
 				}
 			};
-			template <typename Func>
-			ValueType& get_or_make(const KeyType& time, Func func, bool* ExistedAlready = nullptr) {
+			template <typename Func> ValueType& 
+				get_or_make(const KeyType& time, Func func, bool* ExistedAlready = nullptr) {
 				if (auto* f = find(time)) {
 					if (ExistedAlready) *ExistedAlready = true;
 					return *f;
@@ -3587,8 +3539,8 @@ namespace GoodLang {
 					return insert(time, func()).second.get();
 				}
 			};
-
-			bool Visit(std::function<bool(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> const&)> const& Func) const {
+			bool 
+				Visit(std::function<bool(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> const&)> const& Func) const {
 				std::shared_lock locked{ lock };
 				for (size_t i = 0, sz = values.size(); i < sz; ++i) {
 					if (Func(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(times[i]), std::ref(values[i]) })) {
@@ -3597,7 +3549,6 @@ namespace GoodLang {
 				}
 				return false;
 			};
-
 		};
 
 	};
