@@ -3213,15 +3213,16 @@ namespace GoodLang {
 			};
 		};
 
-		// fast, thread-safe sorted map. 
+		// fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
 		template<class KeyType, class ValueType> class flat_map {
+		friend class it_state;
 		public:
 			typedef std::vector<ValueType>	ValueList;
 			typedef std::vector<KeyType>	KeyList;
 
 		protected:
 			mutable fast_shared_mutex
-				lock;
+				lock; // basically equivalent to std::shared_ptr
 			mutable KeyList
 				times;			// knot Times
 			mutable ValueList
@@ -3229,41 +3230,18 @@ namespace GoodLang {
 
 			size_t
 				UnsafeIndexForTime(const KeyType& time, long& hint) const {
-
-				int currentIndex = hint;
-
-				if (times.size() <= 0)
-					return 0; // there is no other data...
-
-				int len, mid, offset;
+				int
+					len{ (int)times.size() },
+					mid,
+					offset,
+					currentIndex{ hint };
 				bool res;
 
-				if (currentIndex >= 0 && currentIndex < times.size()) {
-					// use the cached index if it is still valid
-					if (currentIndex == 0) {
-						if (time <= times[currentIndex]) {
-							return currentIndex; // no change
-						}
-					}
-					else if (currentIndex == times.size()) {
-						if (time > times[currentIndex - 1]) {
-							return currentIndex; // no change
-						}
-					}
-					else if ((time > times[currentIndex - 1]) && (time <= times[currentIndex])) {
-						return currentIndex; // no change
-					}
-					else if ((time > times[currentIndex]) && ((currentIndex + 1 == times.size()) || (time <= times[currentIndex + 1]))) {
-						// use the next index
-						currentIndex++;
-						InterlockedExchange(&hint, currentIndex);
-						return currentIndex;
-					}
+				if (len <= 0) return 0; // there is no other data...		
+				else if ((currentIndex >= 0) && (currentIndex < len) && (times[currentIndex] == time)) {
+					return currentIndex;
 				}
-
-				len = times.size();
-				// test the start and end of the list quickly
-				if (len != 0) {
+				else if (len != 0) {
 					if (times[0] > time) {
 						currentIndex = 0;
 						InterlockedExchange(&hint, currentIndex);
@@ -3303,41 +3281,73 @@ namespace GoodLang {
 				return currentIndex;
 			};
 			size_t
-				InsertPair(const KeyType& time, const ValueType& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
+				UnsafeInsertPair(long i, const KeyType& time, ValueType&& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
+				if (unique) {
+					if (((i != 0) && (i < values.size()) && (times[i] == time))) {
+						if (!InsertOnlyIfDoesNotExist) values[i] = std::move(valueIN);
+					}
+					else if (values.size() == 0 || i >= values.size()) {
+						times.push_back(time);
+						values.push_back(std::move(valueIN));
+					}
+					else if ((times.size() != 0) && times[0] != time) {
+						times.insert(times.begin() + i, time);
+						values.insert(values.begin() + i, std::move(valueIN));
+					}
+					else {
+						if (!InsertOnlyIfDoesNotExist) values[0] = std::move(valueIN);
+						i = 0;
+					}
+					return i;
+				}
+				else {
+					if (values.size() == 0 || i >= values.size()) {
+						times.push_back(time);
+						values.push_back(std::move(valueIN));
+					}
+					else {
+						times.insert(times.begin() + i, time);
+						values.insert(values.begin() + i, std::move(valueIN));
+					}
+					return i;
+				}
+			};
+			size_t
+				InsertPair(const KeyType& time, ValueType&& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
 				long i = 0;
 				if (unique) {
-					std::unique_lock locked{ lock }; {
+					{
+						std::unique_lock locked{ lock };
 						i = UnsafeIndexForTime(time, i = -1);
 						if (((i != 0) && (i < values.size()) && (times[i] == time))) {
-							if (!InsertOnlyIfDoesNotExist)
-								values[i] = valueIN;
+							if (!InsertOnlyIfDoesNotExist) values[i] = std::move(valueIN);
 						}
 						else if (values.size() == 0 || i >= values.size()) {
 							times.push_back(time);
-							values.push_back(valueIN);
+							values.push_back(std::move(valueIN));
 						}
 						else if ((times.size() != 0) && times[0] != time) {
 							times.insert(times.begin() + i, time);
-							values.insert(values.begin() + i, valueIN);
+							values.insert(values.begin() + i, std::move(valueIN));
 						}
 						else {
-							if (!InsertOnlyIfDoesNotExist)
-								values[0] = valueIN;
+							if (!InsertOnlyIfDoesNotExist) values[0] = std::move(valueIN);
 							i = 0;
 						}
 					}
 					return i;
 				}
 				else {
-					std::unique_lock locked{ lock }; {
+					{
+						std::unique_lock locked{ lock };
 						i = UnsafeIndexForTime(time, i = -1);
 						if (values.size() == 0 || i >= values.size()) {
 							times.push_back(time);
-							values.push_back(valueIN);
+							values.push_back(std::move(valueIN));
 						}
 						else {
 							times.insert(times.begin() + i, time);
-							values.insert(values.begin() + i, valueIN);
+							values.insert(values.begin() + i, std::move(valueIN));
 						}
 					}
 					return i;
@@ -3397,71 +3407,20 @@ namespace GoodLang {
 				return out;
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				insert(const KeyType& time, const ValueType& value) {
-				return at_index(InsertPair(time, value, true, true));
+				insert(const KeyType& time, ValueType&& value) {
+				return at_index(InsertPair(time, std::move(value), true, true));
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				emplace(const KeyType& time, const ValueType& value) {
-				return at_index(InsertPair(time, value, true, false));
+				unsafe_insert(const KeyType& time, ValueType&& value) {
+				long i;
+				return at_index_unsafe(UnsafeInsertPair(UnsafeIndexForTime(time, i = -1), time, std::move(value), true, true));
+			};
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				emplace(const KeyType& time, ValueType&& value) {
+				return at_index(InsertPair(time, std::move(value), true, false));
 			};
 
-			ValueType& 
-				lower_bound(const KeyType& time, long& hint) const {
-				std::shared_lock locked{ lock };
-				long i = UnsafeIndexForTime(time, hint);
-				size_t sz = values.size();
-				if (sz == 0) {
-					throw std::range_error("Could not find " + GoodLang::ToString(time));
-				}
-				if (i >= sz) {
-					return values[sz - 1];
-				}
-				else {
-					return values[i];
-				}
-			};
-			ValueType& 
-				at(const KeyType& time, long& hint) const {
-				std::shared_lock locked{ lock };
-				long i = UnsafeIndexForTime(time, hint);
-				size_t sz = values.size();
-				if (sz == 0) {
-					throw std::range_error("Could not find " + GoodLang::ToString(time));
-				}
-				if (i >= sz) {
-					if (times[sz - 1] == time) {
-						return values[sz - 1];
-					}
-				}
-				else {
-					if (times[i] == time) {
-						return values[i];
-					}
-				}
-				throw std::range_error("Could not find " + GoodLang::ToString(time));
-			};
-			ValueType* 
-				find(const KeyType& time, long& hint) const {
-				std::shared_lock locked{ lock };
-				size_t sz = values.size();
-				if (sz == 0) {
-					return nullptr;
-				}
-				long i = UnsafeIndexForTime(time, hint);
-				if (i >= sz) {
-					if (times[sz - 1] == time) {
-						return &values[sz - 1];
-					}
-				}
-				else {
-					if (times[i] == time) {
-						return &values[i];
-					}
-				}
-				return nullptr;
-			};
-
-			ValueType& 
+			ValueType&
 				lower_bound(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				long i;
@@ -3477,7 +3436,7 @@ namespace GoodLang {
 					return values[i];
 				}
 			};
-			ValueType& 
+			ValueType&
 				at(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				long i;
@@ -3498,14 +3457,13 @@ namespace GoodLang {
 				}
 				throw std::range_error("Could not find " + GoodLang::ToString(time));
 			};
-			ValueType* 
-				find(const KeyType& time) const {
-				std::shared_lock locked{ lock };
-				size_t sz = values.size();
-				if (sz == 0) {
-					return nullptr;
-				}
+			ValueType*
+				unsafe_find(const KeyType& time) const {
+				size_t sz;
 				long i;
+
+				sz = values.size();
+				if (sz == 0) { return nullptr; }
 				i = UnsafeIndexForTime(time, i = -1);
 				if (i >= sz) {
 					if (times[sz - 1] == time) {
@@ -3519,27 +3477,54 @@ namespace GoodLang {
 				}
 				return nullptr;
 			};
-			ValueType& 
+			ValueType*
+				try_at(const KeyType& time) const {
+				std::shared_lock locked{ lock };
+				return unsafe_find(time);
+			};
+			ValueType&
 				operator[](const KeyType& time) {
-				if (auto* f = find(time)) {
+				lock.lock_shared();
+				if (auto* f = unsafe_find(time)) {
+					lock.unlock_shared();
 					return *f;
 				}
 				else {
-					return insert(time, {}).second.get();
+					if (lock.upgrade_lock()) {
+						auto* out = &unsafe_insert(time, {}).second.get();
+						lock.unlock();
+						return *out;
+					}
+					else {
+						auto* out = &unsafe_insert(time, {}).second.get();
+						lock.unlock();
+						return *out;
+					}
 				}
 			};
-			template <typename Func> ValueType& 
+			template <typename Func> ValueType&
 				get_or_make(const KeyType& time, Func func, bool* ExistedAlready = nullptr) {
-				if (auto* f = find(time)) {
+				lock.lock_shared();
+				if (auto* f = unsafe_find(time)) {
 					if (ExistedAlready) *ExistedAlready = true;
+					lock.unlock_shared();
 					return *f;
 				}
 				else {
 					if (ExistedAlready) *ExistedAlready = false;
-					return insert(time, func()).second.get();
+					if (lock.upgrade_lock()) {
+						auto* out = &unsafe_insert(time, func()).second.get();
+						lock.unlock();
+						return *out;
+					}
+					else {
+						auto* out = &unsafe_insert(time, func()).second.get();
+						lock.unlock();
+						return *out;
+					}
 				}
 			};
-			bool 
+			bool
 				Visit(std::function<bool(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> const&)> const& Func) const {
 				std::shared_lock locked{ lock };
 				for (size_t i = 0, sz = values.size(); i < sz; ++i) {
@@ -3549,6 +3534,69 @@ namespace GoodLang {
 				}
 				return false;
 			};
+
+		private:
+			class it_state {
+			public:
+				using thisType = flat_map;
+				using value_type = std::pair<KeyType*, ValueType*>;
+				using iterator_category = std::forward_iterator_tag;
+				using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+				// data
+				mutable typename ValueList::iterator
+					_val_ptr{};
+				mutable typename KeyList::iterator
+					_time_ptr{};
+				std::shared_ptr<std::shared_lock<fast_shared_mutex>>
+					lifetime{ nullptr };
+				mutable value_type
+					_out;
+
+				// functions
+				void Initialize(thisType* ref) {
+					lifetime = std::make_shared<std::shared_lock<fast_shared_mutex>>(ref->lock);
+				};
+				void ToBeginning(thisType* ref) {
+					_time_ptr = ref->times.begin();
+					_val_ptr = ref->values.begin();
+				};
+				void ToEnd(thisType* ref) {
+					_time_ptr = ref->times.end();
+					_val_ptr = ref->values.end();
+				};
+				void Next(thisType* ref) {
+					++_time_ptr;
+					++_val_ptr;
+				};
+				void Prev(thisType* ref) {
+					--_time_ptr;
+					--_val_ptr;
+				};
+				value_type& Get(thisType* ref) const {
+					_out.first = &*_time_ptr;
+					_out.second = &*_val_ptr;
+					return _out;
+				};
+				bool operator==(it_state const& rhs) const {
+					return _time_ptr == rhs._time_ptr;
+				};
+				difference_type Distance(it_state const& other) const { return _time_ptr - other._time_ptr; };
+			};
+		public:
+			SETUP_ITERATOR(flat_map, it_state);
+			iterator find(const KeyType& _Keyval) const {
+				std::shared_lock locked{ lock };
+
+				auto iter = this->end();
+				if (auto* loc = unsafe_find(_Keyval)) {
+					size_t pos = loc - &this->values[0];
+					iter.state._val_ptr = this->values.begin() + pos;
+					iter.state._time_ptr = this->times.begin() + pos;
+				}
+				return iter;
+			};
+
 		};
 
 	};

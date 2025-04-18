@@ -564,7 +564,6 @@ namespace GoodLang {
 	public:
 		bool try_lock() const {
 			thread_local long long read, planned;
-
 			read = planned = mut.load(std::memory_order::memory_order_relaxed);
 			if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
 				if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
@@ -577,7 +576,9 @@ namespace GoodLang {
 		};
 		void unlock() const {
 			thread_local long long read, planned;
+			int i = 0;
 			while (true) {
+				if (++i > 40) std::this_thread::yield();
 				read = planned = mut.load(std::memory_order::memory_order_relaxed);
 				--reinterpret_cast<short*>(&planned)[1];
 				if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
@@ -586,7 +587,10 @@ namespace GoodLang {
 			}
 		};
 		void lock() const {
-			while (!try_lock()) {}
+			int i = 0;
+			while (!try_lock()) {
+				if (++i > 40) std::this_thread::yield();
+			}
 		};
 
 		bool try_lock_shared() const {
@@ -607,10 +611,39 @@ namespace GoodLang {
 			mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
 		};
 		void lock_shared() const {
-			while (!try_lock_shared()) {}
+			int i = 0;
+			while (!try_lock_shared()) {
+				if (++i > 40) std::this_thread::yield();
+			}
 		};
+
+		// if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
+		// Returns true if this ideal scenario was successful. Returns false otherwise.
+		bool upgrade_lock() const {
+			thread_local long long read, planned;
+			// increment the write count and decrement our read count...
+			for (int i = 0; i < 40; ++i) {
+				planned = read = mut.load(std::memory_order::memory_order_relaxed);
+				if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
+					if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
+						if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+							return true;
+						}
+					}
+				}
+				else {
+					break;
+				}
+			}
+
+			unlock_shared();
+			lock();
+
+			return false;
+		};
+
 	};
-	
+
 	// Allows readers or writers exclusive access to a critical section, but not both at the same time. 
 	class fast_boolean_mutex {
 	private:
