@@ -556,7 +556,7 @@ namespace GoodLang {
 
 	};
 
-	// a fast alternative to the std::shared_mutex when prioritizing readers over writers. 
+	// a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
 	class fast_shared_mutex {
 	private:
 		mutable std::atomic<long long> mut{ 0 }; // Read, Write

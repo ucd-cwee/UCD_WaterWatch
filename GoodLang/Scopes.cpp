@@ -1807,11 +1807,14 @@ namespace GoodLang {
 	};
 	std::shared_ptr< Functions::FunctionSort > Namespace::GetFunctions(std::string const& name) const {
 		static auto hasher{ std::hash<std::string>() };
-		// movable shared lock
-		// auto locked{ std::make_shared< std::shared_lock<std::shared_mutex> >(p_functions->m_mut) };
-		auto f = p_functions->m_functions.find(hasher(name));
-		if (f != p_functions->m_functions.end()) {
-			return std::shared_ptr< Functions::FunctionSort >(&f->second.second, [/*lockedCopy = locked*/](Functions::FunctionSort*) { /*if (!lockedCopy) { throw(std::runtime_error("ERR")); };*/ });
+
+		if (name.size() > 0) {
+			auto& m_functions = p_functions->FirstCharToFunctionNameMap[p_functions->CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+			auto f = m_functions.find(hasher(name));
+			if (f != m_functions.end()) {
+				return std::shared_ptr< Functions::FunctionSort >(&f->second.second, [/*lockedCopy = locked*/](Functions::FunctionSort*) { /*if (!lockedCopy) { throw(std::runtime_error("ERR")); };*/ });
+			}
 		}
 		return nullptr;
 	};

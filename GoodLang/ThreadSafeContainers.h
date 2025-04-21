@@ -1334,7 +1334,7 @@ namespace GoodLang {
 
 	public:
 		std::unique_ptr<Arg, Deleter> data;
-		mutable std::shared_mutex lock{};
+		mutable GoodLang::fast_shared_mutex lock{};
 		void EnsureDataExists() const {
 			if (!data) {
 				lock.lock();
@@ -2320,7 +2320,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator 
 				_ptr{};
-			std::shared_ptr<std::shared_lock<std::shared_mutex>> 
+			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -2542,7 +2542,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -2751,7 +2751,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -2955,7 +2955,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -3116,7 +3116,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<std::shared_mutex>>
+			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions

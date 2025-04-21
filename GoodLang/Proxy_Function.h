@@ -4,6 +4,7 @@
 #include "Any.h"
 #include <optional>
 #include <iostream>
+#include <array>
 
 // Type_Conversion_Base, its impl's, & TypeConverter wrapper
 namespace GoodLang {
@@ -343,7 +344,7 @@ namespace GoodLang {
 			};
 
 		private:
-			mutable std::shared_mutex p_mut;
+			mutable GoodLang::fast_shared_mutex p_mut;
 		};
 
 	public:
@@ -3479,22 +3480,16 @@ namespace GoodLang {
 	public:
 		Functions() = default;
 		Functions(Functions const& rhs) {
-			//auto locked2{ std::shared_lock(rhs.m_mut) };
-			m_functions = rhs.m_functions;
+			FirstCharToFunctionNameMap = rhs.FirstCharToFunctionNameMap;
 		};
 		Functions(Functions&& rhs) {
-			//auto locked2{ std::unique_lock(rhs.m_mut) };
-			m_functions = std::move(rhs.m_functions);
+			FirstCharToFunctionNameMap = std::move(rhs.FirstCharToFunctionNameMap);
 		};
 		Functions& operator=(Functions const& rhs) {
-			//auto locked{ std::unique_lock(m_mut) };
-			//auto locked2{ std::shared_lock(rhs.m_mut) };
-			m_functions = rhs.m_functions;
+			FirstCharToFunctionNameMap = rhs.FirstCharToFunctionNameMap;
 		};
 		Functions& operator=(Functions&& rhs) {
-			//auto locked{ std::unique_lock(m_mut) };
-			//auto locked2{ std::unique_lock(rhs.m_mut) };
-			m_functions = std::move(rhs.m_functions);
+			FirstCharToFunctionNameMap = std::move(rhs.FirstCharToFunctionNameMap);
 		};
 		~Functions() = default;
 
@@ -3506,10 +3501,24 @@ namespace GoodLang {
 		typedef concurrency::concurrent_unordered_map< size_t, std::pair<std::string, FunctionSort> >
 			FunctionMap;
 
-		FunctionMap 
-			m_functions;
-		// mutable std::shared_mutex 
-			// m_mut{};
+	public:
+		static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
+		static constexpr size_t CharToIndex(char firstChar) {
+			if (firstChar >= 'a' && firstChar <= 'z') {
+				return ((int)firstChar - (int)('a')) + 27;
+			}
+			else if (firstChar >= 'A' && firstChar <= 'Z') {
+				return ((int)firstChar - (int)('A')) + 1;
+			}
+			else {
+				return 0;
+			}
+		};
+		std::array< FunctionMap, numV> 
+			FirstCharToFunctionNameMap;
+
+		//FunctionMap 
+			//m_functions;
 
 	private:
 		FunctionPtr at_unsafe(std::string const& key, ParamTypes const& params) const;

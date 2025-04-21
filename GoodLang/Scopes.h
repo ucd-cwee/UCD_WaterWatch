@@ -417,7 +417,7 @@ namespace GoodLang {
 		};
 	private:
 		using CacheContainer 
-			= std::pair < std::shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
+			= std::pair < GoodLang::fast_shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
 		using VersionedCacheContainer // use this mutex to delete entire caches once the version is out-of-date
 			= std::map<size_t, std::shared_ptr<CacheContainer>>; 
 		using TemplatedCacheContainer // organizes multiple caches for several purposes...
@@ -1093,7 +1093,7 @@ namespace GoodLang {
 			CachedClassList{ std::make_shared<std::unordered_map<size_t, std::weak_ptr<Class>>>() };
 		GoodLang::InterlockedLong
 			CachedClassListVersion{ 0 };
-		std::shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
+		GoodLang::fast_shared_mutex // fibers::synchronization::shared_mutex<fibers::synchronization::mutex>
 			CachedClassListMutex{};
 
 		//fibers::containers::number<unsigned int> 

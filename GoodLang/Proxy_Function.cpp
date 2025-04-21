@@ -916,11 +916,15 @@ namespace GoodLang {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
 
-		auto functionMapPtr = m_functions.find(hasher(key));
-		if (functionMapPtr != m_functions.end()) {
-			auto FunctionSortPtr = functionMapPtr->second.second.find(hasher2(params));
-			if (FunctionSortPtr != functionMapPtr->second.second.end()) {
-				return FunctionSortPtr->second.second;
+		if (key.size() > 0) {
+			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
+
+			auto functionMapPtr = m_functions.find(hasher(key));
+			if (functionMapPtr != m_functions.end()) {
+				auto FunctionSortPtr = functionMapPtr->second.second.find(hasher2(params));
+				if (FunctionSortPtr != functionMapPtr->second.second.end()) {
+					return FunctionSortPtr->second.second;
+				}
 			}
 		}
 		return nullptr;
@@ -932,26 +936,37 @@ namespace GoodLang {
 	Functions::FunctionPtr Functions::at(std::string const& key, ParamTypes const& params) const {
 		return operator()(key, params);
 	};
-
 	Functions::FunctionPtr Functions::emplace(std::string const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists) {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
 
-		// auto locked{ std::unique_lock(m_mut) };
-		auto& ptr = m_functions[hasher(key)].second[hasher2(params)].second;
-		if (!ptr || (ptr && replaceIfAlreadyExists))
-			ptr = GoodLang::make_shared<Function>(func);
-		return ptr;
+		if (key.size() > 0) {
+			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
+
+			auto& ptr = m_functions[hasher(key)].second[hasher2(params)].second;
+			if (!ptr || (ptr && replaceIfAlreadyExists))
+				ptr = GoodLang::make_shared<Function>(func);
+			return ptr;
+		}
+		else {
+			return nullptr;
+		}
 	};
 	Functions::FunctionPtr Functions::emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists) {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
 
-		// auto locked{ std::unique_lock(m_mut) };
-		auto& ptr = m_functions[hasher(key)].second[hasher2(func.m_function->Arguments().Types())].second;
-		if (!ptr || (ptr && replaceIfAlreadyExists))
-			ptr = GoodLang::make_shared<Function>(func);
-		return ptr;
+		if (key.size() > 0) {
+			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
+
+			auto& ptr = m_functions[hasher(key)].second[hasher2(func.m_function->Arguments().Types())].second;
+			if (!ptr || (ptr && replaceIfAlreadyExists))
+				ptr = GoodLang::make_shared<Function>(func);
+			return ptr;
+		}
+		else {
+			return nullptr;
+		}
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
@@ -975,30 +990,31 @@ namespace GoodLang {
 				std::vector<std::shared_ptr<Type_Info>> paramTypes;
 				for (auto& x : Params) paramTypes.push_back(x.lock());
 
+				if (functionName.size() > 0) {
+					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
+					auto& m_func_find = m_functions[hasher(functionName)];
+					for (auto& function : m_func_find.second) {
+						if (!function.second.second) continue;
+						if (!function.second.second->m_function) continue;
+						if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+						bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
+						bool isExplicitFunc = function.second.second->m_isEplicit;
 
-				// auto locked{ std::shared_lock(m_mut) }; // LOCKED
-				auto& m_func_find = m_functions[hasher(functionName)];
-				for (auto& function : m_func_find.second) {
-					if (!function.second.second) continue;
-					if (!function.second.second->m_function) continue;
-					if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
-					bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
-					bool isExplicitFunc = function.second.second->m_isEplicit;
+						auto conversionCost = function.second.second->m_function->conversion_cost_fast(paramTypes, m_typeConverters);
+						if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
 
-					auto conversionCost = function.second.second->m_function->conversion_cost_fast(paramTypes, m_typeConverters);
-					if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
-
-					if (isTemplateFunc) {
-						if (AllowTemplateInstantiation) {
-							candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
+						if (isTemplateFunc) {
+							if (AllowTemplateInstantiation) {
+								candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
+							}
 						}
-					}
-					else {
-						if (conversionCost == 0) {
-							candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
-						}
-						else if (AllowTypeConversion && !isExplicitFunc) {
-							candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
+						else {
+							if (conversionCost == 0) {
+								candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
+							}
+							else if (AllowTypeConversion && !isExplicitFunc) {
+								candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
+							}
 						}
 					}
 				}
@@ -1048,61 +1064,64 @@ namespace GoodLang {
 				std::vector<std::shared_ptr<Type_Info>> paramTypes;
 				for (auto& x : Params) paramTypes.push_back(x.lock());
 
-				// auto locked{ std::shared_lock(m_mut) }; // LOCKED
-				auto& m_func_find = m_functions[hasher(functionName)];
-				double conversionCost;
-				for (auto& function : m_func_find.second) {
-					if (!function.second.second) continue;
-					if (!function.second.second->m_function) continue;
-					if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
-					bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
-					bool isExplicitFunc = function.second.second->m_isEplicit;
+				if (functionName.size() > 0) {
+					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
+					auto& m_func_find = m_functions[hasher(functionName)];
+					double conversionCost;
+					for (auto& function : m_func_find.second) {
+						if (!function.second.second) continue;
+						if (!function.second.second->m_function) continue;
+						if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+						bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
+						bool isExplicitFunc = function.second.second->m_isEplicit;
 
-					// NOTE: if the hash for Params and function.second.second->m_function-> Arguments().Types() match, doesn't that mean the types inside exactly match?
-					if ((0 == Params.size()) && (0 == function.second.second->m_function->Arguments().Types().size())) {
-						// both have a matching size...
-						conversionCost = 0;
-					}
-					else if (Params.hash() == function.second.second->m_function->Arguments().Types().hash()) {
-						conversionCost = 0;
-					}
-					else {
-						conversionCost = function.second.second->m_function->conversion_cost_fast(params, paramTypes, m_typeConverters);
-					}
+						// NOTE: if the hash for Params and function.second.second->m_function-> Arguments().Types() match, doesn't that mean the types inside exactly match?
+						if ((0 == Params.size()) && (0 == function.second.second->m_function->Arguments().Types().size())) {
+							// both have a matching size...
+							conversionCost = 0;
+						}
+						else if (Params.hash() == function.second.second->m_function->Arguments().Types().hash()) {
+							conversionCost = 0;
+						}
+						else {
+							conversionCost = function.second.second->m_function->conversion_cost_fast(params, paramTypes, m_typeConverters);
+						}
 
-					if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
+						if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
 
-					// try to early exit...
-					if (Params.size() == function.second.second->m_function->Arguments().size()) {
-						if (!isTemplateFunc) {
-							if (conversionCost == 0) {
-								if (function.second.second) {
-									// ParamTypes ParamTypesToCache{ params };
-									Function FunctionToCache{ function.second.second->m_function };
-									FunctionToCache.m_isCached = true;
-									// if someone already beat us to it, it should return the "current" value
-									if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
-										return func->m_function;
+						// try to early exit...
+						if (Params.size() == function.second.second->m_function->Arguments().size()) {
+							if (!isTemplateFunc) {
+								if (conversionCost == 0) {
+									if (function.second.second) {
+										// ParamTypes ParamTypesToCache{ params };
+										Function FunctionToCache{ function.second.second->m_function };
+										FunctionToCache.m_isCached = true;
+										// if someone already beat us to it, it should return the "current" value
+										if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+											return func->m_function;
+										}
 									}
 								}
 							}
 						}
-					}
 
-					if (isTemplateFunc) {
-						if (AllowTemplateInstantiation) {
-							candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
+						if (isTemplateFunc) {
+							if (AllowTemplateInstantiation) {
+								candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
+							}
 						}
-					}
-					else {
-						if (conversionCost == 0) {
-							candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
-						}
-						else if (AllowTypeConversion && !isExplicitFunc) {
-							candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
+						else {
+							if (conversionCost == 0) {
+								candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
+							}
+							else if (AllowTypeConversion && !isExplicitFunc) {
+								candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
+							}
 						}
 					}
 				}
+
 			}
 
 			// Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).

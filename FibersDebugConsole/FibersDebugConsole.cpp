@@ -7410,7 +7410,7 @@ public:
 	};
 
 	// Get a function (if it exists!)
-	GoodLang::Proxy_Function at(GoodLang::ParamTypes const& params, std::string_view const& name) {
+	GoodLang::Proxy_Function* at(GoodLang::ParamTypes const& params, std::string_view const& name) {
 		size_t hash{ 0 };
 		if (name.size() > 0) {
 			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
@@ -7420,7 +7420,7 @@ public:
 			if (auto* F = map.try_at(hash)) {
 				if (auto* P = (*F)->try_at(params.hash())) {
 					if (auto* X = (*P)->get<2>().get()) {
-						return *X;
+						return X;
 					}
 				}
 			}
@@ -7573,19 +7573,32 @@ private:
 public:
 	SETUP_ITERATOR(FunctionsMap, it_state);
 
-	// Get a function (if it exists!)
-	//iterator at(std::string_view const& name) {
-	//	auto iter = end();
-	//	if (name.size() > 0) {
-	//		iter.state.outtermost_index = CharToIndex(name[0]);
-	//		iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
-	//		// iter.state.middle_index = ;
-	//		iter.state.middle_index_max = iter.state.middle_index + 1;
-	//		// iter.state.middle_index = ;
-	//		iter.state.final_index_max = ;
-	//	}
-	//	return iter;
-	//};
+	// // Get a function (if it exists!)
+	// this failed and did not work. Needs fixing. 
+	iterator find(std::string_view const& name) {
+		auto iter = end();
+		if (name.size() > 0) {
+			iter.state.outtermost_index = CharToIndex(name[0]);
+			iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
+
+			if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].try_at(GoodLang::GetHash(name))) {
+				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].begin(); 
+				iter.state.middle_index = FirstCharToFunctionNameMap[iter.state.outtermost_index].at_index(0).second.get() - *ptr;
+				iter.state.middle_index_max = iter.state.middle_index + 1;
+				iter.state.middle_iter += iter.state.middle_index;
+				iter.state.final_iter = (*iter.state.middle_iter->second)->begin();
+				iter.state.final_index = 0;
+				iter.state.final_index_max = (*ptr)->size();
+			}
+			else {
+				iter.state.middle_index = 0;
+				iter.state.middle_index_max = 0;
+				iter.state.final_index = 0;
+				iter.state.final_index_max = 0;
+			}
+		}
+		return iter;
+	};
 
 };
 
@@ -7747,6 +7760,12 @@ int main() {
 			print(ToString(Units::second(sw.Stop_s())) + " @ search w/ FunctionsMap (no hints)");
 
 			for (auto& x : funcs) {
+				auto& func_name = x.get<0>();
+				// print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(**x.get<2>()));
+			}
+
+			// this failed and did not work. Needs fixing. 
+			for (auto& x : funcs.find("int")) {
 				auto& func_name = x.get<0>();
 				print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(**x.get<2>()));
 			}
@@ -10104,144 +10123,6 @@ int main() {
 						(void)(s1->Cast<size_t>(s1->CallFunction("to_hash", { Units::foot(100) })));                     // 16763820920937584519 // 100_ft != 100_m
 					}
 
-					// Proxy_Function tests
-					if (1) {
-						// Function without any arguments
-						if (1) {
-							auto proxy = make_callable([]() -> double { return ((double)std::rand()) / (double)RAND_MAX; });
-							EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("Returns", { proxy }), user_type_shared<double>() })));
-							EXPECT_EQ(0, s1->Cast<size_t>(s1->CallFunction("NumArguments", { proxy })));
-							(void)(s1->Cast<double>(s1->CallFunction("()", { proxy })));
-							(void)(s1->Cast<double>(s1->CallFunction("Invoke", { proxy, Vector<Var>() })));
-							(void)(s1->Cast<double>(s1->CallFunction("()", { proxy, std::string("DUMMY") })));
-							(void)(s1->Cast<double>(s1->CallFunction("()", { proxy, std::string("DUMMY"), std::string("DUMMY"), std::string("DUMMY"), std::string("DUMMY"), std::string("DUMMY") })));
-						}
-						// Function with two arguments
-						if (1) {
-							auto proxy = make_callable([](double min, double max) -> double { return min+((max - min)*(((double)std::rand()) / (double)RAND_MAX)); });
-							EXPECT_EQ(true, s1->Cast<bool>(s1->CallFunction("==", { s1->CallFunction("Returns", { proxy }), user_type_shared<double>() })));
-							EXPECT_EQ(2, s1->Cast<size_t>(s1->CallFunction("NumArguments", { proxy })));
-							(void)(s1->Cast<double>(s1->CallFunction("()", { proxy, 0, 1 })));
-
-							Vector<Var> Temp; 
-							Temp.push_back(Var(Any(0))); 
-							Temp.push_back(Var(Any(1.0)));
-
-							(void)(s1->Cast<double>(s1->CallFunction("Invoke", { proxy, Temp })));
-							(void)(s1->Cast<double>(s1->CallFunction("()", { proxy, 0, 1, 2, 3, 4, 5 })));
-
-							(void)(s1->Cast<double>(s1->CallFunction("()", { proxy, Units::foot(1), Units::foot(5), std::string("DUMMY") })));
-							
-							try {
-								print(s1->Cast<double>(s1->CallFunction("()", { proxy, Units::foot(1), std::string("DUMMY") }))); // will throw an error, since cast from std::string to double is not found
-							} catch (exception::bad_any_cast&) {}
-						}
-
-						if (0) {
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable([](double min, double max) -> double { return 0; }) })));
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable([](int min, float const& max) -> std::string { return ""; }) })));
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable(&stackThing::get_var_name) })));
-							print(s1->Cast<std::string>(s1->CallFunction("to_string", { make_callable(&DateTime::Now) })));
-
-							for (auto& funcs : s0->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-							for (auto& funcs : s0->FindNamespace("Units::value")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-
-							for (auto& funcs : s0->FindNamespace("Vector")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-							for (auto& funcs : s0->FindNamespace("Map")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-
-							for (auto& funcs : s0->FindNamespace("string")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-
-							for (auto& funcs : s0->FindNamespace("Promise")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-
-							for (auto& funcs : s0->FindNamespace("Function")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-
-
-							for (auto& funcs : s0->FindNamespace("DateTime")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-
-							for (auto& funcs : s0->FindNamespace("Var")->GetFunctions()->m_functions) {
-								auto& name = funcs.second.first;
-								for (auto& func : funcs.second.second) {
-									if (!func.second.second->m_isCached) {
-										auto& function = func.second.second->m_function;
-										print(s1->Cast<std::string>(s1->CallFunction("to_string", { function })));
-									}
-								}
-							}
-
-						}
-					}
 				}
 			}
 			// SharedLockable

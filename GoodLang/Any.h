@@ -1208,7 +1208,7 @@ namespace GoodLang {
 
 		std::weak_ptr<Scripted_Type_Info> m_self;
 		std::weak_ptr<Scripted_Type_Info> m_parent;
-		mutable std::shared_mutex m_children_mut;
+		mutable GoodLang::fast_shared_mutex m_children_mut;
 		mutable std::unordered_map<size_t, std::shared_ptr<Scripted_Type_Info>> m_children;
 		std::weak_ptr<Type_Info> MakeDuplicate(bool targetConst, bool targetRef) const;
 
@@ -2532,7 +2532,7 @@ namespace GoodLang {
 
 	public:
 		mutable std::shared_ptr<AnyData> container;
-		mutable std::shared_mutex mut;
+		mutable GoodLang::fast_shared_mutex mut;
 	};
 	namespace Impl {
 		__forceinline void ToString(Tag<Any>, Any const& r, std::string& out) {
