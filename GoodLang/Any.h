@@ -514,280 +514,6 @@ namespace GoodLang {
 		T* ptr;
 	};
 
-	template<class T> class weak_ptr; // forward-decl
-
-	class shared_ptr_base {
-	public:
-		struct aux {
-			std::atomic<long long> // strong (first short), weak (second short), destroy flag (third short), delete flag (fourth short)
-				Strong_Weak_Destroy_Delete{ 1 }; // strong = 1, weak = 0, destroy = 0, delete = 0
-
-			aux() = default;
-
-			virtual void* ptr() const = 0;
-			virtual void destroy() = 0;
-			virtual ~aux() {} //must be polymorphic
-		};
-		static void PreventDeletion(aux* const& ptr);
-		static void AllowDeletion(aux* const& ptr);
-		// requires that the ptr is NOT already locked through PreventDeletion
-		static void DoDeletion(aux* const& ptr);
-		// requires that the ptr is NOT already locked through PreventDeletion
-		static void DoDestroyOrDelete(aux* const& ptr, bool Destroy, bool Delete);
-		template<class U, class Deleter> struct auximpl : public aux {
-			void* p;
-			Deleter d;
-			auximpl(U* pu, Deleter x) : aux(), p(static_cast<void*>(pu)), d(std::move(x)) {}
-			virtual void* ptr() const override { return p; };
-			virtual void destroy() override { d(static_cast<U*>(p)); }
-		};
-		template<class U> struct auxlocalimpl : public aux {
-			unsigned char p[sizeof(U)];
-
-			template <class... _Types>
-			auxlocalimpl(_Types&&... _Args) : aux() {
-				auto* ptr = reinterpret_cast<void*>(&p[0]);
-				new (ptr) U(_STD forward<_Types>(_Args)...);
-			};
-			virtual void* ptr() const override { return reinterpret_cast<void*>(const_cast<unsigned char*>(&p[0])); };
-			virtual void destroy() override {
-				reinterpret_cast<U*>(&p[0])->~U();
-			};
-		};
-		template<class U> struct default_deleter {
-			void operator()(U* p) const { delete p; };
-		};
-		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
-		static aux* inc(GoodLang::atomic_ptr<aux> const& pa);
-		// ASSUMES THAT THE PTR COMES IN LOCKED.
-		static void dec(aux* pa_ptr);
-		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
-		static aux* inc_weak(GoodLang::atomic_ptr<aux> const& pa);
-		// ASSUMES THAT THE PTR COMES IN LOCKED.
-		static void dec_weak(aux* pa_ptr);
-	};
-
-	/// <summary>
-	/// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
-	/// </summary>
-	/// <returns></returns>
-	template<class T> class shared_ptr : public shared_ptr_base {
-	protected:
-		friend class weak_ptr<T>;
-
-		GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
-		T* pt;
-
-		static T* get(shared_ptr const& p) {
-			T*
-				out{ nullptr };
-			aux
-				* pa_ptr{ nullptr },
-				* pa_ptr_copy{ nullptr };
-			long long
-				read;
-
-			while (pa_ptr_copy = pa_ptr = p.pa.load()) {
-				// prevent its deletion while we work on it. This does not access it, it simply locks the region the pointer belongs to, HOPING to prevent collisions. 
-				PreventDeletion(pa_ptr_copy);
-				if (pa_ptr_copy == (pa_ptr = p.pa.load())) {
-					if (pa_ptr) {
-						read = pa_ptr->Strong_Weak_Destroy_Delete.load();
-						if (!reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
-							out = static_cast<T*>(pa_ptr->ptr());
-							AllowDeletion(pa_ptr_copy);
-							return out;
-						}
-					}
-				}
-				AllowDeletion(pa_ptr_copy);
-			}
-			return out;
-		};
-
-		explicit shared_ptr(aux* p) : pa(p), pt(nullptr) {
-			pt = get(*this);
-		};
-
-	public:
-		const auto& GetPa() const {
-			return pa;
-		};
-
-		shared_ptr() :pa(nullptr), pt(nullptr) {}
-		shared_ptr(std::nullptr_t) : pa(nullptr), pt(nullptr) {}
-		explicit shared_ptr(aux* pa_p, T* pt_p, bool) :pa(pa_p), pt(pt_p) {} // used to initialize a new ptr from custom aux-type.
-
-		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(reinterpret_cast<T*>(pu)) {}
-		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(reinterpret_cast<T*>(pu)) {}
-
-		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(nullptr), pt(nullptr) {
-			auto* new_pa = shared_ptr_base::inc(s.GetPa()); // this is locked! 
-			if (new_pa) {
-				pt = static_cast<T*>(new_pa->ptr());
-			}
-			pa = new_pa;
-			shared_ptr_base::AllowDeletion(new_pa);
-		};
-		shared_ptr(shared_ptr<T> const& s) : pa(nullptr), pt(nullptr) {
-			auto* new_pa = shared_ptr_base::inc(s.GetPa()); // this is locked! 
-			if (new_pa) {
-				pt = static_cast<T*>(new_pa->ptr());
-			}
-			pa = new_pa;
-			shared_ptr_base::AllowDeletion(new_pa);
-		};
-
-		~shared_ptr() {
-			auto* ptr = pa.load();
-			shared_ptr_base::PreventDeletion(ptr);
-			shared_ptr_base::dec(ptr);
-		}
-
-		shared_ptr& operator=(const shared_ptr& s) {
-			if (this != &s) {
-				InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
-				auto* new_ptr = shared_ptr_base::inc(s.pa); // this is locked! 
-				auto* old_ptr = pa.Set(new_ptr);
-				shared_ptr_base::AllowDeletion(new_ptr);
-				shared_ptr_base::PreventDeletion(old_ptr);
-				shared_ptr_base::dec(old_ptr);
-			}
-			return *this;
-		};
-		template<class U> shared_ptr& operator=(const shared_ptr<U>& s) {
-			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
-			auto* new_ptr = shared_ptr_base::inc(s.GetPa()); // this is locked! 
-			auto* old_ptr = pa.Set(new_ptr);
-			shared_ptr_base::AllowDeletion(new_ptr);
-			shared_ptr_base::PreventDeletion(old_ptr);
-			shared_ptr_base::dec(old_ptr);
-			return *this;
-		};
-		shared_ptr& operator=(std::nullptr_t) {
-			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
-			auto* old_ptr = pa.Set(nullptr);
-			shared_ptr_base::PreventDeletion(old_ptr);
-			shared_ptr_base::dec(old_ptr);
-			return *this;
-		};
-
-		T* get() const {
-			if (pt) return pt;
-			return get(*this);
-		};
-		operator bool() const {
-			return get();
-		};
-		T* operator->() const {
-			return get();
-		};
-		T& operator*() const {
-			return *get();
-		};
-
-		friend bool operator==(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() == b.get(); };
-		friend bool operator!=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() != b.get(); };
-		friend bool operator<(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() < b.get(); };
-		friend bool operator<=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() <= b.get(); };
-		friend bool operator>(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() > b.get(); };
-		friend bool operator>=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() >= b.get(); };
-		friend bool operator==(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() == nullptr; };
-		friend bool operator!=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() != nullptr; };
-		friend bool operator<(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() < nullptr; };
-		friend bool operator<=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() <= nullptr; };
-		friend bool operator>(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() > nullptr; };
-		friend bool operator>=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() >= nullptr; };
-		friend bool operator==(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr == a.get(); };
-		friend bool operator!=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr != a.get(); };
-		friend bool operator<(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr < a.get(); };
-		friend bool operator<=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr <= a.get(); };
-		friend bool operator>(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr > a.get(); };
-		friend bool operator>=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr >= a.get(); };
-	};
-
-	/// <summary>
-	/// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
-	/// </summary>
-	/// <returns></returns>
-	template<class T> class weak_ptr {
-		GoodLang::atomic_ptr<shared_ptr_base::aux> pa; // pointer to shared memory block
-
-	public:
-		weak_ptr() : pa(nullptr) {}
-		weak_ptr(std::nullptr_t) : pa(nullptr) {}
-		weak_ptr(shared_ptr<T> const& r) : pa(nullptr) {
-			auto* new_pa = shared_ptr_base::inc_weak(r.pa); // this is locked! 
-			pa = new_pa;
-			shared_ptr_base::AllowDeletion(new_pa);
-		};
-		weak_ptr(const weak_ptr& r) : pa(nullptr) {
-			auto* new_pa = shared_ptr_base::inc_weak(r.pa); // this is locked! 
-			pa = new_pa;
-			shared_ptr_base::AllowDeletion(new_pa);
-		};
-		~weak_ptr() {
-			auto* ptr = pa.load();
-			shared_ptr_base::PreventDeletion(ptr);
-			shared_ptr_base::dec_weak(ptr);
-		}
-
-		operator bool() const {
-			return !expired();
-		};
-
-		weak_ptr& operator=(const weak_ptr& s) {
-			if (this != &s) {
-				auto* new_ptr = shared_ptr_base::inc_weak(s.pa); // this is locked! 
-				auto* old_ptr = pa.Set(new_ptr);
-				shared_ptr_base::AllowDeletion(new_ptr);
-				shared_ptr_base::PreventDeletion(old_ptr);
-				shared_ptr_base::dec_weak(old_ptr);
-			}
-			return *this;
-		};
-		weak_ptr& operator=(std::nullptr_t) {
-			auto* old_ptr = pa.Set(nullptr);
-			shared_ptr_base::PreventDeletion(old_ptr);
-			shared_ptr_base::dec_weak(old_ptr);
-			return *this;
-		};
-
-		shared_ptr<T> lock() const {
-			auto* new_ptr = shared_ptr_base::inc(pa); // this is locked! 
-			auto out{ shared_ptr<T>(new_ptr) };
-			shared_ptr_base::AllowDeletion(new_ptr);
-			return out;
-		};
-		bool expired() {
-			if (auto* pa_ptr = pa.load()) {
-				shared_ptr_base::PreventDeletion(pa_ptr);
-				auto read = pa_ptr->Strong_Weak_Destroy_Delete.load();
-				if ((reinterpret_cast<short*>(&read)[0] < std::numeric_limits<short>::max()) && !reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
-					shared_ptr_base::AllowDeletion(pa_ptr);
-					return false;
-				}
-				else {
-					shared_ptr_base::AllowDeletion(pa_ptr);
-					return true;
-				}
-			}
-			return true;
-		};
-	};
-
-	template <class _Ty, class... _Types>
-	_NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { // make a shared_ptr to non-array object
-		if constexpr (sizeof(_Ty) > (sizeof(uint64_t) * 16)) {
-			// large objects should be deleted / free-d seperately from the memory block, otherwise there's a risk that a weak_ptr could hold that memory for a long time
-			return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...));
-		}
-		else {
-			// small objects should be included in the memory block
-			auto* aux = new shared_ptr_base::auxlocalimpl<_Ty>(_STD forward<_Types>(_Args)...);
-			return shared_ptr<_Ty>(aux, reinterpret_cast<_Ty*>(&aux->p[0]), true);
-		}
-	};
 };
 
 // printf
@@ -1387,6 +1113,306 @@ namespace GoodLang {
 	};
 };
 
+// shared_ptr
+namespace GoodLang {
+	template<class T> class weak_ptr; // forward-decl
+
+	class shared_ptr_base {
+	public:
+		struct aux {
+			std::atomic<long long> // strong (first short), weak (second short), destroy flag (third short), delete flag (fourth short)
+				Strong_Weak_Destroy_Delete{ 1 }; // strong = 1, weak = 0, destroy = 0, delete = 0
+
+			aux() = default;
+
+			virtual void* ptr() const = 0;
+			virtual Type_Info const& type() const = 0;
+			virtual void destroy() = 0;
+			virtual ~aux() {} //must be polymorphic
+		};
+		static void PreventDeletion(aux* const& ptr);
+		static void AllowDeletion(aux* const& ptr);
+		// requires that the ptr is NOT already locked through PreventDeletion
+		static void DoDeletion(aux* const& ptr);
+		// requires that the ptr is NOT already locked through PreventDeletion
+		static void DoDestroyOrDelete(aux* const& ptr, bool Destroy, bool Delete);
+		template<class U, class Deleter> struct auximpl : public aux {
+			void* p;
+			Deleter d;
+			auximpl(U* pu, Deleter x) : aux(), p(static_cast<void*>(pu)), d(std::move(x)) {}
+			virtual Type_Info const& type() const override {
+				return user_type<U>();
+			};
+			virtual void* ptr() const override { return p; };
+			virtual void destroy() override { d(static_cast<U*>(p)); }
+		};
+		template<class U> struct auxlocalimpl : public aux {
+			unsigned char p[sizeof(U)];
+
+			template <class... _Types>
+			auxlocalimpl(_Types&&... _Args) : aux() {
+				auto* ptr = reinterpret_cast<void*>(&p[0]);
+				new (ptr) U(_STD forward<_Types>(_Args)...);
+			};
+			virtual Type_Info const& type() const override {
+				return user_type<U>();
+			};
+			virtual void* ptr() const override { return reinterpret_cast<void*>(const_cast<unsigned char*>(&p[0])); };
+			virtual void destroy() override {
+				reinterpret_cast<U*>(&p[0])->~U();
+			};
+		};
+		template<class U> struct default_deleter {
+			void operator()(U* p) const { delete p; };
+		};
+		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
+		static aux* inc(GoodLang::atomic_ptr<aux> const& pa);
+		// ASSUMES THAT THE PTR COMES IN LOCKED.
+		static void dec(aux* pa_ptr);
+		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
+		static aux* inc_weak(GoodLang::atomic_ptr<aux> const& pa);
+		// ASSUMES THAT THE PTR COMES IN LOCKED.
+		static void dec_weak(aux* pa_ptr);
+	};
+
+	/// <summary>
+	/// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
+	/// </summary>
+	/// <returns></returns>
+	template<class T> class shared_ptr : public shared_ptr_base {
+	protected:
+		friend class weak_ptr<T>;
+
+		GoodLang::atomic_ptr<aux> pa; // pointer to shared memory block
+		T* pt;
+
+		static T* get(shared_ptr const& p) {
+			T*
+				out{ nullptr };
+			aux
+				* pa_ptr{ nullptr },
+				* pa_ptr_copy{ nullptr };
+			long long
+				read;
+
+			while (pa_ptr_copy = pa_ptr = p.pa.load()) {
+				// prevent its deletion while we work on it. This does not access it, it simply locks the region the pointer belongs to, HOPING to prevent collisions. 
+				PreventDeletion(pa_ptr_copy);
+				if (pa_ptr_copy == (pa_ptr = p.pa.load())) {
+					if (pa_ptr) {
+						read = pa_ptr->Strong_Weak_Destroy_Delete.load();
+						if (!reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
+							out = static_cast<T*>(pa_ptr->ptr());
+							AllowDeletion(pa_ptr_copy);
+							return out;
+						}
+					}
+				}
+				AllowDeletion(pa_ptr_copy);
+			}
+			return out;
+		};
+
+		explicit shared_ptr(aux* p) : pa(p), pt(nullptr) {
+			pt = get(*this);
+		};
+
+	public:
+		const auto& GetPa() const {
+			return pa;
+		};
+
+		shared_ptr() :pa(nullptr), pt(nullptr) {}
+		shared_ptr(std::nullptr_t) : pa(nullptr), pt(nullptr) {}
+		explicit shared_ptr(aux* pa_p, T* pt_p, bool) :pa(pa_p), pt(pt_p) {} // used to initialize a new ptr from custom aux-type.
+
+		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(reinterpret_cast<T*>(pu)) {}
+		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(reinterpret_cast<T*>(pu)) {}
+
+		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(nullptr), pt(nullptr) {
+			auto* new_pa = shared_ptr_base::inc(s.GetPa()); // this is locked! 
+			if (new_pa) {
+				pt = static_cast<T*>(new_pa->ptr());
+			}
+			pa = new_pa;
+			shared_ptr_base::AllowDeletion(new_pa);
+		};
+		shared_ptr(shared_ptr<T> const& s) : pa(nullptr), pt(nullptr) {
+			auto* new_pa = shared_ptr_base::inc(s.GetPa()); // this is locked! 
+			if (new_pa) {
+				pt = static_cast<T*>(new_pa->ptr());
+			}
+			pa = new_pa;
+			shared_ptr_base::AllowDeletion(new_pa);
+		};
+
+		~shared_ptr() {
+			auto* ptr = pa.load();
+			shared_ptr_base::PreventDeletion(ptr);
+			shared_ptr_base::dec(ptr);
+		}
+
+		shared_ptr& operator=(const shared_ptr& s) {
+			if (this != &s) {
+				InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
+				auto* new_ptr = shared_ptr_base::inc(s.pa); // this is locked! 
+				auto* old_ptr = pa.Set(new_ptr);
+				shared_ptr_base::AllowDeletion(new_ptr);
+				shared_ptr_base::PreventDeletion(old_ptr);
+				shared_ptr_base::dec(old_ptr);
+			}
+			return *this;
+		};
+		template<class U> shared_ptr& operator=(const shared_ptr<U>& s) {
+			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
+			auto* new_ptr = shared_ptr_base::inc(s.GetPa()); // this is locked! 
+			auto* old_ptr = pa.Set(new_ptr);
+			shared_ptr_base::AllowDeletion(new_ptr);
+			shared_ptr_base::PreventDeletion(old_ptr);
+			shared_ptr_base::dec(old_ptr);
+			return *this;
+		};
+		shared_ptr& operator=(std::nullptr_t) {
+			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
+			auto* old_ptr = pa.Set(nullptr);
+			shared_ptr_base::PreventDeletion(old_ptr);
+			shared_ptr_base::dec(old_ptr);
+			return *this;
+		};
+
+		T* get() const {
+			if (pt) return pt;
+			return get(*this);
+		};
+		operator bool() const {
+			return get();
+		};
+		T* operator->() const {
+			return get();
+		};
+		T& operator*() const {
+			return *get();
+		};
+
+		friend bool operator==(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() == b.get(); };
+		friend bool operator!=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() != b.get(); };
+		friend bool operator<(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() < b.get(); };
+		friend bool operator<=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() <= b.get(); };
+		friend bool operator>(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() > b.get(); };
+		friend bool operator>=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() >= b.get(); };
+		friend bool operator==(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() == nullptr; };
+		friend bool operator!=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() != nullptr; };
+		friend bool operator<(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() < nullptr; };
+		friend bool operator<=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() <= nullptr; };
+		friend bool operator>(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() > nullptr; };
+		friend bool operator>=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() >= nullptr; };
+		friend bool operator==(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr == a.get(); };
+		friend bool operator!=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr != a.get(); };
+		friend bool operator<(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr < a.get(); };
+		friend bool operator<=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr <= a.get(); };
+		friend bool operator>(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr > a.get(); };
+		friend bool operator>=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr >= a.get(); };
+	};
+
+	/// <summary>
+	/// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
+	/// </summary>
+	/// <returns></returns>
+	template<class T> class weak_ptr {
+		GoodLang::atomic_ptr<shared_ptr_base::aux> pa; // pointer to shared memory block
+
+	public:
+		weak_ptr() : pa(nullptr) {}
+		weak_ptr(std::nullptr_t) : pa(nullptr) {}
+		weak_ptr(shared_ptr<T> const& r) : pa(nullptr) {
+			auto* new_pa = shared_ptr_base::inc_weak(r.pa); // this is locked! 
+			pa = new_pa;
+			shared_ptr_base::AllowDeletion(new_pa);
+		};
+		weak_ptr(const weak_ptr& r) : pa(nullptr) {
+			auto* new_pa = shared_ptr_base::inc_weak(r.pa); // this is locked! 
+			pa = new_pa;
+			shared_ptr_base::AllowDeletion(new_pa);
+		};
+		~weak_ptr() {
+			auto* ptr = pa.load();
+			shared_ptr_base::PreventDeletion(ptr);
+			shared_ptr_base::dec_weak(ptr);
+		}
+
+		operator bool() const {
+			return !expired();
+		};
+
+		weak_ptr& operator=(const weak_ptr& s) {
+			if (this != &s) {
+				auto* new_ptr = shared_ptr_base::inc_weak(s.pa); // this is locked! 
+				auto* old_ptr = pa.Set(new_ptr);
+				shared_ptr_base::AllowDeletion(new_ptr);
+				shared_ptr_base::PreventDeletion(old_ptr);
+				shared_ptr_base::dec_weak(old_ptr);
+			}
+			return *this;
+		};
+		weak_ptr& operator=(std::nullptr_t) {
+			auto* old_ptr = pa.Set(nullptr);
+			shared_ptr_base::PreventDeletion(old_ptr);
+			shared_ptr_base::dec_weak(old_ptr);
+			return *this;
+		};
+
+		shared_ptr<T> lock() const {
+			auto* new_ptr = shared_ptr_base::inc(pa); // this is locked! 
+			auto out{ shared_ptr<T>(new_ptr) };
+			shared_ptr_base::AllowDeletion(new_ptr);
+			return out;
+		};
+		bool expired() {
+			if (auto* pa_ptr = pa.load()) {
+				shared_ptr_base::PreventDeletion(pa_ptr);
+				auto read = pa_ptr->Strong_Weak_Destroy_Delete.load();
+				if ((reinterpret_cast<short*>(&read)[0] < std::numeric_limits<short>::max()) && !reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
+					shared_ptr_base::AllowDeletion(pa_ptr);
+					return false;
+				}
+				else {
+					shared_ptr_base::AllowDeletion(pa_ptr);
+					return true;
+				}
+			}
+			return true;
+		};
+	};
+
+	template <class _Ty, class... _Types>
+	_NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { // make a shared_ptr to non-array object
+		if constexpr (sizeof(_Ty) > (sizeof(uint64_t) * 16)) {
+			// large objects should be deleted / free-d seperately from the memory block, otherwise there's a risk that a weak_ptr could hold that memory for a long time
+			return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...));
+		}
+		else {
+			// small objects should be included in the memory block
+			auto* aux = new shared_ptr_base::auxlocalimpl<_Ty>(_STD forward<_Types>(_Args)...);
+			return shared_ptr<_Ty>(aux, reinterpret_cast<_Ty*>(&aux->p[0]), true);
+		}
+	};
+
+	// performs type checking to see if the conversion is reasonable
+	template <class _Tto, class _Tfrom> _NODISCARD shared_ptr<_Tto> static_pointer_cast(shared_ptr<_Tfrom> const& F) {
+		if (const shared_ptr_base::aux* pa = F->GetPa().load()) {
+			shared_ptr_base::PreventDeletion(pa);
+			if ((pa->type() == user_type<_Tto>()) || (user_type<_Tto>() == user_type<void>())) {
+				shared_ptr<_Tto> out{ F };
+				shared_ptr_base::AllowDeletion(pa);
+				return out;
+			}
+			shared_ptr_base::AllowDeletion(pa);
+		}
+		return nullptr;
+	};
+};
+
+
 __forceinline bool operator==(std::weak_ptr<GoodLang::Type_Info> const& a, std::weak_ptr<GoodLang::Type_Info> const& b) {
 	return GetHash(a) == GetHash(b);
 };
@@ -1709,6 +1735,9 @@ namespace GoodLang {
 		};
 		__forceinline void ToString(Tag<std::string>, std::string const& r, std::string& out) {
 			out = r;
+		};
+		__forceinline void ToString(Tag<std::string_view>, std::string_view const& r, std::string& out) {
+			out = std::string(r);
 		};
 		__forceinline void ToString(Tag<const char*>, const char* const& r, std::string& out) {
 			out = r;

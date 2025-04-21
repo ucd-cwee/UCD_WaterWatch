@@ -3351,6 +3351,7 @@ namespace GoodLang {
 		};
 	};
 	
+
 	/*
 	// If a function is namespaced in a class, that means it's a free function in the namespace of _CLASS_NAME_, whose first parameter is to be that class type.
 	def _CLASS_NAME_::_FUNCTION_NAME_(Type_Info _PARAM_NAME_, ...) -> Type_Info { ... };
@@ -3494,7 +3495,7 @@ namespace GoodLang {
 		~Functions() = default;
 
 	public:
-		typedef GoodLang::shared_ptr<Function> 
+		typedef GoodLang::shared_ptr<Function>
 			FunctionPtr;
 		typedef concurrency::concurrent_unordered_map< size_t, std::pair<ParamTypes, FunctionPtr>>
 			FunctionSort; // key may NOT be the function's underlying params, but just params that were previously searched... 
@@ -3514,7 +3515,7 @@ namespace GoodLang {
 				return 0;
 			}
 		};
-		std::array< FunctionMap, numV> 
+		std::array< FunctionMap, numV>
 			FirstCharToFunctionNameMap;
 
 		//FunctionMap 

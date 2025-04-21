@@ -3,6 +3,144 @@
 #include <boost/unordered_set.hpp>
 
 namespace GoodLang {
+	FunctionsMap::TupleType* FunctionsMap::BuildMatch(std::string_view const& Name, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
+		// Note: we cannot in good faith match a function to a template parameter -- we could not predict what function would return.
+		if (params.IsTemplate()) {
+			return nullptr;
+			// throw std::runtime_error("Cannot build a matching function with template or empty types. This is meant to be called with KNOWN types");
+		};
+
+		// Check that we don't already have an exact match for these params
+		if (auto* tuple = at(Name, params)) { // this would have included objects or functions with no parameters
+			return tuple;
+		};
+
+		if (1) {
+			// Three sorted groups of candidates. 
+			// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
+			// First ordered by the number of parameters (more matches are preferred over fewer matches)
+			// Then ordered by preference for exact matches, then matches with type conversions, then (finally) template functions.
+			thread_local static std::map< size_t, std::array<std::map<double, Function, std::less<double>>, 3>, std::greater<size_t>>
+				candidates{};
+			candidates.clear(); // clear from the last search
+
+			/* Create candidates. */ {
+				std::vector<std::shared_ptr<Type_Info>> paramTypes;
+				for (auto& x : params) paramTypes.push_back(x.lock());
+
+				if (Name.size() > 0) {
+					double conversionCost;
+					for (auto Iter = this->find(Name), End = this->end(); Iter != End; ++Iter) {
+						auto& function = Iter->get<2>();
+
+						if (!function.m_function) continue;
+						if (function.m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+						bool isTemplateFunc = function.m_function->GetSignature().IsTemplate();
+						bool isExplicitFunc = function.m_isEplicit;
+
+						// NOTE: if the hash for Params and function.second.second->m_function-> Arguments().Types() match, doesn't that mean the types inside exactly match?
+						if ((0 == params.size()) && (0 == function.m_function->Arguments().Types().size())) {
+							// both have a matching size...
+							conversionCost = 0;
+						}
+						else if (params.hash() == function.m_function->Arguments().Types().hash()) {
+							conversionCost = 0;
+						}
+						else {
+							conversionCost = function.m_function->conversion_cost_fast(paramTypes, m_typeConverters);
+						}
+
+						if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
+
+						// try to early exit...
+						if (params.size() == function.m_function->Arguments().size()) {
+							if (!isTemplateFunc) {
+								if (conversionCost == 0) {
+									Function FunctionToCache{ function.m_function };
+									FunctionToCache.m_isCached = true;
+									// if someone already beat us to it, it should return the "current" value
+									Iter = this->end();
+									return this->emplace(Name, params, FunctionToCache);
+								}
+							}
+						}
+
+						if (isTemplateFunc) {
+							if (AllowTemplateInstantiation) {
+								candidates[function.m_function->NumArguments()][2][conversionCost] = function;
+							}
+						}
+						else {
+							if (conversionCost == 0) {
+								candidates[function.m_function->NumArguments()][0][conversionCost] = function;
+							}
+							else if (AllowTypeConversion && !isExplicitFunc) {
+								candidates[function.m_function->NumArguments()][1][conversionCost] = function;
+							}
+						}
+					}
+				}
+			}
+
+			// Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).
+			for (auto& numParams : candidates) {
+				for (auto& preference_order : numParams.second) {
+					for (auto& candidate : preference_order) {
+						if (candidate.first >= details::TypeConversionWorstCaseCost) continue; // this shouldn't happen, but just in case
+
+						Function FunctionToCache{ candidate.second.m_function };
+						FunctionToCache.m_isCached = true;
+						// if someone already beat us to it, it should return the "current" value
+						return this->emplace(Name, params, FunctionToCache);
+					}
+				}
+			}
+		}
+
+		return nullptr;
+	};
+	Any FunctionsMap::Call(std::string_view const& Name, std::vector<Any> const& params, TypeConverter& m_typeConverters) {
+		if (auto* f = BuildMatch(Name, ParamTypes(params), m_typeConverters)) {
+			if (f->get<4>()) {
+				// function
+				if (f->get<2>().m_function) {
+					return f->get<2>().m_function->operator()(params, m_typeConverters);
+				}
+			}
+			else {
+				// object
+				return f->get<3>();
+			}
+		}
+		
+		std::string params_str;
+		for (auto& p : params) {
+			std::string className = p.TypeName(); {
+				//if (auto classPtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(p.Type()))) {
+				//	className = classPtr->GetName();
+				//}
+			}
+
+			if (params_str.empty()) {
+				params_str += className;
+			}
+			else {
+				params_str += ", ";
+				params_str += className;
+			}
+		}
+
+		throw exception::not_found_error(
+			std::string("`") + GoodLang::ToString(Name) + std::string("`(") + params_str.c_str() + std::string(")")
+		);
+	};
+
+
+
+
+
+
+
 	// try and find the object with the requested key.
 	std::shared_ptr<Any> Scope::GetObj(std::string const& name) const {
 		auto f = p_objects.find(name);
@@ -294,8 +432,7 @@ namespace GoodLang {
 		}
 
 		return false;
-	};
-	std::shared_ptr< Functions > Scope::GetFunctions() const {
+	};	std::shared_ptr< Functions > Scope::GetFunctions() const {
 		if (auto namespacePtr = std::dynamic_pointer_cast<Scope>(GetNamespace())) {
 			return namespacePtr->GetFunctions();
 		}
@@ -542,7 +679,7 @@ namespace GoodLang {
 		return FindScopeWithObjImpl(objName, found_obj);
 	};
 	std::shared_ptr<Any> Scope::FindObj(std::string objName) const {
-		static auto fixNamespace{ [](std::string& x)  {
+		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
 			}
@@ -716,7 +853,7 @@ namespace GoodLang {
 			}
 		}
 	};
-	
+
 	bool Scope::TryFindNearestScopeWhere_2(
 		std::shared_ptr<Scope>& bestMatch,
 		std::function<bool(std::shared_ptr<Scope> const&, bool, bool)> const& func,
@@ -743,7 +880,7 @@ namespace GoodLang {
 					bestMatch = p;
 					return true;
 				}
-			}			
+			}
 		}
 
 		// test my "using" namespaces and their children.
@@ -766,7 +903,7 @@ namespace GoodLang {
 						bestMatch = p;
 						return true;
 					}
-				}				
+				}
 			}
 			else {
 				break; // we've checked this before! Quick, get out. 
@@ -790,7 +927,7 @@ namespace GoodLang {
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
-			}			
+			}
 		}
 
 		// test my parents and their children
@@ -806,7 +943,7 @@ namespace GoodLang {
 				if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		return false;
@@ -835,7 +972,7 @@ namespace GoodLang {
 					bestMatch = p;
 					return true;
 				}
-			}			
+			}
 		}
 
 		// test my "using" namespaces and their children.
@@ -858,7 +995,7 @@ namespace GoodLang {
 						bestMatch = p;
 						return true;
 					}
-				}				
+				}
 			}
 			else {
 				break; // we've checked this before! Quick, get out. 
@@ -882,7 +1019,7 @@ namespace GoodLang {
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
-			}			
+			}
 		}
 
 		// test my parents and their children
@@ -898,7 +1035,7 @@ namespace GoodLang {
 				if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		return false;
@@ -927,7 +1064,7 @@ namespace GoodLang {
 					bestMatch = p;
 					return true;
 				}
-			}			
+			}
 		}
 
 		// test my "using" namespaces and their children.
@@ -958,7 +1095,7 @@ namespace GoodLang {
 						bestMatch = p;
 						return true;
 					}
-				}				
+				}
 			}
 			else {
 				break; // we've checked this before! Quick, get out. 
@@ -977,13 +1114,13 @@ namespace GoodLang {
 							bestMatch = innerChildNamespace.second;
 							return true;
 						}
-					}					
+					}
 				}
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
 			}
-			
+
 		}
 
 		// test my parents and their children
@@ -999,7 +1136,7 @@ namespace GoodLang {
 				if (p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		return false;
@@ -1007,11 +1144,11 @@ namespace GoodLang {
 
 
 	std::shared_ptr<Scope> Scope::FindScopeWithObjOrFunction(
-		std::string objName, 
-		std::vector<Any> const& params, 
-		ParamTypes const& Params, 
-		TypeConverter& tree, 
-		std::shared_ptr<Any>* found_obj, 
+		std::string objName,
+		std::vector<Any> const& params,
+		ParamTypes const& Params,
+		TypeConverter& tree,
+		std::shared_ptr<Any>* found_obj,
 		Proxy_Function* found_function
 	) {
 		static auto fixNamespace{ [](std::string& x) {
@@ -1051,24 +1188,24 @@ namespace GoodLang {
 			}
 			else {
 				bool success = TryFindNearestScopeWhere_2(
-					out, 
+					out,
 					[&objName, &params, &Params, &tree, &found_obj, &found_function](
 						std::shared_ptr<Scope> const& ptr, bool isExploringParent, bool allowFindObject
-					)->bool {
-					if (ptr) {
-						// always prefer objects if we are able
-						if (allowFindObject) {
-							if (auto objFound = ptr->GetObj(objName)) {
-								if (found_obj) *found_obj = objFound;
-								return true;
+						)->bool {
+							if (ptr) {
+								// always prefer objects if we are able
+								if (allowFindObject) {
+									if (auto objFound = ptr->GetObj(objName)) {
+										if (found_obj) *found_obj = objFound;
+										return true;
+									}
+								}
+								if (auto func = ptr->GetFunction(objName, params, Params, tree)) {
+									if (found_function) *found_function = func;
+									return true;
+								}
 							}
-						}
-						if (auto func = ptr->GetFunction(objName, params, Params, tree)) {
-							if (found_function) *found_function = func;
-							return true;
-						}
-					}
-					return false;
+							return false;
 					}, false, true);
 				if (success) {
 					// do the save
@@ -1183,17 +1320,17 @@ namespace GoodLang {
 		if (this->is_basic_scope) {
 			if (this->p_objects.size() == 0) {
 				if (auto parent = this->p_parent.lock()) {
-					return parent->FindObjOrFunction(objName, params, Params, tree, found_obj, found_function);					
+					return parent->FindObjOrFunction(objName, params, Params, tree, found_obj, found_function);
 				}
 			}
 			else {
 				if (auto objFound = this->GetObj(objName)) {
-					if (found_obj) *found_obj = objFound;				
+					if (found_obj) *found_obj = objFound;
 					return true;
 				}
 				else if (auto parent = this->p_parent.lock()) {
 					return parent->FindObjOrFunction(objName, params, Params, tree, found_obj, found_function);
-				}				
+				}
 			}
 		}
 
@@ -1219,19 +1356,19 @@ namespace GoodLang {
 				InsertCachedIfNotExist<5>(funcVersion, *found_function, objName, Params.hash());
 				return true;
 			}
-			
+
 			if (auto objFound = found_scope->GetObj(objName)) {
 				if (found_obj) *found_obj = objFound;
-				InsertCachedIfNotExist<4>(objVersion, objFound, objName);				
-				return true;
-			}			
-			
-			if (auto func = found_scope->GetFunction(objName, params, Params, tree)) {
-				if (found_function) *found_function = func;
-				InsertCachedIfNotExist<5>(funcVersion, func, objName, Params.hash());				
+				InsertCachedIfNotExist<4>(objVersion, objFound, objName);
 				return true;
 			}
-		}		
+
+			if (auto func = found_scope->GetFunction(objName, params, Params, tree)) {
+				if (found_function) *found_function = func;
+				InsertCachedIfNotExist<5>(funcVersion, func, objName, Params.hash());
+				return true;
+			}
+		}
 		return false;
 	};
 	bool Scope::FindObjOrFunction(std::string const& objName, ParamTypes const& Params, TypeConverter& tree, std::shared_ptr<Any>* found_obj, Proxy_Function* found_function) {
@@ -1361,7 +1498,7 @@ namespace GoodLang {
 		}
 	};
 
-	
+
 	size_t Scope::GetObjectCacheVersion() const {
 		// Theory: combine the hash for this scope and its parents
 		if (auto p = this->p_parent.lock()) {
@@ -1392,7 +1529,7 @@ namespace GoodLang {
 		}
 	};
 	std::shared_ptr<Namespace> Scope::FindNamespaceWithFunction(std::string functionName, std::vector<Any> const& params, ParamTypes const& Params) {
-		return FindNamespaceWithFunction(functionName, params, Params , *GetTypeConverterTree());
+		return FindNamespaceWithFunction(functionName, params, Params, *GetTypeConverterTree());
 	};
 	Proxy_Function Scope::FindFunction(std::string functionName, std::vector<Any> const& params) {
 		auto& tree = GetTypeConverterTree();
@@ -1457,7 +1594,7 @@ namespace GoodLang {
 							}
 						}
 						return false;
-					});
+						});
 				}
 
 				// try to find the function from nearby scopes... 
@@ -1474,7 +1611,7 @@ namespace GoodLang {
 						}
 					}
 					return false;
-				});
+					});
 
 				// PERHAPS THE USER MEANT TO CALL THE CONSTRUCTOR FOR A CLASS (ALLOW FOR CONVERSIONS, BUT NO TEMPLATES)
 				if (constructorScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(functionName))) {
@@ -1687,7 +1824,7 @@ namespace GoodLang {
 					}
 				}
 				return false;
-			})) {
+				})) {
 				InsertCached<3>(treeV, out, objName);
 				return out;
 			}
@@ -1762,7 +1899,7 @@ namespace GoodLang {
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
-			}			
+			}
 		}
 
 		// test my children's children.
@@ -1771,7 +1908,7 @@ namespace GoodLang {
 				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		return false;
@@ -1780,7 +1917,7 @@ namespace GoodLang {
 	bool Namespace::AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists) {
 		const_cast<Function&>(function).m_function->GetSignature().Name(name);
 		const_cast<Function&>(function).m_function->GetSignature().QualifiedName(this->GetQualifiedNamespace() + name);
-		
+
 		function.m_function->GetSignature().Name(name);
 		defer(this->RecordFunction(name, function));
 		if (this->IsClass() && (this->GetName() == name) && (function.m_function->Arguments().size() <= 1)) {
@@ -1790,9 +1927,9 @@ namespace GoodLang {
 						//auto& tree = this->GetTypeConverterTree();
 						//if (auto func = inputClass->GetFunction(inputClass->GetName(), {}, *tree)) {
 							//if (auto inputParamImpl = func->operator()({}, *tree)) {
-								return (bool)p_functions->emplace(name, function, overrideIfAlreadyExists);
-							//}
+						return (bool)p_functions->emplace(name, function, overrideIfAlreadyExists);
 						//}
+					//}
 					}
 					catch (...) {}
 
@@ -1867,7 +2004,7 @@ namespace GoodLang {
 
 			// something went wrong -- set it to void. The class type was not provided, could not be found, or could not be instanced.
 			obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>();
-			
+
 		}
 	};
 	void Class::ConstructMemberObjects(DynamicObject& obj, DynamicObject const& CopyFrom) const {
@@ -1933,7 +2070,7 @@ namespace GoodLang {
 
 			// something went wrong -- set it to void. The class type was not provided, could not be found, or could not be instanced.
 			obj.m_objects->operator[](memberObjectName) = std::make_shared<Any>();
-			
+
 		}
 	};
 	// Gets the member objects of just this class
@@ -1941,7 +2078,7 @@ namespace GoodLang {
 		std::map<std::string, std::weak_ptr<Type_Info>> out;
 
 		for (auto x : p_declared_member_objects) {
-			out[x.first] = x.second.first;			
+			out[x.first] = x.second.first;
 		}
 		return out;
 	};
@@ -1956,7 +2093,7 @@ namespace GoodLang {
 		}
 
 		for (auto x : p_declared_member_objects) {
-			out[x.first] = x.second.first;			
+			out[x.first] = x.second.first;
 		}
 		return out;
 	};
@@ -2084,7 +2221,7 @@ namespace GoodLang {
 				if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		// test my inherited namespace.
@@ -2134,7 +2271,7 @@ namespace GoodLang {
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
-			}			
+			}
 		}
 
 		// test my parents and their children
@@ -2150,7 +2287,7 @@ namespace GoodLang {
 				if (p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}						
+			}
 		}
 
 		return false;
@@ -2188,7 +2325,7 @@ namespace GoodLang {
 				if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		// test my inherited namespace.
@@ -2240,7 +2377,7 @@ namespace GoodLang {
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
-			}						
+			}
 		}
 
 		// test my parents and their children
@@ -2258,7 +2395,7 @@ namespace GoodLang {
 						return true;
 					}
 				}
-			}						
+			}
 		}
 
 		return false;
@@ -2280,7 +2417,7 @@ namespace GoodLang {
 			}
 			else {
 				out.push_back(x.second);
-			}			
+			}
 		}
 
 		if (DoCleanup) {
@@ -2306,7 +2443,7 @@ namespace GoodLang {
 			else {
 				out.push_back(x.second);
 			}
-			
+
 		}
 
 		if (DoCleanup) {
@@ -2328,7 +2465,7 @@ namespace GoodLang {
 			}
 			else {
 				out.insert({ hash, x.second });
-			}			
+			}
 		}
 
 		if (DoCleanup) {
@@ -2358,7 +2495,7 @@ namespace GoodLang {
 						p2->GetAllAvailableClassesImpl(out, uniqueLibraries);
 					}
 				}
-			}			
+			}
 		}
 		if (DoCleanup) {
 			//const_cast<Global*>(this)->CleanupRequested.CompareExchange(0, 1);
@@ -2549,7 +2686,7 @@ namespace GoodLang {
 		auto globalScope2 = std::shared_ptr<GoodLang::Global>(new GoodLang::Global(), [childName](GoodLang::Global* p) {
 			// p->RemoveChild_Unsafe(*childName);
 			delete p;
-		}); // the "fake" global
+			}); // the "fake" global
 		globalScope2->SetName_Unsafe("");
 		globalScope2->SetSelf(globalScope2);
 		// parent->AddChild(globalScope2);
@@ -2583,7 +2720,7 @@ namespace GoodLang {
 			}
 			return globalScope->CreateTemporaryGlobalChild(globalScope);
 		}
-		
+
 	};
 
 

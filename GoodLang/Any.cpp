@@ -170,28 +170,22 @@ namespace GoodLang {
 	void shared_ptr_base::AllowDeletion(aux* const& ptr) {
 		if (ptr) locks[PtrToIndex(ptr)].unlock_shared();
 	};
-	// requires that the ptr is NOT already locked through PreventDeletion
+	// requires that the ptr is WEAK LOCKED
 	void shared_ptr_base::DoDeletion(aux* const& ptr) {
 		if (ptr) {
 			auto& lock = locks[PtrToIndex(ptr)];
-			lock.lock();
+			(void)lock.upgrade_lock();
 			delete ptr;
 			lock.unlock();
 		}
 	};
-	// requires that the ptr is NOT already locked through PreventDeletion
+	// requires that the ptr is NOT LOCKED. 
 	void shared_ptr_base::DoDestroyOrDelete(aux* const& ptr, bool Destroy, bool Delete) {
 		if (ptr) {
 			if (Destroy) {
-				ptr->destroy();
-				if (Delete) {
-					auto& lock = locks[PtrToIndex(ptr)];
-					lock.lock();
-					delete ptr;
-					lock.unlock();
-				}
+				ptr->destroy(); // the destruction must take place when completely unlocked, since downstream / daisy-chained deletions may take place and need access. 
 			}
-			else if (Delete) {
+			if (Delete) {
 				auto& lock = locks[PtrToIndex(ptr)];
 				lock.lock();
 				delete ptr;
@@ -313,7 +307,7 @@ namespace GoodLang {
 					reinterpret_cast<short*>(&planned)[3] = 1;
 				}
 				if (pa_ptr->Strong_Weak_Destroy_Delete.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) { // success!
-					AllowDeletion(pa_ptr);
+					// AllowDeletion(pa_ptr);
 					if (reinterpret_cast<short*>(&planned)[3] == 1) {
 						DoDeletion(pa_ptr);
 					}

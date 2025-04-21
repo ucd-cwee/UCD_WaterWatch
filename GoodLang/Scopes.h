@@ -8,6 +8,341 @@
 
 #define useCachedData
 
+namespace GoodLang {
+	// std::string to a collection of maps with given params. (E.g. first sorted by strings)
+	class FunctionsMap {
+		friend class it_state;
+	public:
+		using TupleType = GoodLang::Union<
+			std::string, // name of object or function
+			GoodLang::ParamTypes, // params may be empty
+			GoodLang::Function, // function
+			std::shared_ptr<GoodLang::Any>, // object
+			bool // is_function (true if function, false if object)
+		>;
+
+	private:
+		// Allocators allow for pointers to be made which do not need to be explicitely deleted -- they will be deleted in the future. 
+		// Additionally, if we want to support deleting functions from the map, these allocators can switched to Epoch style and defer deletion until it is safe to do so. 
+		GoodLang::Allocator<GoodLang::details::flat_map<size_t, TupleType*>>
+			alloc1;
+		GoodLang::Allocator<TupleType>
+			alloc2;
+
+	public:
+		using MapType = GoodLang::details::flat_map<size_t, GoodLang::details::flat_map<size_t, TupleType*>*>;
+
+	protected:
+		static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
+		static constexpr size_t CharToIndex(char firstChar) {
+			if (firstChar >= 'a' && firstChar <= 'z') {
+				return ((int)firstChar - (int)('a')) + 27;
+			}
+			else if (firstChar >= 'A' && firstChar <= 'Z') {
+				return ((int)firstChar - (int)('A')) + 1;
+			}
+			else {
+				return 0;
+			}
+		};
+		std::array< MapType, numV> FirstCharToFunctionNameMap;
+
+	public:
+		// emplace a function, if not already exists, using the provided params
+		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func) {
+			size_t hash{ 0 };
+			if (func.m_function && (name.size() > 0)) {
+				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+				GoodLang::details::hash_combine(hash, name);
+
+				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
+					return alloc1.Alloc();
+				});
+				auto& F2 = F->get_or_make(params.hash(), [&]() -> TupleType* {
+					return alloc2.Alloc(
+						std::string(name),
+						params,
+						func, 
+						nullptr,
+						true
+					);
+				});
+				return &*F2;
+			}
+			return nullptr;
+		};
+
+		// emplace a function, if not already exists
+		TupleType* emplace(std::string_view const& name, GoodLang::Function const& func) {
+			size_t hash{ 0 };
+			if (func.m_function && (name.size() > 0)) {
+				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+				GoodLang::details::hash_combine(hash, name);
+
+				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
+					return alloc1.Alloc();
+				});
+				auto& F2 = F->get_or_make(func.m_function->Arguments().Types().hash(), [&]() -> TupleType* {
+					return alloc2.Alloc(
+						std::string(name),
+						func.m_function->Arguments().Types(),
+						func,
+						nullptr,
+						true
+					);
+				});
+				return &*F2;
+			}
+			return nullptr;
+		};
+
+		// emplace an object, if not already exists
+		TupleType* emplace(std::string_view const& name, std::shared_ptr<GoodLang::Any> const& obj) {
+			size_t hash{ 0 };
+			if (name.size() > 0) {
+				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+				GoodLang::details::hash_combine(hash, name);
+
+				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
+					return alloc1.Alloc();
+				});
+				auto& F2 = F->get_or_make(ParamTypes().hash(), [&]() -> TupleType* {
+					return alloc2.Alloc(
+						std::string(name),
+						ParamTypes{},
+						Function{},
+						obj,
+						false
+					);
+				});
+				return &*F2;
+			}
+			return nullptr;
+		};
+
+		// Get the tuple (function, likely) that exists at this name and param types
+		TupleType* at(std::string_view const& name, GoodLang::ParamTypes const& params) const {
+			size_t hash{ 0 };
+			if (name.size() > 0) {
+				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+				GoodLang::details::hash_combine(hash, name);
+				long hint;
+				if (auto* F = map.try_at(hash, hint)) {
+					if (auto* P = (*F)->try_at(params.hash(), hint)) {
+						return *P;
+					}
+				}
+			}
+			return nullptr;
+		};
+		// Get the tuple (function, likely) that exists at this name and param types
+		TupleType* operator()(std::string_view const& name, GoodLang::ParamTypes const& params) const {
+			return at(name, params);
+		};
+		// Get the tuple (object, likely) that exists at this name and with empty params
+		TupleType* at(std::string_view const& name) const {
+			size_t hash{ 0 };
+			if (name.size() > 0) {
+				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+				GoodLang::details::hash_combine(hash, name);
+				long hint;
+				if (auto* F = map.try_at(hash, hint)) {
+					if (auto* P = (*F)->try_at(ParamTypes().hash(), hint)) {
+						return *P;
+					}
+				}
+			}
+			return nullptr;
+		};
+		// Get the tuple (object, likely) that exists at this name and with empty params
+		TupleType* operator()(std::string_view const& name) const {
+			return at(name);
+		};
+
+	private:
+		using value_type = TupleType;
+		class it_state {
+		public:
+			using thisType = FunctionsMap;
+			using value_type = typename thisType::value_type;
+			using iterator_category = std::forward_iterator_tag;
+			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+			// data
+			mutable size_t
+				outtermost_index{ 0 };
+			mutable size_t
+				outtermost_index_max{ 0 };
+
+			mutable typename thisType::MapType::iterator
+				middle_iter{};
+			mutable size_t
+				middle_index{ 0 };
+			mutable size_t
+				middle_index_max{ 0 };
+
+			mutable GoodLang::details::flat_map<size_t, value_type*>::iterator
+				final_iter{};
+			mutable size_t
+				final_index{ 0 };
+			mutable size_t
+				final_index_max{ 0 };
+
+			// functions
+			void Initialize(thisType* ref) {
+				outtermost_index_max = ref->numV;
+			};
+			void ToBeginning(thisType* ref) {
+				outtermost_index = 0;
+				while (outtermost_index < outtermost_index_max) {
+					middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
+					middle_index = 0;
+					if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
+						++outtermost_index;
+					}
+					else {
+						// we got one
+						while (middle_index < middle_index_max) {
+							final_iter = (*middle_iter->second)->begin();
+							final_index = 0;
+							if (0 == (final_index_max = (*middle_iter->second)->size())) {
+								++middle_iter;
+								++middle_index;
+							}
+							else {
+								// we got one
+								return;
+							}
+						}
+					}
+				}
+			};
+			void ToEnd(thisType* ref) {
+				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
+			};
+			void Next(thisType* ref) {
+				while (outtermost_index < outtermost_index_max) {
+					if (final_index < (final_index_max - 1)) {
+						++final_iter;
+						++final_index;
+						return;
+					}
+					else {
+						if (middle_index < (middle_index_max - 1)) {
+							++middle_iter;
+							++middle_index;
+
+							while (middle_index < middle_index_max) {
+								final_iter = (*middle_iter->second)->begin();
+								final_index = 0;
+								if (0 == (final_index_max = (*middle_iter->second)->size())) {
+									++middle_iter;
+									++middle_index;
+								}
+								else {
+									// we got one
+									return;
+								}
+							}
+						}
+						else {
+							++outtermost_index;
+							while (outtermost_index < outtermost_index_max) {
+								middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
+								middle_index = 0;
+								if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
+									++outtermost_index;
+								}
+								else {
+									// we got one
+									while (middle_index < middle_index_max) {
+										final_iter = (*middle_iter->second)->begin();
+										final_index = 0;
+										if (0 == (final_index_max = (*middle_iter->second)->size())) {
+											++middle_iter;
+											++middle_index;
+										}
+										else {
+											// we got one
+											return;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// failure!
+				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
+			};
+			void Prev(thisType* ref) {
+				throw std::runtime_error("Cannot iterate in reverse with the FunctionsMap iterator");
+			};
+			value_type& Get(thisType* ref) const {
+				return **final_iter->second;
+			};
+			bool operator==(it_state const& rhs) const {
+				return (outtermost_index == rhs.outtermost_index)
+					&& (middle_index == rhs.middle_index)
+					&& (final_index == rhs.final_index);
+			};
+			difference_type Distance(it_state const& other) const {
+				throw std::runtime_error("Cannot calculate distance with the FunctionsMap iterator");
+			};
+		};
+
+	public:
+		SETUP_ITERATOR(FunctionsMap, it_state);
+
+		// Allows looping over all contained Tuples with the requested name. 
+		iterator find(std::string_view const& name) {
+			auto iter = end();
+			if (name.size() > 0) {
+				iter.state.outtermost_index = CharToIndex(name[0]);
+				iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
+
+				size_t hash{ 0 };
+				GoodLang::details::hash_combine(hash, name);
+
+				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].begin(); // also does a weak_lock on the map
+				long index = -1;
+				if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].try_at(hash, index)) {
+					if ((*ptr)->size() > 0) {
+						iter.state.middle_index = index;
+						iter.state.middle_index_max = index + 1;
+						iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
+						iter.state.final_iter = (*iter.state.middle_iter->second)->begin();
+						iter.state.final_index = 0;
+						iter.state.final_index_max = (*ptr)->size();
+						return iter;
+					}
+				}
+				iter.state.outtermost_index = 0;
+				iter.state.outtermost_index_max = 0;
+				iter.state.middle_iter = {}; // release the weak_lock
+				iter.state.middle_index = 0;
+				iter.state.middle_index_max = 0;
+				iter.state.final_iter = {};
+				iter.state.final_index = 0;
+				iter.state.final_index_max = 0;
+			}
+			return iter;
+		};
+
+	public:
+		TupleType* BuildMatch(std::string_view const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
+		Any Call(std::string_view const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
+
+	};
+
+};
+
 // forward decl
 namespace GoodLang {
 	class Scope;
@@ -416,10 +751,10 @@ namespace GoodLang {
 			hash_combine(seed, rest...);
 		};
 	private:
-		using CacheContainer 
+		using CacheContainer
 			= std::pair < GoodLang::fast_shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
 		using VersionedCacheContainer // use this mutex to delete entire caches once the version is out-of-date
-			= std::map<size_t, std::shared_ptr<CacheContainer>>; 
+			= std::map<size_t, std::shared_ptr<CacheContainer>>;
 		using TemplatedCacheContainer // organizes multiple caches for several purposes...
 			= std::vector<SharedLockable<VersionedCacheContainer>>;
 		TemplatedCacheContainer
@@ -445,7 +780,7 @@ namespace GoodLang {
 						}
 					}
 				}
-				version_container.lock.unlock_shared();				
+				version_container.lock.unlock_shared();
 			}
 
 			// didn't exist yet -- delete old version(s) and create new version.
@@ -533,7 +868,7 @@ namespace GoodLang {
 	private:
 		virtual std::shared_ptr<Scope>  FindScopeWithObjImpl(std::string const& objName, std::shared_ptr<Any>* found_obj) const;
 		std::shared_ptr<Scope> FindScopeWithObj(std::string const& objName, std::shared_ptr<Any>* found_obj = nullptr) const;
-		
+
 		GoodLang::InterlockedLong
 			CachedObjectVersion{ 0 };
 	public:
@@ -554,7 +889,7 @@ namespace GoodLang {
 
 		std::shared_ptr<Namespace> FindNamespaceWithFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
 		Proxy_Function FindFunction(std::string functionName, ParamTypes& params, TypeConverter& tree);
-		
+
 		virtual size_t GetObjectCacheVersion() const;
 		virtual size_t GetTypeConverterTreeVersion() const;
 		virtual GoodLang::shared_ptr<TypeConverter>& GetTypeConverterTree() const;
@@ -788,7 +1123,7 @@ namespace GoodLang {
 						toRemove = ref.first;
 						doRemoval = true;
 						break;
-					}					
+					}
 				}
 				if (doRemoval) {
 					p_using.erase(toRemove);
@@ -808,7 +1143,7 @@ namespace GoodLang {
 						doRemoval = true;
 						break;
 					}
-					
+
 				}
 				if (doRemoval) {
 					p_postfixes.erase(toRemove);
@@ -984,24 +1319,24 @@ namespace GoodLang {
 				// foot(value)
 				foot_namespace->AddFunction(UnitName, Function(make_callable([](Units::value const& makeCopy) -> T { return makeCopy; }), false));
 				// foot() = value();
-				foot_namespace->AddFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any { 
-					T& out = a.cast(); out = b; return a; 
-				}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), foot_namespace->GetClassType().lock()->MakeRef()), false));
+				foot_namespace->AddFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any {
+					T& out = a.cast(); out = b; return a;
+					}, ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), foot_namespace->GetClassType().lock()->MakeRef()), false));
 
 				// value(foot)
 				value_namespace->AddFunction(
-					value_namespace->GetName(), 
+					value_namespace->GetName(),
 					make_callable(
-						&CastToValue<T>, 
-						ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() }), 
+						&CastToValue<T>,
+						ParamTypes({ foot_namespace->GetClassType().lock()->MakeConstRef() }),
 						GoodLang::user_type_shared<Units::value>().lock()->MakeConstRef()
 					)
 				);
 				value_namespace->AddFunction(
-					value_namespace->GetName(), 
+					value_namespace->GetName(),
 					make_callable(
-						&CastToValue<T>, 
-						ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef() }), 
+						&CastToValue<T>,
+						ParamTypes({ foot_namespace->GetClassType().lock()->MakeRef() }),
 						GoodLang::user_type_shared<Units::value>().lock()->MakeRef()
 					)
 				);
@@ -1119,7 +1454,7 @@ namespace GoodLang {
 								doRemoval = true;
 								break;
 							}
-							
+
 						}
 						if (doRemoval) {
 							p_using.erase(toRemove);
@@ -1138,7 +1473,7 @@ namespace GoodLang {
 								toRemove = ref.first;
 								doRemoval = true;
 								break;
-							}							
+							}
 						}
 						if (doRemoval) {
 							p_postfixes.erase(toRemove);
@@ -1166,7 +1501,7 @@ namespace GoodLang {
 						for (auto& ref : Usings) {
 							if (ref.second.expired()) {
 								toRemove.push_back(ref.first);
-							}							
+							}
 						}
 						for (auto& x : toRemove) Usings.erase(x);
 						toRemove.clear();
@@ -1178,7 +1513,7 @@ namespace GoodLang {
 						for (auto& ref : Functions) {
 							if (ref.second.second.expired()) {
 								toRemove.push_back(ref.first);
-							}							
+							}
 						}
 						for (auto& x : toRemove) Functions.erase(x);
 						toRemove.clear();

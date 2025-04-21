@@ -7327,281 +7327,6 @@ namespace GoodLang {
 
 
 
-
-
-// std::string to a colleciton of maps with given params. (E.g. first sorted by strings)
-class FunctionsMap {
-	friend class it_state;
-public:
-	using TupleType = GoodLang::Union<
-		std::string,
-		GoodLang::ParamTypes,
-		GoodLang::shared_ptr<GoodLang::Proxy_Function>
-	>;
-
-private:
-	GoodLang::Allocator<GoodLang::details::flat_map<size_t, TupleType*>> alloc1;
-	GoodLang::Allocator<TupleType> alloc2;
-
-public:	
-	using MapType = GoodLang::details::flat_map<size_t, GoodLang::details::flat_map<size_t, TupleType*>*>;
-
-protected:	
-	static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
-	static constexpr size_t CharToIndex(char firstChar) {
-		if (firstChar >= 'a' && firstChar <= 'z') {
-			return ((int)firstChar - (int)('a')) + 27;
-		}
-		else if (firstChar >= 'A' && firstChar <= 'Z') {
-			return ((int)firstChar - (int)('A')) + 1;
-		}
-		else {
-			return 0;
-		}
-	};
-	std::array< MapType, numV> FirstCharToFunctionNameMap;
-
-public:
-	// inserts if not exists. Faster than emplacing.
-	bool insert(GoodLang::Proxy_Function const& func, GoodLang::ParamTypes const& params, std::string_view const& name) {
-		size_t hash{ 0 };
-		if (func && (name.size() > 0)) {
-			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-						
-			GoodLang::details::hash_combine(hash, name); // params.hash()
-
-			auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>* {
-				return alloc1.Alloc();
-			});
-			F->get_or_make(params.hash(), [&]() -> TupleType* {
-				return alloc2.Alloc(
-					std::string(name),
-					params,
-					GoodLang::make_shared<GoodLang::Proxy_Function>(func)
-				);
-			});
-			return true;
-		}
-		return false;
-	};
-	
-	// emplace a function, and override an existing function if necessary. Slower than inserting. 
-	bool emplace(GoodLang::Proxy_Function const& func, GoodLang::ParamTypes const& params, std::string_view const& name) {
-		size_t hash{ 0 };
-		if (func && (name.size() > 0)) {
-			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-			GoodLang::details::hash_combine(hash, name); // params.hash()
-
-			auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
-				return alloc1.Alloc();
-				});
-			auto& F2 = F->get_or_make(params.hash(), [&]() -> TupleType* {
-				return alloc2.Alloc(
-					std::string(name),
-					params,
-					GoodLang::make_shared<GoodLang::Proxy_Function>(func)
-				);
-			});
-			F2->get<2>() = GoodLang::make_shared<GoodLang::Proxy_Function>(func);
-			return true;
-		}
-		return false;
-	};
-
-	// Get a function (if it exists!)
-	GoodLang::Proxy_Function* at(GoodLang::ParamTypes const& params, std::string_view const& name) {
-		size_t hash{ 0 };
-		if (name.size() > 0) {
-			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-			GoodLang::details::hash_combine(hash, name); // params.hash()
-
-			if (auto* F = map.try_at(hash)) {
-				if (auto* P = (*F)->try_at(params.hash())) {
-					if (auto* X = (*P)->get<2>().get()) {
-						return X;
-					}
-				}
-			}
-		}
-		return nullptr;
-	};
-
-private:
-	using value_type = TupleType;
-	class it_state {
-	public:
-		using thisType = FunctionsMap;
-		using value_type = typename thisType::value_type;
-		using iterator_category = std::forward_iterator_tag;
-		using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
-
-		// data
-		mutable size_t 
-			outtermost_index{ 0 };
-		mutable size_t
-			outtermost_index_max{ 0 };
-
-		mutable typename thisType::MapType::iterator
-			middle_iter{};
-		mutable size_t
-			middle_index{ 0 };
-		mutable size_t
-			middle_index_max{ 0 };
-
-		mutable GoodLang::details::flat_map<size_t, value_type*>::iterator
-			final_iter{};
-		mutable size_t
-			final_index{ 0 };
-		mutable size_t
-			final_index_max{ 0 };
-
-		// functions
-		void Initialize(thisType* ref) {
-			outtermost_index_max = ref->numV;
-		};
-		void ToBeginning(thisType* ref) {
-			outtermost_index = 0;
-			while (outtermost_index < outtermost_index_max) {
-				middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
-				middle_index = 0;
-				if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
-					++outtermost_index;
-				}
-				else {
-					// we got one
-					while (middle_index < middle_index_max) {
-						final_iter = (*middle_iter->second)->begin();
-						final_index = 0;
-						if (0 == (final_index_max = (*middle_iter->second)->size())) {
-							++middle_iter;
-							++middle_index;
-						}
-						else {
-							// we got one
-							return;
-						}
-					}
-				}
-			}
-		};
-		void ToEnd(thisType* ref) {
-			outtermost_index = outtermost_index_max;
-			middle_index = 0;
-			middle_index_max = 0;
-			final_index = 0;
-			final_index_max = 0;
-		};
-		void Next(thisType* ref) {
-			while (outtermost_index < outtermost_index_max) {
-				if (final_index < (final_index_max - 1)) {
-					++final_iter;
-					++final_index;
-					return;
-				}
-				else {
-					if (middle_index < (middle_index_max - 1)) {
-						++middle_iter;
-						++middle_index;
-
-						while (middle_index < middle_index_max) {
-							final_iter = (*middle_iter->second)->begin();
-							final_index = 0;
-							if (0 == (final_index_max = (*middle_iter->second)->size())) {
-								++middle_iter;
-								++middle_index;
-							}
-							else {
-								// we got one
-								return;
-							}
-						}
-					}
-					else {
-						++outtermost_index;
-						while (outtermost_index < outtermost_index_max) {
-							middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
-							middle_index = 0;
-							if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
-								++outtermost_index;
-							}
-							else {
-								// we got one
-								while (middle_index < middle_index_max) {
-									final_iter = (*middle_iter->second)->begin();
-									final_index = 0;
-									if (0 == (final_index_max = (*middle_iter->second)->size())) {
-										++middle_iter;
-										++middle_index;
-									}
-									else {
-										// we got one
-										return;
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// failure!
-			outtermost_index = outtermost_index_max;
-			middle_index = 0;
-			middle_index_max = 0;
-			final_index = 0;
-			final_index_max = 0;
-		};
-		void Prev(thisType* ref) {
-			throw std::runtime_error("Cannot iterate in reverse with the FunctionsMap iterator");
-		};
-		value_type& Get(thisType* ref) const {
-			return **final_iter->second;
-		};
-		bool operator==(it_state const& rhs) const {
-			return
-				(outtermost_index == rhs.outtermost_index)
-				&& (middle_index == rhs.middle_index)
-				&& (final_index == rhs.final_index);
-		};
-		difference_type Distance(it_state const& other) const {
-			throw std::runtime_error("Cannot calculate distance with the FunctionsMap iterator");
-		};
-	};
-
-public:
-	SETUP_ITERATOR(FunctionsMap, it_state);
-
-	// // Get a function (if it exists!)
-	// this failed and did not work. Needs fixing. 
-	iterator find(std::string_view const& name) {
-		auto iter = end();
-		if (name.size() > 0) {
-			iter.state.outtermost_index = CharToIndex(name[0]);
-			iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
-
-			if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].try_at(GoodLang::GetHash(name))) {
-				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].begin(); 
-				iter.state.middle_index = FirstCharToFunctionNameMap[iter.state.outtermost_index].at_index(0).second.get() - *ptr;
-				iter.state.middle_index_max = iter.state.middle_index + 1;
-				iter.state.middle_iter += iter.state.middle_index;
-				iter.state.final_iter = (*iter.state.middle_iter->second)->begin();
-				iter.state.final_index = 0;
-				iter.state.final_index_max = (*ptr)->size();
-			}
-			else {
-				iter.state.middle_index = 0;
-				iter.state.middle_index_max = 0;
-				iter.state.final_index = 0;
-				iter.state.final_index_max = 0;
-			}
-		}
-		return iter;
-	};
-
-};
-
 int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
@@ -7619,7 +7344,7 @@ int main() {
 					funcs.emplace("to_string", func, false);
 					funcs.emplace("int", func, false);
 					funcs.emplace("double", func, false);
-				});
+					});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ insert w/ Functions");
 		}
@@ -7627,13 +7352,13 @@ int main() {
 			Stopwatch sw;
 			sw.Start();
 			if (1) {
-				FunctionsMap funcs;
+				GoodLang::FunctionsMap funcs;
 				auto func = make_callable([]() {});
 				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					funcs.insert(func, func->Arguments().Types(), "to_string");
-					funcs.insert(func, func->Arguments().Types(), "int");
-					funcs.insert(func, func->Arguments().Types(), "double");
-				});
+					funcs.emplace("to_string", func);
+					funcs.emplace("int", func);
+					funcs.emplace("double", func);
+					});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ insert w/ FunctionsMap");
 		}
@@ -7664,7 +7389,7 @@ int main() {
 					//(void)funcs.at(GoodLang::printf("to_string_%i", i), PT);
 					(void)funcs.at("int", PT);
 					(void)funcs.at("double", PT);
-				});
+					});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ insert & search w/ Functions");
 		}
@@ -7672,28 +7397,28 @@ int main() {
 			Stopwatch sw;
 			sw.Start();
 			if (1) {
-				FunctionsMap funcs;
+				GoodLang::FunctionsMap funcs;
 				auto func = make_callable([]() {});
 				auto func2 = make_callable([](int j, int b) {});
 				auto func3 = make_callable([](int i, double j) {});
 
 				auto PT = ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<double>() });
 				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i) {// 
-					//funcs.insert(func, func->Arguments().Types(), GoodLang::printf("to_string_%i", i));
-					funcs.insert(func, func->Arguments().Types(), "int");
-					funcs.insert(func, func->Arguments().Types(), "double");
+					//funcs.emplace(GoodLang::printf("to_string_%i", i), func, false);
+					funcs.emplace("int", func);
+					funcs.emplace("double", func);
 
-					//funcs.insert(func2, func2->Arguments().Types(), GoodLang::printf("to_string_%i", i));
-					funcs.insert(func2, func2->Arguments().Types(), "int");
-					funcs.insert(func2, func2->Arguments().Types(), "double");
+					//funcs.emplace(GoodLang::printf("to_string_%i", i), func2, false);
+					funcs.emplace("int", func2);
+					funcs.emplace("double", func2);
 
-					//funcs.insert(func3, func3->Arguments().Types(), GoodLang::printf("to_string_%i", i));
-					funcs.insert(func3, func3->Arguments().Types(), "int");
-					funcs.insert(func3, func3->Arguments().Types(), "double");
+					//funcs.emplace(GoodLang::printf("to_string_%i", i), func3, false);
+					funcs.emplace("int", func3);
+					funcs.emplace("double", func3);
 
-					//(void)funcs.at(PT, GoodLang::printf("to_string_%i", i));
-					(void)funcs.at(PT, "int");
-					(void)funcs.at(PT, "double");
+					//(void)funcs.at(GoodLang::printf("to_string_%i", i), PT);
+					(void)funcs.at("int", PT);
+					(void)funcs.at("double", PT);
 				});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ insert & search w/ FunctionsMap (no hints)");
@@ -7725,53 +7450,71 @@ int main() {
 					(void)funcs.at("to_string_50", PT);
 					(void)funcs.at("int", PT);
 					(void)funcs.at("double", PT);
-				});
+					});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ search w/ Functions");
 		}
 		if (1) {
 			Stopwatch sw;
 			sw.Start();
-			FunctionsMap funcs;
-			if (1) {				
+			GoodLang::FunctionsMap funcs;
+			if (1) {
 				for (int i = 0; i < 10000; ++i) {
 					auto func = make_callable([]() {});
-					funcs.insert(func, func->Arguments().Types(), GoodLang::printf("to_string_%i", i));
-					funcs.insert(func, func->Arguments().Types(), "int");
-					funcs.insert(func, func->Arguments().Types(), "double");
+					funcs.emplace(GoodLang::printf("to_string_%i", i), func);
+					funcs.emplace("int", func);
+					funcs.emplace("double", func);
 
 					auto func2 = make_callable([](int i, int j) {});
-					funcs.insert(func2, func2->Arguments().Types(), GoodLang::printf("to_string_%i", i));
-					funcs.insert(func2, func2->Arguments().Types(), "int");
-					funcs.insert(func2, func2->Arguments().Types(), "double");
+					funcs.emplace(GoodLang::printf("to_string_%i", i), func2);
+					funcs.emplace("int", func2);
+					funcs.emplace("double", func2);
 
 					auto func3 = make_callable([](int i, double j) {});
-					funcs.insert(func3, func3->Arguments().Types(), GoodLang::printf("to_string_%i", i));
-					funcs.insert(func3, func3->Arguments().Types(), "int");
-					funcs.insert(func3, func3->Arguments().Types(), "double");
+					funcs.emplace(GoodLang::printf("to_string_%i", i), func3);
+					funcs.emplace("int", func3);
+					funcs.emplace("double", func3);
 				}
 				auto PT = ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<double>() });
-				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i) {// 
-					(void)funcs.at(PT, "to_string_50");
-					(void)funcs.at(PT, "int");
-					(void)funcs.at(PT, "double");
+				parallel::For(0, 1000000, [&](int i) {
+					(void)funcs.at("to_string_50", PT);
+					(void)funcs.at("int", PT);
+					(void)funcs.at("double", PT);
 				});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ search w/ FunctionsMap (no hints)");
 
 			for (auto& x : funcs) {
 				auto& func_name = x.get<0>();
-				// print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(**x.get<2>()));
 			}
 
-			// this failed and did not work. Needs fixing. 
-			for (auto& x : funcs.find("int")) {
-				auto& func_name = x.get<0>();
-				print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(**x.get<2>()));
+			for (auto x = funcs.find("int"), y = funcs.end(); x != y; ++x) {
+				auto& func_name = x->get<0>();
+				print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(x->get<2>()));
 			}
+			for (auto x = funcs.find("double"), y = funcs.end(); x != y; ++x) {
+				auto& func_name = x->get<0>();
+				print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(x->get<2>()));
+			}
+			// should be nothing in this list...
+			for (auto x = funcs.find("to_string"), y = funcs.end(); x != y; ++x) {
+				auto& func_name = x->get<0>();
+				print(GoodLang::ToString(func_name) + ": " + GoodLang::ToString(x->get<2>()));
+			}
+
+			funcs.emplace("obj", std::make_shared<Any>(100.0f));
+			if (auto* p = funcs.at("obj")) {
+				if (!p->get<4>()) {
+					print(ToString(p->get<3>()));
+				}
+			}
+
+
 
 		}
+	}
 
+	if (1) {
 		auto globalScope = StartScope(); // will initialize the globally shared engine as well
 
 		if (1) {
@@ -7892,6 +7635,7 @@ int main() {
 				print(ToString(parsed_result));
 				print(std::string("\t -> \t") + ToString(result));
 			}
+
 
 			parsed_result = parse.Parse(R"start(				
 				var& x = 10;
@@ -9379,8 +9123,6 @@ int main() {
 			TypeConverter converter;
 			auto result = call(func, { 100 }, converter);
 			EXPECT_EQ(true, result.IsTypeOf<int>());
-			Functions F;
-			F.emplace("foo", make_callable([](double x) -> double { return x * x; }), true);
 			Union<int, int> y;
 			y.get<0>() += 1;
 			Units::scalar S;

@@ -1999,25 +1999,41 @@ namespace GoodLang {
 			std::atomic<EpochStorageType> Epoch_1{ 0 }; // youngest Epoch
 			std::atomic<long> StackLevel{ 0 };
 
+		public:
 			class EpochGuard {
 			private:
 				ThreadLocalStorage* _parent;
 				EpochStorageType _CurrentEpoch;
 
 			public:
-				EpochGuard() = default;
+				EpochGuard() : _parent{ nullptr }, _CurrentEpoch{} {};
 				EpochGuard(ThreadLocalStorage* parent, EpochStorageType CurrentEpoch) : _parent{ parent }, _CurrentEpoch{ CurrentEpoch } {};
 				EpochGuard(EpochGuard const&) = delete;
-				EpochGuard(EpochGuard&&) = delete;
+				EpochGuard(EpochGuard&& rhs) : _parent{ std::move(rhs._parent) }, _CurrentEpoch{ std::move(rhs._CurrentEpoch) } {
+					rhs._parent = nullptr;
+				};
 				EpochGuard& operator=(EpochGuard const&) = delete;
-				EpochGuard& operator=(EpochGuard&&) = delete;
+				EpochGuard& operator=(EpochGuard&& rhs) {
+					if (_parent) {
+						if (--_parent->StackLevel == 0) {
+							EpochStorageType safeToDelete = _parent->ForwardEpoch(_CurrentEpoch);
+							_parent->parent->RunGC();
+						}
+					}
+					_parent = std::move(rhs._parent);
+					_CurrentEpoch = std::move(rhs._CurrentEpoch);
+					rhs._parent = nullptr;
+				}
 				~EpochGuard() {
-					if (--_parent->StackLevel == 0) {
-						EpochStorageType safeToDelete = _parent->ForwardEpoch(_CurrentEpoch);
-						_parent->parent->RunGC();
+					if (_parent) {
+						if (--_parent->StackLevel == 0) {
+							EpochStorageType safeToDelete = _parent->ForwardEpoch(_CurrentEpoch);
+							_parent->parent->RunGC();
+						}
 					}
 				};
 			};
+		private:
 			// forwards the current Epoch, and returns the epoch for which it is 100% safe to delete for (previous EpochLimit).
 			EpochStorageType ForwardEpoch(EpochStorageType CurrentEpoch) {
 				return EpochLimit.exchange(
@@ -3217,8 +3233,8 @@ namespace GoodLang {
 		template<class KeyType, class ValueType> class flat_map {
 		friend class it_state;
 		public:
-			typedef std::vector<ValueType>	ValueList;
-			typedef std::vector<KeyType>	KeyList;
+			typedef veque::veque<ValueType>	ValueList;
+			typedef veque::veque<KeyType>	KeyList;
 
 		protected:
 			mutable fast_shared_mutex
@@ -3458,16 +3474,15 @@ namespace GoodLang {
 				throw std::range_error("Could not find " + GoodLang::ToString(time));
 			};
 			ValueType*
-				unsafe_find(const KeyType& time) const {
+				unsafe_find(const KeyType& time, long& i) const {
 				size_t sz;
-				long i;
-
 				sz = values.size();
 				if (sz == 0) { return nullptr; }
 				i = UnsafeIndexForTime(time, i = -1);
 				if (i >= sz) {
 					if (times[sz - 1] == time) {
-						return &values[sz - 1];
+						i = sz - 1;
+						return &values[i];
 					}
 				}
 				else {
@@ -3478,9 +3493,9 @@ namespace GoodLang {
 				return nullptr;
 			};
 			ValueType*
-				try_at(const KeyType& time) const {
+				try_at(const KeyType& time, long& hint) const {
 				std::shared_lock locked{ lock };
-				return unsafe_find(time);
+				return unsafe_find(time, hint);
 			};
 			ValueType&
 				operator[](const KeyType& time) {
@@ -3504,8 +3519,9 @@ namespace GoodLang {
 			};
 			template <typename Func> ValueType&
 				get_or_make(const KeyType& time, Func func, bool* ExistedAlready = nullptr) {
+				long i;
 				lock.lock_shared();
-				if (auto* f = unsafe_find(time)) {
+				if (auto* f = unsafe_find(time, i)) {
 					if (ExistedAlready) *ExistedAlready = true;
 					lock.unlock_shared();
 					return *f;
@@ -3533,6 +3549,46 @@ namespace GoodLang {
 					}
 				}
 				return false;
+			};
+			bool
+				erase(const KeyType& time, ValueType* out = nullptr) {
+				std::unique_lock locked{ lock };
+
+				size_t sz;
+				long i;
+				sz = values.size();
+				if (sz == 0) { return false; }
+				i = UnsafeIndexForTime(time, i = -1);
+				if (i >= sz) {
+					if (times[sz - 1] == time) {
+						i = sz - 1;						
+						times.erase(times.begin() + i);
+						if (out) *out = std::move(values[i]);
+						values.erase(values.begin() + i);
+						return true;
+					}
+				}
+				else {
+					if (times[i] == time) {						
+						times.erase(times.begin() + i);
+						if (out) *out = std::move(values[i]);
+						values.erase(values.begin() + i);
+						return true;
+					}
+				}
+				return false;
+			};
+			void
+				clear(std::vector<ValueType>* out = nullptr) {
+				std::unique_lock locked{ lock };
+
+				if (out) {
+					for (auto& x : values) {
+						out->push_back(x);
+					}
+				}
+				times.clear();
+				values.clear();				
 			};
 
 		private:
