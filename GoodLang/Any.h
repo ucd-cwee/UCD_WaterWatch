@@ -1843,6 +1843,9 @@ namespace GoodLang {
 			out.push_back(GoodLang::GetChildren(r.first));
 			out.push_back(GoodLang::GetChildren(r.second));
 		};
+		template <typename... Args> __forceinline void GetChildren(Tag<std::reference_wrapper<Args...>>, std::reference_wrapper<Args...> const& r, std::vector< NodeCache >& out) {
+			out.push_back(GoodLang::GetChildren(r.get()));
+		};
 		template <typename... Args> __forceinline void GetChildren(Tag<std::vector<Args...>>, std::vector<Args...> const& r, std::vector< NodeCache >& out) {
 			for (auto& x : r) {
 				out.push_back(GoodLang::GetChildren(x));

@@ -611,10 +611,17 @@ namespace GoodLang {
 			mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
 		};
 		void lock_shared() const {
-			int i = 0;
-			while (!try_lock_shared()) {
-				if (++i > 40) std::this_thread::yield();
+			thread_local long long read;
+			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+			while (reinterpret_cast<long*>(&read)[1] != 0) {
+				read = mut.load();
 			}
+			
+
+			//int i = 0;
+			//while (!try_lock_shared()) {
+			//	if (++i > 40) std::this_thread::yield();
+			//}
 		};
 
 		// if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
@@ -622,7 +629,7 @@ namespace GoodLang {
 		bool upgrade_lock() const {
 			thread_local long long read, planned;
 			// increment the write count and decrement our read count...
-			for (int i = 0; i < 40; ++i) {
+			//for (int i = 0; i < 40; ++i) {
 				planned = read = mut.load(std::memory_order::memory_order_relaxed);
 				if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
 					if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
@@ -631,10 +638,10 @@ namespace GoodLang {
 						}
 					}
 				}
-				else {
-					break;
-				}
-			}
+				//else {
+				//	break;
+				//}
+			//}
 
 			unlock_shared();
 			lock();

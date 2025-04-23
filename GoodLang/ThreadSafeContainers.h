@@ -3246,20 +3246,21 @@ namespace GoodLang {
 
 			size_t
 				UnsafeIndexForTime(const KeyType& time, long& hint) const {
-				int
-					len{ (int)times.size() },
+				size_t 
+					currentIndex{ hint >= 0l ? (size_t)hint : 0ull };
+				long
+					len{ (long)times.size() },
 					mid,
-					offset,
-					currentIndex{ hint };
+					offset;
 				bool res;
 
 				if (len <= 0) return 0; // there is no other data...		
-				else if ((currentIndex >= 0) && (currentIndex < len) && (times[currentIndex] == time)) {
+				else if ((hint >= 0l) && (hint < len) && (times[currentIndex] == time)) {
 					return currentIndex;
 				}
 				else if (len != 0) {
 					if (times[0] > time) {
-						currentIndex = 0;
+						currentIndex = 0ull;
 						InterlockedExchange(&hint, currentIndex);
 						return currentIndex;
 					}
@@ -3494,8 +3495,31 @@ namespace GoodLang {
 			};
 			ValueType*
 				try_at(const KeyType& time, long& hint) const {
+				ValueType* out;
+				lock.lock_shared();
+				out = unsafe_find(time, hint);
+				lock.unlock_shared();
+				return out;
+			};
+			template <typename Func> bool
+				do_at_beginning(Func const& func) const {
 				std::shared_lock locked{ lock };
-				return unsafe_find(time, hint);
+				
+				if (values.size() > 0) {
+					func(times[0], values[0]);
+					return true;
+				}
+				return false;
+			};
+			template <typename Func> bool
+				do_at_end(Func const& func) const {
+				std::shared_lock locked{ lock };
+
+				if (values.size() > 0) {
+					func(times[values.size()-1], values[values.size()-1]);
+					return true;
+				}
+				return false;
 			};
 			ValueType&
 				operator[](const KeyType& time) {
@@ -3518,7 +3542,7 @@ namespace GoodLang {
 				}
 			};
 			template <typename Func> ValueType&
-				get_or_make(const KeyType& time, Func func, bool* ExistedAlready = nullptr) {
+				get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
 				long i;
 				lock.lock_shared();
 				if (auto* f = unsafe_find(time, i)) {
@@ -3575,6 +3599,30 @@ namespace GoodLang {
 						values.erase(values.begin() + i);
 						return true;
 					}
+				}
+				return false;
+			};
+			bool
+				pop_front(ValueType* out = nullptr) {
+				std::unique_lock locked{ lock };
+
+				if (values.size() > 0) {
+					times.pop_front();
+					if (out) *out = values.pop_front_element();
+					else values.pop_front();
+					return true;
+				}
+				return false;
+			};
+			bool
+				pop_back(ValueType* out = nullptr) {
+				std::unique_lock locked{ lock };
+
+				if (values.size() > 0) {
+					times.pop_front();
+					if (out) *out = values.pop_back_element();
+					else values.pop_back();
+					return true;
 				}
 				return false;
 			};
@@ -3652,10 +3700,40 @@ namespace GoodLang {
 				}
 				return iter;
 			};
-
+			std::string ToString() const { 
+				std::string out;
+				std::shared_lock locked{ lock };
+				for (int i = 0; i < this->values.size(); ++i) {
+					if (out.empty()) {
+						out += GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(this->values[i]) });
+					}
+					else {
+						out += std::string(", ") + GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(this->values[i]) });
+					}
+				}
+				return std::string("[") + out + std::string("]");
+			};
+			std::vector< Impl::NodeCache > GetChildren() const { 
+				std::vector< Impl::NodeCache > out; 
+				std::shared_lock locked{ lock };				
+				for (int i = 0; i < this->values.size(); ++i) {
+					out.push_back(GoodLang::GetChildren(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(this->values[i]) }));
+				}
+				return out;
+			};
 		};
 
 	};
+	namespace Impl {
+		template <typename... Args> __forceinline void ToString(Tag< details::flat_map<Args...> >, details::flat_map<Args...> const& r, std::string& out) {
+			out = r.ToString();
+		};
+		template <typename... Args> __forceinline void GetChildren(Tag<details::flat_map<Args...>>, details::flat_map<Args...> const& r, std::vector< NodeCache >& out) {
+			out = r.GetChildren();
+		};
+	};
+
+
 
 	/// <summary>
 	/// Splines are wrappers for a dictionary of 2D values, which can interpolate between the values smoothly based on your position. 
@@ -3890,4 +3968,375 @@ namespace GoodLang {
 
 
 };
+
+
+
+
+//namespace GoodLang {
+//	// std::string to a collection of maps with given params. (E.g. first sorted by strings)
+//	class FunctionsMap {
+//		friend class it_state;
+//	public:
+//		using TupleType = GoodLang::Union<
+//			std::string, // name of object or function
+//			GoodLang::ParamTypes, // params may be empty
+//			GoodLang::Function, // function
+//			std::shared_ptr<GoodLang::Any>, // object
+//			bool // is_function (true if function, false if object)
+//		>;
+//
+//	public:
+//		using MapType = GoodLang::details::flat_map<size_t, GoodLang::details::flat_map<size_t, TupleType>>;
+//
+//	protected:
+//		static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
+//		static constexpr size_t CharToIndex(char firstChar) {
+//			if (firstChar >= 'a' && firstChar <= 'z') {
+//				return ((int)firstChar - (int)('a')) + 27;
+//			}
+//			else if (firstChar >= 'A' && firstChar <= 'Z') {
+//				return ((int)firstChar - (int)('A')) + 1;
+//			}
+//			else {
+//				return 0;
+//			}
+//		};
+//		std::array< MapType, numV> FirstCharToFunctionNameMap;
+//		std::atomic<long> NumFunctions{ 0 };
+//		std::atomic<long> NumObjects{ 0 };
+//	public:
+//		// emplace a function, if not already exists, using the provided params
+//		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func) {
+//			size_t hash{ 0 };
+//			if (func.m_function && (name.size() > 0)) {
+//				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+//
+//				GoodLang::details::hash_combine(hash, name);
+//				bool existedAlready = false;
+//				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType> {
+//					return {};
+//					});
+//				auto& F2 = F.get_or_make(params.hash(), [&]() -> TupleType {
+//					return TupleType{
+//						std::string(name),
+//						params,
+//						func,
+//						nullptr,
+//						true
+//					};
+//					}, &existedAlready);
+//				if (!existedAlready) {
+//					++NumFunctions;
+//				}
+//				return &F2;
+//			}
+//			return nullptr;
+//		};
+//
+//		// emplace a function, if not already exists
+//		TupleType* emplace(std::string_view const& name, GoodLang::Function const& func) {
+//			size_t hash{ 0 };
+//			if (func.m_function && (name.size() > 0)) {
+//				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+//
+//				GoodLang::details::hash_combine(hash, name);
+//				bool existedAlready = false;
+//				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType> {
+//					return {};
+//					});
+//				auto& F2 = F.get_or_make(func.m_function->Arguments().Types().hash(), [&]() -> TupleType {
+//					return TupleType{
+//						std::string(name),
+//						func.m_function->Arguments().Types(),
+//						func,
+//						nullptr,
+//						true
+//					};
+//					}, &existedAlready);
+//				if (!existedAlready) {
+//					++NumFunctions;
+//				}
+//				return &F2;
+//			}
+//			return nullptr;
+//		};
+//
+//		// emplace an object, if not already exists
+//		TupleType* emplace(std::string_view const& name, std::shared_ptr<GoodLang::Any> const& obj) {
+//			size_t hash{ 0 };
+//			if (name.size() > 0) {
+//				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+//
+//				GoodLang::details::hash_combine(hash, name);
+//				bool existedAlready = false;
+//				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType> {
+//					return {};
+//					});
+//				auto& F2 = F.get_or_make(ParamTypes().hash(), [&]() -> TupleType {
+//					return TupleType{
+//						std::string(name),
+//						ParamTypes{},
+//						Function{},
+//						obj,
+//						false
+//					};
+//					}, &existedAlready);
+//				if (!existedAlready) {
+//					++NumObjects;
+//				}
+//				return &F2;
+//			}
+//			return nullptr;
+//		};
+//
+//		// Get the tuple (function, likely) that exists at this name and param types
+//		TupleType* at(std::string_view const& name, GoodLang::ParamTypes const& params) const {
+//			size_t hash{ 0 };
+//			if (name.size() > 0) {
+//				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+//
+//				GoodLang::details::hash_combine(hash, name);
+//				long hint;
+//				if (auto* F = map.try_at(hash, hint)) {
+//					if (auto* P = F->try_at(params.hash(), hint)) {
+//						return P;
+//					}
+//				}
+//			}
+//			return nullptr;
+//		};
+//		// Get the tuple (function, likely) that exists at this name and param types
+//		TupleType* at(std::string_view const& name, size_t const& name_hash, GoodLang::ParamTypes const& params) const {
+//			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+//
+//			long hint;
+//			if (auto* F = map.try_at(name_hash, hint)) {
+//				if (auto* P = F->try_at(params.hash(), hint)) {
+//					return P;
+//				}
+//			}
+//
+//			return nullptr;
+//		};
+//		// Get the tuple (function, likely) that exists at this name and param types
+//		TupleType* operator()(std::string_view const& name, GoodLang::ParamTypes const& params) const {
+//			return at(name, params);
+//		};
+//		// Get the tuple (object, likely) that exists at this name and with empty params
+//		TupleType* at(std::string_view const& name) const {
+//			size_t hash{ 0 };
+//			if (name.size() > 0) {
+//				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+//
+//				GoodLang::details::hash_combine(hash, name);
+//				long hint;
+//				if (auto* F = map.try_at(hash, hint)) {
+//					if (auto* P = F->try_at(ParamTypes().hash(), hint)) {
+//						return P;
+//					}
+//				}
+//			}
+//			return nullptr;
+//		};
+//		// Get the tuple (object, likely) that exists at this name and with empty params
+//		TupleType* operator()(std::string_view const& name) const {
+//			return at(name);
+//		};
+//
+//		long num_objects() const {
+//			return NumObjects.load();
+//		};
+//		long num_functions() const {
+//			return NumFunctions.load();
+//		};
+//		long size() const {
+//			return num_objects() + num_functions();
+//		};
+//	private:
+//		using value_type = TupleType;
+//		class it_state {
+//		public:
+//			using thisType = FunctionsMap;
+//			using value_type = typename thisType::value_type;
+//			using iterator_category = std::forward_iterator_tag;
+//			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+//
+//			// data
+//			mutable size_t
+//				outtermost_index{ 0 };
+//			mutable size_t
+//				outtermost_index_max{ 0 };
+//
+//			mutable typename thisType::MapType::iterator
+//				middle_iter{};
+//			mutable size_t
+//				middle_index{ 0 };
+//			mutable size_t
+//				middle_index_max{ 0 };
+//
+//			mutable GoodLang::details::flat_map<size_t, value_type>::iterator
+//				final_iter{};
+//			mutable size_t
+//				final_index{ 0 };
+//			mutable size_t
+//				final_index_max{ 0 };
+//
+//			// functions
+//			void Initialize(thisType* ref) {
+//				outtermost_index_max = ref->numV;
+//			};
+//			void ToEnd(thisType* ref) {
+//				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
+//			};
+//			void ToBeginning(thisType* ref) {
+//				outtermost_index = 0;
+//				while (outtermost_index < outtermost_index_max) {
+//					middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
+//					middle_index = 0;
+//					if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
+//						++outtermost_index;
+//					}
+//					else {
+//						// we got one
+//						while (middle_index < middle_index_max) {
+//							final_iter = middle_iter->second->begin();
+//							final_index = 0;
+//							if (0 == (final_index_max = middle_iter->second->size())) {
+//								++middle_iter;
+//								++middle_index;
+//							}
+//							else {
+//								// we got one
+//								return;
+//							}
+//						}
+//					}
+//				}
+//				// failure
+//				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
+//			};
+//
+//			void Next(thisType* ref) {
+//				while (outtermost_index < outtermost_index_max) {
+//					if (final_index < (final_index_max - 1)) {
+//						++final_iter;
+//						++final_index;
+//						return;
+//					}
+//					else {
+//						if (middle_index < (middle_index_max - 1)) {
+//							++middle_iter;
+//							++middle_index;
+//
+//							while (middle_index < middle_index_max) {
+//								final_iter = middle_iter->second->begin();
+//								final_index = 0;
+//								if (0 == (final_index_max = middle_iter->second->size())) {
+//									++middle_iter;
+//									++middle_index;
+//								}
+//								else {
+//									// we got one
+//									return;
+//								}
+//							}
+//						}
+//						else {
+//							++outtermost_index;
+//							while (outtermost_index < outtermost_index_max) {
+//								middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
+//								middle_index = 0;
+//								if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
+//									++outtermost_index;
+//								}
+//								else {
+//									// we got one
+//									while (middle_index < middle_index_max) {
+//										final_iter = middle_iter->second->begin();
+//										final_index = 0;
+//										if (0 == (final_index_max = middle_iter->second->size())) {
+//											++middle_iter;
+//											++middle_index;
+//										}
+//										else {
+//											// we got one
+//											return;
+//										}
+//									}
+//								}
+//							}
+//						}
+//					}
+//				}
+//
+//				// failure!
+//				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
+//			};
+//			void Prev(thisType* ref) {
+//				throw std::runtime_error("Cannot iterate in reverse with the FunctionsMap iterator");
+//			};
+//			value_type& Get(thisType* ref) const {
+//				return *final_iter->second;
+//			};
+//			bool operator==(it_state const& rhs) const {
+//				return (outtermost_index == rhs.outtermost_index)
+//					&& (middle_index == rhs.middle_index)
+//					&& (final_index == rhs.final_index) && (outtermost_index_max == rhs.outtermost_index_max)
+//					&& (middle_index_max == rhs.middle_index_max)
+//					&& (final_index_max == rhs.final_index_max);
+//			};
+//			difference_type Distance(it_state const& other) const {
+//				throw std::runtime_error("Cannot calculate distance with the FunctionsMap iterator");
+//			};
+//		};
+//
+//	public:
+//		SETUP_ITERATOR(FunctionsMap, it_state);
+//
+//		// Allows looping over all contained Tuples with the requested name. 
+//		iterator find(std::string_view const& name) {
+//			auto iter = end();
+//			if (name.size() > 0) {
+//				iter.state.outtermost_index = CharToIndex(name[0]);
+//				iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
+//
+//				size_t hash{ 0 };
+//				GoodLang::details::hash_combine(hash, name);
+//
+//				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].begin(); // also does a weak_lock on the map
+//				long index = -1;
+//				if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].try_at(hash, index)) {
+//					if (ptr->size() > 0) {
+//						iter.state.middle_index = index;
+//						iter.state.middle_index_max = index + 1;
+//						iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
+//						iter.state.final_iter = iter.state.middle_iter->second->begin();
+//						iter.state.final_index = 0;
+//						iter.state.final_index_max = ptr->size();
+//						return iter;
+//					}
+//				}
+//				iter.state.outtermost_index = 0;
+//				iter.state.outtermost_index_max = 0;
+//				iter.state.middle_iter = {}; // release the weak_lock
+//				iter.state.middle_index = 0;
+//				iter.state.middle_index_max = 0;
+//				iter.state.final_iter = {};
+//				iter.state.final_index = 0;
+//				iter.state.final_index_max = 0;
+//			}
+//			return iter;
+//		};
+//
+//	public:
+//		// Builds a match (for better or worse) and encodes the result
+//		TupleType* BuildMatch(std::string_view const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
+//		// Builds a match but does not encode it.
+//		std::shared_ptr<FunctionsMap::TupleType> FindMatch(std::string_view const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
+//		bool EncodeMatch(std::shared_ptr<FunctionsMap::TupleType> const& toEncode);
+//		Any Call(std::string_view const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
+//
+//	};
+//
+//};
 
