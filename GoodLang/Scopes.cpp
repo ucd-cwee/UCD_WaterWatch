@@ -3,6 +3,150 @@
 #include <boost/unordered_set.hpp>
 
 namespace GoodLang {
+	// emplace a function, if not already exists, using the provided params
+	FunctionsMap::TupleType* FunctionsMap::emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func) {
+		size_t hash{ 0 };
+		if (func.m_function && (name.size() > 0)) {
+			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+			GoodLang::details::hash_combine(hash, name);
+
+			auto& F = map.first.get_or_make(hash, [&]() -> auto* {
+				return alloc1.Alloc();
+			});
+			auto& F2 = F->first.get_or_make(params.hash(), [&]() -> TupleType* {
+				return alloc2.Alloc(
+					std::string(name),
+					params,
+					func,
+					nullptr,
+					true
+				);
+			});
+			return &*F2;
+		}
+		return nullptr;
+	};
+	// emplace a function, if not already exists
+	FunctionsMap::TupleType* FunctionsMap::emplace(std::string_view const& name, GoodLang::Function const& func) {
+		size_t hash{ 0 };
+		if (func.m_function && (name.size() > 0)) {
+			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+			GoodLang::details::hash_combine(hash, name);
+
+			auto& F = map.first.get_or_make(hash, [&]() -> auto* {
+				return alloc1.Alloc();
+			});
+			auto& F2 = F->first.get_or_make(func.m_function->Arguments().Types().hash(), [&]() -> TupleType* {
+				return alloc2.Alloc(
+					std::string(name),
+					func.m_function->Arguments().Types(),
+					func,
+					nullptr,
+					true
+				);
+				});
+			return &*F2;
+		}
+		return nullptr;
+	};
+	// emplace an object, if not already exists
+	FunctionsMap::TupleType* FunctionsMap::emplace(std::string_view const& name, std::shared_ptr<GoodLang::Any> const& obj) {
+		size_t hash{ 0 };
+		if (name.size() > 0) {
+			MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+			GoodLang::details::hash_combine(hash, name);
+
+			auto& F = map.first.get_or_make(hash, [&]() -> auto* {
+				return alloc1.Alloc();
+			});
+			auto& F2 = F->first.get_or_make(ParamTypes().hash(), [&]() -> TupleType* {
+				return alloc2.Alloc(
+					std::string(name),
+					ParamTypes{},
+					Function{},
+					obj,
+					false
+				);
+				});
+			return &*F2;
+		}
+		return nullptr;
+	};
+	// Get the tuple (function, likely) that exists at this name and param types
+	FunctionsMap::TupleType* FunctionsMap::at(std::string_view const& name, GoodLang::ParamTypes const& params) const {
+		size_t hash{ 0 };
+		if (name.size() > 0) {
+			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+			GoodLang::details::hash_combine(hash, name);
+			if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
+				if (auto* P = (*F)->first.try_at(params.hash(), (*F)->second)) {
+					return *P;
+				}
+			}
+		}
+		return nullptr;
+	};
+	// Get the tuple (function, likely) that exists at this name and param types
+	FunctionsMap::TupleType* FunctionsMap::operator()(std::string_view const& name, GoodLang::ParamTypes const& params) const {
+		return at(name, params);
+	};
+	// Get the tuple (object, likely) that exists at this name and with empty params
+	FunctionsMap::TupleType* FunctionsMap::at(std::string_view const& name) const {
+		size_t hash{ 0 };
+		if (name.size() > 0) {
+			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
+
+			GoodLang::details::hash_combine(hash, name);
+			if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
+				if (auto* P = (*F)->first.try_at(ParamTypes().hash(), (*F)->second)) {
+					return *P;
+				}
+			}
+		}
+		return nullptr;
+	};
+	// Get the tuple (object, likely) that exists at this name and with empty params
+	FunctionsMap::TupleType* FunctionsMap::operator()(std::string_view const& name) const {
+		return at(name);
+	};
+	// Allows looping over all contained Tuples with the requested name. 
+	FunctionsMap::iterator FunctionsMap::find(std::string_view const& name) {
+		auto iter = end();
+		if (name.size() > 0) {
+			iter.state.outtermost_index = CharToIndex(name[0]);
+			iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
+
+			size_t hash{ 0 };
+			GoodLang::details::hash_combine(hash, name);
+
+			iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].first.begin(); // also does a weak_lock on the map
+			long index = -1;
+			if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].first.try_at(hash, index)) {
+				if ((*ptr)->first.size() > 0) {
+					iter.state.middle_index = index;
+					iter.state.middle_index_max = index + 1;
+					iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
+					iter.state.final_iter = (*iter.state.middle_iter->second)->first.begin();
+					iter.state.final_index = 0;
+					iter.state.final_index_max = (*ptr)->first.size();
+					return iter;
+				}
+			}
+			iter.state.outtermost_index = 0;
+			iter.state.outtermost_index_max = 0;
+			iter.state.middle_iter = {}; // release the weak_lock
+			iter.state.middle_index = 0;
+			iter.state.middle_index_max = 0;
+			iter.state.final_iter = {};
+			iter.state.final_index = 0;
+			iter.state.final_index_max = 0;
+		}
+		return iter;
+	};
 	FunctionsMap::TupleType* FunctionsMap::BuildMatch(std::string_view const& Name, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
 		// Note: we cannot in good faith match a function to a template parameter -- we could not predict what function would return.
 		if (params.IsTemplate()) {
@@ -139,7 +283,7 @@ namespace GoodLang {
 
 
 
-
+	
 
 	// try and find the object with the requested key.
 	std::shared_ptr<Any> Scope::GetObj(std::string const& name) const {
@@ -164,7 +308,7 @@ namespace GoodLang {
 		p_objects[name] = obj;
 		if (updateObjectTree) this->RecordObject(name, obj);
 		return true;
-		
+
 		//if (p_objects.emplace(name, obj)) {
 		//	if (updateObjectTree) this->RecordObject(name, obj);
 		//	return true;
@@ -173,50 +317,17 @@ namespace GoodLang {
 		//	return false;
 		//}
 	};
-	//// Returns true if successful.
-	//bool Scope::EraseObj(std::string const& name) {
-	//	if (p_objects.erase(name)) {
-	//		this->RecordObject(name, nullptr);
-	//		return true;
-	//	}
-	//	else {
-	//		return false;
-	//	}
-	//};
-	//// Returns true if successful.
-	//bool Scope::EraseObj(std::shared_ptr<Any> const& Obj) {
-	//	std::string key;
-	//	bool doErasure = false;
-	//	for (auto& obj : p_objects) {
-	//		if (obj.second == Obj) {
-	//			key = obj.first;
-	//			doErasure = true;
-	//			break;
-	//		}
-	//	}
-	//	if (doErasure) {
-	//		if (EraseObj(key)) {
-	//			this->RecordObject(key, nullptr);
-	//			return true;
-	//		}
-	//		else {
-	//			return false;
-	//		}
-	//	}
-	//	else return false;
-	//};
-
 
 	bool Scope::AddUsing(std::weak_ptr<Namespace> namespacePtr) {
 		if (auto p = std::dynamic_pointer_cast<Scope>(namespacePtr.lock())) {
-			if (p_using.emplace(Hasher()(p), namespacePtr)) {
+			bool existedAlready = false;
+			(void)p_using.get_or_make(Hasher()(p), [&]() -> std::weak_ptr<Namespace> {
+				return namespacePtr;
+			}, &existedAlready);
+			if (!existedAlready) {
 				if (p->IsNamespace()) {
-					// if this "namespacePtr" belongs to our same library, then we do not care. We only care to track other libraries being used.
-					//if (p->GetLibrary() != this->GetLibrary()) {
-						(void)RecordUsing(std::dynamic_pointer_cast<Namespace>(p));
-					//}
+					(void)RecordUsing(std::dynamic_pointer_cast<Namespace>(p));
 				}
-
 				is_basic_scope = false;
 				return true;
 			}
@@ -273,7 +384,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -367,7 +478,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -885,7 +996,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -977,7 +1088,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -1069,7 +1180,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestScopeWhere_2(bestMatch, func, isExporingParent, allowFindObject, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -1875,7 +1986,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -2217,7 +2328,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestScopeWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
@@ -2321,7 +2432,7 @@ namespace GoodLang {
 
 		// test my "using" namespaces and their children.
 		for (auto& childNamespace : this->p_using) {
-			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second.lock())) {
+			if (auto p = std::dynamic_pointer_cast<Scope>(childNamespace.second->lock())) {
 				if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}

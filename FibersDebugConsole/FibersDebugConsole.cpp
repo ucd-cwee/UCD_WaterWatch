@@ -7353,12 +7353,12 @@ int main() {
 			sw.Start();
 			if (1) {
 				GoodLang::FunctionsMap funcs;
-				auto func = make_callable([]() {});
+				auto func = make_callable([]() {}); 
 				parallel::For(0, 1000000, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
 					funcs.emplace("to_string", func);
 					funcs.emplace("int", func);
 					funcs.emplace("double", func);
-					});
+				});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ insert w/ FunctionsMap");
 		}

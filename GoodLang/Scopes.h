@@ -24,13 +24,19 @@ namespace GoodLang {
 	private:
 		// Allocators allow for pointers to be made which do not need to be explicitely deleted -- they will be deleted in the future. 
 		// Additionally, if we want to support deleting functions from the map, these allocators can switched to Epoch style and defer deletion until it is safe to do so. 
-		GoodLang::Allocator<GoodLang::details::flat_map<size_t, TupleType*>>
+		GoodLang::Allocator<std::pair<GoodLang::details::flat_map<size_t, TupleType*>, long>>
 			alloc1;
 		GoodLang::Allocator<TupleType>
 			alloc2;
 
 	public:
-		using MapType = GoodLang::details::flat_map<size_t, GoodLang::details::flat_map<size_t, TupleType*>*>;
+		using MapType =
+			std::pair <
+			    GoodLang::details::flat_map<size_t, 
+			        std::pair<GoodLang::details::flat_map<size_t, TupleType*>, long>*
+				>,
+			    long // hint
+			>;
 
 	protected:
 		static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
@@ -49,120 +55,19 @@ namespace GoodLang {
 
 	public:
 		// emplace a function, if not already exists, using the provided params
-		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func) {
-			size_t hash{ 0 };
-			if (func.m_function && (name.size() > 0)) {
-				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-
-				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
-					return alloc1.Alloc();
-				});
-				auto& F2 = F->get_or_make(params.hash(), [&]() -> TupleType* {
-					return alloc2.Alloc(
-						std::string(name),
-						params,
-						func, 
-						nullptr,
-						true
-					);
-				});
-				return &*F2;
-			}
-			return nullptr;
-		};
-
+		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func);
 		// emplace a function, if not already exists
-		TupleType* emplace(std::string_view const& name, GoodLang::Function const& func) {
-			size_t hash{ 0 };
-			if (func.m_function && (name.size() > 0)) {
-				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-
-				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
-					return alloc1.Alloc();
-				});
-				auto& F2 = F->get_or_make(func.m_function->Arguments().Types().hash(), [&]() -> TupleType* {
-					return alloc2.Alloc(
-						std::string(name),
-						func.m_function->Arguments().Types(),
-						func,
-						nullptr,
-						true
-					);
-				});
-				return &*F2;
-			}
-			return nullptr;
-		};
-
+		TupleType* emplace(std::string_view const& name, GoodLang::Function const& func);
 		// emplace an object, if not already exists
-		TupleType* emplace(std::string_view const& name, std::shared_ptr<GoodLang::Any> const& obj) {
-			size_t hash{ 0 };
-			if (name.size() > 0) {
-				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-
-				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType*>*{
-					return alloc1.Alloc();
-				});
-				auto& F2 = F->get_or_make(ParamTypes().hash(), [&]() -> TupleType* {
-					return alloc2.Alloc(
-						std::string(name),
-						ParamTypes{},
-						Function{},
-						obj,
-						false
-					);
-				});
-				return &*F2;
-			}
-			return nullptr;
-		};
-
+		TupleType* emplace(std::string_view const& name, std::shared_ptr<GoodLang::Any> const& obj);
 		// Get the tuple (function, likely) that exists at this name and param types
-		TupleType* at(std::string_view const& name, GoodLang::ParamTypes const& params) const {
-			size_t hash{ 0 };
-			if (name.size() > 0) {
-				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				long hint;
-				if (auto* F = map.try_at(hash, hint)) {
-					if (auto* P = (*F)->try_at(params.hash(), hint)) {
-						return *P;
-					}
-				}
-			}
-			return nullptr;
-		};
+		TupleType* at(std::string_view const& name, GoodLang::ParamTypes const& params) const;
 		// Get the tuple (function, likely) that exists at this name and param types
-		TupleType* operator()(std::string_view const& name, GoodLang::ParamTypes const& params) const {
-			return at(name, params);
-		};
+		TupleType* operator()(std::string_view const& name, GoodLang::ParamTypes const& params) const;
 		// Get the tuple (object, likely) that exists at this name and with empty params
-		TupleType* at(std::string_view const& name) const {
-			size_t hash{ 0 };
-			if (name.size() > 0) {
-				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				long hint;
-				if (auto* F = map.try_at(hash, hint)) {
-					if (auto* P = (*F)->try_at(ParamTypes().hash(), hint)) {
-						return *P;
-					}
-				}
-			}
-			return nullptr;
-		};
+		TupleType* at(std::string_view const& name) const;
 		// Get the tuple (object, likely) that exists at this name and with empty params
-		TupleType* operator()(std::string_view const& name) const {
-			return at(name);
-		};
+		TupleType* operator()(std::string_view const& name) const;
 
 	private:
 		using value_type = TupleType;
@@ -179,7 +84,7 @@ namespace GoodLang {
 			mutable size_t
 				outtermost_index_max{ 0 };
 
-			mutable typename thisType::MapType::iterator
+			mutable typename thisType::MapType::first_type::iterator
 				middle_iter{};
 			mutable size_t
 				middle_index{ 0 };
@@ -200,17 +105,17 @@ namespace GoodLang {
 			void ToBeginning(thisType* ref) {
 				outtermost_index = 0;
 				while (outtermost_index < outtermost_index_max) {
-					middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
+					middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].first.begin();
 					middle_index = 0;
-					if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
+					if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].first.size())) {
 						++outtermost_index;
 					}
 					else {
 						// we got one
 						while (middle_index < middle_index_max) {
-							final_iter = (*middle_iter->second)->begin();
+							final_iter = (*middle_iter->second)->first.begin();
 							final_index = 0;
-							if (0 == (final_index_max = (*middle_iter->second)->size())) {
+							if (0 == (final_index_max = (*middle_iter->second)->first.size())) {
 								++middle_iter;
 								++middle_index;
 							}
@@ -238,9 +143,9 @@ namespace GoodLang {
 							++middle_index;
 
 							while (middle_index < middle_index_max) {
-								final_iter = (*middle_iter->second)->begin();
+								final_iter = (*middle_iter->second)->first.begin();
 								final_index = 0;
-								if (0 == (final_index_max = (*middle_iter->second)->size())) {
+								if (0 == (final_index_max = (*middle_iter->second)->first.size())) {
 									++middle_iter;
 									++middle_index;
 								}
@@ -253,17 +158,17 @@ namespace GoodLang {
 						else {
 							++outtermost_index;
 							while (outtermost_index < outtermost_index_max) {
-								middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
+								middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].first.begin();
 								middle_index = 0;
-								if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
+								if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].first.size())) {
 									++outtermost_index;
 								}
 								else {
 									// we got one
 									while (middle_index < middle_index_max) {
-										final_iter = (*middle_iter->second)->begin();
+										final_iter = (*middle_iter->second)->first.begin();
 										final_index = 0;
-										if (0 == (final_index_max = (*middle_iter->second)->size())) {
+										if (0 == (final_index_max = (*middle_iter->second)->first.size())) {
 											++middle_iter;
 											++middle_index;
 										}
@@ -301,39 +206,7 @@ namespace GoodLang {
 		SETUP_ITERATOR(FunctionsMap, it_state);
 
 		// Allows looping over all contained Tuples with the requested name. 
-		iterator find(std::string_view const& name) {
-			auto iter = end();
-			if (name.size() > 0) {
-				iter.state.outtermost_index = CharToIndex(name[0]);
-				iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
-
-				size_t hash{ 0 };
-				GoodLang::details::hash_combine(hash, name);
-
-				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].begin(); // also does a weak_lock on the map
-				long index = -1;
-				if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].try_at(hash, index)) {
-					if ((*ptr)->size() > 0) {
-						iter.state.middle_index = index;
-						iter.state.middle_index_max = index + 1;
-						iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
-						iter.state.final_iter = (*iter.state.middle_iter->second)->begin();
-						iter.state.final_index = 0;
-						iter.state.final_index_max = (*ptr)->size();
-						return iter;
-					}
-				}
-				iter.state.outtermost_index = 0;
-				iter.state.outtermost_index_max = 0;
-				iter.state.middle_iter = {}; // release the weak_lock
-				iter.state.middle_index = 0;
-				iter.state.middle_index_max = 0;
-				iter.state.final_iter = {};
-				iter.state.final_index = 0;
-				iter.state.final_index_max = 0;
-			}
-			return iter;
-		};
+		iterator find(std::string_view const& name);
 
 	public:
 		TupleType* BuildMatch(std::string_view const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
@@ -565,7 +438,7 @@ namespace GoodLang {
 
 	private:
 		concurrency::concurrent_unordered_map< std::string, std::shared_ptr<Any>>
-		// UnorderedMap<std::string, std::shared_ptr<Any>>
+			// UnorderedMap<std::string, std::shared_ptr<Any>>
 			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
 
 	public:
@@ -573,10 +446,6 @@ namespace GoodLang {
 		std::shared_ptr<Any> GetObj(std::string const& name) const;
 		// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
 		bool AddObj(std::string const& name, std::shared_ptr<Any> const& obj, bool updateObjectTree = true);
-		// Returns true if successful.
-		// bool EraseObj(std::string const& name);
-		// Returns true if successful.
-		// bool EraseObj(std::shared_ptr<Any> const& Obj);
 
 	private:
 		std::weak_ptr<Global> // parent's parent's ... parent's scope. The logical result of asking for p_parent on repeat until you get the end. 
@@ -603,7 +472,7 @@ namespace GoodLang {
 		};
 
 	public:
-		UnorderedMap< size_t, std::weak_ptr<Namespace>> // allows this scope to use the children of other scopes as if they were their own.
+		GoodLang::details::flat_map<size_t, std::weak_ptr<Namespace>> // allows this scope to use the children of other scopes as if they were their own.
 			p_using;
 		// the Library should know about our "using" list
 		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) {
@@ -615,11 +484,6 @@ namespace GoodLang {
 		virtual bool RecordObject(std::string const& Name, std::shared_ptr<Any> const& ptr) {
 			this->CachedObjectVersion.Increment();
 			return true;
-
-			//if (auto p = std::dynamic_pointer_cast<Scope>(GetLibrary())) {
-			//	return p->RecordObject(Name, ptr);
-			//}
-			//return false;
 		};
 
 	public:
@@ -655,8 +519,8 @@ namespace GoodLang {
 				size_t toRemove{};
 				bool doRemoval = false;
 				for (auto& ref : p_using) {
-					if (ref.second.expired()) {
-						toRemove = ref.first;
+					if (ref.second->expired()) {
+						toRemove = *ref.first;
 						doRemoval = true;
 						break;
 					}					
@@ -1119,8 +983,8 @@ namespace GoodLang {
 				size_t toRemove{};
 				bool doRemoval = false;
 				for (auto& ref : p_using) {
-					if (ref.second.expired()) {
-						toRemove = ref.first;
+					if (ref.second->expired()) {
+						toRemove = *ref.first;
 						doRemoval = true;
 						break;
 					}
@@ -1449,8 +1313,8 @@ namespace GoodLang {
 						size_t toRemove{};
 						bool doRemoval = false;
 						for (auto& ref : p_using) {
-							if (ref.second.expired()) {
-								toRemove = ref.first;
+							if (ref.second->expired()) {
+								toRemove = *ref.first;
 								doRemoval = true;
 								break;
 							}

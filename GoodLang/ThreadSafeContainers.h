@@ -1334,7 +1334,7 @@ namespace GoodLang {
 
 	public:
 		std::unique_ptr<Arg, Deleter> data;
-		mutable GoodLang::fast_shared_mutex lock{};
+		mutable std::shared_mutex lock{};
 		void EnsureDataExists() const {
 			if (!data) {
 				lock.lock();
@@ -1765,9 +1765,12 @@ namespace GoodLang {
 		template <typename... TArgs> _type_* Alloc(TArgs&&... a) noexcept {
 			// get (or make) an available header
 			size_t header_index{ 0 };
-			if (!available_header_indexes.try_pop(header_index)) {
+
+			moodycamel::ConsumerToken consumer(available_header_indexes);
+
+			if (!available_header_indexes.try_pop(consumer, header_index)) {
 				// add a new header_block and then move those to this queue
-				auto header_block_iterator = header_blocks.push_back({});
+				auto header_block_iterator = header_blocks.grow_by(1); // .push_back({});
 				size_t parent_block_index = std::distance(header_blocks.begin(), header_block_iterator);
 
 				moodycamel::ProducerToken producer(available_header_indexes);
@@ -1792,8 +1795,6 @@ namespace GoodLang {
 					Header.initialized = false;
 					Header.data = &header_block_iterator->data[inner_index];
 					Header.data->header_index = (parent_block_index * _blockSize_) + inner_index;
-
-					//available_header_indexes.push(Header.data->header_index);
 				}
 
 				auto seq = GoodLang::Sequence<size_t>((parent_block_index * _blockSize_) + 1, (parent_block_index * _blockSize_) + _blockSize_);
@@ -1817,10 +1818,12 @@ namespace GoodLang {
 			return out;
 		};
 		void Free(const _type_* t) noexcept {
+			moodycamel::ProducerToken producer(available_header_indexes);
+
 			element_item* element{ static_cast<element_item*>(static_cast<void*>(const_cast<_type_*>(t))) };
 			if constexpr (!isPod()) t->~_type_(); // destroy
 			header_blocks[element->header_index / _blockSize_].headers[element->header_index % _blockSize_].initialized = false; // indicate it was destroyed
-			available_header_indexes.push(element->header_index); // free the header_index
+			available_header_indexes.push(producer, element->header_index); // free the header_index
 		};
 		template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) noexcept {
 			return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
@@ -2336,7 +2339,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator 
 				_ptr{};
-			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -2558,7 +2561,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -2767,7 +2770,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -2971,7 +2974,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -3132,7 +3135,7 @@ namespace GoodLang {
 			// data
 			mutable typename underlying::iterator
 				_ptr{};
-			std::shared_ptr<std::shared_lock<GoodLang::fast_shared_mutex>>
+			std::shared_ptr<std::shared_lock<std::shared_mutex>>
 				lifetime{ nullptr };
 
 			// functions
@@ -3233,9 +3236,9 @@ namespace GoodLang {
 		template<class KeyType, class ValueType> class flat_map {
 		friend class it_state;
 		public:
-			typedef veque::veque<ValueType>	ValueList;
+			typedef veque::veque<ValueType*>	ValueList;
 			typedef veque::veque<KeyType>	KeyList;
-
+			typedef GoodLang::BlockAllocator<ValueType> AllocType; // basic block allocator 
 		protected:
 			mutable fast_shared_mutex
 				lock; // basically equivalent to std::shared_ptr
@@ -3243,41 +3246,40 @@ namespace GoodLang {
 				times;			// knot Times
 			mutable ValueList
 				values;			// knot Values	
+			mutable GoodLang::shared_ptr<AllocType>
+				allocator;
 
 			size_t
-				UnsafeIndexForTime(const KeyType& time, long& hint) const {
+				UnsafeIndexForTime(const KeyType& time, long& hint, size_t len) const {
+				KeyType*
+					sample;
 				size_t 
-					currentIndex{ hint >= 0l ? (size_t)hint : 0ull };
-				long
-					len{ (long)times.size() },
-					mid,
-					offset;
-				bool res;
+					currentIndex{ hint >= 0l ? (size_t)hint : 0ull },
+					mid{ len },
+					offset{ 0 };
+				bool 
+					res{ false };
 
-				if (len <= 0) return 0; // there is no other data...		
-				else if ((hint >= 0l) && (hint < len) && (times[currentIndex] == time)) {
-					return currentIndex;
-				}
-				else if (len != 0) {
-					if (times[0] > time) {
+				if (len == 0) 
+					return 0; // there is no other data...		
+				else if ((hint >= 0l) && (currentIndex < len) && (times[currentIndex] == time)) 
+					return currentIndex;				
+				else if (len != 0ull) {
+					if (times[0ull] > time) {
 						currentIndex = 0ull;
 						InterlockedExchange(&hint, currentIndex);
 						return currentIndex;
 					}
-					if (times[len - 1] < time) {
+					if (times[len - 1ull] < time) {
 						currentIndex = len;
 						InterlockedExchange(&hint, currentIndex);
 						return currentIndex;
 					}
 				}
 
-				// use binary search to find the index for the given time	
-				mid = len;
-				offset = 0;
-				res = false;
-				KeyType* sample;
-				while (mid > 0) {
-					mid = len >> 1;
+				// use binary search to find the index for the given time				
+				while (mid > 0ull) {
+					mid = len >> 1ull;
 					sample = &times[offset + mid];
 					if (time >= *sample) {
 						offset += mid;
@@ -3301,18 +3303,20 @@ namespace GoodLang {
 				UnsafeInsertPair(long i, const KeyType& time, ValueType&& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
 				if (unique) {
 					if (((i != 0) && (i < values.size()) && (times[i] == time))) {
-						if (!InsertOnlyIfDoesNotExist) values[i] = std::move(valueIN);
+						if (!InsertOnlyIfDoesNotExist) {
+							*values[i] = std::move(valueIN);
+						}
 					}
 					else if (values.size() == 0 || i >= values.size()) {
 						times.push_back(time);
-						values.push_back(std::move(valueIN));
+						values.push_back(allocator->Alloc(std::move(valueIN)));
 					}
 					else if ((times.size() != 0) && times[0] != time) {
 						times.insert(times.begin() + i, time);
-						values.insert(values.begin() + i, std::move(valueIN));
+						values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
 					}
 					else {
-						if (!InsertOnlyIfDoesNotExist) values[0] = std::move(valueIN);
+						if (!InsertOnlyIfDoesNotExist) *values[0] = std::move(valueIN);
 						i = 0;
 					}
 					return i;
@@ -3320,11 +3324,11 @@ namespace GoodLang {
 				else {
 					if (values.size() == 0 || i >= values.size()) {
 						times.push_back(time);
-						values.push_back(std::move(valueIN));
+						values.push_back(allocator->Alloc(std::move(valueIN)));
 					}
 					else {
 						times.insert(times.begin() + i, time);
-						values.insert(values.begin() + i, std::move(valueIN));
+						values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
 					}
 					return i;
 				}
@@ -3335,20 +3339,21 @@ namespace GoodLang {
 				if (unique) {
 					{
 						std::unique_lock locked{ lock };
-						i = UnsafeIndexForTime(time, i = -1);
-						if (((i != 0) && (i < values.size()) && (times[i] == time))) {
-							if (!InsertOnlyIfDoesNotExist) values[i] = std::move(valueIN);
+						size_t sz{ values.size() };
+						i = UnsafeIndexForTime(time, i = -1, sz);
+						if (((i != 0) && (i < sz) && (times[i] == time))) {
+							if (!InsertOnlyIfDoesNotExist) *values[i] = std::move(valueIN);
 						}
-						else if (values.size() == 0 || i >= values.size()) {
+						else if (sz == 0 || i >= sz) {
 							times.push_back(time);
-							values.push_back(std::move(valueIN));
+							values.push_back(allocator->Alloc(std::move(valueIN)));
 						}
-						else if ((times.size() != 0) && times[0] != time) {
+						else if ((sz != 0) && times[0] != time) {
 							times.insert(times.begin() + i, time);
-							values.insert(values.begin() + i, std::move(valueIN));
+							values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
 						}
 						else {
-							if (!InsertOnlyIfDoesNotExist) values[0] = std::move(valueIN);
+							if (!InsertOnlyIfDoesNotExist) *values[0] = std::move(valueIN);
 							i = 0;
 						}
 					}
@@ -3357,14 +3362,15 @@ namespace GoodLang {
 				else {
 					{
 						std::unique_lock locked{ lock };
-						i = UnsafeIndexForTime(time, i = -1);
-						if (values.size() == 0 || i >= values.size()) {
+						size_t sz{ values.size() };
+						i = UnsafeIndexForTime(time, i = -1, sz);
+						if (sz == 0 || i >= sz) {
 							times.push_back(time);
-							values.push_back(std::move(valueIN));
+							values.push_back(allocator->Alloc(std::move(valueIN)));
 						}
 						else {
 							times.insert(times.begin() + i, time);
-							values.insert(values.begin() + i, std::move(valueIN));
+							values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
 						}
 					}
 					return i;
@@ -3372,27 +3378,49 @@ namespace GoodLang {
 			};
 
 		public:
-			flat_map() = default;
-			flat_map(flat_map const& rhs) {
-				std::shared_lock locked{ rhs.lock };
+			flat_map() 
+				: lock{}
+				, times{}
+				, values{}
+				, allocator{ GoodLang::make_shared<AllocType>() }
+			{};
+			flat_map(flat_map const& rhs) 
+				: lock{}
+				, times{}
+				, values{}
+				, allocator{nullptr} 
+			{
+				std::shared_lock locked{ rhs.lock };				
+				allocator = rhs.allocator;
 				times = rhs.times;
-				values = rhs.values;
+				values = rhs.values;				
 			};
-			flat_map(flat_map&& rhs) : times{ std::move(rhs.times) }, values{ std::move(rhs.values) } {};
+			flat_map(flat_map&& rhs) 
+				: lock{}
+				, times{ std::move(rhs.times) }
+				, values{ std::move(rhs.values) }
+				, allocator{ std::move(rhs.allocator) }
+			{};
 			flat_map& operator=(flat_map const& rhs) {
 				if (this == &rhs) return *this;
-				std::scoped_lock locked1{ lock };
+				std::unique_lock locked1{ lock };
 				std::shared_lock locked2{ rhs.lock };
+
+				allocator = rhs.allocator;
 				times = rhs.times;
 				values = rhs.values;
+				
 				return *this;
 			};
 			flat_map& operator=(flat_map&& rhs) {
 				if (this == &rhs) return *this;
-				std::scoped_lock locked1{ lock };
+				std::unique_lock locked1{ lock };
 				std::shared_lock locked2{ rhs.lock };
+
+				allocator = rhs.allocator;
 				times = rhs.times;
 				values = rhs.values;
+				
 				return *this;
 			};
 			~flat_map() = default;
@@ -3408,7 +3436,7 @@ namespace GoodLang {
 				at_index_unsafe(size_t index) const {
 				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{
 					std::ref(times[index]),
-						std::ref(values[index])
+						std::ref(*values[index])
 				};
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
@@ -3420,7 +3448,7 @@ namespace GoodLang {
 				get_index(const KeyType& time) const {
 				long out;
 				std::shared_lock locked{ lock };
-				out = UnsafeIndexForTime(time, out = -1);
+				out = UnsafeIndexForTime(time, out = -1, values.size());
 				return out;
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
@@ -3430,7 +3458,7 @@ namespace GoodLang {
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
 				unsafe_insert(const KeyType& time, ValueType&& value) {
 				long i;
-				return at_index_unsafe(UnsafeInsertPair(UnsafeIndexForTime(time, i = -1), time, std::move(value), true, true));
+				return at_index_unsafe(UnsafeInsertPair(UnsafeIndexForTime(time, i = -1, values.size()), time, std::move(value), true, true));
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
 				emplace(const KeyType& time, ValueType&& value) {
@@ -3441,72 +3469,65 @@ namespace GoodLang {
 				lower_bound(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				long i;
-				i = UnsafeIndexForTime(time, i = -1);
 				size_t sz = values.size();
+				i = UnsafeIndexForTime(time, i = -1, sz);				
 				if (sz == 0) {
 					throw std::range_error("Could not find " + GoodLang::ToString(time));
 				}
 				if (i >= sz) {
-					return values[sz - 1];
+					return *values[sz - 1];
 				}
 				else {
-					return values[i];
+					return *values[i];
 				}
 			};
 			ValueType&
 				at(const KeyType& time) const {
 				std::shared_lock locked{ lock };
 				long i;
-				i = UnsafeIndexForTime(time, i = -1);
 				size_t sz = values.size();
+				i = UnsafeIndexForTime(time, i = -1, sz);				
 				if (sz == 0) {
 					throw std::range_error("Could not find " + GoodLang::ToString(time));
 				}
 				if (i >= sz) {
 					if (times[sz - 1] == time) {
-						return values[sz - 1];
+						return *values[sz - 1];
 					}
 				}
 				else {
 					if (times[i] == time) {
-						return values[i];
+						return *values[i];
 					}
 				}
 				throw std::range_error("Could not find " + GoodLang::ToString(time));
 			};
 			ValueType*
 				unsafe_find(const KeyType& time, long& i) const {
-				size_t sz;
-				sz = values.size();
-				if (sz == 0) { return nullptr; }
-				i = UnsafeIndexForTime(time, i = -1);
-				if (i >= sz) {
-					if (times[sz - 1] == time) {
-						i = sz - 1;
-						return &values[i];
-					}
+				size_t sz{ values.size() };
+				if (sz == 0ull) { return nullptr; }
+				if (sz <= (i = UnsafeIndexForTime(time, i, sz))) {
+					if (times[i = sz - 1ull] == time) 
+						return values[i];					
+					else 
+						return nullptr;					
 				}
-				else {
-					if (times[i] == time) {
-						return &values[i];
-					}
-				}
-				return nullptr;
+				else if (times[i] == time) 
+					return values[i];				
+				else 
+					return nullptr;
 			};
 			ValueType*
 				try_at(const KeyType& time, long& hint) const {
-				ValueType* out;
-				lock.lock_shared();
-				out = unsafe_find(time, hint);
-				lock.unlock_shared();
-				return out;
+				std::shared_lock locked{ lock };
+				return unsafe_find(time, hint);				
 			};
 			template <typename Func> bool
 				do_at_beginning(Func const& func) const {
 				std::shared_lock locked{ lock };
 				
 				if (values.size() > 0) {
-					func(times[0], values[0]);
+					func(times[0], *values[0]);
 					return true;
 				}
 				return false;
@@ -3516,7 +3537,7 @@ namespace GoodLang {
 				std::shared_lock locked{ lock };
 
 				if (values.size() > 0) {
-					func(times[values.size()-1], values[values.size()-1]);
+					func(times[times.size()-1], *values[values.size()-1]);
 					return true;
 				}
 				return false;
@@ -3568,7 +3589,7 @@ namespace GoodLang {
 				Visit(std::function<bool(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> const&)> const& Func) const {
 				std::shared_lock locked{ lock };
 				for (size_t i = 0, sz = values.size(); i < sz; ++i) {
-					if (Func(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(times[i]), std::ref(values[i]) })) {
+					if (Func(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(times[i]), std::ref(*values[i]) })) {
 						return true;
 					}
 				}
@@ -3582,12 +3603,13 @@ namespace GoodLang {
 				long i;
 				sz = values.size();
 				if (sz == 0) { return false; }
-				i = UnsafeIndexForTime(time, i = -1);
+				i = UnsafeIndexForTime(time, i = -1, sz);
 				if (i >= sz) {
 					if (times[sz - 1] == time) {
 						i = sz - 1;						
 						times.erase(times.begin() + i);
-						if (out) *out = std::move(values[i]);
+						if (out) *out = std::move(*values[i]);
+						allocator->Free(values[i]);
 						values.erase(values.begin() + i);
 						return true;
 					}
@@ -3595,7 +3617,8 @@ namespace GoodLang {
 				else {
 					if (times[i] == time) {						
 						times.erase(times.begin() + i);
-						if (out) *out = std::move(values[i]);
+						if (out) *out = std::move(*values[i]);
+						allocator->Free(values[i]);
 						values.erase(values.begin() + i);
 						return true;
 					}
@@ -3608,8 +3631,10 @@ namespace GoodLang {
 
 				if (values.size() > 0) {
 					times.pop_front();
-					if (out) *out = values.pop_front_element();
-					else values.pop_front();
+					if (auto* old_ptr = values.pop_front_element()) {
+						if (out) *out = *old_ptr;
+						allocator->Free(old_ptr);
+					}
 					return true;
 				}
 				return false;
@@ -3620,8 +3645,10 @@ namespace GoodLang {
 
 				if (values.size() > 0) {
 					times.pop_front();
-					if (out) *out = values.pop_back_element();
-					else values.pop_back();
+					if (auto* old_ptr = values.pop_back_element()) {
+						if (out) *out = *old_ptr;
+						allocator->Free(old_ptr);
+					}
 					return true;
 				}
 				return false;
@@ -3632,11 +3659,12 @@ namespace GoodLang {
 
 				if (out) {
 					for (auto& x : values) {
-						out->push_back(x);
+						out->push_back(std::move(*x));
 					}
 				}
 				times.clear();
-				values.clear();				
+				values.clear();
+				allocator = GoodLang::make_shared<AllocType>();
 			};
 
 		private:
@@ -3679,7 +3707,7 @@ namespace GoodLang {
 				};
 				value_type& Get(thisType* ref) const {
 					_out.first = &*_time_ptr;
-					_out.second = &*_val_ptr;
+					_out.second = *_val_ptr;
 					return _out;
 				};
 				bool operator==(it_state const& rhs) const {
@@ -3693,10 +3721,10 @@ namespace GoodLang {
 				std::shared_lock locked{ lock };
 
 				auto iter = this->end();
-				if (auto* loc = unsafe_find(_Keyval)) {
-					size_t pos = loc - &this->values[0];
-					iter.state._val_ptr = this->values.begin() + pos;
-					iter.state._time_ptr = this->times.begin() + pos;
+				long i;
+				if (auto* loc = unsafe_find(_Keyval, i)) {
+					iter.state._val_ptr = this->values.begin() + i;
+					iter.state._time_ptr = this->times.begin() + i;
 				}
 				return iter;
 			};
@@ -3705,10 +3733,10 @@ namespace GoodLang {
 				std::shared_lock locked{ lock };
 				for (int i = 0; i < this->values.size(); ++i) {
 					if (out.empty()) {
-						out += GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(this->values[i]) });
+						out += GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(*this->values[i]) });
 					}
 					else {
-						out += std::string(", ") + GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(this->values[i]) });
+						out += std::string(", ") + GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(*this->values[i]) });
 					}
 				}
 				return std::string("[") + out + std::string("]");
@@ -3717,7 +3745,7 @@ namespace GoodLang {
 				std::vector< Impl::NodeCache > out; 
 				std::shared_lock locked{ lock };				
 				for (int i = 0; i < this->values.size(); ++i) {
-					out.push_back(GoodLang::GetChildren(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(this->values[i]) }));
+					out.push_back(GoodLang::GetChildren(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(*this->values[i]) }));
 				}
 				return out;
 			};
@@ -3968,372 +3996,3 @@ namespace GoodLang {
 
 
 };
-
-namespace GoodLang {
-	// std::string to a collection of maps with given params. (E.g. first sorted by strings)
-	class FunctionsMap {
-		friend class it_state;
-	public:
-		using TupleType = GoodLang::Union<
-			std::string, // name of object or function
-			GoodLang::ParamTypes, // params may be empty
-			GoodLang::Function, // function
-			std::shared_ptr<GoodLang::Any>, // object
-			bool // is_function (true if function, false if object)
-		>;
-
-	public:
-		using MapType = GoodLang::details::flat_map<size_t, GoodLang::details::flat_map<size_t, TupleType>>;
-
-	protected:
-		static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
-		static constexpr size_t CharToIndex(char firstChar) {
-			if (firstChar >= 'a' && firstChar <= 'z') {
-				return ((int)firstChar - (int)('a')) + 27;
-			}
-			else if (firstChar >= 'A' && firstChar <= 'Z') {
-				return ((int)firstChar - (int)('A')) + 1;
-			}
-			else {
-				return 0;
-			}
-		};
-		std::array< MapType, numV> FirstCharToFunctionNameMap;
-		std::atomic<long> NumFunctions{ 0 };
-		std::atomic<long> NumObjects{ 0 };
-	public:
-		// emplace a function, if not already exists, using the provided params
-		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func) {
-			size_t hash{ 0 };
-			if (func.m_function && (name.size() > 0)) {
-				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				bool existedAlready = false;
-				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType> {
-					return {};
-					});
-				auto& F2 = F.get_or_make(params.hash(), [&]() -> TupleType {
-					return TupleType{
-						std::string(name),
-						params,
-						func,
-						nullptr,
-						true
-					};
-					}, &existedAlready);
-				if (!existedAlready) {
-					++NumFunctions;
-				}
-				return &F2;
-			}
-			return nullptr;
-		};
-
-		// emplace a function, if not already exists
-		TupleType* emplace(std::string_view const& name, GoodLang::Function const& func) {
-			size_t hash{ 0 };
-			if (func.m_function && (name.size() > 0)) {
-				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				bool existedAlready = false;
-				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType> {
-					return {};
-					});
-				auto& F2 = F.get_or_make(func.m_function->Arguments().Types().hash(), [&]() -> TupleType {
-					return TupleType{
-						std::string(name),
-						func.m_function->Arguments().Types(),
-						func,
-						nullptr,
-						true
-					};
-					}, &existedAlready);
-				if (!existedAlready) {
-					++NumFunctions;
-				}
-				return &F2;
-			}
-			return nullptr;
-		};
-
-		// emplace an object, if not already exists
-		TupleType* emplace(std::string_view const& name, std::shared_ptr<GoodLang::Any> const& obj) {
-			size_t hash{ 0 };
-			if (name.size() > 0) {
-				MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				bool existedAlready = false;
-				auto& F = map.get_or_make(hash, [&]() -> GoodLang::details::flat_map<size_t, TupleType> {
-					return {};
-					});
-				auto& F2 = F.get_or_make(ParamTypes().hash(), [&]() -> TupleType {
-					return TupleType{
-						std::string(name),
-						ParamTypes{},
-						Function{},
-						obj,
-						false
-					};
-					}, &existedAlready);
-				if (!existedAlready) {
-					++NumObjects;
-				}
-				return &F2;
-			}
-			return nullptr;
-		};
-
-		// Get the tuple (function, likely) that exists at this name and param types
-		TupleType* at(std::string_view const& name, GoodLang::ParamTypes const& params) const {
-			size_t hash{ 0 };
-			if (name.size() > 0) {
-				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				long hint;
-				if (auto* F = map.try_at(hash, hint)) {
-					if (auto* P = F->try_at(params.hash(), hint)) {
-						return P;
-					}
-				}
-			}
-			return nullptr;
-		};
-		// Get the tuple (function, likely) that exists at this name and param types
-		TupleType* at(std::string_view const& name, size_t const& name_hash, GoodLang::ParamTypes const& params) const {
-			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-			long hint;
-			if (auto* F = map.try_at(name_hash, hint)) {
-				if (auto* P = F->try_at(params.hash(), hint)) {
-					return P;
-				}
-			}
-
-			return nullptr;
-		};
-		// Get the tuple (function, likely) that exists at this name and param types
-		TupleType* operator()(std::string_view const& name, GoodLang::ParamTypes const& params) const {
-			return at(name, params);
-		};
-		// Get the tuple (object, likely) that exists at this name and with empty params
-		TupleType* at(std::string_view const& name) const {
-			size_t hash{ 0 };
-			if (name.size() > 0) {
-				const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-				GoodLang::details::hash_combine(hash, name);
-				long hint;
-				if (auto* F = map.try_at(hash, hint)) {
-					if (auto* P = F->try_at(ParamTypes().hash(), hint)) {
-						return P;
-					}
-				}
-			}
-			return nullptr;
-		};
-		// Get the tuple (object, likely) that exists at this name and with empty params
-		TupleType* operator()(std::string_view const& name) const {
-			return at(name);
-		};
-
-		long num_objects() const {
-			return NumObjects.load();
-		};
-		long num_functions() const {
-			return NumFunctions.load();
-		};
-		long size() const {
-			return num_objects() + num_functions();
-		};
-	private:
-		using value_type = TupleType;
-		class it_state {
-		public:
-			using thisType = FunctionsMap;
-			using value_type = typename thisType::value_type;
-			using iterator_category = std::forward_iterator_tag;
-			using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
-
-			// data
-			mutable size_t
-				outtermost_index{ 0 };
-			mutable size_t
-				outtermost_index_max{ 0 };
-
-			mutable typename thisType::MapType::iterator
-				middle_iter{};
-			mutable size_t
-				middle_index{ 0 };
-			mutable size_t
-				middle_index_max{ 0 };
-
-			mutable GoodLang::details::flat_map<size_t, value_type>::iterator
-				final_iter{};
-			mutable size_t
-				final_index{ 0 };
-			mutable size_t
-				final_index_max{ 0 };
-
-			// functions
-			void Initialize(thisType* ref) {
-				outtermost_index_max = ref->numV;
-			};
-			void ToEnd(thisType* ref) {
-				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
-			};
-			void ToBeginning(thisType* ref) {
-				outtermost_index = 0;
-				while (outtermost_index < outtermost_index_max) {
-					middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
-					middle_index = 0;
-					if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
-						++outtermost_index;
-					}
-					else {
-						// we got one
-						while (middle_index < middle_index_max) {
-							final_iter = middle_iter->second->begin();
-							final_index = 0;
-							if (0 == (final_index_max = middle_iter->second->size())) {
-								++middle_iter;
-								++middle_index;
-							}
-							else {
-								// we got one
-								return;
-							}
-						}
-					}
-				}
-				// failure
-				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
-			};
-
-			void Next(thisType* ref) {
-				while (outtermost_index < outtermost_index_max) {
-					if (final_index < (final_index_max - 1)) {
-						++final_iter;
-						++final_index;
-						return;
-					}
-					else {
-						if (middle_index < (middle_index_max - 1)) {
-							++middle_iter;
-							++middle_index;
-
-							while (middle_index < middle_index_max) {
-								final_iter = middle_iter->second->begin();
-								final_index = 0;
-								if (0 == (final_index_max = middle_iter->second->size())) {
-									++middle_iter;
-									++middle_index;
-								}
-								else {
-									// we got one
-									return;
-								}
-							}
-						}
-						else {
-							++outtermost_index;
-							while (outtermost_index < outtermost_index_max) {
-								middle_iter = ref->FirstCharToFunctionNameMap[outtermost_index].begin();
-								middle_index = 0;
-								if (0 == (middle_index_max = ref->FirstCharToFunctionNameMap[outtermost_index].size())) {
-									++outtermost_index;
-								}
-								else {
-									// we got one
-									while (middle_index < middle_index_max) {
-										final_iter = middle_iter->second->begin();
-										final_index = 0;
-										if (0 == (final_index_max = middle_iter->second->size())) {
-											++middle_iter;
-											++middle_index;
-										}
-										else {
-											// we got one
-											return;
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// failure!
-				final_index_max = final_index = middle_index_max = middle_index = outtermost_index = outtermost_index_max = 0;
-			};
-			void Prev(thisType* ref) {
-				throw std::runtime_error("Cannot iterate in reverse with the FunctionsMap iterator");
-			};
-			value_type& Get(thisType* ref) const {
-				return *final_iter->second;
-			};
-			bool operator==(it_state const& rhs) const {
-				return (outtermost_index == rhs.outtermost_index)
-					&& (middle_index == rhs.middle_index)
-					&& (final_index == rhs.final_index) && (outtermost_index_max == rhs.outtermost_index_max)
-					&& (middle_index_max == rhs.middle_index_max)
-					&& (final_index_max == rhs.final_index_max);
-			};
-			difference_type Distance(it_state const& other) const {
-				throw std::runtime_error("Cannot calculate distance with the FunctionsMap iterator");
-			};
-		};
-
-	public:
-		SETUP_ITERATOR(FunctionsMap, it_state);
-
-		// Allows looping over all contained Tuples with the requested name. 
-		iterator find(std::string_view const& name) {
-			auto iter = end();
-			if (name.size() > 0) {
-				iter.state.outtermost_index = CharToIndex(name[0]);
-				iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
-
-				size_t hash{ 0 };
-				GoodLang::details::hash_combine(hash, name);
-
-				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].begin(); // also does a weak_lock on the map
-				long index = -1;
-				if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].try_at(hash, index)) {
-					if (ptr->size() > 0) {
-						iter.state.middle_index = index;
-						iter.state.middle_index_max = index + 1;
-						iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
-						iter.state.final_iter = iter.state.middle_iter->second->begin();
-						iter.state.final_index = 0;
-						iter.state.final_index_max = ptr->size();
-						return iter;
-					}
-				}
-				iter.state.outtermost_index = 0;
-				iter.state.outtermost_index_max = 0;
-				iter.state.middle_iter = {}; // release the weak_lock
-				iter.state.middle_index = 0;
-				iter.state.middle_index_max = 0;
-				iter.state.final_iter = {};
-				iter.state.final_index = 0;
-				iter.state.final_index_max = 0;
-			}
-			return iter;
-		};
-
-	public:
-		// Builds a match (for better or worse) and encodes the result
-		TupleType* BuildMatch(std::string_view const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
-		// Builds a match but does not encode it.
-		std::shared_ptr<FunctionsMap::TupleType> FindMatch(std::string_view const& functionName, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true);
-		bool EncodeMatch(std::shared_ptr<FunctionsMap::TupleType> const& toEncode);
-		Any Call(std::string_view const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
-
-	};
-
-};
-

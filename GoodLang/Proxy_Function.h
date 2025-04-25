@@ -344,7 +344,7 @@ namespace GoodLang {
 			};
 
 		private:
-			mutable GoodLang::fast_shared_mutex p_mut;
+			mutable std::shared_mutex p_mut; // GoodLang::fast_shared_mutex
 		};
 
 	public:
