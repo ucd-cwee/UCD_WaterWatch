@@ -7425,56 +7425,58 @@ int main() {
 		}
 
 		if (1) {
+			GoodLang::Functions funcs;
+			for (int i = 0; i < 10000; ++i) {
+				auto func = make_callable([]() {});
+				funcs.emplace(GoodLang::printf("to_string_%i", i), func, false);
+				funcs.emplace("int", func, false);
+				funcs.emplace("double", func, false);
+
+				auto func2 = make_callable([](int i, int j) {});
+				funcs.emplace(GoodLang::printf("to_string_%i", i), func2, false);
+				funcs.emplace("int", func2, false);
+				funcs.emplace("double", func2, false);
+
+				auto func3 = make_callable([](int i, double j) {});
+				funcs.emplace(GoodLang::printf("to_string_%i", i), func3, false);
+				funcs.emplace("int", func3, false);
+				funcs.emplace("double", func3, false);
+			}
+
 			Stopwatch sw;
 			sw.Start();
-			if (1) {
-				GoodLang::Functions funcs;
-				for (int i = 0; i < 10000; ++i) {
-					auto func = make_callable([]() {});
-					funcs.emplace(GoodLang::printf("to_string_%i", i), func, false);
-					funcs.emplace("int", func, false);
-					funcs.emplace("double", func, false);
-
-					auto func2 = make_callable([](int i, int j) {});
-					funcs.emplace(GoodLang::printf("to_string_%i", i), func2, false);
-					funcs.emplace("int", func2, false);
-					funcs.emplace("double", func2, false);
-
-					auto func3 = make_callable([](int i, double j) {});
-					funcs.emplace(GoodLang::printf("to_string_%i", i), func3, false);
-					funcs.emplace("int", func3, false);
-					funcs.emplace("double", func3, false);
-				}
+			if (1) {				
 				auto PT = ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<double>() });
 				parallel::For(0, 1000000, [&](int i) {
 					(void)funcs.at("to_string_50", PT);
 					(void)funcs.at("int", PT);
 					(void)funcs.at("double", PT);
-					});
+				});
 			}
 			print(ToString(Units::second(sw.Stop_s())) + " @ search w/ Functions");
 		}
 		if (1) {
+			GoodLang::FunctionsMap funcs;
+			for (int i = 0; i < 10000; ++i) {
+				auto func = make_callable([]() {});
+				funcs.emplace(GoodLang::printf("to_string_%i", i), func);
+				funcs.emplace("int", func);
+				funcs.emplace("double", func);
+
+				auto func2 = make_callable([](int i, int j) {});
+				funcs.emplace(GoodLang::printf("to_string_%i", i), func2);
+				funcs.emplace("int", func2);
+				funcs.emplace("double", func2);
+
+				auto func3 = make_callable([](int i, double j) {});
+				funcs.emplace(GoodLang::printf("to_string_%i", i), func3);
+				funcs.emplace("int", func3);
+				funcs.emplace("double", func3);
+			}
+
 			Stopwatch sw;
 			sw.Start();
-			GoodLang::FunctionsMap funcs;
 			if (1) {
-				for (int i = 0; i < 10000; ++i) {
-					auto func = make_callable([]() {});
-					funcs.emplace(GoodLang::printf("to_string_%i", i), func);
-					funcs.emplace("int", func);
-					funcs.emplace("double", func);
-
-					auto func2 = make_callable([](int i, int j) {});
-					funcs.emplace(GoodLang::printf("to_string_%i", i), func2);
-					funcs.emplace("int", func2);
-					funcs.emplace("double", func2);
-
-					auto func3 = make_callable([](int i, double j) {});
-					funcs.emplace(GoodLang::printf("to_string_%i", i), func3);
-					funcs.emplace("int", func3);
-					funcs.emplace("double", func3);
-				}
 				auto PT = ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<double>() });
 				parallel::For(0, 1000000, [&](int i) {
 					(void)funcs.at("to_string_50", PT);

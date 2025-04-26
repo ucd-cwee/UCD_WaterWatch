@@ -52,7 +52,7 @@ namespace GoodLang {
 			}
 		};
 		std::array< MapType, numV> FirstCharToFunctionNameMap;
-
+		size_t count;
 	public:
 		// emplace a function, if not already exists, using the provided params
 		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func);
@@ -68,7 +68,9 @@ namespace GoodLang {
 		TupleType* at(std::string_view const& name) const;
 		// Get the tuple (object, likely) that exists at this name and with empty params
 		TupleType* operator()(std::string_view const& name) const;
-
+		const size_t& size() const {
+			return this->count;
+		};
 	private:
 		using value_type = TupleType;
 		class it_state {
@@ -437,8 +439,8 @@ namespace GoodLang {
 		};
 
 	private:
+		// GoodLang::details::flat_map<std::string, std::shared_ptr<Any>>
 		concurrency::concurrent_unordered_map< std::string, std::shared_ptr<Any>>
-			// UnorderedMap<std::string, std::shared_ptr<Any>>
 			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
 
 	public:

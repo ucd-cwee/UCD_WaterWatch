@@ -3199,7 +3199,7 @@ namespace GoodLang {
 		// single-threaded flat set
 		template <typename T> class flat_set {
 		private:
-			veque::veque<T> queue; 
+			veque::veque<T> queue;
 		public:
 			auto emplace(T const& item) {
 				return queue.insert(
@@ -3207,7 +3207,7 @@ namespace GoodLang {
 					item
 				);
 			};
-			void clear() { 
+			void clear() {
 				queue.clear();
 			};
 			void emplace_fast(T&& val) {
@@ -3216,7 +3216,7 @@ namespace GoodLang {
 			void emplace_fast(T const& val) {
 				queue.push_back(val);
 			};
-			bool contains_fast(T const& find) { 
+			bool contains_fast(T const& find) {
 				for (auto& x : queue) {
 					if (x == find) {
 						return true;
@@ -3227,11 +3227,956 @@ namespace GoodLang {
 			bool contains(T const& v) {
 				return std::binary_search(queue.begin(), queue.end(), v);
 			};
-			bool contains(T && v) {
+			bool contains(T&& v) {
 				return std::binary_search(queue.begin(), queue.end(), std::move(v));
 			};
 		};
+	};
 
+	namespace details {
+		__forceinline void* Mem_Alloc(const size_t& size) {
+			if (!size) return NULL;
+			const size_t paddedSize = (size + 15) & ~15;
+			return ::_aligned_malloc(paddedSize, 16);
+		};
+		__forceinline void  Mem_Free(void* ptr) {
+			if (ptr) ::_aligned_free(ptr);
+		};
+		__forceinline void* Mem_ClearedAlloc(const size_t& size) {
+			void* mem = Mem_Alloc(size);
+			::memset(mem, 0, size);
+			return mem;
+		};
+
+		/*
+		================================================
+		cweeBlockAlloc is a block-based allocator for fixed-size objects.
+		All objects are properly constructed and destructed.
+		================================================
+		*/
+#define CONST_MAX( x, y )			( (x) > (y) ? (x) : (y) )
+#define BLOCK_ALLOC_ALIGNMENT 16
+
+		template<class _type_, size_t BlockSize = 128>
+		class SingleThreadedAllocator {
+		private:
+			static constexpr bool isPod() { return std::is_pod<_type_>::value; };
+
+		public:
+			template<class _type_, int _blockSize_>
+			class BlockAlloc {
+			public:
+				BlockAlloc(bool clear = true) : // = false
+					blocks(NULL),
+					free(NULL),
+					total(0),
+					active(0),
+					allowAllocs(true),
+					clearAllocs(clear)
+				{};
+				BlockAlloc(int toReserve) :
+					blocks(NULL),
+					free(NULL),
+					total(0),
+					active(0),
+					allowAllocs(true),
+					clearAllocs(true)
+				{
+					Reserve(toReserve);
+				};
+				~BlockAlloc() {
+					Shutdown();
+				};
+
+				// returns total size of allocated memory
+				size_t				Allocated() const { return total * sizeof(_type_); }
+
+				// returns total size of allocated memory including size of (*this)
+				size_t				Size() const { return sizeof(*this) + Allocated(); }
+
+				void				Shutdown() {
+					while (blocks != NULL) {
+						cweeBlock* block = blocks;
+						blocks = blocks->next;
+						Mem_Free(block);
+					}
+					blocks = NULL;
+					free = NULL;
+					total = active = 0;
+				};
+				void			SetFixedBlocks(long long numBlocks) {
+					long long currentNumBlocks = 0;
+					for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+						currentNumBlocks++;
+					}
+					for (long long i = currentNumBlocks; i < numBlocks; i++) {
+						AllocNewBlock();
+					}
+					allowAllocs = false;
+				};
+				void			FreeEmptyBlocks() {
+					// first count how many free elements are in each block and build up a free chain per block
+					for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+						block->free = NULL;
+						block->freeCount = 0;
+					}
+					for (element_t* element = free; element != NULL; ) {
+						element_t* next = element->next;
+						for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+							if (element >= block->elements && element < block->elements + _blockSize_) {
+								element->next = block->free;
+								block->free = element;
+								block->freeCount++;
+								break;
+							}
+						}
+						// if this assert fires, we couldn't find the element in any block
+						assert(element->next != next);
+						element = next;
+					}
+					// now free all blocks whose free count == _blockSize_
+					cweeBlock* prevBlock = NULL;
+					for (cweeBlock* block = blocks; block != NULL; ) {
+						cweeBlock* next = block->next;
+						if (block->freeCount == _blockSize_) {
+							if (prevBlock == NULL) {
+								assert(blocks == block);
+								blocks = block->next;
+							}
+							else {
+								assert(prevBlock->next == block);
+								prevBlock->next = block->next;
+							}
+							Mem_Free(block);
+							total -= _blockSize_;
+						}
+						else {
+							prevBlock = block;
+						}
+						block = next;
+					}
+					// now rebuild the free chain
+					free = NULL;
+					for (cweeBlock* block = blocks; block != NULL; block = block->next) {
+						for (element_t* element = block->free; element != NULL; ) {
+							element_t* next = element->next;
+							element->next = free;
+							free = element;
+							element = next;
+						}
+					}
+				};
+
+				static constexpr bool isPod() { return std::is_pod<_type_>::value; };
+				_type_* Alloc() {
+					if (free == NULL) {
+						if (!allowAllocs) {
+							return NULL;
+						}
+						AllocNewBlock();
+					}
+
+					active++;
+					element_t* element = free;
+					free = free->next;
+					element->next = NULL;
+
+					_type_* t = (_type_*)element->buffer;
+					if constexpr (isPod()) {
+						memset(t, 0, sizeof(_type_));
+					}
+					else {
+						if (clearAllocs) {
+							memset(t, 0, sizeof(_type_));
+						}
+						new (t) _type_;
+					}
+
+					return t;
+				};
+				void				Free(_type_* element) {
+					if (element == nullptr) {
+						return;
+					}
+
+					if constexpr (!isPod()) {
+						element->~_type_();
+					}
+
+					element_t* t = (element_t*)(element);
+					t->next = free;
+					free = t;
+					active--;
+				};
+				void			    Reserve(long long num) {
+					if (total < num) {
+						std::vector< _type_* > arr; arr.reserve(2 * (num - total));
+						while (total < num) {
+							arr.push_back(Alloc());
+						}
+						for (_type_* p : arr) {
+							Free(p);
+						}
+					}
+				};
+				long long			GetTotalCount() const { return total; }
+				long long			GetAllocCount() const { return active; }
+				long long			GetFreeCount() const { return total - active; }
+
+			private:
+				union element_t {
+					_type_* data;
+					element_t* next;
+					::byte			buffer[(CONST_MAX(sizeof(_type_), sizeof(element_t*)) + (BLOCK_ALLOC_ALIGNMENT - 1)) & ~(BLOCK_ALLOC_ALIGNMENT - 1)];
+				};
+
+				class cweeBlock {
+				public:
+					element_t		elements[_blockSize_];
+					cweeBlock* next;
+					element_t* free;		// list with free elements in this block (temp used only by FreeEmptyBlocks)
+					long long		freeCount;	// number of free elements in this block (temp used only by FreeEmptyBlocks)
+				};
+
+				cweeBlock* blocks;
+				element_t* free;
+				long long			total;
+				long long			active;
+				bool				allowAllocs;
+				bool				clearAllocs;
+
+				void			AllocNewBlock() {
+					cweeBlock* block = (cweeBlock*)Mem_Alloc((size_t)(sizeof(cweeBlock)));
+					block->next = blocks;
+					blocks = block;
+					for (int i = 0; i < _blockSize_; i++) {
+						block->elements[i].next = free;
+						free = &block->elements[i];
+						assert((((UINT_PTR)free) & (BLOCK_ALLOC_ALIGNMENT - 1)) == 0);
+					}
+					total += _blockSize_;
+				};
+			};
+
+		public:
+			SingleThreadedAllocator() : ptrs(), alloc() {};
+			SingleThreadedAllocator(int toReserve) : ptrs(), alloc(toReserve) {};
+			~SingleThreadedAllocator() { Clear(); };
+
+			_type_* Alloc() {
+				auto p = alloc.Alloc();
+				if constexpr (!isPod()) {
+					ptrs.insert(p);
+				}
+				return p;
+			};
+			void	Free(_type_* element) {
+				if constexpr (!isPod()) {
+					ptrs.erase(element);
+				}
+				alloc.Free(element);
+			};
+			void	Clean() {
+				alloc.FreeEmptyBlocks();
+			};
+			long long	GetTotalCount() const {
+				return alloc.GetTotalCount();
+			};
+			long long	GetAllocCount() const {
+				if constexpr (!isPod()) {
+					return ptrs.size();
+				}
+				else {
+					return alloc.GetAllocCount();
+				}
+			};
+			void	Clear() {
+				if constexpr (!isPod()) {
+					for (auto& x : ptrs) {
+						if (x != nullptr) {
+							alloc.Free(x);
+						}
+					}
+					ptrs.clear();
+				}
+				else {
+					alloc.Shutdown();
+					alloc.Free(alloc.Alloc());
+				}
+			};
+			void	Reserve(long long n) {
+				alloc.Reserve(n);
+			};
+
+		private:
+			std::set<_type_*> ptrs;
+			BlockAlloc<_type_, BlockSize> alloc;
+		};
+
+#undef BLOCK_ALLOC_ALIGNMENT
+#undef CONST_MAX
+
+		template< class objType, class keyType, int maxChildrenPerNode = 10 >
+		class BalancedTree {
+		public:
+			struct TreeNode {
+				keyType				  key;							// key used for sorting
+				objType* object;						            // if != NULL pointer to object stored in leaf node
+				TreeNode* parent;						// parent node
+				TreeNode* next;							// next sibling
+				TreeNode* prev;							// prev sibling
+				long long			  numChildren;					// number of children
+				TreeNode* firstChild;					// first child
+				TreeNode* lastChild;					// last child
+			};
+			typedef TreeNode _iterType;
+
+			_iterType* InitNode(_iterType* p) {
+				p->key = {};
+				p->object = nullptr;
+				p->parent = nullptr;
+				p->next = nullptr;
+				p->prev = nullptr;
+				p->numChildren = 0;
+				p->firstChild = nullptr;
+				p->lastChild = nullptr;
+				return p;
+			};
+				
+		private:
+			long long
+				Num;
+			_iterType
+				* root,
+				* first,
+				* last;
+			SingleThreadedAllocator<objType, maxChildrenPerNode>
+				objAllocator;
+			SingleThreadedAllocator<_iterType, maxChildrenPerNode>
+				nodeAllocator;
+
+		public:
+			BalancedTree& operator=(const BalancedTree& obj) {
+				Clear(); // empty out whatever this container had 
+				for (auto* x = obj.GetFirst(); x != nullptr; x = obj.GetNextLeaf(x)) {
+					Add(*x->object, x->key, false);
+				}
+
+				return *this;
+			};
+			bool operator==(const BalancedTree& obj) {
+				return GetFirst() == obj.GetFirst() && GetLast() == obj.GetLast();
+			};
+			bool operator!=(const BalancedTree& obj) { return !operator==(obj); };
+
+			BalancedTree() : Num(0), root(nullptr), first(nullptr), last(nullptr), objAllocator(), nodeAllocator() {
+				static_assert(maxChildrenPerNode >= 4);
+				Init();
+			};
+			BalancedTree(int toReserve) :
+				Num(0),
+				root(nullptr),
+				first(nullptr),
+				last(nullptr),
+				objAllocator(toReserve),
+				nodeAllocator(toReserve * 1.25)
+			{
+				static_assert(maxChildrenPerNode >= 4);
+				Init();
+			};
+			~BalancedTree() {
+				Clear();
+			};
+
+			void									Reserve(long long num) {
+				objAllocator.Reserve(num);
+				nodeAllocator.Reserve(num * 1.25); // approximately 25% more for 'overage'
+			};
+
+			_iterType* Add(objType const& object, keyType const& key, bool addUnique = true) {
+				_iterType* node, * child, * newNode; objType* OBJ;
+
+				if (root == nullptr) {
+					root = AllocNode();
+				}
+
+				// check that the key does not already exist		
+				if (addUnique) {
+					node = NodeFind(key);
+					if (node && node->object) {
+						*node->object = const_cast<objType&>(object);
+						return CheckLastNode(CheckFirstNode(node));
+					}
+				}
+
+				if (root->numChildren >= maxChildrenPerNode) {
+					newNode = AllocNode();
+					newNode->key = root->key;
+					newNode->firstChild = root;
+					newNode->lastChild = root;
+					newNode->numChildren = 1;
+					root->parent = newNode;
+					SplitNode(root);
+					root = newNode;
+				}
+
+				newNode = AllocNode();
+				newNode->key = key;
+
+				OBJ = nullptr;
+				{
+					OBJ = objAllocator.Alloc();
+					*OBJ = const_cast<objType&>(object);
+					Num++;
+				}
+
+				newNode->object = OBJ;
+
+				for (node = root; node->firstChild != nullptr; node = child) {
+
+					if (key > node->key) {
+						node->key = key;
+					}
+
+					// find the first child with a key larger equal to the key of the new node
+					for (child = node->firstChild; child->next; child = child->next) {
+						if (key <= child->key) {
+							break;
+						}
+					}
+
+					if (child->object) {
+
+						if (key <= child->key) {
+							// insert new node before child
+							if (child->prev) {
+								child->prev->next = newNode;
+							}
+							else {
+								node->firstChild = newNode;
+							}
+							newNode->prev = child->prev;
+							newNode->next = child;
+							child->prev = newNode;
+						}
+						else {
+							// insert new node after child
+							if (child->next) {
+								child->next->prev = newNode;
+							}
+							else {
+								node->lastChild = newNode;
+							}
+							newNode->prev = child;
+							newNode->next = child->next;
+							child->next = newNode;
+						}
+
+						newNode->parent = node;
+						node->numChildren++;
+
+						return CheckLastNode(CheckFirstNode(newNode));
+					}
+
+					// make sure the child has room to store another node
+					if (child->numChildren >= maxChildrenPerNode) {
+						SplitNode(child);
+						if (key <= child->prev->key) {
+							child = child->prev;
+						}
+					}
+				}
+
+				// we only end up here if the root node is empty
+				newNode->parent = root;
+				root->key = key;
+				root->firstChild = newNode;
+				root->lastChild = newNode;
+				root->numChildren++;
+
+				return CheckLastNode(CheckFirstNode(newNode));
+			};
+
+			void									Remove(_iterType* node) {
+				if (!node) return;
+
+				if (first == node) {
+					first = this->GetNextLeaf(node);
+				}
+
+				if (last == node) {
+					last = this->GetPrevLeaf(node);
+				}
+
+				_iterType* parent, * oldRoot;
+
+				// unlink the node from it's parent
+				if (node->prev) {
+					node->prev->next = node->next;
+				}
+				else {
+					node->parent->firstChild = node->next;
+				}
+				if (node->next) {
+					node->next->prev = node->prev;
+				}
+				else {
+					node->parent->lastChild = node->prev;
+				}
+				node->parent->numChildren--;
+
+				// make sure there are no parent nodes with a single child
+				for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
+
+					if (parent->next) {
+						parent = MergeNodes(parent, parent->next);
+					}
+					else if (parent->prev) {
+						parent = MergeNodes(parent->prev, parent);
+					}
+
+					// a parent may not use a key higher than the key of it's last child
+					if (parent->key > parent->lastChild->key) {
+						parent->key = parent->lastChild->key;
+					}
+
+					if (parent->numChildren > maxChildrenPerNode) {
+						SplitNode(parent);
+						break;
+					}
+				}
+				for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent) {
+					// a parent may not use a key higher than the key of it's last child
+					if (parent->key > parent->lastChild->key) {
+						parent->key = parent->lastChild->key;
+					}
+				}
+
+				// free the node
+				FreeNode(node);
+
+				// remove the root node if it has a single internal node as child
+				if (root->numChildren == 1 && root->firstChild->object == nullptr) {
+					oldRoot = root;
+					root->firstChild->parent = nullptr;
+					root = root->firstChild;
+					FreeNode(oldRoot);
+				}
+			};				// remove an object node from the tree
+			void									Clear() {
+				// while (first) { Remove(first); }
+
+				// remove all
+				nodeAllocator.Clear();
+				objAllocator.Clear();
+				root = nullptr;
+				first = nullptr;
+				last = nullptr;
+				Num = 0;
+
+				Init();
+			};
+			_iterType* NodeFindByIndex(int index) const {
+				if (index <= 0) return first;
+				else if (index >= (Num - 1)) return last;
+				else return NodeFindByIndex(index, root);
+			};
+			_iterType* NodeFind(keyType  const& key) const {
+				return NodeFind(key, root);
+			};								// find an object using the given key;
+			_iterType* NodeFindSmallestLargerEqual(keyType const& key) const {
+				return NodeFindSmallestLargerEqual(key, root);
+			};			// find an object with the smallest key larger equal the given key;
+			_iterType* NodeFindLargestSmallerEqual(keyType const& key) const {
+				return NodeFindLargestSmallerEqual(key, root);
+			};			// find an object with the largest key smaller equal the given key;
+
+			static _iterType* NodeFind(keyType  const& key, _iterType* root) {
+				_iterType* node = NodeFindLargestSmallerEqual(key, root);
+				if (node && node->object && node->key == key) return node;
+				return nullptr;
+			};								// find an object using the given key;
+			static _iterType* NodeFindByIndex(int index, _iterType* Root) {
+				int startIndex{ 0 };
+
+				if (Root == nullptr) {
+					return nullptr;
+				}
+
+				while (Root) {
+					if (index == startIndex && Root->object) { return Root; }
+
+					if (startIndex <= index && (startIndex + Root->numChildren) > index) {
+						// one of my children has this index				
+						Root = Root->firstChild;
+					}
+					else {
+						// one of my neighbors has this index				
+						if (Root->object) ++startIndex;
+						else startIndex += Root->numChildren;
+
+						Root = Root->next;
+					}
+				}
+
+				return Root;
+			};			// find an object with the largest key smaller equal the given key;
+			static _iterType* NodeFindSmallestLargerEqual(keyType const& key, _iterType* Root) {
+				_iterType* node, * smaller;
+
+				if (Root == nullptr) {
+					return nullptr;
+				}
+
+				smaller = nullptr;
+				for (node = Root->lastChild; node != nullptr; node = node->lastChild) {
+					//if (node->lastChild && node->firstChild) {
+					//	if (node->firstChild->key > node->lastChild->key) {
+					//		node = GetPrevLeaf(Root);
+					//		break;
+					//	}
+					//}
+					while (node->prev) {
+						if (node->key <= key) {
+							if (!smaller) {
+								smaller = GetPrevLeaf(Root);
+							}
+							break;
+						}
+						smaller = node;
+						node = node->prev;
+					}
+					if (node->object) {
+						if (node->key >= key) {
+							break;
+						}
+						else if (smaller == nullptr) {
+							return nullptr;
+						}
+						else {
+							node = smaller;
+							if (node->object) {
+								break;
+							}
+						}
+					}
+				}
+
+				return node;
+			};			// find an object with the smallest key larger equal the given key;
+			static _iterType* NodeFindLargestSmallerEqual(keyType const& key, _iterType* Root) {
+				_iterType* node, * smaller;
+
+				if (Root == nullptr) {
+					return nullptr;
+				}
+
+				smaller = nullptr;
+				for (node = Root->firstChild; node != nullptr; node = node->firstChild) {
+					while (node->next) {
+						if (node->key >= key) {
+							if (!smaller) {
+								smaller = GetNextLeaf(Root);
+							}
+							break;
+						}
+						smaller = node;
+						node = node->next;
+					}
+					if (node->object) {
+						if (node->key <= key) {
+							break;
+						}
+						else if (smaller == nullptr) {
+							return nullptr;
+						}
+						else {
+							node = smaller;
+							if (node->object) {
+								break;
+							}
+						}
+					}
+				}
+				return node;
+			};			// find an object with the largest key smaller equal the given key;
+			objType* Find(keyType  const& key) const {
+				_iterType* node = NodeFind(key, root);
+				if (node == nullptr) {
+					return nullptr;
+				}
+				else {
+					return node->object;
+				}
+			};									// find an object using the given key;
+			objType* FindSmallestLargerEqual(keyType const& key) const {
+				_iterType* node = NodeFindSmallestLargerEqual(key, root);
+				if (node == nullptr) {
+					return nullptr;
+				}
+				else {
+					return node->object;
+				}
+			};				// find an object with the smallest key larger equal the given key;
+			objType* FindLargestSmallerEqual(keyType const& key) const {
+				_iterType* node = NodeFindLargestSmallerEqual(key, root);
+				if (node == nullptr) {
+					return nullptr;
+				}
+				else {
+					return node->object;
+				}
+			};				// find an object with the largest key smaller equal the given key;
+
+			_iterType* GetFirst() const { return first; };
+			_iterType* GetLast() const { return last; };
+			_iterType* GetRoot() const { return root; };
+			long long								GetNodeCount() const {
+				return Num;
+			};										// returns the total number of nodes in the tree;
+			long long								GetReservedCount() const {
+				return objAllocator.GetTotalCount();  // .Num(); //  
+			};
+			static _iterType* GetNext(_iterType* node) {
+				if (node) {
+					if (node->firstChild) {
+						node = node->firstChild;
+					}
+					else {
+						while (node && node->next == nullptr) {
+							node = node->parent;
+						}
+					}
+				}
+				return node;
+
+				//if (!node) return nullptr; 
+				//if (node->firstChild) {
+				//	return node->firstChild;
+				//}
+				//else {
+				//	while (node && node->next == nullptr) {
+				//		node = node->parent;
+				//	}
+				//	return node;
+				//}
+			};		// goes through all nodes of the tree;
+
+		public:
+			static _iterType* GetNextLeaf(_iterType* node) {
+				if (node) {
+					if (node->firstChild) {
+						while (node->firstChild) {
+							node = node->firstChild;
+						}
+					}
+					else {
+						while (node && !node->next) {
+							node = node->parent;
+						}
+						if (node) {
+							node = node->next;
+							while (node->firstChild) {
+								node = node->firstChild;
+							}
+						}
+						else {
+							node = nullptr;
+						}
+					}
+				}
+				return node;
+
+				//if (!node) return nullptr;
+				//if (node->firstChild) {
+				//	while (node->firstChild) {
+				//		node = node->firstChild;
+				//	}
+				//	return node;
+				//}
+				//else {
+				//	while (node && node->next == nullptr) {
+				//		node = node->parent;
+				//	}
+				//	if (node) {
+				//		node = node->next;
+				//		while (node->firstChild) {
+				//			node = node->firstChild;
+				//		}
+				//		return node;
+				//	}
+				//	else {
+				//		return nullptr;
+				//	}
+				//}
+			};	// goes through all leaf nodes of the tree;
+			static _iterType* GetPrevLeaf(_iterType* node) {
+				if (!node) return nullptr;
+				if (node->lastChild) {
+					while (node->lastChild) {
+						node = node->lastChild;
+					}
+					return node;
+				}
+				else {
+					while (node && node->prev == nullptr) {
+						node = node->parent;
+					}
+					if (node) {
+						node = node->prev;
+						while (node->lastChild) {
+							node = node->lastChild;
+						}
+						return node;
+					}
+					else {
+						return nullptr;
+					}
+				}
+			};	// goes through all leaf nodes of the tree;
+
+		private:
+			_iterType* CheckFirstNode(_iterType* newNode) {
+				if (newNode && first) {
+					if (newNode->key < first->key) {
+						first = newNode;
+					}
+				}
+				else {
+					first = newNode;
+				}
+				return newNode;
+			};
+			_iterType* CheckLastNode(_iterType* newNode) {
+				if (newNode && last) {
+					if (newNode->key > last->key) {
+						last = newNode;
+					}
+				}
+				else {
+					last = newNode;
+				}
+				return newNode;
+			};
+			void									Init() {
+				root = AllocNode();
+				{ // helps init the objAllocator
+					auto x = objAllocator.Alloc();
+					objAllocator.Free(x);
+				}
+			};
+			void									Shutdown() {
+				nodeAllocator.Clear();
+
+				objAllocator.Clear();
+				root = nullptr;
+				first = nullptr;
+				last = nullptr;
+				Num = 0;
+			};
+			_iterType* AllocNode() {
+				_iterType* node;
+
+				node = nodeAllocator.Alloc();
+				return InitNode(node);
+
+				//node->key = 0;
+				//node->parent = nullptr;
+				//node->next = nullptr;
+				//node->prev = nullptr;
+				//node->numChildren = 0;
+				//node->firstChild = nullptr;
+				//node->lastChild = nullptr;
+				//node->object = nullptr;
+
+				//return node;
+			};
+			void									FreeNode(_iterType* node) {
+				if (node && node->object) {
+					objAllocator.Free(node->object);  // RemoveFast(node->object); // 
+					Num--;
+				}
+				nodeAllocator.Free(node); // RemoveFast(node); //  
+			};
+			void									SplitNode(_iterType* node) {
+				long long i;
+				_iterType* child, * newNode;
+
+				// allocate a new node
+				newNode = AllocNode();
+				newNode->parent = node->parent;
+
+				// divide the children over the two nodes
+				child = node->firstChild;
+				child->parent = newNode;
+				for (i = 3; i < node->numChildren; i += 2) {
+					child = child->next;
+					child->parent = newNode;
+				}
+
+				newNode->key = child->key;
+				newNode->numChildren = node->numChildren / 2;
+				newNode->firstChild = node->firstChild;
+				newNode->lastChild = child;
+
+				node->numChildren -= newNode->numChildren;
+				node->firstChild = child->next;
+
+				child->next->prev = nullptr;
+				child->next = nullptr;
+
+				// add the new child to the parent before the split node
+				assert(node->parent->numChildren < maxChildrenPerNode);
+
+				if (node->prev) {
+					node->prev->next = newNode;
+				}
+				else {
+					node->parent->firstChild = newNode;
+				}
+				newNode->prev = node->prev;
+				newNode->next = node;
+				node->prev = newNode;
+
+				node->parent->numChildren++;
+			};
+			_iterType* MergeNodes(_iterType* node1, _iterType* node2) {
+				_iterType* child;
+
+				assert(node1->parent == node2->parent);
+				assert(node1->next == node2 && node2->prev == node1);
+				assert(node1->object == nullptr && node2->object == nullptr);
+				assert(node1->numChildren >= 1 && node2->numChildren >= 1);
+
+				for (child = node1->firstChild; child->next; child = child->next) {
+					child->parent = node2;
+				}
+				child->parent = node2;
+				child->next = node2->firstChild;
+				node2->firstChild->prev = child;
+				node2->firstChild = node1->firstChild;
+				node2->numChildren += node1->numChildren;
+
+				// unlink the first node from the parent
+				if (node1->prev) {
+					node1->prev->next = node2;
+				}
+				else {
+					node1->parent->firstChild = node2;
+				}
+				node2->prev = node1->prev;
+				node2->parent->numChildren--;
+
+				FreeNode(node1);
+
+				return node2;
+			};
+
+		};
+	};
+
+	namespace details {
+#if 0
 		// fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
 		template<class KeyType, class ValueType> class flat_map {
 		friend class it_state;
@@ -3248,6 +4193,8 @@ namespace GoodLang {
 				values;			// knot Values	
 			mutable GoodLang::shared_ptr<AllocType>
 				allocator;
+			mutable size_t
+				count;
 
 			size_t
 				UnsafeIndexForTime(const KeyType& time, long& hint, size_t len) const {
@@ -3260,44 +4207,60 @@ namespace GoodLang {
 				bool 
 					res{ false };
 
-				if (len == 0) 
-					return 0; // there is no other data...		
-				else if ((hint >= 0l) && (currentIndex < len) && (times[currentIndex] == time)) 
-					return currentIndex;				
-				else if (len != 0ull) {
+				if (len == 0ull) 
+					return 0ull; // there is no other data...									
+				else if (len == 1ull) {
+					InterlockedExchange(&hint, currentIndex = 0ull);
+					return currentIndex;
+				}
+				else if ((hint >= 0l) && (currentIndex < len) && (times[currentIndex] == time))
+					return currentIndex;
+				else {
 					if (times[0ull] > time) {
 						currentIndex = 0ull;
 						InterlockedExchange(&hint, currentIndex);
 						return currentIndex;
 					}
-					if (times[len - 1ull] < time) {
+					else if (times[len - 1ull] < time) {
 						currentIndex = len;
 						InterlockedExchange(&hint, currentIndex);
 						return currentIndex;
 					}
 				}
 
-				// use binary search to find the index for the given time				
-				while (mid > 0ull) {
-					mid = len >> 1ull;
-					sample = &times[offset + mid];
-					if (time >= *sample) {
-						offset += mid;
-						if (time == *sample) {
-							currentIndex = offset;
-							InterlockedExchange(&hint, currentIndex);
-							return currentIndex;
+				//if (len < 8) {
+				//	for (currentIndex = 0; currentIndex < len; ++currentIndex) {
+				//		if (times[currentIndex] > time) {
+				//			InterlockedExchange(&hint, currentIndex = std::max(0ull, currentIndex - 1ull));
+				//			return currentIndex;
+				//		}
+				//	}
+				//	return 0;
+				//}
+				//else 
+				{
+					// use binary search to find the index for the given time				
+					while (mid > 0ull) {
+						mid = len >> 1ull;
+						sample = &times[offset + mid];
+						if (time >= *sample) {
+							offset += mid;
+							if (time == *sample) {
+								currentIndex = offset;
+								InterlockedExchange(&hint, currentIndex);
+								return currentIndex;
+							}
+							res = true;
 						}
-						res = true;
+						else {
+							res = false;
+						}
+						len -= mid;
 					}
-					else {
-						res = false;
-					}
-					len -= mid;
+					currentIndex = offset + (int)res;
+					InterlockedExchange(&hint, currentIndex);
+					return currentIndex;
 				}
-				currentIndex = offset + (int)res;
-				InterlockedExchange(&hint, currentIndex);
-				return currentIndex;
 			};
 			size_t
 				UnsafeInsertPair(long i, const KeyType& time, ValueType&& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
@@ -3310,10 +4273,12 @@ namespace GoodLang {
 					else if (values.size() == 0 || i >= values.size()) {
 						times.push_back(time);
 						values.push_back(allocator->Alloc(std::move(valueIN)));
+						InterlockedIncrementNoFence(&count);
 					}
 					else if ((times.size() != 0) && times[0] != time) {
 						times.insert(times.begin() + i, time);
 						values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
+						InterlockedIncrementNoFence(&count);
 					}
 					else {
 						if (!InsertOnlyIfDoesNotExist) *values[0] = std::move(valueIN);
@@ -3325,10 +4290,12 @@ namespace GoodLang {
 					if (values.size() == 0 || i >= values.size()) {
 						times.push_back(time);
 						values.push_back(allocator->Alloc(std::move(valueIN)));
+						InterlockedIncrementNoFence(&count);
 					}
 					else {
 						times.insert(times.begin() + i, time);
 						values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
+						InterlockedIncrementNoFence(&count);
 					}
 					return i;
 				}
@@ -3347,10 +4314,12 @@ namespace GoodLang {
 						else if (sz == 0 || i >= sz) {
 							times.push_back(time);
 							values.push_back(allocator->Alloc(std::move(valueIN)));
+							InterlockedIncrementNoFence(&count);
 						}
 						else if ((sz != 0) && times[0] != time) {
 							times.insert(times.begin() + i, time);
 							values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
+							InterlockedIncrementNoFence(&count);
 						}
 						else {
 							if (!InsertOnlyIfDoesNotExist) *values[0] = std::move(valueIN);
@@ -3367,10 +4336,12 @@ namespace GoodLang {
 						if (sz == 0 || i >= sz) {
 							times.push_back(time);
 							values.push_back(allocator->Alloc(std::move(valueIN)));
+							InterlockedIncrementNoFence(&count);
 						}
 						else {
 							times.insert(times.begin() + i, time);
 							values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
+							InterlockedIncrementNoFence(&count);
 						}
 					}
 					return i;
@@ -3383,23 +4354,27 @@ namespace GoodLang {
 				, times{}
 				, values{}
 				, allocator{ GoodLang::make_shared<AllocType>() }
+				, count{ 0 }
 			{};
 			flat_map(flat_map const& rhs) 
 				: lock{}
 				, times{}
 				, values{}
 				, allocator{nullptr} 
+				, count{ 0 }
 			{
 				std::shared_lock locked{ rhs.lock };				
 				allocator = rhs.allocator;
 				times = rhs.times;
-				values = rhs.values;				
+				values = rhs.values;						
+				count = rhs.count;
 			};
 			flat_map(flat_map&& rhs) 
 				: lock{}
 				, times{ std::move(rhs.times) }
 				, values{ std::move(rhs.values) }
 				, allocator{ std::move(rhs.allocator) }
+				, count{ std::move(rhs.count) }
 			{};
 			flat_map& operator=(flat_map const& rhs) {
 				if (this == &rhs) return *this;
@@ -3409,7 +4384,8 @@ namespace GoodLang {
 				allocator = rhs.allocator;
 				times = rhs.times;
 				values = rhs.values;
-				
+				InterlockedExchangeNoFence(&count, rhs.count);
+
 				return *this;
 			};
 			flat_map& operator=(flat_map&& rhs) {
@@ -3420,17 +4396,14 @@ namespace GoodLang {
 				allocator = rhs.allocator;
 				times = rhs.times;
 				values = rhs.values;
-				
+				InterlockedExchange(&count, rhs.count);
+
 				return *this;
 			};
 			~flat_map() = default;
 
-			size_t
-				size() const {
-				int out;
-				std::shared_lock locked{ lock };
-				out = values.size();
-				return out;
+			const size_t& size() const {
+				return count;
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
 				at_index_unsafe(size_t index) const {
@@ -3506,8 +4479,8 @@ namespace GoodLang {
 				unsafe_find(const KeyType& time, long& i) const {
 				size_t sz{ values.size() };
 				if (sz == 0ull) { return nullptr; }
-				if (sz <= (i = UnsafeIndexForTime(time, i, sz))) {
-					if (times[i = sz - 1ull] == time) 
+				else if (sz <= (i = UnsafeIndexForTime(time, i, sz))) {
+					if (times[i = (sz - 1ull)] == time) 
 						return values[i];					
 					else 
 						return nullptr;					
@@ -3519,8 +4492,11 @@ namespace GoodLang {
 			};
 			ValueType*
 				try_at(const KeyType& time, long& hint) const {
-				std::shared_lock locked{ lock };
-				return unsafe_find(time, hint);				
+				if (size() == 0) return nullptr;
+				else {
+					std::shared_lock locked{ lock };
+					return unsafe_find(time, hint);
+				}
 			};
 			template <typename Func> bool
 				do_at_beginning(Func const& func) const {
@@ -3606,6 +4582,7 @@ namespace GoodLang {
 				i = UnsafeIndexForTime(time, i = -1, sz);
 				if (i >= sz) {
 					if (times[sz - 1] == time) {
+						InterlockedDecrementNoFence(&count);
 						i = sz - 1;						
 						times.erase(times.begin() + i);
 						if (out) *out = std::move(*values[i]);
@@ -3615,7 +4592,8 @@ namespace GoodLang {
 					}
 				}
 				else {
-					if (times[i] == time) {						
+					if (times[i] == time) {			
+						InterlockedDecrementNoFence(&count);
 						times.erase(times.begin() + i);
 						if (out) *out = std::move(*values[i]);
 						allocator->Free(values[i]);
@@ -3630,6 +4608,7 @@ namespace GoodLang {
 				std::unique_lock locked{ lock };
 
 				if (values.size() > 0) {
+					InterlockedDecrementNoFence(&count);
 					times.pop_front();
 					if (auto* old_ptr = values.pop_front_element()) {
 						if (out) *out = *old_ptr;
@@ -3644,11 +4623,12 @@ namespace GoodLang {
 				std::unique_lock locked{ lock };
 
 				if (values.size() > 0) {
+					InterlockedDecrementNoFence(&count);
 					times.pop_front();
 					if (auto* old_ptr = values.pop_back_element()) {
 						if (out) *out = *old_ptr;
 						allocator->Free(old_ptr);
-					}
+					}					
 					return true;
 				}
 				return false;
@@ -3665,6 +4645,7 @@ namespace GoodLang {
 				times.clear();
 				values.clear();
 				allocator = GoodLang::make_shared<AllocType>();
+				InterlockedExchangeNoFence(&count, 0);
 			};
 
 		private:
@@ -3718,15 +4699,17 @@ namespace GoodLang {
 		public:
 			SETUP_ITERATOR(flat_map, it_state);
 			iterator find(const KeyType& _Keyval) const {
-				std::shared_lock locked{ lock };
-
-				auto iter = this->end();
-				long i;
-				if (auto* loc = unsafe_find(_Keyval, i)) {
-					iter.state._val_ptr = this->values.begin() + i;
-					iter.state._time_ptr = this->times.begin() + i;
+				if (size() == 0) return this->end();
+				else {
+					std::shared_lock locked{ lock };
+					auto iter = this->end();
+					long i;
+					if (auto* loc = unsafe_find(_Keyval, i)) {
+						iter.state._val_ptr = this->values.begin() + i;
+						iter.state._time_ptr = this->times.begin() + i;
+					}
+					return iter;
 				}
-				return iter;
 			};
 			std::string ToString() const { 
 				std::string out;
@@ -3750,7 +4733,225 @@ namespace GoodLang {
 				return out;
 			};
 		};
+#else
+		// fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
+		template<class KeyType, class ValueType> class flat_map {
+			friend class it_state;
+		protected:
+			mutable BalancedTree<ValueType, KeyType, 10> 
+				tree;
+			mutable fast_shared_mutex
+				lock;
+		public:
+			flat_map()
+				: tree{}
+				, lock{}
+			{};
+			flat_map(flat_map const& rhs)
+				: tree{}
+				, lock{}
+			{
+				std::shared_lock locked{ rhs.lock };
+				tree = rhs.tree;
+			};
+			flat_map(flat_map&& rhs)
+				: tree{ std::move(rhs.tree) }
+				, lock{}
+			{};
+			flat_map& operator=(flat_map const& rhs) {
+				if (this == &rhs) return *this;
+				std::unique_lock locked1{ lock };
+				std::shared_lock locked2{ rhs.lock };
+				tree = rhs.tree;
+				return *this;
+			};
+			flat_map& operator=(flat_map&& rhs) {
+				if (this == &rhs) return *this;
+				std::unique_lock locked1{ lock };
+				std::shared_lock locked2{ rhs.lock };
+				tree = rhs.tree;
+				return *this;
+			};
+			~flat_map() = default;
 
+			size_t size() const {
+				std::shared_lock locked{ lock };
+				return tree.GetNodeCount();
+			};			
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				insert(const KeyType& time, ValueType&& value) {
+				std::unique_lock locked{ lock };
+				auto* p = tree.Add(std::move(value), time, true);
+				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(p->key), std::ref(*p->object) };
+			};
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+				emplace(const KeyType& time, ValueType&& value) {
+				std::unique_lock locked{ lock };
+				auto* p = tree.Add(std::move(value), time, true);
+				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(p->key), std::ref(*p->object) };
+			};
+
+			ValueType&
+				at(const KeyType& time) const {
+				std::shared_lock locked{ lock };
+				if (ValueType* p = tree.Find(time)) {
+					return *p;
+				}
+				else {
+					throw std::range_error("Could not find " + GoodLang::ToString(time));
+				}
+			};
+			ValueType*
+				try_at(const KeyType& time, long& hint) const {
+				std::shared_lock locked{ lock };
+				if (ValueType* p = tree.Find(time)) {
+					return p;
+				}
+				else {
+					return nullptr;
+				}
+			};
+			template <typename Func> bool
+				do_at_beginning(Func const& func) const {
+				std::shared_lock locked{ lock };
+				if (auto* p = tree.GetFirst()) {
+					func(p->key, *p->object);
+					return true;
+				}
+				return false;
+			};
+			template <typename Func> bool
+				do_at_end(Func const& func) const {
+				std::shared_lock locked{ lock };
+				if (auto* p = tree.GetLast()) {
+					func(p->key, *p->object);
+					return true;
+				}
+				return false;
+			};
+			ValueType&
+				operator[](const KeyType& time) {
+				lock.lock_shared();
+				if (ValueType* p = tree.Find(time)) {
+					lock.unlock_shared();
+					return *p;
+				}
+				else {
+					(void)lock.upgrade_lock();
+					if (auto* p = tree.Add({}, time, true)) {
+						lock.unlock();
+						return *p->object;
+					}
+					else {
+						lock.unlock();
+						throw std::range_error("Could not find " + GoodLang::ToString(time));
+					}
+				}
+			};
+			template <typename Func> ValueType&
+				get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
+				lock.lock_shared();
+				if (ValueType* p = tree.Find(time)) {
+					lock.unlock_shared();
+					return *p;
+				}
+				else {
+					(void)lock.upgrade_lock();
+					if (auto* p = tree.Add(func(), time, true)) {
+						lock.unlock();
+						return *p->object;
+					}
+					else {
+						lock.unlock();
+						throw std::range_error("Could not find " + GoodLang::ToString(time));
+					}
+				}
+			};
+			bool
+				erase(const KeyType& time, ValueType* out = nullptr) {
+				lock.lock_shared();
+				if (auto* p = tree.NodeFind(time)) {					
+					if (out) *out = *p->object;
+					(void)lock.upgrade_lock();
+					tree.Remove(p);
+					lock.unlock();
+					return true;
+				}
+				lock.unlock_shared();
+				return false;			
+			};
+			void
+				clear(std::vector<ValueType>* out = nullptr) {
+				std::unique_lock locked{ lock };
+				tree.Clear();
+			};
+
+		private:
+			class it_state {
+			public:
+				using thisType = flat_map;
+				using value_type = std::pair<KeyType*, ValueType*>;
+				using iterator_category = std::forward_iterator_tag;
+				using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+				// data
+				mutable typename BalancedTree<ValueType, KeyType, 10> ::_iterType*
+					_ptr{};
+				std::shared_ptr<std::shared_lock<fast_shared_mutex>>
+					lifetime{ nullptr };
+				mutable value_type
+					_out;
+
+				// functions
+				void Initialize(thisType* ref) {};
+				void ToBeginning(thisType* ref) {
+					lifetime = std::make_shared<std::shared_lock<fast_shared_mutex>>(ref->lock);
+					_ptr = ref->tree.GetFirst();
+				};
+				void ToEnd(thisType* ref) {
+					_ptr = nullptr;
+				};
+				void Next(thisType* ref) {
+					this->_ptr = ref->tree.GetNextLeaf(this->_ptr);
+				};
+				void Prev(thisType* ref) {
+					this->_ptr = ref->tree.GetPrevLeaf(this->_ptr);
+				};
+				value_type& Get(thisType* ref) const {
+					_out.first = &_ptr->key;
+					_out.second = _ptr->object;
+					return _out;
+				};
+				bool operator==(it_state const& rhs) const {
+					return _ptr == rhs._ptr;
+				};
+				difference_type Distance(it_state const& other) const { 
+					return _ptr - other._ptr; 
+				};
+			};
+		public:
+			SETUP_ITERATOR(flat_map, it_state);
+			iterator find(const KeyType& _Keyval) const {
+				std::shared_lock locked{ lock };
+
+				auto iter = this->end();
+				if (auto* p = this->tree.NodeFind(_Keyval)) {
+					iter.state._ptr = p;
+				}
+				return iter;
+			};
+			std::string ToString() const {
+				std::string out;
+				
+				return std::string("[") + out + std::string("]");
+			};
+			std::vector< Impl::NodeCache > GetChildren() const {
+				std::vector< Impl::NodeCache > out;
+				
+				return out;
+			};
+		};
+#endif
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< details::flat_map<Args...> >, details::flat_map<Args...> const& r, std::string& out) {
@@ -3760,6 +4961,12 @@ namespace GoodLang {
 			out = r.GetChildren();
 		};
 	};
+
+
+
+
+
+
 
 
 

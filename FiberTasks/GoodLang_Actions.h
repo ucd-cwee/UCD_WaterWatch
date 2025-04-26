@@ -5159,7 +5159,7 @@ namespace GoodLang {
 				return do_call_impl(r);
 			};
 			virtual Any do_call(Any& r) const override {
-				if (1 < numArgs) throw(exception::arity_error(r.size(), numArgs));
+				if (1 < numArgs) throw(exception::arity_error(1, numArgs));
 				return do_call_impl(r);
 			};
 

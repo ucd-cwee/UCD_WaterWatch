@@ -14,6 +14,7 @@ namespace GoodLang {
 			auto& F = map.first.get_or_make(hash, [&]() -> auto* {
 				return alloc1.Alloc();
 			});
+			bool previouslyExisted = false;
 			auto& F2 = F->first.get_or_make(params.hash(), [&]() -> TupleType* {
 				return alloc2.Alloc(
 					std::string(name),
@@ -22,7 +23,8 @@ namespace GoodLang {
 					nullptr,
 					true
 				);
-			});
+			}, &previouslyExisted);
+			if (!previouslyExisted) InterlockedIncrementNoFence(&count);
 			return &*F2;
 		}
 		return nullptr;
@@ -38,6 +40,7 @@ namespace GoodLang {
 			auto& F = map.first.get_or_make(hash, [&]() -> auto* {
 				return alloc1.Alloc();
 			});
+			bool previouslyExisted = false;
 			auto& F2 = F->first.get_or_make(func.m_function->Arguments().Types().hash(), [&]() -> TupleType* {
 				return alloc2.Alloc(
 					std::string(name),
@@ -46,7 +49,8 @@ namespace GoodLang {
 					nullptr,
 					true
 				);
-				});
+			}, &previouslyExisted);
+			if (!previouslyExisted) InterlockedIncrementNoFence(&count);
 			return &*F2;
 		}
 		return nullptr;
@@ -62,6 +66,7 @@ namespace GoodLang {
 			auto& F = map.first.get_or_make(hash, [&]() -> auto* {
 				return alloc1.Alloc();
 			});
+			bool previouslyExisted = false;
 			auto& F2 = F->first.get_or_make(ParamTypes().hash(), [&]() -> TupleType* {
 				return alloc2.Alloc(
 					std::string(name),
@@ -70,7 +75,8 @@ namespace GoodLang {
 					obj,
 					false
 				);
-				});
+			}, & previouslyExisted);
+			if (!previouslyExisted) InterlockedIncrementNoFence(&count);
 			return &*F2;
 		}
 		return nullptr;
@@ -78,15 +84,18 @@ namespace GoodLang {
 	// Get the tuple (function, likely) that exists at this name and param types
 	FunctionsMap::TupleType* FunctionsMap::at(std::string_view const& name, GoodLang::ParamTypes const& params) const {
 		size_t hash{ 0 };
-		if (name.size() > 0) {
+		if ((this->size() > 0) && (name.size() > 0)) {
 			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-			GoodLang::details::hash_combine(hash, name);
-			if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
-				if (auto* P = (*F)->first.try_at(params.hash(), (*F)->second)) {
-					return *P;
+			//if (map.first.size() > 0) {
+				GoodLang::details::hash_combine(hash, name);
+				if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
+					//if ((*F)->first.size() > 0) {
+						if (auto* P = (*F)->first.try_at(params.hash(), (*F)->second)) {
+							return *P;
+						}
+					//}
 				}
-			}
+			//}
 		}
 		return nullptr;
 	};
@@ -97,15 +106,18 @@ namespace GoodLang {
 	// Get the tuple (object, likely) that exists at this name and with empty params
 	FunctionsMap::TupleType* FunctionsMap::at(std::string_view const& name) const {
 		size_t hash{ 0 };
-		if (name.size() > 0) {
+		if ((this->size() > 0) && (name.size() > 0)) {
 			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
-
-			GoodLang::details::hash_combine(hash, name);
-			if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
-				if (auto* P = (*F)->first.try_at(ParamTypes().hash(), (*F)->second)) {
-					return *P;
+			//if (map.first.size() > 0) {
+				GoodLang::details::hash_combine(hash, name);
+				if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
+					//if ((*F)->first.size() > 0) {
+						if (auto* P = (*F)->first.try_at(ParamTypes().hash(), (*F)->second)) {
+							return *P;
+						}
+					//}
 				}
-			}
+			//}
 		}
 		return nullptr;
 	};
@@ -116,40 +128,42 @@ namespace GoodLang {
 	// Allows looping over all contained Tuples with the requested name. 
 	FunctionsMap::iterator FunctionsMap::find(std::string_view const& name) {
 		auto iter = end();
-		if (name.size() > 0) {
-			iter.state.outtermost_index = CharToIndex(name[0]);
-			iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
+		if (this->size() > 0) {
+			if (name.size() > 0) {
+				iter.state.outtermost_index = CharToIndex(name[0]);
+				iter.state.outtermost_index_max = iter.state.outtermost_index + 1;
 
-			size_t hash{ 0 };
-			GoodLang::details::hash_combine(hash, name);
+				size_t hash{ 0 };
+				GoodLang::details::hash_combine(hash, name);
 
-			iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].first.begin(); // also does a weak_lock on the map
-			long index = -1;
-			if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].first.try_at(hash, index)) {
-				if ((*ptr)->first.size() > 0) {
-					iter.state.middle_index = index;
-					iter.state.middle_index_max = index + 1;
-					iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
-					iter.state.final_iter = (*iter.state.middle_iter->second)->first.begin();
-					iter.state.final_index = 0;
-					iter.state.final_index_max = (*ptr)->first.size();
-					return iter;
+				iter.state.middle_iter = FirstCharToFunctionNameMap[iter.state.outtermost_index].first.begin(); // also does a weak_lock on the map
+				long index = -1;
+				if (auto* ptr = FirstCharToFunctionNameMap[iter.state.outtermost_index].first.try_at(hash, index)) {
+					if ((*ptr)->first.size() > 0) {
+						iter.state.middle_index = index;
+						iter.state.middle_index_max = index + 1;
+						iter.state.middle_iter += index; // continues to hold the weak_lock till the iterator is destroyed. 
+						iter.state.final_iter = (*iter.state.middle_iter->second)->first.begin();
+						iter.state.final_index = 0;
+						iter.state.final_index_max = (*ptr)->first.size();
+						return iter;
+					}
 				}
+				iter.state.outtermost_index = 0;
+				iter.state.outtermost_index_max = 0;
+				iter.state.middle_iter = {}; // release the weak_lock
+				iter.state.middle_index = 0;
+				iter.state.middle_index_max = 0;
+				iter.state.final_iter = {};
+				iter.state.final_index = 0;
+				iter.state.final_index_max = 0;
 			}
-			iter.state.outtermost_index = 0;
-			iter.state.outtermost_index_max = 0;
-			iter.state.middle_iter = {}; // release the weak_lock
-			iter.state.middle_index = 0;
-			iter.state.middle_index_max = 0;
-			iter.state.final_iter = {};
-			iter.state.final_index = 0;
-			iter.state.final_index_max = 0;
 		}
 		return iter;
 	};
 	FunctionsMap::TupleType* FunctionsMap::BuildMatch(std::string_view const& Name, ParamTypes const& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
 		// Note: we cannot in good faith match a function to a template parameter -- we could not predict what function would return.
-		if (params.IsTemplate()) {
+		if ((this->size() == 0) || params.IsTemplate()) {
 			return nullptr;
 			// throw std::runtime_error("Cannot build a matching function with template or empty types. This is meant to be called with KNOWN types");
 		};
@@ -244,19 +258,21 @@ namespace GoodLang {
 		return nullptr;
 	};
 	Any FunctionsMap::Call(std::string_view const& Name, std::vector<Any> const& params, TypeConverter& m_typeConverters) {
-		if (auto* f = BuildMatch(Name, ParamTypes(params), m_typeConverters)) {
-			if (f->get<4>()) {
-				// function
-				if (f->get<2>().m_function) {
-					return f->get<2>().m_function->operator()(params, m_typeConverters);
+		if (this->size() > 0) {
+			if (auto* f = BuildMatch(Name, ParamTypes(params), m_typeConverters)) {
+				if (f->get<4>()) {
+					// function
+					if (f->get<2>().m_function) {
+						return f->get<2>().m_function->operator()(params, m_typeConverters);
+					}
+				}
+				else {
+					// object
+					return f->get<3>();
 				}
 			}
-			else {
-				// object
-				return f->get<3>();
-			}
 		}
-		
+
 		std::string params_str;
 		for (auto& p : params) {
 			std::string className = p.TypeName(); {
@@ -294,28 +310,13 @@ namespace GoodLang {
 		else {
 			return nullptr;
 		}
-
-		//auto f = p_objects.find(name);
-		//if (f != f.end()) {
-		//	return f->second;
-		//}
-		//else {
-		//	return nullptr;
-		//}
 	};
 	// Returns true if successful. Returns false is replaceIfExisting==false and the object already existed on the Scope.
 	bool Scope::AddObj(std::string const& name, std::shared_ptr<Any> const& obj, bool updateObjectTree) {
-		p_objects[name] = obj;
+		p_objects.insert(std::pair<std::string, std::shared_ptr<Any>>{ name, obj });
+		// p_objects[name] = obj;
 		if (updateObjectTree) this->RecordObject(name, obj);
 		return true;
-
-		//if (p_objects.emplace(name, obj)) {
-		//	if (updateObjectTree) this->RecordObject(name, obj);
-		//	return true;
-		//}
-		//else {
-		//	return false;
-		//}
 	};
 
 	bool Scope::AddUsing(std::weak_ptr<Namespace> namespacePtr) {
