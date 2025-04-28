@@ -23,7 +23,7 @@ namespace GoodLang {
 					nullptr,
 					true
 				);
-			}, &previouslyExisted);
+				}, &previouslyExisted);
 			if (!previouslyExisted) InterlockedIncrementNoFence(&count);
 			return &*F2;
 		}
@@ -49,7 +49,7 @@ namespace GoodLang {
 					nullptr,
 					true
 				);
-			}, &previouslyExisted);
+				}, &previouslyExisted);
 			if (!previouslyExisted) InterlockedIncrementNoFence(&count);
 			return &*F2;
 		}
@@ -75,7 +75,7 @@ namespace GoodLang {
 					obj,
 					false
 				);
-			}, & previouslyExisted);
+				}, &previouslyExisted);
 			if (!previouslyExisted) InterlockedIncrementNoFence(&count);
 			return &*F2;
 		}
@@ -87,14 +87,14 @@ namespace GoodLang {
 		if ((this->size() > 0) && (name.size() > 0)) {
 			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
 			//if (map.first.size() > 0) {
-				GoodLang::details::hash_combine(hash, name);
-				if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
-					//if ((*F)->first.size() > 0) {
-						if (auto* P = (*F)->first.try_at(params.hash(), (*F)->second)) {
-							return *P;
-						}
-					//}
+			GoodLang::details::hash_combine(hash, name);
+			if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
+				//if ((*F)->first.size() > 0) {
+				if (auto* P = (*F)->first.try_at(params.hash(), (*F)->second)) {
+					return *P;
 				}
+				//}
+			}
 			//}
 		}
 		return nullptr;
@@ -109,14 +109,14 @@ namespace GoodLang {
 		if ((this->size() > 0) && (name.size() > 0)) {
 			const MapType& map = FirstCharToFunctionNameMap[CharToIndex(name[0])]; // try to reduce conflict by splitting on the first letter
 			//if (map.first.size() > 0) {
-				GoodLang::details::hash_combine(hash, name);
-				if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
-					//if ((*F)->first.size() > 0) {
-						if (auto* P = (*F)->first.try_at(ParamTypes().hash(), (*F)->second)) {
-							return *P;
-						}
-					//}
+			GoodLang::details::hash_combine(hash, name);
+			if (auto* F = map.first.try_at(hash, const_cast<long&>(map.second))) {
+				//if ((*F)->first.size() > 0) {
+				if (auto* P = (*F)->first.try_at(ParamTypes().hash(), (*F)->second)) {
+					return *P;
 				}
+				//}
+			}
 			//}
 		}
 		return nullptr;
@@ -299,7 +299,7 @@ namespace GoodLang {
 
 
 
-	
+
 
 	// try and find the object with the requested key.
 	std::shared_ptr<Any> Scope::GetObj(std::string const& name) const {
@@ -324,7 +324,7 @@ namespace GoodLang {
 			bool existedAlready = false;
 			(void)p_using.get_or_make(Hasher()(p), [&]() -> std::weak_ptr<Namespace> {
 				return namespacePtr;
-			}, &existedAlready);
+				}, &existedAlready);
 			if (!existedAlready) {
 				if (p->IsNamespace()) {
 					(void)RecordUsing(std::dynamic_pointer_cast<Namespace>(p));
@@ -390,7 +390,7 @@ namespace GoodLang {
 					return true;
 				}
 			}
-			
+
 		}
 
 		// test all of my parents
@@ -424,12 +424,12 @@ namespace GoodLang {
 							bestMatch = p;
 							return true;
 						}
-					}						
+					}
 				}
 				else {
 					break; // we've checked this before! Quick, get out. 
 				}
-			}			
+			}
 		}
 
 		// test my parents and their children
@@ -483,7 +483,7 @@ namespace GoodLang {
 				if (p && p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}			
+			}
 		}
 
 		// test all of my parents
@@ -540,7 +540,7 @@ namespace GoodLang {
 				if (p->TryFindNearestNamespaceWhere(bestMatch, func, CheckedSelf, CheckedAll)) {
 					return true;
 				}
-			}					
+			}
 		}
 
 		return false;
@@ -1824,28 +1824,17 @@ namespace GoodLang {
 		}
 		return false;
 	};
-	std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash) const {
+	Any Scope::BuildAndCallFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash = 0) const {
 		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
 		if (this->IsBasicScope()) {
 			if (auto p = this->p_parent.lock()) {
-				return p->BuildFunction(functionName, params, Params, paramsHash);
+				return p->BuildAndCallFunction(functionName, params, Params, paramsHash);
 			}
 		}
 
-		if (1) {
-			std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> out{ nullptr, this->GetTypeConverterTree() };
-			if (TryFindFunctionImpl(functionName, params, Params, out.second, out.first, paramsHash)) {
-				return out;
-			}
-			else {
-				return out;
-			}
-		}
-	};
-	Any Scope::CallFunction(std::string const& functionName, std::vector<Any> const& params) const {
-		auto [func, tree] = BuildFunction(functionName, params, ParamTypes(params));
-		if (func) {
-			return call(func, params, *tree.get());
+		std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> out{ nullptr, std::ref(this->GetTypeConverterTree()) };
+		if (TryFindFunctionImpl(functionName, params, Params, out.second, out.first, paramsHash)) {
+			return call(out.first, params, *out.second.get());
 		}
 		else {
 			// function was not found with the given params
@@ -1867,7 +1856,29 @@ namespace GoodLang {
 			}
 
 			throw exception::not_found_error(GoodLang::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
+		}			
+	};
+	std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> Scope::BuildFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash) const {
+		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+		if (this->IsBasicScope()) {
+			if (auto p = this->p_parent.lock()) {
+				return p->BuildFunction(functionName, params, Params, paramsHash);
+			}
 		}
+
+		if (1) {
+			std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> out{ nullptr, std::ref(this->GetTypeConverterTree()) };
+			if (TryFindFunctionImpl(functionName, params, Params, out.second, out.first, paramsHash)) {
+				return out;
+			}
+			else {
+				return out;
+			}
+		}
+	};
+	Any Scope::CallFunction(std::string const& functionName, std::vector<Any> const& params) const {
+		ParamTypes Params{ params };
+		return BuildAndCallFunction(functionName, params, Params, Params.hash());
 	};
 	Any Scope::CallFunction(Proxy_Function const& func, std::vector<Any> const& params) const {
 		auto& tree{ this->GetTypeConverterTree() };

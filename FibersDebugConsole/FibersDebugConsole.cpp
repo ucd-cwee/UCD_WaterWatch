@@ -7332,7 +7332,7 @@ int main() {
 	for (int i = 0; i < 100000; i++) delete (new int(5));
 
 	using namespace GoodLang;
-		
+
 	if (1) {
 		if (1) {
 			Stopwatch sw;

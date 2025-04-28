@@ -7,8 +7,6 @@
 #include <shared_mutex>
 #include <concurrent_unordered_map.h>
 #include <concurrent_unordered_set.h>
-// #include <string_view>
-
 #include <vector>
 #include <map>
 #include <set>
@@ -1122,30 +1120,44 @@ namespace GoodLang {
 		struct aux {
 			std::atomic<long long> // strong (first short), weak (second short), destroy flag (third short), delete flag (fourth short)
 				Strong_Weak_Destroy_Delete{ 1 }; // strong = 1, weak = 0, destroy = 0, delete = 0
+			void* p;
 
-			aux() = default;
+			aux() : Strong_Weak_Destroy_Delete{ 1 }, p{ nullptr } {};
+			aux(void* pu) : Strong_Weak_Destroy_Delete{ 1 }, p{ pu } {}
 
-			virtual void* ptr() const = 0;
+			void* ptr() const { return p; };
 			virtual Type_Info const& type() const = 0;
 			virtual void destroy() = 0;
-			virtual ~aux() {} //must be polymorphic
+			virtual ~aux() {}; //must be polymorphic
 		};
+
 		static void PreventDeletion(aux* const& ptr);
 		static void AllowDeletion(aux* const& ptr);
 		// requires that the ptr is NOT already locked through PreventDeletion
 		static void DoDeletion(aux* const& ptr);
 		// requires that the ptr is NOT already locked through PreventDeletion
 		static void DoDestroyOrDelete(aux* const& ptr, bool Destroy, bool Delete);
-		template<class U, class Deleter> struct auximpl : public aux {
-			void* p;
-			Deleter d;
-			auximpl(U* pu, Deleter x) : aux(), p(static_cast<void*>(pu)), d(std::move(x)) {}
+
+		template<class U> struct aux_default : public aux {			
+			aux_default(U* pu) : aux(static_cast<void*>(pu)) {}
 			virtual Type_Info const& type() const override {
 				return user_type<U>();
 			};
-			virtual void* ptr() const override { return p; };
-			virtual void destroy() override { d(static_cast<U*>(p)); }
+			virtual void destroy() override { delete static_cast<U*>(this->p); };
 		};
+
+		//template<class U, class Deleter> struct auximpl : public aux {
+		//	void* p;
+		//	Deleter d;
+		//	auximpl(U* pu, Deleter x) : aux(), p(static_cast<void*>(pu)), d(std::move(x)) {}
+		//	virtual Type_Info const& type() const override {
+		//		return user_type<U>();
+		//	};
+		//	virtual void* ptr() const override { return p; };
+		//	virtual void destroy() override { d(static_cast<U*>(p)); }
+		//};
+
+#if 0
 		template<class U> struct auxlocalimpl : public aux {
 			unsigned char p[sizeof(U)];
 
@@ -1165,6 +1177,8 @@ namespace GoodLang {
 		template<class U> struct default_deleter {
 			void operator()(U* p) const { delete p; };
 		};
+#endif		
+
 		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
 		static aux* inc(GoodLang::atomic_ptr<aux> const& pa);
 		// ASSUMES THAT THE PTR COMES IN LOCKED.
@@ -1224,10 +1238,12 @@ namespace GoodLang {
 
 		shared_ptr() :pa(nullptr), pt(nullptr) {}
 		shared_ptr(std::nullptr_t) : pa(nullptr), pt(nullptr) {}
-		explicit shared_ptr(aux* pa_p, T* pt_p, bool) :pa(pa_p), pt(pt_p) {} // used to initialize a new ptr from custom aux-type.
+		explicit shared_ptr(aux* pa_p, T* pt_p, bool) : pa(pa_p), pt(pt_p) {} // used to initialize a new ptr from custom aux-type.
 
-		template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(reinterpret_cast<T*>(pu)) {}
-		template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(reinterpret_cast<T*>(pu)) {}
+		template<class U> explicit shared_ptr(U* pu) : pa(new aux_default<U>(pu)), pt(reinterpret_cast<T*>(pu)) {};
+
+		// template<class U, class Deleter> shared_ptr(U* pu, Deleter d) : pa(new auximpl<U, Deleter>(pu, d)), pt(reinterpret_cast<T*>(pu)) {}
+		// template<class U> explicit shared_ptr(U* pu) : pa(new auximpl<U, default_deleter<U> >(pu, default_deleter<U>())), pt(reinterpret_cast<T*>(pu)) {}
 
 		template<class U> shared_ptr(shared_ptr<U> const& s) : pa(nullptr), pt(nullptr) {
 			auto* new_pa = shared_ptr_base::inc(s.GetPa()); // this is locked! 
@@ -1386,15 +1402,19 @@ namespace GoodLang {
 
 	template <class _Ty, class... _Types>
 	_NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { // make a shared_ptr to non-array object
+#if 0
 		if constexpr (sizeof(_Ty) > (sizeof(uint64_t) * 16)) {
-			// large objects should be deleted / free-d seperately from the memory block, otherwise there's a risk that a weak_ptr could hold that memory for a long time
-			return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...));
-		}
+			// large objects should be deleted / free - d seperately from the memory block, otherwise there's a risk that a weak_ptr could hold that memory for a long time
+				return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...));
+	    }
 		else {
 			// small objects should be included in the memory block
 			auto* aux = new shared_ptr_base::auxlocalimpl<_Ty>(_STD forward<_Types>(_Args)...);
 			return shared_ptr<_Ty>(aux, reinterpret_cast<_Ty*>(&aux->p[0]), true);
 		}
+#else
+		return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...));		
+#endif
 	};
 
 	// performs type checking to see if the conversion is reasonable

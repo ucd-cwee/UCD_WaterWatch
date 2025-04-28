@@ -1800,7 +1800,7 @@ namespace GoodLang {
 				auto seq = GoodLang::Sequence<size_t>((parent_block_index * _blockSize_) + 1, (parent_block_index * _blockSize_) + _blockSize_);
 				available_header_indexes.push_bulk(producer, seq.begin(), _blockSize_ - 1);
 			}
-			
+
 			// Find the data from the header
 			header& thisHeader = header_blocks[header_index / _blockSize_].headers[header_index % _blockSize_];
 			_type_* out = static_cast<_type_*>(static_cast<void*>(&thisHeader.data->data[0]));
@@ -1828,7 +1828,7 @@ namespace GoodLang {
 		template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) noexcept {
 			return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
 		};
-	
+
 	public: // type-defs
 		typedef _type_ value_type;
 		typedef _type_* pointer;
@@ -3461,7 +3461,7 @@ namespace GoodLang {
 		public:
 			SingleThreadedAllocator() : ptrs(), alloc() {};
 			SingleThreadedAllocator(int toReserve) : ptrs(), alloc(toReserve) {};
-			~SingleThreadedAllocator() { Clear(); };
+			~SingleThreadedAllocator() { Clear(true); };
 
 			_type_* Alloc() {
 				auto p = alloc.Alloc();
@@ -3490,7 +3490,7 @@ namespace GoodLang {
 					return alloc.GetAllocCount();
 				}
 			};
-			void	Clear() {
+			void	Clear(bool destroyAllocator = false) {
 				if constexpr (!isPod()) {
 					for (auto& x : ptrs) {
 						if (x != nullptr) {
@@ -3501,7 +3501,7 @@ namespace GoodLang {
 				}
 				else {
 					alloc.Shutdown();
-					alloc.Free(alloc.Alloc());
+					if (!destroyAllocator) alloc.Free(alloc.Alloc());
 				}
 			};
 			void	Reserve(long long n) {
@@ -3585,7 +3585,7 @@ namespace GoodLang {
 				Init();
 			};
 			~BalancedTree() {
-				Clear();
+				Clear(true);
 			};
 
 			void									Reserve(long long num) {
@@ -3763,12 +3763,12 @@ namespace GoodLang {
 					FreeNode(oldRoot);
 				}
 			};				// remove an object node from the tree
-			void									Clear() {
+			void									Clear(bool destroyAllocator = false) {
 				// while (first) { Remove(first); }
 
 				// remove all
-				nodeAllocator.Clear();
-				objAllocator.Clear();
+				nodeAllocator.Clear(destroyAllocator);
+				objAllocator.Clear(destroyAllocator);
 				root = nullptr;
 				first = nullptr;
 				last = nullptr;

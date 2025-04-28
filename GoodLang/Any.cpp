@@ -149,6 +149,7 @@ namespace GoodLang {
 
 // shared_ptr
 namespace GoodLang {
+
 	// std::numeric_limits<unsigned short>::max() and 512 give similar performance metrics.
 	// 255 and less tend to get caught in a constriction with heavy loads. 
 	static std::array<GoodLang::fast_shared_mutex, std::numeric_limits<unsigned short>::max()> locks; // 128, 1000, 10000, std::numeric_limits<unsigned short>::max()

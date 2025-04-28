@@ -439,7 +439,6 @@ namespace GoodLang {
 		};
 
 	private:
-		// GoodLang::details::flat_map<std::string, std::shared_ptr<Any>>
 		concurrency::concurrent_unordered_map< std::string, std::shared_ptr<Any>>
 			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
 
@@ -773,6 +772,7 @@ namespace GoodLang {
 		bool TryFindFunctionImpl(std::string const& functionName, std::vector<Any>  const& params, ParamTypes const& Params, GoodLang::shared_ptr<TypeConverter> const& m_conversionTree, Proxy_Function& out, size_t paramsHash = 0) const;
 
 	public:
+		Any BuildAndCallFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash = 0) const;
 		std::pair<Proxy_Function, std::reference_wrapper<GoodLang::shared_ptr<TypeConverter>>> BuildFunction(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, size_t paramsHash = 0) const;
 		Any CallFunction(std::string const& functionName, std::vector<Any> const& params) const;
 		Any CallFunction(Proxy_Function const& function, std::vector<Any> const& params) const;
