@@ -2385,6 +2385,7 @@ namespace GoodLang {
 
 	public: /*! Data Assignment AFTER INIT */
 		Any& swap(Any& rhs) noexcept;
+		void swap_unsafe(Any&& rhs) noexcept;
 		Any& swap(Any&& rhs) noexcept;
 		Any& operator=(const Any& rhs) noexcept;
 		Any& operator=(Any&& rhs) noexcept;

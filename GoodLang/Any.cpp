@@ -365,6 +365,9 @@ namespace GoodLang {
 		container = std::move(rhs.container);
 		return *this;
 	};
+	void Any::swap_unsafe(Any&& rhs) noexcept {
+		container = std::move(rhs.container);
+	};
 	Any& Any::operator=(const Any& rhs) noexcept {
 		if (this == &rhs) { return *this; }
 

@@ -274,41 +274,45 @@ namespace GoodLang {
 					UniformCostSearchNode* smallestDistanceNode;
 					conversionTreeType::value_type::second_type::const_iterator fSecondIter;
 					conversionTreeType::value_type::second_type::const_iterator fSecondEnd;
+					TypeConverterFunc func;
 					while (vertexSet.size() != 0) {
 						// extract the vertex with the smallest distance value from the set
-						smallestDistanceNode = std::move(vertexSet.top());
+						smallestDistanceNode = vertexSet.top();
 						vertexSet.pop();
 
 						// for each neighbor of the extracted vertex... 
 						f = AllConversions.find(smallestDistanceNode->thisVertexType);
 						if (f != AllConversions.end()) {
-							for (fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter){ auto& connection = *fSecondIter;
-							// for (const auto& connection : f->second) {
-								if (fSecondIter->second.second)
-									if (!fSecondIter->second.second->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
-										conversionCost = fSecondIter->second.second->cost(); // calculate distance value for the neighbor vertex								
-								if (1) {
-									// Is the neighbor already in the vertex set? 
-									auto& toType = connection.second.first;
-									auto& toVertex = vertices[connection.first];
-									if (!toVertex.first) toVertex.first = toType;
+							for (fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
+								auto& connection = *fSecondIter;
+								if (func = connection.second.second) {
+									conversionCost = GoodLang::details::TypeConversionBaselineCost;
+									if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
+										conversionCost = func->cost(); // calculate distance value for the neighbor vertex
 
-									if (!toVertex.second) { // Instance it before we start working with it on an as-needed basis
-										toVertex.second = alloc.Alloc(
-											toType,
-											std::numeric_limits<double>::infinity(),
-											alloc2.Alloc(nullptr, toType)
-										);
-									}
-									if ((toVertex.second->size() + 1) > (smallestDistanceNode->size() + 1)) {
-										toVertex.second->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-										toVertex.second->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex.second->thisVertexType);
-										vertexSet.push(toVertex.second);
-									}
-									else if (toVertex.second->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
-										toVertex.second->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-										toVertex.second->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex.second->thisVertexType);
-										vertexSet.push(toVertex.second);
+									if (1) {
+										// Is the neighbor already in the vertex set? 
+										auto& toType = connection.second.first;
+										auto& toVertex = vertices[connection.first];
+										if (!toVertex.first) toVertex.first = toType;
+
+										if (!toVertex.second) { // Instance it before we start working with it on an as-needed basis
+											toVertex.second = alloc.Alloc(
+												toType,
+												std::numeric_limits<double>::infinity(),
+												alloc2.Alloc(nullptr, toType)
+											);
+										}
+										if ((toVertex.second->size() + 1) > (smallestDistanceNode->size() + 1)) {
+											toVertex.second->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+											toVertex.second->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex.second->thisVertexType);
+											vertexSet.push(toVertex.second);
+										}
+										else if (toVertex.second->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
+											toVertex.second->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+											toVertex.second->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex.second->thisVertexType);
+											vertexSet.push(toVertex.second);
+										}
 									}
 								}
 							}

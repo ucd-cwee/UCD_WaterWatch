@@ -1344,6 +1344,9 @@ namespace GoodLang {
 				lock.unlock();
 			}
 		};
+		bool DataExists() const {
+			return (bool)data;
+		};
 
 	public:
 		auto& GetLock() const { return lock; };
@@ -3234,20 +3237,6 @@ namespace GoodLang {
 	};
 
 	namespace details {
-		__forceinline void* Mem_Alloc(const size_t& size) {
-			if (!size) return NULL;
-			const size_t paddedSize = (size + 15) & ~15;
-			return ::_aligned_malloc(paddedSize, 16);
-		};
-		__forceinline void  Mem_Free(void* ptr) {
-			if (ptr) ::_aligned_free(ptr);
-		};
-		__forceinline void* Mem_ClearedAlloc(const size_t& size) {
-			void* mem = Mem_Alloc(size);
-			::memset(mem, 0, size);
-			return mem;
-		};
-
 		/*
 		================================================
 		cweeBlockAlloc is a block-based allocator for fixed-size objects.
@@ -3298,7 +3287,7 @@ namespace GoodLang {
 					while (blocks != NULL) {
 						cweeBlock* block = blocks;
 						blocks = blocks->next;
-						Mem_Free(block);
+						delete block;
 					}
 					blocks = NULL;
 					free = NULL;
@@ -3347,7 +3336,7 @@ namespace GoodLang {
 								assert(prevBlock->next == block);
 								prevBlock->next = block->next;
 							}
-							Mem_Free(block);
+							delete block;
 							total -= _blockSize_;
 						}
 						else {
@@ -3446,7 +3435,7 @@ namespace GoodLang {
 				bool				clearAllocs;
 
 				void			AllocNewBlock() {
-					cweeBlock* block = (cweeBlock*)Mem_Alloc((size_t)(sizeof(cweeBlock)));
+					cweeBlock* block = new cweeBlock(); // (cweeBlock*)Mem_Alloc((size_t)(sizeof(cweeBlock)));
 					block->next = blocks;
 					blocks = block;
 					for (int i = 0; i < _blockSize_; i++) {
@@ -3498,6 +3487,8 @@ namespace GoodLang {
 						}
 					}
 					ptrs.clear();
+					alloc.Shutdown();
+					if (!destroyAllocator) alloc.Free(alloc.Alloc());
 				}
 				else {
 					alloc.Shutdown();
@@ -4061,8 +4052,8 @@ namespace GoodLang {
 			void									Init() {
 				root = AllocNode();
 				{ // helps init the objAllocator
-					auto x = objAllocator.Alloc();
-					objAllocator.Free(x);
+					// auto x = objAllocator.Alloc();
+					// objAllocator.Free(x);
 				}
 			};
 			void									Shutdown() {
@@ -4829,6 +4820,24 @@ namespace GoodLang {
 				}
 				return false;
 			};
+			bool 
+				pop_front() const {
+				std::unique_lock locked{ lock };
+				if (auto* p = tree.GetFirst()) {
+					tree.Remove(p);
+					return true;
+				}
+				return false;
+			};
+			bool
+				pop_back() const {
+				std::unique_lock locked{ lock };
+				if (auto* p = tree.GetLast()) {
+					tree.Remove(p);
+					return true;
+				}
+				return false;
+			};
 			ValueType&
 				operator[](const KeyType& time) {
 				lock.lock_shared();
@@ -4929,6 +4938,7 @@ namespace GoodLang {
 					return _ptr - other._ptr; 
 				};
 			};
+
 		public:
 			SETUP_ITERATOR(flat_map, it_state);
 			iterator find(const KeyType& _Keyval) const {

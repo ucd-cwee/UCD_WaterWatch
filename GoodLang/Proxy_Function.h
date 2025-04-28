@@ -87,10 +87,10 @@ namespace GoodLang {
 			// From -> To
 			void convert_in_place(Any& t_from) const override {
 				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
-					t_from.swap(m_func(t_from));
+					t_from.swap_unsafe(m_func(t_from));
 				}
 				else {
-					t_from.swap(m_func(t_from.cast()));
+					t_from.swap_unsafe(m_func(t_from.cast()));
 				}
 			};
 

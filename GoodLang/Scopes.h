@@ -5,6 +5,7 @@
 #include "ThreadSafeContainers.h"
 #include "Units_Base.h"
 #include <unordered_set>
+#include <array>
 
 #define useCachedData
 
@@ -439,7 +440,7 @@ namespace GoodLang {
 		};
 
 	private:
-		concurrency::concurrent_unordered_map< std::string, std::shared_ptr<Any>>
+		SharedLockable<concurrency::concurrent_unordered_map< std::string, std::shared_ptr<Any>>>
 			p_objects; // scopes of all types may declare objects. Namespace objects may be global objects, but still. 
 
 	public:
@@ -473,7 +474,7 @@ namespace GoodLang {
 		};
 
 	public:
-		GoodLang::details::flat_map<size_t, std::weak_ptr<Namespace>> // allows this scope to use the children of other scopes as if they were their own.
+		SharedLockable<GoodLang::details::flat_map<size_t, std::weak_ptr<Namespace>>> // allows this scope to use the children of other scopes as if they were their own.
 			p_using;
 		// the Library should know about our "using" list
 		virtual bool RecordUsing(std::shared_ptr<Namespace> ptr) {
@@ -519,15 +520,20 @@ namespace GoodLang {
 			while (true) {
 				size_t toRemove{};
 				bool doRemoval = false;
-				for (auto& ref : p_using) {
-					if (ref.second->expired()) {
-						toRemove = *ref.first;
-						doRemoval = true;
+				if (p_using.DataExists()) {
+					for (auto& ref : *p_using.Shared()) {
+						if (ref.second->expired()) {
+							toRemove = *ref.first;
+							doRemoval = true;
+							break;
+						}
+					}
+					if (doRemoval) {
+						p_using.Shared()->erase(toRemove);
+					}
+					else {
 						break;
-					}					
-				}
-				if (doRemoval) {
-					p_using.erase(toRemove);
+					}
 				}
 				else {
 					break;
@@ -580,7 +586,7 @@ namespace GoodLang {
 		virtual bool AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists = true);
 
 	public:
-		virtual std::shared_ptr< Functions > GetFunctions() const;
+		virtual Functions& GetFunctions() const;
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params);
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree);
@@ -617,71 +623,47 @@ namespace GoodLang {
 		};
 	private:
 		using CacheContainer
-			= std::pair < GoodLang::fast_shared_mutex, std::unordered_map<size_t, std::weak_ptr<void>>>;
+			= GoodLang::details::flat_map<size_t, std::weak_ptr<void>>;
 		using VersionedCacheContainer // use this mutex to delete entire caches once the version is out-of-date
-			= std::map<size_t, std::shared_ptr<CacheContainer>>;
-		using TemplatedCacheContainer // organizes multiple caches for several purposes...
-			= std::vector<SharedLockable<VersionedCacheContainer>>;
-		TemplatedCacheContainer
-			SearchCache{ 6, SharedLockable<VersionedCacheContainer>() };
+			= GoodLang::details::flat_map<size_t, std::shared_ptr<CacheContainer>>;
+		std::array<SharedLockable<VersionedCacheContainer>, 6>
+			SearchCache;
 
-		template<size_t CacheID> SharedLockable<VersionedCacheContainer>& GetVersionedCacheContainer() const {
-			return const_cast<SharedLockable<VersionedCacheContainer>&>(SearchCache[CacheID]);
+		template<size_t CacheID> GoodLang::details::flat_map<size_t, std::shared_ptr<CacheContainer>>& GetVersionedCacheContainer() const {
+			SearchCache[CacheID].EnsureDataExists();
+			return const_cast<GoodLang::details::flat_map<size_t, std::shared_ptr<CacheContainer>>&>(*SearchCache[CacheID].data);
 		};
 		template<size_t CacheID> std::shared_ptr<CacheContainer> GetCacheContainer(size_t version) const {
-			SharedLockable<VersionedCacheContainer>& version_container = GetVersionedCacheContainer<CacheID>();
-			version_container.EnsureDataExists();
+			GoodLang::details::flat_map<size_t, std::shared_ptr<CacheContainer>>& version_container = GetVersionedCacheContainer<CacheID>();
+			
+			std::shared_ptr<CacheContainer> out;
+			if (version_container.do_at_end([&](size_t const& key, std::shared_ptr<CacheContainer> const& val) {
+				if (key >= version) {
+					out = val;
+				}
+			}));
+			if (out) {
+				return out;
+			} 
+			else {
+				// didn't exist yet -- delete old version(s) and create new version.
+				if (version_container.size() > 32) {
+					version_container.pop_front();
+				}
 
-			// test if exists
-			if (1) {
-				version_container.lock.lock_shared();
-				if (version_container.data->size() > 0) {
-					if (1) {
-						auto f = version_container.data->rbegin();
-						if (f->first >= version) {
-							std::shared_ptr<CacheContainer> out{ f->second };
-							version_container.lock.unlock_shared();
-							return out;
-						}
-					}
-				}
-				version_container.lock.unlock_shared();
-			}
-
-			// didn't exist yet -- delete old version(s) and create new version.
-			if (1) {
-				auto locked = version_container.Unique();
-				auto f = locked->find(version); // someone beat us to it
-				if (f != locked->end()) {
-					return f->second;
-				}
-				else {
-					// allow some caching of versions, in case of multithreading
-					if (locked->size() > 64) {
-						// locked->erase(locked->begin());
-						while (locked->size() > 8) {
-							locked->erase(locked->begin());
-						}
-					}
-					auto out{ std::make_shared<CacheContainer>() };
-					locked->insert(std::pair<size_t, std::shared_ptr<CacheContainer>>{ version, out });
-					return out;
-				}
+				return version_container.get_or_make(version, []() {
+					return std::make_shared<CacheContainer>();
+				});
 			}
 		};
 		template<size_t CacheID, typename T, typename... Rest> bool TryGetCached(size_t version, std::shared_ptr<T>& out, Rest const&... rest) const {
 			if (std::shared_ptr<CacheContainer> cache_container = GetCacheContainer<CacheID>(version)) {
 				size_t hash = 0;
 				hash_combine(hash, rest...);
-
-				// test if exists
-				if (1) {
-					auto locked{ std::shared_lock(cache_container->first) };
-					auto f = cache_container->second.find(hash);
-					if (f != cache_container->second.end()) {
-						out = std::static_pointer_cast<T>(f->second.lock());
-						return true;
-					}
+				long hint{ -1 };
+				if (auto* p = cache_container->try_at(hash, hint)) {
+					out = std::static_pointer_cast<T>(p->lock());
+					return true;
 				}
 			}
 			out = nullptr;
@@ -693,17 +675,7 @@ namespace GoodLang {
 				hash_combine(hash, rest...);
 
 				// didn't exist yet
-				if (1) {
-					auto locked{ std::scoped_lock(cache_container->first) };
-					auto f = cache_container->second.find(hash);
-					if (f != cache_container->second.end()) {
-						// do nothing?
-						f->second = obj;
-					}
-					else {
-						cache_container->second.insert(std::pair<size_t, std::weak_ptr<void>>{ hash, obj });
-					}
-				}
+				cache_container->emplace(hash, obj);
 			}
 		};
 		template<size_t CacheID, typename... Rest> void InsertCachedIfNotExist(size_t version, std::shared_ptr<void> const& obj, Rest const&... rest) const {
@@ -712,17 +684,7 @@ namespace GoodLang {
 				hash_combine(hash, rest...);
 
 				// didn't exist yet
-				if (1) {
-					auto locked{ std::scoped_lock(cache_container->first) };
-					auto f = cache_container->second.find(hash);
-					if (f != cache_container->second.end()) {
-						// do nothing?
-						// f->second = obj;
-					}
-					else {
-						cache_container->second.insert(std::pair<size_t, std::weak_ptr<void>>{ hash, obj });
-					}
-				}
+				cache_container->emplace(hash, obj);
 			}
 		};
 #endif
@@ -975,8 +937,8 @@ namespace GoodLang {
 			p_postfixes;
 
 	private:
-		std::shared_ptr<Functions> // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
-			p_functions{ std::make_shared<Functions>() };
+		Functions // functions. (e.g. `==` or `to_string`). Duplicate names are expected. 
+			p_functions;
 
 	private:
 		virtual void RemoveStaleReferences() override {
@@ -984,15 +946,20 @@ namespace GoodLang {
 			while (true) {
 				size_t toRemove{};
 				bool doRemoval = false;
-				for (auto& ref : p_using) {
-					if (ref.second->expired()) {
-						toRemove = *ref.first;
-						doRemoval = true;
+				if (p_using.DataExists()) {
+					for (auto& ref : *p_using.Shared()) {
+						if (ref.second->expired()) {
+							toRemove = *ref.first;
+							doRemoval = true;
+							break;
+						}
+					}
+					if (doRemoval) {
+						p_using.Shared()->erase(toRemove);
+					}
+					else {
 						break;
 					}
-				}
-				if (doRemoval) {
-					p_using.erase(toRemove);
 				}
 				else {
 					break;
@@ -1032,7 +999,7 @@ namespace GoodLang {
 		virtual bool AddFunction(std::string const& name, Function const& function, bool overrideIfAlreadyExists = true) override;
 
 	public:
-		virtual std::shared_ptr< Functions > GetFunctions() const override;
+		virtual Functions& GetFunctions() const override;
 		virtual std::shared_ptr< Functions::FunctionSort > GetFunctions(std::string const& name) const override;
 		virtual Proxy_Function GetFunction(std::string const& name, ParamTypes& params, TypeConverter& tree) override;
 		virtual Proxy_Function GetFunction(std::string const& name, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& tree) override;
@@ -1314,16 +1281,20 @@ namespace GoodLang {
 					while (true) {
 						size_t toRemove{};
 						bool doRemoval = false;
-						for (auto& ref : p_using) {
-							if (ref.second->expired()) {
-								toRemove = *ref.first;
-								doRemoval = true;
+						if (p_using.DataExists()) {
+							for (auto& ref : *p_using.Shared()) {
+								if (ref.second->expired()) {
+									toRemove = *ref.first;
+									doRemoval = true;
+									break;
+								}
+							}
+							if (doRemoval) {
+								p_using.Shared()->erase(toRemove);
+							}
+							else {
 								break;
 							}
-
-						}
-						if (doRemoval) {
-							p_using.erase(toRemove);
 						}
 						else {
 							break;
