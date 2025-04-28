@@ -52,8 +52,11 @@ namespace GoodLang {
 				return 0;
 			}
 		};
-		std::array< MapType, numV> FirstCharToFunctionNameMap;
-		size_t count;
+		std::array< MapType, numV> 
+			FirstCharToFunctionNameMap;
+		size_t 
+			count;
+
 	public:
 		// emplace a function, if not already exists, using the provided params
 		TupleType* emplace(std::string_view const& name, GoodLang::ParamTypes const& params, GoodLang::Function const& func);
@@ -72,6 +75,7 @@ namespace GoodLang {
 		const size_t& size() const {
 			return this->count;
 		};
+
 	private:
 		using value_type = TupleType;
 		class it_state {
@@ -247,9 +251,7 @@ namespace GoodLang {
 			, p_using()
 		{
 			// for a speed-up, attempt to convert a single random number into our desired pseudo-random string. 
-			void* pos = const_cast<void*>((const void*)p_UniqueName.c_str());
-			double* double_part = (double*)pos;
-			*double_part = std::rand();
+			*reinterpret_cast<double*>(const_cast<void*>((const void*)p_UniqueName.c_str())) = std::rand(); // requires that p_UniqueName be at least 8 characters long already
 
 			if (parent) { p_namespace = parent->GetNamespaceImpl(); }
 			else { p_namespace = std::dynamic_pointer_cast<Namespace>(p_self.lock()); }

@@ -13,6 +13,16 @@ namespace GoodLang {
 			, m_converters(std::forward<std::vector<GoodLang::shared_ptr<Type_Conversion_Base>>>(t_converters))
 			, m_cost(0)
 		{
+			for (int index = m_converters.size() - 2; index >= 1; --index) {
+				if (m_converters[index]->cost() == 0) {
+					m_converters.erase(m_converters.begin() + index);
+				}
+			}
+
+
+
+
+
 			this->m_to = m_converters[m_converters.size() - 1]->to();
 			this->m_from = m_converters[0]->from();
 
@@ -274,7 +284,7 @@ namespace GoodLang {
 					UniformCostSearchNode* smallestDistanceNode;
 					conversionTreeType::value_type::second_type::const_iterator fSecondIter;
 					conversionTreeType::value_type::second_type::const_iterator fSecondEnd;
-					TypeConverterFunc func;
+					GoodLang::details::Type_Conversion_Base* func;
 					while (vertexSet.size() != 0) {
 						// extract the vertex with the smallest distance value from the set
 						smallestDistanceNode = vertexSet.top();
@@ -285,22 +295,21 @@ namespace GoodLang {
 						if (f != AllConversions.end()) {
 							for (fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
 								auto& connection = *fSecondIter;
-								if (func = connection.second.second) {
+								if (func = connection.second.second.get()) {
 									conversionCost = GoodLang::details::TypeConversionBaselineCost;
 									if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
 										conversionCost = func->cost(); // calculate distance value for the neighbor vertex
 
 									if (1) {
 										// Is the neighbor already in the vertex set? 
-										auto& toType = connection.second.first;
 										auto& toVertex = vertices[connection.first];
-										if (!toVertex.first) toVertex.first = toType;
+										if (!toVertex.first) toVertex.first = connection.second.first;
 
 										if (!toVertex.second) { // Instance it before we start working with it on an as-needed basis
 											toVertex.second = alloc.Alloc(
-												toType,
+												connection.second.first,
 												std::numeric_limits<double>::infinity(),
-												alloc2.Alloc(nullptr, toType)
+												alloc2.Alloc(nullptr, connection.second.first)
 											);
 										}
 										if ((toVertex.second->size() + 1) > (smallestDistanceNode->size() + 1)) {
@@ -461,9 +470,7 @@ namespace GoodLang {
 							ExistsAlready = pair.second.operator bool();
 						}
 						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-								return x;
-								}, baseType, constType, 0.0))) {
+							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, constType))) {
 								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
 								if (!pair.first) pair.first = func->to().lock();
 								pair.second = func;
@@ -477,9 +484,7 @@ namespace GoodLang {
 							ExistsAlready = pair.second.operator bool();
 						}
 						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-								return x;
-								}, baseType, refType, 0.0))) {
+							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, refType))) {
 								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
 								if (!pair.first) pair.first = func->to().lock();
 								pair.second = func;
@@ -493,9 +498,7 @@ namespace GoodLang {
 							ExistsAlready = pair.second.operator bool();
 						}
 						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-								return x;
-								}, baseType, constRefType, 0.0))) {
+							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, constRefType))) {
 								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
 								if (!pair.first) pair.first = func->to().lock();
 								pair.second = func;
@@ -509,9 +512,7 @@ namespace GoodLang {
 							ExistsAlready = pair.second.operator bool();
 						}
 						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-								return x;
-								}, constType, constRefType, 0.0))) {
+							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(constType, constRefType))) {
 								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
 								if (!pair.first) pair.first = func->to().lock();
 								pair.second = func;
@@ -525,9 +526,7 @@ namespace GoodLang {
 							ExistsAlready = pair.second.operator bool();
 						}
 						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([](Any const& x)->Any {
-								return x;
-								}, refType, constRefType, 0.0))) {
+							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(refType, constRefType))) {
 								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
 								if (!pair.first) pair.first = func->to().lock();
 								pair.second = func;
@@ -544,7 +543,7 @@ namespace GoodLang {
 							auto& copyConstructor = baseType->GetCopyConstructor();
 							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([&copyConstructor](Any const& x)->Any {
 								return copyConstructor(x);
-								}, constRefType, baseType))) {
+							}, constRefType, baseType))) {
 								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
 								if (!pair.first) pair.first = func->to().lock();
 								pair.second = func;

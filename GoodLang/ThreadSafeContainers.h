@@ -3246,13 +3246,12 @@ namespace GoodLang {
 #define CONST_MAX( x, y )			( (x) > (y) ? (x) : (y) )
 #define BLOCK_ALLOC_ALIGNMENT 16
 
-		template<class _type_, size_t BlockSize = 128>
+		template<class _type_, size_t BlockSize = 128, size_t objectsize = sizeof(_type_)>
 		class SingleThreadedAllocator {
 		private:
 			static constexpr bool isPod() { return std::is_pod<_type_>::value; };
 
 		public:
-			template<class _type_, int _blockSize_>
 			class BlockAlloc {
 			public:
 				BlockAlloc(bool clear = true) : // = false
@@ -3278,7 +3277,7 @@ namespace GoodLang {
 				};
 
 				// returns total size of allocated memory
-				size_t				Allocated() const { return total * sizeof(_type_); }
+				size_t				Allocated() const { return total * objectsize; }
 
 				// returns total size of allocated memory including size of (*this)
 				size_t				Size() const { return sizeof(*this) + Allocated(); }
@@ -3312,7 +3311,7 @@ namespace GoodLang {
 					for (element_t* element = free; element != NULL; ) {
 						element_t* next = element->next;
 						for (cweeBlock* block = blocks; block != NULL; block = block->next) {
-							if (element >= block->elements && element < block->elements + _blockSize_) {
+							if (element >= block->elements && element < block->elements + BlockSize) {
 								element->next = block->free;
 								block->free = element;
 								block->freeCount++;
@@ -3323,11 +3322,11 @@ namespace GoodLang {
 						assert(element->next != next);
 						element = next;
 					}
-					// now free all blocks whose free count == _blockSize_
+					// now free all blocks whose free count == BlockSize
 					cweeBlock* prevBlock = NULL;
 					for (cweeBlock* block = blocks; block != NULL; ) {
 						cweeBlock* next = block->next;
-						if (block->freeCount == _blockSize_) {
+						if (block->freeCount == BlockSize) {
 							if (prevBlock == NULL) {
 								assert(blocks == block);
 								blocks = block->next;
@@ -3337,7 +3336,7 @@ namespace GoodLang {
 								prevBlock->next = block->next;
 							}
 							delete block;
-							total -= _blockSize_;
+							total -= BlockSize;
 						}
 						else {
 							prevBlock = block;
@@ -3357,7 +3356,8 @@ namespace GoodLang {
 				};
 
 				static constexpr bool isPod() { return std::is_pod<_type_>::value; };
-				_type_* Alloc() {
+
+				template <typename... TArgs> _type_* Alloc(TArgs &&... a) {
 					if (free == NULL) {
 						if (!allowAllocs) {
 							return NULL;
@@ -3371,14 +3371,13 @@ namespace GoodLang {
 					element->next = NULL;
 
 					_type_* t = (_type_*)element->buffer;
-					if constexpr (isPod()) {
-						memset(t, 0, sizeof(_type_));
+
+					if constexpr (isPod() && (sizeof...(a) == 0)) {
+						memset(t, 0, objectsize);
 					}
 					else {
-						if (clearAllocs) {
-							memset(t, 0, sizeof(_type_));
-						}
-						new (t) _type_;
+						if (clearAllocs) memset(t, 0, objectsize);
+						new (t) _type_(std::forward<TArgs>(a)...);
 					}
 
 					return t;
@@ -3416,12 +3415,12 @@ namespace GoodLang {
 				union element_t {
 					_type_* data;
 					element_t* next;
-					::byte			buffer[(CONST_MAX(sizeof(_type_), sizeof(element_t*)) + (BLOCK_ALLOC_ALIGNMENT - 1)) & ~(BLOCK_ALLOC_ALIGNMENT - 1)];
+					::byte			buffer[(CONST_MAX(objectsize, sizeof(element_t*)) + (BLOCK_ALLOC_ALIGNMENT - 1)) & ~(BLOCK_ALLOC_ALIGNMENT - 1)];
 				};
 
 				class cweeBlock {
 				public:
-					element_t		elements[_blockSize_];
+					element_t		elements[BlockSize];
 					cweeBlock* next;
 					element_t* free;		// list with free elements in this block (temp used only by FreeEmptyBlocks)
 					long long		freeCount;	// number of free elements in this block (temp used only by FreeEmptyBlocks)
@@ -3438,12 +3437,12 @@ namespace GoodLang {
 					cweeBlock* block = new cweeBlock(); // (cweeBlock*)Mem_Alloc((size_t)(sizeof(cweeBlock)));
 					block->next = blocks;
 					blocks = block;
-					for (int i = 0; i < _blockSize_; i++) {
+					for (int i = 0; i < BlockSize; i++) {
 						block->elements[i].next = free;
 						free = &block->elements[i];
 						assert((((UINT_PTR)free) & (BLOCK_ALLOC_ALIGNMENT - 1)) == 0);
 					}
-					total += _blockSize_;
+					total += BlockSize;
 				};
 			};
 
@@ -3452,8 +3451,8 @@ namespace GoodLang {
 			SingleThreadedAllocator(int toReserve) : ptrs(), alloc(toReserve) {};
 			~SingleThreadedAllocator() { Clear(true); };
 
-			_type_* Alloc() {
-				auto p = alloc.Alloc();
+			template <typename... TArgs> _type_* Alloc(TArgs &&... a) {
+				auto p = alloc.Alloc(std::forward<TArgs>(a)...);
 				if constexpr (!isPod()) {
 					ptrs.insert(p);
 				}
@@ -3501,7 +3500,125 @@ namespace GoodLang {
 
 		private:
 			std::set<_type_*> ptrs;
-			BlockAlloc<_type_, BlockSize> alloc;
+			BlockAlloc alloc;
+		};
+
+		template <typename _type_, size_t num_parallel_allocators = 4, size_t BlockSize = 128>
+		class BTreeAllocator final : public EpochGarbageCollectorImpl {
+		private:
+			std::array<std::pair<GoodLang::mutex, SingleThreadedAllocator<_type_, BlockSize, sizeof(_type_) + sizeof(size_t)>>, num_parallel_allocators> TLS_arr{};
+			static auto GetThreadID() { return IDManager::GetThreadID(); };
+
+			struct innerType {
+				_type_ T;
+				size_t threadID;
+			};
+
+		public:
+			template <typename... TArgs> _type_* Alloc(TArgs&&... a) {
+				static thread_local size_t thisThreadIndex{ GetThreadID() % num_parallel_allocators };
+				auto& TLS = TLS_arr[thisThreadIndex];
+				_type_* out;
+				TLS.first.lock();
+				out = TLS.second.Alloc(std::forward<TArgs>(a)...);
+				TLS.first.unlock();
+				innerType* impl = static_cast<innerType*>(static_cast<void*>(out));
+				impl->threadID = thisThreadIndex;
+				return out;
+			};
+			void Free(const _type_* t) {
+				innerType* impl = static_cast<innerType*>(static_cast<void*>(const_cast<_type_*>(t)));
+				auto& TLS = TLS_arr[impl->threadID];
+				TLS.first.lock();
+				TLS.second.Free(const_cast<_type_*>(t));
+				TLS.first.unlock();
+			};
+			template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
+				return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
+			};
+		};
+
+		template<class T, size_t BlockSize = 128, uint64_t CleanupFrequencyMilliseconds = 1>
+		class FastEpochAllocator final : public EpochGarbageCollectorImpl {
+		private:
+			using EpochStorageType = typename ThreadLocalStorage::EpochStorageType;
+			using EpochQueueType = std::pair<EpochStorageType, T*>;
+
+			std::array<ThreadLocalStorage, ThreadManager::kMaxThreadNum> 
+				TLS_arr;
+			std::atomic<EpochStorageType> 
+				lastGC;
+			BTreeAllocator<T, 4, BlockSize> 
+				_alloc;
+			moodycamel::ConcurrentQueue< EpochQueueType >
+				DeleteList;
+
+			static auto GetThreadID() { return IDManager::GetThreadID(); };
+			auto& GetTLS() { return TLS_arr[GetThreadID()]; };
+
+		public:
+			// Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
+			void RunGC() override {
+				static constexpr auto duration{ std::chrono::milliseconds(CleanupFrequencyMilliseconds) };
+				static thread_local EpochQueueType out{};
+				EpochStorageType _EpochLimit{ std::numeric_limits<EpochStorageType>::max() };
+				auto currentGC{ std::chrono::milliseconds(ThreadManager::GetCurrentEpoch()) };
+				thread_local std::array< EpochQueueType, 10> iter;
+				size_t count_popped;
+				bool anyFailure;
+
+				if ((currentGC - std::chrono::milliseconds(lastGC.load())) > duration) {
+					lastGC.store(currentGC.count());
+
+					for (auto& tls : TLS_arr)
+						if (tls.Active > 0)
+							_EpochLimit = std::min<EpochStorageType>(_EpochLimit, tls.EpochLimit.load());
+
+					if (_EpochLimit > 0) {						
+						
+						while ((count_popped = DeleteList.try_pop_bulk(/*token, */iter.begin(), iter.size())) > 0) {
+							anyFailure = false;
+							for (size_t i = 0; i < count_popped; ++i) {
+								if (iter[i].first <= _EpochLimit) { // ...if the data is in the correct time period for reclamation...
+									_alloc.Free(iter[i].second); // ... then do the clean-up, and try again (hoping that the list is semi-sorted).
+								}
+								else {
+									DeleteList.push(iter[i]);
+									anyFailure = true;
+								}// ... otherwise push to the end of the queue, which is a form of lazy sorting (also prevents endless looping without additional checks / handles). 
+							}							
+							if (anyFailure) break;
+						}
+					}
+				}
+			};
+
+		public:
+			// Request a new memory pointer
+			template <typename... TArgs> T* Alloc(TArgs &&... a) {
+				return _alloc.Alloc(std::forward<TArgs>(a)...);
+			};
+
+			// Frees the memory pointer
+			void				Free(const T* element) {
+				DeleteList.push(/*token, */{ ThreadManager::GetCurrentEpoch(), const_cast<T*>(element) });
+				RunGC();
+			};
+
+		public:
+			FastEpochAllocator() : EpochGarbageCollectorImpl(), TLS_arr{}, lastGC{ 0 }, _alloc{}, DeleteList{} { for (auto& tls : TLS_arr) tls.parent = this; };
+			FastEpochAllocator(FastEpochAllocator const&) = delete;
+			FastEpochAllocator(FastEpochAllocator&&) = delete;
+			FastEpochAllocator& operator=(FastEpochAllocator const&) = delete;
+			FastEpochAllocator& operator=(FastEpochAllocator&&) = delete;
+			virtual ~FastEpochAllocator() = default;
+
+		public:
+			// Stalls deallocation / free calls made after this guard until at least after this guard expires.
+			[[nodiscard]] const auto CreateEpochGuard() {
+				return GetTLS().ProtectCurrentEpoch();
+			};
+
 		};
 
 #undef BLOCK_ALLOC_ALIGNMENT
@@ -3576,7 +3693,7 @@ namespace GoodLang {
 				Init();
 			};
 			~BalancedTree() {
-				Clear(true);
+				// Clear(true);
 			};
 
 			void									Reserve(long long num) {
@@ -3584,7 +3701,7 @@ namespace GoodLang {
 				nodeAllocator.Reserve(num * 1.25); // approximately 25% more for 'overage'
 			};
 
-			_iterType* Add(objType const& object, keyType const& key, bool addUnique = true) {
+			_iterType* Add(objType const& object, keyType const& key, bool addUnique = true, bool* AlreadyExisted = nullptr) {
 				_iterType* node, * child, * newNode; objType* OBJ;
 
 				if (root == nullptr) {
@@ -3596,9 +3713,12 @@ namespace GoodLang {
 					node = NodeFind(key);
 					if (node && node->object) {
 						*node->object = const_cast<objType&>(object);
+						if (AlreadyExisted) *AlreadyExisted = true;
 						return CheckLastNode(CheckFirstNode(node));
 					}
 				}
+
+				if (AlreadyExisted) *AlreadyExisted = false;
 
 				if (root->numChildren >= maxChildrenPerNode) {
 					newNode = AllocNode();
@@ -3755,8 +3875,6 @@ namespace GoodLang {
 				}
 			};				// remove an object node from the tree
 			void									Clear(bool destroyAllocator = false) {
-				// while (first) { Remove(first); }
-
 				// remove all
 				nodeAllocator.Clear(destroyAllocator);
 				objAllocator.Clear(destroyAllocator);
@@ -3764,8 +3882,7 @@ namespace GoodLang {
 				first = nullptr;
 				last = nullptr;
 				Num = 0;
-
-				Init();
+				if (!destroyAllocator) Init();
 			};
 			_iterType* NodeFindByIndex(int index) const {
 				if (index <= 0) return first;
@@ -3821,12 +3938,6 @@ namespace GoodLang {
 
 				smaller = nullptr;
 				for (node = Root->lastChild; node != nullptr; node = node->lastChild) {
-					//if (node->lastChild && node->firstChild) {
-					//	if (node->firstChild->key > node->lastChild->key) {
-					//		node = GetPrevLeaf(Root);
-					//		break;
-					//	}
-					//}
 					while (node->prev) {
 						if (node->key <= key) {
 							if (!smaller) {
@@ -3940,17 +4051,6 @@ namespace GoodLang {
 					}
 				}
 				return node;
-
-				//if (!node) return nullptr; 
-				//if (node->firstChild) {
-				//	return node->firstChild;
-				//}
-				//else {
-				//	while (node && node->next == nullptr) {
-				//		node = node->parent;
-				//	}
-				//	return node;
-				//}
 			};		// goes through all nodes of the tree;
 
 		public:
@@ -3977,29 +4077,6 @@ namespace GoodLang {
 					}
 				}
 				return node;
-
-				//if (!node) return nullptr;
-				//if (node->firstChild) {
-				//	while (node->firstChild) {
-				//		node = node->firstChild;
-				//	}
-				//	return node;
-				//}
-				//else {
-				//	while (node && node->next == nullptr) {
-				//		node = node->parent;
-				//	}
-				//	if (node) {
-				//		node = node->next;
-				//		while (node->firstChild) {
-				//			node = node->firstChild;
-				//		}
-				//		return node;
-				//	}
-				//	else {
-				//		return nullptr;
-				//	}
-				//}
 			};	// goes through all leaf nodes of the tree;
 			static _iterType* GetPrevLeaf(_iterType* node) {
 				if (!node) return nullptr;
@@ -4167,564 +4244,6 @@ namespace GoodLang {
 	};
 
 	namespace details {
-#if 0
-		// fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
-		template<class KeyType, class ValueType> class flat_map {
-		friend class it_state;
-		public:
-			typedef veque::veque<ValueType*>	ValueList;
-			typedef veque::veque<KeyType>	KeyList;
-			typedef GoodLang::BlockAllocator<ValueType> AllocType; // basic block allocator 
-		protected:
-			mutable fast_shared_mutex
-				lock; // basically equivalent to std::shared_ptr
-			mutable KeyList
-				times;			// knot Times
-			mutable ValueList
-				values;			// knot Values	
-			mutable GoodLang::shared_ptr<AllocType>
-				allocator;
-			mutable size_t
-				count;
-
-			size_t
-				UnsafeIndexForTime(const KeyType& time, long& hint, size_t len) const {
-				KeyType*
-					sample;
-				size_t 
-					currentIndex{ hint >= 0l ? (size_t)hint : 0ull },
-					mid{ len },
-					offset{ 0 };
-				bool 
-					res{ false };
-
-				if (len == 0ull) 
-					return 0ull; // there is no other data...									
-				else if (len == 1ull) {
-					InterlockedExchange(&hint, currentIndex = 0ull);
-					return currentIndex;
-				}
-				else if ((hint >= 0l) && (currentIndex < len) && (times[currentIndex] == time))
-					return currentIndex;
-				else {
-					if (times[0ull] > time) {
-						currentIndex = 0ull;
-						InterlockedExchange(&hint, currentIndex);
-						return currentIndex;
-					}
-					else if (times[len - 1ull] < time) {
-						currentIndex = len;
-						InterlockedExchange(&hint, currentIndex);
-						return currentIndex;
-					}
-				}
-
-				//if (len < 8) {
-				//	for (currentIndex = 0; currentIndex < len; ++currentIndex) {
-				//		if (times[currentIndex] > time) {
-				//			InterlockedExchange(&hint, currentIndex = std::max(0ull, currentIndex - 1ull));
-				//			return currentIndex;
-				//		}
-				//	}
-				//	return 0;
-				//}
-				//else 
-				{
-					// use binary search to find the index for the given time				
-					while (mid > 0ull) {
-						mid = len >> 1ull;
-						sample = &times[offset + mid];
-						if (time >= *sample) {
-							offset += mid;
-							if (time == *sample) {
-								currentIndex = offset;
-								InterlockedExchange(&hint, currentIndex);
-								return currentIndex;
-							}
-							res = true;
-						}
-						else {
-							res = false;
-						}
-						len -= mid;
-					}
-					currentIndex = offset + (int)res;
-					InterlockedExchange(&hint, currentIndex);
-					return currentIndex;
-				}
-			};
-			size_t
-				UnsafeInsertPair(long i, const KeyType& time, ValueType&& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
-				if (unique) {
-					if (((i != 0) && (i < values.size()) && (times[i] == time))) {
-						if (!InsertOnlyIfDoesNotExist) {
-							*values[i] = std::move(valueIN);
-						}
-					}
-					else if (values.size() == 0 || i >= values.size()) {
-						times.push_back(time);
-						values.push_back(allocator->Alloc(std::move(valueIN)));
-						InterlockedIncrementNoFence(&count);
-					}
-					else if ((times.size() != 0) && times[0] != time) {
-						times.insert(times.begin() + i, time);
-						values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
-						InterlockedIncrementNoFence(&count);
-					}
-					else {
-						if (!InsertOnlyIfDoesNotExist) *values[0] = std::move(valueIN);
-						i = 0;
-					}
-					return i;
-				}
-				else {
-					if (values.size() == 0 || i >= values.size()) {
-						times.push_back(time);
-						values.push_back(allocator->Alloc(std::move(valueIN)));
-						InterlockedIncrementNoFence(&count);
-					}
-					else {
-						times.insert(times.begin() + i, time);
-						values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
-						InterlockedIncrementNoFence(&count);
-					}
-					return i;
-				}
-			};
-			size_t
-				InsertPair(const KeyType& time, ValueType&& valueIN, bool unique = false, bool InsertOnlyIfDoesNotExist = false) {
-				long i = 0;
-				if (unique) {
-					{
-						std::unique_lock locked{ lock };
-						size_t sz{ values.size() };
-						i = UnsafeIndexForTime(time, i = -1, sz);
-						if (((i != 0) && (i < sz) && (times[i] == time))) {
-							if (!InsertOnlyIfDoesNotExist) *values[i] = std::move(valueIN);
-						}
-						else if (sz == 0 || i >= sz) {
-							times.push_back(time);
-							values.push_back(allocator->Alloc(std::move(valueIN)));
-							InterlockedIncrementNoFence(&count);
-						}
-						else if ((sz != 0) && times[0] != time) {
-							times.insert(times.begin() + i, time);
-							values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
-							InterlockedIncrementNoFence(&count);
-						}
-						else {
-							if (!InsertOnlyIfDoesNotExist) *values[0] = std::move(valueIN);
-							i = 0;
-						}
-					}
-					return i;
-				}
-				else {
-					{
-						std::unique_lock locked{ lock };
-						size_t sz{ values.size() };
-						i = UnsafeIndexForTime(time, i = -1, sz);
-						if (sz == 0 || i >= sz) {
-							times.push_back(time);
-							values.push_back(allocator->Alloc(std::move(valueIN)));
-							InterlockedIncrementNoFence(&count);
-						}
-						else {
-							times.insert(times.begin() + i, time);
-							values.insert(values.begin() + i, allocator->Alloc(std::move(valueIN)));
-							InterlockedIncrementNoFence(&count);
-						}
-					}
-					return i;
-				}
-			};
-
-		public:
-			flat_map() 
-				: lock{}
-				, times{}
-				, values{}
-				, allocator{ GoodLang::make_shared<AllocType>() }
-				, count{ 0 }
-			{};
-			flat_map(flat_map const& rhs) 
-				: lock{}
-				, times{}
-				, values{}
-				, allocator{nullptr} 
-				, count{ 0 }
-			{
-				std::shared_lock locked{ rhs.lock };				
-				allocator = rhs.allocator;
-				times = rhs.times;
-				values = rhs.values;						
-				count = rhs.count;
-			};
-			flat_map(flat_map&& rhs) 
-				: lock{}
-				, times{ std::move(rhs.times) }
-				, values{ std::move(rhs.values) }
-				, allocator{ std::move(rhs.allocator) }
-				, count{ std::move(rhs.count) }
-			{};
-			flat_map& operator=(flat_map const& rhs) {
-				if (this == &rhs) return *this;
-				std::unique_lock locked1{ lock };
-				std::shared_lock locked2{ rhs.lock };
-
-				allocator = rhs.allocator;
-				times = rhs.times;
-				values = rhs.values;
-				InterlockedExchangeNoFence(&count, rhs.count);
-
-				return *this;
-			};
-			flat_map& operator=(flat_map&& rhs) {
-				if (this == &rhs) return *this;
-				std::unique_lock locked1{ lock };
-				std::shared_lock locked2{ rhs.lock };
-
-				allocator = rhs.allocator;
-				times = rhs.times;
-				values = rhs.values;
-				InterlockedExchange(&count, rhs.count);
-
-				return *this;
-			};
-			~flat_map() = default;
-
-			const size_t& size() const {
-				return count;
-			};
-			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				at_index_unsafe(size_t index) const {
-				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{
-					std::ref(times[index]),
-						std::ref(*values[index])
-				};
-			};
-			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				at_index(size_t index) const {
-				std::shared_lock locked{ lock };
-				return at_index_unsafe(index);
-			};
-			size_t
-				get_index(const KeyType& time) const {
-				long out;
-				std::shared_lock locked{ lock };
-				out = UnsafeIndexForTime(time, out = -1, values.size());
-				return out;
-			};
-			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				insert(const KeyType& time, ValueType&& value) {
-				return at_index(InsertPair(time, std::move(value), true, true));
-			};
-			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				unsafe_insert(const KeyType& time, ValueType&& value) {
-				long i;
-				return at_index_unsafe(UnsafeInsertPair(UnsafeIndexForTime(time, i = -1, values.size()), time, std::move(value), true, true));
-			};
-			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
-				emplace(const KeyType& time, ValueType&& value) {
-				return at_index(InsertPair(time, std::move(value), true, false));
-			};
-
-			ValueType&
-				lower_bound(const KeyType& time) const {
-				std::shared_lock locked{ lock };
-				long i;
-				size_t sz = values.size();
-				i = UnsafeIndexForTime(time, i = -1, sz);				
-				if (sz == 0) {
-					throw std::range_error("Could not find " + GoodLang::ToString(time));
-				}
-				if (i >= sz) {
-					return *values[sz - 1];
-				}
-				else {
-					return *values[i];
-				}
-			};
-			ValueType&
-				at(const KeyType& time) const {
-				std::shared_lock locked{ lock };
-				long i;
-				size_t sz = values.size();
-				i = UnsafeIndexForTime(time, i = -1, sz);				
-				if (sz == 0) {
-					throw std::range_error("Could not find " + GoodLang::ToString(time));
-				}
-				if (i >= sz) {
-					if (times[sz - 1] == time) {
-						return *values[sz - 1];
-					}
-				}
-				else {
-					if (times[i] == time) {
-						return *values[i];
-					}
-				}
-				throw std::range_error("Could not find " + GoodLang::ToString(time));
-			};
-			ValueType*
-				unsafe_find(const KeyType& time, long& i) const {
-				size_t sz{ values.size() };
-				if (sz == 0ull) { return nullptr; }
-				else if (sz <= (i = UnsafeIndexForTime(time, i, sz))) {
-					if (times[i = (sz - 1ull)] == time) 
-						return values[i];					
-					else 
-						return nullptr;					
-				}
-				else if (times[i] == time) 
-					return values[i];				
-				else 
-					return nullptr;
-			};
-			ValueType*
-				try_at(const KeyType& time, long& hint) const {
-				if (size() == 0) return nullptr;
-				else {
-					std::shared_lock locked{ lock };
-					return unsafe_find(time, hint);
-				}
-			};
-			template <typename Func> bool
-				do_at_beginning(Func const& func) const {
-				std::shared_lock locked{ lock };
-				
-				if (values.size() > 0) {
-					func(times[0], *values[0]);
-					return true;
-				}
-				return false;
-			};
-			template <typename Func> bool
-				do_at_end(Func const& func) const {
-				std::shared_lock locked{ lock };
-
-				if (values.size() > 0) {
-					func(times[times.size()-1], *values[values.size()-1]);
-					return true;
-				}
-				return false;
-			};
-			ValueType&
-				operator[](const KeyType& time) {
-				lock.lock_shared();
-				if (auto* f = unsafe_find(time)) {
-					lock.unlock_shared();
-					return *f;
-				}
-				else {
-					if (lock.upgrade_lock()) {
-						auto* out = &unsafe_insert(time, {}).second.get();
-						lock.unlock();
-						return *out;
-					}
-					else {
-						auto* out = &unsafe_insert(time, {}).second.get();
-						lock.unlock();
-						return *out;
-					}
-				}
-			};
-			template <typename Func> ValueType&
-				get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
-				long i;
-				lock.lock_shared();
-				if (auto* f = unsafe_find(time, i)) {
-					if (ExistedAlready) *ExistedAlready = true;
-					lock.unlock_shared();
-					return *f;
-				}
-				else {
-					if (ExistedAlready) *ExistedAlready = false;
-					if (lock.upgrade_lock()) {
-						auto* out = &unsafe_insert(time, func()).second.get();
-						lock.unlock();
-						return *out;
-					}
-					else {
-						auto* out = &unsafe_insert(time, func()).second.get();
-						lock.unlock();
-						return *out;
-					}
-				}
-			};
-			bool
-				Visit(std::function<bool(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>> const&)> const& Func) const {
-				std::shared_lock locked{ lock };
-				for (size_t i = 0, sz = values.size(); i < sz; ++i) {
-					if (Func(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(times[i]), std::ref(*values[i]) })) {
-						return true;
-					}
-				}
-				return false;
-			};
-			bool
-				erase(const KeyType& time, ValueType* out = nullptr) {
-				std::unique_lock locked{ lock };
-
-				size_t sz;
-				long i;
-				sz = values.size();
-				if (sz == 0) { return false; }
-				i = UnsafeIndexForTime(time, i = -1, sz);
-				if (i >= sz) {
-					if (times[sz - 1] == time) {
-						InterlockedDecrementNoFence(&count);
-						i = sz - 1;						
-						times.erase(times.begin() + i);
-						if (out) *out = std::move(*values[i]);
-						allocator->Free(values[i]);
-						values.erase(values.begin() + i);
-						return true;
-					}
-				}
-				else {
-					if (times[i] == time) {			
-						InterlockedDecrementNoFence(&count);
-						times.erase(times.begin() + i);
-						if (out) *out = std::move(*values[i]);
-						allocator->Free(values[i]);
-						values.erase(values.begin() + i);
-						return true;
-					}
-				}
-				return false;
-			};
-			bool
-				pop_front(ValueType* out = nullptr) {
-				std::unique_lock locked{ lock };
-
-				if (values.size() > 0) {
-					InterlockedDecrementNoFence(&count);
-					times.pop_front();
-					if (auto* old_ptr = values.pop_front_element()) {
-						if (out) *out = *old_ptr;
-						allocator->Free(old_ptr);
-					}
-					return true;
-				}
-				return false;
-			};
-			bool
-				pop_back(ValueType* out = nullptr) {
-				std::unique_lock locked{ lock };
-
-				if (values.size() > 0) {
-					InterlockedDecrementNoFence(&count);
-					times.pop_front();
-					if (auto* old_ptr = values.pop_back_element()) {
-						if (out) *out = *old_ptr;
-						allocator->Free(old_ptr);
-					}					
-					return true;
-				}
-				return false;
-			};
-			void
-				clear(std::vector<ValueType>* out = nullptr) {
-				std::unique_lock locked{ lock };
-
-				if (out) {
-					for (auto& x : values) {
-						out->push_back(std::move(*x));
-					}
-				}
-				times.clear();
-				values.clear();
-				allocator = GoodLang::make_shared<AllocType>();
-				InterlockedExchangeNoFence(&count, 0);
-			};
-
-		private:
-			class it_state {
-			public:
-				using thisType = flat_map;
-				using value_type = std::pair<KeyType*, ValueType*>;
-				using iterator_category = std::forward_iterator_tag;
-				using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
-
-				// data
-				mutable typename ValueList::iterator
-					_val_ptr{};
-				mutable typename KeyList::iterator
-					_time_ptr{};
-				std::shared_ptr<std::shared_lock<fast_shared_mutex>>
-					lifetime{ nullptr };
-				mutable value_type
-					_out;
-
-				// functions
-				void Initialize(thisType* ref) {
-					lifetime = std::make_shared<std::shared_lock<fast_shared_mutex>>(ref->lock);
-				};
-				void ToBeginning(thisType* ref) {
-					_time_ptr = ref->times.begin();
-					_val_ptr = ref->values.begin();
-				};
-				void ToEnd(thisType* ref) {
-					_time_ptr = ref->times.end();
-					_val_ptr = ref->values.end();
-				};
-				void Next(thisType* ref) {
-					++_time_ptr;
-					++_val_ptr;
-				};
-				void Prev(thisType* ref) {
-					--_time_ptr;
-					--_val_ptr;
-				};
-				value_type& Get(thisType* ref) const {
-					_out.first = &*_time_ptr;
-					_out.second = *_val_ptr;
-					return _out;
-				};
-				bool operator==(it_state const& rhs) const {
-					return _time_ptr == rhs._time_ptr;
-				};
-				difference_type Distance(it_state const& other) const { return _time_ptr - other._time_ptr; };
-			};
-		public:
-			SETUP_ITERATOR(flat_map, it_state);
-			iterator find(const KeyType& _Keyval) const {
-				if (size() == 0) return this->end();
-				else {
-					std::shared_lock locked{ lock };
-					auto iter = this->end();
-					long i;
-					if (auto* loc = unsafe_find(_Keyval, i)) {
-						iter.state._val_ptr = this->values.begin() + i;
-						iter.state._time_ptr = this->times.begin() + i;
-					}
-					return iter;
-				}
-			};
-			std::string ToString() const { 
-				std::string out;
-				std::shared_lock locked{ lock };
-				for (int i = 0; i < this->values.size(); ++i) {
-					if (out.empty()) {
-						out += GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(*this->values[i]) });
-					}
-					else {
-						out += std::string(", ") + GoodLang::ToString(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(*this->values[i]) });
-					}
-				}
-				return std::string("[") + out + std::string("]");
-			};
-			std::vector< Impl::NodeCache > GetChildren() const { 
-				std::vector< Impl::NodeCache > out; 
-				std::shared_lock locked{ lock };				
-				for (int i = 0; i < this->values.size(); ++i) {
-					out.push_back(GoodLang::GetChildren(std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(this->times[i]), std::ref(*this->values[i]) }));
-				}
-				return out;
-			};
-		};
-#else
 		// fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
 		template<class KeyType, class ValueType> class flat_map {
 			friend class it_state;
@@ -4733,27 +4252,34 @@ namespace GoodLang {
 				tree;
 			mutable fast_shared_mutex
 				lock;
+			mutable size_t
+				count;
 		public:
 			flat_map()
 				: tree{}
 				, lock{}
+				, count{ 0 }
 			{};
 			flat_map(flat_map const& rhs)
 				: tree{}
 				, lock{}
+				, count{ 0 }
 			{
 				std::shared_lock locked{ rhs.lock };
 				tree = rhs.tree;
+				InterlockedExchangeNoFence(&count, rhs.count);
 			};
 			flat_map(flat_map&& rhs)
 				: tree{ std::move(rhs.tree) }
 				, lock{}
+				, count{ rhs.count }
 			{};
 			flat_map& operator=(flat_map const& rhs) {
 				if (this == &rhs) return *this;
 				std::unique_lock locked1{ lock };
 				std::shared_lock locked2{ rhs.lock };
 				tree = rhs.tree;
+				InterlockedExchangeNoFence(&count, rhs.count);
 				return *this;
 			};
 			flat_map& operator=(flat_map&& rhs) {
@@ -4761,24 +4287,30 @@ namespace GoodLang {
 				std::unique_lock locked1{ lock };
 				std::shared_lock locked2{ rhs.lock };
 				tree = rhs.tree;
+				InterlockedExchangeNoFence(&count, rhs.count);
 				return *this;
 			};
 			~flat_map() = default;
 
-			size_t size() const {
-				std::shared_lock locked{ lock };
-				return tree.GetNodeCount();
+			size_t const& size() const {
+				return count;
 			};			
-			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
+			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>				
 				insert(const KeyType& time, ValueType&& value) {
 				std::unique_lock locked{ lock };
-				auto* p = tree.Add(std::move(value), time, true);
+				bool alreadyExisted = false;
+				auto* p = tree.Add(std::move(value), time, true, &alreadyExisted);
+				if (!alreadyExisted)
+					InterlockedIncrementNoFence(&count);
 				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(p->key), std::ref(*p->object) };
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
 				emplace(const KeyType& time, ValueType&& value) {
 				std::unique_lock locked{ lock };
-				auto* p = tree.Add(std::move(value), time, true);
+				bool alreadyExisted = false; 				
+				auto* p = tree.Add(std::move(value), time, true, &alreadyExisted);
+				if (!alreadyExisted)
+					InterlockedIncrementNoFence(&count);
 				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(p->key), std::ref(*p->object) };
 			};
 
@@ -4824,7 +4356,8 @@ namespace GoodLang {
 				pop_front() const {
 				std::unique_lock locked{ lock };
 				if (auto* p = tree.GetFirst()) {
-					tree.Remove(p);
+					InterlockedDecrementNoFence(&count);
+					tree.Remove(p);					
 					return true;
 				}
 				return false;
@@ -4833,7 +4366,8 @@ namespace GoodLang {
 				pop_back() const {
 				std::unique_lock locked{ lock };
 				if (auto* p = tree.GetLast()) {
-					tree.Remove(p);
+					InterlockedDecrementNoFence(&count);
+					tree.Remove(p);					
 					return true;
 				}
 				return false;
@@ -4865,9 +4399,11 @@ namespace GoodLang {
 					return *p;
 				}
 				else {
+					bool ExistedAlready = false;
 					(void)lock.upgrade_lock();
-					if (auto* p = tree.Add(func(), time, true)) {
+					if (auto* p = tree.Add(func(), time, true, &ExistedAlready)) {
 						lock.unlock();
+						if (!ExistedAlready) InterlockedIncrementNoFence(&count);
 						return *p->object;
 					}
 					else {
@@ -4880,6 +4416,7 @@ namespace GoodLang {
 				erase(const KeyType& time, ValueType* out = nullptr) {
 				lock.lock_shared();
 				if (auto* p = tree.NodeFind(time)) {					
+					InterlockedDecrementNoFence(&count);
 					if (out) *out = *p->object;
 					(void)lock.upgrade_lock();
 					tree.Remove(p);
@@ -4890,8 +4427,9 @@ namespace GoodLang {
 				return false;			
 			};
 			void
-				clear(std::vector<ValueType>* out = nullptr) {
+				clear() {
 				std::unique_lock locked{ lock };
+				InterlockedExchangeNoFence(&count, 0);
 				tree.Clear();
 			};
 
@@ -4961,7 +4499,6 @@ namespace GoodLang {
 				return out;
 			};
 		};
-#endif
 	};
 	namespace Impl {
 		template <typename... Args> __forceinline void ToString(Tag< details::flat_map<Args...> >, details::flat_map<Args...> const& r, std::string& out) {
@@ -4971,13 +4508,6 @@ namespace GoodLang {
 			out = r.GetChildren();
 		};
 	};
-
-
-
-
-
-
-
 
 
 	/// <summary>

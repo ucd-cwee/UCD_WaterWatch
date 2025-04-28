@@ -87,10 +87,10 @@ namespace GoodLang {
 			// From -> To
 			void convert_in_place(Any& t_from) const override {
 				if constexpr (std::is_convertible<decltype(t_from), InputType>::value) {
-					t_from.swap_unsafe(m_func(t_from));
+					t_from.copy_unsafe(m_func(t_from));
 				}
 				else {
-					t_from.swap_unsafe(m_func(t_from.cast()));
+					t_from.copy_unsafe(m_func(t_from.cast()));
 				}
 			};
 
@@ -151,6 +151,53 @@ namespace GoodLang {
 		private:
 			Callable m_func;
 			std::optional<double> m_cost;
+		};
+
+		class Type_Override_Conversion_Impl : public Type_Conversion_Base {
+		public:
+			Type_Override_Conversion_Impl(std::weak_ptr<Type_Info> inboundType, std::weak_ptr<Type_Info> outboundType)
+				: Type_Conversion_Base(
+					outboundType,
+					inboundType
+				)
+			{};
+
+			// To -> From
+			Any convert_down(const Any&) const override {
+				throw std::runtime_error("Type_Override_Conversion_Impl is not bidirectional.");
+			};
+
+			// From -> To
+			void convert_in_place(Any& t_from) const override {};
+
+			// From -> To
+			Any convert(const Any& t_from) const override {
+				return t_from;
+			};
+
+			bool bidir() const noexcept override {
+				return false;
+			};
+
+			// returns the actual time (in nanoseconds) to perform the conversion
+			double cost() const noexcept override {
+				return 0;
+			};
+
+			void SetTemplateTypes(std::weak_ptr<Type_Info> const& FromType, std::weak_ptr<Type_Info> const& ToType) {
+				if (auto from = this->m_from.lock()) {
+					if (from->is_any()) {
+						this->m_from = FromType;
+					}
+				}
+
+				if (auto to = this->m_to.lock()) {
+					if (to->is_any()) {
+						this->m_to = ToType;
+					}
+				}
+			};
+
 		};
 
 		class DaisyChained_Type_Conversion_Impl : public Type_Conversion_Base {
