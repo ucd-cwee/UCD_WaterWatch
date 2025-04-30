@@ -353,15 +353,15 @@ namespace GoodLang {
 		namespace preprocessor {
 			BETTER_ENUM(PreprocessorDirectives, uint8_t,
 				Completed, None, 
-				Define, Undefine, 
-				If, ElseIf, Else, EndIf, IfDefinded, IfNotDefined, IfChain,
+				Include, Define, Undefine, 
+				If, ElseIf, Else, EndIf, IfDefined, IfNotDefined, IfChain,
 				Error, Warning, Pragma
 			);
 			class PreprocessorToken {
 			public:
 				const PreprocessorDirectives 
 					identifier;
-				const std::string_view
+				const std::string
 					text;
 				Parse_Location 
 					location;
@@ -406,7 +406,7 @@ namespace GoodLang {
 				std::string to_string(const std::string& t_prepend = "") const {
 					std::ostringstream oss;
 					std::string str = std::string(this->identifier.ToString());
-					std::string data = std::string(this->text);
+					std::string data = this->text;
 					
 					replaceAll(data, "\n", "\\n");
 					replaceAll(data, "\r", "\\r");
@@ -433,10 +433,54 @@ namespace GoodLang {
 			protected:
 				PreprocessorToken(std::string_view t_ast_node_text, PreprocessorDirectives t_id, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: identifier(t_id)
-					, text(std::move(t_ast_node_text))
+					, text(t_ast_node_text)
 					, location(std::move(t_loc))
 					, children(std::move(t_children))
-				{}
+				{
+					if ((this->identifier == PreprocessorDirectives::None) || (this->identifier == PreprocessorDirectives::Completed)) {
+						// accept the script as-is
+					}
+					else {
+						// remove the leading and tailing white space
+						std::string_view& Text = t_ast_node_text;
+						bool success = true;
+						while ((Text.size() > 0) && success) {
+							success = false;
+							if (!success) {
+								switch (Text[0]) {
+								case ' ':
+								case '\t':
+								case '\n':
+								case '\r':
+									Text.remove_prefix(1);
+									success = true;
+									break;
+								default:
+									break;
+								}
+							}
+							if (!success) {
+								switch (Text[Text.size() - 1]) {
+								case ' ':
+								case '\t':
+								case '\n':
+								case '\r':
+									Text.remove_suffix(1);
+									success = true;
+									break;
+								default:
+									break;
+								}
+							}
+						}
+						const_cast<std::string&>(text) = std::string(Text);
+						replaceAll(const_cast<std::string&>(text), "\\\n", "");
+						replaceAll(const_cast<std::string&>(text), "\\\r", "");
+					}
+				
+
+
+				}
 			};
 			using PreprocessorTokenPtr = typename std::shared_ptr<PreprocessorToken>;
 
@@ -461,6 +505,13 @@ namespace GoodLang {
 
 				std::string GenerateExpandedCode() const override { return std::string(this->text); };
 			};
+			class IncludePreprocessor final : public PreprocessorToken {
+			public:
+				IncludePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
+					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Include, std::move(t_loc), std::move(t_children)) {}
+
+				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+			};
 			class UndefinePreprocessor final : public PreprocessorToken {
 			public:
 				UndefinePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
@@ -471,7 +522,44 @@ namespace GoodLang {
 			class IfChainPreprocessor final : public PreprocessorToken {
 			public:
 				IfChainPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
-					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::IfChain, std::move(t_loc), std::move(t_children)) {}
+					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::IfChain, std::move(t_loc), {}) {
+
+					// the first child will either be an If or an IfDefined
+                    // the final child will always be an EndIf
+
+					std::shared_ptr<PreprocessorToken> currentIfStatement = t_children[0];
+					int currentIfStatementIndex = 0;
+
+					for (int i = 1; i < (t_children.size() - 1); ++i) {
+						if (t_children[i]->identifier == PreprocessorDirectives::ElseIf) {
+							// end the current PreprocessorToken and add it to our children
+							for (int j = currentIfStatementIndex + 1; j < i; ++j) {
+								currentIfStatement->children.push_back(t_children[j]);
+							}
+							this->children.push_back(currentIfStatement);
+							currentIfStatement = t_children[i];
+							currentIfStatementIndex = i;
+						}
+						else if (t_children[i]->identifier == PreprocessorDirectives::Else) {
+							// end the current PreprocessorToken and add it to our children
+							for (int j = currentIfStatementIndex + 1; j < i; ++j) {
+								currentIfStatement->children.push_back(t_children[j]);
+							}
+							this->children.push_back(currentIfStatement);
+							currentIfStatement = t_children[i];
+							currentIfStatementIndex = i;
+						}
+						else {
+							continue;
+						}
+					}
+					// end the current PreprocessorToken and add it to our children
+					for (int j = currentIfStatementIndex + 1; j < (t_children.size() - 1); ++j) {
+						currentIfStatement->children.push_back(t_children[j]);
+					}
+					this->children.push_back(currentIfStatement);
+					this->children.push_back(t_children[t_children.size() - 1]);
+				}
 
 				std::string GenerateExpandedCode() const override { return std::string(this->text); };
 			};
@@ -506,7 +594,7 @@ namespace GoodLang {
 			class IfDefinedPreprocessor final : public PreprocessorToken {
 			public:
 				IfDefinedPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
-					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::IfDefinded, std::move(t_loc), std::move(t_children)) {}
+					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::IfDefined, std::move(t_loc), std::move(t_children)) {}
 
 				std::string GenerateExpandedCode() const override { return std::string(this->text); };
 			};
@@ -934,9 +1022,9 @@ namespace GoodLang {
 						//++m_position.line;
 						m_position.col = 1;
 					}
-					else if (m_position.has_more() && !t_eos && Char_(';')) {
-						retval = true;
-					}
+					//else if (m_position.has_more() && !t_eos && Char_(';')) {
+					//	retval = true;
+					//}
 
 					return retval;
 				};
@@ -1135,17 +1223,23 @@ namespace GoodLang {
 					return retval;
 				};
 
-				bool SkipToEndOfLine() {
+				bool SkipToEndOfLine(bool InPreprocessorMacro = true) {
 					SkipWS();
 					bool retval = false;
 					while (m_position.has_more()){
-						if (Eol()) {
-							retval = true;
-							break;
+						SkipWS();
+						if (InPreprocessorMacro && (Keyword_("\\\n") || Keyword_("\\\r"))) {
+
 						}
-						else{
-							++m_position;
-						}
+						else {
+							if (Eol()) {
+								retval = true;
+								break;
+							}
+							else {
+								++m_position;
+							}
+						}						
 					}
 					return retval;
 				}
@@ -1170,15 +1264,10 @@ namespace GoodLang {
 					bool saw_eol = true;
 
 					while (has_more) {
-						// (Define() || Undefine()) || (Error() || Warning() || Pragma()) ||
-
 						SkipWS(true);
-						if (If()) {
+						if (Warning() || Error() || Pragma() || Include() || If() || Define() || Undefine() || None()) {
+							has_more = true;
 							retval = true;
-						}
-						else if (None()) {
-							has_more = true;							
-							saw_eol = true;
 						}
 						else {
 							has_more = false;
@@ -1191,12 +1280,34 @@ namespace GoodLang {
 					bool retval = false;
 					const auto prev_stack_top = m_match_stack.size();
 					Position prev_position = this->m_position;
+					SkipWS(true);
+					if (Keyword("#define")) {
+						prev_position = this->m_position;
+						retval = true;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<DefinePreprocessor>(
+							this->m_position.str(prev_position, m_position),
+							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+					}
 					return retval;
 				};
 				bool Undefine() {
 					bool retval = false;
 					const auto prev_stack_top = m_match_stack.size();
 					Position prev_position = this->m_position;
+					SkipWS(true);
+					if (Keyword("#undef")) {
+						prev_position = this->m_position;
+						retval = true;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<UndefinePreprocessor>(
+							this->m_position.str(prev_position, m_position),
+							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+					}
 					return retval;
 				};
 				bool If() {
@@ -1212,20 +1323,34 @@ namespace GoodLang {
 
 					bool foundIfOrElseIf = Keyword("#if");
 					if (foundIfOrElseIf) {
+						auto this_prev_position = this->m_position;
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfPreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							this->m_position.str(this_prev_position, m_position),
+							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
 					if (!foundIfOrElseIf) {
 						foundIfOrElseIf = Keyword("#ifdef");
 						if (foundIfOrElseIf) {
+							auto this_prev_position = this->m_position;
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfDefinedPreprocessor>(
-								this->m_position.str(prev_position, m_position),
-								Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+								this->m_position.str(this_prev_position, m_position),
+								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+								std::vector<PreprocessorTokenPtr>{}
+							)));
+						}
+					}
+					if (!foundIfOrElseIf) {
+						foundIfOrElseIf = Keyword("#ifndef");
+						if (foundIfOrElseIf) {
+							auto this_prev_position = this->m_position;
+							SkipToEndOfLine();
+							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfNotDefinedPreprocessor>(
+								this->m_position.str(this_prev_position, m_position),
+								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 						}
@@ -1237,9 +1362,9 @@ namespace GoodLang {
 
 						Statements();
 
-						Position this_prev_position = this->m_position;
 						SkipWS(true);
 						if (Keyword("#elif")) {
+							Position this_prev_position = this->m_position;
 							foundIfOrElseIf = true;
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElseIfPreprocessor>(
@@ -1250,6 +1375,7 @@ namespace GoodLang {
 							continue;
 						}
 						else if (Keyword("#else")) {
+							Position this_prev_position = this->m_position;
 							foundIfOrElseIf = true;
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElsePreprocessor>(
@@ -1260,6 +1386,7 @@ namespace GoodLang {
 							continue;
 						}
 						else if (Keyword("#endif")) {
+							Position this_prev_position = this->m_position;
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<EndIfPreprocessor>(
 								this->m_position.str(this_prev_position, m_position),
@@ -1270,40 +1397,9 @@ namespace GoodLang {
 						else {
 							return failure();
 						}
-
 						build_match<IfChainPreprocessor>(prev_stack_top, "");
 					}
 					
-					return retval;
-				};
-				bool ElseIf() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-
-					return retval;
-				};
-				bool Else() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					return retval;
-				};
-				bool EndIf() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					return retval;
-				};
-				bool IfDefined() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					return retval;
-				};
-				bool IfNotDefined() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
 					return retval;
 				};
 				bool Error() {
@@ -1312,8 +1408,9 @@ namespace GoodLang {
 					Position prev_position = this->m_position;
 					SkipWS(true);
 					if (Keyword("#error")) {
+						prev_position = this->m_position;
 						retval = true;
-						Eol();
+						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ErrorPreprocessor>(
 							this->m_position.str(prev_position, m_position),
 							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
@@ -1329,9 +1426,28 @@ namespace GoodLang {
 
 					SkipWS(true);
 					if (Keyword("#warning")) {
+						prev_position = this->m_position;
 						retval = true;		
-						Eol();
+						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<WarningPreprocessor>(
+							this->m_position.str(prev_position, m_position),
+							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+					}
+					return retval;
+				};
+				bool Include() {
+					bool retval = false;
+					const auto prev_stack_top = m_match_stack.size();
+					Position prev_position = this->m_position;
+
+					SkipWS(true);
+					if (Keyword("#include")) {
+						prev_position = this->m_position;
+						retval = true;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IncludePreprocessor>(
 							this->m_position.str(prev_position, m_position),
 							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
 							std::vector<PreprocessorTokenPtr>{}
@@ -1344,6 +1460,17 @@ namespace GoodLang {
 					const auto prev_stack_top = m_match_stack.size();
 					Position prev_position = this->m_position;
 
+					SkipWS(true);
+					if (Keyword("#pragma")) {
+						prev_position = this->m_position;
+						retval = true;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<PragmaPreprocessor>(
+							this->m_position.str(prev_position, m_position),
+							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+					}
 					return retval;
 				};
 				bool None() {
@@ -1357,7 +1484,6 @@ namespace GoodLang {
 					};
 
 					SkipWS(true);
-
 					if (
 						Keyword("#define") || 
 						Keyword("#undef") ||
@@ -1369,19 +1495,54 @@ namespace GoodLang {
 						Keyword("#ifndef") ||
 						Keyword("#error") ||
 						Keyword("#warning") ||
-						Keyword("#pragma")
+						Keyword("#pragma") || 
+						Keyword("#include")
 					) {
 						return failure();
 					}
 
-					if (SkipToEndOfLine()) {
+					while (SkipToEndOfLine(false)) {
 						retval = true;
+						SkipWS(true);
 
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
-							this->m_position.str(prev_position, m_position), 
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
+						const auto this_prev_stack_top = m_match_stack.size();
+						Position this_prev_position = this->m_position;
+						if (!m_position.has_more() ||
+							Keyword("#define") ||
+							Keyword("#undef") ||
+							Keyword("#if") ||
+							Keyword("#elif") ||
+							Keyword("#else") ||
+							Keyword("#endif") ||
+							Keyword("#ifdef") ||
+							Keyword("#ifndef") ||
+							Keyword("#error") ||
+							Keyword("#warning") ||
+							Keyword("#pragma") ||
+							Keyword("#include")
+						) {
+							while (m_match_stack.size() != this_prev_stack_top) m_match_stack.pop_back();
+							m_position = this_prev_position;
+
+							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
+								this->m_position.str(prev_position, m_position),
+								Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+								std::vector<PreprocessorTokenPtr>{}
+							)));
+
+							return retval;
+						}
+
+
+
+
+
+
+						//m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
+						//	this->m_position.str(prev_position, m_position), 
+						//	Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						//	std::vector<PreprocessorTokenPtr>{}
+						//)));
 					}
 
 					return retval;					
@@ -8693,313 +8854,6 @@ namespace GoodLang {
 
 
 
-namespace test {
-	class shared_ptr_base {
-	public:
-		static auto& DeleterMap() {
-			static GoodLang::details::flat_map<size_t, std::function<void(void*)>>
-				deleters{};
-			return deleters;
-		};
-		static std::function<void(void*)> const& GetDeleter(size_t type_hash) {
-			return DeleterMap().at(type_hash);
-		};
-		template<class Func> static bool AddDeleter(size_t type_hash, Func const& func) {
-			bool existedAlready = false;
-			(void)DeleterMap().get_or_make(type_hash, func, &existedAlready);
-			return existedAlready;
-		};
-
-
-		
-
-
-	public:
-		struct aux {
-			/*std::atomic<*/long long/*>*/ // strong (first short), weak (second short), destroy flag (third short), delete flag (fourth short)
-				Strong_Weak_Destroy_Delete; // strong = 1, weak = 0, destroy = 0, delete = 0
-			void*
-				p;
-			size_t
-				type_hash;			
-		};
-
-		static auto& MemBlockAllocator() {
-			// static GoodLang::EpochProtectedAllocator<aux> allocator{};
-			static GoodLang::details::FastEpochAllocator<aux> allocator{};
-			return allocator;
-		};
-
-		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
-		aux* inc(GoodLang::atomic_ptr<aux> const& pa) {
-			aux
-				* pa_ptr{ nullptr },
-				* out{ nullptr };
-			unsigned __int64
-				read;
-
-			while (pa_ptr = pa.load()) {
-				// prevent its deletion while we work on it. This does not access it, it simply locks the region the pointer belongs to, HOPING to prevent collisions. 
-				// PreventDeletion(pa_ptr);
-				if (pa_ptr == (out = pa.load())) {
-					if (pa_ptr) {
-						read = InterlockedIncrementNoFence(reinterpret_cast<unsigned __int64*>(&pa_ptr->Strong_Weak_Destroy_Delete))/* + 1*/;
-						if (
-							(reinterpret_cast<short*>(&read)[0] >= 0)
-							&& (reinterpret_cast<long*>(&read)[1] == 0)
-						) { // if NOT being destroyed or deleted...
-							return out; // remember - I am still locked from deletion.
-						}
-						else {
-							InterlockedDecrementNoFence(reinterpret_cast<unsigned __int64*>(&pa_ptr->Strong_Weak_Destroy_Delete));
-						}
-					}
-				}
-				// AllowDeletion(pa_ptr);
-			}
-			return nullptr;
-		};
-		// ASSUMES THAT THE PTR COMES IN LOCKED.
-		void dec(aux* pa_ptr, bool& ShouldDestroy, bool& ShouldDelete) {
-			unsigned __int64
-				read,
-				planned;
-
-			if (pa_ptr) {
-				read = InterlockedDecrementNoFence(reinterpret_cast<unsigned __int64*>(&pa_ptr->Strong_Weak_Destroy_Delete))/* - 1*/;
-				if ((reinterpret_cast<short*>(&read)[0] < 0) || reinterpret_cast<short*>(&read)[2] || reinterpret_cast<short*>(&read)[3]) {
-					// too late! 
-					// AllowDeletion(pa_ptr);
-				}
-				else {
-					if (reinterpret_cast<short*>(&read)[0] == 0) {
-						planned = read;
-
-						reinterpret_cast<short*>(&planned)[0] = -1;
-						reinterpret_cast<short*>(&planned)[2] = 1;
-						if (reinterpret_cast<short*>(&planned)[1] == 0) {
-							// flag that we plan on deleting the mem_block!
-							reinterpret_cast<short*>(&planned)[3] = 1;
-						}
-						if (InterlockedCompareExchangeNoFence(reinterpret_cast<unsigned __int64*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
-							ShouldDestroy = reinterpret_cast<short*>(&planned)[2] == 1;
-							ShouldDelete = reinterpret_cast<short*>(&planned)[3] == 1;
-
-							// AllowDeletion(pa_ptr);
-							//if ((reinterpret_cast<short*>(&planned)[2] == 1) || (reinterpret_cast<short*>(&planned)[3] == 1)) {
-								//DoDestroyOrDelete(
-								//	pa_ptr,
-								//	reinterpret_cast<short*>(&planned)[2] == 1,
-								//	reinterpret_cast<short*>(&planned)[3] == 1
-								//);
-							//}
-							return;
-						}
-					}
-					// still good
-					// AllowDeletion(pa_ptr);
-				}
-			}
-		};
-		// USER MUST ALLOW DELETION AFTER RECIEVING THE PTR
-		aux* inc_weak(GoodLang::atomic_ptr<aux> const& pa) {
-			aux
-				* pa_ptr{ nullptr },
-				* pa_ptr_copy{ nullptr },
-				* out{ nullptr };
-			unsigned __int64
-				read,
-				planned;
-
-			while (pa_ptr_copy = pa_ptr = pa.load()) {
-				// prevent its deletion while we work on it. This does not access it, it simply locks the region the pointer belongs to, HOPING to prevent collisions. 
-				// PreventDeletion(pa_ptr_copy);
-				if (pa_ptr_copy == (out = pa_ptr = pa.load())) {
-					if (pa_ptr) {
-						planned = read = pa_ptr->Strong_Weak_Destroy_Delete;
-						if (!reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
-							// add to the weak count
-							++reinterpret_cast<short*>(&planned)[1];
-							if (InterlockedCompareExchangeNoFence(reinterpret_cast<unsigned __int64*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
-								return out; // remember - I am still locked from deletion.
-							}
-						}
-					}
-				}
-				// AllowDeletion(pa_ptr_copy);
-			}
-			return nullptr;
-		};
-		// ASSUMES THAT THE PTR COMES IN LOCKED.
-		void dec_weak(aux* pa_ptr, bool& ShouldDelete) {
-			unsigned __int64
-				read,
-				planned;
-
-			while (pa_ptr) {
-				planned = read = pa_ptr->Strong_Weak_Destroy_Delete;
-				if (!reinterpret_cast<short*>(&read)[3]) {
-					--reinterpret_cast<short*>(&planned)[1];
-					if (reinterpret_cast<short*>(&planned)[1] == 0) {
-						reinterpret_cast<short*>(&planned)[3] = 1;
-					}
-
-					if (InterlockedCompareExchangeNoFence(reinterpret_cast<unsigned __int64*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
-						// AllowDeletion(pa_ptr);
-						ShouldDelete = reinterpret_cast<short*>(&planned)[3] == 1;
-						return;
-					}
-				}
-				// AllowDeletion(pa_ptr);
-			}
-		};
-
-	};
-
-	template <typename T>
-	class shared_ptr final : public shared_ptr_base {
-	protected:	
-		GoodLang::atomic_ptr<shared_ptr_base::aux>
-			mem_block;
-		T* 
-			pt;
-	
-	public:
-		GoodLang::atomic_ptr<shared_ptr_base::aux>& GetMemBlock() const {
-			return const_cast<GoodLang::atomic_ptr<shared_ptr_base::aux>&>(mem_block);
-		};
-
-	public:
-		shared_ptr() : mem_block{ nullptr }, pt{ nullptr } {};
-		shared_ptr(T* p) : mem_block{ shared_ptr_base::MemBlockAllocator().Alloc(shared_ptr_base::aux{1, p, GoodLang::user_type<T>().GetHash()}) }, pt{ p } {
-			shared_ptr_base::AddDeleter(GoodLang::user_type<T>().GetHash(), []() -> std::function<void(void*)> {
-				return std::function<void(void*)>{[](void* ptr) -> void {
-					delete reinterpret_cast<T*>(ptr);
-				}};
-			});
-		};
-		template <typename U> shared_ptr(shared_ptr<U> const& other) : mem_block{}, pt{ } {
-			auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-			mem_block = shared_ptr_base::inc(other.GetMemBlock());
-			pt = get();
-		};
-		shared_ptr(shared_ptr const& other) : mem_block{}, pt{ } {
-			auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-			mem_block = shared_ptr_base::inc(other.mem_block);
-			pt = get();
-		};
-		template<class U> shared_ptr& operator=(const shared_ptr<U>& other) {
-			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
-			bool
-				ShouldDestroy{ false },
-				ShouldDelete{ false };
-			aux* old_ptr{ nullptr };
-			if (1) {
-				auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-				if (old_ptr = mem_block.Set(shared_ptr_base::inc(other.GetMemBlock()))) {
-					shared_ptr_base::dec(old_ptr, ShouldDestroy, ShouldDelete);
-					if (ShouldDestroy) {
-						shared_ptr_base::GetDeleter(old_ptr->type_hash)(old_ptr->p);
-					}
-				}
-			}
-			if (old_ptr && ShouldDelete) {
-				shared_ptr_base::MemBlockAllocator().Free(old_ptr);
-			}
-			return *this;
-		};
-		shared_ptr& operator=(const shared_ptr& other) {
-			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
-			bool
-				ShouldDestroy{ false },
-				ShouldDelete{ false };
-			aux* old_ptr{ nullptr };
-			if (1) {
-				auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-				if (old_ptr = mem_block.Set(shared_ptr_base::inc(other.mem_block))) {
-					shared_ptr_base::dec(old_ptr, ShouldDestroy, ShouldDelete);
-					if (ShouldDestroy) {
-						shared_ptr_base::GetDeleter(old_ptr->type_hash)(old_ptr->p);
-					}
-				}
-			}
-			if (old_ptr && ShouldDelete) {
-				shared_ptr_base::MemBlockAllocator().Free(old_ptr);
-			}
-			return *this;
-		};
-		shared_ptr& operator=(std::nullptr_t) {
-			InterlockedExchangePointer(reinterpret_cast<void**>(&pt), nullptr);
-			bool
-				ShouldDestroy{ false },
-				ShouldDelete{ false };
-			aux* old_ptr{ nullptr };
-			if (1) {
-				auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-				if (old_ptr = mem_block.Set(nullptr)) {
-					shared_ptr_base::dec(old_ptr, ShouldDestroy, ShouldDelete);
-					if (ShouldDestroy) {
-						shared_ptr_base::GetDeleter(old_ptr->type_hash)(old_ptr->p);
-					}
-				}
-			}
-			if (old_ptr && ShouldDelete) {
-				shared_ptr_base::MemBlockAllocator().Free(old_ptr);
-			}
-			return *this;
-		};		
-		~shared_ptr() {
-			if (mem_block) {
-				bool
-					ShouldDestroy{ false },
-					ShouldDelete{ false };
-				if (1) {
-					auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-					shared_ptr_base::dec(mem_block.load(), ShouldDestroy, ShouldDelete);
-					if (ShouldDestroy) {
-						shared_ptr_base::GetDeleter(mem_block->type_hash)(mem_block->p);
-					}
-				}
-				if (ShouldDelete) {
-					shared_ptr_base::MemBlockAllocator().Free(mem_block.load());
-				}
-				MemBlockAllocator().RunGC();
-			}			
-		}
-
-		T* get() const {
-			if (auto* p = pt) return p;
-			else {
-				auto guard{ shared_ptr_base::MemBlockAllocator().CreateEpochGuard() };
-				if (auto* p = mem_block.load()) return reinterpret_cast<T*>(p->p);
-				else return nullptr;
-			}
-		};
-		operator bool() const {
-			return get();
-		};
-		T* operator->() const {
-			return get();
-		};
-		T& operator*() const {
-			return *get();
-		};
-
-		auto guard() const {
-			return shared_ptr_base::MemBlockAllocator().CreateEpochGuard();
-		};
-
-	};
-
-
-
-}
-
-
-
-
-
-
 int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
@@ -9018,9 +8872,77 @@ int main() {
 	)start")->to_string());
 
 	print(GoodLang::Engine::preprocessor::Preprocessor().Parse(R"start(
+		#ifdef thingy
+			var& x = 50;
+		#elif 100 < 10
+			var& x = 150;
+		#else
+			var& x = 250;	
+		#endif
+	)start")->to_string());
+
+
+
+	print(GoodLang::Engine::preprocessor::Preprocessor().Parse(R"start(
+		#include "filepath"
+		#include www.github.com/thing/thing2
+		#include Name
+
+		#define x = 10; 
+		#define print(a) std::cout \
+<< a << \
+std::endl
+
+		print(a); 
+		print(a);
+		print(a);
+		print(a);
+
+		for (int i = 0; i < 100; ++i){
+			print(i);
+			return i;
+		}
+
+		#undef print
+
+		#warning This is a warning
+		#error This is a compilation error - the script was never even run. 
+
+		#if 1
+			print("TEST");
+		#else
+			print("FAILED");
+		#endif				
+	)start")->to_string());
+
+
+
+	print(GoodLang::Engine::preprocessor::Preprocessor().Parse(R"start(
+		#ifndef thingy
+			var& x = 50;
+		#endif
+
+		var& x ?= 150;
+		
+		#if thingy
+			x = 250;	
+		#endif
+	)start")->to_string());
+
+
+	print(GoodLang::Engine::preprocessor::Preprocessor().Parse(R"start(
+		#if 1			
+		#endif
+		var& x = 50;
+	)start")->to_string());
+
+
+	print(GoodLang::Engine::preprocessor::Preprocessor().Parse(R"start(
 		#if 1
 			#if 1
 				var& x = 50;
+				#warning This is a warning statement
+				var& y = 50;
 			#endif
 		#endif
 	)start")->to_string());
@@ -9047,456 +8969,7 @@ int main() {
 		#endif
 	)start")->to_string());
 
-	for (int J = 0; J < 100; ++J) {
-		int Count = 10000;
-		print(GoodLang::printf("shared_ptr test 1:", Count));
-		if (1) {			
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					std::shared_ptr<int> p(new int(i));
-					p = nullptr;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					GoodLang::shared_ptr<int> p(new int(i));
-					p = nullptr;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ GoodLang::shared_ptr (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					test::shared_ptr<int> p(new int(i));
-					p = nullptr;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ test::shared_ptr (linear)");
-		}
-		print("");
 
-		print(GoodLang::printf("shared_ptr test 2:", Count));
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			std::shared_ptr<int> p(new int());
-			if (1) {
-				for (int i = 0; i < Count; ++i) {// 
-					*p = i;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr overwritting (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			GoodLang::shared_ptr<int> p(new int());
-			if (1) {
-				for (int i = 0; i < Count; ++i) {// 
-					*p = i;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ GoodLang::shared_ptr overwritting (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			test::shared_ptr<int> p(new int());
-			if (1) {
-				for (int i = 0; i < Count; ++i) {// 
-					*p = i;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ test::shared_ptr overwritting (linear)");
-		}
-		print("");
-
-		print(GoodLang::printf("shared_ptr test 3:", Count));
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			std::shared_ptr<std::atomic<int>> p(new std::atomic<int>());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					*p = i;
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr overwritting (parallel)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			GoodLang::shared_ptr<std::atomic<int>> p(new std::atomic<int>());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					*p = i;
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ GoodLang::shared_ptr overwritting (parallel)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			test::shared_ptr<std::atomic<int>> p(new std::atomic<int>());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					*p = i;
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ test::shared_ptr overwritting (parallel)");
-		}
-		print("");
-
-		print(GoodLang::printf("shared_ptr test 4:", Count));
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			GoodLang::shared_ptr<int> p(new int());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					p = GoodLang::shared_ptr<int>(new int(i));
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ GoodLang::shared_ptr overwritting (parallel)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			test::shared_ptr<int> p(new int());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					p = test::shared_ptr<int>(new int(i));
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ test::shared_ptr overwritting (parallel)");
-		}
-		print("");
-
-		print(GoodLang::printf("shared_ptr test 5:", Count));
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			std::shared_ptr<std::atomic<int>> p(new std::atomic<int>());
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					std::shared_ptr<std::atomic<int>> p2(p);
-					*p2 = i;
-					p = std::shared_ptr<std::atomic<int>>(new std::atomic<int>(i));
-				}
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ std::shared_ptr copying (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			GoodLang::shared_ptr<std::atomic<int>> p(new std::atomic<int>());
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					GoodLang::shared_ptr<std::atomic<int>> p2(p);
-					*p2 = i;
-					p = GoodLang::shared_ptr<std::atomic<int>>(new std::atomic<int>(i));
-				}
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ GoodLang::shared_ptr copying (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			test::shared_ptr<int> p(new int());
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					test::shared_ptr<std::atomic<int>> p2(p);
-					*p2 = i;
-					p = test::shared_ptr<std::atomic<int>>(new std::atomic<int>(i));
-				}
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ test::shared_ptr copying (linear)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			GoodLang::shared_ptr<std::atomic<int>> p(new std::atomic<int>());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					GoodLang::shared_ptr<std::atomic<int>> p2(p);
-					*p2 = i;
-					p = GoodLang::shared_ptr<std::atomic<int>>(new std::atomic<int>(i));
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ GoodLang::shared_ptr copying (parallel)");
-		}
-		if (1) {
-			Stopwatch sw;
-			sw.Start();
-			test::shared_ptr<int> p(new int());
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					test::shared_ptr<std::atomic<int>> p2(p);
-					*p2 = i;
-					p = test::shared_ptr<std::atomic<int>>(new std::atomic<int>(i));
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ test::shared_ptr copying (parallel)");
-		}
-		print("");
-
-	}
-
-
-
-
-
-
-	auto tempPtr = test::shared_ptr<stackThing>(new stackThing("TEST 1"));
-	test::shared_ptr<stackThing> tempPtr2; 
-	tempPtr2 = tempPtr;
-	tempPtr = test::shared_ptr<stackThing>(new stackThing("TEST 2"));
-	tempPtr2 = nullptr;
-	tempPtr = nullptr;
-
-
-
-
-
-
-
-
-
-
-	std::is_pod<test::shared_ptr_base::aux>::value;
-	GoodLang::details::FastEpochAllocator<test::shared_ptr_base::aux, 256> alloc;
-
-
-
-
-
-	for (int J = 0; J < 100; ++J) {
-		int Count = 100;
-
-		print(GoodLang::printf("alloc %i integers:", Count));
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i){// 
-					alloc.Alloc(i);
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (LINEAR)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i){// 
-					alloc.Alloc(i);
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (LINEAR)");
-		}
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					alloc.Alloc(i);
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (PARALLEL)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					alloc.Alloc(i);
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (PARALLEL)");
-		}
-
-		print(GoodLang::printf("alloc and free %i integers:", Count));
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i){// 
-					alloc.Free(alloc.Alloc(i));
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (LINEAR)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i){// 
-					alloc.Free(alloc.Alloc(i));
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (LINEAR)");
-		}
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					alloc.Free(alloc.Alloc(i));
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (PARALLEL)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					alloc.Free(alloc.Alloc(i));
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (PARALLEL)");
-		}
-
-		print(GoodLang::printf("alloc, protect, and free %i integers:", Count));
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					auto* ptr = alloc.Alloc(i);
-					auto guard{ alloc.CreateEpochGuard() };
-					alloc.Free(ptr);
-					*ptr = 100;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (LINEAR)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				for (int i = 0; i < Count; ++i) {
-					auto* ptr = alloc.Alloc(i);
-					auto guard{ alloc.CreateEpochGuard() };
-					alloc.Free(ptr);
-					*ptr = 100;
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (LINEAR)");
-		}
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					auto* ptr = alloc.Alloc(i);
-					auto guard{ alloc.CreateEpochGuard() };
-					alloc.Free(ptr);
-					*ptr = 100;
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (PARALLEL)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				parallel::For(0, Count, [&](int i) {
-					auto* ptr = alloc.Alloc(i);
-					auto guard{ alloc.CreateEpochGuard() };
-					alloc.Free(ptr);
-					*ptr = 100;
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (PARALLEL)");
-		}
-
-		print(GoodLang::printf("alloc then free %i integers:", Count));
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				std::vector<int*> vec(Count, nullptr);
-				for (int i = 0; i < Count; ++i){
-					vec[i] = alloc.Alloc(i);
-				};
-				for (int i = 0; i < Count; ++i){
-					alloc.Free(vec[i]);
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (LINEAR)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				std::vector<int*> vec(Count, nullptr);
-				for (int i = 0; i < Count; ++i){
-					vec[i] = alloc.Alloc(i);
-				};
-				for (int i = 0; i < Count; ++i){
-					alloc.Free(vec[i]);
-				};
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (LINEAR)");
-		}
-		if (1) {
-			GoodLang::details::FastEpochAllocator<int, 256> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				std::vector<int*> vec(Count, nullptr);
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					vec[i] = alloc.Alloc(i);
-				});
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					alloc.Free(vec[i]);
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ BTree (PARALLEL)");
-		}
-		if (1) {
-			GoodLang::EpochProtectedAllocator<int> alloc;
-			Stopwatch sw;
-			sw.Start();
-			if (1) {
-				std::vector<int*> vec(Count, nullptr);
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					vec[i] = alloc.Alloc(i);
-				});
-				parallel::For(0, Count, [&](int i) { // for (int i = 0; i < 1000000; ++i){// 
-					alloc.Free(vec[i]);
-				});
-			}
-			print(ToString(Units::second(sw.Stop_s())) + " @ Orgnl (PARALLEL)");
-		}
-
-		print("");
-	}
 
 
 	if (1) {
@@ -10964,36 +10437,6 @@ int main() {
 			Stopwatch sw;			
 			int numTests = 1000000;
 			
-			if (1) {
-				sw.Start();
-				if (1) {
-					std::map<int, int> 
-						example;
-
-					for (int i = 0; i < numTests; i++) {
-						example[i] = i;
-					}
-					for (int i = 0; i < numTests; i++) {
-						example.erase(i);
-					}
-				}
-				print(std::string("std allc: ") + Units::second(sw.Stop_s() / 10.0).ToString());
-
-				sw.Start();
-				if (1) {
-					std::map<int, int, std::less<int>, GoodLang::Allocator<std::pair<const int, int>>>
-						example;
-
-					for (int i = 0; i < numTests; i++) {
-						example[i] = i;
-					}
-					for (int i = 0; i < numTests; i++) {
-						example.erase(i);
-					}
-				}
-				print(std::string("goodlang: ") + Units::second(sw.Stop_s() / 10.0).ToString());
-			}
-
 			print("\n0:"); // linear for-loop Alloc and then linear for-loop Free: Allocator is fastest.
 			if (1) {
 				std::vector< std::string* > pointers(numTests, nullptr);
