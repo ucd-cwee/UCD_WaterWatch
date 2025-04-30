@@ -19,6 +19,7 @@
 #include <stack>
 #include "../FiberTasks/Concurrent_Queue.h"
 #include "veque.hpp"
+#include <intrin.h>
 
 namespace GoodLang {
 	namespace utilities {
@@ -1719,6 +1720,7 @@ namespace GoodLang {
 		};
 	};
 
+#if 0
 	/// <summary>
 	/// Thread-safe allocator. 
 	/// When the allocator goes out-of-scope, all children are destroyed. Children may not out-live the Allocator, at risk of a crash.
@@ -1831,38 +1833,113 @@ namespace GoodLang {
 		template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) noexcept {
 			return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
 		};
+	};
+#else
+	// Fast lock-free arena allocator. If the current arena is exceeded, will allocate an additional block. 
+	template<class T, size_t BlockSize = 128, size_t objectsize = sizeof(T)> class BlockAllocator {
+	private:
+		// element_t is either the data for T or a pointer to the next free element_t
+		struct element_t {
+			unsigned char data[((((objectsize + sizeof(bool) + sizeof(element_t*)) + (16 - 1)) & ~(16 - 1)) - sizeof(bool)) - sizeof(element_t*)];
+			bool initialized;
+			element_t* next;
+		};
 
-	public: // type-defs
-		typedef _type_ value_type;
-		typedef _type_* pointer;
-		typedef const _type_* const_pointer;
-		typedef void* void_pointer;
-		typedef const void* const_void_pointer;
-		typedef size_t size_type;
-		typedef long long difference_type;
+		// block_t is a contiguous block of elements
+		struct block_t {
+			element_t elements[BlockSize];
+		};
 
-		_type_* allocate(size_t n = 1) noexcept {
-			if (n == 1) {
-				return Alloc();
-			}
-			else {
-				return nullptr;
+	private:
+		concurrency::concurrent_vector<block_t>
+			blocks;
+		std::atomic<element_t*>
+			free;
+
+	private:
+		// Allocate one new block of contiguous elements
+		void AllocBlock() {
+			auto block = blocks.grow_by(1);
+
+			// each element in the block points to the previous element...
+			for (int i = 1; i < BlockSize; ++i) block->elements[i].next = &block->elements[i - 1];
+
+			// free should point to the final element in the block, 
+			// while the first element of the block points to free's old location.
+			while (!free.compare_exchange_weak(block->elements[0].next = free.load(), &block->elements[BlockSize - 1], std::memory_order::memory_order_relaxed)) {}
+		};
+
+		// Release all memory held by all blocks
+		void ReleaseBlocks() {
+			if (!std::is_pod<T>::value)
+				for (auto& block : blocks)
+					for (auto& element : block.elements)
+						if (element.initialized)
+							reinterpret_cast<T*>(&element.data[0])->~T();
+		};
+
+	public:
+		BlockAllocator() : blocks{}, free(nullptr) { /*AllocBlock();*/ };
+		~BlockAllocator() { ReleaseBlocks(); };
+
+		// Acquire a new element from the free list and construct it.
+		template <typename... TArgs> T* Alloc(TArgs &&... a) {
+			T* data{ nullptr };
+			element_t* element{ nullptr };
+
+			// Grab the free element and set free to the next item in that list
+			// Update made with compare-and-swap loop:
+			while (true) {
+				if (element = free.load()) {
+					// print(GoodLang::printf("element: %p, element->next: %p", element, element->next));
+					if (free.compare_exchange_weak(element, element->next, std::memory_order::memory_order_relaxed)) {
+						data = reinterpret_cast<T*>(&element->data[0]);
+						new (data) T(std::forward<TArgs>(a)...);
+						element->initialized = true;
+						return data;
+					}
+				}
+				else {
+					// if free is empty, grow the list
+					AllocBlock();
+				}
 			}
 		};
-		void deallocate(_type_* p, size_t n = 1) noexcept {
-			if (n == 1) {
-				Free(p);
-			}
+
+		// Destroys the element and return its memory to the free list
+		void Free(const T* element) {
+			if (element == nullptr) { return; }
+			if (!std::is_pod<T>::value) element->~T();
+			element_t* t = (element_t*)const_cast<T*>(element);
+			t->initialized = false;
+			while (!free.compare_exchange_weak(t->next = free.load(), t, std::memory_order::memory_order_relaxed)) {}
 		};
-		template <class U1> struct rebind { typedef BlockAllocator<U1> other; };
+		template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) noexcept {
+			return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
+		};
 
 	};
+#endif
 
 	class EpochGarbageCollectorImpl {
 	public:
 		EpochGarbageCollectorImpl() = default;
 		virtual ~EpochGarbageCollectorImpl() = default;
 		virtual void RunGC() {};
+
+		struct clock
+		{
+			typedef unsigned long long                 rep;
+			typedef std::ratio<1, 2'800'000'000>       period; // My machine is 2.8 GHz
+			typedef std::chrono::duration<rep, period> duration;
+			typedef std::chrono::time_point<clock>     time_point;
+			static const bool is_steady = true;
+
+			static time_point now() noexcept
+			{
+				return time_point(duration(__rdtsc()));
+			}
+		};
 
 		class ThreadManager {
 		public:
@@ -1872,6 +1949,8 @@ namespace GoodLang {
 				return vec;
 			}; // should be extern
 			static auto GetCurrentEpoch() {
+				//return std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count();
+				// return clock_ms();
 				return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 			};
 
@@ -2042,6 +2121,7 @@ namespace GoodLang {
 		private:
 			// forwards the current Epoch, and returns the epoch for which it is 100% safe to delete for (previous EpochLimit).
 			EpochStorageType ForwardEpoch(EpochStorageType CurrentEpoch) {
+				--Active;
 				return EpochLimit.exchange(
 					Epoch_3.exchange(
 						Epoch_2.exchange(
@@ -2055,7 +2135,7 @@ namespace GoodLang {
 
 		public:
 			[[nodiscard]] const auto ProtectCurrentEpoch() {
-				if (++StackLevel == 1 && Active == 0) { ++Active; }
+				if (++StackLevel == 1 /*&& Active == 0*/) { ++Active; }
 				return EpochGuard(this, ThreadManager::GetCurrentEpoch());
 			};
 
@@ -2096,31 +2176,6 @@ namespace GoodLang {
 		template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
 			return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
 		};
-
-	public: // type-defs
-		typedef _type_ value_type;
-		typedef _type_* pointer;
-		typedef const _type_* const_pointer;
-		typedef void* void_pointer;
-		typedef const void* const_void_pointer;
-		typedef size_t size_type;
-		typedef long long difference_type;
-
-		_type_* allocate(size_t n = 1) noexcept {
-			if (n == 1) {
-				return Alloc();
-			}
-			else {
-				return nullptr;
-			}
-		};
-		void deallocate(_type_* p, size_t n = 1) noexcept {
-			if (n == 1) {
-				Free(p);
-			}
-		};
-		template <class U1> struct rebind { typedef Allocator<U1> other; };
-
 	};
 
 	/// <summary>
@@ -2194,31 +2249,6 @@ namespace GoodLang {
 		[[nodiscard]] const auto CreateEpochGuard() {
 			return GetTLS().ProtectCurrentEpoch();
 		};
-
-	public: // type-defs
-		typedef T value_type;
-		typedef T* pointer;
-		typedef const T* const_pointer;
-		typedef void* void_pointer;
-		typedef const void* const_void_pointer;
-		typedef size_t size_type;
-		typedef long long difference_type;
-
-		T* allocate(size_t n = 1) noexcept {
-			if (n == 1) {
-				return Alloc();
-			}
-			else {
-				return nullptr;
-			}
-		};
-		void deallocate(T* p, size_t n = 1) noexcept {
-			if (n == 1) {
-				Free(p);
-			}
-		};
-		template <class U1> struct rebind { typedef EpochProtectedAllocator<U1> other; };
-
 
 	};
 
