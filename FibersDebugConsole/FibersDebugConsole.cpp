@@ -357,11 +357,43 @@ namespace GoodLang {
 				If, ElseIf, Else, EndIf, IfDefined, IfNotDefined, IfChain,
 				Error, Warning, Pragma
 			);
+
+			class PreprocessorState {
+			public:
+				std::map<
+					std::string, // e.g. include path
+					std::string> // downloaded content
+					includes_to_content;
+
+				std::map<
+					std::string, // e.g. macro name (to be found)
+					std::string> // content (to be replaced with)
+					macro_definitions;
+
+
+				std::map<std::string, // e.g. function name (e.g. add_together)
+					std::pair<
+						std::string, // function content (e.g. x + y)
+						std::vector<std::string> // function variables to look for and replace (e.g. x, y)
+					> >
+					macro_functions;
+
+
+
+
+
+
+
+			};
+
 			class PreprocessorToken {
+			private:
+				std::string
+					Text;
 			public:
 				const PreprocessorDirectives 
 					identifier;
-				const std::string
+				const std::string_view
 					text;
 				Parse_Location 
 					location;
@@ -406,7 +438,7 @@ namespace GoodLang {
 				std::string to_string(const std::string& t_prepend = "") const {
 					std::ostringstream oss;
 					std::string str = std::string(this->identifier.ToString());
-					std::string data = this->text;
+					std::string data = std::string(this->text);
 					
 					replaceAll(data, "\n", "\\n");
 					replaceAll(data, "\r", "\\r");
@@ -433,26 +465,27 @@ namespace GoodLang {
 			protected:
 				PreprocessorToken(std::string_view t_ast_node_text, PreprocessorDirectives t_id, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: identifier(t_id)
-					, text(t_ast_node_text)
+					, text()
 					, location(std::move(t_loc))
 					, children(std::move(t_children))
+					, Text()
 				{
 					if ((this->identifier == PreprocessorDirectives::None) || (this->identifier == PreprocessorDirectives::Completed)) {
-						// accept the script as-is
+						// accept the script as-is, no change. 
+						const_cast<std::string_view&>(text) = t_ast_node_text;
 					}
 					else {
 						// remove the leading and tailing white space
-						std::string_view& Text = t_ast_node_text;
 						bool success = true;
-						while ((Text.size() > 0) && success) {
+						while ((t_ast_node_text.size() > 0) && success) {
 							success = false;
 							if (!success) {
-								switch (Text[0]) {
-								case ' ':
-								case '\t':
-								case '\n':
-								case '\r':
-									Text.remove_prefix(1);
+								switch ((int)(char)t_ast_node_text[0]) {
+								case (int)' ':
+								case (int)'\t':
+								case (int)'\n':
+								case (int)'\r':
+									t_ast_node_text.remove_prefix(1);
 									success = true;
 									break;
 								default:
@@ -460,12 +493,12 @@ namespace GoodLang {
 								}
 							}
 							if (!success) {
-								switch (Text[Text.size() - 1]) {
-								case ' ':
-								case '\t':
-								case '\n':
-								case '\r':
-									Text.remove_suffix(1);
+								switch ((int)(char)t_ast_node_text[t_ast_node_text.size() - 1]) {
+								case (int)' ':
+								case (int)'\t':
+								case (int)'\n':
+								case (int)'\r':
+									t_ast_node_text.remove_suffix(1);
 									success = true;
 									break;
 								default:
@@ -473,13 +506,11 @@ namespace GoodLang {
 								}
 							}
 						}
-						const_cast<std::string&>(text) = std::string(Text);
-						replaceAll(const_cast<std::string&>(text), "\\\n", "");
-						replaceAll(const_cast<std::string&>(text), "\\\r", "");
+						Text = std::string(t_ast_node_text);
+						replaceAll(Text, "\\\n", "");
+						replaceAll(Text, "\\\r", "");
+						const_cast<std::string_view&>(text) = Text;
 					}
-				
-
-
 				}
 			};
 			using PreprocessorTokenPtr = typename std::shared_ptr<PreprocessorToken>;
@@ -488,14 +519,12 @@ namespace GoodLang {
 			public:
 				CompletedPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Completed, std::move(t_loc), std::move(t_children)) {}
-
 				std::string GenerateExpandedCode() const override { return std::string(this->text); };
 			};
 			class NonePreprocessor final : public PreprocessorToken {
 			public:
 				NonePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::None, std::move(t_loc), std::move(t_children)) {}
-
 				std::string GenerateExpandedCode() const override { return std::string(this->text); };
 			};
 			class DefinePreprocessor final : public PreprocessorToken {
