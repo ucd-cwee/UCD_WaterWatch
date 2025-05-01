@@ -14,6 +14,7 @@
 #include <concurrent_vector.h>
 
 #include "../FiberTasks/Concurrent_Queue.h"
+#include <regex>
 
 class stackThing {
 public:
@@ -360,16 +361,13 @@ namespace GoodLang {
 
 			class PreprocessorState {
 			public:
-				std::map<
-					std::string, // e.g. include path
-					std::string> // downloaded content
-					includes_to_content;
+				std::string
+					final_script;
 
 				std::map<
 					std::string, // e.g. macro name (to be found)
 					std::string> // content (to be replaced with)
 					macro_definitions;
-
 
 				std::map<std::string, // e.g. function name (e.g. add_together)
 					std::pair<
@@ -378,11 +376,204 @@ namespace GoodLang {
 					> >
 					macro_functions;
 
+				bool Define(std::string const& Name, std::string const& Content) {
+					macro_definitions[Name] = Content;
+					return true;
+				};
+				bool Define(std::string const& Name, std::vector<std::string> variables, std::string const& Content) {
+					macro_functions[Name] = { Content, variables };
+					return true;
+				};
+				bool Undefine(std::string const& Name) {
+					if (macro_definitions.find(Name) != macro_definitions.end()) {
+						macro_definitions.erase(Name);
+						return true;
+					}
+					if (macro_functions.find(Name) != macro_functions.end()) {
+						macro_functions.erase(Name);
+						return true;
+					}
+					return false;					
+				};
+				bool Include(std::string const& IncludePath) {
+					return {};
+				};
+				struct regex_word {
+					std::string_view word;
+					long pos_start;
+				};
+				static std::vector<regex_word> GetAllWords(std::string const& text) {
+					std::vector<regex_word> out; {
+						// std::regex pattern(R"("[^"]*"|[a-z0-9_:][a-z0-9_:]*(?:\.[a-z0-9_:][a-z0-9_:]*)*)");
+						std::regex pattern(R"("[^"]*"|[A-z0-9_:]+)");
+						int position, length;
+						for (std::sregex_iterator i = std::sregex_iterator(text.begin(), text.end(), pattern);
+							i != std::sregex_iterator();
+							++i)
+						{
+							std::smatch m = *i;
+
+							//position = ((text.length() - m.suffix().length()) - m.length()) - m.prefix().length();
+							//length = m.length() + m.prefix().length();
+
+							position = ((text.length() - m.suffix().length()) - m.length());
+							length = m.length();
+
+							out.push_back(regex_word{ std::string_view(text.c_str() + position, length), position });
+						}
+					}
+					return out;
+				};
+				static std::vector<std::string_view> split(std::string const& s, std::string const& delimiter) {
+					size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+					std::string token;
+					std::vector<std::string_view> res;
+					while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+						pos_start = pos_end + delim_len;
+						res.push_back(std::string_view(s.c_str() + pos_start, pos_end - pos_start));
+					}
+					res.push_back(std::string_view(s.c_str() + pos_start));
+					return res;
+				}
+				static bool TryGetFunctionParams(std::string const& text, std::vector<std::string_view>& splits) {
+					std::string to_split;
+					bool retval = false;
+					std::regex pattern(R"(\(\s*([^)]+?)\s*\))");
+					for (std::sregex_iterator i = std::sregex_iterator(text.begin(), text.end(), pattern);
+						i != std::sregex_iterator();
+						++i) {
+						std::smatch m = *i;
+						retval = true;
+						to_split = m.str();
+						break;
+					}
+					if (retval) {
+						splits = split(to_split, ",");
+						for (auto& split : splits) {
+							while ((split.size() > 0) && ((split[0] == ' ') || (split[0] == '\t') || (split[0] == '\n'))) {
+								split.remove_prefix(1);
+							}
+							while ((split.size() > 0) && ((split[split.size() - 1] == ' ') || (split[split.size() - 1] == '\t') || (split[split.size() - 1] == '\n'))) {
+								split.remove_prefix(1);
+							}
+						}
+					}
+					return retval;
+				};
+				static bool TryReplace(std::string& Text, regex_word const& Where, std::string const& Find, std::string const& ReplaceWith) {
+					std::regex rule(Find);
+					if (Where.word.length() >= 2) {
+						if ((Where.word[0] == '\"') && (Where.word[Where.word.size()-1] == '\"')) {
+							return false; // we don't do string replacements on strings
+						}
+					}
+
+					bool retval = false;
+					if (Find.empty())
+						return retval;
+					size_t start_pos = 0;
+
+					auto newStr = std::string(Where.word);
+					if (newStr == Find) {
+						newStr = ReplaceWith;
+						start_pos += ReplaceWith.length(); // In case 'ReplaceWith' contains 'Find', like replacing 'x' with 'yx'
+						retval = true;
+					}
+					if (retval) {
+						if (Where.pos_start == 0) {
+							Text = newStr + Text.substr(Where.word.length());
+						}
+						else if ((Where.pos_start + Where.word.length()) == Text.length()) {
+							Text = Text.substr(0, Where.pos_start) + newStr;
+						}
+						else {
+							Text = Text.substr(0, Where.pos_start) + newStr + Text.substr(Where.pos_start + Where.word.length());
+						}
+					}
+					return retval;
+				};
+				static std::string Replace(std::string const& text, std::string const& find, std::string const& replaceWith) {
+					std::regex rule(find);
+					return std::regex_replace(text, rule, replaceWith);
+				};
 
 
+				std::string ExpandCode(std::string Code) {
+					bool MadeAnyChanges = true;
+					int maxIterations = 1000000;
+					while (MadeAnyChanges && (--maxIterations >= 0)) {
+						MadeAnyChanges = false;
+						auto words = GetAllWords(Code);
+
+						if (MadeAnyChanges) continue;
+						for (auto& macro_definition : macro_definitions) {
+							if (MadeAnyChanges) break;
+							for (auto& word : words) {
+								if (MadeAnyChanges) break;
+								MadeAnyChanges = TryReplace(Code, word, macro_definition.first, macro_definition.second);
+							}							
+						}
+						
+						if (MadeAnyChanges) continue;
+						for (int word_index = 0; word_index < words.size(); word_index++) {
+							if (MadeAnyChanges) break;
+							for (auto& macro_function : macro_functions) {
+								if (MadeAnyChanges) break;
+								if (words[word_index].word == macro_function.first) { // print
+									// see if the next non-empty character is a '(' character
+									int start_pos = words[word_index].pos_start + words[word_index].word.length();
+									int end_pos;
+									while (Code[start_pos] == ' ' || Code[start_pos] == '\t') { start_pos++; }
+									if (Code[start_pos] == '(') {
+										int commaCount = macro_function.second.second.size() - 1;
+										std::vector<std::string> functionParams;
+
+										// find the end to this, just in case we need it later
+										end_pos = start_pos;
+										int parenCount = 1;
+										int currentVarStart = start_pos + 1;
+										while ((parenCount > 0) && (++end_pos < Code.size())) {
+											if (Code[end_pos] == '(') parenCount++;
+											else if (Code[end_pos] == ')') parenCount--;
+
+											if ((macro_function.second.second.size() > functionParams.size()) && Code[end_pos] == ',') {
+												functionParams.push_back(Code.substr(currentVarStart, (end_pos) - currentVarStart));
+												currentVarStart = end_pos + 1;
+											}
+										}
+										if ((currentVarStart < end_pos) && (functionParams.size() < macro_function.second.second.size())) {
+											functionParams.push_back(Code.substr(currentVarStart, (end_pos) - currentVarStart));
+										}
+
+										// we have a candidate -- ensure there are enough "vars" for the variables
+										if (functionParams.size() >= macro_function.second.second.size()) {
+											auto& function_name = macro_function.first;
+											auto& function_content = macro_function.second.first;
+											auto& function_var_names = macro_function.second.second;
+											auto& function_vars = functionParams;
+
+											PreprocessorState newState;
+											for (int var_index = 0; var_index < function_var_names.size(); var_index++) {
+												newState.Define(function_var_names[var_index], function_vars[var_index]);
+											}
+											auto implimented_function = newState.ExpandCode(function_content);
+
+											auto Fm = Code.substr(words[word_index].pos_start, (end_pos - words[word_index].pos_start) + 1);
+											MadeAnyChanges = TryReplace(Code, regex_word{
+                                                 std::string_view{ Fm },
+												 words[word_index].pos_start
+											}, Fm, implimented_function);
+										}
+									}
+								}
+							}
 
 
+						}
 
+					}
+					return Code;
+				};
 
 			};
 
@@ -415,7 +606,7 @@ namespace GoodLang {
 					return oss.str();
 				}
 
-				virtual std::string GenerateExpandedCode() const = 0;
+				virtual void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const = 0;
 
 				static bool replace(std::string& str, const std::string& from, const std::string& to) {
 					size_t start_pos = str.find(from);
@@ -519,34 +710,79 @@ namespace GoodLang {
 			public:
 				CompletedPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Completed, std::move(t_loc), std::move(t_children)) {}
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {
+					for (auto& child : this->children) {
+						child->GenerateExpandedCode(state, Code);
+					}
+				};
 			};
 			class NonePreprocessor final : public PreprocessorToken {
 			public:
 				NonePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::None, std::move(t_loc), std::move(t_children)) {}
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override { 
+					Code = state.ExpandCode(Code + std::string(this->text));
+					for (auto& child : this->children) {
+						child->GenerateExpandedCode(state, Code);
+					}
+				};
 			};
 			class DefinePreprocessor final : public PreprocessorToken {
 			public:
 				DefinePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Define, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override { 
+					// this->text will include something like:
+					// __version__ 
+					//       |--> this should be defined as a definition named "__version__" with content ""
+					// 
+					// __version__ 100
+					//       |--> this should be defined as a definition named "__version__" with content "100"
+					// 
+					// __version__(x) x + 1
+					//       |--> this should be defined as a function "__version__" with param "x" and content "x + 1"
+
+					auto thisText = std::string(this->text);
+					auto words = state.GetAllWords(thisText);
+					if (words.size() > 0) {
+						auto defName = std::string(words[0].word);
+						std::vector<std::string_view> var_names;
+						if (state.TryGetFunctionParams(thisText, var_names)) {
+
+						}
+						else {
+
+						}
+					}
+
+
+
+
+					Code += std::string(this->text);
+					for (auto& child : this->children) {
+						child->GenerateExpandedCode(state, Code);
+					}
+
+
+
+
+
+				};
 			};
 			class IncludePreprocessor final : public PreprocessorToken {
 			public:
 				IncludePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Include, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {  };
 			};
 			class UndefinePreprocessor final : public PreprocessorToken {
 			public:
 				UndefinePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Undefine, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {  };
 			};
 			class IfChainPreprocessor final : public PreprocessorToken {
 			public:
@@ -590,70 +826,70 @@ namespace GoodLang {
 					this->children.push_back(t_children[t_children.size() - 1]);
 				}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {  };
 			};
 			class IfPreprocessor final : public PreprocessorToken {
 			public:
 				IfPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::If, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {  };
 			};
 			class ElseIfPreprocessor final : public PreprocessorToken {
 			public:
 				ElseIfPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::ElseIf, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 			class ElsePreprocessor final : public PreprocessorToken {
 			public:
 				ElsePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Else, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {  };
 			};
 			class EndIfPreprocessor final : public PreprocessorToken {
 			public:
 				EndIfPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::EndIf, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 			class IfDefinedPreprocessor final : public PreprocessorToken {
 			public:
 				IfDefinedPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::IfDefined, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 			class IfNotDefinedPreprocessor final : public PreprocessorToken {
 			public:
 				IfNotDefinedPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::IfNotDefined, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 			class ErrorPreprocessor final : public PreprocessorToken {
 			public:
 				ErrorPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Error, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 			class WarningPreprocessor final : public PreprocessorToken {
 			public:
 				WarningPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Warning, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 			class PragmaPreprocessor final : public PreprocessorToken {
 			public:
 				PragmaPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Pragma, std::move(t_loc), std::move(t_children)) {}
 
-				std::string GenerateExpandedCode() const override { return std::string(this->text); };
+				void GenerateExpandedCode(PreprocessorState& state, std::string& Code) const override {   };
 			};
 
 			class Preprocessor {
@@ -8888,6 +9124,81 @@ int main() {
 	for (int i = 0; i < 100000; i++) delete (new int(5));
 
 	using namespace GoodLang;
+
+
+	if (1) {
+		GoodLang::Engine::preprocessor::PreprocessorState state;
+		    state.Define("__version__", "1.0");
+			state.Define("__day__", GoodLang::ToString(DateTime::Now().tm_mday()));
+			state.Define("__month__", GoodLang::ToString(DateTime::Now().tm_mon() + 1));
+			state.Define("__year__", GoodLang::ToString(DateTime::Now().tm_year() + 1900));
+			state.Define("__today__", "__month__/__day__/__year__");
+
+		print(state.ExpandCode("version __today__v__version__"));
+		print(state.ExpandCode("\"version __today__v\"__version__"));
+
+
+
+		state.Define("print", { "x" }, "std::cout << x << std::endl");
+
+		print(state.ExpandCode("print(__today__);"));
+
+		print(state.ExpandCode("for (int i = 0 ; i < 100; ++i){ \n\t print(i); \n};"));
+		print(state.ExpandCode("print(print(print(__today__)));"));
+
+		state.Undefine("print");
+
+		print(state.ExpandCode("for (int i = 0 ; i < 100; ++i){ \n\t print(i); \n};"));
+		print(state.ExpandCode("print(print(print(__today__)));"));
+
+		state.Define("AddConv", { "a", "b" }, "tree.AddConverter<a, b>()");
+		state.Define("AddConvs", { "a" }, R"(
+			AddConv(a, char); 
+			AddConv(a, bool); 
+			AddConv(a, int); 
+			AddConv(a, long); 
+			AddConv(a, float); 
+			AddConv(a, long long); 
+			AddConv(a, long double); 
+			AddConv(a, double); 
+			AddConv(a, unsigned int); 
+			AddConv(a, unsigned long); 
+			AddConv(a, fibers::synchronization::atomic_number<double>))");
+		print(state.ExpandCode(R"(
+			AddConvs(char);
+			AddConvs(bool);
+			AddConvs(int);
+			AddConvs(long);
+			AddConvs(float);
+			AddConvs(long long);
+			AddConvs(long double);
+			AddConvs(double);
+			AddConvs(unsigned int);
+			AddConvs(unsigned long);
+			AddConvs(fibers::synchronization::atomic_number<double>);
+		)"));
+		state.Undefine("AddConv");
+		state.Undefine("AddConvs");
+	}
+
+
+
+	{
+		std::vector<std::string> words;
+		for (auto& word : GoodLang::Engine::preprocessor::PreprocessorState::GetAllWords(
+			"Some people, when confronted with a problem, think: \"I know, I'll use regular expressions\"; Now, they have two problems."
+		)) {
+			words.push_back(std::string(word.word));
+		}
+		print(GoodLang::ToString(words));
+	}
+	print(GoodLang::Engine::preprocessor::PreprocessorState::Replace(
+		"Some people, when confronted with a problem, think: \"I know, I'll use regular expressions\"; Now, they have two problems.",
+		"two",
+		"MANY, MANY"
+	));
+
+
 
 
 	print(GoodLang::Engine::preprocessor::Preprocessor().Parse(R"start(
