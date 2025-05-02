@@ -113,163 +113,158 @@ namespace GoodLang {
 	};
 
 	namespace Engine {
-		namespace {
-			struct File_Position {
-				int line = 0;
-				int column = 0;
+		enum Alphabet {
+			symbol_alphabet = 0,
+			keyword_alphabet,
+			int_alphabet,
+			float_alphabet,
+			x_alphabet,
+			hex_alphabet,
+			b_alphabet,
+			bin_alphabet,
+			id_alphabet,
+			white_alphabet,
+			int_suffix_alphabet,
+			float_suffix_alphabet,
+			max_alphabet,
+			lengthof_alphabet = 256
+		};
+		struct File_Position {
+			int line = 0;
+			int column = 0;
 
-				constexpr File_Position(int t_file_line, int t_file_column) noexcept
-					: line(t_file_line)
-					, column(t_file_column) {
-				}
+			constexpr File_Position(int t_file_line, int t_file_column) noexcept
+				: line(t_file_line)
+				, column(t_file_column) {
+			}
 
-				constexpr File_Position() noexcept = default;
-			};
-			struct Parse_Location {
-				Parse_Location(const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
-					: start(t_start_line, t_start_col)
-					, end(t_end_line, t_end_col)
-				{}
-				File_Position start;
-				File_Position end;
-			};
-			struct Position {
-				constexpr Position() = default;
-				constexpr Position(const char* t_pos, const char* t_end) noexcept
-					: line(1)
-					, col(1)
-					, m_pos(t_pos)
-					, m_end(t_end)
-					, m_last_col(1) {
+			constexpr File_Position() noexcept = default;
+		};
+		struct Parse_Location {
+			Parse_Location(const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
+				: start(t_start_line, t_start_col)
+				, end(t_end_line, t_end_col)
+			{}
+			File_Position start;
+			File_Position end;
+		};
+		struct Position {
+			constexpr Position() = default;
+			constexpr Position(const char* t_pos, const char* t_end) noexcept
+				: line(1)
+				, col(1)
+				, m_pos(t_pos)
+				, m_end(t_end)
+				, m_last_col(1) {
+			}
+			static std::string_view str(const Position& t_begin, const Position& t_end) noexcept {
+				if (t_begin.m_pos != nullptr && t_end.m_pos != nullptr) {
+					return std::string_view(t_begin.m_pos, std::size_t(std::distance(t_begin.m_pos, t_end.m_pos)));
 				}
-				static std::string_view str(const Position& t_begin, const Position& t_end) noexcept {
-					if (t_begin.m_pos != nullptr && t_end.m_pos != nullptr) {
-						return std::string_view(t_begin.m_pos, std::size_t(std::distance(t_begin.m_pos, t_end.m_pos)));
-					}
-					else {
-						return {};
-					}
+				else {
+					return {};
 				}
-				constexpr Position& operator++() noexcept {
-					if (m_pos != m_end) {
-						if (*m_pos == '\n') {
-							++line;
-							m_last_col = col;
-							col = 1;
-						}
-						else {
-							++col;
-						}
-
-						++m_pos;
-					}
-					return *this;
-				}
-				constexpr Position& operator--() noexcept {
-					--m_pos;
+			}
+			constexpr Position& operator++() noexcept {
+				if (m_pos != m_end) {
 					if (*m_pos == '\n') {
-						--line;
-						col = m_last_col;
+						++line;
+						m_last_col = col;
+						col = 1;
 					}
 					else {
-						--col;
-					}
-					return *this;
-				}
-				constexpr Position& operator+=(size_t t_distance) noexcept {
-					*this = (*this) + t_distance;
-					return *this;
-				}
-				constexpr Position operator+(size_t t_distance) const noexcept {
-					Position ret(*this);
-					for (size_t i = 0; i < t_distance; ++i) {
-						++ret;
-					}
-					return ret;
-				}
-				constexpr Position& operator-=(size_t t_distance) noexcept {
-					*this = (*this) - t_distance;
-					return *this;
-				}
-				constexpr Position operator-(size_t t_distance) const noexcept {
-					Position ret(*this);
-					for (size_t i = 0; i < t_distance; ++i) {
-						--ret;
-					}
-					return ret;
-				}
-				constexpr bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
-				constexpr bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
-				constexpr bool has_more() const noexcept { return m_pos != m_end; }
-				constexpr size_t remaining() const noexcept { return static_cast<size_t>(m_end - m_pos); }
-				constexpr const char& operator*() const noexcept {
-					if (m_pos == m_end) {
-						return ""[0];
-					}
-					else {
-						return *m_pos;
-					}
-				}
-
-				int line = -1;
-				int col = -1;
-
-			private:
-				const char* m_pos = nullptr;
-				const char* m_end = nullptr;
-				int m_last_col = -1;
-			};
-
-			enum Alphabet {
-				symbol_alphabet = 0,
-				keyword_alphabet,
-				int_alphabet,
-				float_alphabet,
-				x_alphabet,
-				hex_alphabet,
-				b_alphabet,
-				bin_alphabet,
-				id_alphabet,
-				white_alphabet,
-				int_suffix_alphabet,
-				float_suffix_alphabet,
-				max_alphabet,
-				lengthof_alphabet = 256
-			};
-
-			// Generic for u16, u32 and wchar
-			template<typename string_type>
-			struct Char_Parser_Helper {
-				// common for all implementations
-				static std::string u8str_from_ll(long long val) {
-					using char_type = std::string::value_type;
-
-					char_type c[2];
-					c[1] = char_type(val);
-					c[0] = char_type(val >> 8);
-
-					if (c[0] == 0) {
-						return std::string(1, c[1]); // size, character
+						++col;
 					}
 
-					return std::string(c, 2); // char buffer, size
+					++m_pos;
+				}
+				return *this;
+			}
+			constexpr Position& operator--() noexcept {
+				--m_pos;
+				if (*m_pos == '\n') {
+					--line;
+					col = m_last_col;
+				}
+				else {
+					--col;
+				}
+				return *this;
+			}
+			constexpr Position& operator+=(size_t t_distance) noexcept {
+				*this = (*this) + t_distance;
+				return *this;
+			}
+			constexpr Position operator+(size_t t_distance) const noexcept {
+				Position ret(*this);
+				for (size_t i = 0; i < t_distance; ++i) {
+					++ret;
+				}
+				return ret;
+			}
+			constexpr Position& operator-=(size_t t_distance) noexcept {
+				*this = (*this) - t_distance;
+				return *this;
+			}
+			constexpr Position operator-(size_t t_distance) const noexcept {
+				Position ret(*this);
+				for (size_t i = 0; i < t_distance; ++i) {
+					--ret;
+				}
+				return ret;
+			}
+			constexpr bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
+			constexpr bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
+			constexpr bool has_more() const noexcept { return m_pos != m_end; }
+			constexpr size_t remaining() const noexcept { return static_cast<size_t>(m_end - m_pos); }
+			constexpr const char& operator*() const noexcept {
+				if (m_pos == m_end) {
+					return ""[0];
+				}
+				else {
+					return *m_pos;
+				}
+			}
+
+			int line = -1;
+			int col = -1;
+
+		private:
+			const char* m_pos = nullptr;
+			const char* m_end = nullptr;
+			int m_last_col = -1;
+		};
+		template<typename string_type>
+		struct Char_Parser_Helper {
+			// common for all implementations
+			static std::string u8str_from_ll(long long val) {
+				using char_type = std::string::value_type;
+
+				char_type c[2];
+				c[1] = char_type(val);
+				c[0] = char_type(val >> 8);
+
+				if (c[0] == 0) {
+					return std::string(1, c[1]); // size, character
 				}
 
-				static string_type str_from_ll(long long val) {
-					using target_char_type = typename string_type::value_type;
-					return string_type(1, target_char_type(val)); // size, character
-				}
-			};
+				return std::string(c, 2); // char buffer, size
+			}
 
-			// Specialization for char AKA UTF-8
-			template<> struct Char_Parser_Helper<std::string> {
-				static std::string str_from_ll(long long val) {
-					// little SFINAE trick to avoid base class
-					return Char_Parser_Helper<std::true_type>::u8str_from_ll(val);
-				}
-			};
-		}
-		namespace exception {
+			static string_type str_from_ll(long long val) {
+				using target_char_type = typename string_type::value_type;
+				return string_type(1, target_char_type(val)); // size, character
+			}
+		};
+		template<> struct Char_Parser_Helper<std::string> {
+			static std::string str_from_ll(long long val) {
+				// little SFINAE trick to avoid base class
+				return Char_Parser_Helper<std::true_type>::u8str_from_ll(val);
+			}
+		};
+		
+		class exception {
+		public:
 			/// Errors generated during parsing or evaluation
 			struct eval_error : std::runtime_error {
 				std::string reason;
@@ -277,7 +272,7 @@ namespace GoodLang {
 				std::string filename;
 				std::string detail;
 
-				eval_error(const std::string& t_why, const File_Position& t_where, const std::string& t_fname) noexcept
+				eval_error(const std::string& t_why, const File_Position& t_where, const std::string& t_fname = "__EVAL__") noexcept
 					: std::runtime_error(format(t_why, t_where, t_fname))
 					, reason(t_why)
 					, start_position(t_where)
@@ -349,20 +344,36 @@ namespace GoodLang {
 		using SourceFile = std::string_view;
 
 		// The preprocessor should take in source code and perform substitutions based on preprocessor directives
-		namespace preprocessor {
-			BETTER_ENUM(PreprocessorDirectives, uint8_t,
-				Completed, None, 
-				Include, Define, Undefine, 
+		class Preprocessor {
+		public:
+			enum class PreprocessorDirectives {
+				Completed, None,
+				Include, Define, Undefine,
 				If, ElseIf, Else, EndIf, IfDefined, IfNotDefined, IfChain,
 				Error, Warning, Pragma
-			);
-
+			};
 			class PreprocessorState {
 			public:
 				struct word_t {
 					std::string_view word;
 					long pos_start;
 				};
+			public:
+				std::vector<std::pair<std::string, Parse_Location>>
+					Final_Script;
+				std::map<
+					std::string, // e.g. macro name (to be found)
+					std::string> // content (to be replaced with)
+					macro_definitions;
+				std::map<std::string, // e.g. function name (e.g. add_together)
+					std::pair<
+					std::string, // function content (e.g. x + y)
+					std::vector<std::string> // function variables to look for and replace (e.g. x, y)
+					> > macro_functions;
+				std::vector<std::pair<std::string, Parse_Location>>
+					preprocessor_warnings;
+
+			public:
 				PreprocessorState() { // Build-In Preprocessor Macros
 					Define("__VERSION__", 
 						"1.0"
@@ -383,9 +394,6 @@ namespace GoodLang {
 				};
 
 			public:
-				std::vector<std::pair<std::string, Parse_Location>>
-					Final_Script;
-
 				std::string
 					GetFinalScript() const {
 					std::string y;
@@ -394,26 +402,12 @@ namespace GoodLang {
 					}
 					return y;
 				};
-
 				void
 					PrintFinalScript() const {
 					for (auto& x : Final_Script) {
 						print(x.first + "\t\t\t" + GoodLang::printf("L%iC%i-L%iC%i", x.second.start.line, x.second.start.column, x.second.end.line, x.second.end.column));
 					}
 				};
-
-				std::map<
-					std::string, // e.g. macro name (to be found)
-					std::string> // content (to be replaced with)
-					macro_definitions;
-
-				std::map<std::string, // e.g. function name (e.g. add_together)
-					std::pair<
-						std::string, // function content (e.g. x + y)
-						std::vector<std::string> // function variables to look for and replace (e.g. x, y)
-					> >
-					macro_functions;
-
 				bool Define(std::string const& Name, std::string const& Content) {
 					macro_definitions[std::string(RemoveLeadingAndTrailingWhiteSpace(Name))] = std::string(RemoveLeadingAndTrailingWhiteSpace(Content));
 					return true;
@@ -434,6 +428,7 @@ namespace GoodLang {
 					}
 					return false;					
 				};
+				// To-Do
 				bool Include(std::string const& IncludePath) {
 					return {};
 				};
@@ -591,7 +586,6 @@ namespace GoodLang {
 					RemoveLeadingAndTrailingWhiteSpace(x);
 					return x;
 				};
-
 				std::string ExpandCode(std::string Code) {
 					bool MadeAnyChanges = true;
 					int maxIterations = 1000000;
@@ -670,7 +664,6 @@ namespace GoodLang {
 				};
 
 			};
-
 			class PreprocessorToken {
 			private:
 				std::string
@@ -725,7 +718,7 @@ namespace GoodLang {
 				/// Prints the contents of an AST node, including its children, recursively
 				std::string to_string(const std::string& t_prepend = "") const {
 					std::ostringstream oss;
-					std::string str = std::string(this->identifier.ToString());
+					std::string str = GoodLang::ToString((int)this->identifier);
 					std::string data = std::string(this->text);
 					
 					replaceAll(data, "\n", "\\n");
@@ -777,8 +770,7 @@ namespace GoodLang {
 					}
 				}
 			};
-			using PreprocessorTokenPtr = typename std::shared_ptr<PreprocessorToken>;
-
+			using PreprocessorTokenPtr = typename std::shared_ptr<PreprocessorToken>;			
 			class CompletedPreprocessor final : public PreprocessorToken {
 			public:
 				CompletedPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
@@ -862,6 +854,7 @@ namespace GoodLang {
 					state.Undefine(std::string(this->text));				
 				};
 			};
+			// To-Do: Allow the eval function to evaluate the user-provided compile-time logic. Recursion with overall engine, perhaps? 
 			class IfChainPreprocessor final : public PreprocessorToken {
 			public:
 				IfChainPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
@@ -1030,7 +1023,8 @@ namespace GoodLang {
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Error, std::move(t_loc), std::move(t_children)) {}
 
 				void GenerateExpandedCode(PreprocessorState& state) const override { 
-					// To-Do
+					auto orig_error = std::string(this->text);
+					throw exception::eval_error("Compilation error was thrown: " + std::string(state.RemoveLeadingAndTrailingWhiteSpace(orig_error)), this->location.start);
 				};
 			};
 			class WarningPreprocessor final : public PreprocessorToken {
@@ -1039,9 +1033,10 @@ namespace GoodLang {
 					: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Warning, std::move(t_loc), std::move(t_children)) {}
 
 				void GenerateExpandedCode(PreprocessorState& state) const override { 
-					// To-Do
+					state.preprocessor_warnings.push_back({ std::string(this->text), this->location });
 				};
 			};
+			// To-Do: Add pragma support, to enable changes to the compiler.
 			class PragmaPreprocessor final : public PreprocessorToken {
 			public:
 				PragmaPreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
@@ -1051,863 +1046,885 @@ namespace GoodLang {
 					// To-Do
 				};
 			};
+			
+		public:
+			Preprocessor() = default;
+			~Preprocessor() = default;
 
-			class Preprocessor {
-			public:
-				Preprocessor() = default;
-				~Preprocessor() = default;
+			PreprocessorTokenPtr Parse(SourceFile t_input) { return parse(t_input); };
 
-				PreprocessorTokenPtr Parse(SourceFile t_input) { return parse(t_input); };
+		private:
+			Position m_position{};
+			std::vector<PreprocessorTokenPtr> m_match_stack;
 
-			private:
-				Position m_position{};
-				std::vector<PreprocessorTokenPtr> m_match_stack;
+		private:
+			template<typename string_type>
+			struct Char_Parser {
+				string_type& match;
+				using char_type = typename string_type::value_type;
+				bool is_escaped = false;
+				bool is_interpolated = false;
+				bool saw_interpolation_marker = false;
+				bool is_octal = false;
+				bool is_hex = false;
+				std::size_t unicode_size = 0;
+				const bool interpolation_allowed;
 
-			private:
-				template<typename string_type>
-				struct Char_Parser {
-					string_type& match;
-					using char_type = typename string_type::value_type;
-					bool is_escaped = false;
-					bool is_interpolated = false;
-					bool saw_interpolation_marker = false;
-					bool is_octal = false;
-					bool is_hex = false;
-					std::size_t unicode_size = 0;
-					const bool interpolation_allowed;
+				string_type octal_matches;
+				string_type hex_matches;
 
-					string_type octal_matches;
-					string_type hex_matches;
+				Char_Parser(string_type& t_match, const bool t_interpolation_allowed)
+					: match(t_match)
+					, interpolation_allowed(t_interpolation_allowed) {
+				}
 
-					Char_Parser(string_type& t_match, const bool t_interpolation_allowed)
-						: match(t_match)
-						, interpolation_allowed(t_interpolation_allowed) {
+				Char_Parser& operator=(const Char_Parser&) = delete;
+
+				~Char_Parser() {
+					try {
+						if (is_octal) {
+							process_octal();
+						}
+
+						if (is_hex) {
+							process_hex();
+						}
+
+						if (unicode_size > 0) {
+							process_unicode();
+						}
+					}
+					catch (const std::invalid_argument&) {
+					}
+					catch (const exception::eval_error&) {
+						// Something happened with parsing, we'll catch it later?
+					}
+				}
+
+				void process_hex() {
+					if (!hex_matches.empty()) {
+						auto val = stoll(hex_matches, nullptr, 16);
+						match.push_back(char_type(val));
+					}
+					hex_matches.clear();
+					is_escaped = false;
+					is_hex = false;
+				}
+
+				void process_octal() {
+					if (!octal_matches.empty()) {
+						auto val = stoll(octal_matches, nullptr, 8);
+						match.push_back(char_type(val));
+					}
+					octal_matches.clear();
+					is_escaped = false;
+					is_octal = false;
+				}
+
+				void process_unicode() {
+					const auto ch = static_cast<uint32_t>(std::stoi(hex_matches, nullptr, 16));
+					const auto match_size = hex_matches.size();
+					hex_matches.clear();
+					is_escaped = false;
+					const auto u_size = unicode_size;
+					unicode_size = 0;
+
+					char buf[4];
+					if (u_size != match_size) {
+						throw exception::eval_error("Incomplete unicode escape sequence");
+					}
+					if (u_size == 4 && ch >= 0xD800 && ch <= 0xDFFF) {
+						throw exception::eval_error("Invalid 16 bit universal character");
 					}
 
-					Char_Parser& operator=(const Char_Parser&) = delete;
+					if (ch < 0x80) {
+						match += static_cast<char>(ch);
+					}
+					else if (ch < 0x800) {
+						buf[0] = static_cast<char>(0xC0 | (ch >> 6));
+						buf[1] = static_cast<char>(0x80 | (ch & 0x3F));
+						match.append(buf, 2);
+					}
+					else if (ch < 0x10000) {
+						buf[0] = static_cast<char>(0xE0 | (ch >> 12));
+						buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+						buf[2] = static_cast<char>(0x80 | (ch & 0x3F));
+						match.append(buf, 3);
+					}
+					else if (ch < 0x200000) {
+						buf[0] = static_cast<char>(0xF0 | (ch >> 18));
+						buf[1] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+						buf[2] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+						buf[3] = static_cast<char>(0x80 | (ch & 0x3F));
+						match.append(buf, 4);
+					}
+					else {
+						// this must be an invalid escape sequence?
+						throw exception::eval_error("Invalid 32 bit universal character");
+					}
+				}
 
-					~Char_Parser() {
-						try {
-							if (is_octal) {
+				void parse(const char_type t_char, const int line, const int col) {
+					const bool is_octal_char = t_char >= '0' && t_char <= '7';
+
+					const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
+
+					if (is_octal) {
+						if (is_octal_char) {
+							octal_matches.push_back(t_char);
+
+							if (octal_matches.size() == 3) {
 								process_octal();
 							}
-
-							if (is_hex) {
-								process_hex();
-							}
-
-							if (unicode_size > 0) {
-								process_unicode();
-							}
-						}
-						catch (const std::invalid_argument&) {
-						}
-						catch (const exception::eval_error&) {
-							// Something happened with parsing, we'll catch it later?
-						}
-					}
-
-					void process_hex() {
-						if (!hex_matches.empty()) {
-							auto val = stoll(hex_matches, nullptr, 16);
-							match.push_back(char_type(val));
-						}
-						hex_matches.clear();
-						is_escaped = false;
-						is_hex = false;
-					}
-
-					void process_octal() {
-						if (!octal_matches.empty()) {
-							auto val = stoll(octal_matches, nullptr, 8);
-							match.push_back(char_type(val));
-						}
-						octal_matches.clear();
-						is_escaped = false;
-						is_octal = false;
-					}
-
-					void process_unicode() {
-						const auto ch = static_cast<uint32_t>(std::stoi(hex_matches, nullptr, 16));
-						const auto match_size = hex_matches.size();
-						hex_matches.clear();
-						is_escaped = false;
-						const auto u_size = unicode_size;
-						unicode_size = 0;
-
-						char buf[4];
-						if (u_size != match_size) {
-							throw exception::eval_error("Incomplete unicode escape sequence");
-						}
-						if (u_size == 4 && ch >= 0xD800 && ch <= 0xDFFF) {
-							throw exception::eval_error("Invalid 16 bit universal character");
-						}
-
-						if (ch < 0x80) {
-							match += static_cast<char>(ch);
-						}
-						else if (ch < 0x800) {
-							buf[0] = static_cast<char>(0xC0 | (ch >> 6));
-							buf[1] = static_cast<char>(0x80 | (ch & 0x3F));
-							match.append(buf, 2);
-						}
-						else if (ch < 0x10000) {
-							buf[0] = static_cast<char>(0xE0 | (ch >> 12));
-							buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
-							buf[2] = static_cast<char>(0x80 | (ch & 0x3F));
-							match.append(buf, 3);
-						}
-						else if (ch < 0x200000) {
-							buf[0] = static_cast<char>(0xF0 | (ch >> 18));
-							buf[1] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
-							buf[2] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
-							buf[3] = static_cast<char>(0x80 | (ch & 0x3F));
-							match.append(buf, 4);
+							return;
 						}
 						else {
-							// this must be an invalid escape sequence?
-							throw exception::eval_error("Invalid 32 bit universal character");
+							process_octal();
+						}
+					}
+					else if (is_hex) {
+						if (is_hex_char) {
+							hex_matches.push_back(t_char);
+
+							if (hex_matches.size() == 2 * sizeof(char_type)) {
+								// This rule differs from the C/C++ standard, but ChaiScript
+								// does not offer the same workaround options, and having
+								// hexadecimal sequences longer than can fit into the char
+								// type is undefined behavior anyway.
+								process_hex();
+							}
+							return;
+						}
+						else {
+							process_hex();
+						}
+					}
+					else if (unicode_size > 0) {
+						if (is_hex_char) {
+							hex_matches.push_back(t_char);
+
+							if (hex_matches.size() == unicode_size) {
+								// Format is specified to be 'slash'uABCD
+								// on collecting from A to D do parsing
+								process_unicode();
+							}
+							return;
+						}
+						else {
+							// Not a unicode anymore, try parsing any way
+							// May be someone used 'slash'uAA only
+							process_unicode();
 						}
 					}
 
-					void parse(const char_type t_char, const int line, const int col) {
-						const bool is_octal_char = t_char >= '0' && t_char <= '7';
-
-						const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
-
-						if (is_octal) {
+					if (t_char == '\\') {
+						if (is_escaped) {
+							match.push_back('\\');
+							is_escaped = false;
+						}
+						else {
+							is_escaped = true;
+						}
+					}
+					else {
+						if (is_escaped) {
 							if (is_octal_char) {
+								is_octal = true;
 								octal_matches.push_back(t_char);
-
-								if (octal_matches.size() == 3) {
-									process_octal();
-								}
-								return;
+							}
+							else if (t_char == 'x') {
+								is_hex = true;
+							}
+							else if (t_char == 'u') {
+								unicode_size = 4;
+							}
+							else if (t_char == 'U') {
+								unicode_size = 8;
 							}
 							else {
-								process_octal();
-							}
-						}
-						else if (is_hex) {
-							if (is_hex_char) {
-								hex_matches.push_back(t_char);
-
-								if (hex_matches.size() == 2 * sizeof(char_type)) {
-									// This rule differs from the C/C++ standard, but ChaiScript
-									// does not offer the same workaround options, and having
-									// hexadecimal sequences longer than can fit into the char
-									// type is undefined behavior anyway.
-									process_hex();
+								switch (t_char) {
+								case ('\''):
+									match.push_back('\'');
+									break;
+								case ('\"'):
+									match.push_back('\"');
+									break;
+								case ('?'):
+									match.push_back('?');
+									break;
+								case ('a'):
+									match.push_back('\a');
+									break;
+								case ('b'):
+									match.push_back('\b');
+									break;
+								case ('f'):
+									match.push_back('\f');
+									break;
+								case ('n'):
+									match.push_back('\n');
+									break;
+								case ('r'):
+									match.push_back('\r');
+									break;
+								case ('t'):
+									match.push_back('\t');
+									break;
+								case ('v'):
+									match.push_back('\v');
+									break;
+								case ('$'):
+									match.push_back('$');
+									break;
+								default:
+									throw exception::eval_error("Unknown escaped sequence in string", File_Position(line, col), "");
 								}
-								return;
-							}
-							else {
-								process_hex();
-							}
-						}
-						else if (unicode_size > 0) {
-							if (is_hex_char) {
-								hex_matches.push_back(t_char);
-
-								if (hex_matches.size() == unicode_size) {
-									// Format is specified to be 'slash'uABCD
-									// on collecting from A to D do parsing
-									process_unicode();
-								}
-								return;
-							}
-							else {
-								// Not a unicode anymore, try parsing any way
-								// May be someone used 'slash'uAA only
-								process_unicode();
-							}
-						}
-
-						if (t_char == '\\') {
-							if (is_escaped) {
-								match.push_back('\\');
 								is_escaped = false;
 							}
-							else {
-								is_escaped = true;
-							}
+						}
+						else if (interpolation_allowed && t_char == '$') {
+							saw_interpolation_marker = true;
 						}
 						else {
-							if (is_escaped) {
-								if (is_octal_char) {
-									is_octal = true;
-									octal_matches.push_back(t_char);
-								}
-								else if (t_char == 'x') {
-									is_hex = true;
-								}
-								else if (t_char == 'u') {
-									unicode_size = 4;
-								}
-								else if (t_char == 'U') {
-									unicode_size = 8;
-								}
-								else {
-									switch (t_char) {
-									case ('\''):
-										match.push_back('\'');
-										break;
-									case ('\"'):
-										match.push_back('\"');
-										break;
-									case ('?'):
-										match.push_back('?');
-										break;
-									case ('a'):
-										match.push_back('\a');
-										break;
-									case ('b'):
-										match.push_back('\b');
-										break;
-									case ('f'):
-										match.push_back('\f');
-										break;
-									case ('n'):
-										match.push_back('\n');
-										break;
-									case ('r'):
-										match.push_back('\r');
-										break;
-									case ('t'):
-										match.push_back('\t');
-										break;
-									case ('v'):
-										match.push_back('\v');
-										break;
-									case ('$'):
-										match.push_back('$');
-										break;
-									default:
-										throw exception::eval_error("Unknown escaped sequence in string", File_Position(line, col), "");
-									}
-									is_escaped = false;
-								}
-							}
-							else if (interpolation_allowed && t_char == '$') {
-								saw_interpolation_marker = true;
-							}
-							else {
-								match.push_back(t_char);
-							}
+							match.push_back(t_char);
 						}
 					}
-				};
-				template<typename Array2D, typename First, typename Second>
-				constexpr static void set_alphabet(Array2D& array, const First first, const Second second) noexcept {
-					auto* first_ptr = &std::get<0>(array) + static_cast<std::size_t>(first);
-					auto* second_ptr = &std::get<0>(*first_ptr) + static_cast<std::size_t>(second);
-					*second_ptr = true;
-				};
-				static constexpr std::array<std::array<bool, lengthof_alphabet>, max_alphabet> build_alphabet() noexcept {
-					std::array<std::array<bool, lengthof_alphabet>, max_alphabet> alphabet{};
-
-					set_alphabet(alphabet, symbol_alphabet, '?');
-
-					set_alphabet(alphabet, symbol_alphabet, '?');
-					set_alphabet(alphabet, symbol_alphabet, '+');
-					set_alphabet(alphabet, symbol_alphabet, '-');
-					set_alphabet(alphabet, symbol_alphabet, '*');
-					set_alphabet(alphabet, symbol_alphabet, '/');
-					set_alphabet(alphabet, symbol_alphabet, '|');
-					set_alphabet(alphabet, symbol_alphabet, '&');
-					set_alphabet(alphabet, symbol_alphabet, '^');
-					set_alphabet(alphabet, symbol_alphabet, '=');
-					set_alphabet(alphabet, symbol_alphabet, '.');
-					set_alphabet(alphabet, symbol_alphabet, '<');
-					set_alphabet(alphabet, symbol_alphabet, '>');
-
-					for (size_t c = 'a'; c <= 'z'; ++c) {
-						set_alphabet(alphabet, keyword_alphabet, c);
-					}
-					for (size_t c = 'A'; c <= 'Z'; ++c) {
-						set_alphabet(alphabet, keyword_alphabet, c);
-					}
-					for (size_t c = '0'; c <= '9'; ++c) {
-						set_alphabet(alphabet, keyword_alphabet, c);
-					}
-					set_alphabet(alphabet, keyword_alphabet, '_');
-					// set_alphabet(alphabet, keyword_alphabet, ':');
-
-					for (size_t c = '0'; c <= '9'; ++c) {
-						set_alphabet(alphabet, int_alphabet, c);
-					}
-					for (size_t c = '0'; c <= '9'; ++c) {
-						set_alphabet(alphabet, float_alphabet, c);
-					}
-					set_alphabet(alphabet, float_alphabet, '.');
-
-					for (size_t c = '0'; c <= '9'; ++c) {
-						set_alphabet(alphabet, hex_alphabet, c);
-					}
-					for (size_t c = 'a'; c <= 'f'; ++c) {
-						set_alphabet(alphabet, hex_alphabet, c);
-					}
-					for (size_t c = 'A'; c <= 'F'; ++c) {
-						set_alphabet(alphabet, hex_alphabet, c);
-					}
-
-					set_alphabet(alphabet, x_alphabet, 'x');
-					set_alphabet(alphabet, x_alphabet, 'X');
-
-					for (size_t c = '0'; c <= '1'; ++c) {
-						set_alphabet(alphabet, bin_alphabet, c);
-					}
-					set_alphabet(alphabet, b_alphabet, 'b');
-					set_alphabet(alphabet, b_alphabet, 'B');
-
-					for (size_t c = 'a'; c <= 'z'; ++c) {
-						set_alphabet(alphabet, id_alphabet, c);
-					}
-					for (size_t c = 'A'; c <= 'Z'; ++c) {
-						set_alphabet(alphabet, id_alphabet, c);
-					}
-					set_alphabet(alphabet, id_alphabet, '_');
-					set_alphabet(alphabet, id_alphabet, ':'); // RG
-					for (size_t c = '0'; c <= '9'; ++c) { set_alphabet(alphabet, id_alphabet, c); } // RG
-
-					set_alphabet(alphabet, white_alphabet, ' ');
-					set_alphabet(alphabet, white_alphabet, '\t');
-
-					set_alphabet(alphabet, int_suffix_alphabet, 'l');
-					set_alphabet(alphabet, int_suffix_alphabet, 'L');
-					set_alphabet(alphabet, int_suffix_alphabet, 'u');
-					set_alphabet(alphabet, int_suffix_alphabet, 'U');
-
-					set_alphabet(alphabet, float_suffix_alphabet, 'l');
-					set_alphabet(alphabet, float_suffix_alphabet, 'L');
-					set_alphabet(alphabet, float_suffix_alphabet, 'f');
-					set_alphabet(alphabet, float_suffix_alphabet, 'F');
-
-					return alphabet;
 				}
-				bool char_in_alphabet(char c, Alphabet a) const noexcept { return m_alphabet[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
+			};
+			template<typename Array2D, typename First, typename Second>
+			constexpr static void set_alphabet(Array2D& array, const First first, const Second second) noexcept {
+				auto* first_ptr = &std::get<0>(array) + static_cast<std::size_t>(first);
+				auto* second_ptr = &std::get<0>(*first_ptr) + static_cast<std::size_t>(second);
+				*second_ptr = true;
+			};
+			static constexpr std::array<std::array<bool, lengthof_alphabet>, max_alphabet> build_alphabet() noexcept {
+				std::array<std::array<bool, lengthof_alphabet>, max_alphabet> alphabet{};
 
-			private:
-				std::array<std::array<bool, lengthof_alphabet>, max_alphabet> m_alphabet{ build_alphabet() };
-				constexpr static utility::Static_String m_multiline_comment_end{ "*/" };
-				constexpr static utility::Static_String m_multiline_comment_begin{ "/*" };
-				constexpr static utility::Static_String m_singleline_comment{ "//" };
-				constexpr static utility::Static_String m_annotation{ "#" };
-				constexpr static utility::Static_String m_cr_lf{ "\r\n" };
+				set_alphabet(alphabet, symbol_alphabet, '?');
 
-			private:
-				/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
-				bool Symbol_(const utility::Static_String& sym) noexcept {
-					const auto len = sym.size();
-					if (m_position.remaining() >= len) {
-						const char* file_pos = &(*m_position);
-						for (size_t pos = 0; pos < len; ++pos) {
-							if (sym.c_str()[pos] != file_pos[pos]) {
-								return false;
-							}
+				set_alphabet(alphabet, symbol_alphabet, '?');
+				set_alphabet(alphabet, symbol_alphabet, '+');
+				set_alphabet(alphabet, symbol_alphabet, '-');
+				set_alphabet(alphabet, symbol_alphabet, '*');
+				set_alphabet(alphabet, symbol_alphabet, '/');
+				set_alphabet(alphabet, symbol_alphabet, '|');
+				set_alphabet(alphabet, symbol_alphabet, '&');
+				set_alphabet(alphabet, symbol_alphabet, '^');
+				set_alphabet(alphabet, symbol_alphabet, '=');
+				set_alphabet(alphabet, symbol_alphabet, '.');
+				set_alphabet(alphabet, symbol_alphabet, '<');
+				set_alphabet(alphabet, symbol_alphabet, '>');
+
+				for (size_t c = 'a'; c <= 'z'; ++c) {
+					set_alphabet(alphabet, keyword_alphabet, c);
+				}
+				for (size_t c = 'A'; c <= 'Z'; ++c) {
+					set_alphabet(alphabet, keyword_alphabet, c);
+				}
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, keyword_alphabet, c);
+				}
+				set_alphabet(alphabet, keyword_alphabet, '_');
+				// set_alphabet(alphabet, keyword_alphabet, ':');
+
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, int_alphabet, c);
+				}
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, float_alphabet, c);
+				}
+				set_alphabet(alphabet, float_alphabet, '.');
+
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, hex_alphabet, c);
+				}
+				for (size_t c = 'a'; c <= 'f'; ++c) {
+					set_alphabet(alphabet, hex_alphabet, c);
+				}
+				for (size_t c = 'A'; c <= 'F'; ++c) {
+					set_alphabet(alphabet, hex_alphabet, c);
+				}
+
+				set_alphabet(alphabet, x_alphabet, 'x');
+				set_alphabet(alphabet, x_alphabet, 'X');
+
+				for (size_t c = '0'; c <= '1'; ++c) {
+					set_alphabet(alphabet, bin_alphabet, c);
+				}
+				set_alphabet(alphabet, b_alphabet, 'b');
+				set_alphabet(alphabet, b_alphabet, 'B');
+
+				for (size_t c = 'a'; c <= 'z'; ++c) {
+					set_alphabet(alphabet, id_alphabet, c);
+				}
+				for (size_t c = 'A'; c <= 'Z'; ++c) {
+					set_alphabet(alphabet, id_alphabet, c);
+				}
+				set_alphabet(alphabet, id_alphabet, '_');
+				set_alphabet(alphabet, id_alphabet, ':'); // RG
+				for (size_t c = '0'; c <= '9'; ++c) { set_alphabet(alphabet, id_alphabet, c); } // RG
+
+				set_alphabet(alphabet, white_alphabet, ' ');
+				set_alphabet(alphabet, white_alphabet, '\t');
+
+				set_alphabet(alphabet, int_suffix_alphabet, 'l');
+				set_alphabet(alphabet, int_suffix_alphabet, 'L');
+				set_alphabet(alphabet, int_suffix_alphabet, 'u');
+				set_alphabet(alphabet, int_suffix_alphabet, 'U');
+
+				set_alphabet(alphabet, float_suffix_alphabet, 'l');
+				set_alphabet(alphabet, float_suffix_alphabet, 'L');
+				set_alphabet(alphabet, float_suffix_alphabet, 'f');
+				set_alphabet(alphabet, float_suffix_alphabet, 'F');
+
+				return alphabet;
+			}
+			bool char_in_alphabet(char c, Alphabet a) const noexcept { return m_alphabet[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
+
+		private:
+			std::array<std::array<bool, lengthof_alphabet>, max_alphabet> m_alphabet{ build_alphabet() };
+			constexpr static utility::Static_String m_multiline_comment_end{ "*/" };
+			constexpr static utility::Static_String m_multiline_comment_begin{ "/*" };
+			constexpr static utility::Static_String m_singleline_comment{ "//" };
+			constexpr static utility::Static_String m_annotation{ "#" };
+			constexpr static utility::Static_String m_cr_lf{ "\r\n" };
+
+		private:
+			/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+			bool Symbol_(const utility::Static_String& sym) noexcept {
+				const auto len = sym.size();
+				if (m_position.remaining() >= len) {
+					const char* file_pos = &(*m_position);
+					for (size_t pos = 0; pos < len; ++pos) {
+						if (sym.c_str()[pos] != file_pos[pos]) {
+							return false;
 						}
-						m_position += len;
-						return true;
 					}
-					return false;
-				};
-				/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
-				bool Symbol_(const std::string_view& sym) noexcept {
-					const auto len = sym.size();
-					if (m_position.remaining() >= len) {
-						const char* file_pos = &(*m_position);
-						for (size_t pos = 0; pos < len; ++pos) {
-							if (sym[pos] != file_pos[pos]) {
-								return false;
-							}
+					m_position += len;
+					return true;
+				}
+				return false;
+			};
+			/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+			bool Symbol_(const std::string_view& sym) noexcept {
+				const auto len = sym.size();
+				if (m_position.remaining() >= len) {
+					const char* file_pos = &(*m_position);
+					for (size_t pos = 0; pos < len; ++pos) {
+						if (sym[pos] != file_pos[pos]) {
+							return false;
 						}
-						m_position += len;
-						return true;
 					}
+					m_position += len;
+					return true;
+				}
+				return false;
+			};
+			/// Reads a char from input if it matches the parameter, without skipping initial whitespace
+			bool Char_(const char c) {
+				if (m_position.has_more() && (*m_position == c)) {
+					++m_position;
+					return true;
+				}
+				else {
 					return false;
-				};
-				/// Reads a char from input if it matches the parameter, without skipping initial whitespace
-				bool Char_(const char c) {
-					if (m_position.has_more() && (*m_position == c)) {
+				}
+			};
+			/// Reads an end-of-line group from input, without skipping initial whitespace
+			bool Eol_(const bool t_eos = false) {
+				bool retval = false;
+
+				if (m_position.has_more() && (Symbol_(m_cr_lf) || Char_('\n'))) {
+					retval = true;
+					//++m_position.line;
+					m_position.col = 1;
+				}
+				//else if (m_position.has_more() && !t_eos && Char_(';')) {
+				//	retval = true;
+				//}
+
+				return retval;
+			};
+			/// Reads a string from input if it matches the parameter, without skipping initial whitespace
+			bool Keyword_(const utility::Static_String& t_s) {
+				const auto len = t_s.size();
+				if (m_position.remaining() >= len) {
+					auto tmp = m_position;
+					for (size_t i = 0; tmp.has_more() && i < len; ++i) {
+						if (*tmp != t_s.c_str()[i]) {
+							return false;
+						}
+						++tmp;
+					}
+					m_position = tmp;
+					return true;
+				}
+
+				return false;
+			};
+
+			/// Reads an identifier from input which conforms to C's identifier naming conventions, without skipping initial whitespace
+			bool Id_() {
+				if (m_position.has_more() && char_in_alphabet(*m_position, id_alphabet)) {
+					while (m_position.has_more() && char_in_alphabet(*m_position, id_alphabet)) { //keyword_alphabet)) {
 						++m_position;
-						return true;
 					}
-					else {
-						return false;
-					}
-				};
-				/// Reads an end-of-line group from input, without skipping initial whitespace
-				bool Eol_(const bool t_eos = false) {
-					bool retval = false;
 
-					if (m_position.has_more() && (Symbol_(m_cr_lf) || Char_('\n'))) {
-						retval = true;
-						//++m_position.line;
-						m_position.col = 1;
-					}
-					//else if (m_position.has_more() && !t_eos && Char_(';')) {
-					//	retval = true;
-					//}
+					return true;
+				}
+				else if (m_position.has_more() && (*m_position == '`')) {
+					++m_position;
+					const auto start = m_position;
 
-					return retval;
-				};
-				/// Reads a string from input if it matches the parameter, without skipping initial whitespace
-				bool Keyword_(const utility::Static_String& t_s) {
-					const auto len = t_s.size();
-					if (m_position.remaining() >= len) {
-						auto tmp = m_position;
-						for (size_t i = 0; tmp.has_more() && i < len; ++i) {
-							if (*tmp != t_s.c_str()[i]) {
-								return false;
-							}
-							++tmp;
+					while (m_position.has_more() && (*m_position != '`')) {
+						if (Eol()) {
+							throw exception::eval_error("Carriage return in identifier literal",
+								File_Position(m_position.line, m_position.col),
+								"");
 						}
-						m_position = tmp;
-						return true;
-					}
-
-					return false;
-				};
-
-				/// Reads an identifier from input which conforms to C's identifier naming conventions, without skipping initial whitespace
-				bool Id_() {
-					if (m_position.has_more() && char_in_alphabet(*m_position, id_alphabet)) {
-						while (m_position.has_more() && char_in_alphabet(*m_position, id_alphabet)) { //keyword_alphabet)) {
+						else {
 							++m_position;
 						}
-
-						return true;
 					}
-					else if (m_position.has_more() && (*m_position == '`')) {
-						++m_position;
-						const auto start = m_position;
 
-						while (m_position.has_more() && (*m_position != '`')) {
-							if (Eol()) {
-								throw exception::eval_error("Carriage return in identifier literal",
-									File_Position(m_position.line, m_position.col),
-									"");
-							}
-							else {
+					if (start == m_position) {
+						throw exception::eval_error("Missing contents of identifier literal", File_Position(m_position.line, m_position.col), "");
+					}
+					else if (!m_position.has_more()) {
+						throw exception::eval_error("Incomplete identifier literal", File_Position(m_position.line, m_position.col), "");
+					}
+
+					++m_position;
+
+					return true;
+				}
+				return false;
+			};
+
+		private: // TO-DO, reimpliment the optimization sequence inside of "build_match"
+			/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
+			template<typename NodeType>
+			void build_match(size_t t_match_start, std::string_view t_text) {
+				bool is_deep = false;
+
+				Parse_Location filepos = [&]() -> Parse_Location {
+					// so we want to take everything to the right of this and make them children
+					if (t_match_start != m_match_stack.size()) {
+						is_deep = true;
+						return Parse_Location(
+							m_match_stack[t_match_start]->location.start.line,
+							m_match_stack[t_match_start]->location.start.column,
+							m_position.line,
+							m_position.col);
+					}
+					else {
+						return Parse_Location(m_position.line, m_position.col, m_position.line, m_position.col);
+					}
+				}();
+
+				std::vector<PreprocessorTokenPtr> new_children;
+				if (is_deep) {
+					new_children.assign(std::make_move_iterator(m_match_stack.begin() + static_cast<int>(t_match_start)),
+						std::make_move_iterator(m_match_stack.end()));
+					m_match_stack.erase(m_match_stack.begin() + static_cast<int>(t_match_start), m_match_stack.end());
+				}
+
+				m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NodeType>(t_text, std::move(filepos), std::move(new_children))));
+			};
+
+			/// create a node
+			template<typename T, typename... Param>
+			PreprocessorTokenPtr make_node(std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
+				auto out = std::make_shared<T>(
+					t_match,
+					Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col),
+					std::forward<Param>(param)...
+				);
+				return std::dynamic_pointer_cast<PreprocessorToken>(out);
+			};
+
+		private:
+			/// Skips whitespace, which means space and tab, but not cr/lf
+			/// jespada: Modified SkipWS to skip optionally CR ('\n') and/or LF+CR ("\r\n")
+			/// AlekMosingiewicz: Added exception when illegal character detected
+			bool SkipWS(bool skip_cr = false) {
+				bool retval = false;
+
+				while (m_position.has_more()) {
+					if (static_cast<unsigned char>(*m_position) > 0x7e) {
+						throw exception::eval_error("Illegal character", File_Position(m_position.line, m_position.col), "");
+					}
+					auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
+
+					if (char_in_alphabet(*m_position, white_alphabet) || (skip_cr && end_line)) {
+						if (end_line) {
+							if (*m_position == '\r') {
+								// discards lf
 								++m_position;
 							}
 						}
 
-						if (start == m_position) {
-							throw exception::eval_error("Missing contents of identifier literal", File_Position(m_position.line, m_position.col), "");
-						}
-						else if (!m_position.has_more()) {
-							throw exception::eval_error("Incomplete identifier literal", File_Position(m_position.line, m_position.col), "");
-						}
-
 						++m_position;
 
-						return true;
+						retval = true;
 					}
-					return false;
-				};
-
-			private: // TO-DO, reimpliment the optimization sequence inside of "build_match"
-				/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
-				template<typename NodeType>
-				void build_match(size_t t_match_start, std::string_view t_text) {
-					bool is_deep = false;
-
-					Parse_Location filepos = [&]() -> Parse_Location {
-						// so we want to take everything to the right of this and make them children
-						if (t_match_start != m_match_stack.size()) {
-							is_deep = true;
-							return Parse_Location(
-								m_match_stack[t_match_start]->location.start.line,
-								m_match_stack[t_match_start]->location.start.column,
-								m_position.line,
-								m_position.col);
-						}
-						else {
-							return Parse_Location(m_position.line, m_position.col, m_position.line, m_position.col);
-						}
-					}();
-
-					std::vector<PreprocessorTokenPtr> new_children;
-					if (is_deep) {
-						new_children.assign(std::make_move_iterator(m_match_stack.begin() + static_cast<int>(t_match_start)),
-							std::make_move_iterator(m_match_stack.end()));
-						m_match_stack.erase(m_match_stack.begin() + static_cast<int>(t_match_start), m_match_stack.end());
+					else {
+						break;
 					}
+				}
+				return retval;
+			};
+			/// Reads until the end of the current statement
+			bool Eos() {
+				SkipWS();
+				return Eol_(true);
+			};
+			/// Reads (and potentially captures) an end-of-line group from input
+			bool Eol() {
+				SkipWS();
+				return Eol_();
+			};
+			/// Reads (and potentially captures) a char from input if it matches the parameter
+			bool Char(const char t_c) {
+				SkipWS();
+				return Char_(t_c);
+			};
+			/// Reads (and potentially captures) a string from input if it matches the parameter
+			bool Keyword(const utility::Static_String& t_s) {
+				SkipWS();
+				const auto start = m_position;
+				bool retval = Keyword_(t_s);
+				// ignore substring matches
+				if (retval && m_position.has_more() && char_in_alphabet(*m_position, keyword_alphabet)) {
+					m_position = start;
+					retval = false;
+				}
+				return retval;
+			};
+			/// Reads (and potentially captures) a symbol group from input if it matches the parameter
+			bool Symbol(std::string_view t_s, const bool t_disallow_prevention = false) {
+				SkipWS();
+				const auto start = m_position;
+				bool retval = Symbol_(t_s);
 
-					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NodeType>(t_text, std::move(filepos), std::move(new_children))));
-				};
+				// ignore substring matches
+				if (retval && m_position.has_more() && (t_disallow_prevention == false) && char_in_alphabet(*m_position, symbol_alphabet)) {						
+					m_position = start;
+					retval = false;						
+				}
+				return retval;
+			}
 
-				/// create a node
-				template<typename T, typename... Param>
-				PreprocessorTokenPtr make_node(std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
-					auto out = std::make_shared<T>(
-						t_match,
-						Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col),
-						std::forward<Param>(param)...
-					);
-					return std::dynamic_pointer_cast<PreprocessorToken>(out);
-				};
+			PreprocessorTokenPtr parse(SourceFile t_input) {
+				const auto begin = t_input.empty() ? nullptr : &t_input.front();
+				const auto end = begin == nullptr ? nullptr : begin + t_input.size();
+				m_position = Position(begin, end);
 
-			private:
-				/// Skips whitespace, which means space and tab, but not cr/lf
-				/// jespada: Modified SkipWS to skip optionally CR ('\n') and/or LF+CR ("\r\n")
-				/// AlekMosingiewicz: Added exception when illegal character detected
-				bool SkipWS(bool skip_cr = false) {
-					bool retval = false;
+				// top level stack        
+				if (Statements()) {
+					if (m_position.has_more()) {
+						throw exception::eval_error("Unparsed input", File_Position(m_position.line, m_position.col), "");
+					}
+					else {
+						build_match<CompletedPreprocessor>(0, t_input);
+					}
+				}
+				else {
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>("", Parse_Location{}, std::vector<PreprocessorTokenPtr>{})));
+				}
 
-					while (m_position.has_more()) {
-						if (static_cast<unsigned char>(*m_position) > 0x7e) {
-							throw exception::eval_error("Illegal character", File_Position(m_position.line, m_position.col), "");
-						}
-						auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
+				PreprocessorTokenPtr retval = m_match_stack.front();
+				m_match_stack.clear();
 
-						if (char_in_alphabet(*m_position, white_alphabet) || (skip_cr && end_line)) {
-							if (end_line) {
-								if (*m_position == '\r') {
-									// discards lf
-									++m_position;
-								}
-							}
+				return retval;
+			};
 
-							++m_position;
+			bool SkipToEndOfLine(bool InPreprocessorMacro = true) {
+				SkipWS();
+				bool retval = false;
+				while (m_position.has_more()){
+					SkipWS();
+					if (InPreprocessorMacro && (Keyword_("\\\n") || Keyword_("\\\r"))) {
 
+					}
+					else {
+						if (Eol()) {
 							retval = true;
-						}
-						else {
 							break;
 						}
-					}
-					return retval;
-				};
-				/// Reads until the end of the current statement
-				bool Eos() {
-					SkipWS();
-					return Eol_(true);
-				};
-				/// Reads (and potentially captures) an end-of-line group from input
-				bool Eol() {
-					SkipWS();
-					return Eol_();
-				};
-				/// Reads (and potentially captures) a char from input if it matches the parameter
-				bool Char(const char t_c) {
-					SkipWS();
-					return Char_(t_c);
-				};
-				/// Reads (and potentially captures) a string from input if it matches the parameter
-				bool Keyword(const utility::Static_String& t_s) {
-					SkipWS();
-					const auto start = m_position;
-					bool retval = Keyword_(t_s);
-					// ignore substring matches
-					if (retval && m_position.has_more() && char_in_alphabet(*m_position, keyword_alphabet)) {
-						m_position = start;
-						retval = false;
-					}
-					return retval;
-				};
-				/// Reads (and potentially captures) a symbol group from input if it matches the parameter
-				bool Symbol(std::string_view t_s, const bool t_disallow_prevention = false) {
-					SkipWS();
-					const auto start = m_position;
-					bool retval = Symbol_(t_s);
-
-					// ignore substring matches
-					if (retval && m_position.has_more() && (t_disallow_prevention == false) && char_in_alphabet(*m_position, symbol_alphabet)) {						
-						m_position = start;
-						retval = false;						
-					}
-					return retval;
-				}
-
-				PreprocessorTokenPtr parse(SourceFile t_input) {
-					const auto begin = t_input.empty() ? nullptr : &t_input.front();
-					const auto end = begin == nullptr ? nullptr : begin + t_input.size();
-					m_position = Position(begin, end);
-
-					// top level stack        
-					if (Statements()) {
-						if (m_position.has_more()) {
-							throw exception::eval_error("Unparsed input", File_Position(m_position.line, m_position.col), "");
-						}
 						else {
-							build_match<CompletedPreprocessor>(0, t_input);
+							++m_position;
 						}
+					}						
+				}
+				return retval;
+			}
+			bool SearchFor(std::vector<utility::Static_String> const& options, std::string_view& foundOption) {
+				SkipWS();
+				while (m_position.has_more()) {
+					for (auto const& option : options) {
+						if (Keyword(option)) {
+							foundOption = option.c_str();
+							return true;								
+						}
+					}
+					++m_position;						
+				}
+				return false;
+			}
+
+			/// Top level parser, starts parsing of all known parses
+			bool Statements() {
+				bool retval = false;
+				bool has_more = true;
+				bool saw_eol = true;
+
+				while (has_more) {
+					SkipWS(true);
+					if (Warning() || Error() || Pragma() || Include() || If() || Define() || Undefine() || None()) {
+						has_more = true;
+						retval = true;
 					}
 					else {
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>("", Parse_Location{}, std::vector<PreprocessorTokenPtr>{})));
+						has_more = false;
 					}
-
-					PreprocessorTokenPtr retval = m_match_stack.front();
-					m_match_stack.clear();
-
-					return retval;
-				};
-
-				bool SkipToEndOfLine(bool InPreprocessorMacro = true) {
-					SkipWS();
-					bool retval = false;
-					while (m_position.has_more()){
-						SkipWS();
-						if (InPreprocessorMacro && (Keyword_("\\\n") || Keyword_("\\\r"))) {
-
-						}
-						else {
-							if (Eol()) {
-								retval = true;
-								break;
-							}
-							else {
-								++m_position;
-							}
-						}						
-					}
-					return retval;
 				}
-				bool SearchFor(std::vector<utility::Static_String> const& options, std::string_view& foundOption) {
-					SkipWS();
-					while (m_position.has_more()) {
-						for (auto const& option : options) {
-							if (Keyword(option)) {
-								foundOption = option.c_str();
-								return true;								
-							}
-						}
-						++m_position;						
-					}
+				return retval;
+			};
+
+			bool Define() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
+				SkipWS(true);
+				if (Keyword("#define")) {
+					prev_position = this->m_position;
+					retval = true;
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<DefinePreprocessor>(
+						this->m_position.str(prev_position, m_position),
+						Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
+				}
+				return retval;
+			};
+			bool Undefine() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
+				SkipWS(true);
+				if (Keyword("#undef")) {
+					prev_position = this->m_position;
+					retval = true;
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<UndefinePreprocessor>(
+						this->m_position.str(prev_position, m_position),
+						Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
+				}
+				return retval;
+			};
+			bool If() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
+
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_position;
 					return false;
+				};
+
+				bool foundIfOrElseIf = Keyword("#if");
+				if (foundIfOrElseIf) {
+					auto this_prev_position = this->m_position;
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfPreprocessor>(
+						this->m_position.str(this_prev_position, m_position),
+						Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
 				}
-
-				/// Top level parser, starts parsing of all known parses
-				bool Statements() {
-					bool retval = false;
-					bool has_more = true;
-					bool saw_eol = true;
-
-					while (has_more) {
-						SkipWS(true);
-						if (Warning() || Error() || Pragma() || Include() || If() || Define() || Undefine() || None()) {
-							has_more = true;
-							retval = true;
-						}
-						else {
-							has_more = false;
-						}
-					}
-					return retval;
-				};
-
-				bool Define() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					SkipWS(true);
-					if (Keyword("#define")) {
-						prev_position = this->m_position;
-						retval = true;
-						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<DefinePreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
-					}
-					return retval;
-				};
-				bool Undefine() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					SkipWS(true);
-					if (Keyword("#undef")) {
-						prev_position = this->m_position;
-						retval = true;
-						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<UndefinePreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
-					}
-					return retval;
-				};
-				bool If() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-
-					auto failure = [&]() {
-						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-						m_position = prev_position;
-						return false;
-					};
-
-					bool foundIfOrElseIf = Keyword("#if");
+				if (!foundIfOrElseIf) {
+					foundIfOrElseIf = Keyword("#ifdef");
 					if (foundIfOrElseIf) {
 						auto this_prev_position = this->m_position;
 						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfPreprocessor>(
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfDefinedPreprocessor>(
 							this->m_position.str(this_prev_position, m_position),
 							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
-					if (!foundIfOrElseIf) {
-						foundIfOrElseIf = Keyword("#ifdef");
-						if (foundIfOrElseIf) {
-							auto this_prev_position = this->m_position;
-							SkipToEndOfLine();
-							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfDefinedPreprocessor>(
-								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
-								std::vector<PreprocessorTokenPtr>{}
-							)));
-						}
+				}
+				if (!foundIfOrElseIf) {
+					foundIfOrElseIf = Keyword("#ifndef");
+					if (foundIfOrElseIf) {
+						auto this_prev_position = this->m_position;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfNotDefinedPreprocessor>(
+							this->m_position.str(this_prev_position, m_position),
+							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
 					}
-					if (!foundIfOrElseIf) {
-						foundIfOrElseIf = Keyword("#ifndef");
-						if (foundIfOrElseIf) {
-							auto this_prev_position = this->m_position;
-							SkipToEndOfLine();
-							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfNotDefinedPreprocessor>(
-								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
-								std::vector<PreprocessorTokenPtr>{}
-							)));
-						}
+				}
+
+				while (foundIfOrElseIf) {
+					foundIfOrElseIf = false;
+					retval = true;
+
+					Statements();
+
+					SkipWS(true);
+					if (Keyword("#elif")) {
+						Position this_prev_position = this->m_position;
+						foundIfOrElseIf = true;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElseIfPreprocessor>(
+							this->m_position.str(this_prev_position, m_position),
+							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+						continue;
 					}
-
-					while (foundIfOrElseIf) {
-						foundIfOrElseIf = false;
-						retval = true;
-
-						Statements();
-
-						SkipWS(true);
-						if (Keyword("#elif")) {
-							Position this_prev_position = this->m_position;
-							foundIfOrElseIf = true;
-							SkipToEndOfLine();
-							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElseIfPreprocessor>(
-								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
-								std::vector<PreprocessorTokenPtr>{}
-							)));
-							continue;
-						}
-						else if (Keyword("#else")) {
-							Position this_prev_position = this->m_position;
-							foundIfOrElseIf = true;
-							SkipToEndOfLine();
-							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElsePreprocessor>(
-								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
-								std::vector<PreprocessorTokenPtr>{}
-							)));
-							continue;
-						}
-						else if (Keyword("#endif")) {
-							Position this_prev_position = this->m_position;
-							SkipToEndOfLine();
-							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<EndIfPreprocessor>(
-								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
-								std::vector<PreprocessorTokenPtr>{}
-							)));
-						}
-						else {
-							return failure();
-						}
-						build_match<IfChainPreprocessor>(prev_stack_top, "");
+					else if (Keyword("#else")) {
+						Position this_prev_position = this->m_position;
+						foundIfOrElseIf = true;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElsePreprocessor>(
+							this->m_position.str(this_prev_position, m_position),
+							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+						continue;
 					}
+					else if (Keyword("#endif")) {
+						Position this_prev_position = this->m_position;
+						SkipToEndOfLine();
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<EndIfPreprocessor>(
+							this->m_position.str(this_prev_position, m_position),
+							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+					}
+					else {
+						return failure();
+					}
+					build_match<IfChainPreprocessor>(prev_stack_top, "");
+				}
 					
-					return retval;
-				};
-				bool Error() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					SkipWS(true);
-					if (Keyword("#error")) {
-						prev_position = this->m_position;
-						retval = true;
-						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ErrorPreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
-					}
-					return retval;
-				};
-				bool Warning() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
+				return retval;
+			};
+			bool Error() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
+				SkipWS(true);
+				if (Keyword("#error")) {
+					prev_position = this->m_position;
+					retval = true;
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ErrorPreprocessor>(
+						this->m_position.str(prev_position, m_position),
+						Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
+				}
+				return retval;
+			};
+			bool Warning() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
 
-					SkipWS(true);
-					if (Keyword("#warning")) {
-						prev_position = this->m_position;
-						retval = true;		
-						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<WarningPreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
-					}
-					return retval;
-				};
-				bool Include() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
+				SkipWS(true);
+				if (Keyword("#warning")) {
+					prev_position = this->m_position;
+					retval = true;		
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<WarningPreprocessor>(
+						this->m_position.str(prev_position, m_position),
+						Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
+				}
+				return retval;
+			};
+			bool Include() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
 
-					SkipWS(true);
-					if (Keyword("#include")) {
-						prev_position = this->m_position;
-						retval = true;
-						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IncludePreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
-					}
-					return retval;
-				};
-				bool Pragma() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
+				SkipWS(true);
+				if (Keyword("#include")) {
+					prev_position = this->m_position;
+					retval = true;
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IncludePreprocessor>(
+						this->m_position.str(prev_position, m_position),
+						Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
+				}
+				return retval;
+			};
+			bool Pragma() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
 
-					SkipWS(true);
-					if (Keyword("#pragma")) {
-						prev_position = this->m_position;
-						retval = true;
-						SkipToEndOfLine();
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<PragmaPreprocessor>(
-							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-							std::vector<PreprocessorTokenPtr>{}
-						)));
-					}
-					return retval;
+				SkipWS(true);
+				if (Keyword("#pragma")) {
+					prev_position = this->m_position;
+					retval = true;
+					SkipToEndOfLine();
+					m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<PragmaPreprocessor>(
+						this->m_position.str(prev_position, m_position),
+						Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+						std::vector<PreprocessorTokenPtr>{}
+					)));
+				}
+				return retval;
+			};
+			bool None() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				Position prev_position = this->m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_position;
+					return false;
 				};
-				bool None() {
-					bool retval = false;
-					const auto prev_stack_top = m_match_stack.size();
-					Position prev_position = this->m_position;
-					auto failure = [&]() {
-						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-						m_position = prev_position;
-						return false;
-					};
 
+				SkipWS(true);
+				if (
+					Keyword("#define") || 
+					Keyword("#undef") ||
+					Keyword("#if") ||
+					Keyword("#elif") ||
+					Keyword("#else") ||
+					Keyword("#endif") ||
+					Keyword("#ifdef") ||
+					Keyword("#ifndef") ||
+					Keyword("#error") ||
+					Keyword("#warning") ||
+					Keyword("#pragma") || 
+					Keyword("#include")
+				) {
+					return failure();
+				}
+
+				while (SkipToEndOfLine(false)) {
+					retval = true;
 					SkipWS(true);
-					if (
-						Keyword("#define") || 
+
+					const auto this_prev_stack_top = m_match_stack.size();
+					Position this_prev_position = this->m_position;
+					if (!m_position.has_more() ||
+						Keyword("#define") ||
 						Keyword("#undef") ||
 						Keyword("#if") ||
 						Keyword("#elif") ||
@@ -1917,72 +1934,40 @@ namespace GoodLang {
 						Keyword("#ifndef") ||
 						Keyword("#error") ||
 						Keyword("#warning") ||
-						Keyword("#pragma") || 
+						Keyword("#pragma") ||
 						Keyword("#include")
 					) {
-						return failure();
+						while (m_match_stack.size() != this_prev_stack_top) m_match_stack.pop_back();
+						m_position = this_prev_position;
+
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
+							this->m_position.str(prev_position, m_position),
+							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							std::vector<PreprocessorTokenPtr>{}
+						)));
+
+						return retval;
 					}
 
-					while (SkipToEndOfLine(false)) {
-						retval = true;
-						SkipWS(true);
-
-						const auto this_prev_stack_top = m_match_stack.size();
-						Position this_prev_position = this->m_position;
-						if (!m_position.has_more() ||
-							Keyword("#define") ||
-							Keyword("#undef") ||
-							Keyword("#if") ||
-							Keyword("#elif") ||
-							Keyword("#else") ||
-							Keyword("#endif") ||
-							Keyword("#ifdef") ||
-							Keyword("#ifndef") ||
-							Keyword("#error") ||
-							Keyword("#warning") ||
-							Keyword("#pragma") ||
-							Keyword("#include")
-						) {
-							while (m_match_stack.size() != this_prev_stack_top) m_match_stack.pop_back();
-							m_position = this_prev_position;
-
-							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
-								this->m_position.str(prev_position, m_position),
-								Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-								std::vector<PreprocessorTokenPtr>{}
-							)));
-
-							return retval;
-						}
 
 
 
 
 
+					//m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
+					//	this->m_position.str(prev_position, m_position), 
+					//	Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+					//	std::vector<PreprocessorTokenPtr>{}
+					//)));
+				}
 
-						//m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
-						//	this->m_position.str(prev_position, m_position), 
-						//	Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
-						//	std::vector<PreprocessorTokenPtr>{}
-						//)));
-					}
-
-					return retval;					
-				};
+				return retval;					
 			};
-
-
-
-
-
-
-
-			// static SourceFile Preprocessor(SourceFile const& code) {};
-
-
-
-
 		};
+
+
+
+
 
 
 
@@ -9278,11 +9263,10 @@ int main() {
 
 	using namespace GoodLang;
 
-
 	if (1) {
 		if (1) {
-			GoodLang::Engine::preprocessor::PreprocessorState state;
-			auto Interpretted = GoodLang::Engine::preprocessor::Preprocessor().Parse(R"(
+			GoodLang::Engine::Preprocessor::PreprocessorState state;
+			auto Interpretted = GoodLang::Engine::Preprocessor().Parse(R"(
 				print(ONE_HUNDRED);
 
 				#define as_foot(x) ##x_ft
@@ -9328,8 +9312,8 @@ int main() {
 		}
 
 		if (1) {
-			GoodLang::Engine::preprocessor::PreprocessorState state;
-			auto Interpretted = GoodLang::Engine::preprocessor::Preprocessor().Parse(R"(
+			GoodLang::Engine::Preprocessor::PreprocessorState state;
+			auto Interpretted = GoodLang::Engine::Preprocessor().Parse(R"(
 				// this is a conversion function:
 				#define AddConv(a,b) tree.AddConverter<a, b>()
 				#define AddConvs(a) AddConv(a, char); \
@@ -9367,18 +9351,29 @@ int main() {
 				// To-Do: Compilation Warnings
 				#warning This is a warning
 
-				// To-Do: Compilation Errors
-				#error This is a compilation error - the script was never even run. 
-
 				// To-Do: Pragmas
 				#pragma region(Name)
 				#pragma endregion
 				#pragma warning(disable: 6123)
-
 			)");
 			Interpretted->GenerateExpandedCode(state);
 			print(state.GetFinalScript());
 		}
+
+		if (1) {
+			GoodLang::Engine::Preprocessor::PreprocessorState state;
+			auto Interpretted = GoodLang::Engine::Preprocessor().Parse(R"(
+				#error "This error was thrown on purpose from the compiler"
+			)");
+			try {
+				Interpretted->GenerateExpandedCode(state);
+				print("ERROR WAS NOT THROWN!");
+			}
+			catch (GoodLang::Engine::exception::eval_error const& e) {
+				print(e.what());
+			}
+		}
+
 	}
 
 
