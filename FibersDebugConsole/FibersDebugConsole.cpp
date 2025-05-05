@@ -773,7 +773,15 @@ namespace GoodLang {
 					};
 					// To-Do
 					bool Include(std::string const& IncludePath) {
-						return {};
+						auto include_path = RemoveLeadingAndTrailingWhiteSpaceAndQuotes(IncludePath);
+						auto key = std::string(include_path) + "_" + macro_definitions["__DATE__"] + "_" + macro_definitions["__VERSION__"];
+						if (this->macro_definitions.find(key) != this->macro_definitions.end()) {
+							return false;
+						}
+						else {
+							Define(key, IncludePath);
+							return true;
+						}
 					};
 
 					static std::vector<word_t> GetAllWords(std::string const& text) {
@@ -811,14 +819,19 @@ namespace GoodLang {
 					static bool TryGetFunctionParams(std::string const& text, std::vector<std::string>& splits) {
 						std::string to_split;
 						bool retval = false;
-						std::regex pattern(R"(\(\s*([^)]+?)\s*\))");
+						std::regex pattern(R"(\(\s*([^)]+?)\s*\))"); // \(\s*([^)]+?)\s*\)
 						for (std::sregex_iterator i = std::sregex_iterator(text.begin(), text.end(), pattern);
 							i != std::sregex_iterator();
 							++i) {
 							std::smatch m = *i;
 							retval = true;
 							to_split = m.str();
-							break;
+							if (m.prefix().str().find(" ") != std::string::npos) {
+								return false;
+							}
+							else {
+								break;
+							}
 						}
 						if (retval && (to_split.size() >= 2)) {
 							if (to_split[0] == '(') to_split = to_split.substr(1);
@@ -923,6 +936,27 @@ namespace GoodLang {
 						RemoveLeadingAndTrailingWhiteSpace(x);
 						return x;
 					};
+
+					static void RemoveLeadingAndTrailingWhiteSpaceAndQuotes(std::string_view& x) {
+						while (
+							(x.length() > 0)
+							&& ((x[0] == ' ') || (x[0] == '\t') || (x[0] == '\n') || (x[0] == '\"'))
+							) {
+							x.remove_prefix(1);
+						}
+						while (
+							(x.length() > 0)
+							&& ((x[x.length() - 1] == ' ') || (x[x.length() - 1] == '\t') || (x[x.length() - 1] == '\n') || (x[x.length() - 1] == '\"'))
+							) {
+							x.remove_suffix(1);
+						}
+					};
+					static std::string_view RemoveLeadingAndTrailingWhiteSpaceAndQuotes(std::string const& text) {
+						std::string_view x(text);
+						RemoveLeadingAndTrailingWhiteSpaceAndQuotes(x);
+						return x;
+					};
+
 					std::string ExpandCode(std::string Code) {
 						bool MadeAnyChanges = true;
 						int maxIterations = 1000000;
@@ -1195,8 +1229,25 @@ namespace GoodLang {
 					IncludePreprocessor(std::string_view t_ast_node_text, Parse_Location t_loc, std::vector<std::shared_ptr<PreprocessorToken>> t_children)
 						: PreprocessorToken(t_ast_node_text, PreprocessorDirectives::Include, std::move(t_loc), std::move(t_children)) {}
 
-					void GenerateExpandedCode(PreprocessorState& state) const override { 					
-						state.Include(std::string(this->text));
+					void GenerateExpandedCode(PreprocessorState& state) const override { 		
+						if (state.Include(std::string(this->text))) {
+							std::string downloadedScript;
+							downloadedScript = /*state.ExpandCode(*/R"(		
+								#define __print_todays_date__ print(__DATE__)
+								namespace string {
+									string ReplaceOnce(string findWhat, string With){
+										__print_todays_date__;
+									};
+									string ReplaceAll(string findWhat, string With){
+										__print_todays_date__
+									};
+								};
+							)"/*)*/;
+							const_cast<IncludePreprocessor*>(this)->children.push_back(Preprocessor().Parse(downloadedScript));
+						}
+						for (auto& child : this->children) {
+							child->GenerateExpandedCode(state);
+						}
 					};
 				};
 				class UndefinePreprocessor final : public PreprocessorToken {
@@ -8393,6 +8444,8 @@ namespace GoodLang {
 
 			};
 
+
+
 		};
 		
 
@@ -8529,20 +8582,20 @@ int main() {
 
 	}
 
-
-
-
-
-
-
 	if (1) {
 		auto globalScope = StartScope();
 		std::string Script = R"(
 			#define __WINDOWS__ 1
 			#if __WINDOWS__
-				#define try_print(x) print(to_string( x ))
-				try_print( [1,2,3,4,5] );
-				return true;				
+				#if 1_ft < 1_in
+					#error "This code failed"
+				#elif  1_ft > 1_in
+					#define try_print(x) print(to_string( x ))
+					try_print( [1,2,3,4,5] );
+					return true;	
+				#else
+					#error "This code failed"
+				#endif			
 			#else
 				#error "This code path is only supported on Windows"		
 			#endif	
@@ -8552,34 +8605,26 @@ int main() {
 		auto final_script = compilation_state.GetFinalScript();
 		auto parsed_result = GoodLang::Engine::Compiler::Interpreter::parser::Parser2().Parse(final_script);
 		if (1) {
-			print(ToString(parsed_result));
-
 			print(final_script);
 			Stopwatch sw;
 			sw.Start();
-			auto result = parsed_result.first->eval(StartScope(globalScope));			
+			auto result = parsed_result.first->eval(StartScope(globalScope));		
+			print(ToString(parsed_result));
 			print(std::string("\t -> \t") + ToString(result));
 		}
 	}
 
-
-
 	if (1) {
 		auto globalScope = StartScope();
 		std::string Script = R"(
-			#define Lambda(x) ++x	
-
-			int loopCount = 0;
-			while (loopCount < 10000){
-				if ((++loopCount % 1000) == 0) {
-					print("Loop ${ loopCount }");
-				}
-				parallel_for (int x = 0; 1000) {
-					Units::meter y = x;
-					Lambda(y);
-					to_string( [ x , y ] );
-				}
-			}
+			#define Append(Vector, Item) Vector.push_back(Item)
+			Vector x;
+			Append(x, 1);
+			Append(x, 2);
+			Append(x, 3);
+			Append(x, 4);
+			Append(x, 5);
+			return x;
 		)";
 		GoodLang::Engine::Compiler::Preprocessor::PreprocessorState compilation_state;
 		GoodLang::Engine::Compiler::Preprocessor().Parse(Script)->GenerateExpandedCode(compilation_state);
@@ -8594,23 +8639,6 @@ int main() {
 			print(std::string("\t -> \t") + ToString(result));
 		}
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	if (1) {
 		if (1) {
