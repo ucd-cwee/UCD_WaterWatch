@@ -187,27 +187,25 @@ namespace GoodLang {
 		struct File_Position {
 			int line = 0;
 			int column = 0;
+			int position = 0;
 
-			constexpr File_Position(int t_file_line, int t_file_column) noexcept
+			constexpr File_Position(int t_file_line, int t_file_column, int pos) noexcept
 				: line(t_file_line)
-				, column(t_file_column) {
-			}
+				, column(t_file_column) 
+				, position(pos)
+			{}
 
 			constexpr File_Position() noexcept = default;
 		};
-		struct Parse_Location {
-			Parse_Location(const int t_start_line = 0, const int t_start_col = 0, const int t_end_line = 0, const int t_end_col = 0)
-				: start(t_start_line, t_start_col)
-				, end(t_end_line, t_end_col)
-			{}
-			File_Position start;
-			File_Position end;
-		};
 		struct Position {
+			operator File_Position() const {
+				return File_Position(line, col, pos);
+			};
 			constexpr Position() = default;
 			constexpr Position(const char* t_pos, const char* t_end) noexcept
 				: line(1)
 				, col(1)
+				, pos(0)
 				, m_pos(t_pos)
 				, m_end(t_end)
 				, m_last_col(1) {
@@ -231,11 +229,13 @@ namespace GoodLang {
 						++col;
 					}
 
+					++pos;
 					++m_pos;
 				}
 				return *this;
 			}
 			constexpr Position& operator--() noexcept {
+				--pos;
 				--m_pos;
 				if (*m_pos == '\n') {
 					--line;
@@ -283,11 +283,20 @@ namespace GoodLang {
 
 			int line = -1;
 			int col = -1;
-
+			int pos = -1;
 		private:
 			const char* m_pos = nullptr;
 			const char* m_end = nullptr;
 			int m_last_col = -1;
+		};
+
+		struct Parse_Location {
+			Parse_Location(Position _start, Position _end)
+				: start(_start)
+				, end(_end)
+			{}
+			Position start;
+			Position end;
 		};
 
 		template<typename string_type>
@@ -542,7 +551,7 @@ namespace GoodLang {
 
 				oss << GoodLang::printf("%s(%s) [%s] %s : L%iC%i - L%iC%i -> %s\n",
 					t_prepend.c_str(), str.c_str(), TimeSpentEvaling.c_str(), this->text.c_str(),
-					this->location.start.line, this->location.start.column, this->location.end.line, this->location.end.column,
+					this->location.start.operator GoodLang::Engine::File_Position().line, this->location.start.operator GoodLang::Engine::File_Position().column, this->location.end.operator GoodLang::Engine::File_Position().line, this->location.end.operator GoodLang::Engine::File_Position().column,
 					returnType.c_str()
 				);
 
@@ -692,6 +701,54 @@ namespace GoodLang {
 
 		class Compiler{
 		public:
+			//class ScriptText {				
+			//	std::string old_text; // before being split into chunks
+			//	std::vector<std::string> original; // as provided by the user. May have been broken into chunks during the processing. 
+			//	std::vector<std::string> extended; // as updated by the preprocessor. May have been broken into chunks during the processing. 
+			//	std::string new_text; // after being split into chunks
+			//public:
+			//	ScriptText() = default;
+			//	ScriptText(std::string Script) : old_text(std::move(Script)) {
+			//		Preprocessor::PreprocessorState state;
+			//		auto processed_result = Preprocessor().Parse(old_text);
+			//		processed_result->GenerateExpandedCode(state);
+			//		for (auto& script_chunk : state.Final_Script) {
+			//			size_t startPos = new_text.size();
+			//			new_text += script_chunk.first;
+			//			size_t endPos = new_text.size();
+			//			extended.push_back(new_text.substr(startPos, endPos - startPos));
+			//			
+			//		}
+			//	};
+			//	auto& newIndex_to_newText(size_t index) {
+			//		for (auto& chunk : extended) {
+			//			if (index >= chunk.size()) {
+			//				index -= chunk.size();
+			//			}
+			//			else {
+			//				return chunk[index];
+			//			}
+			//		}
+			//		throw std::out_of_range("Out of range of extended script text");
+			//	};
+			//	auto& oldIndex_to_oldText(size_t index) {
+			//		for (auto& chunk : original) {
+			//			if (index >= chunk.size()) {
+			//				index -= chunk.size();
+			//			}
+			//			else {
+			//				return chunk[index];
+			//			}
+			//		}
+			//		throw std::out_of_range("Out of range of original script text");
+			//	};
+			//};
+
+
+
+
+
+		public:
 			// The preprocessor should take in source code and perform substitutions based on preprocessor directives
 			class Preprocessor {
 			public:
@@ -748,7 +805,7 @@ namespace GoodLang {
 					void
 						PrintFinalScript() const {
 						for (auto& x : Final_Script) {
-							print(x.first + "\t\t\t" + GoodLang::printf("L%iC%i-L%iC%i", x.second.start.line, x.second.start.column, x.second.end.line, x.second.end.column));
+							print(x.first + "\t\t\t" + GoodLang::printf("L%iC%i-L%iC%i", x.second.start.operator GoodLang::Engine::File_Position().line, x.second.start.operator GoodLang::Engine::File_Position().column, x.second.end.operator GoodLang::Engine::File_Position().line, x.second.end.operator GoodLang::Engine::File_Position().column));
 						}
 					};
 					bool Define(std::string const& Name, std::string const& Content) {
@@ -1115,7 +1172,7 @@ namespace GoodLang {
 
 						oss << GoodLang::printf("%s(%s) %s : L%iC%i - L%iC%i\n",
 							t_prepend.c_str(), str.c_str(), data.c_str(),
-							this->location.start.line, this->location.start.column, this->location.end.line, this->location.end.column
+							this->location.start.operator GoodLang::Engine::File_Position().line, this->location.start.operator GoodLang::Engine::File_Position().column, this->location.end.operator GoodLang::Engine::File_Position().line, this->location.end.operator GoodLang::Engine::File_Position().column
 						);
 
 						for (auto& elem : children) {
@@ -1572,7 +1629,7 @@ namespace GoodLang {
 						}
 					}
 
-					void parse(const char_type t_char, const int line, const int col) {
+					void parse(const char_type t_char, File_Position pos) {
 						const bool is_octal_char = t_char >= '0' && t_char <= '7';
 
 						const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
@@ -1685,7 +1742,7 @@ namespace GoodLang {
 										match.push_back('$');
 										break;
 									default:
-										throw exception::eval_error("Unknown escaped sequence in string", File_Position(line, col), "");
+										throw exception::eval_error("Unknown escaped sequence in string", pos, "");
 									}
 									is_escaped = false;
 								}
@@ -1887,7 +1944,7 @@ namespace GoodLang {
 						while (m_position.has_more() && (*m_position != '`')) {
 							if (Eol()) {
 								throw exception::eval_error("Carriage return in identifier literal",
-									File_Position(m_position.line, m_position.col),
+									(File_Position)m_position,
 									"");
 							}
 							else {
@@ -1896,10 +1953,10 @@ namespace GoodLang {
 						}
 
 						if (start == m_position) {
-							throw exception::eval_error("Missing contents of identifier literal", File_Position(m_position.line, m_position.col), "");
+							throw exception::eval_error("Missing contents of identifier literal", (File_Position)m_position, "");
 						}
 						else if (!m_position.has_more()) {
-							throw exception::eval_error("Incomplete identifier literal", File_Position(m_position.line, m_position.col), "");
+							throw exception::eval_error("Incomplete identifier literal", (File_Position)m_position, "");
 						}
 
 						++m_position;
@@ -1920,13 +1977,11 @@ namespace GoodLang {
 						if (t_match_start != m_match_stack.size()) {
 							is_deep = true;
 							return Parse_Location(
-								m_match_stack[t_match_start]->location.start.line,
-								m_match_stack[t_match_start]->location.start.column,
-								m_position.line,
-								m_position.col);
+								m_match_stack[t_match_start]->location.start,
+								m_position);
 						}
 						else {
-							return Parse_Location(m_position.line, m_position.col, m_position.line, m_position.col);
+							return Parse_Location(m_position, m_position);
 						}
 					}();
 
@@ -1942,10 +1997,10 @@ namespace GoodLang {
 
 				/// create a node
 				template<typename T, typename... Param>
-				PreprocessorTokenPtr make_node(std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
+				PreprocessorTokenPtr make_node(std::string_view t_match, Position t_prev, Param &&...param) {
 					auto out = std::make_shared<T>(
 						t_match,
-						Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col),
+						Parse_Location(t_prev, m_position),
 						std::forward<Param>(param)...
 					);
 					return std::dynamic_pointer_cast<PreprocessorToken>(out);
@@ -1960,7 +2015,7 @@ namespace GoodLang {
 
 					while (m_position.has_more()) {
 						if (static_cast<unsigned char>(*m_position) > 0x7e) {
-							throw exception::eval_error("Illegal character", File_Position(m_position.line, m_position.col), "");
+							throw exception::eval_error("Illegal character", (File_Position)m_position, "");
 						}
 						auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
 
@@ -2031,14 +2086,14 @@ namespace GoodLang {
 					// top level stack        
 					if (Statements()) {
 						if (m_position.has_more()) {
-							throw exception::eval_error("Unparsed input", File_Position(m_position.line, m_position.col), "");
+							throw exception::eval_error("Unparsed input", (File_Position)m_position, "");
 						}
 						else {
 							build_match<CompletedPreprocessor>(0, t_input);
 						}
 					}
 					else {
-						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>("", Parse_Location{}, std::vector<PreprocessorTokenPtr>{})));
+						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>("", Parse_Location(m_position, m_position), std::vector<PreprocessorTokenPtr>{})));
 					}
 
 					PreprocessorTokenPtr retval = m_match_stack.front();
@@ -2111,7 +2166,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<DefinePreprocessor>(
 							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2128,7 +2183,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<UndefinePreprocessor>(
 							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2151,7 +2206,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfPreprocessor>(
 							this->m_position.str(this_prev_position, m_position),
-							Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ this_prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2162,7 +2217,7 @@ namespace GoodLang {
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfDefinedPreprocessor>(
 								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+								Parse_Location{ this_prev_position, m_position },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 						}
@@ -2174,7 +2229,7 @@ namespace GoodLang {
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IfNotDefinedPreprocessor>(
 								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+								Parse_Location{ this_prev_position, m_position },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 						}
@@ -2193,7 +2248,7 @@ namespace GoodLang {
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElseIfPreprocessor>(
 								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+								Parse_Location{ this_prev_position, m_position },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 							continue;
@@ -2204,7 +2259,7 @@ namespace GoodLang {
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ElsePreprocessor>(
 								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+								Parse_Location{ this_prev_position, m_position },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 							continue;
@@ -2214,7 +2269,7 @@ namespace GoodLang {
 							SkipToEndOfLine();
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<EndIfPreprocessor>(
 								this->m_position.str(this_prev_position, m_position),
-								Parse_Location{ this_prev_position.line, this_prev_position.col, m_position.line, m_position.col },
+								Parse_Location{ this_prev_position, m_position },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 						}
@@ -2237,7 +2292,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<ErrorPreprocessor>(
 							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2255,7 +2310,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<WarningPreprocessor>(
 							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2273,7 +2328,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<IncludePreprocessor>(
 							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2291,7 +2346,7 @@ namespace GoodLang {
 						SkipToEndOfLine();
 						m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<PragmaPreprocessor>(
 							this->m_position.str(prev_position, m_position),
-							Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+							Parse_Location{ prev_position, m_position },
 							std::vector<PreprocessorTokenPtr>{}
 						)));
 					}
@@ -2350,7 +2405,7 @@ namespace GoodLang {
 
 							m_match_stack.push_back(std::dynamic_pointer_cast<PreprocessorToken>(std::make_shared<NonePreprocessor>(
 								this->m_position.str(prev_position, m_position),
-								Parse_Location{ prev_position.line, prev_position.col, m_position.line, m_position.col },
+								Parse_Location{ prev_position, m_position },
 								std::vector<PreprocessorTokenPtr>{}
 							)));
 
@@ -2568,7 +2623,7 @@ namespace GoodLang {
 					}
 
 					explicit Constant_AST_Node(Any t_value)
-						: AST_Node_Impl("", AST_Node_Type::Constant, Parse_Location())
+						: AST_Node_Impl("", AST_Node_Type::Constant, Parse_Location{ Position{}, Position{} })
 						, m_value(std::move(t_value))
 					{
 						m_value.SetFlag(AnyData::Flag::constant, true);
@@ -3421,7 +3476,7 @@ namespace GoodLang {
 					{};
 
 					Noop_AST_Node()
-						: AST_Node_Impl("", AST_Node_Type::Noop, Parse_Location())
+						: AST_Node_Impl("", AST_Node_Type::Noop, Parse_Location{ Position{}, Position{} })
 					{};
 
 					Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -5448,105 +5503,6 @@ namespace GoodLang {
 						};
 
 					private:
-						struct Position {
-							constexpr Position() = default;
-
-							constexpr Position(const char* t_pos, const char* t_end) noexcept
-								: line(1)
-								, col(1)
-								, m_pos(t_pos)
-								, m_end(t_end)
-								, m_last_col(1) {
-							}
-
-							static std::string_view str(const Position& t_begin, const Position& t_end) noexcept {
-								if (t_begin.m_pos != nullptr && t_end.m_pos != nullptr) {
-									return std::string_view(t_begin.m_pos, std::size_t(std::distance(t_begin.m_pos, t_end.m_pos)));
-								}
-								else {
-									return {};
-								}
-							}
-
-							constexpr Position& operator++() noexcept {
-								if (m_pos != m_end) {
-									if (*m_pos == '\n') {
-										++line;
-										m_last_col = col;
-										col = 1;
-									}
-									else {
-										++col;
-									}
-
-									++m_pos;
-								}
-								return *this;
-							}
-
-							constexpr Position& operator--() noexcept {
-								--m_pos;
-								if (*m_pos == '\n') {
-									--line;
-									col = m_last_col;
-								}
-								else {
-									--col;
-								}
-								return *this;
-							}
-
-							constexpr Position& operator+=(size_t t_distance) noexcept {
-								*this = (*this) + t_distance;
-								return *this;
-							}
-
-							constexpr Position operator+(size_t t_distance) const noexcept {
-								Position ret(*this);
-								for (size_t i = 0; i < t_distance; ++i) {
-									++ret;
-								}
-								return ret;
-							}
-
-							constexpr Position& operator-=(size_t t_distance) noexcept {
-								*this = (*this) - t_distance;
-								return *this;
-							}
-
-							constexpr Position operator-(size_t t_distance) const noexcept {
-								Position ret(*this);
-								for (size_t i = 0; i < t_distance; ++i) {
-									--ret;
-								}
-								return ret;
-							}
-
-							constexpr bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
-
-							constexpr bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
-
-							constexpr bool has_more() const noexcept { return m_pos != m_end; }
-
-							constexpr size_t remaining() const noexcept { return static_cast<size_t>(m_end - m_pos); }
-
-							constexpr const char& operator*() const noexcept {
-								if (m_pos == m_end) {
-									return ""[0];
-								}
-								else {
-									return *m_pos;
-								}
-							}
-
-							int line = -1;
-							int col = -1;
-
-						private:
-							const char* m_pos = nullptr;
-							const char* m_end = nullptr;
-							int m_last_col = -1;
-						};
 						Position m_position{};
 						std::vector<ParseNode> m_match_stack;
 						std::vector<ParseNode> m_comment_stack;
@@ -5661,7 +5617,7 @@ namespace GoodLang {
 								}
 							}
 
-							void parse(const char_type t_char, const int line, const int col) {
+							void parse(const char_type t_char, File_Position pos) {
 								const bool is_octal_char = t_char >= '0' && t_char <= '7';
 
 								const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
@@ -5774,7 +5730,7 @@ namespace GoodLang {
 												match.push_back('$');
 												break;
 											default:
-												throw exception::eval_error("Unknown escaped sequence in string", File_Position(line, col), "");
+												throw exception::eval_error("Unknown escaped sequence in string", pos, "");
 											}
 											is_escaped = false;
 										}
@@ -6364,20 +6320,20 @@ namespace GoodLang {
 									if (Hex_()) {
 										auto match = Position::str(start, m_position);
 										auto bv = buildInt(16, match, true);
-										m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
+										m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start, std::move(bv)), currentScope });
 										return true;
 									}
 
 									if (Binary_()) {
 										auto match = Position::str(start, m_position);
 										auto bv = buildInt(2, match, true);
-										m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
+										m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start, std::move(bv)), currentScope });
 										return true;
 									}
 									if (Float_()) {
 										auto match = Position::str(start, m_position);
 										auto bv = buildFloat(match);
-										m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
+										m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start, std::move(bv)), currentScope });
 										return true;
 									}
 									else {
@@ -6385,11 +6341,11 @@ namespace GoodLang {
 										auto match = Position::str(start, m_position);
 										if (!match.empty() && (match[0] == '0')) {
 											auto bv = buildInt(8, match, false);
-											m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
+											m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start, std::move(bv)), currentScope });
 										}
 										else if (!match.empty()) {
 											auto bv = buildInt(10, match, false);
-											m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, std::move(bv)), currentScope });
+											m_match_stack.push_back(ParseNode{ make_node<Constant_AST_Node>(currentScope, match, start, std::move(bv)), currentScope });
 										}
 										else {
 											return false;
@@ -6422,7 +6378,7 @@ namespace GoodLang {
 								while (m_position.has_more() && (*m_position != '`')) {
 									if (Eol()) {
 										throw exception::eval_error("Carriage return in identifier literal",
-											File_Position(m_position.line, m_position.col),
+											(File_Position)m_position,
 											"");
 									}
 									else {
@@ -6431,10 +6387,10 @@ namespace GoodLang {
 								}
 
 								if (start == m_position) {
-									throw exception::eval_error("Missing contents of identifier literal", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Missing contents of identifier literal", (File_Position)m_position, "");
 								}
 								else if (!m_position.has_more()) {
-									throw exception::eval_error("Incomplete identifier literal", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete identifier literal", (File_Position)m_position, "");
 								}
 
 								++m_position;
@@ -6480,7 +6436,7 @@ namespace GoodLang {
 									++m_position;
 								}
 								else {
-									throw exception::eval_error("Unclosed quoted string", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Unclosed quoted string", (File_Position)m_position, "");
 								}
 
 								return true;
@@ -6510,13 +6466,11 @@ namespace GoodLang {
 								if (t_match_start != m_match_stack.size()) {
 									is_deep = true;
 									return Parse_Location(
-										m_match_stack[t_match_start].first->location.start.line,
-										m_match_stack[t_match_start].first->location.start.column,
-										m_position.line,
-										m_position.col);
+										m_match_stack[t_match_start].first->location.start,
+										m_position);
 								}
 								else {
-									return Parse_Location(m_position.line, m_position.col, m_position.line, m_position.col);
+									return Parse_Location(m_position, m_position);
 								}
 							}();
 
@@ -6556,11 +6510,11 @@ namespace GoodLang {
 
 						/// create a node
 						template<typename T, typename... Param>
-						std::shared_ptr<AST_Node_Impl> make_node(const std::shared_ptr<Scope>& currentScope, std::string_view t_match, const int t_prev_line, const int t_prev_col, Param &&...param) {
+						std::shared_ptr<AST_Node_Impl> make_node(const std::shared_ptr<Scope>& currentScope, std::string_view t_match, Position t_prev, Param &&...param) {
 							auto out = std::make_shared<T>(
 								currentScope,
 								std::string(t_match),
-								Parse_Location(t_prev_line, t_prev_col, m_position.line, m_position.col),
+								Parse_Location(t_prev, m_position),
 								std::forward<Param>(param)...
 								);
 							return std::dynamic_pointer_cast<AST_Node_Impl>(out);
@@ -6580,7 +6534,7 @@ namespace GoodLang {
 									}
 								}
 								std::string_view comment = Position::str(start, m_position);
-								auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
+								auto parseLoc = Parse_Location(start, m_position);
 								m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
 
 								return true;
@@ -6601,7 +6555,7 @@ namespace GoodLang {
 								}
 
 								std::string_view comment = Position::str(start, m_position);
-								auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
+								auto parseLoc = Parse_Location(start, m_position);
 								m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
 
 								return true;
@@ -6622,7 +6576,7 @@ namespace GoodLang {
 									}
 								}
 								std::string_view comment = Position::str(start, m_position);
-								auto parseLoc = Parse_Location(start.line, start.col, m_position.line, m_position.col);
+								auto parseLoc = Parse_Location(start, m_position);
 								m_comment_stack.push_back(ParseNode{ std::make_shared<Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
 
 								return true;
@@ -6638,7 +6592,7 @@ namespace GoodLang {
 
 							while (m_position.has_more()) {
 								if (static_cast<unsigned char>(*m_position) > 0x7e) {
-									throw exception::eval_error("Illegal character", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Illegal character", (File_Position)m_position, "");
 								}
 								auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
 
@@ -6718,12 +6672,12 @@ namespace GoodLang {
 
 								auto foundConstant = constants.find(text);
 								if (foundConstant != constants.end()) {
-									m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, text, start.line, start.col, foundConstant->second), currentScope });
+									m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, text, start, foundConstant->second), currentScope });
 								}
 								else {
 									switch (hash(text)) {
 									case hash("__LINE__"): {
-										m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, text, start.line, start.col, const_var(start.line)), currentScope });
+										m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, text, start, const_var(start.line)), currentScope });
 									} break;
 										//case hash("__FILE__"): {
 										//	m_match_stack.push_back(make_node<eval::Constant_AST_Node>(currentScope, text, start.line, start.col, const_var(m_filename)));
@@ -6733,7 +6687,7 @@ namespace GoodLang {
 										if (*start == '`') { // 'escaped' literal, like an operator name ( e.g. `[]`(...) )
 											val = Position::str(start + 1, m_position - 1);
 										}
-										m_match_stack.push_back({ make_node<Id_AST_Node>(currentScope, val, start.line, start.col), currentScope }); // e.g. "x", "Units::meter", etc.
+										m_match_stack.push_back({ make_node<Id_AST_Node>(currentScope, val, start), currentScope }); // e.g. "x", "Units::meter", etc.
 									} break;
 									}
 								}
@@ -6768,7 +6722,7 @@ namespace GoodLang {
 											if (*s == '{') {
 												// We've found an interpolation point
 
-												m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, match), currentScope });
+												m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, match, start, match), currentScope });
 
 												if (cparser.is_interpolated) {
 													// If we've seen previous interpolation, add on instead of making a new one
@@ -6792,7 +6746,7 @@ namespace GoodLang {
 
 													const auto tostr_stack_top = m_match_stack.size();
 
-													m_match_stack.push_back({ make_node<Id_AST_Node>(currentScope, "to_string", start.line, start.col), currentScope });
+													m_match_stack.push_back({ make_node<Id_AST_Node>(currentScope, "to_string", start), currentScope });
 
 													const auto ev_stack_top = m_match_stack.size();
 
@@ -6800,7 +6754,7 @@ namespace GoodLang {
 														m_match_stack.push_back(parse_instr_eval(eval_match, currentScope));
 													}
 													catch (const exception::eval_error& e) {
-														throw exception::eval_error(e.what(), File_Position(start.line, start.col), "");
+														throw exception::eval_error(e.what(), (File_Position)start, "");
 													}
 
 													build_match<Arg_List_AST_Node>(currentScope, ev_stack_top);
@@ -6808,7 +6762,7 @@ namespace GoodLang {
 													build_match<Binary_Operator_AST_Node>(currentScope, prev_stack_top, "+");
 												}
 												else {
-													throw exception::eval_error("Unclosed in-string eval", File_Position(start.line, start.col), "");
+													throw exception::eval_error("Unclosed in-string eval", (File_Position)start, "");
 												}
 											}
 											else {
@@ -6817,7 +6771,7 @@ namespace GoodLang {
 											cparser.saw_interpolation_marker = false;
 										}
 										else {
-											cparser.parse(*s, start.line, start.col);
+											cparser.parse(*s, start);
 
 											++s;
 										}
@@ -6830,7 +6784,7 @@ namespace GoodLang {
 									return cparser.is_interpolated;
 								}();
 
-								m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, match, start.line, start.col, match), currentScope });
+								m_match_stack.push_back({ make_node<Constant_AST_Node>(currentScope, match, start, match), currentScope });
 
 								if (is_interpolated) {
 									build_match<Binary_Operator_AST_Node>(currentScope, prev_stack_top, "+");
@@ -6924,7 +6878,7 @@ namespace GoodLang {
 								while (Char(',')) {
 									SkipWS(true);
 									if (!Arg(currentScope, false)) {
-										throw exception::eval_error("Unexpected value in parameter list", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position, "");
 									}
 								}
 							}
@@ -6953,7 +6907,7 @@ namespace GoodLang {
 								while (Char(',')) {
 									SkipWS(true);
 									if (!Arg(currentScope, true)) {
-										throw exception::eval_error("Unexpected value in parameter list", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position, "");
 									}
 								}
 							}
@@ -6983,7 +6937,7 @@ namespace GoodLang {
 									if (!Char(',')) break;
 									SkipWS(true);
 									if (!Equation(thisScope)) {
-										throw exception::eval_error("Unexpected value in parameter list", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position, "");
 									}
 								}
 							}
@@ -7006,7 +6960,7 @@ namespace GoodLang {
 							if (Operator(currentScope)) {
 								if (Symbol(":")) {
 									retval = true;
-									if (!Operator(currentScope)) { throw exception::eval_error("Incomplete map pair", File_Position(m_position.line, m_position.col), ""); }
+									if (!Operator(currentScope)) { throw exception::eval_error("Incomplete map pair", (File_Position)m_position, ""); }
 
 									build_match<Map_Pair_AST_Node>(currentScope, prev_stack_top);
 								}
@@ -7038,7 +6992,7 @@ namespace GoodLang {
 								while (Char(',')) {
 									SkipWS(true);
 									if (!Map_Pair(thisScope)) {
-										throw exception::eval_error("Unexpected value in container", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Unexpected value in container", (File_Position)m_position, "");
 									}
 								}
 								build_match<Arg_List_AST_Node>(thisScope, prev_stack_top);
@@ -7049,7 +7003,7 @@ namespace GoodLang {
 								while (Char(',')) {
 									SkipWS(true);
 									if (!Operator(thisScope)) {
-										throw exception::eval_error("Unexpected value in container", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Unexpected value in container", (File_Position)m_position, "");
 									}
 									SkipWS(true);
 								}
@@ -7081,7 +7035,7 @@ namespace GoodLang {
 							}
 
 							if (typeName_r == "void") {
-								throw exception::eval_error("Cannot cast to void", File_Position(m_position.line, m_position.col), "");
+								throw exception::eval_error("Cannot cast to void", (File_Position)m_position, "");
 							}
 
 							if (!retval) {
@@ -7106,7 +7060,7 @@ namespace GoodLang {
 									if (Symbol(sym.c_str(), true)) {
 										SkipWS(true);
 										if (!Equation(currentScope)) {
-											throw exception::eval_error("Incomplete equation", File_Position(m_position.line, m_position.col), "");
+											throw exception::eval_error("Incomplete equation", (File_Position)m_position, "");
 										}
 
 										build_match<Equation_AST_Node>(currentScope, prev_stack_top, sym.c_str());
@@ -7125,7 +7079,7 @@ namespace GoodLang {
 
 							if (Symbol("&")) {
 								if (!Id(true, currentScope)) {
-									throw exception::eval_error("Incomplete '&' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete '&' expression", (File_Position)m_position, "");
 								}
 
 								build_match<Reference_AST_Node>(currentScope, prev_stack_top);
@@ -7191,7 +7145,7 @@ namespace GoodLang {
 										build_match<Var_Decl_AST_Node>(currentScope, prev_stack_top);
 									}
 									else {
-										throw exception::eval_error("Incomplete variable declaration ", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete variable declaration ", (File_Position)m_position, "");
 									}
 								}
 								/*
@@ -7201,7 +7155,7 @@ namespace GoodLang {
 										build_match<Global_Decl_AST_Node>(prev_stack_top);
 									}
 									else {
-										throw exception::eval_error("Incomplete variable declaration ", File_Position(m_position.line, m_position.col), *m_filename);
+										throw exception::eval_error("Incomplete variable declaration ", (File_Position)m_position, *m_filename);
 									}
 								}
 								*/
@@ -7221,7 +7175,7 @@ namespace GoodLang {
 								const bool is_char = oper.size() == 1;
 								if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(oper.c_str()))) {
 									if (!Operator(currentScope, m_operators.size() - 1)) {
-										throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", (File_Position)m_position, "");
 									}
 									build_match<Prefix_AST_Node>(currentScope, prev_stack_top, oper.c_str());
 									return true;
@@ -7276,7 +7230,7 @@ namespace GoodLang {
 													std::string temp = GoodLang::ToString(lhs);
 
 													Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
-													loc.end.column += abbreviation.length();
+													loc.end.col += abbreviation.length();
 
 													m_match_stack[prev_stack_top - 1].first =
 														std::dynamic_pointer_cast<AST_Node_Impl>(
@@ -7303,7 +7257,7 @@ namespace GoodLang {
 
 
 												Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
-												loc.end.column += abbreviation.length();
+												loc.end.col += abbreviation.length();
 
 												m_match_stack[prev_stack_top - 1].first =
 													std::dynamic_pointer_cast<AST_Node_Impl>(
@@ -7380,7 +7334,7 @@ namespace GoodLang {
 
 										if (!Operator(currentScope, t_precedence + 1)) {
 											throw exception::eval_error("Incomplete '" + oper + "' expression",
-												File_Position(m_position.line, m_position.col),
+												(File_Position)m_position,
 												"");
 										}
 
@@ -7393,14 +7347,14 @@ namespace GoodLang {
 												if (Symbol(":")) {
 													if (!Operator(currentScope, t_precedence + 1)) {
 														throw exception::eval_error("Incomplete '" + oper + "' expression",
-															File_Position(m_position.line, m_position.col),
+															(File_Position)m_position,
 															"");
 													}
 													build_match<If_AST_Node>(currentScope, prev_stack_top);
 												}
 												else {
 													throw exception::eval_error("Incomplete '" + oper + "' expression",
-														File_Position(m_position.line, m_position.col),
+														(File_Position)m_position,
 														"");
 												}
 											}
@@ -7446,11 +7400,11 @@ namespace GoodLang {
 
 								SkipWS(true);
 								if (!Operator(thisScope)) {
-									throw exception::eval_error("Incomplete expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete expression", (File_Position)m_position, "");
 								}
 								SkipWS(true);
 								if (!Char(')')) {
-									throw exception::eval_error("Missing closing parenthesis ')'", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Missing closing parenthesis ')'", (File_Position)m_position, "");
 								}
 								return true;
 							}
@@ -7472,17 +7426,17 @@ namespace GoodLang {
 								retval = true;
 
 								if (!Char('(')) {
-									throw exception::eval_error("Incomplete 'while' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position, "");
 								}
 
 								if (!(Operator(thisScope) && Char(')'))) {
-									throw exception::eval_error("Incomplete 'while' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position, "");
 								}
 
 								SkipWS(true);
 
 								if (!Block(thisScope)) {
-									throw exception::eval_error("Incomplete 'while' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'while' block", (File_Position)m_position, "");
 								}
 
 								build_match<While_AST_Node>(currentScope, prev_stack_top);
@@ -7505,7 +7459,7 @@ namespace GoodLang {
 								SkipWS(true);
 								if (!Char(']')) {
 									throw exception::eval_error("Missing closing square bracket ']' in container initializer",
-										File_Position(m_position.line, m_position.col),
+										(File_Position)m_position,
 										"");
 								}
 								if ((prev_stack_top != m_match_stack.size()) && (!m_match_stack.back().first->children.empty())) {
@@ -7612,7 +7566,7 @@ namespace GoodLang {
 										Arg_List(currentScope);
 										SkipWS(true);
 										if (!Char(')')) {
-											throw exception::eval_error("Incomplete function call", File_Position(m_position.line, m_position.col), "");
+											throw exception::eval_error("Incomplete function call", (File_Position)m_position, "");
 										}
 
 										build_match<Fun_Call_AST_Node>(currentScope, prev_stack_top, "()");
@@ -7621,12 +7575,12 @@ namespace GoodLang {
 											if (m_match_stack.back().first->children[0]->identifier == AST_Node_Type::Dot_Access) {
 												if (m_match_stack.empty()) {
 													throw exception::eval_error("Incomplete dot access fun call",
-														File_Position(m_position.line, m_position.col),
+														(File_Position)m_position,
 														"");
 												}
 												if (m_match_stack.back().first->children.empty()) {
 													throw exception::eval_error("Incomplete dot access fun call",
-														File_Position(m_position.line, m_position.col),
+														(File_Position)m_position,
 														"");
 												}
 												auto dot_access = std::move(m_match_stack.back().first->children[0]);
@@ -7635,7 +7589,7 @@ namespace GoodLang {
 												func_call.first->children.erase(func_call.first->children.begin());
 												if (dot_access->children.empty()) {
 													throw exception::eval_error("Incomplete dot access fun call",
-														File_Position(m_position.line, m_position.col),
+														(File_Position)m_position,
 														"");
 												}
 												func_call.first->children.insert(func_call.first->children.begin(), std::move(dot_access->children.back()));
@@ -7643,7 +7597,7 @@ namespace GoodLang {
 												dot_access->children.push_back(std::move(func_call.first));
 												if (dot_access->children.size() != 2) {
 													throw exception::eval_error("Incomplete dot access fun call",
-														File_Position(m_position.line, m_position.col),
+														(File_Position)m_position,
 														"");
 												}
 												m_match_stack.push_back({ dot_access, func_call.second });
@@ -7654,7 +7608,7 @@ namespace GoodLang {
 										has_more = true;
 										if (!(Operator(currentScope) && Char(']'))) {
 											// TO-DO, Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
-											throw exception::eval_error("Incomplete array access", File_Position(m_position.line, m_position.col), "");
+											throw exception::eval_error("Incomplete array access", (File_Position)m_position, "");
 										}
 
 										build_match<Array_Call_AST_Node>(currentScope, prev_stack_top, "[]");
@@ -7662,11 +7616,11 @@ namespace GoodLang {
 									else if (Symbol(".")) {
 										has_more = true;
 										if (!(Id(true, currentScope))) {
-											throw exception::eval_error("Incomplete dot access fun call", File_Position(m_position.line, m_position.col), "");
+											throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position, "");
 										}
 
 										if (std::distance(m_match_stack.begin() + static_cast<int>(prev_stack_top), m_match_stack.end()) != 2) {
-											throw exception::eval_error("Incomplete dot access fun call", File_Position(m_position.line, m_position.col), "");
+											throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position, "");
 										}
 
 										build_match<Dot_Access_AST_Node>(currentScope, prev_stack_top, ".");
@@ -7750,7 +7704,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Char('(')) {
-									throw exception::eval_error("Incomplete 'for' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
 								}
 
 								SkipWS(true);
@@ -7764,7 +7718,7 @@ namespace GoodLang {
 									if (classic_for) classic_for = classic_for && Char(')');
 
 									if (!classic_for) {
-										throw exception::eval_error("Incomplete 'for' expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
 									}
 
 									classic_for = false;
@@ -7773,20 +7727,20 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'for' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'for' block", (File_Position)m_position, "");
 								}
 
 								const auto num_children = m_match_stack.size() - prev_stack_top;
 
 								if (classic_for) {
 									if (num_children != 4) {
-										throw exception::eval_error("Incomplete 'for' expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
 									}
 									build_match<For_AST_Node>(currentScope, prev_stack_top);
 								}
 								else {
 									if (num_children != 3) {
-										throw exception::eval_error("Incomplete ranged-for expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete ranged-for expression", (File_Position)m_position, "");
 									}
 									build_match<Ranged_For_AST_Node>(currentScope, prev_stack_top);
 								}
@@ -7800,7 +7754,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Char('(')) {
-									throw exception::eval_error("Incomplete 'parallel_for' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
 								}
 
 								SkipWS(true);
@@ -7814,7 +7768,7 @@ namespace GoodLang {
 									if (classic_for) classic_for = classic_for && Char(')');
 
 									if (!classic_for) {
-										throw exception::eval_error("Incomplete 'parallel_for' expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
 									}
 
 									classic_for = false;
@@ -7823,20 +7777,20 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'parallel_for' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'parallel_for' block", (File_Position)m_position, "");
 								}
 
 								const auto num_children = m_match_stack.size() - prev_stack_top;
 
 								if (classic_for) {
 									if (num_children != 3) {
-										throw exception::eval_error("Incomplete 'parallel_for' expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
 									}
 									build_match<Parallel_For_AST_Node>(currentScope, prev_stack_top);
 								}
 								else {
 									if (num_children != 3) {
-										throw exception::eval_error("Incomplete ranged-parallel_for expression", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete ranged-parallel_for expression", (File_Position)m_position, "");
 									}
 									build_match<Parallel_Ranged_For_AST_Node>(currentScope, prev_stack_top);
 								}
@@ -7883,7 +7837,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Operator(currentScope)) {
-									throw exception::eval_error("Incomplete 'case' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'case' expression", (File_Position)m_position, "");
 								}
 
 								SkipWS(true);
@@ -7893,7 +7847,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'case' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'case' block", (File_Position)m_position, "");
 								}
 
 								build_match<Case_AST_Node>(currentScope, prev_stack_top);
@@ -7910,7 +7864,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'default' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'default' block", (File_Position)m_position, "");
 								}
 
 								build_match<Default_AST_Node>(currentScope, prev_stack_top);
@@ -7925,11 +7879,11 @@ namespace GoodLang {
 
 							if (Keyword("switch")) {
 								if (!Char('(')) {
-									throw exception::eval_error("Incomplete 'switch' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position, "");
 								}
 
 								if (!(Operator(currentScope) && Char(')'))) {
-									throw exception::eval_error("Incomplete 'switch' expression", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position, "");
 								}
 
 								SkipWS(true);
@@ -7944,11 +7898,11 @@ namespace GoodLang {
 									SkipWS(true);
 
 									if (!Char('}')) {
-										throw exception::eval_error("Incomplete block", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
 									}
 								}
 								else {
-									throw exception::eval_error("Incomplete block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
 								}
 
 								build_match<Switch_AST_Node>(currentScope, prev_stack_top);
@@ -7970,7 +7924,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'try' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'try' block", (File_Position)m_position, "");
 								}
 
 								bool has_matches = true;
@@ -7984,27 +7938,27 @@ namespace GoodLang {
 											if (Symbol("...")) {
 												// captures anything...
 												if (!Char(')')) {
-													throw exception::eval_error("Incomplete 'catch(...)' expression", File_Position(m_position.line, m_position.col), "");
+													throw exception::eval_error("Incomplete 'catch(...)' expression", (File_Position)m_position, "");
 												}
 												success = true;
 											}
 
 											if (Arg(currentScope, true)) {
 												if (!Char(')')) {
-													throw exception::eval_error("Incomplete 'catch' expression", File_Position(m_position.line, m_position.col), "");
+													throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position, "");
 												}
 												success = true;
 											}
 
 											if (!success) {
-												throw exception::eval_error("Incomplete 'catch' expression", File_Position(m_position.line, m_position.col), "");
+												throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position, "");
 											}
 										}
 
 										SkipWS(true);
 
 										if (!Block(currentScope)) {
-											throw exception::eval_error("Incomplete 'catch' block", File_Position(m_position.line, m_position.col), "");
+											throw exception::eval_error("Incomplete 'catch' block", (File_Position)m_position, "");
 										}
 										build_match<Catch_AST_Node>(currentScope, catch_stack_top);
 										has_matches = true;
@@ -8017,7 +7971,7 @@ namespace GoodLang {
 									SkipWS(true);
 
 									if (!Block(currentScope)) {
-										throw exception::eval_error("Incomplete 'finally' block", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position, "");
 									}
 									build_match<Finally_AST_Node>(currentScope, finally_stack_top);
 								}
@@ -8030,7 +7984,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'do' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'do' block", (File_Position)m_position, "");
 								}
 								SkipWS(true);
 								if (Keyword("finally")) {
@@ -8039,7 +7993,7 @@ namespace GoodLang {
 									SkipWS(true);
 
 									if (!Block(currentScope)) {
-										throw exception::eval_error("Incomplete 'finally' block", File_Position(m_position.line, m_position.col), "");
+										throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position, "");
 									}
 									build_match<Finally_AST_Node>(currentScope, finally_stack_top);
 								}
@@ -8063,12 +8017,12 @@ namespace GoodLang {
 									/* Great! Got the desired name of the new namespace */
 								}
 								else {
-									throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", (File_Position)m_position, "");
 								}
 
 								// instead of collecting statements, we want to collect declarations...
 								if (!DeclarationsBlock(currentScope)) {
-									throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", (File_Position)m_position, "");
 								}
 
 								build_match<Namespace_AST_Node>(currentScope, prev_stack_top);
@@ -8135,7 +8089,7 @@ namespace GoodLang {
 							// top level stack        
 							if (Statements(currentScope)) {
 								if (m_position.has_more()) {
-									throw exception::eval_error("Unparsed input", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Unparsed input", (File_Position)m_position, "");
 								}
 								else {
 									// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
@@ -8189,7 +8143,7 @@ namespace GoodLang {
 								if (DeclNamespace(thisScope) || DeclFunction(thisScope) /* || Class(thisScope) || */) {
 									if (!saw_eol) {
 										throw exception::eval_error("Two function definitions missing line separator",
-											File_Position(start.line, start.col),
+											(File_Position)start,
 											"");
 									}
 									has_more = true;
@@ -8199,7 +8153,7 @@ namespace GoodLang {
 								else if (Equation(thisScope)) {
 									if (!saw_eol) {
 										throw exception::eval_error("Two expressions missing line separator",
-											File_Position(start.line, start.col),
+											(File_Position)start,
 											"");
 									}
 									has_more = true;
@@ -8238,7 +8192,7 @@ namespace GoodLang {
 								if (DeclNamespace(thisScope) || DeclFunction(thisScope) || /*Def(thisScope) || */ Try(thisScope) || If(thisScope) || While(thisScope) || /* Class(thisScope) || */ For(thisScope) || Switch(thisScope)) {
 									if (!saw_eol) {
 										throw exception::eval_error("Two function definitions missing line separator",
-											File_Position(start.line, start.col),
+											(File_Position)start,
 											"");
 									}
 									has_more = true;
@@ -8248,7 +8202,7 @@ namespace GoodLang {
 								else if (Return(thisScope) || Break(thisScope) || Continue(thisScope) || Equation(thisScope)) {
 									if (!saw_eol) {
 										throw exception::eval_error("Two expressions missing line separator",
-											File_Position(start.line, start.col),
+											(File_Position)start,
 											"");
 									}
 									has_more = true;
@@ -8282,7 +8236,7 @@ namespace GoodLang {
 								Statements(currentScope);
 
 								if (!Char('}')) {
-									throw exception::eval_error("Incomplete block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
 								}
 
 								if (m_match_stack.size() == prev_stack_top) {
@@ -8307,7 +8261,7 @@ namespace GoodLang {
 								Declarations(currentScope);
 
 								if (!Char('}')) {
-									throw exception::eval_error("Incomplete declaration block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete declaration block", (File_Position)m_position, "");
 								}
 
 								if (m_match_stack.size() == prev_stack_top) {
@@ -8336,7 +8290,7 @@ namespace GoodLang {
 								Statements(currentScope);
 
 								if (!Char('}')) {
-									throw exception::eval_error("Incomplete function block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete function block", (File_Position)m_position, "");
 								}
 
 								if (m_match_stack.size() == prev_stack_top) {
@@ -8372,23 +8326,23 @@ namespace GoodLang {
 								retval = true;
 								SkipWS(true);
 								if (!Char('(')) {
-									throw exception::eval_error("Incomplete 'if' expression: cannot find '('", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'if' expression: cannot find '('", (File_Position)m_position, "");
 								}
 								SkipWS(true);
 								if (!Equation(currentScope)) {
-									throw exception::eval_error("Incomplete 'if' expression: cannot find equation block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'if' expression: cannot find equation block", (File_Position)m_position, "");
 								}
 								SkipWS(true);
 								const bool is_if_init = Eol() && Equation(currentScope);
 								SkipWS(true);
 								if (!Char(')')) {
-									throw exception::eval_error("Incomplete 'if' expression: cannot find ')'", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'if' expression: cannot find ')'", (File_Position)m_position, "");
 								}
 
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'if' block", File_Position(m_position.line, m_position.col), "");
+									throw exception::eval_error("Incomplete 'if' block", (File_Position)m_position, "");
 								}
 
 								bool has_matches = true;
@@ -8403,7 +8357,7 @@ namespace GoodLang {
 										else {
 											SkipWS(true);
 											if (!Block(currentScope)) {
-												throw exception::eval_error("Incomplete 'else' block", File_Position(m_position.line, m_position.col), "");
+												throw exception::eval_error("Incomplete 'else' block", (File_Position)m_position, "");
 											}
 											has_matches = true;
 										}
@@ -8444,16 +8398,11 @@ namespace GoodLang {
 
 			};
 
-
-
 		};
 		
 
 	};
 
-};
-
-namespace GoodLang {
 	namespace Impl {
 		__forceinline void ToString(Tag< GoodLang::Engine::Compiler::Interpreter::parser::Parser2::ParseNode >, GoodLang::Engine::Compiler::Interpreter::parser::Parser2::ParseNode const& r, std::string& out) {
 			out = r.first->to_string();
