@@ -759,6 +759,7 @@ namespace GoodLang {
 				classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
 
 				// Functions
+				classPtr->AddFunction("Done", make_callable([](thisType& o) -> bool { return o.try_wait(); }));
 				classPtr->AddFunction("Await", make_callable([](thisType& o) -> Var { return Var(o.wait_get_any()); }));
 				classPtr->AddFunction("Returns", make_callable([](thisType const& o) -> std::weak_ptr<Type_Info> { return o.Type(); }));
 			}
@@ -1452,6 +1453,7 @@ namespace GoodLang {
 #undef Do1
 #undef Do
 			}
+
 		}
 
 		// Built-In static, templated functions
@@ -1472,6 +1474,10 @@ namespace GoodLang {
 			// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
 			this->AddFunction("print", make_callable([](Any const& x) -> void {
 				std::cout << GoodLang::ToString(x) + "\n";
+			}));
+			// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
+			this->AddFunction("Sleep", make_callable([](Units::second const& time) -> void {
+				::Sleep((long long)(Units::millisecond(time)()));
 			}));
 		}
 	};

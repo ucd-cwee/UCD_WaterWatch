@@ -145,6 +145,7 @@ namespace GoodLang {
 			ControlBlock,
 			Assign_Retroactively,
 			TypeId,
+			JustInTimeCompilation,
 			AST_Node_Type_end
 		);
 		BETTER_ENUM(PreprocessorDirectives, uint32_t,
@@ -284,6 +285,11 @@ namespace GoodLang {
 			int line = -1;
 			int col = -1;
 			int pos = -1;
+
+			std::string to_string() const {
+				return GoodLang::printf("L%iC%i(#%i)", line, col, pos);
+			};
+
 		private:
 			const char* m_pos = nullptr;
 			const char* m_end = nullptr;
@@ -297,6 +303,12 @@ namespace GoodLang {
 			{}
 			Position start;
 			Position end;
+
+			std::string to_string() const {
+				auto s = start.to_string();
+				auto e = end.to_string();
+				return GoodLang::printf("%s - %s", s.c_str(), e.c_str());
+			};
 		};
 
 		template<typename string_type>
@@ -548,10 +560,10 @@ namespace GoodLang {
 				std::string str = GoodLang::ToString(std::string(this->identifier.ToString()));
 				std::string returnType = ToString(this->return_type);
 				std::string TimeSpentEvaling = ToString(this->TimeSpent_Total());
-
-				oss << GoodLang::printf("%s(%s) [%s] %s : L%iC%i - L%iC%i -> %s\n",
+				std::string locationStr = this->location.to_string();
+				oss << GoodLang::printf("%s(%s) [%s] %s : %s -> %s\n",
 					t_prepend.c_str(), str.c_str(), TimeSpentEvaling.c_str(), this->text.c_str(),
-					this->location.start.operator GoodLang::Engine::File_Position().line, this->location.start.operator GoodLang::Engine::File_Position().column, this->location.end.operator GoodLang::Engine::File_Position().line, this->location.end.operator GoodLang::Engine::File_Position().column,
+					locationStr.c_str(),
 					returnType.c_str()
 				);
 
@@ -4726,7 +4738,6 @@ namespace GoodLang {
 						const_cast<std::shared_ptr<AST_Node_Impl>&>(m_lambda_node) = this->children.back() = parser::optimizer::Optimizer_Default().optimize(this->children.back(), currentScope);
 						this->return_type = user_type_shared<Proxy_Function>();
 
-
 						// need to immediately optimize the lambda node if at all possible, and reduce the likelihood of throwing (which significantly impacts performance). 
 						while (m_lambda_node->identifier == AST_Node_Type::Return) {
 							if (m_lambda_node->children.size() == 0) {
@@ -4740,8 +4751,6 @@ namespace GoodLang {
 							}
 						}
 						this->children.back() = m_lambda_node;
-
-
 					};
 
 					Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -4763,7 +4772,7 @@ namespace GoodLang {
 						}
 
 						bool returnVoid = false;
-						std::weak_ptr<Type_Info> returnType;// = user_type_shared<Any>();
+						std::weak_ptr<Type_Info> returnType;
 						if (this->children[2]->identifier != AST_Node_Type::Noop) {
 							if (auto Class = currentScope->FindClass(std::string(GetText(this->children[2])))) {
 								returnType = Class->GetClassType();
@@ -4774,88 +4783,235 @@ namespace GoodLang {
 							}
 						}
 
-						if (returnVoid) {
-							return GoodLang::make_callable([
-								lambda_node = m_lambda_node,
-									param_names = this->m_param_names,
-									captures
-							](
-								std::shared_ptr<Scope> currentScope,
-								std::shared_ptr<std::vector<Any>> params
-								)->Any {
-									auto function_scope = std::make_shared<FunctionScope>(currentScope);
-									function_scope->SetSelf(function_scope);
+						if (is_async) {
+							if (returnVoid) {
+								return GoodLang::make_callable([
+									lambda_node = m_lambda_node,
+										param_names = this->m_param_names,
+										captures
+								](
+									std::shared_ptr<Scope> currentScope,
+									std::shared_ptr<std::vector<Any>> params
+									)->Any {
+										auto function_scope = std::make_shared<FunctionScope>(currentScope);
+										function_scope->SetSelf(function_scope);
 
-									// insert the captures
-									for (auto& capture : captures) {
-										function_scope->AddObj(capture.first, capture.second, false);
-									}
-
-									// insert the function params
-									for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-										function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
-									}
-
-									try {
-										lambda_node->eval(function_scope);
-									}
-									catch (detail::Return_Value& rv) {
-										// if the retval is anything but void, we should throw an error
-										if (!rv.retval.IsEmpty()) {
-											throw exception::eval_error("Cannot return with a value inside of a lambda that expects to return void.");
+										// insert the captures
+										for (auto& capture : captures) {
+											function_scope->AddObj(capture.first, capture.second, false);
 										}
-									}
-									return Any();
-								}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() })
-									);
-						}
-						else {
-							return GoodLang::make_callable([
-								lambda_node = m_lambda_node,
+
+										// insert the function params
+										for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+											function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+										}
+
+										return parallel::async([
+											function_scope,
+												lambda_node
+										]() -> Any {
+											try {
+												lambda_node->eval(function_scope);
+											}
+											catch (detail::Return_Value& rv) {
+												// if the retval is anything but void, we should throw an error
+												if (!rv.retval.IsEmpty()) {
+													throw exception::eval_error("Cannot return with a value inside of a lambda that expects to return void.");
+												}
+											}
+											return Any();
+										}).as_promise();
+									}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() }), GoodLang::user_type_shared<GoodLang::parallel::promise>()
+								);
+							}
+							else {
+								return GoodLang::make_callable([
+									lambda_node = m_lambda_node,
 									param_names = this->m_param_names,
 									captures,
 									thisReturnType = returnType
-							](
-								std::shared_ptr<Scope> currentScope,
-								std::shared_ptr<std::vector<Any>> params
-								)->Any {
-									auto function_scope = std::make_shared<FunctionScope>(currentScope);
-									function_scope->SetSelf(function_scope);
+								](
+									std::shared_ptr<Scope> currentScope,
+									std::shared_ptr<std::vector<Any>> params
+									)->Any {
+										auto function_scope = std::make_shared<FunctionScope>(currentScope);
+										function_scope->SetSelf(function_scope);
 
-									// insert the captures
-									for (auto& capture : captures) {
-										function_scope->AddObj(capture.first, capture.second, false);
-									}
+										// insert the captures
+										for (auto& capture : captures) {
+											function_scope->AddObj(capture.first, capture.second, false);
+										}
 
-									// insert the function params
-									for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-										function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
-									}
+										// insert the function params
+										for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+											function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+										}
 
-									Any lambda_result;
-									try {
-										lambda_result = lambda_node->eval(function_scope);
-									}
-									catch (detail::Return_Value& rv) {
-										lambda_result = rv.retval;
-									}
+										return parallel::async([
+											currentScope_t = currentScope,
+											function_scope_t = function_scope,
+											lambda_node_t = lambda_node,
+											thisReturnType_t = thisReturnType
+										]() -> Any {
+											Any lambda_result;
+											try {
+												lambda_result = lambda_node_t->eval(function_scope_t);
+											}
+											catch (detail::Return_Value& rv) {
+												lambda_result = rv.retval;
+											}
 
-									if (thisReturnType.expired()) {
-										return lambda_result;
-									}
-									else {
-										return function_scope->Cast(lambda_result, thisReturnType);
-									}
-								}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>()/*, user_type_shared<AST_Node_Impl>()*/ }), returnType.expired() ? user_type_shared<Any>() : returnType
-									);
+											if (thisReturnType_t.expired()) {
+												return lambda_result;
+											}
+											else {
+												return function_scope_t->Cast(lambda_result, thisReturnType_t);
+											}
+										}).as_promise();
+									}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() }), GoodLang::user_type_shared<GoodLang::parallel::promise>()
+								);
+							}
+						}
+						else {
+							if (returnVoid) {
+								return GoodLang::make_callable([
+									lambda_node = m_lambda_node,
+										param_names = this->m_param_names,
+										captures
+								](
+									std::shared_ptr<Scope> currentScope,
+									std::shared_ptr<std::vector<Any>> params
+									)->Any {
+										auto function_scope = std::make_shared<FunctionScope>(currentScope);
+										function_scope->SetSelf(function_scope);
+
+										// insert the captures
+										for (auto& capture : captures) {
+											function_scope->AddObj(capture.first, capture.second, false);
+										}
+
+										// insert the function params
+										for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+											function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+										}
+
+										try {
+											lambda_node->eval(function_scope);
+										}
+										catch (detail::Return_Value& rv) {
+											// if the retval is anything but void, we should throw an error
+											if (!rv.retval.IsEmpty()) {
+												throw exception::eval_error("Cannot return with a value inside of a lambda that expects to return void.");
+											}
+										}
+										return Any();
+									}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() })
+								);
+							}
+							else {
+								return GoodLang::make_callable([
+									lambda_node = m_lambda_node,
+										param_names = this->m_param_names,
+										captures,
+										thisReturnType = returnType
+								](
+									std::shared_ptr<Scope> currentScope,
+									std::shared_ptr<std::vector<Any>> params
+									)->Any {
+										auto function_scope = std::make_shared<FunctionScope>(currentScope);
+										function_scope->SetSelf(function_scope);
+
+										// insert the captures
+										for (auto& capture : captures) {
+											function_scope->AddObj(capture.first, capture.second, false);
+										}
+
+										// insert the function params
+										for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+											function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+										}
+
+										Any lambda_result;
+										try {
+											lambda_result = lambda_node->eval(function_scope);
+										}
+										catch (detail::Return_Value& rv) {
+											lambda_result = rv.retval;
+										}
+
+										if (thisReturnType.expired()) {
+											return lambda_result;
+										}
+										else {
+											return function_scope->Cast(lambda_result, thisReturnType);
+										}
+									}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>()/*, user_type_shared<AST_Node_Impl>()*/ }), returnType.expired() ? user_type_shared<Any>() : returnType
+								);
+							}
 						}
 					}
+
+				public:
+					bool is_async = false;
 
 				private:
 					const std::vector<std::string> m_param_names;
 					const std::shared_ptr<AST_Node_Impl> m_lambda_node;
 				};
 
+				/*! Currently, the JIT compilation does not support preprocessor macros or other preprocessor activities. */
+				struct JustInTimeCompilation_AST_Node final : AST_Node_Impl {
+					JustInTimeCompilation_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::JustInTimeCompilation, std::move(t_loc), std::move(t_children))
+					{
+						if (this->children[0]->identifier == AST_Node_Type::Constant) {
+							auto& scriptVar = std::dynamic_pointer_cast<Constant_AST_Node>(this->children[0])->m_value;
+							if (scriptVar.IsTypeOf<std::string>()) {
+								Compile(scriptVar.cast<std::string&>(), currentScope, true);
+							}
+							else {
+								auto SCRIPT = currentScope->Cast<std::string>(currentScope->CallFunction("to_string", { scriptVar }));
+								Compile(SCRIPT, currentScope, true);
+							}
+						}
+					}
+
+					// eval("x + 1");
+					// Each thread will compile its own code. If a thread sees the same code again, it will not re-compile it.
+					// Pre-processor macros are not supported at this time. To do so would require text splicing, running the preprocessor, and then resuming the code here.
+					Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+						if (this->children[0]->identifier == AST_Node_Type::Constant) {
+							// consider this already done
+						}
+						else {
+							auto SCRIPT = currentScope->Cast<std::string>(currentScope->CallFunction("to_string", { this->children[0]->eval(currentScope) }));
+							Compile(SCRIPT, currentScope);
+						}
+						return TLS->second->eval(currentScope);
+					};
+
+				private:
+					GoodLang::ThreadLocalInstance < 
+						std::pair < std::string, AST_Node_Impl_Ptr > 
+					> TLS;
+					void Compile(std::string const& SCRIPT, const std::shared_ptr<Scope>& currentScope, bool UpdateAll = false) const {
+						if (UpdateAll) {
+							auto PARSER = GoodLang::Engine::Compiler::Interpreter::parser::Parser2();
+							auto PARSED_RESULT = PARSER.Parse(SCRIPT, currentScope);
+							const_cast<GoodLang::ThreadLocalInstance<std::pair<std::string, AST_Node_Impl_Ptr>>&>(TLS) = 
+								std::pair < std::string, AST_Node_Impl_Ptr >(SCRIPT, PARSED_RESULT.first);
+						}
+						else {
+							if ((!TLS->second) || (TLS->first != SCRIPT)) {
+								auto PARSER = GoodLang::Engine::Compiler::Interpreter::parser::Parser2();
+								auto PARSED_RESULT = PARSER.Parse(SCRIPT, currentScope);
+
+								const_cast<std::string&>(TLS->first) = SCRIPT;
+								const_cast<AST_Node_Impl_Ptr&>(TLS->second) = PARSED_RESULT.first;
+							}
+						}
+					};
+				};
 
 				class parser {
 				public:
@@ -6454,11 +6610,54 @@ namespace GoodLang {
 								}
 								});
 						};
+						void validate_object_name(std::string_view const& name) {
+							switch (hash(name)) {
+							case hash(""): 
+								throw exception::eval_error("Id names cannot be empty", (File_Position)this->m_position);
+							case hash("#define"): 
+							case hash("#undef"):
+							case hash("#ifdef"):
+							case hash("#ifndef"):
+							case hash("#elif"):
+							case hash("#else"):
+							case hash("#endif"):
+							case hash("#error"):
+							case hash("#warning"):
+							case hash("#include"):
+							case hash("#pragma"):
+							case hash("auto"):
+							case hash("var"):
+							case hash("global"):
+							case hash("while"):
+							case hash("for"):
+							case hash("parallel_for"):
+							case hash("break"):
+							case hash("conitnue"):
+							case hash("case"):
+							case hash("default"):
+							case hash("switch"):
+							case hash("try"):
+							case hash("catch"):
+							case hash("finally"):
+							case hash("do"):
+							case hash("evaluate"):
+							case hash("namespace"):
+							case hash("return"):
+							case hash("if"):
+							case hash("else"):
+							{
+								std::string temp = std::string(name);
+								throw exception::eval_error(GoodLang::printf("Id name '%s' was reserved for the langauge", temp.c_str()), (File_Position)this->m_position);
+							}
+							default:
+								return;
+							}
+						};
 
 					private: // TO-DO, re-impliment the optimization sequence inside of "build_match"
 						/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
 						template<typename NodeType>
-						void build_match(const std::shared_ptr<Scope>& currentScope, size_t t_match_start, std::string t_text = "") {
+						std::shared_ptr<NodeType> build_match(const std::shared_ptr<Scope>& currentScope, size_t t_match_start, std::string t_text = "") {
 							bool is_deep = false;
 
 							Parse_Location filepos = [&]() -> Parse_Location {
@@ -6485,28 +6684,15 @@ namespace GoodLang {
 								new_children.push_back(std::dynamic_pointer_cast<AST_Node_Impl>(x.first));
 							}
 
-							m_match_stack.push_back(ParseNode{
-								m_optimizer.optimize(std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<NodeType>(
-									currentScope
-									, std::move(t_text)
-									, std::move(filepos)
-									, std::move(new_children)
-								)), currentScope)
-								,
+							auto ptr = m_optimizer.optimize(std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<NodeType>(
 								currentScope
-								});
-
-							//m_match_stack.push_back(ParseNode{
-							//	std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<NodeType>(
-							//		currentScope
-							//		, std::move(t_text)
-							//		, std::move(filepos)
-							//		, std::move(new_children)
-							//	))
-							//	,
-							//	currentScope
-							//});
-						}
+								, std::move(t_text)
+								, std::move(filepos)
+								, std::move(new_children)
+							)), currentScope);
+							m_match_stack.push_back(ParseNode{ ptr, currentScope });
+							return std::dynamic_pointer_cast<NodeType>(ptr);
+						};
 
 						/// create a node
 						template<typename T, typename... Param>
@@ -6666,9 +6852,10 @@ namespace GoodLang {
 						bool Id(const bool validate, const std::shared_ptr<Scope>& currentScope) {
 							SkipWS();
 							const auto start = m_position;
+
 							if (Id_()) {
 								auto text = Position::str(start, m_position);
-								// if (validate) { validate_object_name(text);	}
+								if (validate) { validate_object_name(text);	}
 
 								auto foundConstant = constants.find(text);
 								if (foundConstant != constants.end()) {
@@ -7492,7 +7679,12 @@ namespace GoodLang {
 								return false;
 							};
 
+							/* All of the following should be examples of valid forms of lambda functions */
+							// []() async -> type {} 
 							// []() -> type {} 
+							// []() async {} 
+							// () async {} 
+							// () {} 
 
 							// Arg_List
 							if (Char('[')) {
@@ -7521,6 +7713,19 @@ namespace GoodLang {
 								return failure();
 							}
 
+							// KeyWords / modifiers
+							bool is_async = false;
+							bool foundKeyWord = true;
+							while (foundKeyWord) {
+								SkipWS(true);
+								foundKeyWord = false;
+
+								if (Keyword("async")) {
+									foundKeyWord = true;
+									is_async = true;
+								}
+							}
+
 							SkipWS(true);
 
 							// Noop or Id
@@ -7543,7 +7748,8 @@ namespace GoodLang {
 								return failure();
 							}
 
-							build_match<Lambda_AST_Node>(currentScope, prev_stack_top);
+							auto lambda_node = build_match<Lambda_AST_Node>(currentScope, prev_stack_top);
+							lambda_node->is_async = is_async;
 
 							return true;
 						};
@@ -7551,8 +7757,6 @@ namespace GoodLang {
 						bool Dot_Fun_Array(const std::shared_ptr<Scope>& currentScope) {
 							bool retval = false;
 							const auto prev_stack_top = m_match_stack.size();
-
-							// TO-DO, complete impl of these evaluations:
 
 							if (Lambda(currentScope) || Num(currentScope) || Quoted_String(currentScope) || Paren_Expression(currentScope) || Inline_Container(currentScope) || Id(false, currentScope)) {
 								retval = true;
@@ -8003,6 +8207,35 @@ namespace GoodLang {
 							return retval;
 						}
 
+						/// Reads a just-in-time compilation request from input
+						bool Eval(const std::shared_ptr<Scope>& currentScope) {
+							bool retval = false;
+							const auto prev_stack_top = m_match_stack.size();
+							if (Keyword("evaluate")) {
+								retval = true;
+								SkipWS(true);
+#if 1
+								if (!Char('(')) {
+									throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+								}
+								SkipWS(true);
+								if (!Equation(currentScope)) {
+									throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+								}
+								SkipWS(true);
+								if (!Char(')')) {
+									throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+								}
+#else
+								if (!Block(currentScope)) {
+									throw exception::eval_error("Incomplete 'evaluate' block", (File_Position)m_position, "");
+								}
+#endif
+								build_match<JustInTimeCompilation_AST_Node>(currentScope, prev_stack_top);
+							}
+							return retval;
+						}
+
 						/// Reads a namespace block from input
 						/// namespace Thing{ ... };
 						bool DeclNamespace(const std::shared_ptr<Scope>& currentScope) {
@@ -8189,7 +8422,7 @@ namespace GoodLang {
 
 								// TO-DO, complete impl of these evaluations:
 
-								if (DeclNamespace(thisScope) || DeclFunction(thisScope) || /*Def(thisScope) || */ Try(thisScope) || If(thisScope) || While(thisScope) || /* Class(thisScope) || */ For(thisScope) || Switch(thisScope)) {
+								if (DeclNamespace(thisScope) || DeclFunction(thisScope) || /*Def(thisScope) || */ Try(thisScope) || If(thisScope) || While(thisScope) || /* Class(thisScope) || */ For(thisScope) || Switch(thisScope) || Eval(thisScope)) {
 									if (!saw_eol) {
 										throw exception::eval_error("Two function definitions missing line separator",
 											(File_Position)start,
@@ -8821,6 +9054,164 @@ int main() {
 				print(std::string("\t -> \t") + ToString(result));
 			}
 
+
+			parsed_result = parse.Parse(R"start(	
+				auto lambda = []() async -> int {
+					return 5;
+				};
+				return lambda().Await();
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				auto lambda = []() async -> int {
+					Sleep(2_s); // ...sleeping...
+					return 50;
+				};
+				auto job = lambda();
+				while (!job.Done()){ /* ...waiting... */ }
+				return job.Await();
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(	
+				auto lambda = []() async {
+					Sleep(2_s);
+					return 55;
+				};
+				return lambda().Await();
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+			parsed_result = parse.Parse(R"start(	
+				auto lambda = []() async {
+					Sleep(2_s);
+					return;
+				};
+				return lambda().Await();
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+			parsed_result = parse.Parse(R"start(	
+				auto lambda;
+				if (1) {
+					auto x = 10;
+					lambda := [x]() async {
+						Sleep(2_s);
+						return x + 1;
+					};
+				}
+				return lambda().Await();
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+			//parsed_result = parse.Parse(R"start(	
+			//	auto lambda = [](x) async {
+			//		Sleep(0.15_s)
+			//		print(x + 1);
+			//	};
+			//	Vector jobs;
+			//	for (int i = 0; i < 100; ++i){
+			//		jobs.push_back(lambda((int)i)); 
+			//	}		
+			//	for (x : jobs){
+			//		x.Await();
+			//	}
+			//)start", StartScope(globalScope));
+			//if (1) {
+			//	Stopwatch sw;
+			//	sw.Start();
+			//	auto result = parsed_result.first->eval(StartScope(globalScope));
+			//	print(ToString(parsed_result));
+			//	print(std::string("\t -> \t") + ToString(result));
+			//}
+
+
+
+
+
+
+
+
+
+
+			parsed_result = parse.Parse(R"start(	
+				var& x = "print( \"PRINT ME FROM A JIT COMPILATION\" );";
+				evaluate( x ); // compiles the code into AST nodes, and then evaluates those nodes.
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				auto& X = "I " + "am " + "a " + "constant " + "expression."; // this will be reduced to a constant string value at compile-time
+				int j = 0;
+				for (int i = 0; i < 1000000; ++i) {
+					evaluate( "j++;" ); // compiles the code into AST nodes, and then evaluates those nodes...
+					// If the script text for those AST nodes does not change, then the nodes are not reevaluated every call and can be re-used. 
+				}
+				return j;
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				var j = 0_ft;
+				parallel_for (int i = 0; 1415){
+					evaluate( "j += ${ i }_ft" ); // compiles the code into AST nodes, and then evaluates those nodes.
+				}
+				return j;
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
 			parsed_result = parse.Parse(R"start(				
 				namespace TEST {
 					int DoWork(){
@@ -9182,6 +9573,7 @@ int main() {
 				{
 					Vector x := [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 					Map y := [ "a":10, 20:x, string("TEST"):30.0f ];
+					print(to_string(y));
 					return y;
 				}
 			)start", StartScope(globalScope));
@@ -9382,6 +9774,7 @@ int main() {
 					case 1: { break; }
 					case 2: { break; }
 					case 3: { break; }					
+					case [1,2,3,4]: { break; }
 					case ([1,2,3,4]): { break; }
 					case (["1":1]): { break; }
 					case ("TEST"): { break; }

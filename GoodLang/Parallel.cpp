@@ -808,6 +808,11 @@ namespace GoodLang {
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Wait();
 	};
+	bool JobGroup::JobGroupImpl::TryWait() {
+		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+		return !wg->IsBusy();
+	};
 	[[nodiscard]] JobGroup Job::AsyncInvoke() { return JobGroup(*this); };
 	[[nodiscard]] JobGroup Job::AsyncInvoke(std::vector<Any> const& p_inputs) const { 
 		Job out; {

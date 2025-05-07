@@ -450,6 +450,7 @@ namespace GoodLang {
 			void Queue(Job const& job);
 			void Queue(std::vector<Job> const& listOfJobs);
 			void Wait();
+			bool TryWait();
 			~JobGroupImpl() { Wait(); };
 		};
 
@@ -494,6 +495,11 @@ namespace GoodLang {
 		/* Await all jobs in this group */
 		void Wait() {
 			impl->Wait();
+		};
+
+		/* Await all jobs in this group */
+		bool TryWait() {
+			return impl->TryWait();
 		};
 
 		impl::TaskGroup& GetTaskGroup() const {
@@ -764,6 +770,33 @@ namespace GoodLang {
 						}
 					}
 				}
+			};
+			/* Returns true if the job is done, otherwise false. */
+			bool try_wait() const noexcept {
+				if (shared_state && result) {
+					if (shared_state->TryWait()) {
+						if (auto s = result->Shared()) {
+							if (auto p = s->load()) { // 
+								return true; // we are already done
+							}
+						}
+						Any R = shared_state->Wait_Get(); // multiple threads are allowed to contribute
+						if (auto s = result->Unique()) {
+							if (auto p = s->load()) {
+								return true; // we are already done
+							}
+							else {
+								auto* p2 = s->Set(new Any(R)); // should only happen once
+								if (p2) delete p2;
+							}
+						}	
+						return true;
+					}
+					else {
+						return false;
+					}
+				}
+				return false;
 			};
 			/* Try to get the result, if available. Does not wait. */
 			GoodLang::Any get_any() const noexcept {

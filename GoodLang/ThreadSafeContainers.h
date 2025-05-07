@@ -2252,6 +2252,29 @@ namespace GoodLang {
 
 	};
 
+
+	template <typename T> class ThreadLocalInstance final : public EpochGarbageCollectorImpl {
+	private:
+		std::array<T, ThreadManager::kMaxThreadNum> TLS_arr;
+		static auto GetThreadID() { return IDManager::GetThreadID(); };
+		auto& GetTLS() { return TLS_arr[GetThreadID()]; };
+		auto& GetTLS() const { return TLS_arr[GetThreadID()]; };
+
+	public:
+		T* operator->() { return &GetTLS(); };
+		const T* operator->() const { return &GetTLS(); };
+		T& operator*() { return GetTLS(); };
+		const T& operator*() const { return GetTLS(); };
+
+		ThreadLocalInstance& operator=(T const& val) {
+			for (auto& x : TLS_arr) {
+				x = val;
+			}
+			return *this;
+		};
+	};
+
+
 	/// <summary>
 	/// thread-safe sorted std::map.
 	/// </summary>
