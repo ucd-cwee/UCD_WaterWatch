@@ -745,17 +745,24 @@ namespace GoodLang {
 
 		template <typename T>
 		T Cast(Any const& from) const {
-			// see if it already matches (best option)
-			if (from.IsTypeOf<T>()) {
-				return from.cast<T>();
-			}
+			auto ToType = user_type_shared_ptr<T>();
+			auto FromType = from.Type().lock();
 
-			auto ToType = user_type_shared<T>();
-			auto FromType = from.Type();
+			// see if it already matches (best option)
+			//if (ToType->is_any()) {
+			//	return from.cast<T>();
+			//}
+			if ((int)FromType->is_const() <= (int)ToType->is_const()) {
+				if (ToType->is_ref()) {
+					if (FromType->underlyingHash == ToType->underlyingHash) {
+						return from.cast<T>();
+					}
+				}
+			}
 
 			// see if we can convert (fastest option)
 			if (auto Tree = this->GetTypeConverterTree()) {
-				if (Tree->Converts<T>(FromType)) {
+				if (Tree->Converts<T>(from)) {
 					try {
 						return Tree->Convert<T>(from);
 					}
@@ -767,7 +774,7 @@ namespace GoodLang {
 			if (ToClass) {
 				// see if he can convert (fastest option)
 				if (auto Tree2 = ToClass->GetTypeConverterTree()) {
-					if (Tree2->Converts<T>(FromType)) {
+					if (Tree2->Converts<T>(from)) {
 						try {
 							return Tree2->Convert<T>(from);
 						}
@@ -801,20 +808,26 @@ namespace GoodLang {
 		};
 		Any Cast(Any const& from, std::weak_ptr<Type_Info> const& To) const {
 			auto ToType = To.lock();
-			auto FromType = from.Type();
+			auto FromType = from.Type().lock();
 
 			// see if it already matches (best option)
-			if (from.IsTypeOf(ToType)) {
-				return from;
+			//if (ToType->is_any()) {
+			//	return from;
+			//}
+			if ((int)FromType->is_const() <= (int)ToType->is_const()) {
+				if (ToType->is_ref()) {
+					if (FromType->underlyingHash == ToType->underlyingHash) {
+						return from;
+					}
+				}
 			}
 
 			// see if we can convert (fastest option)
 			if (auto Tree = this->GetTypeConverterTree()) {
-				if (Tree->Converts(FromType, ToType)) {
+				if (Tree->Converts(from, ToType)) {
 					try {
 						return Tree->Convert(from, ToType);
-					}
-					catch (exception::bad_any_cast&) {}
+					} catch (exception::bad_any_cast&) {}
 				}
 			}
 
@@ -822,7 +835,7 @@ namespace GoodLang {
 			if (ToClass) {
 				// see if he can convert (fastest option)
 				if (auto Tree2 = ToClass->GetTypeConverterTree()) {
-					if (Tree2->Converts(FromType, ToType)) {
+					if (Tree2->Converts(from, ToType)) {
 						try {
 							return Tree2->Convert(from, ToType);
 						}

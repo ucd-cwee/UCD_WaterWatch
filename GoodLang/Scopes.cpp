@@ -611,6 +611,60 @@ namespace GoodLang {
 		}
 	};
 	std::shared_ptr<Namespace> Scope::FindNamespace(std::string QualifiedOrUnqualifiedNamespaceName) const {
+#if 1
+		static auto fixNamespace{ [](std::string& x) {
+			while (x.find("::") == 0 && x.length() > 2) {
+				x = x.substr(2);
+			}
+
+			while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+		} };
+		fixNamespace(QualifiedOrUnqualifiedNamespaceName);
+		if (QualifiedOrUnqualifiedNamespaceName == "" || QualifiedOrUnqualifiedNamespaceName == "::") { return std::dynamic_pointer_cast<Namespace>(this->GetLibrary()); }
+
+		std::shared_ptr<Namespace> out;
+
+#ifdef useCachedData
+		// note: if this scope is a non-namespace, has no "Using" statements, and has no children, then we can potentially speed-up the process by calling this function on the parent. The parent will do the caching, speeding up that parent scope (hopefully)
+		if (this->IsBasicScope()) {
+			if (auto p = this->p_parent.lock()) {
+				return p->FindNamespace(QualifiedOrUnqualifiedNamespaceName);
+			}
+		}
+
+		auto treeV = this->GetTypeConverterTreeVersion();
+		if (TryGetCached<1>(treeV, out, QualifiedOrUnqualifiedNamespaceName)) {
+			return out;
+		}
+#endif
+		auto ScopedQualifiedOrUnqualifiedNamespaceName = "::" + QualifiedOrUnqualifiedNamespaceName;
+		long long len = ScopedQualifiedOrUnqualifiedNamespaceName.length();
+		if (TryFindNearestNamespaceWhere(out, [&len, tryFind = ScopedQualifiedOrUnqualifiedNamespaceName](std::shared_ptr<Namespace> const& namespacePtr)->bool {
+			std::string const& qualifiedName = std::dynamic_pointer_cast<Scope>(namespacePtr)->GetQualifiedNamespace();
+			if ((qualifiedName.size() >= 2) && (qualifiedName.substr(qualifiedName.length() - 2) == "::")) {
+				// remove "::" from end
+				std::string QualifiedName = qualifiedName.substr(0, qualifiedName.length() - 2);
+				while (QualifiedName.size() >= 2 && (QualifiedName.substr(QualifiedName.length() - 2) == "::")) QualifiedName = QualifiedName.substr(0, QualifiedName.length() - 2);
+
+				long long QualifiedNameLen = QualifiedName.length();
+				auto F = QualifiedName.find(tryFind);
+				if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return true;
+				return false;
+			}
+			else {
+				long long qualifiedNameLen = qualifiedName.length();
+				auto F = qualifiedName.find(tryFind);
+				if ((F != std::string::npos) && (F == (qualifiedNameLen - len))) return true;
+				return false;
+			}
+			})) {
+#ifdef useCachedData
+			InsertCached<1>(treeV, out, QualifiedOrUnqualifiedNamespaceName);
+#endif
+			return out;
+		}
+		return nullptr;
+#else
 		static auto fixNamespace{ [](std::string& x) {
 			while (x.find("::") == 0 && x.length() > 2) {
 				x = x.substr(2);
@@ -665,6 +719,14 @@ namespace GoodLang {
 			return out;
 		}
 		return nullptr;
+
+#endif
+
+
+
+
+
+
 	};
 	std::shared_ptr<Class> Scope::FindClass(std::string const& QualifiedOrUnqualifiedNamespaceName) const {
 		return std::dynamic_pointer_cast<Class>(FindNamespace(QualifiedOrUnqualifiedNamespaceName));
@@ -1902,7 +1964,9 @@ namespace GoodLang {
 		}
 	};
 	Any Scope::CallFunction(std::string const& functionName, Any& params) const {
-		return CallFunction(functionName, { params });
+		std::vector<Any> temp{ params };
+		ParamTypes Params{ temp };
+		return BuildAndCallFunction(functionName, temp, Params, Params.hash());
 	};
 	Any Scope::CallFunction(Proxy_Function const& func, Any& params) const {
 		auto& tree{ this->GetTypeConverterTree() };

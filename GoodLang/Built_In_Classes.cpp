@@ -283,6 +283,15 @@ namespace GoodLang {
 					if (auto p = from.lock()) return p->is_void();
 					else return true;
 				}));
+				classPtr->AddFunction("is_ref", make_callable([self = classPtr->p_self](std::weak_ptr<Type_Info> const& from)-> bool {
+					if (auto p = from.lock()) return p->is_ref();
+					else return false;
+				}));
+				classPtr->AddFunction("is_const", make_callable([self = classPtr->p_self](std::weak_ptr<Type_Info> const& from)-> bool {
+					if (auto p = from.lock()) return p->is_const();
+					else return true;
+				}));
+
 				//classPtr->AddFunction("member_objects", make_callable([self = classPtr->p_self](std::weak_ptr<Type_Info> const& from) -> 
 				//	fibers::containers::Map<std::string, Any> {
 				//	if (auto p = self.lock()) {

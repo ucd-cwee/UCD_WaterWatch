@@ -566,12 +566,22 @@ namespace GoodLang {
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	void TypeConverter::Convert_In_Place(Any& from, std::shared_ptr<Type_Info> const& To) {
-		if (To && To->is_any()) {}
-		else if (from.IsTypeOf(*To)) {}
-		else if (TryDoConversion(from, To)) {}
-		else {
-			throw exception::bad_any_cast(from.Type(), To, __LINE__);
+		auto From = from.TypePtr();
+		if (To && To->is_any()) {
+			return;
 		}
+		if (To && From && ((int)From->is_const() <= (int)To->is_const())) {
+			if (To->is_ref()) {
+				if (From->underlyingHash == To->underlyingHash) {
+					return;
+				}
+			}
+		}
+		if (auto f = FindConverter(From, To)) {
+			f->convert_in_place(from);
+			return;
+		}
+		throw exception::bad_any_cast(from.Type(), To, __LINE__);
 	};
 	Any TypeConverter::Convert(Any const& from, std::shared_ptr<Type_Info> const& To) {
 		Any out{ from };
@@ -582,30 +592,12 @@ namespace GoodLang {
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	double TypeConverter::ConversionCost(Any const& from, std::shared_ptr<Type_Info> const& To) {
-		if (To && To->is_any()) {
-			return 0;
-		}
-		else if (from.IsTypeOf(To)) {
-			return 0;
-		}
-		else if (auto f = FindConverter(from.Type().lock(), To)) {
-			return f->cost();
-		}
-		return std::numeric_limits<double>::max();		
+		return ConversionCost_Fast(from.TypePtr(), To);
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
 	double TypeConverter::ConversionCost_Fast(Any const& from, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
-		if (To && To->is_any()) {
-			return 0;
-		}
-		else if (from.IsTypeOf(To)) {
-			return 0;
-		}
-		else if (auto f = FindConverter(From, To)) {
-			return  f->cost();
-		}
-		return std::numeric_limits<double>::max();		
+		return ConversionCost_Fast(From, To);
 	};
 
 	// will return an empty object if the conversion was impossible. (Assumes converting to void is not allowed or desired)
@@ -613,10 +605,14 @@ namespace GoodLang {
 		if (To && To->is_any()) {
 			return 0;
 		}
-		else if (GoodLang::GetHash(From) == GoodLang::GetHash(To)) {
-			return 0;
+		if (To && From && ((int)From->is_const() <= (int)To->is_const())) {
+			if (To->is_ref()) {
+				if (From->underlyingHash == To->underlyingHash) {
+					return 0;
+				}
+			}
 		}
-		else if (auto f = FindConverter(From, To)) {
+		if (auto f = FindConverter(From, To)) {
 			return  f->cost();
 		}
 		return std::numeric_limits<double>::max();

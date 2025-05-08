@@ -2474,7 +2474,47 @@ namespace GoodLang {
 						}
 						return false;
 					};
+					template<typename T>
+					static bool GetClassTypeImpl(T const& r, std::weak_ptr<Type_Info>& out) {
+						if (r->identifier == AST_Node_Type::Id) {
+							if (auto ptr = std::dynamic_pointer_cast<AST_Nodes::Id_AST_Node>(r)) {
+								if (ptr->type == AST_Nodes::IdType::Class) {
+									if (auto ptr2 = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(ptr)) {
+										out = ptr2->TypeInfo;
+										return true;
+									}
+								}
+							}
+						}
+
+						for (auto& child : r->children) {
+							if (GetClassTypeImpl(child, out)) {
+								return true;
+							}
+						}
+
+						return false;
+					};
+
 				};
+
+
+				static std::weak_ptr<Type_Info> GetClassType(AST_Node_Impl_Ptr const& r, std::shared_ptr<Scope> const& currentScope) {
+					std::weak_ptr<Type_Info> out;
+					if (r) {
+						if (!detail::GetClassTypeImpl(r, out)) {
+							auto sv = GetText(r);
+							if (auto Class = currentScope->FindClass(std::string(sv))) {
+								out = Class->GetClassType();
+							}
+							else if (sv == "void") {
+								out = user_type_shared<void>();
+							}
+						}
+					}
+					return out;
+				}
+
 				template<typename T> static std::string_view GetText(T const& r) {
 					std::string_view out;
 					(void)detail::GetTextImpl(r, out);
@@ -2738,6 +2778,8 @@ namespace GoodLang {
 						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
 							return this->children.back()->eval(currentScope);
 						}
+
+
 					};
 					//
 					struct Arg_List_AST_Node final : AST_Node_Impl {
@@ -2765,6 +2807,37 @@ namespace GoodLang {
 								retval.push_back(get_arg_name(*node));
 							}
 
+							return retval;
+						}
+						static std::weak_ptr<Type_Info> get_arg_type(const AST_Node_Impl& t_node) {
+							if (t_node.children.empty()) {
+								return user_type_shared<Any>();
+							}
+							else if (t_node.children.size() == 1) {
+								return user_type_shared<Any>();
+							}
+							else if (t_node.children[0]->identifier == AST_Node_Type::Id) {
+								if (auto ptr = std::dynamic_pointer_cast<AST_Nodes::Id_AST_Node>(t_node.children[0])) {
+									if (ptr->type == AST_Nodes::IdType::Class) {
+										if (auto ptr2 = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(ptr)) {
+											return ptr2->TypeInfo;
+										}
+									}
+								}
+								if (GetText(t_node.children[0]) == "void") {
+									return user_type_shared<void>();
+								}
+								return user_type_shared<Any>();
+							}
+							else {
+								return user_type_shared<Any>();
+							}							
+						}
+						static std::vector<std::weak_ptr<Type_Info>> get_arg_types(const AST_Node_Impl& t_node) {
+							std::vector<std::weak_ptr<Type_Info>> retval;
+							for (const auto& node : t_node.children) {
+								retval.push_back(get_arg_type(*node));
+							}
 							return retval;
 						}
 
@@ -3049,16 +3122,25 @@ namespace GoodLang {
 						}
 
 						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							bool refObj = false;
+							std::weak_ptr<Type_Info> out; 
+							if (detail::GetClassTypeImpl(this->children[0], out)) {
+								if (out.lock()->is_ref()) {
+									// user wanted a reference object.
+									currentScope->AddObj(idname, std::make_shared<Any>(Var(this->children[0]->eval(currentScope))));
+									refObj = true;
+								}
+							}
+
 							// child 0 = TypeID()
 							// child 1 = Id()
-
-							currentScope->AddObj(idname, std::make_shared<Any>(this->children[0]->eval(currentScope)));
+							if (!refObj) currentScope->AddObj(idname, std::make_shared<Any>(this->children[0]->eval(currentScope)));
 							if (this->children.size() == 2) {
 								return currentScope->FindObj(idname);
 							}
 							if (this->children.size() == 3) {
 								std::shared_ptr<Any> thisObj = currentScope->FindObj(idname);
-								(void)currentScope->CallFunction("=", { thisObj, this->children[2]->eval(currentScope) });
+								(void)currentScope->CallFunction(":=", { thisObj, this->children[2]->eval(currentScope) });								
 								return thisObj;
 							}
 							else {
@@ -3386,6 +3468,7 @@ namespace GoodLang {
 								std::move(t_loc),
 								std::vector<AST_Node_Impl_Ptr>(t_children))
 							, m_param_names(Arg_List_AST_Node::get_arg_names(*this->children[1]))
+							, m_param_types(Arg_List_AST_Node::get_arg_types(*this->children[1]))
 							//, m_this_capture(has_this_capture(this->children[0]->children))
 							, m_lambda_node(t_children.back())
 						{
@@ -3425,24 +3508,17 @@ namespace GoodLang {
 								}
 							}
 
-							bool returnVoid = false;
-							std::weak_ptr<Type_Info> returnType;
-							if (this->children[2]->identifier != AST_Node_Type::Noop) {
-								if (auto Class = currentScope->FindClass(std::string(GetText(this->children[2])))) {
-									returnType = Class->GetClassType();
-								}
-								else if (GetText(this->children[2]) == "void") {
-									returnType = user_type_shared<void>();
-									returnVoid = true;
-								}
-							}
+							
+							std::weak_ptr<Type_Info> returnType = GetClassType(this->children[2], currentScope);
+							bool returnVoid = (GetHash(returnType) == GetHash(user_type_shared<void>()));
 
 							if (is_async) {
 								if (returnVoid) {
 									return GoodLang::make_callable([
 										lambda_node = m_lambda_node,
-											param_names = this->m_param_names,
-											captures
+										param_names = this->m_param_names,
+										captures, 
+										paramTypes = this->m_param_types
 									](
 										std::shared_ptr<Scope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
@@ -3457,7 +3533,8 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												// function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
 											return parallel::async([
@@ -3483,7 +3560,8 @@ namespace GoodLang {
 										lambda_node = m_lambda_node,
 											param_names = this->m_param_names,
 											captures,
-											thisReturnType = returnType
+											thisReturnType = returnType,
+											paramTypes = this->m_param_types
 									](
 										std::shared_ptr<Scope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
@@ -3498,7 +3576,8 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												// function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
 											return parallel::async([
@@ -3531,7 +3610,8 @@ namespace GoodLang {
 									return GoodLang::make_callable([
 										lambda_node = m_lambda_node,
 											param_names = this->m_param_names,
-											captures
+											captures,
+											paramTypes = this->m_param_types
 									](
 										std::shared_ptr<Scope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
@@ -3546,7 +3626,8 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												// function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
 											try {
@@ -3565,9 +3646,10 @@ namespace GoodLang {
 								else {
 									return GoodLang::make_callable([
 										lambda_node = m_lambda_node,
-											param_names = this->m_param_names,
-											captures,
-											thisReturnType = returnType
+										param_names = this->m_param_names,
+										captures,
+										thisReturnType = returnType,
+										paramTypes = this->m_param_types
 									](
 										std::shared_ptr<Scope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
@@ -3582,7 +3664,8 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												// function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
 											Any lambda_result;
@@ -3609,6 +3692,7 @@ namespace GoodLang {
 						bool is_async = false;
 
 					private:
+						const std::vector<std::weak_ptr<Type_Info>> m_param_types; 
 						const std::vector<std::string> m_param_names;
 						const std::shared_ptr<AST_Node_Impl> m_lambda_node;
 					};
@@ -4168,7 +4252,6 @@ namespace GoodLang {
 							} };
 							fixNamespace(desired_namespace);
 
-							print(desired_namespace);
 							auto newNamespace = currentScope->FindNamespace(desired_namespace);
 							if (!newNamespace) {
 								newNamespace = std::make_shared<Namespace>(currentScope, std::string(GetText(this->children[0])));
@@ -4185,23 +4268,29 @@ namespace GoodLang {
 					struct FunctionDecl_AST_Node final : AST_Node_Impl {
 						FunctionDecl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::FunctionDecl, std::move(t_loc), std::move(t_children))
+							, inputArgNames(Arg_List_AST_Node::get_arg_names(*this->children[2]))
+							, inputArgTypes(Arg_List_AST_Node::get_arg_types(*this->children[2]))
 						{
 							assert(this->children.size() == 4); // Id -> return_type, Id -> function_name, Arg_List, Block
 
 							return_type_name = GetText(this->children[0]);
+							//if (return_type_name != "void") {
+							    this->return_type = GetClassType(this->children[0], currentScope);
+							//}
+
 							function_name = GetText(this->children[1]);
 							numArgs = this->children[2]->children.size();
 							FunctionBlock = this->children[3] = optimizer::optimize(this->children[3], currentScope);
+							/*
 							for (int childIndex = 0; childIndex < numArgs; ++childIndex) {
 								auto& Arg = *this->children[2]->children[childIndex];
-								if (Arg.children.size() == 1) {
-									// type was not provided.
+								if (Arg.children.size() == 1) { // type was not provided.
+									
 									inputArgTypes.push_back(user_type_shared<Any>());
 									inputArgNames.push_back(std::string(GetText(Arg.children[0])));
 
 								}
-								else if (Arg.children.size() == 2) {
-									// type was provided.
+								else if (Arg.children.size() == 2) { // type was provided.									
 									auto type_name = GetText(Arg.children[0]);
 									if (auto arg_type_class = currentScope->FindClass(return_type_name)) {
 										inputArgTypes.push_back(arg_type_class->GetClassType().lock()->MakeRef());
@@ -4215,22 +4304,22 @@ namespace GoodLang {
 									throw exception::eval_error("Unhandled Arg parameter(s)");
 								}
 							}
-
-							if (return_type_name == "void") {
-								// function will return void
-							}
-							else {
-								if (auto return_type_class = currentScope->FindClass(return_type_name)) {
-									this->return_type = return_type_class->GetClassType();
-								}
-							}
+							*/
+							//if (return_type_name == "void") {
+							//	// function will return void
+							//}
+							//else {
+							//	if (auto return_type_class = currentScope->FindClass(return_type_name)) {
+							//		this->return_type = return_type_class->GetClassType();
+							//	}
+							//}
 
 						};
 
-						static void AddObjects(int startposition, std::shared_ptr< Scope> const& thisScope, std::vector<std::string> const& argNames) {};
-						template<typename T, typename... R> static void AddObjects(int startposition, std::shared_ptr< Scope> const& thisScope, std::vector<std::string> const& argNames, T const& argument, R const&... arguments) {
-							thisScope->AddObj(argNames[startposition], std::make_shared<Any>(argument), false);
-							AddObjects(startposition + 1, thisScope, argNames, arguments...);
+						static void AddObjects(int startposition, std::shared_ptr< Scope> const& thisScope, std::vector<std::string> const& argNames, std::vector<std::weak_ptr<Type_Info>> const& argTypes) {};
+						template<typename T, typename... R> static void AddObjects(int startposition, std::shared_ptr< Scope> const& thisScope, std::vector<std::string> const& argNames, std::vector<std::weak_ptr<Type_Info>> const& argTypes, T const& argument, R const&... arguments) {
+							thisScope->AddObj(argNames[startposition], std::make_shared<Any>(thisScope->Cast(argument, argTypes[startposition])), false);
+							AddObjects(startposition + 1, thisScope, argNames, argTypes, arguments...);
 						};
 
 						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -4261,13 +4350,13 @@ namespace GoodLang {
 							if (GetHash(this->return_type) == GetHash(user_type<void>())) {
 								switch (numArgs) {
 								case 0:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									]() {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4277,13 +4366,13 @@ namespace GoodLang {
 									break;
 
 								case 1:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& in1) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, in1);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4293,13 +4382,13 @@ namespace GoodLang {
 									break;
 
 								case 2:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& in1, Any const& in2) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, in1, in2);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1, in2);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4309,13 +4398,13 @@ namespace GoodLang {
 									break;
 
 								case 3:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4325,13 +4414,13 @@ namespace GoodLang {
 									break;
 
 								case 4:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4341,13 +4430,13 @@ namespace GoodLang {
 									break;
 
 								case 5:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4357,13 +4446,13 @@ namespace GoodLang {
 									break;
 
 								case 6:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4373,13 +4462,13 @@ namespace GoodLang {
 									break;
 
 								case 7:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4389,14 +4478,14 @@ namespace GoodLang {
 									break;
 
 								case 8:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4406,14 +4495,14 @@ namespace GoodLang {
 									break;
 
 								case 9:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4423,14 +4512,14 @@ namespace GoodLang {
 									break;
 
 								case 10:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4440,14 +4529,14 @@ namespace GoodLang {
 									break;
 
 								case 11:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4457,7 +4546,7 @@ namespace GoodLang {
 									break;
 
 								case 12:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l) {
 										Any result;
@@ -4465,7 +4554,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4475,14 +4564,14 @@ namespace GoodLang {
 									break;
 
 								case 13:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4492,14 +4581,14 @@ namespace GoodLang {
 									break;
 
 								case 14:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4509,14 +4598,14 @@ namespace GoodLang {
 									break;
 
 								case 15:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n, Any const& o) {
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
 
 											try { lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) {}
@@ -4529,14 +4618,14 @@ namespace GoodLang {
 							else {
 								switch (numArgs) {
 								case 0:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									]()->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4547,14 +4636,14 @@ namespace GoodLang {
 									break;
 
 								case 1:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& in1)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, in1);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4565,14 +4654,14 @@ namespace GoodLang {
 									break;
 
 								case 2:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& in1, Any const& in2)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, in1, in2);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1, in2);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4583,14 +4672,14 @@ namespace GoodLang {
 									break;
 
 								case 3:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4601,14 +4690,14 @@ namespace GoodLang {
 									break;
 
 								case 4:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4619,14 +4708,14 @@ namespace GoodLang {
 									break;
 
 								case 5:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4637,14 +4726,14 @@ namespace GoodLang {
 									break;
 
 								case 6:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4655,14 +4744,14 @@ namespace GoodLang {
 									break;
 
 								case 7:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4673,7 +4762,7 @@ namespace GoodLang {
 									break;
 
 								case 8:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h)->Any {
 										Any result;
@@ -4681,7 +4770,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4692,7 +4781,7 @@ namespace GoodLang {
 									break;
 
 								case 9:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i)->Any {
 										Any result;
@@ -4700,7 +4789,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4711,7 +4800,7 @@ namespace GoodLang {
 									break;
 
 								case 10:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j)->Any {
 										Any result;
@@ -4719,7 +4808,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4730,7 +4819,7 @@ namespace GoodLang {
 									break;
 
 								case 11:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k)->Any {
 										Any result;
@@ -4738,7 +4827,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4749,7 +4838,7 @@ namespace GoodLang {
 									break;
 
 								case 12:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l)->Any {
 										Any result;
@@ -4757,7 +4846,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4768,7 +4857,7 @@ namespace GoodLang {
 									break;
 
 								case 13:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m)->Any {
 										Any result;
@@ -4776,7 +4865,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4787,7 +4876,7 @@ namespace GoodLang {
 									break;
 
 								case 14:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n)->Any {
 										Any result;
@@ -4795,7 +4884,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -4806,7 +4895,7 @@ namespace GoodLang {
 									break;
 
 								case 15:
-									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n, Any const& o)->Any {
 										Any result;
@@ -4814,7 +4903,7 @@ namespace GoodLang {
 											auto thisScope = std::make_shared<Scope>(parentScope);
 											thisScope->SetSelf(thisScope);
 
-											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
+											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
@@ -5039,8 +5128,228 @@ namespace GoodLang {
 						}
 					};
 
+					// String embedding results in a structure that may resemble:
+					//		ArgList -> {  File -> {   Constant   }  }
+					// This should be simplified to: 
+					//		ArgList -> {  Constant  }
+					struct ArgListFileConstant {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Arg_List
+								&& node->children.size() == 1
+								&& node->children[0]->identifier == AST_Node_Type::File
+								&& node->children[0]->children.size() == 1
+								&& node->children[0]->children[0]->identifier == AST_Node_Type::Constant
+								) {
+								node->children[0] = std::move(node->children[0]->children[0]);
+								return true;
+							}
+							return false;
+						}
+					};
+
+					// converts from:
+					//		var x = int(1)
+					// to:
+					//		int x{ 1 };
+					struct VarDeclEquation_To_RetroactiveAssignment {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Equation
+								&& node->children.size() == 2
+								&& ((node->children[0]->identifier == AST_Node_Type::Reference) || (node->children[0]->identifier == AST_Node_Type::Var_Decl))
+								&& node->children[0]->children.size() == 1
+								// && node->children[0]->children[0]->identifier == AST_Node_Type::Id
+								// && node->children[1]->identifier == AST_Node_Type::Fun_Call
+								&& ((node->text == "=") || (node->text == ":="))
+								) {
+								node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Assign_Retroactively_AST_Node>(
+									currentScope, node->text, node->location, std::vector<AST_Node_Impl_Ptr>{
+										std::move(node->children[1]),
+										std::move(node->children[0])
+									}
+								));
+								return true;
+							}
+
+							if (node->identifier == AST_Node_Type::Equation
+								&& node->children.size() == 2
+								&& node->children[0]->identifier == AST_Node_Type::Assign_Retroactively
+								&& ((node->text == "=") || (node->text == ":="))
+								) {
+								node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Assign_Retroactively_AST_Node>(
+									currentScope, node->text, node->location, std::vector<AST_Node_Impl_Ptr>{
+										std::move(node->children[0]->children[0]),
+										std::move(node->children[0]->children[1]),
+										std::move(node->children[1])
+									}
+								));
+								return true;
+							}
+
+
+
+
+							return false;
+						}
+					};
+
+					// String embedding results in a structure that may resemble:
+					//		Fun_Call -> {  Id{ to_string }, Arg_list{ Constant{} } }
+					// This should be simplified and completed:
+					//      Constant(to_string(Constant()))
+					struct ToStringFunctionCallWithConstant {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Fun_Call
+								&& node->children.size() == 2
+								&& node->children[0]->identifier == AST_Node_Type::Id
+								&& node->children[1]->identifier == AST_Node_Type::Arg_List
+								&& node->children[1]->children.size() == 1
+								&& node->children[1]->children[0]->identifier == AST_Node_Type::Constant
+								&& node->children[0]->text == "to_string"
+								) {
+								const Any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1]->children[0].get())->m_value;
+								try {
+									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+										node->text, node->location, currentScope->CallFunction("to_string", const_cast<Any&>(rhs))
+									));
+									return true;
+								}
+								catch (...) {
+									// failure to fold -- that's OK
+									return false;
+								}
+							}
+							return false;
+						}
+					};
+
+					// removes items from Blocks that are unecessary (e.g. floating code) or will never be hit (e.g. following return statements)
+					struct Dead_Code {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if ((node->identifier == AST_Node_Type::Block) || (node->identifier == AST_Node_Type::Scopeless_Block)) {
+								std::vector<size_t> keepers;
+								const auto num_children = node->children.size();
+								keepers.reserve(num_children);
+								bool foundReturnStatement = false;
+								for (size_t i = 0; i < (num_children - 1); ++i) {
+									const auto& child = *node->children[i];
+									switch (child.identifier) {
+									case AST_Node_Type::Constant: // 50.0f;
+									case AST_Node_Type::Noop: // comments
+									case AST_Node_Type::Id: // y, x, etc.
+										break;
+									case AST_Node_Type::Return: // return; return x; return 50; etc.
+										keepers.push_back(i);
+										i = num_children; // stop considering the remaining items -- they'll never be found anyways. 
+										foundReturnStatement = true;
+										break;
+									default:
+										keepers.push_back(i);
+										break;
+									}
+								}
+								if ((!foundReturnStatement) && (num_children > 0)) { keepers.push_back(num_children - 1); };
+
+								if (keepers.size() == num_children) {
+									return false;
+								}
+								else {
+									const auto new_children = [&]() {
+										std::vector<AST_Node_Impl_Ptr> retval;
+										for (const auto x : keepers) {
+											retval.push_back(std::move(node->children[x]));
+										}
+										return retval;
+									};
+
+									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Block_AST_Node>(currentScope, node->text, node->location, new_children()));
+
+									return true;
+								}
+							}
+							else {
+								return false;
+							}
+						}
+					};
+
+					// re-arrange the return statement, to avoid throwing whenever possible
+					struct Return {
+						bool optimize(AST_Node_Impl_Ptr& p, const std::shared_ptr<Scope>& currentScope) {
+							if ((p->identifier == AST_Node_Type::Lambda) && !p->children.empty()) {
+								auto& last_child = p->children.back();
+								if (last_child->identifier == AST_Node_Type::Block || last_child->identifier == AST_Node_Type::Scopeless_Block) {
+									auto& block_last_child = last_child->children.back();
+									if (block_last_child->identifier == AST_Node_Type::Return) {
+										if (block_last_child->children.size() == 1) {
+											block_last_child = std::move(block_last_child->children[0]);
+											return true;
+										}
+										else if (block_last_child->children.size() == 0) {
+											block_last_child = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Noop_AST_Node>());
+											return true;
+										}
+									}
+								}
+								//if (last_child->identifier == AST_Node_Type::Return) {
+								//	if (last_child->children.size() == 1) {
+								//		last_child = std::move(last_child->children[0]);
+								//		return true;
+								//	}
+								//	else if (last_child->children.size() == 0) {
+								//		last_child = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<Noop_AST_Node>());
+								//		return true;
+								//	}
+								//}
+							}
+							if ((p->identifier == AST_Node_Type::Def) && !p->children.empty()) {
+								auto& last_child = p->children.back();
+								if (last_child->identifier == AST_Node_Type::Block || last_child->identifier == AST_Node_Type::Scopeless_Block) {
+									auto& block_last_child = last_child->children.back();
+									if (block_last_child->identifier == AST_Node_Type::Return) {
+										if (block_last_child->children.size() == 1) {
+											last_child->children.back() = std::move(block_last_child->children[0]);
+											return true;
+										}
+									}
+								}
+							}
+							if (p->identifier == AST_Node_Type::File && !p->children.empty()) {
+								auto& last_child = p->children.back();
+								if (last_child->identifier == AST_Node_Type::Block || last_child->identifier == AST_Node_Type::Scopeless_Block) {
+									auto& block_last_child = last_child->children.back();
+									if (block_last_child->identifier == AST_Node_Type::Return) {
+										if (block_last_child->children.size() == 0) {
+											last_child->children.back() = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Noop_AST_Node>());
+											return true;
+										}
+										else if (block_last_child->children.size() == 1) {
+											last_child->children.back() = std::move(block_last_child->children[0]);
+											return true;
+										}
+									}
+								}
+								else if (last_child->identifier == AST_Node_Type::Return) {
+									if (last_child->children.size() == 0) {
+										last_child = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Noop_AST_Node>());
+										return true;
+									}
+									else if (last_child->children.size() == 1) {
+										last_child = std::move(last_child->children[0]);
+										return true;
+									}
+								}
+							}
+							return false;
+						}
+					};
+
 					using Optimizer_Default = Optimizer<
-						Example
+						Return,
+						Dead_Code, 
+						Example,
+						ArgListFileConstant,
+						VarDeclEquation_To_RetroactiveAssignment,
+						ToStringFunctionCallWithConstant
 					>;
 
 				public:
@@ -6374,7 +6683,13 @@ namespace GoodLang {
 							std::string_view className;
 
 							auto Success = [&](bool Const, bool Ref) -> bool {
-								if (auto Class = currentScope->FindClass(std::string(className))) {
+								if (className == "void") {
+									auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, className, prev_pos));
+									ptr->TypeInfo = user_type_shared<void>();
+									m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
+									return true;
+								}
+								else if (auto Class = currentScope->FindClass(std::string(className))) {
 									auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, className, prev_pos));
 									if (Const && Ref) {
 										ptr->TypeInfo = Class->GetClassType().lock()->MakeConstRef();
@@ -6510,8 +6825,7 @@ namespace GoodLang {
 					bool TypeName(const std::shared_ptr<Scope>& currentScope) {
 						return Id(false, currentScope, AST_Nodes::IdType::Class);
 					};
-					
-
+		
 					/// Reads an argument from input
 					bool Arg(const std::shared_ptr<Scope>& currentScope, const bool t_type_allowed = true) {
 						const auto prev_stack_top = m_match_stack.size();
@@ -6753,6 +7067,15 @@ namespace GoodLang {
 						return false;
 					};
 
+					static auto make_postfix_operators() {
+						std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, Units::value>>, std::greater_equal<int>> out;
+						for (auto& unit_type : Units::value::GetValueTypes()) {
+							auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+							out[abbreviation.length()].push_back(unit_type);
+						}	
+						return out;
+					}
+
 					bool Postfix(const std::shared_ptr<Scope>& currentScope, bool gotValueAlready) {
 						const auto prev_stack_top = m_match_stack.size();
 						const auto prev_pos = m_position;
@@ -6772,17 +7095,12 @@ namespace GoodLang {
 								return true;
 							}
 							else {
+								static std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, Units::value>>, std::greater_equal<int>>
+									customOperators{ make_postfix_operators() };
+
 								// evaluate the custom operators...
 								if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "" && m_match_stack[prev_stack_top - 1].first->identifier == AST_Node_Type::Constant) {
-									// this path means the incoming value is constant and known
-									static thread_local std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, Units::value>>, std::greater_equal<int>>
-										customOperators{};
-									if (customOperators.size() == 0) {
-										for (auto& unit_type : Units::value::GetValueTypes()) {
-											auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
-											customOperators[abbreviation.length()].push_back(unit_type);
-										}
-									}
+									// this path means the incoming value is constant and known									
 									for (auto& abbreviation_length_to_category : customOperators) {
 										for (auto& unit_type : abbreviation_length_to_category.second) {
 											auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
@@ -6813,50 +7131,49 @@ namespace GoodLang {
 								}
 								else if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "") {
 									// this path means the incoming value is NOT constant and is not known. 
-									for (auto& unit_type : Units::value::GetValueTypes()) {
-										auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
-										if (Symbol(abbreviation)) {
-											Any lhs;
-											if (auto Class = currentScope->FindClass(unit_type.first)) {
-												lhs = Class->CallFunction(Class->GetName(), {});
+									for (auto& abbreviation_length_to_category : customOperators) {
+										for (auto& unit_type : abbreviation_length_to_category.second) {
+											auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+											if (Symbol(abbreviation)) {
+												Any lhs;
+												if (auto Class = currentScope->FindClass(unit_type.first)) {
+													lhs = Class->CallFunction(Class->GetName(), {});
+												}
+												else {
+													lhs = Any(unit_type.second);;
+												}
+
+												Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+												loc.end.col += abbreviation.length();
+
+												m_match_stack[prev_stack_top - 1].first =
+													std::dynamic_pointer_cast<AST_Node_Impl>(
+														std::make_shared<AST_Nodes::Equation_AST_Node>(currentScope, "=", loc, std::vector<AST_Node_Impl_Ptr>{
+													std::dynamic_pointer_cast<AST_Node_Impl>(
+														std::make_shared<AST_Nodes::Constant_AST_Node>(GoodLang::ToString(lhs), loc, lhs)
+														),
+														std::move(m_match_stack[prev_stack_top - 1].first)
+												    })
+												);
+
+												return true;
+
+
+												//// To-Do, finish this analysis!
+												//// Insert a node that evaluates the function `=`(lhs, rhs) and returns lhs.
+
+
+
+
+
+
+
+												//throw std::runtime_error("FIX ME!");
+												//while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+												//m_position = prev_pos;
+
+
 											}
-											else {
-												lhs = Any(unit_type.second);;
-											}
-
-
-											Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
-											loc.end.col += abbreviation.length();
-
-											m_match_stack[prev_stack_top - 1].first =
-												std::dynamic_pointer_cast<AST_Node_Impl>(
-													std::make_shared<AST_Nodes::Equation_AST_Node>(currentScope, "=", loc, std::vector<AST_Node_Impl_Ptr>{
-												std::dynamic_pointer_cast<AST_Node_Impl>(
-													std::make_shared<AST_Nodes::Constant_AST_Node>(GoodLang::ToString(lhs), loc, lhs)
-													),
-													std::move(m_match_stack[prev_stack_top - 1].first)
-											})
-													);
-
-											return true;
-
-
-											//// To-Do, finish this analysis!
-											//// Insert a node that evaluates the function `=`(lhs, rhs) and returns lhs.
-
-
-
-
-
-
-
-											//throw std::runtime_error("FIX ME!");
-											//while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-											//m_position = prev_pos;
-
-
-
-
 										}
 									}
 								}
@@ -6994,11 +7311,11 @@ namespace GoodLang {
 						};
 
 						/* All of the following should be examples of valid forms of lambda functions */
-						// []() async -> type {} 
-						// []() -> type {} 
-						// []() async {} 
-						// () async {} 
-						// () {} 
+						// [...](...) async -> typename {...} 
+						// [...](...) -> typename {...} 
+						// [...](...) async {...} 
+						// (...) async {...} 
+						// (...) {...} 
 
 						// Arg_List
 						if (Char('[')) {
@@ -7590,27 +7907,27 @@ namespace GoodLang {
 										if (Symbol("...")) {
 											// captures anything...
 											if (!Char(')')) {
-												throw exception::eval_error("Incomplete 'catch(...)' expression", (File_Position)m_position, "");
+												throw exception::eval_error("Incomplete 'catch(...)' expression", (File_Position)m_position);
 											}
 											success = true;
 										}
 
 										if (Arg(currentScope, true)) {
 											if (!Char(')')) {
-												throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position, "");
+												throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position);
 											}
 											success = true;
 										}
 
 										if (!success) {
-											throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position, "");
+											throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position);
 										}
 									}
 
 									SkipWS(true);
 
 									if (!Block(currentScope)) {
-										throw exception::eval_error("Incomplete 'catch' block", (File_Position)m_position, "");
+										throw exception::eval_error("Incomplete 'catch' block", (File_Position)m_position);
 									}
 									build_match<AST_Nodes::Catch_AST_Node>(currentScope, catch_stack_top);
 									has_matches = true;
@@ -7623,7 +7940,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::Finally_AST_Node>(currentScope, finally_stack_top);
 							}
@@ -7636,7 +7953,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'do' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'do' block", (File_Position)m_position);
 							}
 							SkipWS(true);
 							if (Keyword("finally")) {
@@ -7645,7 +7962,7 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Block(currentScope)) {
-									throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::Finally_AST_Node>(currentScope, finally_stack_top);
 							}
@@ -7664,19 +7981,19 @@ namespace GoodLang {
 							SkipWS(true);
 #if 1
 							if (!Char('(')) {
-								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position);
 							}
 							SkipWS(true);
 							if (!Equation(currentScope)) {
-								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position);
 							}
 							SkipWS(true);
 							if (!Char(')')) {
-								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position);
 							}
 #else
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'evaluate' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'evaluate' block", (File_Position)m_position);
 							}
 #endif
 							build_match<AST_Nodes::JustInTimeCompilation_AST_Node>(currentScope, prev_stack_top);
@@ -7698,12 +8015,12 @@ namespace GoodLang {
 								/* Great! Got the desired name of the new namespace */
 							}
 							else {
-								throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", (File_Position)m_position);
 							}
 
 							// instead of collecting statements, we want to collect declarations...
 							if (!DeclarationsBlock(currentScope)) {
-								throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", (File_Position)m_position);
 							}
 
 							build_match<AST_Nodes::Namespace_AST_Node>(currentScope, prev_stack_top);
@@ -14424,6 +14741,13 @@ int main() {
 	}
 
 	if (1) {
+		print(GoodLang::ToString(GoodLang::Engine::Compiler::Interpreter2::Parser2().Parse(R"(1_ft > 1_in)").first->eval(StartScope(StartScope()))));
+	}
+
+
+
+
+	if (1) {
 		auto globalScope = StartScope();
 		std::string Script = R"(
 			#define __WINDOWS__ 1
@@ -14713,8 +15037,93 @@ int main() {
 				print(std::string("\t -> \t") + ToString(result));
 			}
 
+			parsed_result = parse.Parse(R"start(
+				"100";
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				"100".to_string
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				"${ "100" }";
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				int x = 100;
+				auto lambda := [](){ 100; };
+				return "100 == ${ "100" } == ${ [ 100 ] } == ${ [ "100":100, 100:"100" ] } == ${ x } == ${ lambda() }";
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 
+			parsed_result = parse.Parse(R"start(
+				float x = 0;
+				float& y := x;
+				float& z = x;
+				float w = x;
+				auto Lambda = [](float x, float& y, float const& z, double const& w, A) {
+					++x;
+					y += 5;
+					print("value=${ x }, name=${ x.Type.name }, const=${ x.Type.is_const } ref=${ x.Type.is_ref }");
+					print("value=${ y }, name=${ y.Type.name }, const=${ y.Type.is_const } ref=${ y.Type.is_ref }");
+					print("value=${ z }, name=${ z.Type.name }, const=${ z.Type.is_const } ref=${ z.Type.is_ref }");
+					print("value=${ w }, name=${ w.Type.name }, const=${ w.Type.is_const } ref=${ w.Type.is_ref }");
+					print("value=${ A }, name=${ A.Type.name }, const=${ A.Type.is_const } ref=${ A.Type.is_ref }");
+				};
+				Lambda(x, x, x, x, x);
+				return [x,y,z,w];
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+
+
+			parsed_result = parse.Parse(R"start(
+				float x = 0;
+				float& y := x;				
+				float& z = x;
+				float w = x;
+				void Lambda(float x, float& y, float const& z, double const& w, A) {
+					++x;
+					y += 5;
+					print("value=${ x }, name=${ x.Type.name }, const=${ x.Type.is_const } ref=${ x.Type.is_ref }");
+					print("value=${ y }, name=${ y.Type.name }, const=${ y.Type.is_const } ref=${ y.Type.is_ref }");
+					print("value=${ z }, name=${ z.Type.name }, const=${ z.Type.is_const } ref=${ z.Type.is_ref }");
+					print("value=${ w }, name=${ w.Type.name }, const=${ w.Type.is_const } ref=${ w.Type.is_ref }");
+					print("value=${ A }, name=${ A.Type.name }, const=${ A.Type.is_const } ref=${ A.Type.is_ref }");
+				};
+				Lambda(x, x, x, x, x);
+				return [x,y,z,w];
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 
 
@@ -14879,37 +15288,8 @@ int main() {
 				Units::foot FunctionName(float x, float y) { 
 					return x + y;
 				};
-				//Vector FunctionName(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o) { 
-				//	return [a,b,c,d,e,f,g,h,i,j,k,l,m,n,o];
-				//};
-				//return FunctionName(1,2); // will fail since the TEST namespace is dead and deleted by now	
-			)start", StartScope(globalScope));
-			if (1) {
-				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
-				print(std::string("\t -> \t") + ToString(result));
-			}
-
-			parsed_result = parse.Parse(R"start(
-				Units::foot FunctionName(float x, float y) { 
-					return x + y;
-				};
-				Vector FunctionName(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o) { 
-					return 10;
-					// return [a,b,c,d,e,f,g,h,i,j,k,l,m,n,o];
-				};
-				//return FunctionName(1,2); // will fail since the TEST namespace is dead and deleted by now	
-			)start", StartScope(globalScope));
-			if (1) {
-				auto result = parsed_result.first->eval(StartScope(globalScope));
-				print(ToString(parsed_result));
-				print(std::string("\t -> \t") + ToString(result));
-			}
-
-
-			parsed_result = parse.Parse(R"start(
-				Units::foot FunctionName(float x, float y) { 
-					return x + y;
+				Vector FunctionName(a,b, c,d,e,f,g, h,i,j,k,l,m,n, o) { // these may be typed or un-typed. If untyped, the name must not match another existing type.
+					return [a,b,c,d,e,f,g,h, i, j, k, l, m, n, o];
 				};
 				return FunctionName(1,2); // will fail since the TEST namespace is dead and deleted by now	
 			)start", StartScope(globalScope));
@@ -14918,7 +15298,6 @@ int main() {
 				print(ToString(parsed_result));
 				print(std::string("\t -> \t") + ToString(result));
 			}
-
 
 			parsed_result = parse.Parse(R"start(
 				if (int x = 50_ft){
@@ -14938,7 +15317,41 @@ int main() {
 
 
 
-
+			parsed_result = parse.Parse(R"start(				
+				namespace TEST {
+					int DoWork(){
+						Units::meter x;
+						x.double;
+						x++;
+						x*x;
+						var& y = x % x ^ x.double;						
+					};
+					void DoWork(int x){
+						x.double;
+						x++;
+						x*x;
+						var& y = x * x ^ x.double;
+					};
+					void DoWork(int x, int y){
+						x.double;
+						x++;
+						x*x;
+						x ^ (x % x).double;
+					};
+				};
+				for (int i = 0; i < 1000; ++i) {
+					TEST::DoWork();
+					TEST::DoWork(i.double);
+					TEST::DoWork(i.int, Var(i));
+				};
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
 
 
 
@@ -15700,8 +16113,8 @@ int main() {
 				try{
 					i++;
 				}
-				catch (exception e) { /* catch an exception */
-				}
+				//catch (exception e) { /* catch an exception */
+				//}
 				catch (int e) { // catch an int
 				}
 				catch (e) { // catch anything as "e"
