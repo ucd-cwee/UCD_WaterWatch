@@ -1902,13 +1902,7 @@ namespace GoodLang {
 		}
 	};
 	Any Scope::CallFunction(std::string const& functionName, Any& params) const {
-		auto [func, tree] = BuildFunction(functionName, { params }, ParamTypes({ params.Type() }));
-		if (func) {
-			return call(func, params, *tree.get());
-		}
-		else {
-			return CallFunction(functionName, { params });
-		}
+		return CallFunction(functionName, { params });
 	};
 	Any Scope::CallFunction(Proxy_Function const& func, Any& params) const {
 		auto& tree{ this->GetTypeConverterTree() };

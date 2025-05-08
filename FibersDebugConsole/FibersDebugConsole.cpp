@@ -2440,6 +2440,5657 @@ namespace GoodLang {
 				};
 			};
 		
+			class Interpreter2 {
+			public:
+				struct AST_Node_Impl;
+				using AST_Node_Impl_Ptr = typename std::shared_ptr<AST_Node_Impl>;
+				using AST_NodePtr = typename std::shared_ptr<AST_Node>;
+
+				class detail {
+				public:
+					/// Special type for returned values
+					struct Return_Value {
+						Any retval;
+					};
+
+					/// Special type indicating a call to 'break'
+					struct Break_Loop {};
+
+					/// Special type indicating a call to 'continue'
+					struct Continue_Loop {};
+
+					template<typename T>
+					static bool GetTextImpl(T const& r, std::string_view& out) {
+						if (!r->text.empty()) {
+							out = r->text;
+							return true;
+						}
+						else {
+							for (auto& child : r->children) {
+								if (GetTextImpl(child, out)) {
+									return true;
+								}
+							}
+						}
+						return false;
+					};
+				};
+				template<typename T> static std::string_view GetText(T const& r) {
+					std::string_view out;
+					(void)detail::GetTextImpl(r, out);
+					return out;
+				};
+				static Any const_var(Any const& rhs) {
+					Any out = rhs;
+					out.SetFlag(AnyData::Flag::constant, true);
+					return out;
+				};
+
+				struct AST_Node_Impl : public AST_Node {
+					AST_Node_Impl(std::string t_ast_node_text,
+						AST_Node_Type t_id,
+						Parse_Location t_loc,
+						std::vector<AST_Node_Impl_Ptr> t_children = std::vector<AST_Node_Impl_Ptr>())
+						: AST_Node(std::move(t_ast_node_text), t_id, std::move(t_loc))
+						, children(std::move(t_children))
+						, time_spent_during_eval{ 0 }
+						, num_evals{ 0 }
+					{};
+
+					std::vector<std::reference_wrapper<AST_Node>> get_children() const override final {
+						std::vector<std::reference_wrapper<AST_Node>> retval;
+						retval.reserve(children.size());
+						for (const AST_Node_Impl_Ptr& child : children) {
+							retval.emplace_back(*child);
+						}
+						return retval;
+					};
+
+					Any eval(std::shared_ptr<Scope> const& currentScope) const override final {
+						Stopwatch sw;
+						sw.Start();
+
+						InterlockedIncrementAcquire64(&num_evals);
+						defer(
+							InterlockedAddAcquire64(&time_spent_during_eval, sw.Stop());
+						);
+
+						try {
+							// T::trace(currentScope, this);
+							return eval_internal(currentScope);
+						}
+						catch (exception::eval_error& ee) {
+							ee.call_stack.push_back(*this);
+							throw ee;
+						}
+						catch (std::runtime_error& ee) {
+							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
+							e.call_stack.push_back(*this);
+							throw e;
+						}
+						catch (std::exception& ee) {
+							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
+							e.call_stack.push_back(*this);
+							throw e;
+						}
+					}
+
+					Units::second TimeSpent_Total() const override {
+						Units::second out = Units::nanosecond(time_spent_during_eval);
+						for (auto& child : children) {
+							out += child->TimeSpent_Total();
+						}
+						return out;
+					};
+					Units::second TimeSpent_Self() const override {
+						return Units::nanosecond(time_spent_during_eval) / std::max<long long>(1, num_evals);
+					};
+
+					mutable __int64 time_spent_during_eval;
+					mutable __int64 num_evals;
+					std::vector<AST_Node_Impl_Ptr> children;
+
+				protected:
+					virtual Any eval_internal(std::shared_ptr<Scope> const&) const {
+						return Any();
+						// throw std::runtime_error("Undispatched ast_node (internal error)");
+					};
+				};
+				class AST_Nodes {
+				public:
+					// return ARG
+					struct Return_AST_Node final : AST_Node_Impl {
+						Return_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Return, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() == 0) {
+
+							}
+							else if (this->children.size() == 1) {
+								this->return_type = this->children[0]->return_type;
+							}
+							else {
+								this->return_type = user_type_shared<Vector<Var>>();
+							}
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							if (this->children.size() == 0) {
+								throw detail::Return_Value{ Any() };
+							}
+							else if (this->children.size() == 1) {
+								Any out{ this->children[0]->eval(currentScope) };
+								if (out.IsEmpty()) // cannot return void						
+									throw exception::eval_error("Cannot return void from a return statement.");
+								else
+									throw detail::Return_Value{ out };
+							}
+							else {
+								Vector<Var> vec;
+								for (const auto& child : this->children) {
+									vec.push_back(Var(child->eval(currentScope)));
+								}
+								throw detail::Return_Value{ vec };
+							}
+						}
+					};
+					// built-in constants that could be understood by the compiler, such as integers, floating-point values, strings, vectors, etc.
+					struct Constant_AST_Node final : public AST_Node_Impl {
+						Constant_AST_Node(std::string t_ast_node_text, Parse_Location t_loc, Any t_value)
+							: AST_Node_Impl(t_ast_node_text, AST_Node_Type::Constant, std::move(t_loc))
+							, m_value(std::move(t_value))
+						{
+							m_value.SetFlag(AnyData::Flag::constant, true);
+							this->return_type = m_value.Type().lock()->MakeConstRef();
+						}
+
+						explicit Constant_AST_Node(Any t_value)
+							: AST_Node_Impl("", AST_Node_Type::Constant, Parse_Location{ Position{}, Position{} })
+							, m_value(std::move(t_value))
+						{
+							m_value.SetFlag(AnyData::Flag::constant, true);
+							this->return_type = m_value.Type().lock()->MakeConstRef();
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>&) const override {
+							return m_value;
+						}
+
+						Any m_value;
+					};
+					// empty lines, comments, etc.
+					struct Noop_AST_Node final : AST_Node_Impl {
+						Noop_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc)
+							: AST_Node_Impl(t_ast_node_text, AST_Node_Type::Noop, t_loc)
+						{};
+
+						Noop_AST_Node()
+							: AST_Node_Impl("", AST_Node_Type::Noop, Parse_Location{ Position{}, Position{} })
+						{};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// It's a no-op, that evaluates to "void"
+							return {};
+						}
+					};
+					// intended for basic operations like "+"
+					struct Binary_Operator_AST_Node : AST_Node_Impl {
+						Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(t_oper, AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
+							, m_oper(Operators::to_operator(t_oper))
+						{
+							GoodLang::ParamTypes params({ this->children[0]->return_type, this->children[1]->return_type });
+							if (Proxy_Function func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
+								this->return_type = func->Returns();
+							}
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), this->children[1]->eval(currentScope) });
+						};
+
+					private:
+						Operators::Opers m_oper;
+
+					};
+
+					enum class IdType { 
+						Id, 
+						Function, 
+						Variable, 
+						Class 
+					};
+					// keyname node, could be a function name, could be a variable name, etc.
+					struct Id_AST_Node : AST_Node_Impl {
+						Id_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_ast_node_text, Parse_Location t_loc)
+							: AST_Node_Impl(t_ast_node_text, AST_Node_Type::Id, std::move(t_loc))
+						{}
+
+						//Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+						//	if (auto obj = currentScope->FindObj(this->text)) {
+						//		// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+						//		return obj;
+						//	}
+						//	throw exception::eval_error("Can not find object: " + this->text);
+						//}
+					public: 
+						IdType type = IdType::Id;
+					};
+					// 
+					struct FunctionName_AST_Node final : Id_AST_Node {
+						FunctionName_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_ast_node_text, Parse_Location t_loc)
+							: Id_AST_Node(currentScope, t_ast_node_text, std::move(t_loc))
+						{
+							type = IdType::Function;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							if (auto obj = currentScope->FindObj(this->text)) {
+								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+								return obj;
+							}
+							throw exception::eval_error("Can not find object: " + this->text);
+						}
+					};
+					// 
+					struct VariableName_AST_Node final : Id_AST_Node {
+						VariableName_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_ast_node_text, Parse_Location t_loc)
+							: Id_AST_Node(currentScope, t_ast_node_text, std::move(t_loc))
+						{
+							type = IdType::Variable;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							if (auto obj = currentScope->FindObj(this->text)) {
+								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+								return obj;
+							}
+							throw exception::eval_error("Can not find object: " + this->text);
+						}
+					};
+					// 
+					struct ClassName_AST_Node final : Id_AST_Node {
+						ClassName_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_ast_node_text, Parse_Location t_loc)
+							: Id_AST_Node(currentScope, t_ast_node_text, std::move(t_loc))
+						{
+							type = IdType::Class;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							if (auto obj = currentScope->FindObj(this->text)) {
+								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+								return obj;
+							}
+							throw exception::eval_error("Can not find object: " + this->text);
+						}
+
+					public:
+						std::weak_ptr<GoodLang::Type_Info> TypeInfo;
+					};					
+					//
+					struct Arg_AST_Node final : AST_Node_Impl {
+						Arg_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Arg, std::move(t_loc), std::move(t_children))
+						{
+							this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return this->children.back()->eval(currentScope);
+						}
+					};
+					//
+					struct Arg_List_AST_Node final : AST_Node_Impl {
+						Arg_List_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Arg_List, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						static std::string get_arg_name(const AST_Node_Impl& t_node) {
+							if (t_node.children.empty()) {
+								return t_node.text;
+							}
+							else if (t_node.children.size() == 1) {
+								return t_node.children[0]->text;
+							}
+							else {
+								return t_node.children[1]->text;
+							}
+						}
+						static std::vector<std::string> get_arg_names(const AST_Node_Impl& t_node) {
+							std::vector<std::string> retval;
+
+							for (const auto& node : t_node.children) {
+								retval.push_back(get_arg_name(*node));
+							}
+
+							return retval;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// evaluate all of the children, return the result of the last child
+							int numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(currentScope);
+								}
+								return this->children.back()->eval(currentScope);
+							}
+							else {
+								return Any();
+							}
+						}
+					};
+					// ID(ARG_LIST)
+					struct Fun_Call_AST_Node : AST_Node_Impl {
+						Fun_Call_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children))
+						{
+							assert(!this->children.empty());
+
+							function_name = GetText(this->children[0]);
+
+							std::vector<std::weak_ptr<Type_Info>> params;
+							for (const AST_Node_Impl_Ptr& child : this->children[1]->children) {
+								if (std::shared_ptr<Type_Info> Type = child->return_type.lock()) {
+									if (Type->is_any() || Type->is_void()) { // return_types should be known at compile time to support caching functions during compilation.
+										return;
+									}
+									params.push_back(Type);
+								}
+								else {
+									return;
+								}
+							}
+							ParamTypes Params{ params };
+							std::shared_ptr<Any> obj;
+							Proxy_Function found_function;
+
+							if (currentScope->FindObjOrFunction(function_name, Params, *currentScope->GetTypeConverterTree(), &obj, &found_function)) {
+								if (obj) {
+									if (Proxy_Function func = obj->cast<Proxy_Function>()) {
+										Function = func;
+									}
+								}
+								else if (found_function) {
+									Function = found_function;
+								}
+							}
+
+							if (auto func = Function.lock()) this->return_type = func->Returns();
+						};
+
+						template <bool returnsValue>
+						Any do_eval_internal(const std::shared_ptr<Scope>& currentScope) const {
+							std::vector<Any> params{};
+
+							params.reserve(this->children[1]->children.size());
+							for (const AST_Node_Impl_Ptr& child : this->children[1]->children) {
+								params.push_back(child->eval(currentScope));
+							}
+							ParamTypes Params{ params };
+
+							if (auto func = Function.lock()) {
+								if (
+									func->NumArguments() == 2
+									&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
+									&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
+									) {
+									if constexpr (returnsValue) {
+										return func->operator()({ currentScope, params });
+									}
+									else {
+										(void)func->operator()({ currentScope, params });
+										return {};
+									}
+								}
+								else {
+									if constexpr (returnsValue)
+										return currentScope->CallFunction(func, params);
+									else {
+										(void)currentScope->CallFunction(func, params);
+										return {};
+									}
+								}
+							}
+
+							if (1) {
+								auto tree = currentScope->GetTypeConverterTree();
+								std::shared_ptr<Any> obj;
+								Proxy_Function found_function;
+								if (currentScope->FindObjOrFunction(function_name, params, Params, *tree, &obj, &found_function)) {
+									if (obj) {
+										if (Proxy_Function func = obj->cast<Proxy_Function>()) {
+											if (
+												func->NumArguments() == 2
+												&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scope>())
+												&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
+												) {
+												if constexpr (returnsValue) {
+													return func->operator()({ currentScope, params });
+												}
+												else {
+													(void)func->operator()({ currentScope, params });
+													return {};
+												}
+											}
+											else {
+												if constexpr (returnsValue)
+													return currentScope->CallFunction(func, params);
+												else {
+													(void)currentScope->CallFunction(func, params);
+													return {};
+												}
+											}
+										}
+										if (1) {
+											std::vector<Any> params2{ obj };
+											for (auto& x : params) params2.push_back(x);
+
+											auto [func, tree] = currentScope->BuildFunction("()", params2, ParamTypes(params2));
+											if (func) {
+												if constexpr (returnsValue)
+													return currentScope->CallFunction(func, params2);
+												else {
+													(void)currentScope->CallFunction(func, params2);
+													return {};
+												}
+											}
+										}
+									}
+									else if (found_function) {
+										if constexpr (returnsValue)
+											return currentScope->CallFunction(function_name, params);
+										else {
+											(void)currentScope->CallFunction(function_name, params);
+											return {};
+										}
+									}
+								}
+								throw exception::eval_error("Can not find requested object or function: " + function_name);
+							}
+						};
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return do_eval_internal<true>(currentScope);
+						};
+						std::string function_name;
+						std::weak_ptr<details::Proxy_Function_Base> Function;
+					};
+					// 
+					struct Equation_AST_Node final : AST_Node_Impl {
+						Equation_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Equation, std::move(t_loc), std::move(t_children))
+							, m_oper(Operators::to_operator(this->text))
+						{
+							assert(this->children.size() == 2);
+
+							if ((m_oper == Operators::Opers::assign_if_null) || (this->text == "?=")) {
+								// should actually test the return type of the first param first...
+								this->return_type = this->children[1]->return_type;
+							}
+							else {
+								auto lhs = this->children[0]->return_type;
+								auto rhs = this->children[1]->return_type;
+								ParamTypes params({ lhs, rhs });
+								if (m_oper == Operators::Opers::assign) {
+									this->return_type = this->children[0]->return_type;
+								}
+								else if (this->text == ":=") {
+									this->return_type = this->children[1]->return_type;
+								}
+								else {
+									if (auto func = currentScope->FindFunction(this->text, params, *currentScope->GetTypeConverterTree())) {
+										this->return_type = func->Returns();
+									}
+									else {
+										this->return_type = this->children[0]->return_type;
+									}
+								}
+							}
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							if (m_oper == Operators::Opers::assign_if_null || this->text == "?=") {
+								Any lhs = this->children[0]->eval(currentScope);
+								if (lhs.IsTypeOf<void>()) {
+									return currentScope->CallFunction(":=", { lhs, this->children[1]->eval(currentScope) });
+								}
+								else {
+									return lhs;
+								}
+							}
+							else {
+								Any lhs = this->children[0]->eval(currentScope);
+								Any rhs = this->children[1]->eval(currentScope);
+
+								// if (lhs.GetFlag(AnyData::Flag::constant)) { throw exception::eval_error("Error, constant value cannot be assigned to."); }
+
+								if (m_oper == Operators::Opers::assign) {
+									return currentScope->CallFunction("=", { lhs, rhs });
+								}
+								else if (this->text == ":=") {
+									return currentScope->CallFunction(":=", { lhs, rhs });
+								}
+								else {
+									try {
+										return currentScope->CallFunction(this->text, { lhs, rhs });
+									}
+									catch (GoodLang::exception::not_found_error const& e) {
+										throw exception::eval_error("Unable to find appropriate'" + this->text + "' operator.");
+									}
+								}
+							}
+						}
+
+					private:
+						Operators::Opers m_oper;
+
+					};
+					// &&
+					struct Logical_And_AST_Node final : AST_Node_Impl {
+						Logical_And_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Logical_And, std::move(t_loc), std::move(t_children)) {
+							assert(this->children.size() == 2);
+							this->return_type = user_type_shared<bool>();
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return currentScope->Cast<bool>(this->children[0]->eval(currentScope)) && currentScope->Cast<bool>(this->children[1]->eval(currentScope));
+						}
+					};
+					// ||
+					struct Logical_Or_AST_Node final : AST_Node_Impl {
+						Logical_Or_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Logical_Or, std::move(t_loc), std::move(t_children)) {
+							assert(this->children.size() == 2);
+							this->return_type = user_type_shared<bool>();
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return currentScope->Cast<bool>(this->children[0]->eval(currentScope)) || currentScope->Cast<bool>(this->children[1]->eval(currentScope));
+						}
+					};
+
+					/*
+					var x;
+					*/
+					struct Var_Decl_AST_Node final : AST_Node_Impl {
+						Var_Decl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Var_Decl, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() >= 1);
+							this->return_type = user_type_shared<Var>();
+						}
+
+						/*! Empty variable assignment:
+						  var j;
+						*/
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							const std::string& idname = this->children[0]->text;
+							currentScope->AddObj(idname, std::make_shared<Any>(Var()));
+							return currentScope->FindObj(idname);
+						}
+					};
+					/*
+					double x;
+					*/
+					struct Assign_Retroactively_AST_Node final : AST_Node_Impl {
+						Assign_Retroactively_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Assign_Retroactively, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() >= 1);
+
+							// type_name = std::string(GetText(this->children[0]->children[0]));//  ->text; // e.g. double, int, std::string
+							idname = std::string(GetText(this->children[1]));// ->text; // e.g. x, y, z
+
+							//if (auto Class = currentScope->FindClass(type_name)) this->return_type = Class->GetClassType();
+							this->return_type = this->children[0]->return_type;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// child 0 = TypeID()
+							// child 1 = Id()
+
+							currentScope->AddObj(idname, std::make_shared<Any>(this->children[0]->eval(currentScope)));
+							if (this->children.size() == 2) {
+								return currentScope->FindObj(idname);
+							}
+							if (this->children.size() == 3) {
+								std::shared_ptr<Any> thisObj = currentScope->FindObj(idname);
+								(void)currentScope->CallFunction("=", { thisObj, this->children[2]->eval(currentScope) });
+								return thisObj;
+							}
+							else {
+								return {};
+							}
+						};
+
+						// std::string type_name;
+						std::string idname;
+					};
+					/*
+					var x = double();
+					*/
+					struct Assign_Decl_AST_Node final : AST_Node_Impl {
+						Assign_Decl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children))
+						{
+							this->return_type = this->children[1]->return_type;
+						};
+
+						/*! Non-Empty variable assignment:
+						  var j = 100;
+						*/
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							const std::string& idname = this->children[0]->text;
+							Any value = this->children[1]->eval(currentScope);
+							if (value.GetFlag(AnyData::Flag::constant)) {
+								// clone it
+								currentScope->AddObj(idname, std::make_shared<Any>(value.Type().lock()->GetCopyConstructor()(value)));
+							}
+							else {
+								// return as-is
+								currentScope->AddObj(idname, std::make_shared<Any>(value));
+							}
+							return currentScope->FindObj(idname);
+						}
+					};					
+					// ++x
+					struct Prefix_AST_Node final : AST_Node_Impl {
+						Prefix_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Prefix, std::move(t_loc), std::move(t_children))
+							, m_oper(Operators::to_operator(this->text, true))
+						{}
+
+						// ++x;
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto temp{ this->children[0]->eval(currentScope) };
+							return currentScope->CallFunction(this->text, temp); // we currently do not attempt to validate -- just process the request and see what lands. 
+						};
+
+					private:
+						Operators::Opers m_oper = Operators::Opers::invalid;
+					};
+					// x++
+					struct Postfix_AST_Node final : AST_Node_Impl {
+						Postfix_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Postfix, std::move(t_loc), std::move(t_children))
+							, m_oper(Operators::to_operator(this->text, true)) {
+						}
+
+						// x++; 
+						// depending on the context, is either specifying the type (e.g. _ft, ull) or is modifying the underlying value (++, --)
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							Any var(this->children[0]->eval(currentScope)); // an int, float, etc.                 
+
+							// the type is known. Short-circuit and get out fast. 
+							if (m_oper == Operators::Opers::pre_increment) {
+								auto out = var.Type().lock()->GetCopyConstructor()(var);
+								(void)currentScope->CallFunction("++", var);
+								return out;
+							}
+							else if (m_oper == Operators::Opers::pre_decrement) {
+								auto out = var.Type().lock()->GetCopyConstructor()(var);
+								(void)currentScope->CallFunction("--", var);
+								return out;
+							}
+							else if (m_oper == Operators::Opers::invalid) {
+								if (this->text != "" && this->text.length() >= 1) {
+									for (auto& unit_type : Units::value::GetValueTypes()) {
+										auto abbreviation = unit_type.second.UnitAbbreviation();
+										if (this->text == abbreviation) {
+											if (auto Class = currentScope->FindClass(unit_type.first)) {
+												return Class->CallFunction(Class->GetName(), var);
+											}
+											else {
+												auto out = Any(unit_type.second);
+												currentScope->CallFunction("=", { out, var });
+												return out;
+											}
+										}
+									}
+								}
+								return var;
+							}
+							else {
+								throw exception::eval_error("Only increment (i++) or decrement (i--) operators are supported in a postfix context, as well as custom postfixes.");
+							}
+						};
+
+						Operators::Opers m_oper = Operators::Opers::invalid;
+					};
+					// if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node	
+					struct If_AST_Node final : AST_Node_Impl {
+						If_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::If, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() >= 2); // CONDITION, IF_TRUE_BLOCK, ELSE_BLOCK
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// create a temporary scope for temporary variables made in the CONDITION
+							if (1) {
+								auto newScope = std::make_shared<Scope>(currentScope);
+								newScope->SetSelf(newScope);
+								// evaluate the CONDITION statement within this new scope -- note that the new scope only applies if true! 
+								if (newScope->Cast<bool>(this->children[0]->eval(newScope))) {
+									return this->children[1]->eval(newScope);
+								}
+							}
+
+							// if an else-statement is available...
+							if (this->children.size() >= 3) {
+								auto newScope = std::make_shared<Scope>(currentScope);
+								newScope->SetSelf(newScope);
+
+								return this->children[2]->eval(newScope);
+							}
+							else return Any(); // returns void
+						}
+					};
+					// while (Scopeless_Block_AST_Node) Block_AST_Node
+					struct While_AST_Node final : AST_Node_Impl {
+						While_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::While, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() >= 2);
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							while (currentScope->Cast<bool>(this->children[0]->eval(currentScope))) {
+								auto newScope = std::make_shared<Scope>(currentScope);
+								newScope->SetSelf(newScope);
+
+								try {
+									(void)this->children[1]->eval(newScope);
+								}
+								catch (detail::Break_Loop&) {
+									break;
+								}
+								catch (detail::Continue_Loop&) {}
+							}
+							return {};
+						}
+					};
+					// for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
+					struct For_AST_Node final : AST_Node_Impl {
+						For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::For, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() >= 4);
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto forScope = std::make_shared<Scope>(currentScope);
+							forScope->SetSelf(forScope);
+							{
+								// INIT_BLOCK
+								if (this->children[0]->identifier != AST_Node_Type::Noop) {
+									this->children[0]->eval(forScope); // may include declaring a variable, or nothing at all
+								}
+
+								// CONDITION_BLOCK
+								while (this->children[1]->identifier == AST_Node_Type::Noop
+									||
+									forScope->Cast<bool>(this->children[1]->eval(forScope))
+									) {
+									auto newScope = std::make_shared<Scope>(forScope);
+									newScope->SetSelf(newScope);
+
+									try {
+										(void)this->children[3]->eval(newScope);
+									}
+									catch (detail::Continue_Loop&) {}
+									catch (detail::Break_Loop&) { break; }
+
+									// PROGRESS_BLOCK
+									this->children[2]->eval(forScope);
+								}
+							}
+							return {};
+						}
+					};
+					// for (range_declaration : range_expression) loop_statement
+					struct Ranged_For_AST_Node final : AST_Node_Impl {
+						Ranged_For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Ranged_For, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() == 3);
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							Any out;
+							auto forScope = std::make_shared<Scope>(currentScope);
+							forScope->SetSelf(forScope);
+
+							Any item_decl = this->children[0]->eval(forScope); // var x;
+							Any range = this->children[1]->eval(forScope); // 0..100 or [0,1,2,3] or vectorObjName etc;
+
+							try {
+								auto begin_func = forScope->FindFunction("begin", { range });
+								auto end_func = forScope->FindFunction("end", { range });
+								if (begin_func && end_func) {
+									// user-defined functions for begin() and end() were found -- this is the ideal.
+									for (
+										auto begin = forScope->CallFunction(begin_func, range),
+										end = forScope->CallFunction(end_func, range);
+										forScope->Cast<bool>(forScope->CallFunction("!=", { begin, end }));
+										forScope->CallFunction("++", begin)
+										) {
+										forScope->CallFunction(":=", { item_decl, forScope->CallFunction("get", begin) });
+										try {
+											auto innerScope = std::make_shared<Scope>(forScope);
+											innerScope->SetSelf(innerScope);
+											out = this->children[2]->eval(innerScope);
+										}
+										catch (detail::Continue_Loop&) {}
+									}
+								}
+								else { // TO-DO, we should probably just throw an error and give-up...
+
+
+									// try to fall-back to the built-in GetChildren function and see what we get.
+									// Note that this causes a huge lift in the memory requirements for the call due to how this recursive function works... 
+									auto cache = GoodLang::GetChildren(range).children[0];
+									Any Child;
+									for (auto& childWrapper : cache.children) {
+										childWrapper.children.clear();
+										Child.container = std::move(childWrapper.data);
+										forScope->CallFunction(":=", { item_decl, Child });
+
+										try {
+											auto innerScope = std::make_shared<Scope>(forScope);
+											innerScope->SetSelf(innerScope);
+											out = this->children[2]->eval(innerScope);
+										}
+										catch (detail::Continue_Loop&) {}
+									}
+								}
+							}
+							catch (detail::Break_Loop&) {}
+							return out;
+						};
+					};
+					// x[1]
+					struct Array_Call_AST_Node final : AST_Node_Impl {
+						Array_Call_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Array_Call, std::move(t_loc), std::move(t_children))
+						{
+							auto lhs = this->children[0]->return_type;
+							auto rhs = this->children[1]->return_type;
+							ParamTypes params({ lhs, rhs });
+							if (auto func = currentScope->FindFunction("[]", params, *currentScope->GetTypeConverterTree())) {
+								this->return_type = func->Returns();
+							}
+							else {
+								this->return_type = user_type_shared<Var>();
+							}
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							try {
+								return currentScope->CallFunction("[]", {
+									this->children[0]->eval(currentScope),
+									this->children[1]->eval(currentScope)
+									});
+							}
+							catch (const GoodLang::exception::not_found_error& e) {
+								throw exception::eval_error("Can not find appropriate array lookup operator '[]'.");
+							}
+						}
+
+					private:
+						mutable std::atomic_uint_fast32_t m_loc = { 0 };
+					};
+					// x.first
+					struct Dot_Access_AST_Node final : AST_Node_Impl {
+						Dot_Access_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Dot_Access, std::move(t_loc), std::move(t_children))
+							, m_fun_name(((this->children[1]->identifier == AST_Node_Type::Fun_Call) || (this->children[1]->identifier == AST_Node_Type::Array_Call))
+								? this->children[1]->children[0]->text
+								: this->children[1]->text)
+						{
+
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							std::vector<Any> params{ this->children[0]->eval(currentScope) };
+							std::string functionName;
+
+							// what happens next depends on the RHS
+							switch (this->children[1]->identifier) {
+							case AST_Node_Type::Fun_Call:
+								functionName = this->children[1]->children[0]->text;
+								for (auto& child : this->children[1]->children[1]->children)
+									params.push_back(child->eval(currentScope));
+								break;
+							default: // case AST_Node_Type::Id:
+								functionName = this->children[1]->text;
+								break;
+							}
+							return currentScope->CallFunction(functionName, params);
+						}
+						const std::string m_fun_name;
+
+					private:
+						mutable std::atomic_uint_fast32_t m_loc = { 0 };
+						mutable std::atomic_uint_fast32_t m_array_loc = { 0 };
+
+					};
+					// [x](FF) async -> int { return x+FF; };
+					struct Lambda_AST_Node final : AST_Node_Impl {
+						Lambda_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(t_ast_node_text,
+								AST_Node_Type::Lambda,
+								std::move(t_loc),
+								std::vector<AST_Node_Impl_Ptr>(t_children))
+							, m_param_names(Arg_List_AST_Node::get_arg_names(*this->children[1]))
+							//, m_this_capture(has_this_capture(this->children[0]->children))
+							, m_lambda_node(t_children.back())
+						{
+							const_cast<std::shared_ptr<AST_Node_Impl>&>(m_lambda_node) = this->children.back() = optimizer::optimize(this->children.back(), currentScope);
+							this->return_type = user_type_shared<Proxy_Function>();
+
+							// need to immediately optimize the lambda node if at all possible, and reduce the likelihood of throwing (which significantly impacts performance). 
+							while (m_lambda_node->identifier == AST_Node_Type::Return) {
+								if (m_lambda_node->children.size() == 0) {
+									const_cast<std::shared_ptr<AST_Node_Impl>&>(m_lambda_node) = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<Noop_AST_Node>());
+								}
+								else if (m_lambda_node->children.size() == 1) {
+									const_cast<std::shared_ptr<AST_Node_Impl>&>(m_lambda_node) = std::move(m_lambda_node->children[0]);
+								}
+								else {
+									break;
+								}
+							}
+							this->children.back() = m_lambda_node;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// children[0] -> list of Id's or variables to be captured. 
+							// children[1] -> list of (possibly type'd) variables that define the inputs to the function.
+							// children[2] -> either Noop or Id whose name is the desired return type
+							// children[3] -> m_lambda_node -> function to call
+
+							std::map<std::string, std::shared_ptr<Any>>
+								captures;
+
+							for (auto& var_name : Arg_List_AST_Node::get_arg_names(*this->children[0])) {
+								if (auto obj = currentScope->FindObj(var_name)) {
+									captures[var_name] = obj;
+								}
+								else {
+									throw exception::eval_error("Cannot find captured variable");
+								}
+							}
+
+							bool returnVoid = false;
+							std::weak_ptr<Type_Info> returnType;
+							if (this->children[2]->identifier != AST_Node_Type::Noop) {
+								if (auto Class = currentScope->FindClass(std::string(GetText(this->children[2])))) {
+									returnType = Class->GetClassType();
+								}
+								else if (GetText(this->children[2]) == "void") {
+									returnType = user_type_shared<void>();
+									returnVoid = true;
+								}
+							}
+
+							if (is_async) {
+								if (returnVoid) {
+									return GoodLang::make_callable([
+										lambda_node = m_lambda_node,
+											param_names = this->m_param_names,
+											captures
+									](
+										std::shared_ptr<Scope> currentScope,
+										std::shared_ptr<std::vector<Any>> params
+										)->Any {
+											auto function_scope = std::make_shared<FunctionScope>(currentScope);
+											function_scope->SetSelf(function_scope);
+
+											// insert the captures
+											for (auto& capture : captures) {
+												function_scope->AddObj(capture.first, capture.second, false);
+											}
+
+											// insert the function params
+											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+											}
+
+											return parallel::async([
+												function_scope,
+													lambda_node
+											]() -> Any {
+													try {
+														lambda_node->eval(function_scope);
+													}
+													catch (detail::Return_Value& rv) {
+														// if the retval is anything but void, we should throw an error
+														if (!rv.retval.IsEmpty()) {
+															throw exception::eval_error("Cannot return with a value inside of a lambda that expects to return void.");
+														}
+													}
+													return Any();
+												}).as_promise();
+										}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() }), GoodLang::user_type_shared<GoodLang::parallel::promise>()
+											);
+								}
+								else {
+									return GoodLang::make_callable([
+										lambda_node = m_lambda_node,
+											param_names = this->m_param_names,
+											captures,
+											thisReturnType = returnType
+									](
+										std::shared_ptr<Scope> currentScope,
+										std::shared_ptr<std::vector<Any>> params
+										)->Any {
+											auto function_scope = std::make_shared<FunctionScope>(currentScope);
+											function_scope->SetSelf(function_scope);
+
+											// insert the captures
+											for (auto& capture : captures) {
+												function_scope->AddObj(capture.first, capture.second, false);
+											}
+
+											// insert the function params
+											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+											}
+
+											return parallel::async([
+												currentScope_t = currentScope,
+													function_scope_t = function_scope,
+													lambda_node_t = lambda_node,
+													thisReturnType_t = thisReturnType
+											]() -> Any {
+													Any lambda_result;
+													try {
+														lambda_result = lambda_node_t->eval(function_scope_t);
+													}
+													catch (detail::Return_Value& rv) {
+														lambda_result = rv.retval;
+													}
+
+													if (thisReturnType_t.expired()) {
+														return lambda_result;
+													}
+													else {
+														return function_scope_t->Cast(lambda_result, thisReturnType_t);
+													}
+												}).as_promise();
+										}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() }), GoodLang::user_type_shared<GoodLang::parallel::promise>()
+											);
+								}
+							}
+							else {
+								if (returnVoid) {
+									return GoodLang::make_callable([
+										lambda_node = m_lambda_node,
+											param_names = this->m_param_names,
+											captures
+									](
+										std::shared_ptr<Scope> currentScope,
+										std::shared_ptr<std::vector<Any>> params
+										)->Any {
+											auto function_scope = std::make_shared<FunctionScope>(currentScope);
+											function_scope->SetSelf(function_scope);
+
+											// insert the captures
+											for (auto& capture : captures) {
+												function_scope->AddObj(capture.first, capture.second, false);
+											}
+
+											// insert the function params
+											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+											}
+
+											try {
+												lambda_node->eval(function_scope);
+											}
+											catch (detail::Return_Value& rv) {
+												// if the retval is anything but void, we should throw an error
+												if (!rv.retval.IsEmpty()) {
+													throw exception::eval_error("Cannot return with a value inside of a lambda that expects to return void.");
+												}
+											}
+											return Any();
+										}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>() })
+											);
+								}
+								else {
+									return GoodLang::make_callable([
+										lambda_node = m_lambda_node,
+											param_names = this->m_param_names,
+											captures,
+											thisReturnType = returnType
+									](
+										std::shared_ptr<Scope> currentScope,
+										std::shared_ptr<std::vector<Any>> params
+										)->Any {
+											auto function_scope = std::make_shared<FunctionScope>(currentScope);
+											function_scope->SetSelf(function_scope);
+
+											// insert the captures
+											for (auto& capture : captures) {
+												function_scope->AddObj(capture.first, capture.second, false);
+											}
+
+											// insert the function params
+											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
+												function_scope->AddObj(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
+											}
+
+											Any lambda_result;
+											try {
+												lambda_result = lambda_node->eval(function_scope);
+											}
+											catch (detail::Return_Value& rv) {
+												lambda_result = rv.retval;
+											}
+
+											if (thisReturnType.expired()) {
+												return lambda_result;
+											}
+											else {
+												return function_scope->Cast(lambda_result, thisReturnType);
+											}
+										}, ParamTypes({ user_type_shared<Scope>(), user_type_shared<std::vector<Any>>()/*, user_type_shared<AST_Node_Impl>()*/ }), returnType.expired() ? user_type_shared<Any>() : returnType
+											);
+								}
+							}
+						}
+
+					public:
+						bool is_async = false;
+
+					private:
+						const std::vector<std::string> m_param_names;
+						const std::shared_ptr<AST_Node_Impl> m_lambda_node;
+					};
+					// [0, 1, 2, 3]
+					struct Inline_Array_AST_Node final : AST_Node_Impl {
+						Inline_Array_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Inline_Array, std::move(t_loc), std::move(t_children))
+						{
+							this->return_type = user_type_shared<Vector<Var>>();
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// assumes the first child is an ArgList or Arg
+							Vector<Var> vec;
+							if (!this->children.empty()) {
+								vec.reserve(this->children[0]->children.size());
+								for (auto& child : this->children[0]->children) {
+									vec.push_back(Var(child->eval(currentScope)));
+								}
+							}
+							return vec;
+						}
+
+					private:
+						mutable std::atomic_uint_fast32_t m_loc = { 0 };
+					};
+					struct Map_Pair_AST_Node final : AST_Node_Impl {
+						Map_Pair_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Map_Pair, std::move(t_loc), std::move(t_children))
+						{}
+					};
+					// ["":10, 10:10, Vector():10, 20:Vector()]
+					struct Inline_Map_AST_Node final : AST_Node_Impl {
+						Inline_Map_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Inline_Map, std::move(t_loc), std::move(t_children))
+						{
+							this->return_type = user_type_shared<Map<size_t, std::pair<Var, Var>>>();
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// assumes the first child is an ArgList or Arg
+							Any out{ Map<size_t, std::pair<Var, Var>>() };
+							if (!this->children.empty()) {
+								for (const auto& child : this->children[0]->children) {
+									currentScope->CallFunction("emplace", { out, child->children[0]->eval(currentScope), child->children[1]->eval(currentScope) });
+								}
+							}
+							return out;
+						};
+
+					};
+
+					// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
+					// parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
+					struct Parallel_For_AST_Node final : AST_Node_Impl {
+						Parallel_For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Parallel_For, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() == 3);
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto forScope = std::make_shared<Scope>(currentScope);
+							forScope->SetSelf(forScope);
+
+							if (1) { // parallel_for (var x = START_VALUE; END_VALUE) WORK_BLOCK
+								int startPos{ 0 }, endPos{ 0 };
+								if (1) {
+									auto temp_memory = std::make_shared<Scope>(forScope);
+									temp_memory->SetSelf(temp_memory);
+									startPos = temp_memory->Cast<int>(this->children[0]->eval(temp_memory));
+									endPos = temp_memory->Cast<int>(this->children[1]->eval(temp_memory));
+								}
+								if (startPos > endPos) {
+									int temp = endPos;
+									endPos = startPos;
+									startPos = temp;
+								}
+								if (endPos > startPos) {
+									impl::context ctx;
+									using DateStorageType = GoodLang::Union<Any, std::shared_ptr<Scope>, std::weak_ptr<details::Proxy_Function_Base>>;
+									impl::Dispatch(ctx,
+										endPos - startPos /* count of jobs */,
+										[&](impl::JobArgs const& _args)-> void {
+											DateStorageType& shared_memory
+												= *((DateStorageType*)_args.sharedmemory);
+											if (_args.groupIndex == 0) {
+												// start of a group
+												shared_memory.get<1>()->CallFunction(":=", { shared_memory.get<0>(), _args.jobIndex });
+											}
+											else {
+												//if (auto func = shared_memory.get<2>().lock()) 
+												//	shared_memory.get<1>()->CallFunction(func, shared_memory.get<0>());
+												//else 
+												shared_memory.get<1>()->CallFunction("++", shared_memory.get<0>());
+											}
+
+											// do the work
+											try {
+												auto newScope = std::make_shared<Scope>(shared_memory.get<1>());
+												newScope->SetSelf(newScope);
+
+												this->children[2]->eval(newScope);
+											}
+											catch (detail::Continue_Loop&) {}
+										},
+										sizeof(DateStorageType) /* size of shared memory */,
+											[&](void* p) -> void {
+											new (p) DateStorageType{
+												Any{},
+												std::make_shared<Scope>(forScope),
+												Proxy_Function{}
+											}; // initialize the shared memory
+											DateStorageType& iter =
+												*static_cast<DateStorageType*>(p);
+											iter.get<1>()->SetSelf(iter.get<1>());
+											iter.get<0>() = this->children[0]->eval(iter.get<1>()); // e.g. int x = 0 or var& x = 0
+											//if (auto Type = iter.get<0>().TypePtr()) {
+											//	if (Type->is_any() || Type->is_void()) { }
+											//	else iter.get<2>() = iter.get<1>()->FindFunction("++", { iter.get<0>() }, *iter.get<1>()->GetTypeConverterTree());							
+											//}
+										},
+											[&](void* p) -> void {
+											((DateStorageType*)p)->~DateStorageType(); // destroy the shared memory
+										}
+										);
+									try {
+										impl::Wait(ctx);
+									}
+									catch (detail::Break_Loop&) {};
+								}
+							}
+
+							return Any();
+						}
+					};
+
+					// parallel_for (range_declaration : range_expression) loop_statement;
+					struct Parallel_Ranged_For_AST_Node final : AST_Node_Impl {
+						Parallel_Ranged_For_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Parallel_Ranged_For, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() == 3);
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto forScope = std::make_shared<Scope>(currentScope);
+							forScope->SetSelf(forScope);
+
+							Any range = this->children[1]->eval(forScope); // 0..100 or [0,1,2,3] or vectorObjName etc;
+							try {
+								auto begin_func = forScope->FindFunction("begin", { range });
+								auto end_func = forScope->FindFunction("end", { range });
+								if (begin_func && end_func) {
+									Any begin = forScope->CallFunction(begin_func, range);
+									Any end = forScope->CallFunction(end_func, range);
+									auto& copyConstructorFunctor = begin.Type().lock()->GetCopyConstructor();
+
+									// if we can get the distance quickly, then great
+									size_t count = 0;
+									if (auto distanceFunction = forScope->FindFunction("-", { end, begin })) {
+										count = forScope->Cast<size_t>(forScope->CallFunction(distanceFunction, { end, begin }));
+									}
+									else {
+										while (forScope->Cast<bool>(forScope->CallFunction("!=", { begin, end }))) {
+											count++;
+											forScope->CallFunction("++", begin);
+										}
+										begin = forScope->CallFunction(begin_func, range);
+									}
+
+									using shared_type = std::pair< std::pair<Any, Any>, std::shared_ptr<Scope>>;
+									impl::context ctx;
+									impl::Dispatch(ctx,
+										count,
+										[&](impl::JobArgs const& _args)-> void {
+											shared_type& iter = *static_cast<shared_type*>(_args.sharedmemory);
+											if (_args.groupIndex == 0) {
+												// start of a group
+												if (auto jumpFunction = iter.second->FindFunction("+=", { iter.first.first, _args.jobIndex })) {
+													iter.second->CallFunction(jumpFunction, { iter.first.first, _args.jobIndex });
+												}
+												else {
+													for (int i = 0; i < _args.jobIndex; i++) iter.second->CallFunction("++", iter.first.first);
+												}
+											}
+											else {
+												// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
+												iter.second->CallFunction("++", iter.first.first);
+											}
+											iter.second->CallFunction(":=", { iter.first.second, iter.second->CallFunction("get", iter.first.first) });
+
+											// do the work
+											try {
+												auto innerScope = std::make_shared<Scope>(iter.second);
+												innerScope->SetSelf(innerScope);
+												this->children[2]->eval(innerScope);
+											}
+											catch (detail::Continue_Loop&) {}
+										},
+										sizeof(shared_type),
+											[&](void* p) -> void {
+											new (p) shared_type{ std::pair<Any,Any>{}, std::make_shared<Scope>(forScope) };
+											shared_type& iter = *static_cast<shared_type*>(p);
+											iter.second->SetSelf(iter.second);
+											iter.first.first = copyConstructorFunctor(begin); // iterator
+											iter.first.second = this->children[0]->eval(iter.second); // var x;
+										},
+											[](void* p) -> void {
+											((shared_type*)p)->~shared_type();
+										}
+										);
+									impl::Wait(ctx);
+								}
+								else {
+									throw exception::eval_error("begin() and/or end() functions were not found for the provided type", this->location.start, "");
+								}
+							}
+							catch (detail::Break_Loop&) {}
+
+							return Any();
+						}
+					};
+
+					struct Break_AST_Node final : AST_Node_Impl {
+						Break_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Break, std::move(t_loc), std::move(t_children)) {
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override { throw detail::Break_Loop(); }
+					};
+
+					struct Continue_AST_Node final : AST_Node_Impl {
+						Continue_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Continue, std::move(t_loc), std::move(t_children)) {
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override { throw detail::Continue_Loop(); }
+					};
+
+					struct Case_AST_Node final : AST_Node_Impl {
+						Case_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Case, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() == 2);
+							// if this is a constant, its hash should also be a constant
+							if (this->children[0]->identifier == AST_Node_Type::Constant) {
+								try {
+									constexprHash = currentScope->Cast<size_t>(currentScope->CallFunction("to_hash", { std::dynamic_pointer_cast<Constant_AST_Node>(this->children[0])->m_value }));
+									// don't need the first child anymore
+									const_cast<std::string&>(this->text) = this->children.front()->text;
+									this->children.front() = this->children.back();
+									this->children.pop_back();
+								}
+								catch (...) {}
+							}
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+							return this->children.back()->eval(thisScope);
+						}
+
+						std::optional<size_t> constexprHash;
+					};
+
+					struct Switch_AST_Node final : AST_Node_Impl {
+						Switch_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Switch, std::move(t_loc), std::move(t_children)) {
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							bool breaking = false;
+							size_t currentCase = 1;
+							bool hasMatched = false;
+
+							size_t match_hash = currentScope->Cast<size_t>(currentScope->CallFunction("to_hash", { this->children[0]->eval(thisScope) }));
+
+							Any out;
+							while (!breaking && (currentCase < this->children.size())) {
+								try {
+									if (this->children[currentCase]->identifier == AST_Node_Type::Case) {
+										if (hasMatched) {
+											out = this->children[currentCase]->eval(thisScope);
+										}
+										else {
+											std::optional<size_t>& constexprHash = std::dynamic_pointer_cast<Case_AST_Node>(this->children[currentCase])->constexprHash;
+											size_t this_hash;
+											if (constexprHash.has_value()) {
+												// best-case scenario
+												this_hash = constexprHash.value();
+											}
+											else {
+												this_hash = currentScope->Cast<size_t>(currentScope->CallFunction("to_hash", { this->children[currentCase]->children[0]->eval(thisScope) }));
+											}
+
+											// This is a little odd, but because want to see both the switch and the case simultaneously, I do a downcast here.
+											if (hasMatched || (this_hash == match_hash)) {
+												out = this->children[currentCase]->eval(thisScope);
+												hasMatched = true;
+											}
+										}
+									}
+									else if (this->children[currentCase]->identifier == AST_Node_Type::Default) {
+										out = this->children[currentCase]->eval(thisScope);
+										// hasMatched = true;
+									}
+								}
+								catch (detail::Break_Loop&) {
+									breaking = true;
+								}
+								++currentCase;
+							}
+							return out;
+						}
+
+						mutable std::atomic_uint_fast32_t m_loc = { 0 };
+					};
+
+					struct Default_AST_Node final : AST_Node_Impl {
+						Default_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Default, std::move(t_loc), std::move(t_children)) {
+							assert(this->children.size() == 1);
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+							return this->children[0]->eval(thisScope);
+						}
+					};
+
+					struct Do_AST_Node final : AST_Node_Impl {
+						Do_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Do, std::move(t_loc), std::move(t_children))
+						{}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							Any retval;
+
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							std::exception_ptr err{ nullptr };
+
+							try { retval = this->children[0]->eval(thisScope); }
+							catch (...) { err = std::current_exception(); }
+
+							if (this->children.back()->identifier == AST_Node_Type::Finally)
+								this->children.back()->children[0]->eval(thisScope);
+
+							if (err)
+								std::rethrow_exception(err);
+
+							return retval;
+						}
+					};
+
+					struct Try_AST_Node final : AST_Node_Impl {
+						Try_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Try, std::move(t_loc), std::move(t_children))
+						{}
+
+						Any handle_exception(const std::shared_ptr<Scope>& currentScope, const Any& t_except, bool& rethrow) const {
+							Any retval;
+							bool wasCaught = false;
+							for (int i = 1; i < this->children.size(); i++) {
+								auto& catch_block = *this->children[i];
+								if (catch_block.identifier == AST_Node_Type::Finally) {
+									continue;
+								}
+								//else if (catch_block.identifier == AST_Node_Type::Noop) {
+								//	// catches anything, but doesn't provide a type or var name. Therefore this will always catch, regardless of t_except's type
+								//	retval = catch_block.children[1]->eval(currentScope);
+								//}
+								else if (catch_block.identifier == AST_Node_Type::Catch) {
+									if (catch_block.children.size() == 1) { // catch{ ... }
+										// No variable capture
+										retval = catch_block.children[0]->eval(currentScope);
+										wasCaught = true;
+										break;
+									}
+									else {
+										// variable capture
+										if (catch_block.children[0]->identifier == AST_Node_Type::Arg) {
+											if (catch_block.children[0]->children.size() == 1) {
+												// catch(e){...}
+												auto& varName = catch_block.children[0]->children[0]->text; // e.g. x
+
+												currentScope->AddObj(varName, std::make_shared<Any>(t_except));
+												retval = catch_block.children[1]->eval(currentScope);
+												wasCaught = true;
+												break;
+											}
+											else {
+												// catch(exception& e){...}
+												auto& varTypeName = catch_block.children[0]->children[0]->text; // e.g. exception&
+												auto& varName = catch_block.children[0]->children[1]->text; // e.g. x
+
+												// ensure the var type matches
+
+												// TO-DO
+
+												currentScope->AddObj(varName, std::make_shared<Any>(t_except));
+												retval = catch_block.children[1]->eval(currentScope);
+												wasCaught = true;
+												break;
+											}
+										}
+										else {
+											throw exception::eval_error("Internal error: catch block variable unrecognized");
+										}
+									}
+								}
+								else {
+									throw exception::eval_error("Internal error: catch block type unrecognized");
+								}
+							}
+
+							if (!wasCaught) {
+								rethrow = true;
+							}
+
+							return retval;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							Any retval;
+							Any err;
+							std::exception_ptr Error;
+							bool rethrow = false;
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							try {
+								retval = this->children[0]->eval(thisScope);
+							}
+							catch (const std::exception& e) {
+								Error = std::current_exception();
+								// this must be handled within this scope before the exception goes out-of-scope.
+								auto exception = Any(std::shared_ptr<std::exception>(const_cast<std::exception*>(&e), [](std::exception* p) { /* do nothing */ }));
+								retval = handle_exception(thisScope, exception, rethrow);
+							}
+							catch (Any& e) {
+								Error = std::current_exception();
+								retval = handle_exception(thisScope, e, rethrow);
+							}
+							catch (...) {
+								Error = std::current_exception();
+								// unhandled exception type
+								if (this->children.back()->identifier == AST_Node_Type::Finally) {
+									this->children.back()->children[0]->eval(thisScope);
+								}
+								rethrow = true;
+							}
+
+							if (rethrow) {
+								std::rethrow_exception(Error);
+							}
+
+							if (this->children.back()->identifier == AST_Node_Type::Finally) {
+								retval = this->children.back()->children[0]->eval(thisScope);
+							}
+
+							return retval;
+						}
+					};
+
+					struct Catch_AST_Node final : AST_Node_Impl {
+						Catch_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Catch, std::move(t_loc), std::move(t_children))
+						{}
+					};
+
+					struct Finally_AST_Node final : AST_Node_Impl {
+						Finally_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Finally, std::move(t_loc), std::move(t_children))
+						{}
+					};
+
+					/*! Currently, the JIT compilation does not support preprocessor macros or other preprocessor activities. */
+					struct JustInTimeCompilation_AST_Node final : AST_Node_Impl {
+						JustInTimeCompilation_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::JustInTimeCompilation, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children[0]->identifier == AST_Node_Type::Constant) {
+								auto& scriptVar = std::dynamic_pointer_cast<Constant_AST_Node>(this->children[0])->m_value;
+								if (scriptVar.IsTypeOf<std::string>()) {
+									Compile(scriptVar.cast<std::string&>(), currentScope, true);
+								}
+								else {
+									auto SCRIPT = currentScope->Cast<std::string>(currentScope->CallFunction("to_string", { scriptVar }));
+									Compile(SCRIPT, currentScope, true);
+								}
+							}
+						}
+
+						// eval("x + 1");
+						// Each thread will compile its own code. If a thread sees the same code again, it will not re-compile it.
+						// Pre-processor macros are not supported at this time. To do so would require text splicing, running the preprocessor, and then resuming the code here.
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							if (this->children[0]->identifier == AST_Node_Type::Constant) {
+								// consider this already done
+							}
+							else {
+								auto SCRIPT = currentScope->Cast<std::string>(currentScope->CallFunction("to_string", { this->children[0]->eval(currentScope) }));
+								Compile(SCRIPT, currentScope);
+							}
+							return TLS->second->eval(currentScope);
+						};
+
+					private:
+						GoodLang::ThreadLocalInstance <
+							std::pair < std::string, AST_Node_Impl_Ptr >
+						> TLS;
+						void Compile(std::string const& SCRIPT, const std::shared_ptr<Scope>& currentScope, bool UpdateAll = false) const {
+							if (UpdateAll) {
+								auto PARSER = GoodLang::Engine::Compiler::Interpreter2::Parser2();
+								auto PARSED_RESULT = PARSER.Parse(SCRIPT, currentScope);
+								const_cast<GoodLang::ThreadLocalInstance<std::pair<std::string, AST_Node_Impl_Ptr>>&>(TLS) =
+									std::pair < std::string, AST_Node_Impl_Ptr >(SCRIPT, PARSED_RESULT.first);
+							}
+							else {
+								if ((!TLS->second) || (TLS->first != SCRIPT)) {
+									auto PARSER = GoodLang::Engine::Compiler::Interpreter2::Parser2();
+									auto PARSED_RESULT = PARSER.Parse(SCRIPT, currentScope);
+
+									const_cast<std::string&>(TLS->first) = SCRIPT;
+									const_cast<AST_Node_Impl_Ptr&>(TLS->second) = PARSED_RESULT.first;
+								}
+							}
+						};
+					};
+
+					struct Namespace_AST_Node final : AST_Node_Impl {
+						Namespace_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Namespace, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() == 2); // Id, DeclBlock
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// if the namespace already exists, then we should "resume" it, rather than creating a new one. 
+
+							std::string desired_namespace = currentScope->GetQualifiedNamespace() + "::" + std::string(GetText(this->children[0]));
+
+							static auto fixNamespace{ [](std::string& x) {
+								while (x.find("::") == 0 && x.length() > 2) {
+									x = x.substr(2);
+								}
+
+								while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+							} };
+							fixNamespace(desired_namespace);
+
+							print(desired_namespace);
+							auto newNamespace = currentScope->FindNamespace(desired_namespace);
+							if (!newNamespace) {
+								newNamespace = std::make_shared<Namespace>(currentScope, std::string(GetText(this->children[0])));
+								newNamespace->SetSelf(newNamespace);
+								currentScope->AddChild(newNamespace); // add the new namespace as a child
+							}
+
+							(void)this->children.back()->eval(newNamespace);
+
+							return {};
+						}
+					};
+
+					struct FunctionDecl_AST_Node final : AST_Node_Impl {
+						FunctionDecl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::FunctionDecl, std::move(t_loc), std::move(t_children))
+						{
+							assert(this->children.size() == 4); // Id -> return_type, Id -> function_name, Arg_List, Block
+
+							return_type_name = GetText(this->children[0]);
+							function_name = GetText(this->children[1]);
+							numArgs = this->children[2]->children.size();
+							FunctionBlock = this->children[3] = optimizer::optimize(this->children[3], currentScope);
+							for (int childIndex = 0; childIndex < numArgs; ++childIndex) {
+								auto& Arg = *this->children[2]->children[childIndex];
+								if (Arg.children.size() == 1) {
+									// type was not provided.
+									inputArgTypes.push_back(user_type_shared<Any>());
+									inputArgNames.push_back(std::string(GetText(Arg.children[0])));
+
+								}
+								else if (Arg.children.size() == 2) {
+									// type was provided.
+									auto type_name = GetText(Arg.children[0]);
+									if (auto arg_type_class = currentScope->FindClass(return_type_name)) {
+										inputArgTypes.push_back(arg_type_class->GetClassType().lock()->MakeRef());
+									}
+									else {
+										inputArgTypes.push_back(std::weak_ptr<Type_Info>());
+									}
+									inputArgNames.push_back(std::string(GetText(Arg.children[1])));
+								}
+								else {
+									throw exception::eval_error("Unhandled Arg parameter(s)");
+								}
+							}
+
+							if (return_type_name == "void") {
+								// function will return void
+							}
+							else {
+								if (auto return_type_class = currentScope->FindClass(return_type_name)) {
+									this->return_type = return_type_class->GetClassType();
+								}
+							}
+
+						};
+
+						static void AddObjects(int startposition, std::shared_ptr< Scope> const& thisScope, std::vector<std::string> const& argNames) {};
+						template<typename T, typename... R> static void AddObjects(int startposition, std::shared_ptr< Scope> const& thisScope, std::vector<std::string> const& argNames, T const& argument, R const&... arguments) {
+							thisScope->AddObj(argNames[startposition], std::make_shared<Any>(argument), false);
+							AddObjects(startposition + 1, thisScope, argNames, arguments...);
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							for (int childIndex = 0; childIndex < numArgs; ++childIndex) {
+								if (inputArgTypes[childIndex].expired()) { // if it was never determined or is invalid... 
+									auto& Arg = *this->children[2]->children[childIndex];
+									if (Arg.children.size() == 1) {
+										const_cast<std::weak_ptr<Type_Info>&>(inputArgTypes[childIndex]) = user_type_shared<Any>();
+									}
+									else if (Arg.children.size() == 2) {
+										// type was provided.
+										auto type_name = GetText(Arg.children[0]);
+										if (auto arg_type_class = currentScope->FindClass(return_type_name)) {
+											const_cast<std::weak_ptr<Type_Info>&>(inputArgTypes[childIndex]) = arg_type_class->GetClassType().lock()->MakeRef();
+										}
+										else {
+											const_cast<std::weak_ptr<Type_Info>&>(inputArgTypes[childIndex]) = user_type_shared<Any>();
+										}
+									}
+									else {
+										throw exception::eval_error("Unhandled Arg parameter(s)");
+									}
+								}
+							}
+
+							// the current scope should be a namespace... HOPEFULLY! Need to confirm... Perhaps also need to change the impl based on whether we are in a Class or in a Namespace or in a Global?
+							Proxy_Function func;
+							if (GetHash(this->return_type) == GetHash(user_type<void>())) {
+								switch (numArgs) {
+								case 0:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									]() {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 1:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& in1) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, in1);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 2:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& in1, Any const& in2) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, in1, in2);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 3:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 4:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 5:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 6:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 7:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 8:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 9:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 10:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 11:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 12:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l) {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 13:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 14:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+
+								case 15:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n, Any const& o) {
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
+
+											try { lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) {}
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes));
+									break;
+								}
+							}
+							else {
+								switch (numArgs) {
+								case 0:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									]()->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 1:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& in1)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, in1);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 2:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& in1, Any const& in2)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, in1, in2);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 3:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 4:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 5:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 6:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 7:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 8:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 9:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 10:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 11:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 12:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 13:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 14:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+								case 15:
+									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scope>(currentScope), returnType = this->return_type
+									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
+										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n, Any const& o)->Any {
+										Any result;
+										if (auto parentScope = declaringNamespace.lock()) {
+											auto thisScope = std::make_shared<Scope>(parentScope);
+											thisScope->SetSelf(thisScope);
+
+											AddObjects(0, thisScope, InputArgNames, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
+
+											try { result = lambda->eval(thisScope); }
+											catch (detail::Return_Value& rv) { result = rv.retval; }
+											return thisScope->Cast(result, returnType);
+										}
+										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
+									}, ParamTypes(inputArgTypes), this->return_type);
+									break;
+
+
+
+
+
+								}
+							};
+
+							if (func) {
+								currentScope->AddFunction(function_name, func);
+							}
+							else {
+								throw exception::eval_error("Function has too many parameters!");
+							}
+							return {};
+						};
+
+						std::string return_type_name;
+						std::string function_name;
+						int numArgs;
+						AST_Node_Impl_Ptr FunctionBlock;
+						std::vector<std::weak_ptr<Type_Info>> inputArgTypes;
+						std::vector<std::string> inputArgNames;
+					};
+
+					struct Scopeless_Block_AST_Node final : AST_Node_Impl {
+						Scopeless_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// evaluate all of the children, return the result of the last child
+							int numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(currentScope);
+								}
+								return this->children.back()->eval(currentScope);
+							}
+							else {
+								return Any();
+							}
+						}
+					};
+
+					struct Block_AST_Node final : AST_Node_Impl {
+						Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto newScope = std::make_shared<Scope>(currentScope);
+							newScope->SetSelf(newScope);
+
+							const auto numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(newScope);
+								}
+								return this->children.back()->eval(newScope);
+							}
+							else {
+								return Any();
+							}
+						};
+					};
+
+					struct Declaration_Block_AST_Node final : AST_Node_Impl {
+						Declaration_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::DeclarationBlock, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							const auto numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(currentScope);
+								}
+								return this->children.back()->eval(currentScope);
+							}
+							else {
+								return Any();
+							}
+						};
+					};
+
+					struct Function_Block_AST_Node final : AST_Node_Impl {
+						Function_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::FunctionBlock, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto newScope = std::make_shared<FunctionScope>(currentScope);
+							newScope->SetSelf(newScope);
+
+							const auto numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(newScope);
+								}
+								return this->children.back()->eval(newScope);
+							}
+							else {
+								return Any();
+							}
+						};
+					};
+
+					struct File_AST_Node final : AST_Node_Impl {
+						File_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::File, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							try {
+								const auto num_children = this->children.size();
+								try {
+									if (num_children > 0) {
+										for (size_t i = 0; i < num_children - 1; ++i) {
+											this->children[i]->eval(currentScope);
+										}
+										return this->children.back()->eval(currentScope);
+									}
+									else {
+										return {};
+									}
+								}
+								catch (detail::Return_Value& rv) {
+									return rv.retval;
+								}
+							}
+							catch (const detail::Continue_Loop&) {
+								throw exception::eval_error("Unexpected `continue` statement outside of a loop");
+							}
+							catch (const detail::Break_Loop&) {
+								throw exception::eval_error("Unexpected `break` statement outside of a loop");
+							}
+						}
+					};
+
+
+				};
+
+
+				class optimizer {
+				private:
+					template<typename... T> struct Optimizer : T... {
+						Optimizer() = default;
+						explicit Optimizer(T... t) : T(std::move(t))... { };
+						AST_Node_Impl_Ptr optimize(AST_Node_Impl_Ptr p, const std::shared_ptr<Scope>& currentScope) {
+							long long maxDepth = 100;
+							while (--maxDepth >= 0) {
+								bool successful = false;
+								((successful = (successful || static_cast<T&>(*this).optimize(p, currentScope))), ...); // this line performs all optimizations in-line
+								if (!successful) break;
+							}
+							return p;
+						};
+					};
+
+					static AST_Node_Impl& child_at(AST_Node_Impl& node, const size_t offset) noexcept {
+							return *node.children[offset];
+					};
+					static const AST_Node_Impl& child_at(const AST_Node_Impl& node, const size_t offset) noexcept {
+						return *node.children[offset];
+					};
+					static size_t child_count(const AST_Node_Impl& node) noexcept {
+						return node.children.size();
+					};
+					static bool contains_var_decl_in_scope(const AST_Node_Impl& node) noexcept {
+						if (
+							node.identifier == AST_Node_Type::Var_Decl
+							|| node.identifier == AST_Node_Type::Assign_Decl
+							|| node.identifier == AST_Node_Type::Reference
+							|| node.identifier == AST_Node_Type::Assign_Retroactively
+							|| node.identifier == AST_Node_Type::Def
+							|| node.identifier == AST_Node_Type::Class
+							) {
+							return true;
+						}
+
+						const auto num = child_count(node);
+
+						for (size_t i = 0; i < num; ++i) {
+							const auto& child = child_at(node, i);
+							if (child.identifier != AST_Node_Type::Block
+								&& child.identifier != AST_Node_Type::For
+								&& child.identifier != AST_Node_Type::Ranged_For
+								&& child.identifier != AST_Node_Type::Parallel_For
+								&& child.identifier != AST_Node_Type::Parallel_Ranged_For
+								&& contains_var_decl_in_scope(child)
+								) {
+								return true;
+							}
+						}
+
+						return false;
+					};
+
+					// re-arrange the return statement, to avoid throwing whenever possible
+					struct Example {
+						bool optimize(AST_Node_Impl_Ptr& p, const std::shared_ptr<Scope>& currentScope) {
+							return false; // does nothing
+						}
+					};
+
+					using Optimizer_Default = Optimizer<
+						Example
+					>;
+
+				public:
+					static AST_Node_Impl_Ptr optimize(AST_Node_Impl_Ptr p, const std::shared_ptr<Scope>& currentScope) {
+						return Optimizer_Default().optimize(p, currentScope);
+					};
+				}; // namespace optimizer
+
+				class Parser2 {
+				private:
+					constexpr static utility::Static_String m_multiline_comment_end{ "*/" };
+					constexpr static utility::Static_String m_multiline_comment_begin{ "/*" };
+					constexpr static utility::Static_String m_singleline_comment{ "//" };
+					constexpr static utility::Static_String m_annotation{ "#" };
+					constexpr static utility::Static_String m_cr_lf{ "\r\n" };
+					
+					template<typename string_type> struct Char_Parser {
+						string_type& match;
+						using char_type = typename string_type::value_type;
+						bool is_escaped = false;
+						bool is_interpolated = false;
+						bool saw_interpolation_marker = false;
+						bool is_octal = false;
+						bool is_hex = false;
+						std::size_t unicode_size = 0;
+						const bool interpolation_allowed;
+
+						string_type octal_matches;
+						string_type hex_matches;
+
+						Char_Parser(string_type& t_match, const bool t_interpolation_allowed)
+							: match(t_match)
+							, interpolation_allowed(t_interpolation_allowed) {
+						}
+
+						Char_Parser& operator=(const Char_Parser&) = delete;
+
+						~Char_Parser() {
+							try {
+								if (is_octal) {
+									process_octal();
+								}
+
+								if (is_hex) {
+									process_hex();
+								}
+
+								if (unicode_size > 0) {
+									process_unicode();
+								}
+							}
+							catch (const std::invalid_argument&) {
+							}
+							catch (const exception::eval_error&) {
+								// Something happened with parsing, we'll catch it later?
+							}
+						}
+
+						void process_hex() {
+							if (!hex_matches.empty()) {
+								auto val = stoll(hex_matches, nullptr, 16);
+								match.push_back(char_type(val));
+							}
+							hex_matches.clear();
+							is_escaped = false;
+							is_hex = false;
+						}
+
+						void process_octal() {
+							if (!octal_matches.empty()) {
+								auto val = stoll(octal_matches, nullptr, 8);
+								match.push_back(char_type(val));
+							}
+							octal_matches.clear();
+							is_escaped = false;
+							is_octal = false;
+						}
+
+						void process_unicode() {
+							const auto ch = static_cast<uint32_t>(std::stoi(hex_matches, nullptr, 16));
+							const auto match_size = hex_matches.size();
+							hex_matches.clear();
+							is_escaped = false;
+							const auto u_size = unicode_size;
+							unicode_size = 0;
+
+							char buf[4];
+							if (u_size != match_size) {
+								throw exception::eval_error("Incomplete unicode escape sequence");
+							}
+							if (u_size == 4 && ch >= 0xD800 && ch <= 0xDFFF) {
+								throw exception::eval_error("Invalid 16 bit universal character");
+							}
+
+							if (ch < 0x80) {
+								match += static_cast<char>(ch);
+							}
+							else if (ch < 0x800) {
+								buf[0] = static_cast<char>(0xC0 | (ch >> 6));
+								buf[1] = static_cast<char>(0x80 | (ch & 0x3F));
+								match.append(buf, 2);
+							}
+							else if (ch < 0x10000) {
+								buf[0] = static_cast<char>(0xE0 | (ch >> 12));
+								buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+								buf[2] = static_cast<char>(0x80 | (ch & 0x3F));
+								match.append(buf, 3);
+							}
+							else if (ch < 0x200000) {
+								buf[0] = static_cast<char>(0xF0 | (ch >> 18));
+								buf[1] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+								buf[2] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+								buf[3] = static_cast<char>(0x80 | (ch & 0x3F));
+								match.append(buf, 4);
+							}
+							else {
+								// this must be an invalid escape sequence?
+								throw exception::eval_error("Invalid 32 bit universal character");
+							}
+						}
+
+						void parse(const char_type t_char, File_Position pos) {
+							const bool is_octal_char = t_char >= '0' && t_char <= '7';
+
+							const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
+
+							if (is_octal) {
+								if (is_octal_char) {
+									octal_matches.push_back(t_char);
+
+									if (octal_matches.size() == 3) {
+										process_octal();
+									}
+									return;
+								}
+								else {
+									process_octal();
+								}
+							}
+							else if (is_hex) {
+								if (is_hex_char) {
+									hex_matches.push_back(t_char);
+
+									if (hex_matches.size() == 2 * sizeof(char_type)) {
+										// This rule differs from the C/C++ standard, but ChaiScript
+										// does not offer the same workaround options, and having
+										// hexadecimal sequences longer than can fit into the char
+										// type is undefined behavior anyway.
+										process_hex();
+									}
+									return;
+								}
+								else {
+									process_hex();
+								}
+							}
+							else if (unicode_size > 0) {
+								if (is_hex_char) {
+									hex_matches.push_back(t_char);
+
+									if (hex_matches.size() == unicode_size) {
+										// Format is specified to be 'slash'uABCD
+										// on collecting from A to D do parsing
+										process_unicode();
+									}
+									return;
+								}
+								else {
+									// Not a unicode anymore, try parsing any way
+									// May be someone used 'slash'uAA only
+									process_unicode();
+								}
+							}
+
+							if (t_char == '\\') {
+								if (is_escaped) {
+									match.push_back('\\');
+									is_escaped = false;
+								}
+								else {
+									is_escaped = true;
+								}
+							}
+							else {
+								if (is_escaped) {
+									if (is_octal_char) {
+										is_octal = true;
+										octal_matches.push_back(t_char);
+									}
+									else if (t_char == 'x') {
+										is_hex = true;
+									}
+									else if (t_char == 'u') {
+										unicode_size = 4;
+									}
+									else if (t_char == 'U') {
+										unicode_size = 8;
+									}
+									else {
+										switch (t_char) {
+										case ('\''):
+											match.push_back('\'');
+											break;
+										case ('\"'):
+											match.push_back('\"');
+											break;
+										case ('?'):
+											match.push_back('?');
+											break;
+										case ('a'):
+											match.push_back('\a');
+											break;
+										case ('b'):
+											match.push_back('\b');
+											break;
+										case ('f'):
+											match.push_back('\f');
+											break;
+										case ('n'):
+											match.push_back('\n');
+											break;
+										case ('r'):
+											match.push_back('\r');
+											break;
+										case ('t'):
+											match.push_back('\t');
+											break;
+										case ('v'):
+											match.push_back('\v');
+											break;
+										case ('$'):
+											match.push_back('$');
+											break;
+										default:
+											throw exception::eval_error("Unknown escaped sequence in string", pos, "");
+										}
+										is_escaped = false;
+									}
+								}
+								else if (interpolation_allowed && t_char == '$') {
+									saw_interpolation_marker = true;
+								}
+								else {
+									match.push_back(t_char);
+								}
+							}
+						}
+					};
+					static std::map<std::string_view, Any> build_constants() {
+						std::map<std::string_view, Any> out;
+						out["true"] = const_var(true);
+						out["false"] = const_var(false);
+						out["Infinity"] = const_var(std::numeric_limits<double>::infinity());
+						out["NaN"] = const_var(std::numeric_limits<double>::quiet_NaN());
+						out["nullptr"] = const_var(Any());
+						out["null"] = const_var(Any());
+						return out;
+					};
+					static std::map<std::string_view, Any> const& constants() {
+						static auto out{ build_constants() };
+						return out;
+					};
+
+
+					template<typename Array2D, typename First, typename Second>
+					static void set_alphabet(Array2D& array, const First first, const Second second) noexcept {
+						auto* first_ptr = &std::get<0>(array) + static_cast<std::size_t>(first);
+						auto* second_ptr = &std::get<0>(*first_ptr) + static_cast<std::size_t>(second);
+						*second_ptr = true;
+					};
+					static std::array<std::array<bool, lengthof_alphabet>, max_alphabet> build_alphabet() noexcept {
+						std::array<std::array<bool, lengthof_alphabet>, max_alphabet> alphabet{};
+
+						set_alphabet(alphabet, symbol_alphabet, '?');
+
+						set_alphabet(alphabet, symbol_alphabet, '?');
+						set_alphabet(alphabet, symbol_alphabet, '+');
+						set_alphabet(alphabet, symbol_alphabet, '-');
+						set_alphabet(alphabet, symbol_alphabet, '*');
+						set_alphabet(alphabet, symbol_alphabet, '/');
+						set_alphabet(alphabet, symbol_alphabet, '|');
+						set_alphabet(alphabet, symbol_alphabet, '&');
+						set_alphabet(alphabet, symbol_alphabet, '^');
+						set_alphabet(alphabet, symbol_alphabet, '=');
+						set_alphabet(alphabet, symbol_alphabet, '.');
+						set_alphabet(alphabet, symbol_alphabet, '<');
+						set_alphabet(alphabet, symbol_alphabet, '>');
+
+						for (size_t c = 'a'; c <= 'z'; ++c) {
+							set_alphabet(alphabet, keyword_alphabet, c);
+						}
+						for (size_t c = 'A'; c <= 'Z'; ++c) {
+							set_alphabet(alphabet, keyword_alphabet, c);
+						}
+						for (size_t c = '0'; c <= '9'; ++c) {
+							set_alphabet(alphabet, keyword_alphabet, c);
+						}
+						set_alphabet(alphabet, keyword_alphabet, '_');
+						// set_alphabet(alphabet, keyword_alphabet, ':');
+
+						for (size_t c = '0'; c <= '9'; ++c) {
+							set_alphabet(alphabet, int_alphabet, c);
+						}
+						for (size_t c = '0'; c <= '9'; ++c) {
+							set_alphabet(alphabet, float_alphabet, c);
+						}
+						set_alphabet(alphabet, float_alphabet, '.');
+
+						for (size_t c = '0'; c <= '9'; ++c) {
+							set_alphabet(alphabet, hex_alphabet, c);
+						}
+						for (size_t c = 'a'; c <= 'f'; ++c) {
+							set_alphabet(alphabet, hex_alphabet, c);
+						}
+						for (size_t c = 'A'; c <= 'F'; ++c) {
+							set_alphabet(alphabet, hex_alphabet, c);
+						}
+
+						set_alphabet(alphabet, x_alphabet, 'x');
+						set_alphabet(alphabet, x_alphabet, 'X');
+
+						for (size_t c = '0'; c <= '1'; ++c) {
+							set_alphabet(alphabet, bin_alphabet, c);
+						}
+						set_alphabet(alphabet, b_alphabet, 'b');
+						set_alphabet(alphabet, b_alphabet, 'B');
+
+						for (size_t c = 'a'; c <= 'z'; ++c) {
+							set_alphabet(alphabet, id_alphabet, c);
+						}
+						for (size_t c = 'A'; c <= 'Z'; ++c) {
+							set_alphabet(alphabet, id_alphabet, c);
+						}
+						set_alphabet(alphabet, id_alphabet, '_');
+						set_alphabet(alphabet, id_alphabet, ':'); // RG
+						for (size_t c = '0'; c <= '9'; ++c) { set_alphabet(alphabet, id_alphabet, c); } // RG
+
+						set_alphabet(alphabet, white_alphabet, ' ');
+						set_alphabet(alphabet, white_alphabet, '\t');
+
+						set_alphabet(alphabet, int_suffix_alphabet, 'l');
+						set_alphabet(alphabet, int_suffix_alphabet, 'L');
+						set_alphabet(alphabet, int_suffix_alphabet, 'u');
+						set_alphabet(alphabet, int_suffix_alphabet, 'U');
+
+						set_alphabet(alphabet, float_suffix_alphabet, 'l');
+						set_alphabet(alphabet, float_suffix_alphabet, 'L');
+						set_alphabet(alphabet, float_suffix_alphabet, 'f');
+						set_alphabet(alphabet, float_suffix_alphabet, 'F');
+
+						return alphabet;
+					}
+					static std::array<std::array<bool, lengthof_alphabet>, max_alphabet> const& alphabet() {
+						static auto out{ build_alphabet() };
+						return out;
+					};
+
+					struct Operator_Matches {
+						using SS = utility::Static_String;
+
+						struct Operator_Matches_Impl {
+							using SS = utility::Static_String;
+							// should match the order and categories from create_operators()
+							const std::array<utility::Static_String, 2> m_0{ {SS("?"), SS("?=")} };
+							const std::array<utility::Static_String, 1> m_1{ {SS("||")} };
+							const std::array<utility::Static_String, 1> m_2{ {SS("&&")} };
+							const std::array<utility::Static_String, 1> m_3{ {SS("|")} };
+							const std::array<utility::Static_String, 1> m_4{ {SS("&")} };
+							const std::array<utility::Static_String, 3> m_5{ {SS("=="), SS("!="), SS("..")} };
+							const std::array<utility::Static_String, 4> m_6{ {SS("<"), SS("<="), SS(">"), SS(">=")} };
+							const std::array<utility::Static_String, 2> m_7{ {SS("<<"), SS(">>")} };
+							const std::array<utility::Static_String, 2> m_8{ {SS("+"), SS("-")} };
+							const std::array<utility::Static_String, 3> m_9{ {SS("*"), SS("/"), SS("%")} };
+							const std::array<utility::Static_String, 1> m_10{ {SS("^")} };
+							const std::array<utility::Static_String, 6> m_11{ SS("++"), SS("--"), SS("-"), SS("+"), SS("!"), SS("~") };
+						};
+						static auto const& Data() {
+							static Operator_Matches_Impl out;
+							return out;
+						};
+						static bool is_match(std::string_view t_str) noexcept {
+							constexpr std::array<std::size_t, 12> groups{ { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } };
+							return std::any_of(groups.begin(), groups.end(), [&t_str](const std::size_t group) { return is_match(group, t_str); });
+						};
+						template<typename Predicate> static bool any_of(const std::size_t t_group, Predicate&& predicate) {
+							auto match = [&predicate](const auto& array) { return std::any_of(array.begin(), array.end(), predicate); };
+
+							switch (t_group) {
+							case 0:
+								return match(Data().m_0);
+							case 1:
+								return match(Data().m_1);
+							case 2:
+								return match(Data().m_2);
+							case 3:
+								return match(Data().m_3);
+							case 4:
+								return match(Data().m_4);
+							case 5:
+								return match(Data().m_5);
+							case 6:
+								return match(Data().m_6);
+							case 7:
+								return match(Data().m_7);
+							case 8:
+								return match(Data().m_8);
+							case 9:
+								return match(Data().m_9);
+							case 10:
+								return match(Data().m_10);
+							case 11:
+								return match(Data().m_11);
+							default:
+								return false;
+							}
+						}
+						static bool is_match(const std::size_t t_group, std::string_view t_str)  noexcept {
+							auto match = [&t_str](const auto& array) {
+								return std::any_of(array.begin(), array.end(), [&t_str](const auto& v) { return v == t_str; });
+							};
+
+							switch (t_group) {
+							case 0:
+								return match(Data().m_0);
+							case 1:
+								return match(Data().m_1);
+							case 2:
+								return match(Data().m_2);
+							case 3:
+								return match(Data().m_3);
+							case 4:
+								return match(Data().m_4);
+							case 5:
+								return match(Data().m_5);
+							case 6:
+								return match(Data().m_6);
+							case 7:
+								return match(Data().m_7);
+							case 8:
+								return match(Data().m_8);
+							case 9:
+								return match(Data().m_9);
+							case 10:
+								return match(Data().m_10);
+							case 11:
+								return match(Data().m_11);
+							default:
+								return false;
+							}
+						}
+					};
+					static std::array<Operator_Precedence, 12> build_operators() noexcept {
+						return std::array<Operator_Precedence, 12>{
+							{
+								Operator_Precedence::Ternary_Cond,
+									Operator_Precedence::Logical_Or,
+									Operator_Precedence::Logical_And,
+									Operator_Precedence::Bitwise_Or,
+									Operator_Precedence::Bitwise_And,
+									Operator_Precedence::Equality,
+									Operator_Precedence::Comparison,
+									Operator_Precedence::Shift,
+									Operator_Precedence::Addition,
+									Operator_Precedence::Multiplication,
+									Operator_Precedence::Bitwise_Xor,
+									Operator_Precedence::Prefix
+							}
+						};
+					};
+					static std::array<Operator_Precedence, 12> const& operators() noexcept {
+						static auto out{ build_operators() };
+						return out;
+					};
+
+					constexpr bool char_in_alphabet(char c, Alphabet a) const noexcept { return alphabet()[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
+					
+				public:
+					using ParseNode = std::pair< std::shared_ptr<AST_Node_Impl>, std::shared_ptr<Scope> >;
+				private:
+					Position m_position{};					
+					std::vector<ParseNode> m_match_stack;
+					std::vector<ParseNode> m_comment_stack;
+
+				private:
+					// check if the string is a valid operator
+					static bool is_operator(std::string_view t_s) noexcept { return Operator_Matches::is_match(t_s); }
+					static void validate_object_name(std::string_view const& name, Position const& m_position) {
+						switch (hash(name)) {
+						case hash(""):
+							throw exception::eval_error("Id names cannot be empty", (File_Position)m_position);
+						case hash("#define"):
+						case hash("#undef"):
+						case hash("#ifdef"):
+						case hash("#ifndef"):
+						case hash("#elif"):
+						case hash("#else"):
+						case hash("#endif"):
+						case hash("#error"):
+						case hash("#warning"):
+						case hash("#include"):
+						case hash("#pragma"):
+						case hash("auto"):
+						case hash("var"):
+						case hash("global"):
+						case hash("while"):
+						case hash("for"):
+						case hash("parallel_for"):
+						case hash("break"):
+						case hash("conitnue"):
+						case hash("case"):
+						case hash("default"):
+						case hash("switch"):
+						case hash("try"):
+						case hash("catch"):
+						case hash("finally"):
+						case hash("do"):
+						case hash("evaluate"):
+						case hash("namespace"):
+						case hash("return"):
+						case hash("if"):
+						case hash("else"):
+						{
+							std::string temp = std::string(name);
+							throw exception::eval_error(GoodLang::printf("Id name '%s' was reserved for the langauge", temp.c_str()), (File_Position)m_position);
+						}
+						default:
+							return;
+						}
+					};
+					
+				private:
+					/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+					bool Symbol_(const utility::Static_String& sym) noexcept {
+						const auto len = sym.size();
+						if (m_position.remaining() >= len) {
+							const char* file_pos = &(*m_position);
+							for (size_t pos = 0; pos < len; ++pos) {
+								if (sym.c_str()[pos] != file_pos[pos]) {
+									return false;
+								}
+							}
+							m_position += len;
+							return true;
+						}
+						return false;
+					};
+					/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+					bool Symbol_(const std::string_view& sym) noexcept {
+						const auto len = sym.size();
+						if (m_position.remaining() >= len) {
+							const char* file_pos = &(*m_position);
+							for (size_t pos = 0; pos < len; ++pos) {
+								if (sym[pos] != file_pos[pos]) {
+									return false;
+								}
+							}
+							m_position += len;
+							return true;
+						}
+						return false;
+					};
+					/// Reads a char from input if it matches the parameter, without skipping initial whitespace
+					bool Char_(const char c) {
+						if (m_position.has_more() && (*m_position == c)) {
+							++m_position;
+							return true;
+						}
+						else {
+							return false;
+						}
+					};
+					/// Reads an end-of-line group from input, without skipping initial whitespace
+					bool Eol_(const bool t_eos = false) {
+						bool retval = false;
+
+						if (m_position.has_more() && (Symbol_(m_cr_lf) || Char_('\n'))) {
+							retval = true;
+							//++m_position.line;
+							m_position.col = 1;
+						}
+						else if (m_position.has_more() && !t_eos && Char_(';')) {
+							retval = true;
+						}
+
+						return retval;
+					};
+					/// Reads a string from input if it matches the parameter, without skipping initial whitespace
+					bool Keyword_(const utility::Static_String& t_s) {
+						const auto len = t_s.size();
+						if (m_position.remaining() >= len) {
+							auto tmp = m_position;
+							for (size_t i = 0; tmp.has_more() && i < len; ++i) {
+								if (*tmp != t_s.c_str()[i]) {
+									return false;
+								}
+								++tmp;
+							}
+							m_position = tmp;
+							return true;
+						}
+
+						return false;
+					};
+					/// Reads the optional exponent (scientific notation) and suffix for a Float, without skipping initial whitespace
+					/// Support a form of scientific notation: 1e-5, 35.5E+8, 0.01e19
+					bool read_exponent_and_suffix_() noexcept {
+						// Support a form of scientific notation: 1e-5, 35.5E+8, 0.01e19
+						if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+							++m_position;
+							if (m_position.has_more() && ((*m_position == '-') || (*m_position == '+'))) {
+								++m_position;
+							}
+							auto exponent_pos = m_position;
+							while (m_position.has_more() && char_in_alphabet(*m_position, int_alphabet)) {
+								++m_position;
+							}
+							if (m_position == exponent_pos) {
+								// Require at least one digit after the exponent
+								return false;
+							}
+						}
+
+						// Parse optional float suffix
+						while (m_position.has_more() && char_in_alphabet(*m_position, float_suffix_alphabet)) {
+							++m_position;
+						}
+
+						return true;
+					};
+					/// Reads a floating point value from input, without skipping initial whitespace
+					bool Float_() noexcept {
+						if (m_position.has_more() && char_in_alphabet(*m_position, float_alphabet)) {
+							while (m_position.has_more() && char_in_alphabet(*m_position, int_alphabet)) {
+								++m_position;
+							}
+
+							if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+								// The exponent is valid even without any decimal in the Float (1e8, 3e-15)
+								return read_exponent_and_suffix_();
+							}
+							else if (m_position.has_more() && (*m_position == '.')) {
+								++m_position;
+								if (m_position.has_more() && char_in_alphabet(*m_position, int_alphabet)) {
+									while (m_position.has_more() && char_in_alphabet(*m_position, int_alphabet)) {
+										++m_position;
+									}
+									// After any decimal digits, support an optional exponent (3.7e3)
+									return read_exponent_and_suffix_();
+								}
+								else {
+									--m_position;
+								}
+							}
+						}
+						return false;
+					};
+					/// Reads a hex value from input, without skipping initial whitespace
+					bool Hex_() noexcept {
+						if (m_position.has_more() && (*m_position == '0')) {
+							++m_position;
+
+							if (m_position.has_more() && char_in_alphabet(*m_position, x_alphabet)) {
+								++m_position;
+								if (m_position.has_more() && char_in_alphabet(*m_position, hex_alphabet)) {
+									while (m_position.has_more() && char_in_alphabet(*m_position, hex_alphabet)) {
+										++m_position;
+									}
+									while (m_position.has_more() && char_in_alphabet(*m_position, int_suffix_alphabet)) {
+										++m_position;
+									}
+
+									return true;
+								}
+								else {
+									--m_position;
+								}
+							}
+							else {
+								--m_position;
+							}
+						}
+
+						return false;
+					}
+					/// Reads an integer suffix, without skipping initial whitespace
+					void IntSuffix_() {
+						while (m_position.has_more() && char_in_alphabet(*m_position, int_suffix_alphabet)) {
+							++m_position;
+						}
+					}
+					/// Reads a binary value from input, without skipping initial whitespace
+					bool Binary_() {
+						if (m_position.has_more() && (*m_position == '0')) {
+							++m_position;
+
+							if (m_position.has_more() && char_in_alphabet(*m_position, b_alphabet)) {
+								++m_position;
+								if (m_position.has_more() && char_in_alphabet(*m_position, bin_alphabet)) {
+									while (m_position.has_more() && char_in_alphabet(*m_position, bin_alphabet)) {
+										++m_position;
+									}
+									return true;
+								}
+								else {
+									--m_position;
+								}
+							}
+							else {
+								--m_position;
+							}
+						}
+
+						return false;
+					};
+					template<typename T> constexpr static auto parse_num_(const std::string_view t_str) noexcept -> typename std::enable_if<std::is_integral<T>::value, T>::type {
+						T t = 0;
+						for (const auto c : t_str) {
+							if (c < '0' || c > '9') {
+								return t;
+							}
+							t *= 10;
+							t += c - '0';
+						}
+						return t;
+					};
+					template<typename T> static auto parse_num_(const std::string_view t_str) -> typename std::enable_if<!std::is_integral<T>::value, T>::type {
+						T t = 0;
+						T base{};
+						T decimal_place = 0;
+						int exponent = 0;
+
+						for (const auto c : t_str) {
+							switch (c) {
+							case '.':
+								decimal_place = 10;
+								break;
+							case 'e':
+							case 'E':
+								exponent = 1;
+								decimal_place = 0;
+								base = t;
+								t = 0;
+								break;
+							case '-':
+								exponent = -1;
+								break;
+							case '+':
+								break;
+							case '0':
+							case '1':
+							case '2':
+							case '3':
+							case '4':
+							case '5':
+							case '6':
+							case '7':
+							case '8':
+							case '9':
+								if (decimal_place < 10) {
+									t *= 10;
+									t += static_cast<T>(c - '0');
+								}
+								else {
+									t += static_cast<T>(c - '0') / decimal_place;
+									decimal_place *= 10;
+								}
+								break;
+							default:
+								break;
+							}
+						}
+						return exponent ? base * std::pow(T(10), t * static_cast<T>(exponent)) : t;
+					};
+					/// Parses a floating point value
+					static Units::value buildFloat(std::string_view t_val) {
+						bool float_ = false;
+						bool long_ = false;
+
+						auto i = t_val.size();
+
+						for (; i > 0; --i) {
+							char val = t_val[i - 1];
+
+							if (val == 'f' || val == 'F') {
+								float_ = true;
+							}
+							else if (val == 'l' || val == 'L') {
+								long_ = true;
+							}
+							else {
+								break;
+							}
+						}
+
+						if (float_) {
+							return Units::value(parse_num_<float>(t_val.substr(0, i)));
+						}
+						else if (long_) {
+							return Units::value(parse_num_<long double>(t_val.substr(0, i)));
+						}
+						else {
+							return Units::value(parse_num_<double>(t_val.substr(0, i)));
+						}
+					}
+					/// Parses a integer value and returns a wrapped representation of it
+					static Units::value buildInt(const int base, std::string_view t_val, const bool prefixed) {
+						bool unsigned_ = false;
+						bool long_ = false;
+						bool longlong_ = false;
+
+						auto i = t_val.size();
+
+						for (; i > 0; --i) {
+							const char val = t_val[i - 1];
+
+							if (val == 'u' || val == 'U') {
+								unsigned_ = true;
+							}
+							else if (val == 'l' || val == 'L') {
+								if (long_) {
+									longlong_ = true;
+								}
+
+								long_ = true;
+							}
+							else {
+								break;
+							}
+						}
+
+						if (prefixed) {
+							t_val.remove_prefix(2);
+						}
+
+						try {
+							/// TODO fix this to use from_chars
+							auto u = std::stoll(std::string(t_val), nullptr, base);
+
+							if (!unsigned_ && !long_ && u >= std::numeric_limits<int>::min() && u <= std::numeric_limits<int>::max()) {
+								return static_cast<int>(u);
+							}
+							else if ((unsigned_ || base != 10) && !long_ && u >= std::numeric_limits<unsigned int>::min()
+								&& u <= std::numeric_limits<unsigned int>::max()) {
+								return static_cast<unsigned int>(u);
+							}
+							else if (!unsigned_ && !longlong_ && u >= std::numeric_limits<long>::min() && u <= std::numeric_limits<long>::max()) {
+								return static_cast<long>(u);
+							}
+							else if ((unsigned_ || base != 10) && !longlong_ && u >= std::numeric_limits<unsigned long>::min()
+								&& u <= std::numeric_limits<unsigned long>::max()) {
+								return static_cast<unsigned long>(u);
+							}
+							else if (!unsigned_ && u >= std::numeric_limits<long long>::min() && u <= std::numeric_limits<long long>::max()) {
+								return static_cast<long long>(u);
+							}
+							else {
+								return static_cast<unsigned long long>(u);
+							}
+						}
+						catch (const std::out_of_range&) {
+							// too big to be signed
+							try {
+								/// TODO fix this to use from_chars
+								auto u = std::stoull(std::string(t_val), nullptr, base);
+
+								if (!longlong_ && u >= std::numeric_limits<unsigned long>::min() && u <= std::numeric_limits<unsigned long>::max()) {
+									return static_cast<unsigned long>(u);
+								}
+								else {
+									return static_cast<unsigned long long>(u);
+								}
+							}
+							catch (const std::out_of_range&) {
+								// it's just simply too big
+								return std::numeric_limits<long long>::max();
+							}
+						}
+					}
+					/// Reads an identifier from input which conforms to C's identifier naming conventions, without skipping initial whitespace
+					bool Id_(std::string_view* out = nullptr) {
+						const auto start = m_position;
+						if (m_position.has_more() && char_in_alphabet(*m_position, id_alphabet)) {
+							while (m_position.has_more() && char_in_alphabet(*m_position, id_alphabet)) { //keyword_alphabet)) {
+								++m_position;
+							}
+							if (out) *out = Position::str(start, m_position);
+							return true;
+						}
+						else if (m_position.has_more() && (*m_position == '`')) {
+							++m_position;
+							const auto start = m_position;
+
+							while (m_position.has_more() && (*m_position != '`')) {
+								if (Eol()) {
+									throw exception::eval_error("Carriage return in identifier literal", (File_Position)m_position);
+								}
+								else {
+									++m_position;
+								}
+							}
+
+							if (start == m_position) {
+								throw exception::eval_error("Missing contents of identifier literal", (File_Position)m_position);
+							}
+							else if (!m_position.has_more()) {
+								throw exception::eval_error("Incomplete identifier literal", (File_Position)m_position);
+							}
+
+							++m_position;
+							if (out) *out = Position::str(start, m_position);
+							return true;
+						}
+						return false;
+					};
+					/// Reads a quoted string from input, without skipping initial whitespace
+					bool Quoted_String_() {
+						if (m_position.has_more() && (*m_position == '\"')) {
+							char prev_char = *m_position;
+							++m_position;
+
+							int in_interpolation = 0;
+							bool in_quote = false;
+
+							while (m_position.has_more() && ((*m_position != '\"') || (in_interpolation > 0) || (prev_char == '\\'))) {
+								if (!Eol_()) {
+									if (prev_char == '$' && *m_position == '{') {
+										++in_interpolation;
+									}
+									else if (prev_char != '\\' && *m_position == '"') {
+										in_quote = !in_quote;
+									}
+									else if (*m_position == '}' && !in_quote) {
+										--in_interpolation;
+									}
+
+									if (prev_char == '\\') {
+										prev_char = 0;
+									}
+									else {
+										prev_char = *m_position;
+									}
+									++m_position;
+								}
+							}
+
+							if (m_position.has_more()) {
+								++m_position;
+							}
+							else {
+								throw exception::eval_error("Unclosed quoted string", (File_Position)m_position, "");
+							}
+
+							return true;
+						}
+						return false;
+					};
+					/// Reads (and potentially captures) a number from the input, detecting if it's an integer or floating point, without skipping initial whitespace
+					bool Num_() {
+						const auto start = m_position;
+						if (m_position.has_more() && char_in_alphabet(*m_position, float_alphabet)) {
+							try {
+								if (Hex_()) {
+									auto match = Position::str(start, m_position);
+									auto bv = buildInt(16, match, true);
+									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									return true;
+								}
+								else if (Binary_()) {
+									auto match = Position::str(start, m_position);
+									auto bv = buildInt(2, match, true);
+									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									return true;
+								}
+								else if (Float_()) {
+									auto match = Position::str(start, m_position);
+									auto bv = buildFloat(match);
+									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									return true;
+								}
+								else {
+									IntSuffix_();
+									auto match = Position::str(start, m_position);
+									if (!match.empty() && (match[0] == '0')) {
+										auto bv = buildInt(8, match, false);
+										m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									}
+									else if (!match.empty()) {
+										auto bv = buildInt(10, match, false);
+										m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									}
+									else {
+										return false;
+									}
+									return true;
+								}
+							}
+							catch (const std::invalid_argument&) {
+								// error parsing number passed in to buildFloat/buildInt
+								return false;
+							}
+						}
+						else {
+							return false;
+						}
+					};
+
+				private:
+					/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
+					template<typename NodeType> std::shared_ptr<NodeType> build_match(const std::shared_ptr<Scope>& currentScope, size_t t_match_start, std::string t_text = "") {
+						bool is_deep = false;
+
+						Parse_Location filepos = [&]() -> Parse_Location {
+							// so we want to take everything to the right of this and make them children
+							if (t_match_start != m_match_stack.size()) {
+								is_deep = true;
+								return Parse_Location(
+									m_match_stack[t_match_start].first->location.start,
+									m_position);
+							}
+							else {
+								return Parse_Location(m_position, m_position);
+							}
+						}();
+
+						std::vector<ParseNode> new_children_ParseNodes;
+						std::vector<AST_Node_Impl_Ptr> new_children;
+						if (is_deep) {
+							new_children_ParseNodes.assign(std::make_move_iterator(m_match_stack.begin() + static_cast<int>(t_match_start)),
+								std::make_move_iterator(m_match_stack.end()));
+							m_match_stack.erase(m_match_stack.begin() + static_cast<int>(t_match_start), m_match_stack.end());
+						}
+						for (auto& x : new_children_ParseNodes) {
+							new_children.push_back(std::dynamic_pointer_cast<AST_Node_Impl>(x.first));
+						}
+
+						auto ptr = optimizer::optimize(std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<NodeType>(
+							currentScope
+							, std::move(t_text)
+							, std::move(filepos)
+							, std::move(new_children)
+							)), currentScope);
+						m_match_stack.push_back(ParseNode{ ptr, currentScope });
+						return std::dynamic_pointer_cast<NodeType>(ptr);
+					};
+					/// create a node
+					template<typename T, typename... Param> std::shared_ptr<AST_Node_Impl> make_node(const std::shared_ptr<Scope>& currentScope, std::string_view t_match, Position t_prev, Param &&...param) {
+						auto out = std::make_shared<T>(
+							currentScope,
+							std::string(t_match),
+							Parse_Location(t_prev, m_position),
+							std::forward<Param>(param)...
+							);
+						return std::dynamic_pointer_cast<AST_Node_Impl>(out);
+					};
+					/// create a node
+					template<typename... Param> std::shared_ptr<AST_Nodes::Constant_AST_Node> make_const(std::string_view t_match, Position t_prev, Param &&...param) {
+						return std::make_shared<AST_Nodes::Constant_AST_Node>(
+							std::string(t_match),
+							Parse_Location(t_prev, m_position),
+							std::forward<Param>(param)...
+						);
+					};
+
+				private:
+					/// Skips (and potentially captures w/ nullptr scope) any multi-line or single-line comment
+					bool SkipComment() {
+						const auto start = m_position;
+						if (Symbol_(m_multiline_comment_begin)) {
+							while (m_position.has_more()) {
+								if (Symbol_(m_multiline_comment_end)) {
+									break;
+								}
+								else if (!Eol_()) {
+									++m_position;
+								}
+							}
+							std::string_view comment = Position::str(start, m_position);
+							auto parseLoc = Parse_Location(start, m_position);
+							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
+
+							return true;
+						}
+						else if (Symbol_(m_singleline_comment)) {
+							while (m_position.has_more()) {
+								if (Symbol_(m_cr_lf)) {
+									m_position -= 2;
+									break;
+								}
+								else if (Char_('\n')) {
+									--m_position;
+									break;
+								}
+								else {
+									++m_position;
+								}
+							}
+
+							std::string_view comment = Position::str(start, m_position);
+							auto parseLoc = Parse_Location(start, m_position);
+							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
+
+							return true;
+
+						}
+						else if (Symbol_(m_annotation)) {
+							while (m_position.has_more()) {
+								if (Symbol_(m_cr_lf)) {
+									m_position -= 2;
+									break;
+								}
+								else if (Char_('\n')) {
+									--m_position;
+									break;
+								}
+								else {
+									++m_position;
+								}
+							}
+							std::string_view comment = Position::str(start, m_position);
+							auto parseLoc = Parse_Location(start, m_position);
+							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
+
+							return true;
+						}
+						return false;
+					}
+					/// Skips whitespace, which means space and tab, but not cr/lf
+					/// jespada: Modified SkipWS to skip optionally CR ('\n') and/or LF+CR ("\r\n")
+					/// AlekMosingiewicz: Added exception when illegal character detected
+					bool SkipWS(bool skip_cr = false) {
+						bool retval = false;
+
+						while (m_position.has_more()) {
+							if (static_cast<unsigned char>(*m_position) > 0x7e) {
+								throw exception::eval_error("Illegal character", (File_Position)m_position, "");
+							}
+							auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
+
+							if (char_in_alphabet(*m_position, white_alphabet) || (skip_cr && end_line)) {
+								if (end_line) {
+									if (*m_position == '\r') {
+										// discards lf
+										++m_position;
+									}
+								}
+
+								++m_position;
+
+								retval = true;
+							}
+							else if (SkipComment()) {
+								retval = true;
+							}
+							else {
+								break;
+							}
+						}
+						return retval;
+					};
+					/// Reads until the end of the current statement
+					bool Eos() {
+						SkipWS();
+						return Eol_(true);
+					};
+					/// Reads (and potentially captures) an end-of-line group from input
+					bool Eol() {
+						SkipWS();
+						return Eol_();
+					};
+					/// Reads (and potentially captures) a char from input if it matches the parameter
+					bool Char(const char t_c) {
+						SkipWS();
+						return Char_(t_c);
+					};
+					/// Reads (and potentially captures) a string from input if it matches the parameter
+					bool Keyword(const utility::Static_String& t_s) {
+						SkipWS();
+						const auto start = m_position;
+						bool retval = Keyword_(t_s);
+						// ignore substring matches
+						if (retval && m_position.has_more() && char_in_alphabet(*m_position, keyword_alphabet)) {
+							m_position = start;
+							retval = false;
+						}
+						return retval;
+					};
+					/// Reads (and potentially captures) a symbol group from input if it matches the parameter
+					bool Symbol(const std::string_view& t_s, const bool t_disallow_prevention = false) {
+						SkipWS();
+						const auto start = m_position;
+						bool retval = Symbol_(t_s);
+
+						// ignore substring matches
+						if (retval && m_position.has_more() && (t_disallow_prevention == false) && char_in_alphabet(*m_position, symbol_alphabet)) {
+							if (*m_position != '=' && is_operator(Position::str(start, m_position)) && !is_operator(Position::str(start, m_position + 1))) {
+								// don't throw this away, it's a good match and the next is not
+							}
+							else {
+								m_position = start;
+								retval = false;
+							}
+						}
+						return retval;
+					}
+					/// Reads (and potentially captures) a number from the input, detecting if it's an integer or floating point
+					bool Num() {
+						SkipWS();
+						return Num_();
+					};
+					/// 
+					bool Operator_Helper(const size_t t_precedence, std::string& oper) {
+						return Operator_Matches::any_of(t_precedence, [&oper, this](const auto& elem) {
+							if (Symbol(elem.c_str())) {
+								oper = elem.c_str();
+								return true;
+							}
+							else {
+								return false;
+							}
+						});
+					};
+					/// Reads (and potentially captures) a quoted string from input.  Translates escaped sequences.
+					bool Quoted_String(const std::shared_ptr<Scope>& currentScope) {
+						SkipWS();
+
+						const auto start = m_position;
+
+						if (Quoted_String_()) {
+							std::string match;
+							const auto prev_stack_top = m_match_stack.size();
+
+							bool is_interpolated = [&]() -> bool {
+								Char_Parser<std::string> cparser(match, true);
+
+								auto s = start + 1, end = m_position - 1;
+
+								while (s != end) {
+									if (cparser.saw_interpolation_marker) {
+										if (*s == '{') {
+											// We've found an interpolation point
+
+											m_match_stack.push_back({ make_const(match, start, match), nullptr });
+
+											if (cparser.is_interpolated) {
+												// If we've seen previous interpolation, add on instead of making a new one
+												build_match<AST_Nodes::Binary_Operator_AST_Node>(currentScope, prev_stack_top, "+");
+											}
+
+											// We've finished with the part of the string up to this point, so clear it
+											match.clear();
+
+											std::string eval_match;
+
+											++s;
+											while ((s != end) && (*s != '}')) {
+												eval_match.push_back(*s);
+												++s;
+											}
+
+											if (*s == '}') {
+												cparser.is_interpolated = true;
+												++s;
+
+												const auto tostr_stack_top = m_match_stack.size();
+
+												m_match_stack.push_back({ make_node<AST_Nodes::FunctionName_AST_Node>(currentScope, "to_string", start), currentScope }); //  Id_AST_Node
+
+												const auto ev_stack_top = m_match_stack.size();
+
+												try {
+													m_match_stack.push_back(parse_instr_eval(eval_match, currentScope));
+												}
+												catch (const exception::eval_error& e) {
+													throw exception::eval_error(e.what(), (File_Position)start);
+												}
+
+												build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, ev_stack_top);
+												build_match<AST_Nodes::Fun_Call_AST_Node>(currentScope, tostr_stack_top);
+												build_match<AST_Nodes::Binary_Operator_AST_Node>(currentScope, prev_stack_top, "+");
+											}
+											else {
+												throw exception::eval_error("Unclosed in-string eval", (File_Position)start);
+											}
+										}
+										else {
+											match.push_back('$');
+										}
+										cparser.saw_interpolation_marker = false;
+									}
+									else {
+										cparser.parse(*s, start);
+
+										++s;
+									}
+								}
+
+								if (cparser.saw_interpolation_marker) {
+									match.push_back('$');
+								}
+
+								return cparser.is_interpolated;
+							}();
+
+							m_match_stack.push_back({ make_const(match, start, match), nullptr });
+
+							if (is_interpolated) {
+								build_match<AST_Nodes::Binary_Operator_AST_Node>(currentScope, prev_stack_top, "+");
+							}
+
+							return true;
+						}
+						else {
+							return false;
+						}
+					};
+					/// Reads (and potentially captures) an identifier from input
+					bool Id(const bool validate, const std::shared_ptr<Scope>& currentScope, AST_Nodes::IdType T) {
+						SkipWS();
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						auto failure = [&]() {
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+							return false;
+						};
+
+
+
+						if (T == AST_Nodes::IdType::Class) {
+							std::string_view className;
+
+							auto Success = [&](bool Const, bool Ref) -> bool {
+								if (auto Class = currentScope->FindClass(std::string(className))) {
+									auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, className, prev_pos));
+									if (Const && Ref) {
+										ptr->TypeInfo = Class->GetClassType().lock()->MakeConstRef();
+									}
+									else if (Const && !Ref) {
+										ptr->TypeInfo = Class->GetClassType().lock()->MakeConst();
+									}
+									else if(!Const && Ref) {
+										ptr->TypeInfo = Class->GetClassType().lock()->MakeRef();
+									}
+									else {
+										ptr->TypeInfo = Class->GetClassType();
+									}
+									m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
+									return true;
+								}
+								else {
+									return failure();
+								}
+							};
+
+							// valid arrangements: 
+							//     typename
+							//     const typename
+							//     typename&
+							//     const typename&
+							//     typename const
+							//     typename const&
+							//     const& typename
+							if (Keyword("const")) {
+								if (Char('&')) {
+									SkipWS();
+									if (Id_(&className)) {
+										// const& typename
+										return Success(true, true);
+									}
+								}
+								else if (Id_(&className)) {
+									const auto prev_pos_temp = m_position;
+									if (Char('&')) {
+										// const typename&
+										return Success(true, true);
+									}
+									else {
+										m_position = prev_pos_temp;
+										// const typename
+										return Success(true, false);
+									}
+								}
+							}
+							else if (Id_(&className)) {
+								auto prev_pos_temp = m_position;
+								//     typename
+								//     typename&
+								//     typename const
+								//     typename const&
+								if (Keyword("const")) {
+									prev_pos_temp = m_position;
+									if (Char('&')) {
+										//     typename const&
+										return Success(true, true);
+									}
+									else {										
+										m_position = prev_pos_temp;
+										//     typename const
+										return Success(true, false);
+									}
+								}
+								else if (Char('&')) {
+									//     typename&
+									return Success(false, true);
+								}
+								else {									
+									m_position = prev_pos_temp;
+									//     typename
+									return Success(false, false);
+								}
+							}
+							return failure();
+
+						}
+						else {
+							if (Id_()) {
+								auto text = Position::str(prev_pos, m_position);
+								if (validate) { validate_object_name(text, m_position); }
+
+								auto foundConstant = constants().find(text);
+								if (foundConstant != constants().end()) {
+									if (AST_Nodes::IdType::Class == T) throw exception::eval_error(GoodLang::printf("Cannot use constant value \"%s\" as a class or type name", text.data()), m_position);
+									m_match_stack.push_back({ make_const(text, prev_pos, foundConstant->second), nullptr });
+								}
+								else {
+									switch (hash(text)) {
+									case hash("__LINE__"): {
+										if (AST_Nodes::IdType::Class == T) throw exception::eval_error(GoodLang::printf("Cannot use constant value \"%s\" as a class or type name", text.data()), m_position);
+										m_match_stack.push_back({ make_const(text, prev_pos, const_var(prev_pos.line)), nullptr });
+									} break;
+										//case hash("__FILE__"): {
+										//	m_match_stack.push_back(make_node<eval::Constant_AST_Node>(currentScope, text, prev_pos.line, prev_pos.col, const_var(m_filename)));
+										//} break;
+									default: {
+										auto val = text;
+										if (*prev_pos == '`') { // 'escaped' literal, like an operator name ( e.g. `[]`(...) )
+											val = Position::str(prev_pos + 1, m_position - 1);
+										}
+										if (1) {
+											switch (T) {
+											default:
+												m_match_stack.push_back({ make_node<AST_Nodes::Id_AST_Node>(currentScope, val, prev_pos), currentScope }); // e.g. "x", "Units::meter", etc.
+												break;
+											case AST_Nodes::IdType::Function:
+												m_match_stack.push_back({ make_node<AST_Nodes::FunctionName_AST_Node>(currentScope, val, prev_pos), currentScope }); // e.g. "x", "Units::meter", etc.
+												break;
+											case AST_Nodes::IdType::Variable:
+												m_match_stack.push_back({ make_node<AST_Nodes::VariableName_AST_Node>(currentScope, val, prev_pos), currentScope }); // e.g. "x", "Units::meter", etc.
+												break;
+											case AST_Nodes::IdType::Class:
+												m_match_stack.push_back({ make_node<AST_Nodes::ClassName_AST_Node>(currentScope, val, prev_pos), currentScope }); // e.g. "x", "Units::meter", etc.
+												break;
+											}
+										}
+									} break;
+									}
+								}
+								return true;
+							}
+							else {
+								return false;
+							}
+						}
+					};
+					/// Reads (and potentially captures) an type or class identifier from input
+					bool TypeName(const std::shared_ptr<Scope>& currentScope) {
+						return Id(false, currentScope, AST_Nodes::IdType::Class);
+					};
+					
+
+					/// Reads an argument from input
+					bool Arg(const std::shared_ptr<Scope>& currentScope, const bool t_type_allowed = true) {
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						auto failure = [&]() {
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+							return false;
+						};
+
+						SkipWS();
+
+						bool foundType = false;
+						if (t_type_allowed) {
+							foundType = TypeName(currentScope);
+						}
+
+						if (!Id(true, currentScope, AST_Nodes::IdType::Variable)) {
+							return failure();
+						}
+
+						build_match<AST_Nodes::Arg_AST_Node>(currentScope, prev_stack_top);
+
+						return true;
+					};
+
+					/// Reads a comma-separated list of values from input. Id's only, no types allowed
+					bool Id_Arg_List(const std::shared_ptr<Scope>& currentScope) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						SkipWS(true);
+
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Arg(currentScope, false)) {
+							retval = true;
+							SkipWS(true);
+							while (Char(',')) {
+								SkipWS(true);
+								if (!Arg(currentScope, false)) {
+									throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position);
+								}
+							}
+						}
+						build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+
+						SkipWS(true);
+
+						return retval;
+					};
+
+					/// Reads a comma-separated list of values from input, for function declarations
+					bool Decl_Arg_List(const std::shared_ptr<Scope>& currentScope) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						SkipWS(true);
+
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Arg(currentScope, true)) {
+							retval = true;
+							SkipWS(true);
+							while (Char(',')) {
+								SkipWS(true);
+								if (!Arg(currentScope, true)) {
+									throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position);
+								}
+							}
+						}
+						build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+
+						SkipWS(true);
+
+						return retval;
+					};
+
+					/// Reads a comma-separated list of values from input
+					bool Arg_List(const std::shared_ptr<Scope>& currentScope, int maxNumArgs = std::numeric_limits<int>::max()) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						SkipWS(true);
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Equation(thisScope)) {
+							retval = true;
+							SkipWS(true);
+							while (((--maxNumArgs) > 0)) {
+								SkipWS(true);
+								if (!Char(',')) break;
+								SkipWS(true);
+								if (!Equation(thisScope)) {
+									throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position, "");
+								}
+							}
+						}
+
+						build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+
+						SkipWS(true);
+
+						return retval;
+					};
+
+					/// Reads a C-style type-cast from input (e.g. (int)0.0f )
+					bool TypeCastOperation(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						SkipWS(true);
+
+						// (string)100
+						if (Char('(') && TypeName(currentScope) && Char(')')) {
+							if (Operator(currentScope)) {
+								retval = true;
+								build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top + 1);
+								build_match<AST_Nodes::Fun_Call_AST_Node>(currentScope, prev_stack_top); // Id(fun name), Arg_List()
+							}
+						}
+
+						if (!retval) {
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+						}
+						return retval;
+					};
+
+					/// Parses a string of binary equation operators
+					bool Equation(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+						using SS = utility::Static_String;
+
+						if (TypeCastOperation(currentScope)) {
+							return true;
+						}
+
+						if (Operator(currentScope)) {
+							for (const auto& sym :
+								{ SS{"="}, SS{":="}, SS{"?="}, SS{".."}, SS{"+="}, SS{"-="}, SS{"*="}, SS{"/="}, SS{"%="}, SS{"<<="}, SS{">>="}, SS{"&="}, SS{"^="}, SS{"|="} }) {
+								if (Symbol(sym.c_str(), true)) {
+									SkipWS(true);
+									if (!Equation(currentScope)) {
+										throw exception::eval_error("Incomplete equation", (File_Position)m_position, "");
+									}
+
+									build_match<AST_Nodes::Equation_AST_Node>(currentScope, prev_stack_top, sym.c_str());
+									return true;
+								}
+							}
+							return true;
+						}
+
+						return false;
+					};
+					// int x;
+					// int const& x;
+					bool SpecifiedType_Var_Decl(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						if (TypeName(currentScope)) { // typename was specified and found
+							build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top + 1); // {no_params}
+							build_match<AST_Nodes::Fun_Call_AST_Node>(currentScope, prev_stack_top); // collapse all into a function call (i.e. int({no_params}))
+
+							if (Id(true, currentScope, AST_Nodes::IdType::Variable)) {
+								retval = true;
+								build_match<AST_Nodes::Var_Decl_AST_Node>(currentScope, prev_stack_top + 1);  // var i;                           
+							}
+
+							if (retval) {
+								// Fun_Call ("Typename()") , Id or Ref ("Variable name");
+								build_match < AST_Nodes::Assign_Retroactively_AST_Node>(currentScope, prev_stack_top);
+							}
+						}
+						if (!retval) {
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+						}
+
+						return retval;
+					}
+
+					/// Reads a variable declaration from input
+					bool Var_Decl(const std::shared_ptr<Scope>& currentScope, const bool t_namespace_context = false, const std::string& t_namespace_name = "") {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+						if (t_namespace_context) { // Classes and namespaces must explicitely define their variable types. They must not be left implicit e.g. auto or var
+							return SpecifiedType_Var_Decl(currentScope);
+						}
+						else { // Normal scopes may utilize implicit or late-definition style variables if they so choose, for ease.
+							if (Keyword("auto") || Keyword("var")) {
+								(void)Char('&');
+								if (Id(true, currentScope, AST_Nodes::IdType::Variable)) {									
+									build_match<AST_Nodes::Var_Decl_AST_Node>(currentScope, prev_stack_top);
+									retval = true;
+								}
+								else {
+									throw exception::eval_error("Incomplete variable declaration ", (File_Position)m_position);
+								}
+							}
+							else {
+								return SpecifiedType_Var_Decl(currentScope);
+							}
+						}
+						return retval;
+					};
+
+					/// Reads a unary prefixed expression from input
+					bool Prefix(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+						using SS = utility::Static_String;
+						constexpr std::array<utility::Static_String, 6> prefix_opers{ SS{"++"}, SS{"--"}, SS{"-"}, SS{"+"}, SS{"!"}, SS{"~"} };
+						for (const auto& oper : prefix_opers) {
+							const bool is_char = oper.size() == 1;
+							if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(oper.c_str()))) {
+								if (!Operator(currentScope, operators().size() - 1)) {
+									throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::Prefix_AST_Node>(currentScope, prev_stack_top, oper.c_str());
+								return true;
+							}
+						}
+						return false;
+					};
+
+					bool Postfix(const std::shared_ptr<Scope>& currentScope, bool gotValueAlready) {
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						// add support for custom post-fixes
+						// Examples: 
+						// 12_in = inch(12)
+						// 1_gal = gallon(1)
+
+						if (gotValueAlready) {
+							if (Symbol("++")) {
+								build_match<AST_Nodes::Postfix_AST_Node>(currentScope, prev_stack_top - 1, "++");
+								return true;
+							}
+							else if (Symbol("--")) {
+								build_match<AST_Nodes::Postfix_AST_Node>(currentScope, prev_stack_top - 1, "--");
+								return true;
+							}
+							else {
+								// evaluate the custom operators...
+								if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "" && m_match_stack[prev_stack_top - 1].first->identifier == AST_Node_Type::Constant) {
+									// this path means the incoming value is constant and known
+									static thread_local std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, Units::value>>, std::greater_equal<int>>
+										customOperators{};
+									if (customOperators.size() == 0) {
+										for (auto& unit_type : Units::value::GetValueTypes()) {
+											auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+											customOperators[abbreviation.length()].push_back(unit_type);
+										}
+									}
+									for (auto& abbreviation_length_to_category : customOperators) {
+										for (auto& unit_type : abbreviation_length_to_category.second) {
+											auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+											if (Symbol(abbreviation)) {
+												auto& rhs = std::dynamic_pointer_cast<AST_Nodes::Constant_AST_Node>(m_match_stack[prev_stack_top - 1].first)->m_value;
+												Any lhs;
+												if (auto Class = currentScope->FindClass(unit_type.first)) {
+													lhs = Class->CallFunction(Class->GetName(), rhs);
+												}
+												else {
+													lhs = Any(unit_type.second);
+													currentScope->CallFunction("=", { lhs, rhs });
+												}
+												std::string temp = GoodLang::ToString(lhs);
+
+												Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+												loc.end.col += abbreviation.length();
+
+												m_match_stack[prev_stack_top - 1].first =
+													std::dynamic_pointer_cast<AST_Node_Impl>(
+														std::make_shared<AST_Nodes::Constant_AST_Node>(temp, loc, lhs)
+														);
+
+												return true;
+											}
+										}
+									}
+								}
+								else if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "") {
+									// this path means the incoming value is NOT constant and is not known. 
+									for (auto& unit_type : Units::value::GetValueTypes()) {
+										auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+										if (Symbol(abbreviation)) {
+											Any lhs;
+											if (auto Class = currentScope->FindClass(unit_type.first)) {
+												lhs = Class->CallFunction(Class->GetName(), {});
+											}
+											else {
+												lhs = Any(unit_type.second);;
+											}
+
+
+											Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+											loc.end.col += abbreviation.length();
+
+											m_match_stack[prev_stack_top - 1].first =
+												std::dynamic_pointer_cast<AST_Node_Impl>(
+													std::make_shared<AST_Nodes::Equation_AST_Node>(currentScope, "=", loc, std::vector<AST_Node_Impl_Ptr>{
+												std::dynamic_pointer_cast<AST_Node_Impl>(
+													std::make_shared<AST_Nodes::Constant_AST_Node>(GoodLang::ToString(lhs), loc, lhs)
+													),
+													std::move(m_match_stack[prev_stack_top - 1].first)
+											})
+													);
+
+											return true;
+
+
+											//// To-Do, finish this analysis!
+											//// Insert a node that evaluates the function `=`(lhs, rhs) and returns lhs.
+
+
+
+
+
+
+
+											//throw std::runtime_error("FIX ME!");
+											//while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+											//m_position = prev_pos;
+
+
+
+
+										}
+									}
+								}
+							}
+						}
+						else {
+							if (Id(true, currentScope, AST_Nodes::IdType::Variable)) {
+								if (Symbol("++")) {
+									build_match<AST_Nodes::Postfix_AST_Node>(currentScope, prev_stack_top, "++");
+									return true;
+								}
+								else if (Symbol("--")) {
+									build_match<AST_Nodes::Postfix_AST_Node>(currentScope, prev_stack_top, "--");
+									return true;
+								}
+								while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+								m_position = prev_pos;
+							}
+						}
+						return false;
+					}
+
+					/// Reads a pair of values used to create a map initialization from input
+					bool Map_Pair(const std::shared_ptr<Scope>& currentScope) {
+						SkipWS(true);
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						if (Operator(currentScope)) {
+							if (Symbol(":")) {
+								retval = true;
+								if (!Operator(currentScope)) { throw exception::eval_error("Incomplete map pair", (File_Position)m_position, ""); }
+
+								build_match<AST_Nodes::Map_Pair_AST_Node>(currentScope, prev_stack_top);
+							}
+							else {
+								m_position = prev_pos;
+								while (prev_stack_top != m_match_stack.size()) {
+									m_match_stack.pop_back();
+								}
+							}
+						}
+
+						return retval;
+					}
+
+					/// Reads possible special container values, including ranges and map_pairs
+					bool Container_Arg_List(const std::shared_ptr<Scope>& currentScope) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						SkipWS(true);
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Map_Pair(thisScope)) {
+							retval = true;
+							SkipWS(true);
+							while (Char(',')) {
+								SkipWS(true);
+								if (!Map_Pair(thisScope)) {
+									throw exception::eval_error("Unexpected value in container", (File_Position)m_position, "");
+								}
+							}
+							build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+						}
+						else if (Operator(thisScope)) {
+							retval = true;
+							SkipWS(true);
+							while (Char(',')) {
+								SkipWS(true);
+								if (!Operator(thisScope)) {
+									throw exception::eval_error("Unexpected value in container", (File_Position)m_position, "");
+								}
+								SkipWS(true);
+							}
+							build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+						}
+
+						SkipWS(true);
+
+						return retval;
+					}
+
+
+					/// Reads, and identifies, a short-form container initialization from input
+					bool Inline_Container(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Char('[')) {
+							// increment the scope
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							SkipWS(true);
+							Container_Arg_List(thisScope);
+							SkipWS(true);
+							if (!Char(']')) {
+								throw exception::eval_error("Missing closing square bracket ']' in container initializer",
+									(File_Position)m_position,
+									"");
+							}
+							if ((prev_stack_top != m_match_stack.size()) && (!m_match_stack.back().first->children.empty())) {
+								if (m_match_stack.back().first->children[0]->identifier == AST_Node_Type::Map_Pair) {
+									build_match<AST_Nodes::Inline_Map_AST_Node>(thisScope, prev_stack_top);
+								}
+								else {
+									build_match<AST_Nodes::Inline_Array_AST_Node>(thisScope, prev_stack_top);
+								}
+							}
+							else {
+								build_match<AST_Nodes::Inline_Array_AST_Node>(thisScope, prev_stack_top);
+							}
+
+							return true;
+						}
+						else {
+							return false;
+						}
+					}
+
+					/// Reads a lambda (anonymous function) from input
+					bool Lambda(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						auto failure = [&]() {
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+							return false;
+						};
+
+						/* All of the following should be examples of valid forms of lambda functions */
+						// []() async -> type {} 
+						// []() -> type {} 
+						// []() async {} 
+						// () async {} 
+						// () {} 
+
+						// Arg_List
+						if (Char('[')) {
+							SkipWS(true);
+							Id_Arg_List(currentScope);
+							SkipWS(true);
+							if (!Char(']')) {
+								return failure();
+							}
+						}
+						else {
+							// make sure we always have the same number of nodes
+							build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top);
+						}
+
+						// Arg_List
+						if (Char('(')) {
+							SkipWS(true);
+							Decl_Arg_List(currentScope);
+							SkipWS(true);
+							if (!Char(')')) {
+								return failure();
+							}
+						}
+						else {
+							return failure();
+						}
+
+						// KeyWords / modifiers
+						bool is_async = false;
+						bool foundKeyWord = true;
+						while (foundKeyWord) {
+							SkipWS(true);
+							foundKeyWord = false;
+
+							if (Keyword("async")) {
+								foundKeyWord = true;
+								is_async = true;
+							}
+						}
+
+						SkipWS(true);
+
+						// Noop or Id
+						if (Symbol("->")) {
+							SkipWS(true);
+							const auto start = m_position;
+							if (!TypeName(currentScope)) {
+								return failure();
+							}
+						}
+						else {
+							// make sure we always have the same number of nodes
+							m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+						}
+
+						// Block
+						SkipWS(true);
+						if (!Block(currentScope)) {
+							return failure();
+						}
+
+						auto lambda_node = build_match<AST_Nodes::Lambda_AST_Node>(currentScope, prev_stack_top);
+						lambda_node->is_async = is_async;
+
+						return true;
+					};
+
+					bool Dot_Fun_Array(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Lambda(currentScope) || Num() || Quoted_String(currentScope) || Paren_Expression(currentScope) || Inline_Container(currentScope) || Id(false, currentScope, AST_Nodes::IdType::Variable)) {
+							retval = true;
+							bool has_more = true;
+
+							while (has_more) {
+								has_more = false;
+								if (Char('(')) {
+									has_more = true;
+									SkipWS(true);
+									Arg_List(currentScope);
+									SkipWS(true);
+									if (!Char(')')) {
+										throw exception::eval_error("Incomplete function call", (File_Position)m_position, "");
+									}
+
+									build_match<AST_Nodes::Fun_Call_AST_Node>(currentScope, prev_stack_top, "()");
+									/// \todo Work around for method calls until we have a better solution
+									if (!m_match_stack.back().first->children.empty()) {
+										if (m_match_stack.back().first->children[0]->identifier == AST_Node_Type::Dot_Access) {
+											if (m_match_stack.empty()) {
+												throw exception::eval_error("Incomplete dot access fun call",
+													(File_Position)m_position,
+													"");
+											}
+											if (m_match_stack.back().first->children.empty()) {
+												throw exception::eval_error("Incomplete dot access fun call",
+													(File_Position)m_position,
+													"");
+											}
+											auto dot_access = std::move(m_match_stack.back().first->children[0]);
+											auto func_call = std::move(m_match_stack.back());
+											m_match_stack.pop_back();
+											func_call.first->children.erase(func_call.first->children.begin());
+											if (dot_access->children.empty()) {
+												throw exception::eval_error("Incomplete dot access fun call",
+													(File_Position)m_position,
+													"");
+											}
+											func_call.first->children.insert(func_call.first->children.begin(), std::move(dot_access->children.back()));
+											dot_access->children.pop_back();
+											dot_access->children.push_back(std::move(func_call.first));
+											if (dot_access->children.size() != 2) {
+												throw exception::eval_error("Incomplete dot access fun call",
+													(File_Position)m_position,
+													"");
+											}
+											m_match_stack.push_back({ dot_access, func_call.second });
+										}
+									}
+								}
+								else if (Char('[')) {
+									has_more = true;
+									if (!(Operator(currentScope) && Char(']'))) {
+										// TO-DO, Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
+										throw exception::eval_error("Incomplete array access", (File_Position)m_position, "");
+									}
+
+									build_match<AST_Nodes::Array_Call_AST_Node>(currentScope, prev_stack_top, "[]");
+								}
+								else if (Symbol(".")) {
+									has_more = true;
+									if (!(Id(true, currentScope, AST_Nodes::IdType::Function))) {
+										throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position, "");
+									}
+
+									if (std::distance(m_match_stack.begin() + static_cast<int>(prev_stack_top), m_match_stack.end()) != 2) {
+										throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position, "");
+									}
+
+									build_match<AST_Nodes::Dot_Access_AST_Node>(currentScope, prev_stack_top, ".");
+								}
+								else if (Eol()) {
+									auto start = (--m_position);
+									SkipWS(true);
+									if (Symbol(".")) {
+										has_more = true;
+										--m_position;
+									}
+									else {
+										m_position = start;
+									}
+								}
+							}
+						}
+
+						return retval;
+					};
+
+					/// Parses any of a group of 'value' style ast_node groups from input
+					bool Value(const std::shared_ptr<Scope>& currentScope) {
+						if (Var_Decl(currentScope) || Dot_Fun_Array(currentScope) || Prefix(currentScope)) {
+							Postfix(currentScope, true);
+							return true;
+						}
+						else {
+							return Postfix(currentScope, false);
+						}
+					};
+
+					bool Operator(const std::shared_ptr<Scope>& currentScope, const size_t t_precedence = 0) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (operators()[t_precedence] != Operator_Precedence::Prefix) {
+							if (Operator(currentScope, t_precedence + 1)) {
+								std::string oper;
+								retval = true;
+								while (Operator_Helper(t_precedence, oper)) {
+									while (Eol()) {}
+
+									if (!Operator(currentScope, t_precedence + 1)) {
+										throw exception::eval_error("Incomplete '" + oper + "' expression",
+											(File_Position)m_position,
+											"");
+									}
+
+									switch (operators()[t_precedence]) {
+									case (Operator_Precedence::Ternary_Cond):
+										if (oper == "?=") {
+											build_match<AST_Nodes::Equation_AST_Node>(currentScope, prev_stack_top, oper);
+										}
+										else {
+											if (Symbol(":")) {
+												if (!Operator(currentScope, t_precedence + 1)) {
+													throw exception::eval_error("Incomplete '" + oper + "' expression",
+														(File_Position)m_position,
+														"");
+												}
+												build_match<AST_Nodes::If_AST_Node>(currentScope, prev_stack_top);
+											}
+											else {
+												throw exception::eval_error("Incomplete '" + oper + "' expression",
+													(File_Position)m_position,
+													"");
+											}
+										}
+										break;
+
+									case (Operator_Precedence::Addition):
+									case (Operator_Precedence::Multiplication):
+									case (Operator_Precedence::Shift):
+									case (Operator_Precedence::Equality):
+									case (Operator_Precedence::Bitwise_And):
+									case (Operator_Precedence::Bitwise_Xor):
+									case (Operator_Precedence::Bitwise_Or):
+									case (Operator_Precedence::Comparison):
+										build_match<AST_Nodes::Binary_Operator_AST_Node>(currentScope, prev_stack_top, oper);
+										break;
+
+									case (Operator_Precedence::Logical_And):
+										build_match<AST_Nodes::Logical_And_AST_Node>(currentScope, prev_stack_top, oper);
+										break;
+									case (Operator_Precedence::Logical_Or):
+										build_match<AST_Nodes::Logical_Or_AST_Node>(currentScope, prev_stack_top, oper);
+										break;
+									case (Operator_Precedence::Prefix):
+										assert(false); // cannot reach here because of if() statement at the top
+										break;
+									}
+								}
+							}
+						}
+						else {
+							return Value(currentScope);
+						}
+
+						return retval;
+					}
+
+					/// Reads an expression surrounded by parentheses from input
+					bool Paren_Expression(const std::shared_ptr<Scope>& currentScope) {
+						if (Char('(')) {
+							// increment the scope
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							SkipWS(true);
+							if (!Operator(thisScope)) {
+								throw exception::eval_error("Incomplete expression", (File_Position)m_position, "");
+							}
+							SkipWS(true);
+							if (!Char(')')) {
+								throw exception::eval_error("Missing closing parenthesis ')'", (File_Position)m_position, "");
+							}
+							return true;
+						}
+						else {
+							return false;
+						}
+					};
+
+					/// Reads a while block from input
+					bool While(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Keyword("while")) {
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							retval = true;
+
+							if (!Char('(')) {
+								throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position, "");
+							}
+
+							if (!(Operator(thisScope) && Char(')'))) {
+								throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position, "");
+							}
+
+							SkipWS(true);
+
+							if (!Block(thisScope)) {
+								throw exception::eval_error("Incomplete 'while' block", (File_Position)m_position, "");
+							}
+
+							build_match<AST_Nodes::While_AST_Node>(currentScope, prev_stack_top);
+						}
+
+						return retval;
+					};
+
+					/// Reads the C-style `for` conditions from input
+					bool For_Guards(const std::shared_ptr<Scope>& currentScope) {
+						if (!(Equation(currentScope) && Eol())) {
+							if (!Eol()) {
+								return false;
+							}
+							else {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+							}
+						}
+
+						if (!(Equation(currentScope) && Eol())) {
+							if (!Eol()) {
+								return false;
+							}
+							else {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Constant_AST_Node>(Any(true)), nullptr });
+							}
+						}
+
+						if (!Equation(currentScope)) {
+							m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+						}
+
+						return true;
+					}
+
+					/// Reads the C-style `for` conditions from input
+					bool Parallel_For_Guards(const std::shared_ptr<Scope>& currentScope) {
+						if (!(Equation(currentScope) && Eol())) {
+							if (!Eol()) {
+								return false;
+							}
+							else {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+							}
+						}
+
+						if (!(Equation(currentScope))) {
+							m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Constant_AST_Node>(Any(true)), nullptr });
+						}
+
+						return true;
+					}
+
+					/// Reads the ranged `for` conditions from input
+					bool Range_Expression(const std::shared_ptr<Scope>& currentScope) {
+						// the first element will have already been captured by the For_Guards() call that preceeds it
+						return Char(':') && Equation(currentScope);
+					}
+
+					/// Reads a for block from input
+					bool For(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Keyword("for")) {
+							retval = true;
+
+							SkipWS(true);
+
+							if (!Char('(')) {
+								throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
+							}
+
+							SkipWS(true);
+
+							bool classic_for = For_Guards(currentScope);
+							SkipWS(true);
+							if (classic_for) classic_for = classic_for && Char(')');
+							if (!classic_for) {
+								classic_for = Range_Expression(currentScope);
+								SkipWS(true);
+								if (classic_for) classic_for = classic_for && Char(')');
+
+								if (!classic_for) {
+									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
+								}
+
+								classic_for = false;
+							}
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'for' block", (File_Position)m_position, "");
+							}
+
+							const auto num_children = m_match_stack.size() - prev_stack_top;
+
+							if (classic_for) {
+								if (num_children != 4) {
+									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::For_AST_Node>(currentScope, prev_stack_top);
+							}
+							else {
+								if (num_children != 3) {
+									throw exception::eval_error("Incomplete ranged-for expression", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::Ranged_For_AST_Node>(currentScope, prev_stack_top);
+							}
+						}
+						else if (Keyword("parallel_for")) {
+							// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
+							// parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
+							// parallel_for (range_declaration : range_expression) loop_statement;
+							retval = true;
+
+							SkipWS(true);
+
+							if (!Char('(')) {
+								throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
+							}
+
+							SkipWS(true);
+
+							bool classic_for = Parallel_For_Guards(currentScope);
+							SkipWS(true);
+							if (classic_for) classic_for = classic_for && Char(')');
+							if (!classic_for) {
+								classic_for = Range_Expression(currentScope);
+								SkipWS(true);
+								if (classic_for) classic_for = classic_for && Char(')');
+
+								if (!classic_for) {
+									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
+								}
+
+								classic_for = false;
+							}
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'parallel_for' block", (File_Position)m_position, "");
+							}
+
+							const auto num_children = m_match_stack.size() - prev_stack_top;
+
+							if (classic_for) {
+								if (num_children != 3) {
+									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::Parallel_For_AST_Node>(currentScope, prev_stack_top);
+							}
+							else {
+								if (num_children != 3) {
+									throw exception::eval_error("Incomplete ranged-parallel_for expression", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::Parallel_Ranged_For_AST_Node>(currentScope, prev_stack_top);
+							}
+						}
+
+						return retval;
+					}
+
+					/// Reads a break statement from input
+					bool Break(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+						if (Keyword("break")) {
+							build_match<AST_Nodes::Break_AST_Node>(currentScope, prev_stack_top);
+							return true;
+						}
+						else {
+							return false;
+						}
+					}
+
+					/// Reads a continue statement from input
+					bool Continue(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+						if (Keyword("continue")) {
+							build_match<AST_Nodes::Continue_AST_Node>(currentScope, prev_stack_top);
+							return true;
+						}
+						else {
+							return false;
+						}
+					}
+
+					/// Reads a case block from input
+					bool Case(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						// case "option": { ... }
+						// case "option" { ... }
+						if (Keyword("case")) {
+							retval = true;
+
+							SkipWS(true);
+
+							if (!Operator(currentScope)) {
+								throw exception::eval_error("Incomplete 'case' expression", (File_Position)m_position, "");
+							}
+
+							SkipWS(true);
+
+							Char(':'); // optional
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'case' block", (File_Position)m_position, "");
+							}
+
+							build_match<AST_Nodes::Case_AST_Node>(currentScope, prev_stack_top);
+						}
+						// default: { ... }
+						// default { ... }
+						else if (Keyword("default")) {
+							retval = true;
+
+							SkipWS(true);
+
+							Char(':'); // optional
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'default' block", (File_Position)m_position, "");
+							}
+
+							build_match<AST_Nodes::Default_AST_Node>(currentScope, prev_stack_top);
+						}
+
+						return retval;
+					};
+
+					/// Reads a switch statement from input
+					bool Switch(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Keyword("switch")) {
+							if (!Char('(')) {
+								throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position, "");
+							}
+
+							if (!(Operator(currentScope) && Char(')'))) {
+								throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position, "");
+							}
+
+							SkipWS(true);
+
+							if (Char('{')) {
+								SkipWS(true);
+
+								while (Case(currentScope)) {
+									SkipWS(true);
+								}
+
+								SkipWS(true);
+
+								if (!Char('}')) {
+									throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
+								}
+							}
+							else {
+								throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
+							}
+
+							build_match<AST_Nodes::Switch_AST_Node>(currentScope, prev_stack_top);
+							return true;
+
+						}
+						else {
+							return false;
+						}
+					}
+
+					/// Reads a try-catch from input
+					bool Try(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+						if (Keyword("try")) {
+							retval = true;
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'try' block", (File_Position)m_position, "");
+							}
+
+							bool has_matches = true;
+							while (has_matches) {
+								SkipWS(true);
+								has_matches = false;
+								if (Keyword("catch")) {
+									const auto catch_stack_top = m_match_stack.size();
+									if (Char('(')) {
+										bool success = false;
+										if (Symbol("...")) {
+											// captures anything...
+											if (!Char(')')) {
+												throw exception::eval_error("Incomplete 'catch(...)' expression", (File_Position)m_position, "");
+											}
+											success = true;
+										}
+
+										if (Arg(currentScope, true)) {
+											if (!Char(')')) {
+												throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position, "");
+											}
+											success = true;
+										}
+
+										if (!success) {
+											throw exception::eval_error("Incomplete 'catch' expression", (File_Position)m_position, "");
+										}
+									}
+
+									SkipWS(true);
+
+									if (!Block(currentScope)) {
+										throw exception::eval_error("Incomplete 'catch' block", (File_Position)m_position, "");
+									}
+									build_match<AST_Nodes::Catch_AST_Node>(currentScope, catch_stack_top);
+									has_matches = true;
+								}
+							}
+							SkipWS(true);
+							if (Keyword("finally")) {
+								const auto finally_stack_top = m_match_stack.size();
+
+								SkipWS(true);
+
+								if (!Block(currentScope)) {
+									throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::Finally_AST_Node>(currentScope, finally_stack_top);
+							}
+
+							build_match<AST_Nodes::Try_AST_Node>(currentScope, prev_stack_top);
+						}
+						else if (Keyword("do")) {
+							retval = true;
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'do' block", (File_Position)m_position, "");
+							}
+							SkipWS(true);
+							if (Keyword("finally")) {
+								const auto finally_stack_top = m_match_stack.size();
+
+								SkipWS(true);
+
+								if (!Block(currentScope)) {
+									throw exception::eval_error("Incomplete 'finally' block", (File_Position)m_position, "");
+								}
+								build_match<AST_Nodes::Finally_AST_Node>(currentScope, finally_stack_top);
+							}
+
+							build_match<AST_Nodes::Do_AST_Node>(currentScope, prev_stack_top);
+						}
+						return retval;
+					}
+
+					/// Reads a just-in-time compilation request from input
+					bool Eval(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+						if (Keyword("evaluate")) {
+							retval = true;
+							SkipWS(true);
+#if 1
+							if (!Char('(')) {
+								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+							}
+							SkipWS(true);
+							if (!Equation(currentScope)) {
+								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+							}
+							SkipWS(true);
+							if (!Char(')')) {
+								throw exception::eval_error("Incomplete 'evaluate' expression", (File_Position)m_position, "");
+							}
+#else
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'evaluate' block", (File_Position)m_position, "");
+							}
+#endif
+							build_match<AST_Nodes::JustInTimeCompilation_AST_Node>(currentScope, prev_stack_top);
+						}
+						return retval;
+					}
+
+					/// Reads a namespace block from input
+					/// namespace Thing{ ... };
+					bool DeclNamespace(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Keyword("namespace")) {
+							retval = true;
+							SkipWS(true);
+
+							if (Id(true, currentScope, AST_Nodes::IdType::Variable)) { // variable becase this namespace may not exist yet! 
+								/* Great! Got the desired name of the new namespace */
+							}
+							else {
+								throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", (File_Position)m_position, "");
+							}
+
+							// instead of collecting statements, we want to collect declarations...
+							if (!DeclarationsBlock(currentScope)) {
+								throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", (File_Position)m_position, "");
+							}
+
+							build_match<AST_Nodes::Namespace_AST_Node>(currentScope, prev_stack_top);
+						}
+						return retval;
+					};
+
+					/// Reads a declared function from input
+					/// Type Foo(...){ ... };
+					bool DeclFunction(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+
+						auto failure = [&]() {
+							while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+							return false;
+						};
+
+						// return type (Id)
+						if (!TypeName(currentScope)) { // Id
+							return failure();
+						}
+
+						// function name (Id)
+						if (!Id(true, currentScope, AST_Nodes::IdType::Function)) {
+							return failure();
+						}
+
+						// Arg_List 
+						if (Char('(')) {
+							SkipWS(true);
+							Decl_Arg_List(currentScope);
+							SkipWS(true);
+							if (!Char(')')) {
+								return failure();
+							}
+						}
+						else {
+							return failure();
+						}
+
+						// Block
+						if (!Block(currentScope)) {
+							return failure();
+						}
+
+						build_match<AST_Nodes::FunctionDecl_AST_Node>(currentScope, prev_stack_top);
+
+						return true;
+					};
+
+					/// Top level parser, starts parsing of all known parses
+					bool Declarations(const std::shared_ptr<Scope>& currentScope) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						SkipWS();
+
+						bool retval = false;
+						bool has_more = true;
+						bool saw_eol = true;
+
+						while (has_more) {
+							const auto start = m_position;
+
+							// TO-DO, complete impl of these evaluations:
+
+							if (DeclNamespace(thisScope) || DeclFunction(thisScope) /* || Class(thisScope) || */) {
+								if (!saw_eol) {
+									throw exception::eval_error("Two function definitions missing line separator",
+										(File_Position)start,
+										"");
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = true;
+							}
+							else if (Equation(thisScope)) {
+								if (!saw_eol) {
+									throw exception::eval_error("Two expressions missing line separator",
+										(File_Position)start,
+										"");
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = false;
+							}
+							else if (DeclarationsBlock(thisScope) || Eol()) {
+								has_more = true;
+								retval = true;
+								saw_eol = true;
+							}
+							else {
+								has_more = false;
+							}
+						}
+						return retval;
+					};
+
+					/// Top level parser, starts parsing of all known parses
+					bool Statements(const std::shared_ptr<Scope>& currentScope) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						SkipWS();
+
+						bool retval = false;
+						bool has_more = true;
+						bool saw_eol = true;
+
+						while (has_more) {
+							const auto start = m_position;
+
+							// TO-DO, complete impl of these evaluations:
+
+							if (DeclNamespace(thisScope) || DeclFunction(thisScope) || /*Def(thisScope) || */ Try(thisScope) || If(thisScope) || While(thisScope) || /* Class(thisScope) || */ For(thisScope) || Switch(thisScope) || Eval(thisScope)) {
+								if (!saw_eol) {
+									throw exception::eval_error("Two function definitions missing line separator",
+										(File_Position)start,
+										"");
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = true;
+							}
+							else if (Return(thisScope) || Break(thisScope) || Continue(thisScope) || Equation(thisScope)) {
+								if (!saw_eol) {
+									throw exception::eval_error("Two expressions missing line separator",
+										(File_Position)start,
+										"");
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = false;
+							}
+							else if (Block(thisScope) || Eol()) {
+								has_more = true;
+								retval = true;
+								saw_eol = true;
+							}
+							else {
+								has_more = false;
+							}
+						}
+						return retval;
+					};
+					
+					/// Reads a curly-brace C-style block from input
+					bool Block(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Char('{')) {
+							// increment the scope
+							auto thisScope = std::make_shared<Scope>(currentScope);
+							thisScope->SetSelf(thisScope);
+
+							retval = true;
+
+							Statements(currentScope);
+
+							if (!Char('}')) {
+								throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
+							}
+
+							if (m_match_stack.size() == prev_stack_top) {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+							}
+
+							build_match<AST_Nodes::Block_AST_Node>(thisScope, prev_stack_top);
+						}
+
+						return retval;
+					};
+
+					/// Reads a curly-brace C-style block from input which only allows for declarations
+					bool DeclarationsBlock(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Char('{')) {
+							retval = true;
+
+							Declarations(currentScope);
+
+							if (!Char('}')) {
+								throw exception::eval_error("Incomplete declaration block", (File_Position)m_position, "");
+							}
+
+							if (m_match_stack.size() == prev_stack_top) {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+							}
+
+							build_match<AST_Nodes::Declaration_Block_AST_Node>(currentScope, prev_stack_top);
+						}
+
+						return retval;
+					};
+
+					/// Reads a curly-brace C-style block from input -- note that this scope is special and cannot find objects from parent scopes. 
+					bool FunctionBlock(const std::shared_ptr<Scope>& currentScope) {
+						// increment the scope
+						auto thisScope = std::make_shared<Scope>(currentScope);
+						thisScope->SetSelf(thisScope);
+
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+
+						if (Char('{')) {
+							retval = true;
+
+							Statements(currentScope);
+
+							if (!Char('}')) {
+								throw exception::eval_error("Incomplete function block", (File_Position)m_position, "");
+							}
+
+							if (m_match_stack.size() == prev_stack_top) {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
+							}
+
+							build_match<AST_Nodes::Function_Block_AST_Node>(thisScope, prev_stack_top);
+						}
+
+						return retval;
+					};
+
+					/// Reads a return statement from input
+					bool Return(const std::shared_ptr<Scope>& currentScope) {
+						const auto prev_stack_top = m_match_stack.size();
+						if (Keyword("return")) {
+							Operator(currentScope);
+							build_match<AST_Nodes::Return_AST_Node>(currentScope, prev_stack_top);
+							return true;
+						}
+						else {
+							return false;
+						}
+					}
+
+					/// Reads an if/else if/else block from input
+					bool If(const std::shared_ptr<Scope>& currentScope) {
+						bool retval = false;
+
+						const auto prev_stack_top = m_match_stack.size();
+						// SkipWS(true);
+						if (Keyword("if")) {
+							retval = true;
+							SkipWS(true);
+							if (!Char('(')) {
+								throw exception::eval_error("Incomplete 'if' expression: cannot find '('", (File_Position)m_position, "");
+							}
+							SkipWS(true);
+							if (!Equation(currentScope)) {
+								throw exception::eval_error("Incomplete 'if' expression: cannot find equation block", (File_Position)m_position, "");
+							}
+							SkipWS(true);
+							const bool is_if_init = Eol() && Equation(currentScope);
+							SkipWS(true);
+							if (!Char(')')) {
+								throw exception::eval_error("Incomplete 'if' expression: cannot find ')'", (File_Position)m_position, "");
+							}
+
+							SkipWS(true);
+
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'if' block", (File_Position)m_position, "");
+							}
+
+							bool has_matches = true;
+							while (has_matches) {
+								SkipWS(true);
+								has_matches = false;
+								if (Keyword("else")) {
+									SkipWS(true);
+									if (If(currentScope)) {
+										has_matches = true;
+									}
+									else {
+										SkipWS(true);
+										if (!Block(currentScope)) {
+											throw exception::eval_error("Incomplete 'else' block", (File_Position)m_position, "");
+										}
+										has_matches = true;
+									}
+								}
+							}
+
+							const auto num_children = m_match_stack.size() - prev_stack_top;
+
+							if ((is_if_init && num_children == 3) || (!is_if_init && num_children == 2)) {
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), currentScope });
+							}
+
+							if (!is_if_init) {
+								build_match<AST_Nodes::If_AST_Node>(currentScope, prev_stack_top);
+							}
+							else {
+								build_match<AST_Nodes::If_AST_Node>(currentScope, prev_stack_top + 1);
+								build_match<AST_Nodes::Block_AST_Node>(currentScope, prev_stack_top);
+							}
+						}
+
+						return retval;
+					};
+
+				public:
+					Parser2() = default;
+					~Parser2() = default;
+
+					// highest-level parse request, which starts a new scope from scratch and completes it. 
+					ParseNode Parse(const std::string& t_input, std::shared_ptr<Scope> parentScope = nullptr) {
+						if (!parentScope) {
+							parentScope = std::make_shared<Global>();
+							parentScope->SetSelf(parentScope);
+							std::dynamic_pointer_cast<Global>(parentScope)->AddBuiltIns();
+						}
+						return parse(t_input, parentScope);
+					};
+
+				private:
+					ParseNode parse(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) {
+						return parse_internal(t_input, currentScope);
+					};
+					ParseNode parse_internal(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) {
+						const auto begin = t_input.empty() ? nullptr : &t_input.front();
+						const auto end = begin == nullptr ? nullptr : begin + t_input.size();
+						m_position = Position(begin, end);
+
+						// top level stack        
+						if (Statements(currentScope)) {
+							if (m_position.has_more()) {
+								throw exception::eval_error("Unparsed input", (File_Position)m_position, "");
+							}
+							else {
+								// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
+								auto i = m_comment_stack.rbegin();
+								while (i != m_comment_stack.rend()) {
+									m_match_stack.insert(m_match_stack.begin(), std::move(*i));
+									i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
+								}
+								build_match<AST_Nodes::File_AST_Node>(currentScope, 0);
+							}
+						}
+						else {
+							m_match_stack.push_back({ std::make_shared<AST_Node_Impl, AST_Nodes::Noop_AST_Node>(AST_Nodes::Noop_AST_Node()), nullptr });
+						}
+
+						ParseNode retval = m_match_stack.front();
+						m_match_stack.clear();
+
+						return retval;
+					};
+					ParseNode parse_instr_eval(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) {
+						auto last_position = m_position;
+						auto last_match_stack = std::exchange(m_match_stack, decltype(m_match_stack){});
+
+						auto retval = parse_internal(t_input, currentScope);
+
+						m_position = std::move(last_position);
+
+						m_match_stack = std::move(last_match_stack);
+
+						return retval;
+					};
+
+
+
+                };
+
+
+
+
+
+			};
+
+
+
+
+
 			// The interpreter should take in source code and convert it to an abstract syntax tree (AST) that can be evaluated at runtime. 
 			class Interpreter {
 			public:
@@ -2548,8 +8199,7 @@ namespace GoodLang {
 					};
 				};
 
-				template<typename T>
-				static std::string_view GetText(T const& r) {
+				template<typename T> static std::string_view GetText(T const& r) {
 					std::string_view out;
 					(void)detail::GetTextImpl(r, out);
 					return out;
@@ -3422,7 +9072,11 @@ namespace GoodLang {
 				private:
 					mutable std::atomic_uint_fast32_t m_loc = { 0 };
 				};
-
+				struct Map_Pair_AST_Node final : AST_Node_Impl {
+					Map_Pair_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Map_Pair, std::move(t_loc), std::move(t_children))
+					{}
+				};
 				// ["":10, 10:10, Vector():10, 20:Vector()]
 				struct Inline_Map_AST_Node final : AST_Node_Impl {
 					Inline_Map_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
@@ -3670,11 +9324,7 @@ namespace GoodLang {
 
 				};
 
-				struct Map_Pair_AST_Node final : AST_Node_Impl {
-					Map_Pair_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
-						: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Map_Pair, std::move(t_loc), std::move(t_children))
-					{}
-				};
+
 
 				struct Prefix_AST_Node final : AST_Node_Impl {
 					Prefix_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
@@ -8644,6 +14294,15 @@ namespace GoodLang {
 			// out.push_back(GoodLang::GetChildren(r.load()));
 		};
 	};
+
+	namespace Impl {
+		__forceinline void ToString(Tag< GoodLang::Engine::Compiler::Interpreter2::Parser2::ParseNode >, GoodLang::Engine::Compiler::Interpreter2::Parser2::ParseNode const& r, std::string& out) {
+			out = r.first->to_string();
+		};
+		__forceinline void GetChildren(Tag< GoodLang::Engine::Compiler::Interpreter2::Parser2::ParseNode >, GoodLang::Engine::Compiler::Interpreter2::Parser2::ParseNode const& r, std::vector< NodeCache >& out) {
+			// out.push_back(GoodLang::GetChildren(r.load()));
+		};
+	};
 };
 
 int main() {
@@ -9043,7 +14702,7 @@ int main() {
 				globalScope->CallFunction("FooBar", {});
 			} catch (...) {}
 
-			auto parse{ GoodLang::Engine::Compiler::Interpreter::parser::Parser2() };
+			auto parse{ GoodLang::Engine::Compiler::Interpreter2::Parser2() };
 
 			auto parsed_result = parse.Parse("/* I AM A COMMENT! */ { /* COMMENT */ { /* COMMENT2 */ // COMMENT 3! \n } }", StartScope(globalScope));
 			if (1) {
@@ -9053,6 +14712,246 @@ int main() {
 				print(ToString(parsed_result));
 				print(std::string("\t -> \t") + ToString(result));
 			}
+
+
+
+
+
+
+
+
+			parsed_result = parse.Parse(R"start(	
+				var x;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(	
+				int x;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(	
+				int x = 10;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(	
+				var& x = 10;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(	
+				int& x = 10;
+			)start", StartScope(globalScope));
+			if (1) {
+				print(ToString(parsed_result));
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+
+
+			parsed_result = parse.Parse(R"start(	
+				return 10_ft;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(	
+				Units::meter x;
+				return x;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+                Units::meter x;
+				x.double;
+				return x;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+                Units::meter x;
+				x.double;
+				x++;
+				return x;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+                Units::meter x;
+				x.double;
+				x++;
+				x*x;	
+				return x;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+                int x;
+				x.double;
+				x++;
+				x*x;	
+				var& y = x ^ (x % x).double;;	
+				return y;
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				Var String() { 
+					return "Static Function";
+				};				
+				auto String = [](){
+					return "Lambda Function"
+				};
+	
+				// At this point, it is ambiguous who "String" is. 
+				// It is resolved in preference of objects to functions, in order of reverse scope search.
+
+				return String();
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				auto String = [](){
+					return "Lambda Function"
+				};
+
+				{					
+					Var String() { 
+						return "Static Function";
+					};
+					return String();
+				}				
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+			parsed_result = parse.Parse(R"start(
+				Units::foot FunctionName(float x, float y) { 
+					return x + y;
+				};
+				//Vector FunctionName(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o) { 
+				//	return [a,b,c,d,e,f,g,h,i,j,k,l,m,n,o];
+				//};
+				//return FunctionName(1,2); // will fail since the TEST namespace is dead and deleted by now	
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+			parsed_result = parse.Parse(R"start(
+				Units::foot FunctionName(float x, float y) { 
+					return x + y;
+				};
+				Vector FunctionName(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o) { 
+					return 10;
+					// return [a,b,c,d,e,f,g,h,i,j,k,l,m,n,o];
+				};
+				//return FunctionName(1,2); // will fail since the TEST namespace is dead and deleted by now	
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+			parsed_result = parse.Parse(R"start(
+				Units::foot FunctionName(float x, float y) { 
+					return x + y;
+				};
+				return FunctionName(1,2); // will fail since the TEST namespace is dead and deleted by now	
+			)start", StartScope(globalScope));
+			if (1) {
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+			parsed_result = parse.Parse(R"start(
+				if (int x = 50_ft){
+					return x;
+				}else{
+					return false;
+				}
+			)start", StartScope(globalScope));
+			if (1) {
+				Stopwatch sw;
+				sw.Start();
+				auto result = parsed_result.first->eval(StartScope(globalScope));
+				print(ToString(parsed_result));
+				print(std::string("\t -> \t") + ToString(result));
+			}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 			parsed_result = parse.Parse(R"start(	
