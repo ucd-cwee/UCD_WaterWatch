@@ -1754,7 +1754,7 @@ namespace GoodLang {
 										match.push_back('$');
 										break;
 									default:
-										throw exception::eval_error("Unknown escaped sequence in string", pos, "");
+										throw exception::eval_error("Unknown escaped sequence in string", pos);
 									}
 									is_escaped = false;
 								}
@@ -1955,9 +1955,7 @@ namespace GoodLang {
 
 						while (m_position.has_more() && (*m_position != '`')) {
 							if (Eol()) {
-								throw exception::eval_error("Carriage return in identifier literal",
-									(File_Position)m_position,
-									"");
+								throw exception::eval_error("Carriage return in identifier literal", (File_Position)m_position);
 							}
 							else {
 								++m_position;
@@ -1965,10 +1963,10 @@ namespace GoodLang {
 						}
 
 						if (start == m_position) {
-							throw exception::eval_error("Missing contents of identifier literal", (File_Position)m_position, "");
-						}
+							throw exception::eval_error("Missing contents of identifier literal", (File_Position)m_position);
+						} 
 						else if (!m_position.has_more()) {
-							throw exception::eval_error("Incomplete identifier literal", (File_Position)m_position, "");
+							throw exception::eval_error("Incomplete identifier literal", (File_Position)m_position);
 						}
 
 						++m_position;
@@ -2027,7 +2025,7 @@ namespace GoodLang {
 
 					while (m_position.has_more()) {
 						if (static_cast<unsigned char>(*m_position) > 0x7e) {
-							throw exception::eval_error("Illegal character", (File_Position)m_position, "");
+							throw exception::eval_error("Illegal character", (File_Position)m_position);
 						}
 						auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
 
@@ -2098,7 +2096,7 @@ namespace GoodLang {
 					// top level stack        
 					if (Statements()) {
 						if (m_position.has_more()) {
-							throw exception::eval_error("Unparsed input", (File_Position)m_position, "");
+							throw exception::eval_error("Unparsed input", (File_Position)m_position);
 						}
 						else {
 							build_match<CompletedPreprocessor>(0, t_input);
@@ -2597,6 +2595,54 @@ namespace GoodLang {
 				};
 				class AST_Nodes {
 				public:
+					// wrapper for an entire script
+					struct File_AST_Node final : AST_Node_Impl {
+						File_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::File, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							try {
+								const auto num_children = this->children.size();
+								try {
+									if (num_children > 0) {
+										for (size_t i = 0; i < num_children - 1; ++i) {
+											this->children[i]->eval(currentScope);
+										}
+										return this->children.back()->eval(currentScope);
+									}
+									else {
+										return {};
+									}
+								}
+								catch (detail::Return_Value& rv) {
+									return rv.retval;
+								}
+							}
+							catch (const detail::Continue_Loop&) {
+								throw exception::eval_error("Unexpected `continue` statement outside of a loop", (File_Position)this->location.start);
+							}
+							catch (const detail::Break_Loop&) {
+								throw exception::eval_error("Unexpected `break` statement outside of a loop", (File_Position)this->location.start);
+							}
+						}
+					};
+					// empty lines, comments, etc.
+					struct Noop_AST_Node final : AST_Node_Impl {
+						Noop_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc)
+							: AST_Node_Impl(t_ast_node_text, AST_Node_Type::Noop, t_loc)
+						{};
+
+						Noop_AST_Node()
+							: AST_Node_Impl("", AST_Node_Type::Noop, Parse_Location{ Position{}, Position{} })
+						{};
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// It's a no-op, that evaluates to "void"
+							return {};
+						}
+					};
 					// return ARG
 					struct Return_AST_Node final : AST_Node_Impl {
 						Return_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
@@ -2620,7 +2666,7 @@ namespace GoodLang {
 							else if (this->children.size() == 1) {
 								Any out{ this->children[0]->eval(currentScope) };
 								if (out.IsEmpty()) // cannot return void						
-									throw exception::eval_error("Cannot return void from a return statement.");
+									throw exception::eval_error("Cannot return void from a return statement.", (File_Position)this->location.start);
 								else
 									throw detail::Return_Value{ out };
 							}
@@ -2657,21 +2703,7 @@ namespace GoodLang {
 
 						Any m_value;
 					};
-					// empty lines, comments, etc.
-					struct Noop_AST_Node final : AST_Node_Impl {
-						Noop_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc)
-							: AST_Node_Impl(t_ast_node_text, AST_Node_Type::Noop, t_loc)
-						{};
 
-						Noop_AST_Node()
-							: AST_Node_Impl("", AST_Node_Type::Noop, Parse_Location{ Position{}, Position{} })
-						{};
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							// It's a no-op, that evaluates to "void"
-							return {};
-						}
-					};
 					// intended for basic operations like "+"
 					struct Binary_Operator_AST_Node : AST_Node_Impl {
 						Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
@@ -2728,7 +2760,7 @@ namespace GoodLang {
 								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
 								return obj;
 							}
-							throw exception::eval_error("Can not find object: " + this->text);
+							throw exception::eval_error("Can not find object: " + this->text, (File_Position)this->location.start);
 						}
 					};
 					// 
@@ -2744,7 +2776,7 @@ namespace GoodLang {
 								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
 								return obj;
 							}
-							throw exception::eval_error("Can not find object: " + this->text);
+							throw exception::eval_error("Can not find object: " + this->text, (File_Position)this->location.start);
 						}
 					};
 					// 
@@ -2760,7 +2792,7 @@ namespace GoodLang {
 								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
 								return obj;
 							}
-							throw exception::eval_error("Can not find object: " + this->text);
+							throw exception::eval_error("Can not find object: " + this->text, (File_Position)this->location.start);
 						}
 
 					public:
@@ -2980,7 +3012,7 @@ namespace GoodLang {
 										}
 									}
 								}
-								throw exception::eval_error("Can not find requested object or function: " + function_name);
+								throw exception::eval_error("Can not find requested object or function: " + function_name, (File_Position)this->location.start);
 							}
 						};
 						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
@@ -3045,8 +3077,6 @@ namespace GoodLang {
 								Any lhs = this->children[0]->eval(currentScope);
 								Any rhs = this->children[1]->eval(currentScope);
 
-								// if (lhs.GetFlag(AnyData::Flag::constant)) { throw exception::eval_error("Error, constant value cannot be assigned to."); }
-
 								if (m_oper == Operators::Opers::assign) {
 									return currentScope->CallFunction("=", { lhs, rhs });
 								}
@@ -3058,7 +3088,7 @@ namespace GoodLang {
 										return currentScope->CallFunction(this->text, { lhs, rhs });
 									}
 									catch (GoodLang::exception::not_found_error const& e) {
-										throw exception::eval_error("Unable to find appropriate'" + this->text + "' operator.");
+										throw exception::eval_error("Unable to find appropriate'" + this->text + "' operator.", (File_Position)this->location.start);
 									}
 								}
 							}
@@ -3280,7 +3310,7 @@ namespace GoodLang {
 								return var;
 							}
 							else {
-								throw exception::eval_error("Only increment (i++) or decrement (i--) operators are supported in a postfix context, as well as custom postfixes.");
+								throw exception::eval_error("Only increment (i++) or decrement (i--) operators are supported in a postfix context, as well as custom postfixes.", (File_Position)this->location.start);
 							}
 						};
 
@@ -3462,7 +3492,7 @@ namespace GoodLang {
 									});
 							}
 							catch (const GoodLang::exception::not_found_error& e) {
-								throw exception::eval_error("Can not find appropriate array lookup operator '[]'.");
+								throw exception::eval_error("Can not find appropriate array lookup operator '[]'.", (File_Position)this->location.start);
 							}
 						}
 
@@ -3548,7 +3578,7 @@ namespace GoodLang {
 									captures[var_name] = obj;
 								}
 								else {
-									throw exception::eval_error("Cannot find captured variable");
+									throw exception::eval_error("Cannot find captured variable", (File_Position)this->location.start);
 								}
 							}
 
@@ -3952,7 +3982,7 @@ namespace GoodLang {
 									impl::Wait(ctx);
 								}
 								else {
-									throw exception::eval_error("begin() and/or end() functions were not found for the provided type", this->location.start, "");
+									throw exception::eval_error("begin() and/or end() functions were not found for the provided type", (File_Position)this->location.start);
 								}
 							}
 							catch (detail::Break_Loop&) {}
@@ -4151,12 +4181,12 @@ namespace GoodLang {
 											}
 										}
 										else {
-											throw exception::eval_error("Internal error: catch block variable unrecognized");
+											throw exception::eval_error("Internal error: catch block variable unrecognized", (File_Position)this->location.start);
 										}
 									}
 								}
 								else {
-									throw exception::eval_error("Internal error: catch block type unrecognized");
+									throw exception::eval_error("Internal error: catch block type unrecognized", (File_Position)this->location.start);
 								}
 							}
 
@@ -4275,75 +4305,135 @@ namespace GoodLang {
 						};
 					};
 
+					struct Scopeless_Block_AST_Node final : AST_Node_Impl {
+						Scopeless_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							// evaluate all of the children, return the result of the last child
+							int numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(currentScope);
+								}
+								return this->children.back()->eval(currentScope);
+							}
+							else {
+								return Any();
+							}
+						}
+					};
+
+					struct Block_AST_Node final : AST_Node_Impl {
+						Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto newScope = std::make_shared<Scope>(currentScope);
+							newScope->SetSelf(newScope);
+
+							const auto numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(newScope);
+								}
+								return this->children.back()->eval(newScope);
+							}
+							else {
+								return Any();
+							}
+						};
+					};
+
+					struct Function_Block_AST_Node final : AST_Node_Impl {
+						Function_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::FunctionBlock, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							auto newScope = std::make_shared<FunctionScope>(currentScope);
+							newScope->SetSelf(newScope);
+
+							const auto numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(newScope);
+								}
+								return this->children.back()->eval(newScope);
+							}
+							else {
+								return Any();
+							}
+						};
+					};
+
+					struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl {
+						Fold_Right_Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, Any t_rhs)
+							: AST_Node_Impl(t_oper, AST_Node_Type::BinaryFoldRight, std::move(t_loc), std::move(t_children))
+							, m_oper(Operators::to_operator(t_oper))
+							, m_rhs(std::move(t_rhs))
+						{}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), m_rhs });
+						};
+
+					private:
+						Operators::Opers m_oper;
+						Any m_rhs;
+					};
+
 					struct Namespace_AST_Node final : AST_Node_Impl {
 						Namespace_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Namespace, std::move(t_loc), std::move(t_children))
 						{
-							assert(this->children.size() == 2); // Id, DeclBlock
+							(void)this->children.back()->eval(currentScope);
 						}
-
 						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							// if the namespace already exists, then we should "resume" it, rather than creating a new one. 
-
-							std::string desired_namespace = currentScope->GetQualifiedNamespace() + "::" + std::string(GetText(this->children[0]));
-
-							static auto fixNamespace{ [](std::string& x) {
-								while (x.find("::") == 0 && x.length() > 2) {
-									x = x.substr(2);
-								}
-
-								while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-							} };
-							fixNamespace(desired_namespace);
-
-							auto newNamespace = currentScope->FindNamespace(desired_namespace);
-							if (!newNamespace) {
-								newNamespace = std::make_shared<Namespace>(currentScope, std::string(GetText(this->children[0])));
-								newNamespace->SetSelf(newNamespace);
-								currentScope->AddChild(newNamespace); // add the new namespace as a child
-							}
-
-							(void)this->children.back()->eval(newNamespace);
-
 							return {};
-						}
+						};
 					};
 
 					struct Class_AST_Node final : AST_Node_Impl {
 						Class_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Namespace, std::move(t_loc), std::move(t_children))
 						{
-							assert(this->children.size() == 2); // Id, DeclBlock
+							(void)this->children.back()->eval(currentScope);
 						}
 
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							// if the namespace already exists, then we should "resume" it, rather than creating a new one. 
-
-							std::string desired_namespace = currentScope->GetQualifiedNamespace() + "::" + std::string(GetText(this->children[0]));
-
-							static auto fixNamespace{ [](std::string& x) {
-								while (x.find("::") == 0 && x.length() > 2) {
-									x = x.substr(2);
-								}
-
-								while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-							} };
-							fixNamespace(desired_namespace);
-
-							auto newNamespace = currentScope->FindClass(desired_namespace);
-							if (!newNamespace) {
-								newNamespace = std::make_shared<Class>(currentScope, std::string(GetText(this->children[0])));
-								newNamespace->SetSelf(newNamespace);
-								currentScope->AddChild(newNamespace); // add the new namespace as a child
-
-								// Default Constructors
-								newNamespace->AddDefaultConstructors();
-							}
-							(void)this->children.back()->eval(newNamespace);
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {							
 							return {};
 						}
 					};
 
+					struct Declaration_Block_AST_Node final : AST_Node_Impl {
+						Declaration_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::DeclarationBlock, std::move(t_loc), std::move(t_children))
+						{
+							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
+						};
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							const auto numChildren = this->children.size();
+							if (numChildren > 0) {
+								for (int i = 0; i < numChildren - 1; i++) {
+									this->children[i]->eval(currentScope);
+								}
+								this->children.back()->eval(currentScope);
+							}
+							else {
+								return {};
+							}
+						};
+					};
 
 					struct FunctionDecl_AST_Node final : AST_Node_Impl {
 						FunctionDecl_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
@@ -4366,28 +4456,7 @@ namespace GoodLang {
 							AddObjects(startposition + 1, thisScope, argNames, argTypes, arguments...);
 						};
 
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							//for (int childIndex = 0; childIndex < numArgs; ++childIndex) {
-							//	if (inputArgTypes[childIndex].expired()) { // if it was never determined or is invalid... 
-							//		auto& Arg = *this->children[2]->children[childIndex];
-							//		if (Arg.children.size() == 1) {
-							//			const_cast<std::weak_ptr<Type_Info>&>(inputArgTypes[childIndex]) = user_type_shared<Any>();
-							//		}
-							//		else if (Arg.children.size() == 2) {
-							//			// type was provided.
-							//			auto type_name = GetText(Arg.children[0]);
-							//			if (auto arg_type_class = currentScope->FindClass(return_type_name)) {
-							//				const_cast<std::weak_ptr<Type_Info>&>(inputArgTypes[childIndex]) = arg_type_class->GetClassType().lock()->MakeRef();
-							//			}
-							//			else {
-							//				const_cast<std::weak_ptr<Type_Info>&>(inputArgTypes[childIndex]) = user_type_shared<Any>();
-							//			}
-							//		}
-							//		else {
-							//			throw exception::eval_error("Unhandled Arg parameter(s)");
-							//		}
-							//	}
-							//}
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {							
 							if (currentScope->IsClass()) {
 								if (auto ptr = std::dynamic_pointer_cast<Class>(currentScope)) {
 									auto p_locked = initialized.Unique();
@@ -4995,148 +5064,6 @@ namespace GoodLang {
 						std::vector<std::weak_ptr<Type_Info>> inputArgTypes;
 						std::vector<std::string> inputArgNames;
 					};
-
-					struct Scopeless_Block_AST_Node final : AST_Node_Impl {
-						Scopeless_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
-							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
-						{
-							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
-						};
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							// evaluate all of the children, return the result of the last child
-							int numChildren = this->children.size();
-							if (numChildren > 0) {
-								for (int i = 0; i < numChildren - 1; i++) {
-									this->children[i]->eval(currentScope);
-								}
-								return this->children.back()->eval(currentScope);
-							}
-							else {
-								return Any();
-							}
-						}
-					};
-
-					struct Block_AST_Node final : AST_Node_Impl {
-						Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
-							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
-						{
-							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
-						};
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							auto newScope = std::make_shared<Scope>(currentScope);
-							newScope->SetSelf(newScope);
-
-							const auto numChildren = this->children.size();
-							if (numChildren > 0) {
-								for (int i = 0; i < numChildren - 1; i++) {
-									this->children[i]->eval(newScope);
-								}
-								return this->children.back()->eval(newScope);
-							}
-							else {
-								return Any();
-							}
-						};
-					};
-
-					struct Declaration_Block_AST_Node final : AST_Node_Impl {
-						Declaration_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
-							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::DeclarationBlock, std::move(t_loc), std::move(t_children))
-						{
-							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
-						};
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							const auto numChildren = this->children.size();
-							if (numChildren > 0) {
-								for (int i = 0; i < numChildren - 1; i++) {
-									this->children[i]->eval(currentScope);
-								}
-								return this->children.back()->eval(currentScope);
-							}
-							else {
-								return Any();
-							}
-						};
-					};
-
-					struct Function_Block_AST_Node final : AST_Node_Impl {
-						Function_Block_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
-							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::FunctionBlock, std::move(t_loc), std::move(t_children))
-						{
-							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
-						};
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							auto newScope = std::make_shared<FunctionScope>(currentScope);
-							newScope->SetSelf(newScope);
-
-							const auto numChildren = this->children.size();
-							if (numChildren > 0) {
-								for (int i = 0; i < numChildren - 1; i++) {
-									this->children[i]->eval(newScope);
-								}
-								return this->children.back()->eval(newScope);
-							}
-							else {
-								return Any();
-							}
-						};
-					};
-
-					struct File_AST_Node final : AST_Node_Impl {
-						File_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
-							: AST_Node_Impl(std::move(t_ast_node_text), AST_Node_Type::File, std::move(t_loc), std::move(t_children))
-						{
-							if (this->children.size() > 0) this->return_type = this->children.back()->return_type;
-						}
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							try {
-								const auto num_children = this->children.size();
-								try {
-									if (num_children > 0) {
-										for (size_t i = 0; i < num_children - 1; ++i) {
-											this->children[i]->eval(currentScope);
-										}
-										return this->children.back()->eval(currentScope);
-									}
-									else {
-										return {};
-									}
-								}
-								catch (detail::Return_Value& rv) {
-									return rv.retval;
-								}
-							}
-							catch (const detail::Continue_Loop&) {
-								throw exception::eval_error("Unexpected `continue` statement outside of a loop");
-							}
-							catch (const detail::Break_Loop&) {
-								throw exception::eval_error("Unexpected `break` statement outside of a loop");
-							}
-						}
-					};
-
-					struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl {
-						Fold_Right_Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, Any t_rhs)
-							: AST_Node_Impl(t_oper, AST_Node_Type::BinaryFoldRight, std::move(t_loc), std::move(t_children))
-							, m_oper(Operators::to_operator(t_oper))
-							, m_rhs(std::move(t_rhs))
-						{}
-
-						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
-							return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), m_rhs });
-						};
-
-					private:
-						Operators::Opers m_oper;
-						Any m_rhs;
-					};
-
 				};
 
 				class optimizer {
@@ -5984,7 +5911,7 @@ namespace GoodLang {
 											match.push_back('$');
 											break;
 										default:
-											throw exception::eval_error("Unknown escaped sequence in string", pos, "");
+											throw exception::eval_error("Unknown escaped sequence in string", pos);
 										}
 										is_escaped = false;
 									}
@@ -6699,7 +6626,7 @@ namespace GoodLang {
 								++m_position;
 							}
 							else {
-								throw exception::eval_error("Unclosed quoted string", (File_Position)m_position, "");
+								throw exception::eval_error("Unclosed quoted string", (File_Position)m_position);
 							}
 
 							return true;
@@ -6884,7 +6811,7 @@ namespace GoodLang {
 
 						while (m_position.has_more()) {
 							if (static_cast<unsigned char>(*m_position) > 0x7e) {
-								throw exception::eval_error("Illegal character", (File_Position)m_position, "");
+								throw exception::eval_error("Illegal character", (File_Position)m_position);
 							}
 							auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
 
@@ -7269,10 +7196,6 @@ namespace GoodLang {
 
 					/// Reads a comma-separated list of values from input. Id's only, no types allowed
 					bool Id_Arg_List(const std::shared_ptr<Scope>& currentScope) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						SkipWS(true);
 
 						bool retval = false;
@@ -7289,7 +7212,7 @@ namespace GoodLang {
 								}
 							}
 						}
-						build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+						build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top);
 
 						SkipWS(true);
 
@@ -7298,10 +7221,6 @@ namespace GoodLang {
 
 					/// Reads a comma-separated list of values from input, for function declarations
 					bool Decl_Arg_List(const std::shared_ptr<Scope>& currentScope) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						SkipWS(true);
 
 						bool retval = false;
@@ -7318,7 +7237,7 @@ namespace GoodLang {
 								}
 							}
 						}
-						build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+						build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top);
 
 						SkipWS(true);
 
@@ -7327,29 +7246,25 @@ namespace GoodLang {
 
 					/// Reads a comma-separated list of values from input
 					bool Arg_List(const std::shared_ptr<Scope>& currentScope, int maxNumArgs = std::numeric_limits<int>::max()) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						SkipWS(true);
 						bool retval = false;
 
 						const auto prev_stack_top = m_match_stack.size();
 
-						if (Equation(thisScope)) {
+						if (Equation(currentScope)) {
 							retval = true;
 							SkipWS(true);
 							while (((--maxNumArgs) > 0)) {
 								SkipWS(true);
 								if (!Char(',')) break;
 								SkipWS(true);
-								if (!Equation(thisScope)) {
-									throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position, "");
+								if (!Equation(currentScope)) {
+									throw exception::eval_error("Unexpected value in parameter list", (File_Position)m_position);
 								}
 							}
 						}
 
-						build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+						build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top);
 
 						SkipWS(true);
 
@@ -7396,7 +7311,7 @@ namespace GoodLang {
 								if (Symbol(sym.c_str(), true)) {
 									SkipWS(true);
 									if (!Equation(currentScope)) {
-										throw exception::eval_error("Incomplete equation", (File_Position)m_position, "");
+										throw exception::eval_error("Incomplete equation", (File_Position)m_position);
 									}
 
 									build_match<AST_Nodes::Equation_AST_Node>(currentScope, prev_stack_top, sym.c_str());
@@ -7474,7 +7389,7 @@ namespace GoodLang {
 							const bool is_char = oper.size() == 1;
 							if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(oper.c_str()))) {
 								if (!Operator(currentScope, operators().size() - 1)) {
-									throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::Prefix_AST_Node>(currentScope, prev_stack_top, oper.c_str());
 								return true;
@@ -7623,7 +7538,7 @@ namespace GoodLang {
 						if (Operator(currentScope)) {
 							if (Symbol(":")) {
 								retval = true;
-								if (!Operator(currentScope)) { throw exception::eval_error("Incomplete map pair", (File_Position)m_position, ""); }
+								if (!Operator(currentScope)) { throw exception::eval_error("Incomplete map pair", (File_Position)m_position); }
 
 								build_match<AST_Nodes::Map_Pair_AST_Node>(currentScope, prev_stack_top);
 							}
@@ -7640,37 +7555,33 @@ namespace GoodLang {
 
 					/// Reads possible special container values, including ranges and map_pairs
 					bool Container_Arg_List(const std::shared_ptr<Scope>& currentScope) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						SkipWS(true);
 						bool retval = false;
 
 						const auto prev_stack_top = m_match_stack.size();
 
-						if (Map_Pair(thisScope)) {
+						if (Map_Pair(currentScope)) {
 							retval = true;
 							SkipWS(true);
 							while (Char(',')) {
 								SkipWS(true);
-								if (!Map_Pair(thisScope)) {
-									throw exception::eval_error("Unexpected value in container", (File_Position)m_position, "");
+								if (!Map_Pair(currentScope)) {
+									throw exception::eval_error("Unexpected value in container", (File_Position)m_position);
 								}
 							}
-							build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+							build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top);
 						}
-						else if (Operator(thisScope)) {
+						else if (Operator(currentScope)) {
 							retval = true;
 							SkipWS(true);
 							while (Char(',')) {
 								SkipWS(true);
-								if (!Operator(thisScope)) {
-									throw exception::eval_error("Unexpected value in container", (File_Position)m_position, "");
+								if (!Operator(currentScope)) {
+									throw exception::eval_error("Unexpected value in container", (File_Position)m_position);
 								}
 								SkipWS(true);
 							}
-							build_match<AST_Nodes::Arg_List_AST_Node>(thisScope, prev_stack_top);
+							build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, prev_stack_top);
 						}
 
 						SkipWS(true);
@@ -7678,34 +7589,27 @@ namespace GoodLang {
 						return retval;
 					}
 
-
 					/// Reads, and identifies, a short-form container initialization from input
 					bool Inline_Container(const std::shared_ptr<Scope>& currentScope) {
 						const auto prev_stack_top = m_match_stack.size();
 
 						if (Char('[')) {
-							// increment the scope
-							auto thisScope = std::make_shared<Scope>(currentScope);
-							thisScope->SetSelf(thisScope);
-
 							SkipWS(true);
-							Container_Arg_List(thisScope);
+							Container_Arg_List(currentScope);
 							SkipWS(true);
 							if (!Char(']')) {
-								throw exception::eval_error("Missing closing square bracket ']' in container initializer",
-									(File_Position)m_position,
-									"");
+								throw exception::eval_error("Missing closing square bracket ']' in container initializer", (File_Position)m_position);
 							}
 							if ((prev_stack_top != m_match_stack.size()) && (!m_match_stack.back().first->children.empty())) {
 								if (m_match_stack.back().first->children[0]->identifier == AST_Node_Type::Map_Pair) {
-									build_match<AST_Nodes::Inline_Map_AST_Node>(thisScope, prev_stack_top);
+									build_match<AST_Nodes::Inline_Map_AST_Node>(currentScope, prev_stack_top);
 								}
 								else {
-									build_match<AST_Nodes::Inline_Array_AST_Node>(thisScope, prev_stack_top);
+									build_match<AST_Nodes::Inline_Array_AST_Node>(currentScope, prev_stack_top);
 								}
 							}
 							else {
-								build_match<AST_Nodes::Inline_Array_AST_Node>(thisScope, prev_stack_top);
+								build_match<AST_Nodes::Inline_Array_AST_Node>(currentScope, prev_stack_top);
 							}
 
 							return true;
@@ -7816,7 +7720,7 @@ namespace GoodLang {
 									Arg_List(currentScope);
 									SkipWS(true);
 									if (!Char(')')) {
-										throw exception::eval_error("Incomplete function call", (File_Position)m_position, "");
+										throw exception::eval_error("Incomplete function call", (File_Position)m_position);
 									}
 
 									build_match<AST_Nodes::Fun_Call_AST_Node>(currentScope, prev_stack_top, "()");
@@ -7824,31 +7728,23 @@ namespace GoodLang {
 									if (!m_match_stack.back().first->children.empty()) {
 										if (m_match_stack.back().first->children[0]->identifier == AST_Node_Type::Dot_Access) {
 											if (m_match_stack.empty()) {
-												throw exception::eval_error("Incomplete dot access fun call",
-													(File_Position)m_position,
-													"");
+												throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position);
 											}
 											if (m_match_stack.back().first->children.empty()) {
-												throw exception::eval_error("Incomplete dot access fun call",
-													(File_Position)m_position,
-													"");
+												throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position);
 											}
 											auto dot_access = std::move(m_match_stack.back().first->children[0]);
 											auto func_call = std::move(m_match_stack.back());
 											m_match_stack.pop_back();
 											func_call.first->children.erase(func_call.first->children.begin());
 											if (dot_access->children.empty()) {
-												throw exception::eval_error("Incomplete dot access fun call",
-													(File_Position)m_position,
-													"");
+												throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position);
 											}
 											func_call.first->children.insert(func_call.first->children.begin(), std::move(dot_access->children.back()));
 											dot_access->children.pop_back();
 											dot_access->children.push_back(std::move(func_call.first));
 											if (dot_access->children.size() != 2) {
-												throw exception::eval_error("Incomplete dot access fun call",
-													(File_Position)m_position,
-													"");
+												throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position);
 											}
 											m_match_stack.push_back({ dot_access, func_call.second });
 										}
@@ -7858,7 +7754,7 @@ namespace GoodLang {
 									has_more = true;
 									if (!(Operator(currentScope) && Char(']'))) {
 										// TO-DO, Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
-										throw exception::eval_error("Incomplete array access", (File_Position)m_position, "");
+										throw exception::eval_error("Incomplete array access", (File_Position)m_position);
 									}
 
 									build_match<AST_Nodes::Array_Call_AST_Node>(currentScope, prev_stack_top, "[]");
@@ -7866,11 +7762,11 @@ namespace GoodLang {
 								else if (Symbol(".")) {
 									has_more = true;
 									if (!(Id(true, currentScope, AST_Nodes::IdType::Function))) {
-										throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position, "");
+										throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position);
 									}
 
 									if (std::distance(m_match_stack.begin() + static_cast<int>(prev_stack_top), m_match_stack.end()) != 2) {
-										throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position, "");
+										throw exception::eval_error("Incomplete dot access fun call", (File_Position)m_position);
 									}
 
 									build_match<AST_Nodes::Dot_Access_AST_Node>(currentScope, prev_stack_top, ".");
@@ -7915,9 +7811,7 @@ namespace GoodLang {
 									while (Eol()) {}
 
 									if (!Operator(currentScope, t_precedence + 1)) {
-										throw exception::eval_error("Incomplete '" + oper + "' expression",
-											(File_Position)m_position,
-											"");
+										throw exception::eval_error("Incomplete '" + oper + "' expression", (File_Position)m_position);
 									}
 
 									switch (operators()[t_precedence]) {
@@ -7928,16 +7822,12 @@ namespace GoodLang {
 										else {
 											if (Symbol(":")) {
 												if (!Operator(currentScope, t_precedence + 1)) {
-													throw exception::eval_error("Incomplete '" + oper + "' expression",
-														(File_Position)m_position,
-														"");
+													throw exception::eval_error("Incomplete '" + oper + "' expression", (File_Position)m_position);
 												}
 												build_match<AST_Nodes::If_AST_Node>(currentScope, prev_stack_top);
 											}
 											else {
-												throw exception::eval_error("Incomplete '" + oper + "' expression",
-													(File_Position)m_position,
-													"");
+												throw exception::eval_error("Incomplete '" + oper + "' expression", (File_Position)m_position);
 											}
 										}
 										break;
@@ -7976,17 +7866,13 @@ namespace GoodLang {
 					/// Reads an expression surrounded by parentheses from input
 					bool Paren_Expression(const std::shared_ptr<Scope>& currentScope) {
 						if (Char('(')) {
-							// increment the scope
-							auto thisScope = std::make_shared<Scope>(currentScope);
-							thisScope->SetSelf(thisScope);
-
 							SkipWS(true);
-							if (!Operator(thisScope)) {
-								throw exception::eval_error("Incomplete expression", (File_Position)m_position, "");
+							if (!Operator(currentScope)) {
+								throw exception::eval_error("Incomplete expression", (File_Position)m_position);
 							}
 							SkipWS(true);
 							if (!Char(')')) {
-								throw exception::eval_error("Missing closing parenthesis ')'", (File_Position)m_position, "");
+								throw exception::eval_error("Missing closing parenthesis ')'", (File_Position)m_position);
 							}
 							return true;
 						}
@@ -8002,23 +7888,20 @@ namespace GoodLang {
 						const auto prev_stack_top = m_match_stack.size();
 
 						if (Keyword("while")) {
-							auto thisScope = std::make_shared<Scope>(currentScope);
-							thisScope->SetSelf(thisScope);
-
 							retval = true;
 
 							if (!Char('(')) {
-								throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position);
 							}
 
-							if (!(Operator(thisScope) && Char(')'))) {
-								throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position, "");
+							if (!(Operator(currentScope) && Char(')'))) {
+								throw exception::eval_error("Incomplete 'while' expression", (File_Position)m_position);
 							}
 
 							SkipWS(true);
 
-							if (!Block(thisScope)) {
-								throw exception::eval_error("Incomplete 'while' block", (File_Position)m_position, "");
+							if (!Block(currentScope)) {
+								throw exception::eval_error("Incomplete 'while' block", (File_Position)m_position);
 							}
 
 							build_match<AST_Nodes::While_AST_Node>(currentScope, prev_stack_top);
@@ -8089,7 +7972,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Char('(')) {
-								throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position);
 							}
 
 							SkipWS(true);
@@ -8103,7 +7986,7 @@ namespace GoodLang {
 								if (classic_for) classic_for = classic_for && Char(')');
 
 								if (!classic_for) {
-									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position);
 								}
 
 								classic_for = false;
@@ -8112,20 +7995,20 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'for' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'for' block", (File_Position)m_position);
 							}
 
 							const auto num_children = m_match_stack.size() - prev_stack_top;
 
 							if (classic_for) {
 								if (num_children != 4) {
-									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete 'for' expression", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::For_AST_Node>(currentScope, prev_stack_top);
 							}
 							else {
 								if (num_children != 3) {
-									throw exception::eval_error("Incomplete ranged-for expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete ranged-for expression", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::Ranged_For_AST_Node>(currentScope, prev_stack_top);
 							}
@@ -8139,7 +8022,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Char('(')) {
-								throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position);
 							}
 
 							SkipWS(true);
@@ -8153,7 +8036,7 @@ namespace GoodLang {
 								if (classic_for) classic_for = classic_for && Char(')');
 
 								if (!classic_for) {
-									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position);
 								}
 
 								classic_for = false;
@@ -8162,20 +8045,20 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'parallel_for' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'parallel_for' block", (File_Position)m_position);
 							}
 
 							const auto num_children = m_match_stack.size() - prev_stack_top;
 
 							if (classic_for) {
 								if (num_children != 3) {
-									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete 'parallel_for' expression", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::Parallel_For_AST_Node>(currentScope, prev_stack_top);
 							}
 							else {
 								if (num_children != 3) {
-									throw exception::eval_error("Incomplete ranged-parallel_for expression", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete ranged-parallel_for expression", (File_Position)m_position);
 								}
 								build_match<AST_Nodes::Parallel_Ranged_For_AST_Node>(currentScope, prev_stack_top);
 							}
@@ -8222,7 +8105,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Operator(currentScope)) {
-								throw exception::eval_error("Incomplete 'case' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'case' expression", (File_Position)m_position);
 							}
 
 							SkipWS(true);
@@ -8232,7 +8115,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'case' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'case' block", (File_Position)m_position);
 							}
 
 							build_match<AST_Nodes::Case_AST_Node>(currentScope, prev_stack_top);
@@ -8249,7 +8132,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'default' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'default' block", (File_Position)m_position);
 							}
 
 							build_match<AST_Nodes::Default_AST_Node>(currentScope, prev_stack_top);
@@ -8264,11 +8147,11 @@ namespace GoodLang {
 
 						if (Keyword("switch")) {
 							if (!Char('(')) {
-								throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position);
 							}
 
 							if (!(Operator(currentScope) && Char(')'))) {
-								throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'switch' expression", (File_Position)m_position);
 							}
 
 							SkipWS(true);
@@ -8283,11 +8166,11 @@ namespace GoodLang {
 								SkipWS(true);
 
 								if (!Char('}')) {
-									throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
+									throw exception::eval_error("Incomplete block", (File_Position)m_position);
 								}
 							}
 							else {
-								throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete block", (File_Position)m_position);
 							}
 
 							build_match<AST_Nodes::Switch_AST_Node>(currentScope, prev_stack_top);
@@ -8309,7 +8192,7 @@ namespace GoodLang {
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'try' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'try' block", (File_Position)m_position);
 							}
 
 							bool has_matches = true;
@@ -8437,12 +8320,36 @@ namespace GoodLang {
 								throw exception::eval_error("Incomplete 'class' block: class must have a name", (File_Position)m_position);
 							}
 
+
+							std::string desired_namespace = currentScope->GetQualifiedNamespace() + "::" + std::string(GetText(m_match_stack.back().first));
+
+							static auto fixNamespace{ [](std::string& x) {
+								while (x.find("::") == 0 && x.length() > 2) {
+									x = x.substr(2);
+								}
+
+								while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+							} };
+							fixNamespace(desired_namespace);
+
+							// if the namespace already exists, then we should "resume" it, rather than creating a new one. 
+							auto newNamespace = currentScope->FindClass(desired_namespace);
+							if (!newNamespace) {
+								newNamespace = std::make_shared<Class>(currentScope, std::string(GetText(m_match_stack.back().first)));
+								newNamespace->SetSelf(newNamespace);
+								currentScope->AddChild(newNamespace); // add the new namespace as a child
+
+								// Default Constructors
+								newNamespace->AddDefaultConstructors();
+							}
+
+
 							// instead of collecting statements, we want to collect declarations...
-							if (!DeclarationsBlock(currentScope)) {
+							if (!DeclarationsBlock(newNamespace)) {
 								throw exception::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", (File_Position)m_position);
 							}
 
-							build_match<AST_Nodes::Class_AST_Node>(currentScope, prev_stack_top);
+							build_match<AST_Nodes::Class_AST_Node>(newNamespace, prev_stack_top);
 						}
 						return retval;
 					};
@@ -8464,12 +8371,25 @@ namespace GoodLang {
 								throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", (File_Position)m_position);
 							}
 
+							std::string desired_namespace = currentScope->GetQualifiedNamespace() + "::" + std::string(GetText(m_match_stack.back().first));
+							static auto fixNamespace{ [](std::string& x) {
+								while (x.find("::") == 0 && x.length() > 2) {
+									x = x.substr(2);
+								}
+								while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+							} };
+							fixNamespace(desired_namespace);
+							auto newNamespace = currentScope->FindNamespace(desired_namespace);
+							if (!newNamespace) {
+								newNamespace = std::make_shared<Namespace>(currentScope, std::string(GetText(m_match_stack.back().first)));
+								newNamespace->SetSelf(newNamespace);
+								currentScope->AddChild(newNamespace); // add the new namespace as a child
+							}
 							// instead of collecting statements, we want to collect declarations...
-							if (!DeclarationsBlock(currentScope)) {
+							if (!DeclarationsBlock(newNamespace)) {
 								throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", (File_Position)m_position);
 							}
-
-							build_match<AST_Nodes::Namespace_AST_Node>(currentScope, prev_stack_top);
+							build_match<AST_Nodes::Namespace_AST_Node>(newNamespace, prev_stack_top);
 						}
 						return retval;
 					};
@@ -8511,7 +8431,9 @@ namespace GoodLang {
 						}
 
 						// Block
-						if (!Block(currentScope)) {
+						auto this_scope = std::make_shared<Scope>(currentScope);
+						this_scope->SetSelf(this_scope);						
+						if (!Block(this_scope)) {
 							return failure();
 						}
 
@@ -8522,10 +8444,6 @@ namespace GoodLang {
 
 					/// Top level parser, starts parsing of all known parses
 					bool Declarations(const std::shared_ptr<Scope>& currentScope) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						SkipWS();
 
 						bool retval = false;
@@ -8537,25 +8455,23 @@ namespace GoodLang {
 
 							// TO-DO, complete impl of these evaluations:
 
-							if (DeclNamespace(thisScope) || DeclFunction(thisScope) || DeclClass(thisScope)) {
+							if (DeclNamespace(currentScope) || DeclFunction(currentScope) || DeclClass(currentScope)) {
 								if (!saw_eol) {
-									throw exception::eval_error("Two function definitions missing line separator",
-										(File_Position)start);
+									throw exception::eval_error("Two function definitions missing line separator", (File_Position)start);
 								}
 								has_more = true;
 								retval = true;
 								saw_eol = true;
 							}
-							else if (Equation(thisScope)) {
+							else if (Equation(currentScope)) {
 								if (!saw_eol) {
-									throw exception::eval_error("Two expressions missing line separator",
-										(File_Position)start);
+									throw exception::eval_error("Two expressions missing line separator", (File_Position)start);
 								}
 								has_more = true;
 								retval = true;
 								saw_eol = false;
 							}
-							else if (DeclarationsBlock(thisScope) || Eol()) {
+							else if (DeclarationsBlock(currentScope) || Eol()) {
 								has_more = true;
 								retval = true;
 								saw_eol = true;
@@ -8569,10 +8485,6 @@ namespace GoodLang {
 
 					/// Top level parser, starts parsing of all known parses
 					bool Statements(const std::shared_ptr<Scope>& currentScope) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						SkipWS();
 
 						bool retval = false;
@@ -8581,28 +8493,23 @@ namespace GoodLang {
 
 						while (has_more) {
 							const auto start = m_position;
-
-							// TO-DO, complete impl of these evaluations:
-
-							if (DeclNamespace(thisScope) || DeclClass(thisScope) || DeclFunction(thisScope) || /*Def(thisScope) || */ Try(thisScope) || If(thisScope) || While(thisScope) || /* Class(thisScope) || */ For(thisScope) || Switch(thisScope) || Eval(thisScope)) {
+							if (DeclNamespace(currentScope) || DeclClass(currentScope) || DeclFunction(currentScope) || /*Def(currentScope) || */ Try(currentScope) || If(currentScope) || While(currentScope) || /* Class(currentScope) || */ For(currentScope) || Switch(currentScope) || Eval(currentScope)) {
 								if (!saw_eol) {
-									throw exception::eval_error("Two function definitions missing line separator",
-										(File_Position)start);
+									throw exception::eval_error("Two function definitions missing line separator", (File_Position)start);
 								}
 								has_more = true;
 								retval = true;
 								saw_eol = true;
 							}
-							else if (Return(thisScope) || Break(thisScope) || Continue(thisScope) || Equation(thisScope)) {
+							else if (Return(currentScope) || Break(currentScope) || Continue(currentScope) || Equation(currentScope)) {
 								if (!saw_eol) {
-									throw exception::eval_error("Two expressions missing line separator",
-										(File_Position)start);
+									throw exception::eval_error("Two expressions missing line separator", (File_Position)start);
 								}
 								has_more = true;
 								retval = true;
 								saw_eol = false;
 							}
-							else if (Block(thisScope) || Eol()) {
+							else if (Block(currentScope) || Eol()) {
 								has_more = true;
 								retval = true;
 								saw_eol = true;
@@ -8613,7 +8520,7 @@ namespace GoodLang {
 						}
 						return retval;
 					};
-					
+
 					/// Reads a curly-brace C-style block from input
 					bool Block(const std::shared_ptr<Scope>& currentScope) {
 						bool retval = false;
@@ -8621,23 +8528,19 @@ namespace GoodLang {
 						const auto prev_stack_top = m_match_stack.size();
 
 						if (Char('{')) {
-							// increment the scope
-							auto thisScope = std::make_shared<Scope>(currentScope);
-							thisScope->SetSelf(thisScope);
-
 							retval = true;
 
 							Statements(currentScope);
 
 							if (!Char('}')) {
-								throw exception::eval_error("Incomplete block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete block", (File_Position)m_position);
 							}
 
 							if (m_match_stack.size() == prev_stack_top) {
 								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
 							}
 
-							build_match<AST_Nodes::Block_AST_Node>(thisScope, prev_stack_top);
+							build_match<AST_Nodes::Block_AST_Node>(currentScope, prev_stack_top);
 						}
 
 						return retval;
@@ -8655,7 +8558,7 @@ namespace GoodLang {
 							Declarations(currentScope);
 
 							if (!Char('}')) {
-								throw exception::eval_error("Incomplete declaration block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete declaration block", (File_Position)m_position);
 							}
 
 							if (m_match_stack.size() == prev_stack_top) {
@@ -8670,10 +8573,6 @@ namespace GoodLang {
 
 					/// Reads a curly-brace C-style block from input -- note that this scope is special and cannot find objects from parent scopes. 
 					bool FunctionBlock(const std::shared_ptr<Scope>& currentScope) {
-						// increment the scope
-						auto thisScope = std::make_shared<Scope>(currentScope);
-						thisScope->SetSelf(thisScope);
-
 						bool retval = false;
 
 						const auto prev_stack_top = m_match_stack.size();
@@ -8684,14 +8583,14 @@ namespace GoodLang {
 							Statements(currentScope);
 
 							if (!Char('}')) {
-								throw exception::eval_error("Incomplete function block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete function block", (File_Position)m_position);
 							}
 
 							if (m_match_stack.size() == prev_stack_top) {
 								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(), nullptr });
 							}
 
-							build_match<AST_Nodes::Function_Block_AST_Node>(thisScope, prev_stack_top);
+							build_match<AST_Nodes::Function_Block_AST_Node>(currentScope, prev_stack_top);
 						}
 
 						return retval;
@@ -8720,23 +8619,23 @@ namespace GoodLang {
 							retval = true;
 							SkipWS(true);
 							if (!Char('(')) {
-								throw exception::eval_error("Incomplete 'if' expression: cannot find '('", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'if' expression: cannot find '('", (File_Position)m_position);
 							}
 							SkipWS(true);
 							if (!Equation(currentScope)) {
-								throw exception::eval_error("Incomplete 'if' expression: cannot find equation block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'if' expression: cannot find equation block", (File_Position)m_position);
 							}
 							SkipWS(true);
 							const bool is_if_init = Eol() && Equation(currentScope);
 							SkipWS(true);
 							if (!Char(')')) {
-								throw exception::eval_error("Incomplete 'if' expression: cannot find ')'", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'if' expression: cannot find ')'", (File_Position)m_position);
 							}
 
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
-								throw exception::eval_error("Incomplete 'if' block", (File_Position)m_position, "");
+								throw exception::eval_error("Incomplete 'if' block", (File_Position)m_position);
 							}
 
 							bool has_matches = true;
@@ -8751,7 +8650,7 @@ namespace GoodLang {
 									else {
 										SkipWS(true);
 										if (!Block(currentScope)) {
-											throw exception::eval_error("Incomplete 'else' block", (File_Position)m_position, "");
+											throw exception::eval_error("Incomplete 'else' block", (File_Position)m_position);
 										}
 										has_matches = true;
 									}
@@ -8795,14 +8694,17 @@ namespace GoodLang {
 						return parse_internal(t_input, currentScope);
 					};
 					ParseNode parse_internal(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) {
+						auto this_scope = std::make_shared<Scope>(currentScope);
+						this_scope->SetSelf(this_scope);
+
 						const auto begin = t_input.empty() ? nullptr : &t_input.front();
 						const auto end = begin == nullptr ? nullptr : begin + t_input.size();
 						m_position = Position(begin, end);
 
 						// top level stack        
-						if (Statements(currentScope)) {
+						if (Statements(this_scope)) {
 							if (m_position.has_more()) {
-								throw exception::eval_error("Unparsed input", (File_Position)m_position, "");
+								throw exception::eval_error("Unparsed input", (File_Position)m_position);
 							}
 							else {
 								// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
@@ -8811,7 +8713,7 @@ namespace GoodLang {
 									m_match_stack.insert(m_match_stack.begin(), std::move(*i));
 									i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
 								}
-								build_match<AST_Nodes::File_AST_Node>(currentScope, 0);
+								build_match<AST_Nodes::File_AST_Node>(this_scope, 0);
 							}
 						}
 						else {
@@ -8820,7 +8722,7 @@ namespace GoodLang {
 
 						ParseNode retval = m_match_stack.front();
 						m_match_stack.clear();
-
+						// retval.second = currentScope;
 						return retval;
 					};
 					ParseNode parse_instr_eval(const std::string& t_input, const std::shared_ptr<Scope>& currentScope) {
@@ -8866,6 +8768,65 @@ int main() {
 		std::vector<std::string_view> DebugScripts;
 		if (1) {
 			DebugScripts = {
+				R"(
+					namespace UI {
+						class Color{
+							double R = 0;
+							double G = 0;
+							double B = 0;
+
+							string to_string() {
+								return "r${ this.R.int }g${ this.G.int }b${ this.B.int }";
+							};
+							double lum() {
+								return (this.R + this.B + this.G) / 3.0;
+							};
+						};
+					};
+					UI::Color fill; {
+						fill.R = 255;
+						fill.G = 0;
+						fill.B = 0;
+					}
+					fill = UI::Color();
+					return fill.to_string;
+				)",
+				R"(
+					namespace UI {
+						class Color{
+							double R = 0;
+							double G = 0;
+							double B = 0;
+
+							string to_string() {
+								return "r${ this.R.int }g${ this.G.int }b${ this.B.int }";
+							};
+							double lum() {
+								return (this.R + this.B + this.G) / 3.0;
+							};
+						};
+						class Rectangle {
+							Color fill = Color();
+							Color border = Color();
+							Vector border_thickness = [0.0, 0.0, 0.0, 0.0];							
+
+							string to_string() {
+								return "Fill: ${ fill }, Border: ${ border } @ ${ border_thickness }"
+							};
+						};
+
+					};
+					UI::Rectangle rect;{
+						rect.fill.R = 255;
+						rect.fill.G = 0;
+						rect.fill.B = 0;
+						rect.border_thickness[0] = 1.0;
+						rect.border_thickness[0] = 1.0;
+						rect.border_thickness[0] = 1.0;
+						rect.border_thickness[0] = 1.0;
+					}
+					return rect.to_string;
+				)",
 				R"(
 					print(ONE_HUNDRED);
 
@@ -9007,8 +8968,24 @@ int main() {
 							return (this.R + this.B + this.G) / 3.0;
 						};
 					};
-					// Color out; // <<-- this is not valid because class Color{} is not compiled until runtime. 
-					auto out = Color(); 
+					var& out := Color(); 
+					out.R = 256.0;
+					return [out.to_string, out.Type.to_string, lum(out)];
+				)",
+	            R"(
+					class Color{
+						double R = 128;
+						double G = 128;
+						double B = 128;
+
+						string to_string() {
+							return "r${ this.R.int }g${ this.G.int }b${ this.B.int }";
+						};
+						double lum() {
+							return (this.R + this.B + this.G) / 3.0;
+						};
+					};
+					Color out; 
 					out.R = 256.0;
 					return [out.to_string, out.Type.to_string, lum(out)];
 				)",
@@ -9232,7 +9209,7 @@ int main() {
 							};
 
 							// invalid static objects may reduce down to (for example) Var_Decl and should be rejected.
-							auto invalid_static_object;	
+							// auto invalid_static_object; << this would throw
 						};
 
 						out := [ TEST::FunctionName(), TEST::FunctionName(5), TEST::FunctionName(5, 5) ];
@@ -9609,14 +9586,29 @@ int main() {
 			
 			print(ToString("\nScript #") + ToString(scriptN++) + ToString(": "));
 
-			try {
-				auto parsed_result = GoodLang::Engine::Compiler::Interpreter::Parser().Parse(expandedScript);
+			auto this_scope = StartScope(globalScope);
+			try {				
+				auto parsed_result = GoodLang::Engine::Compiler::Interpreter::Parser().Parse(expandedScript, this_scope);
 				Stopwatch sw;
 				sw.Start();
 				auto result = parsed_result.first->eval(parsed_result.second);
 				sw.Stop();
 				print(ToString(parsed_result));
 				print(GoodLang::printf("\t (%f sec) -> \t", (float)sw.Seconds_Passed()) + ToString(result));
+			}
+			catch (GoodLang::Engine::exception::eval_error& e) {
+				if (e.start_position.position >= 0 && e.start_position.position < expandedScript.length()) {
+					print("####");
+					print(expandedScript.substr(0, e.start_position.position));
+					print(GoodLang::ToString(" __ ||| __ ") + e.reason);
+					print(expandedScript.substr(e.start_position.position));
+					print("####");
+				}
+				else {
+					print("####");
+					print(e.what());
+					print("####");
+				}
 			}
 			catch (std::exception& e) {
 				print("####");

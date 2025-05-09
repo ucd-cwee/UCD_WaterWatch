@@ -2331,7 +2331,68 @@ namespace GoodLang {
 				else {
 					throw(exception::not_found_error("Custom class type was no longer available"));
 				}
-			}, ParamTypes({ ClassType->MakeRef(), ClassType->MakeConstRef() })));
+			}, ParamTypes({ ClassType->MakeRef(), ClassType->MakeConstRef() }), ClassType->MakeRef()));
+
+			// Comparisons
+			this->AddFunction("==", make_callable([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& to, Any const& from)-> bool {
+				DynamicObject& To = to.cast<DynamicObject&>();
+				DynamicObject const& From = from.cast<DynamicObject const&>();
+				if (auto self = selfPtr.lock()) {
+					bool success = To.m_objects->size() == From.m_objects->size();
+					if (!success) return false;
+					for (auto& obj : *To.m_objects) {
+						success = success && self->CallFunction("==", { obj.second, From.m_objects->at(obj.first) });
+						if (!success) return false;
+					}
+					return success;
+				}
+				else {
+					throw(exception::not_found_error("Custom class type was no longer available"));
+				}
+			}, ParamTypes({ ClassType->MakeConstRef(), ClassType->MakeConstRef() })));
+			this->AddFunction("!=", make_callable([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& to, Any const& from)-> bool {
+				if (auto self = selfPtr.lock()) {
+					return !self->Cast<bool>(self->CallFunction("==", { to, from }));
+				}
+				else {
+					throw(exception::not_found_error("Custom class type was no longer available"));
+				}
+			}, ParamTypes({ ClassType->MakeConstRef(), ClassType->MakeConstRef() })));
+
+			this->GetTypeConverterTree()->AddConverter([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& from)->Any {
+				DynamicObject const& obj = from.cast<DynamicObject const&>();
+				if (auto self = selfPtr.lock()) {
+					DynamicObject out{ self->GetClassType() };
+					self->ConstructMemberObjects(out, obj);
+					return out;
+				}
+				else {
+					throw(exception::not_found_error("Custom class type was no longer available"));
+				}
+			}, ClassType->MakeBase(), ClassType->MakeBase());
+			this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
+				return from;
+			}, ClassType->MakeBase(), ClassType->MakeRef());
+			this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
+				return from;
+			}, ClassType->MakeBase(), ClassType->MakeConstRef());
+			this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
+				return from;
+			}, ClassType->MakeRef(), ClassType->MakeConstRef());
+			this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
+				return from;
+			}, ClassType->MakeConstRef(), ClassType->MakeConstRef());
+			this->GetTypeConverterTree()->AddConverter([selfPtr = std::weak_ptr<Class>(std::dynamic_pointer_cast<Class>(p_self.lock()))](Any const& from)->Any {
+				DynamicObject const& obj = from.cast<DynamicObject const&>();
+				if (auto self = selfPtr.lock()) {
+					DynamicObject out{ self->GetClassType() };
+					self->ConstructMemberObjects(out, obj);
+					return out;
+				}
+				else {
+					throw(exception::not_found_error("Custom class type was no longer available"));
+				}
+			}, ClassType->MakeConstRef(), ClassType->MakeBase());
 
 			// upcast constructor for inherited types
 			for (auto& derivedFrom : DerivedFrom) {
@@ -2348,20 +2409,6 @@ namespace GoodLang {
 					}, ParamTypes({ ClassType->MakeConstRef() }), parentClass->GetClassType()));
 				}
 			}
-
-			//// Member objects
-			//for (auto& member_obj : this->GetMemberObjects()) {
-			//	// ref access
-			//	this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-			//		DynamicObject& From = from.cast<DynamicObject&>();
-			//		return From.m_objects->at(objName);
-			//	}, ParamTypes({ ClassType->MakeRef() }), member_obj.second.lock()->MakeRef()));
-			//	// const ref access
-			//	this->AddFunction(member_obj.first, make_callable([objName = member_obj.first](Any const& from)->Any {
-			//		DynamicObject const& From = from.cast<DynamicObject const&>();
-			//		return From.m_objects->at(objName);
-			//	}, ParamTypes({ ClassType->MakeConstRef() }), member_obj.second.lock()->MakeConstRef()));
-			//}
 		}
 	};
 	void Class::DeclareMemberObject(std::string const& name, std::weak_ptr<Type_Info> type, std::shared_ptr<Any> defaultValue) {
@@ -2372,14 +2419,16 @@ namespace GoodLang {
 			// ref access
 			this->AddFunction(name, make_callable([objName = name](Any const& from)->Any {
 				DynamicObject& From = from.cast<DynamicObject&>();
-				return From.m_objects->at(objName);
-				}, ParamTypes({ ClassType->MakeRef() }), type.lock()->MakeRef()));
+				auto temp = From.m_objects->at(objName);
+				return Any(temp);
+			}, ParamTypes({ ClassType->MakeRef() }), type.lock()->MakeRef()));
 
 			// const ref access
 			this->AddFunction(name, make_callable([objName = name](Any const& from)->Any {
 				DynamicObject const& From = from.cast<DynamicObject const&>();
-				return From.m_objects->at(objName);
-				}, ParamTypes({ ClassType->MakeConstRef() }), type.lock()->MakeConstRef()));
+				auto temp = From.m_objects->at(objName);
+				return Any(temp);
+			}, ParamTypes({ ClassType->MakeConstRef() }), type.lock()->MakeConstRef()));
 		}
 	};
 	bool Class::TryFindNearestScopeWhere(
