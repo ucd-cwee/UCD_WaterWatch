@@ -1956,7 +1956,12 @@ namespace GoodLang {
 	};
 	namespace Impl {
 		__forceinline void ToString(Tag<DynamicObject>, DynamicObject const& r, std::string& out) {
-			out = GoodLang::ToString(r.m_actualType) + "{ " + GoodLang::ToString(r.m_objects) + " }";
+			if (!r.m_actualType.expired())
+				out = GoodLang::ToString(r.m_actualType) + "{ " + GoodLang::ToString(r.m_objects) + " }";
+			else if (!r.m_classType.expired())
+				out = GoodLang::ToString(r.m_classType) + "{ " + GoodLang::ToString(r.m_objects) + " }";
+			else 
+				out = GoodLang::ToString(r.m_objects);
 		};
 		__forceinline void GetChildren(Tag<DynamicObject>, DynamicObject const& r, std::vector< NodeCache >& out) {
 			out = { GoodLang::GetChildren(r.m_objects) };
