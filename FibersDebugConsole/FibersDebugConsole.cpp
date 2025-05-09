@@ -2990,6 +2990,15 @@ namespace GoodLang {
 						std::string function_name;
 						std::weak_ptr<details::Proxy_Function_Base> Function;
 					};
+					struct Unused_Return_Fun_Call_AST_Node final : Fun_Call_AST_Node {
+						Unused_Return_Fun_Call_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+							: Fun_Call_AST_Node(currentScope, std::move(t_ast_node_text), std::move(t_loc), std::move(t_children))
+						{}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return this->template do_eval_internal<false>(currentScope);
+						};
+					};
 					// 
 					struct Equation_AST_Node final : AST_Node_Impl {
 						Equation_AST_Node(const std::shared_ptr<Scope>& currentScope, std::string t_ast_node_text, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
@@ -5062,6 +5071,21 @@ namespace GoodLang {
 						}
 					};
 
+					struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl {
+						Fold_Right_Binary_Operator_AST_Node(const std::shared_ptr<Scope>& currentScope, const std::string& t_oper, Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, Any t_rhs)
+							: AST_Node_Impl(t_oper, AST_Node_Type::BinaryFoldRight, std::move(t_loc), std::move(t_children))
+							, m_oper(Operators::to_operator(t_oper))
+							, m_rhs(std::move(t_rhs))
+						{}
+
+						Any eval_internal(const std::shared_ptr<Scope>& currentScope) const override {
+							return currentScope->CallFunction(this->text, { this->children[0]->eval(currentScope), m_rhs });
+						};
+
+					private:
+						Operators::Opers m_oper;
+						Any m_rhs;
+					};
 
 				};
 
@@ -5343,13 +5367,340 @@ namespace GoodLang {
 						}
 					};
 
+					// removes the scope from blocks if they do not have declarations at all
+					struct Block {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Block) {
+								if (!contains_var_decl_in_scope(*node)) {
+									if (node->children.size() == 1) {
+										node = std::move(node->children[0]);
+										return true;
+									}
+									else {
+										node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Scopeless_Block_AST_Node>(
+											currentScope,
+											node->text,
+											node->location,
+											std::move(node->children)
+										));
+										return true;
+									}
+								}
+							}
+							else if (node->identifier == AST_Node_Type::Scopeless_Block) {
+								if (!contains_var_decl_in_scope(*node)) {
+									if (node->children.size() == 1) {
+										node = std::move(node->children[0]);
+										return true;
+									}
+								}
+							}
+							return false;
+						}
+					};
+
+					// If a function call's return value was going to be unused, there may be no point to holding onto it. 
+					struct Unused_Fun_Return {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							bool result = false;
+							if ((node->identifier == AST_Node_Type::Block || node->identifier == AST_Node_Type::Scopeless_Block) && !node->children.empty()) {
+								for (size_t i = 0; i < node->children.size() - 1; ++i) {
+									auto child = node->children[i].get();
+									if (child->identifier == AST_Node_Type::Fun_Call) {
+										node->children[i] = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Unused_Return_Fun_Call_AST_Node>(
+											currentScope,
+											child->text,
+											child->location,
+											std::move(child->children)
+											));
+										result = true;
+									}
+								}
+							}
+							else if ((node->identifier == AST_Node_Type::For || node->identifier == AST_Node_Type::While) && child_count(*node) > 0) {
+								auto& child = child_at(*node, child_count(*node) - 1);
+								if (child.identifier == AST_Node_Type::Block || child.identifier == AST_Node_Type::Scopeless_Block) {
+									auto num_sub_children = child_count(child);
+									for (size_t i = 0; i < num_sub_children; ++i) {
+										auto& sub_child = child_at(child, i);
+										if (sub_child.identifier == AST_Node_Type::Fun_Call) {
+											child.children[i] = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Unused_Return_Fun_Call_AST_Node>(
+												currentScope,
+												sub_child.text,
+												sub_child.location,
+												std::move(sub_child.children)
+												));
+											result = true;
+										}
+									}
+								}
+							}
+							return result;
+						}
+					};
+
+					// If the condition of an If statement is constant and known, then simply skip the check and hard-code the correct path. 
+					struct If {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if ((node->identifier == AST_Node_Type::If) && node->children.size() >= 2 && node->children[0]->identifier == AST_Node_Type::Constant) {
+								try {
+									if (currentScope->Cast<bool>(dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value)) {
+										// "TRUE" statement is the exclusive path
+										node = std::move(node->children[1]);
+										return true;
+									}
+									else if (node->children.size() == 3) {
+										// "FALSE" statement is the exclusive path (and a false path is even present)
+										node = std::move(node->children[2]);
+										return true;
+									}
+									else {
+										// do nothing?
+										node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Noop_AST_Node>());
+										return true;
+									}
+								}
+								catch (...) {
+									return false;
+								}
+							}
+							return false;
+						}
+					};
+
+					// Try to fold a basic prefix operation with a constant value
+					struct PrefixFold {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Prefix
+								&& node->children.size() == 1
+								&& node->children[0]->identifier == AST_Node_Type::Constant
+								) {
+								const Any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value;
+								try {
+									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+										node->text, node->location, currentScope->CallFunction(node->text, const_cast<Any&>(rhs))
+									));
+									return true;
+								}
+								catch (...) {
+									// failure to fold -- that's OK. 
+									return false;
+								}
+							}
+							return false;
+						}
+					};
+
+					// postfix's (++/--) on constant values should simply return the same constant value before the change anyways. 
+					struct PostfixFold {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Postfix
+								&& node->children.size() == 1
+								&& node->children[0]->identifier == AST_Node_Type::Constant
+								&& ((node->text == "++") || (node->text == "--"))
+								) {
+								node = std::move(node->children[0]);
+								return true;
+							}
+							return false;
+						}
+					};
+
+					// Try to fold a basic binary operation between two constant values (e.g. std::string + std::string, or Units::foot == Units::meter)
+					struct BinaryFold {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::Binary
+								&& node->children.size() == 2
+								&& node->children[0]->identifier == AST_Node_Type::Constant
+								&& node->children[1]->identifier == AST_Node_Type::Constant
+							) {
+								const Any& lhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value;
+								const Any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1].get())->m_value;
+
+								try {
+									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+										node->text, node->location, currentScope->CallFunction(node->text, { lhs, rhs })
+									));
+									return true;
+								}
+								catch (...) {
+									// failure to fold -- that's OK
+									return false;
+								}
+							}
+							return false;
+						}
+					};
+
+					// Try to fold a basic binary operation (e.g. +/-/*) with one constant value, to speed-up evaluation in the future
+					struct PartialBinaryFold {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							// Fold right side
+							if (node->identifier == AST_Node_Type::Binary
+								&& node->children.size() == 2
+								&& node->children[0]->identifier != AST_Node_Type::Constant
+								&& node->children[1]->identifier == AST_Node_Type::Constant
+								) {
+								try {
+									const auto& oper = node->text;
+									const auto parsed = Operators::to_operator(oper);
+									if (parsed != Operators::Opers::invalid) {
+										const auto rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1].get())->m_value;
+										node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Fold_Right_Binary_Operator_AST_Node>(
+											currentScope, node->text, node->location, std::move(node->children), rhs
+											));
+										return true;
+									}
+								}
+								catch (const std::exception&) {
+									// failure to fold, that's OK
+									return false;
+								}
+							}
+
+							return false;
+						}
+					};
+
+					// If an Inline_Array is made-up of const elements, then evaluate and store it as constexpr too.
+					struct ConstArray {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							// Fold right side
+							if (node->identifier == AST_Node_Type::Inline_Array
+								&& node->children.size() == 1
+								&& node->children[0]->identifier == AST_Node_Type::Arg_List
+								) {
+								auto& argList = *node->children.back();
+
+								bool allItemsAreConst = true;
+								for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+									if (argList.children[childIndex]->identifier != AST_Node_Type::Constant) {
+										allItemsAreConst = false;
+										break;
+									}
+								}
+
+								if (allItemsAreConst) {
+									Vector<Var> constArray;
+									for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+										Any rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(argList.children[childIndex].get())->m_value;
+										rhs.SetFlag(AnyData::Flag::constant, true);
+										constArray.push_back(Var(std::move(rhs)));
+									}
+									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+										node->text, node->location, std::move(constArray)
+									));
+									return true;
+								}
+							}
+							return false;
+						}
+					};
+
+					// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
+					struct ConstMap {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							// Fold right side
+							if (node->identifier == AST_Node_Type::Inline_Map
+								&& node->children.size() == 1
+								&& node->children[0]->identifier == AST_Node_Type::Arg_List
+								) {
+								auto& argList = *node->children.back();
+
+								bool allItemsAreConst = true;
+								for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+									if (argList.children[childIndex]->identifier == AST_Node_Type::Map_Pair) {
+										auto& map_pair = *dynamic_cast<AST_Nodes::Map_Pair_AST_Node*>(argList.children[childIndex].get());
+										if (
+											(map_pair.children[0]->identifier == AST_Node_Type::Constant) &&
+											(map_pair.children[1]->identifier == AST_Node_Type::Constant)
+											) {
+											continue;
+										}
+										else {
+											allItemsAreConst = false;
+											break;
+										}
+									}
+									else {
+										allItemsAreConst = false;
+										break;
+									}
+								}
+
+								if (allItemsAreConst) {
+									Any constArray{ Map<size_t, std::pair<Var, Var>>() };
+									if (!node->children.empty()) {
+										for (const auto& child : node->children[0]->children) {
+											auto rhs_key = child->children[0]->eval(currentScope);
+											auto rhs_val = child->children[1]->eval(currentScope);
+
+											rhs_key.SetFlag(AnyData::Flag::constant, true);
+											rhs_val.SetFlag(AnyData::Flag::constant, true);
+
+											currentScope->CallFunction("emplace", {
+												constArray,
+												rhs_key,
+												rhs_val
+												});
+										}
+									}
+									constArray.SetFlag(AnyData::Flag::constant, true);
+
+									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+										node->text, node->location, std::move(constArray)
+									));
+									return true;
+								}
+							}
+							return false;
+						}
+					};
+
+					// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
+					struct ForLoopSignature {
+						bool optimize(AST_Node_Impl_Ptr& node, const std::shared_ptr<Scope>& currentScope) {
+							if (node->identifier == AST_Node_Type::For
+								&& node->children.size() >= 4
+								) {
+								// x++ into ++x;
+								if (node->children[2]->identifier == AST_Node_Type::Postfix) { // x++
+									switch (hash(GetText(node->children[2]))) {
+									case hash("++"):
+										node->children[2] = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Prefix_AST_Node>(
+											currentScope, "++", node->children[2]->location, std::move(node->children[2]->children)
+										));
+										return true;
+									case hash("--"):
+										node->children[2] = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Prefix_AST_Node>(
+											currentScope, "--", node->children[2]->location, std::move(node->children[2]->children)
+										));
+										return true;
+									default:
+										return false;
+									};
+								}
+							}
+							return false;
+						};
+					};
+
 					using Optimizer_Default = Optimizer<
-						Return,
-						Dead_Code, 
-						Example,
-						ArgListFileConstant,
-						VarDeclEquation_To_RetroactiveAssignment,
-						ToStringFunctionCallWithConstant
+						optimizer::PostfixFold,
+						optimizer::PrefixFold,
+						optimizer::BinaryFold,
+						optimizer::PartialBinaryFold,
+						optimizer::Unused_Fun_Return,
+						optimizer::ArgListFileConstant,
+						optimizer::VarDeclEquation_To_RetroactiveAssignment,
+						optimizer::ToStringFunctionCallWithConstant,
+						optimizer::ConstArray,
+						optimizer::ConstMap,
+						optimizer::If,
+						optimizer::Return,
+						optimizer::Dead_Code,
+						optimizer::ForLoopSignature,
+						optimizer::Block
 					>;
 
 				public:
