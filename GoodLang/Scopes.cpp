@@ -752,16 +752,16 @@ namespace GoodLang {
 		}
 #endif
 
-		if (TryFindNearestNamespaceWhere(out, [tryFind = typeInfo](std::shared_ptr<Namespace> const& namespacePtr)->bool {
+		if (TryFindNearestNamespaceWhere(out, [tryFind = GetHash(typeInfo)](std::shared_ptr<Namespace> const& namespacePtr)->bool {
 			if (auto ptr = std::dynamic_pointer_cast<Scope>(namespacePtr)) {
 				if (ptr->IsClass()) {
-					if (tryFind == ptr->GetClassType()) {
+					if (tryFind == GetHash(ptr->GetClassType())) {
 						return true;
 					}
 				}
 			}
 			return false;
-			})) {
+		})) {
 #ifdef useCachedData
 			InsertCached<2>(treeV, std::dynamic_pointer_cast<Class>(out), typeInfo);
 #endif				
@@ -1765,7 +1765,24 @@ namespace GoodLang {
 				{
 					auto firstParam = params.begin();
 					if (firstParam != params.end()) {
-						firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->ActualType())); // firstParam->Type()
+						firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->ActualType())); 
+						if (!firstParamScopePtr) {
+							if (auto typePtr = firstParam->ActualType().lock()) {
+								if (!typePtr->IsBuiltInType()) {
+									firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(std::dynamic_pointer_cast<Scripted_Type_Info>(typePtr)->m_full_name));
+								}
+							}
+						}
+						if (!firstParamScopePtr) {
+							firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(firstParam->Type())); 
+						}
+						if (!firstParamScopePtr) {
+							if (auto typePtr = firstParam->Type().lock()) {
+								if (!typePtr->IsBuiltInType()) {
+									firstParamScopePtr = std::dynamic_pointer_cast<Scope>(this->FindClass(std::dynamic_pointer_cast<Scripted_Type_Info>(typePtr)->m_full_name));
+								}
+							}
+						}
 					}
 				}
 				// While we normally try to minimize the conversion cost, 

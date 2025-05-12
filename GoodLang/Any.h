@@ -924,10 +924,10 @@ namespace GoodLang {
 		virtual std::function<Any(Any const&)>& GetCopyConstructor() const override;
 		virtual bool IsBuiltInType() const override;
 
+		const std::string m_full_name; // namespace::name
+		const std::string m_qualified_namespace; // namespace
+		const std::string m_name; // name
 	protected:
-		std::string m_full_name; // namespace::name
-		std::string m_qualified_namespace; // namespace
-		std::string m_name; // name
 		size_t m_uniqueHash; // std::hash<std::string>()(m_full_name)
 
 		std::weak_ptr<Scripted_Type_Info> m_self;

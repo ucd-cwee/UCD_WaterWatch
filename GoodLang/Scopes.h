@@ -1058,15 +1058,34 @@ namespace GoodLang {
 				}
 			}
 
+			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
+			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
+
 			if ((!type) || (type->is_void())) {
-				ClassType = std::dynamic_pointer_cast<Type_Info>(std::make_shared<Scripted_Type_Info>(this->p_UniqueName, Name, false, false));
+				std::string sv{ qualifiedNamespaceWithoutQualifiers };
+				static auto fixNamespace{ [](std::string& x) {
+					while (x.find("::") == 0 && x.length() > 2) {
+						x = x.substr(2);
+					}
+
+					while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+				} };
+				fixNamespace(sv);
+				sv = "::" + sv;
+				static auto fixNamespace2{ [Name_p = std::string(Name)] (std::string& x) {
+					while (x.find("::::") == 0 && x.length() >= 4) {
+						x = x.substr(2);
+					}
+					if (x.size() >= Name_p.length() && (x.rfind(Name_p) == (x.length() - Name_p.length()))) { x = x.substr(0, x.length() - Name_p.length()); }
+					while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
+				} };
+				fixNamespace2(sv);
+
+				ClassType = std::dynamic_pointer_cast<Type_Info>(std::make_shared<Scripted_Type_Info>(sv, Name, false, false));
 			}
 			else {
 				ClassType = type;
 			}
-
-			qualifiedNamespaceWithQualifiers = this->GetQualifiedNamespaceImpl(true);
-			qualifiedNamespaceWithoutQualifiers = this->GetQualifiedNamespaceImpl();
 		};
 		Class(std::shared_ptr<FunctionScope> const& parent, std::string const& Name, std::shared_ptr<Type_Info> type, std::vector<std::weak_ptr<Class>> inheritance)
 			: Class(std::dynamic_pointer_cast<Scope>(parent), Name, type, inheritance) {};

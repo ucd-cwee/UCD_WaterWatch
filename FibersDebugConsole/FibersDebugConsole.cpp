@@ -53,6 +53,135 @@ public:
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 
 
+
+namespace GoodLang {
+	namespace Scopes {
+		// Used to identify a individual scope
+		class ScopeID {
+		public:
+			std::string_view 
+				scope_name; // e.g. "Color"
+			size_t 
+				scope_name_hash; // hash of "Color"
+
+			ScopeID(std::string_view scopeName = "") : scope_name(scopeName), scope_name_hash(GetHash(scopeName)) {}			
+		};
+
+		// Used to track and hash the current scope position. 
+		class Breadcrumb {
+		public:
+			ScopeID*
+				this_m; // will always point to the owner node's scope ID
+			Breadcrumb*
+				parent_m; // may be nullptr for root nodes, otherwise will point to the parent breadcrumb node
+			size_t 
+				hash_m; // the resulting hash of the chain
+
+			Breadcrumb(ScopeID& thisNode, Breadcrumb* parent = nullptr) : this_m(&thisNode), parent_m(parent), hash_m(0) {
+				if (parent_m)
+					GoodLang::details::hash_combine(hash_m, parent_m->hash_m, this_m->scope_name_hash);
+				else 
+					GoodLang::details::hash_combine(hash_m, this_m->scope_name_hash);
+			};
+
+		};
+
+		class BasicScope {
+		public:
+			std::weak_ptr< BasicScope >
+				parent_m;
+			GoodLang::details::flat_map< std::string, std::shared_ptr<Any> >
+				objects_m;
+			std::weak_ptr<BasicScope>
+				self_m;
+			ScopeID
+				self_id_m;
+			Breadcrumb
+				breadcrumb_m;
+
+
+
+			BasicScope(std::weak_ptr< BasicScope > const& parent = std::weak_ptr< BasicScope >())
+				: parent_m(parent)
+				, objects_m()
+			{
+				self_id_m = ScopeID(this->Name());
+				if (auto parent = parent_m.lock())
+					breadcrumb_m = Breadcrumb(self_id_m, &parent->breadcrumb_m);
+				else
+					breadcrumb_m = Breadcrumb(self_id_m);
+			};
+
+			virtual std::string_view Name() const { return ""; };
+
+
+			// nearly every scope has a parent scope, with the exception of the ultimate parent scopes. 
+			std::weak_ptr< BasicScope > GetParent() const;
+			void SetSelf(std::shared_ptr<BasicScope> const& Self) {
+				self_m = Self;
+			};
+
+
+
+
+
+
+		};
+
+		/* 
+		During object searches: 
+		- May search parent scopes, and may search all the "using" namespaces, but may not search children
+		During type searches:
+		- May search parennt's 
+		
+		Scopes allow for searching parent's for objects or type info, but not their children for objects or type info. */
+		class Scope; 
+		// 
+		class Namespace;
+		class Class;
+		class Global;
+
+
+
+
+
+	};
+
+
+
+
+
+
+
+
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 namespace GoodLang {
 	namespace utility {
 		struct Static_String {
@@ -8783,12 +8912,13 @@ int main() {
 							};
 						};
 					};
-					UI::Color fill; {
+					UI::Color fill; 
+                    fill = UI::Color();
+                    {
 						fill.R = 255;
 						fill.G = 0;
 						fill.B = 0;
 					}
-					fill = UI::Color();
 					return fill.to_string;
 				)",
 				R"(
@@ -8816,16 +8946,16 @@ int main() {
 						};
 
 					};
-					UI::Rectangle rect;{
-						rect.fill.R = 255;
-						rect.fill.G = 0;
-						rect.fill.B = 0;
-						rect.border_thickness[0] = 1.0;
-						rect.border_thickness[0] = 1.0;
-						rect.border_thickness[0] = 1.0;
-						rect.border_thickness[0] = 1.0;
+					UI::Rectangle rect; {
+						rect.fill().R() = 255;
+						rect.fill().G() = 0;
+						rect.fill().B() = 0;
+						rect.border_thickness()[0] = 1.0;
+						rect.border_thickness()[0] = 1.1;
+						rect.border_thickness()[0] = 1.2;
+						rect.border_thickness()[0] = 1.3;
 					}
-					return rect.to_string;
+					return rect.to_string();
 				)",
 				R"(
 					print(ONE_HUNDRED);
