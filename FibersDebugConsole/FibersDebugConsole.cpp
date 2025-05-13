@@ -104,6 +104,7 @@ namespace GoodLang {
 			BasicScope(std::weak_ptr< BasicScope > const& parent = std::weak_ptr< BasicScope >())
 				: parent_m(parent)
 				, objects_m()
+				, breadcrumb_m(self_id_m)
 			{
 				self_id_m = ScopeID(this->Name());
 				if (auto parent = parent_m.lock())
@@ -120,7 +121,9 @@ namespace GoodLang {
 			void SetSelf(std::shared_ptr<BasicScope> const& Self) {
 				self_m = Self;
 			};
-
+			std::shared_ptr<BasicScope> ChildScope() const {
+				return std::make_shared<BasicScope>(self_m.lock());
+			};
 
 
 
