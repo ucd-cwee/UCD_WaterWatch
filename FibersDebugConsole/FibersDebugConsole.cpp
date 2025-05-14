@@ -55,7 +55,23 @@ public:
 
 
 namespace GoodLang {
-	namespace Scopes {
+	class Scopes {
+	public:
+		class ScopeID;
+		class Breadcrumb; 
+		
+		class BasicScope;
+		class NamespaceScope;
+		class ClassScope;
+		class RootScope;
+		
+		enum ScopeType {
+			Basic = 1,
+			Namespace = 2,
+			Class = 4, 
+			Root = 8
+		};
+
 		// Used to identify a individual scope
 		class ScopeID {
 		public:
@@ -63,86 +79,1072 @@ namespace GoodLang {
 				scope_name; // e.g. "Color"
 			size_t 
 				scope_name_hash; // hash of "Color"
+			std::weak_ptr<Scopes::BasicScope>
+				scope;
+			int
+				scope_type;
 
-			ScopeID(std::string_view scopeName = "") : scope_name(scopeName), scope_name_hash(GetHash(scopeName)) {}			
+			ScopeID(int type = ScopeType::Basic, std::string_view scopeName_p = "", std::weak_ptr<Scopes::BasicScope> scope_p = {})
+				: scope_type(type)
+				, scope_name(scopeName_p)
+				, scope_name_hash(scopeName_p == "" ? 0 : GetHash(scopeName_p))
+				, scope(scope_p)
+			{}
+
+			bool is_namespace() const {
+				return scope_type & ScopeType::Namespace;
+			};
+			bool is_class() const {
+				return scope_type & ScopeType::Class;
+			};
+			bool is_root() const {
+				return scope_type & ScopeType::Root;
+			};
 		};
 
 		// Used to track and hash the current scope position. 
 		class Breadcrumb {
 		public:
+			static bool replace(std::string& str, const std::string& from, const std::string& to) {
+				size_t start_pos = str.find(from);
+				if (start_pos == std::string::npos)
+					return false;
+				str.replace(start_pos, from.length(), to);
+				return true;
+			}
+			static bool replaceAll(std::string& str, const std::string& from, const std::string& to) {
+				if (from.empty())
+					return false;
+				if (from == to)
+					return false;
+				size_t start_pos = 0;
+				bool retval = false;
+				bool retval_t = true;
+				while (retval_t) {
+					start_pos = 0;
+					retval_t = false;
+					while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+						str.replace(start_pos, from.length(), to);
+						start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
+						retval = true;
+						retval_t = true;
+					}
+				}
+				//if (str == from) {
+				//	str = to;
+				//	retval = true;
+				//}
+				return retval;
+			}
+			static void RemoveLeadingAndTrailing(std::string_view& x, char what) {
+				while (
+					(x.length() > 0)
+					&& (x[0] == what)
+				) {
+					x.remove_prefix(1);
+				}
+				while (
+					(x.length() > 0)
+					&& ((x[x.length() - 1] == what))
+				) {
+					x.remove_suffix(1);
+				}
+			};
+			static void RemoveTrailing(std::string_view& x, char what) {
+				while (
+					(x.length() > 0)
+					&& ((x[x.length() - 1] == what))
+					) {
+					x.remove_suffix(1);
+				}
+			};
+			static std::string_view RemoveLeadingAndTrailing(std::string const& text, char what) {
+				std::string_view x(text);
+				RemoveLeadingAndTrailing(x, what);
+				return x;
+			};
+			static std::string_view RemoveTrailing(std::string const& text, char what) {
+				std::string_view x(text);
+				RemoveTrailing(x, what);
+				return x;
+			};
+
+			// clean-up the name of a scope
+			static std::string CleanUpScopeName(std::string x) {	
+				x = "::" + x + "::"; // std::string(RemoveLeadingAndTrailing(x, ':'))
+				(bool)replaceAll(x, "::::", "::");
+				return x;
+			};
+
+
+		public:
+			size_t
+				hash_m; // the resulting hash of the chain
 			ScopeID*
 				this_m; // will always point to the owner node's scope ID
 			Breadcrumb*
 				parent_m; // may be nullptr for root nodes, otherwise will point to the parent breadcrumb node
-			size_t 
-				hash_m; // the resulting hash of the chain
+			Breadcrumb*
+				root_m; // may point to this
+			Breadcrumb*
+				namespace_m; // may point to this
+			std::string
+				current_namespace; // e.g. "::" or "::UI::Color::"
 
-			Breadcrumb(ScopeID& thisNode, Breadcrumb* parent = nullptr) : this_m(&thisNode), parent_m(parent), hash_m(0) {
-				if (parent_m)
-					GoodLang::details::hash_combine(hash_m, parent_m->hash_m, this_m->scope_name_hash);
-				else 
-					GoodLang::details::hash_combine(hash_m, this_m->scope_name_hash);
+			Breadcrumb(ScopeID& thisNode, Breadcrumb* parent = nullptr) 
+				: hash_m(0) 
+				, this_m(&thisNode)
+				, parent_m(parent)
+				, root_m(nullptr)
+				, namespace_m(nullptr)
+			{
+				// ROOT
+				if (parent_m) root_m = parent_m->root_m;
+				else root_m = this;
+
+				// NAMESPACE
+				if (this_m->is_namespace()) namespace_m = this;
+				else if (parent_m) namespace_m = parent_m->namespace_m;
+				else namespace_m = this->root_m;
+
+				// HASH
+				if (parent_m) GoodLang::details::hash_combine(hash_m, parent_m->hash_m, this_m->scope_name_hash);				
+				else hash_m = this_m->scope_name_hash;
+
+				// current_namespace
+				if (this_m->scope_name != "") {
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
+					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+				}
+				else {
+					if (parent_m) current_namespace = parent_m->current_namespace;
+					else current_namespace = "::";
+				}
+			};
+			Breadcrumb(Breadcrumb const& other)
+				: hash_m(other.hash_m)
+				, this_m(other.this_m)
+				, parent_m(other.parent_m)
+				, root_m(nullptr)
+				, namespace_m(nullptr)
+			{
+				// ROOT
+				if (parent_m) root_m = parent_m->root_m;
+				else root_m = this;
+
+				// NAMESPACE
+				if (this_m->is_namespace()) namespace_m = this;
+				else if (parent_m) namespace_m = parent_m->namespace_m;
+				else namespace_m = this->root_m;
+
+				// current_namespace
+				if (this_m->scope_name != "") {
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
+					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+				}
+				else {
+					if (parent_m) current_namespace = parent_m->current_namespace;
+					else current_namespace = "::";
+				}
+			};
+			Breadcrumb(Breadcrumb && other)
+				: hash_m(other.hash_m)
+				, this_m(other.this_m)
+				, parent_m(other.parent_m)
+				, root_m(nullptr)
+				, namespace_m(nullptr)
+			{
+				// ROOT
+				if (parent_m) root_m = parent_m->root_m;
+				else root_m = this;
+
+				// NAMESPACE
+				if (this_m->is_namespace()) namespace_m = this;
+				else if (parent_m) namespace_m = parent_m->namespace_m;
+				else namespace_m = this->root_m;
+
+				// current_namespace
+				if (this_m->scope_name != "") {
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
+					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+				}
+				else {
+					if (parent_m) current_namespace = parent_m->current_namespace;
+					else current_namespace = "::";
+				}
+			};
+			Breadcrumb& operator=(Breadcrumb const& other) {
+				hash_m = other.hash_m;
+				this_m = other.this_m;
+				parent_m = other.parent_m;
+
+				// ROOT
+				if (parent_m) root_m = parent_m->root_m;
+				else root_m = this;
+
+				// NAMESPACE
+				if (this_m->is_namespace()) namespace_m = this;
+				else if (parent_m) namespace_m = parent_m->namespace_m;
+				else namespace_m = this->root_m;
+
+				// current_namespace
+				if (this_m->scope_name != "") {
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
+					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+				}
+				else {
+					if (parent_m) current_namespace = parent_m->current_namespace;
+					else current_namespace = "::";
+				}
+
+				return *this;
+			};
+			Breadcrumb& operator=(Breadcrumb&& other) {
+				hash_m = other.hash_m;
+				this_m = other.this_m;
+				parent_m = other.parent_m;
+
+				// ROOT
+				if (parent_m) root_m = parent_m->root_m;
+				else root_m = this;
+
+				// NAMESPACE
+				if (this_m->is_namespace()) namespace_m = this;
+				else if (parent_m) namespace_m = parent_m->namespace_m;
+				else namespace_m = this->root_m;
+
+				// current_namespace
+				if (this_m->scope_name != "") {
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
+					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+				}
+				else {
+					if (parent_m) current_namespace = parent_m->current_namespace;
+					else current_namespace = "::";
+				}
+
+				return *this;
+			};
+			~Breadcrumb() = default;
+		};
+
+		class ObjectWrapper {
+		public:
+			enum ObjectState {
+				Normal = 0,
+				Static = 1,
+				Constant = 2
 			};
 
+			ObjectWrapper(Any const& obj = {}, int s = 0)
+				: object{ std::make_shared<Any>(obj) }
+				, state { s }
+			{
+				if (object->GetFlag(AnyData::Flag::constant)) {
+					state = state | Constant;
+				}
+				if (is_const()) {
+					object->SetFlag(AnyData::Flag::constant, true);
+				}
+			};
+
+			std::shared_ptr<Any> object;
+			int state = 0;
+
+			bool is_const() const {
+				return state & Constant;
+			};
+			bool is_static() const {
+				return state & Static;
+			};
 		};
 
 		class BasicScope {
-		public:
-			std::weak_ptr< BasicScope >
-				parent_m;
-			GoodLang::details::flat_map< std::string, std::shared_ptr<Any> >
-				objects_m;
-			std::weak_ptr<BasicScope>
-				self_m;
+		friend class NamespaceScope;
+		friend class ClassScope;
+		protected:			
 			ScopeID
-				self_id_m;
+				self_id_m; // this scope's identifiers, including its name and type
 			Breadcrumb
-				breadcrumb_m;
+				breadcrumb_m; // contains the self ptr
+			GoodLang::details::flat_map< std::string, ObjectWrapper >
+				objects_m; // Objects that live inside this scope
+			GoodLang::details::flat_map< Breadcrumb*, Breadcrumb* >
+				using_m; 
 
-
-
-			BasicScope(std::weak_ptr< BasicScope > const& parent = std::weak_ptr< BasicScope >())
-				: parent_m(parent)
-				, objects_m()
+		public:
+			BasicScope(std::string_view name = "", int type = ScopeType::Basic, std::shared_ptr< BasicScope > const& parent = nullptr)
+				: self_id_m(type, name)
 				, breadcrumb_m(self_id_m)
+				, objects_m()
 			{
-				self_id_m = ScopeID(this->Name());
-				if (auto parent = parent_m.lock())
+				if (parent)
 					breadcrumb_m = Breadcrumb(self_id_m, &parent->breadcrumb_m);
 				else
 					breadcrumb_m = Breadcrumb(self_id_m);
 			};
-
-			virtual std::string_view Name() const { return ""; };
-
-
-			// nearly every scope has a parent scope, with the exception of the ultimate parent scopes. 
-			std::weak_ptr< BasicScope > GetParent() const;
+			BasicScope(BasicScope const&) = delete;
+			BasicScope(BasicScope &&) = delete;
+			BasicScope& operator=(BasicScope const&) = delete;
+			BasicScope& operator=(BasicScope&&) = delete;
+			virtual ~BasicScope() = default;
 			void SetSelf(std::shared_ptr<BasicScope> const& Self) {
-				self_m = Self;
-			};
-			std::shared_ptr<BasicScope> ChildScope() const {
-				return std::make_shared<BasicScope>(self_m.lock());
+				self_id_m.scope = Self;
 			};
 
+			std::string_view Name() const { return self_id_m.scope_name; };
+			std::string_view CurrentNamespacePath(bool removeLeadingAndTrailingColons = true) const { 
+				std::string_view out{ this->breadcrumb_m.current_namespace };
+				if (removeLeadingAndTrailingColons) Breadcrumb::RemoveLeadingAndTrailing(out, ':');
+				return out;
+			};
+
+			// Returns true if this scope is a namespace scope
+			bool is_namespace() const {
+				return self_id_m.is_namespace();
+			};
+			// Returns true if this scope is a class scope
+			bool is_class() const {
+				return self_id_m.is_class();
+			};
+			// Returns true if this scope is a root scope
+			bool is_root() const {
+				return self_id_m.is_root();
+			};
+
+			// Get the immediate parent
+			std::shared_ptr< BasicScope > GetParent() const {
+				if (breadcrumb_m.parent_m) {
+					return breadcrumb_m.parent_m->this_m->scope.lock();
+				}
+				else {
+					return nullptr;
+				}
+			};
+			// Get the current namespace (for inserting functions, etc)
+			std::shared_ptr< BasicScope > GetNamespace() const {
+				if (breadcrumb_m.namespace_m) {
+					return breadcrumb_m.namespace_m->this_m->scope.lock();
+				}
+				else {
+					return nullptr;
+				}
+			};
+			// Get the root of the entire scope tree
+			std::shared_ptr< BasicScope > GetRoot() const {
+				if (breadcrumb_m.root_m) {
+					return breadcrumb_m.root_m->this_m->scope.lock();
+				}
+				else {
+					return nullptr;
+				}
+			};
+			// Get the pointer to the self
+			std::shared_ptr< BasicScope > GetSelf() const {
+				return self_id_m.scope.lock();
+			};
+
+			enum SearchState {
+				MayFindObject = 1,
+				MayFindFunction = 2,				
+				SearchingParents = 4,
+				SearchingUsings = 8,
+				SearchingChildren = 16,
+				SearchUpHitNamespace = 32,
+				SkipChildren = 64,
+				SkipParent = 128
+			};
+			virtual Breadcrumb* FindNearestScopeWhere(
+				std::function<bool(Breadcrumb*, int)> const& func,
+				int searchState = MayFindObject | MayFindFunction,
+				std::set< Breadcrumb* > const& CheckedSelf = {},
+				std::set< Breadcrumb* > const& CheckedAll = {}
+			) const {
+				auto& checkedSelf = const_cast<std::set< Breadcrumb* >&>(CheckedSelf);
+				auto& checkedAll = const_cast<std::set< Breadcrumb* >&>(CheckedAll);
+				
+				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
+				
+				if (selfPtr.this_m->is_namespace()) {
+					searchState = searchState | SearchUpHitNamespace;
+				}
+
+				// Prevent Duplication
+				if (checkedAll.count(&selfPtr) > 0) { return nullptr; }
+				if (!(searchState & SkipChildren)) checkedAll.emplace(&selfPtr);
+				
+				// test myself directly	
+				if (checkedSelf.count(&selfPtr) <= 0) {
+					checkedSelf.emplace(&selfPtr);
+					if (func(&selfPtr, searchState)) {
+						return &selfPtr;
+					}
+				}
+
+				// test my personal "using" namespaces completely
+				if (using_m.size() > 0ull) {
+					for (auto& childNamespace : using_m) {
+						if (childNamespace.first && *childNamespace.first) {
+							if (checkedSelf.count(*childNamespace.first) > 0) continue;
+							if (auto ptr = (*childNamespace.first)->this_m->scope.lock()) {
+								if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, CheckedSelf, CheckedAll)) {
+									return result;
+								}
+							}
+						}
+					}
+				}
+
+				// test all of my parents directly -- hoping to quickly find "it"
+				if (!(searchState & SkipParent)) {
+					Breadcrumb* thisParent = &selfPtr;
+					while (thisParent = thisParent->parent_m) {
+						if (checkedSelf.count(thisParent) > 0) break;
+						checkedSelf.emplace(thisParent);
+						if (func(thisParent, searchState | SearchingParents | SkipChildren)) {
+							return thisParent;
+						}
+						// check the using statements of the parent.
+						if (auto ptr = thisParent->this_m->scope.lock()) {
+							if (ptr->using_m.size() > 0ull) {
+								for (auto& childNamespace : ptr->using_m) {
+									if (childNamespace.first && *childNamespace.first) {
+										if (checkedSelf.count(*childNamespace.first) > 0) continue;
+										if (auto ptr = (*childNamespace.first)->this_m->scope.lock()) {
+											if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, CheckedSelf, CheckedAll)) {
+												return result;
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Test my parent completely.
+				if (!(searchState & SkipParent)) {
+					if (selfPtr.parent_m) {
+						if (auto ptr = selfPtr.parent_m->this_m->scope.lock()) {
+							if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingParents, CheckedSelf, CheckedAll)) {
+								return result;
+							}
+						}
+					}
+				}
+
+				return nullptr;
+			};
+
+			std::shared_ptr<NamespaceScope> FindNamespace(std::string name) const {
+				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
+				auto len = name.length();
+				if (auto BC = FindNearestScopeWhere([&len, &name](Breadcrumb* namespacePtr, int search_state)->bool {
+					if (!namespacePtr->this_m->is_namespace()) return false;
+					long long QualifiedNameLen = namespacePtr->current_namespace.length();
+					auto F = namespacePtr->current_namespace.rfind(name);
+					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return true;
+					return false;
+				})) {
+					return std::dynamic_pointer_cast<NamespaceScope>(BC->this_m->scope.lock());
+				}
+				else {
+					return nullptr;
+				}
+			};
+			std::shared_ptr<ClassScope> FindClass(std::string name) const {
+				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
+				auto len = name.length();
+				if (auto BC = FindNearestScopeWhere([&len, &name](Breadcrumb* namespacePtr, int search_state)->bool {
+					if (!namespacePtr->this_m->is_class()) return false;
+					long long QualifiedNameLen = namespacePtr->current_namespace.length();
+					auto F = namespacePtr->current_namespace.rfind(name);
+					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return true;
+					return false;
+				})) {
+					return std::dynamic_pointer_cast<ClassScope>(BC->this_m->scope.lock());
+				}
+				else {
+					return nullptr;
+				}
+			};
+
+			// Explicitely looks for an object with the given name. Name may include specialization for the namespace to expect the object in. E.g.: 
+			// std::string::npos -> finds namespace "::std::string::" and finds object "npos"
+			std::shared_ptr<Any> FindObject(std::string name) const {
+				name = Breadcrumb::CleanUpScopeName(name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				std::string objName;
+				std::string_view namespaceName;
+				if (auto f = sv.rfind("::"); f != std::string::npos) {
+					objName = std::string(sv.substr(f + 2, sv.length() - f));
+					namespaceName = sv.substr(0, f + 2);
+				}
+
+				std::shared_ptr<Any> out{ nullptr };
+				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &out](Breadcrumb* namespacePtr, int search_state)->bool {
+					bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
+					// we hit a namespace during our search up the node tree -- this prevents us from finding any more objects except for the static type. 
+
+					if (namespaceName.length() > 0) {
+
+						long long QualifiedNameLen = namespacePtr->current_namespace.length();
+						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							// the namespace is technically a candidate
+							if (auto ptr = namespacePtr->this_m->scope.lock()) {
+								auto f = ptr->objects_m.find(objName);
+								if (f != ptr->objects_m.end()) {
+									if (StaticOnly && !f->second->is_static()) return false;
+									out = f->second->object;
+									return true;
+								}
+							}
+						}
+					}
+					else {
+						// any namespace is technically a candidate
+						if (auto ptr = namespacePtr->this_m->scope.lock()) {
+							auto f = ptr->objects_m.find(objName);
+							if (f != ptr->objects_m.end()) {
+								if (StaticOnly && !f->second->is_static()) return false;
+								out = f->second->object;
+								return true;
+							}
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return out;
+				}
+			};
+
+			// Explicitely looks for a function with the given name. Name may include specialization for the namespace to expect the function in. E.g.: 
+			// std::string::npos -> finds namespace "::std::string::" and finds function "npos"
+			Proxy_Function FindFunction(std::string name) const {
+				name = Breadcrumb::CleanUpScopeName(name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				std::string objName;
+				std::string_view namespaceName;
+				if (auto f = sv.rfind("::"); f != std::string::npos) {
+					objName = std::string(sv.substr(f + 2, sv.length() - f));
+					namespaceName = sv.substr(0, f + 2);
+				}
+
+				Proxy_Function out{ nullptr };
+				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &out](Breadcrumb* namespacePtr, int search_state)->bool {
+					if (namespaceName.length() > 0) {
+
+						long long QualifiedNameLen = namespacePtr->current_namespace.length();
+						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							// the namespace is technically a candidate
+							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
+								auto f = ptr->functions_m.find(objName);
+								if (f != ptr->functions_m.end()) {
+									out = *f->second;
+									return true;
+								}
+							}
+						}
+					}
+					else {
+						// any namespace is technically a candidate
+						if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
+							auto f = ptr->functions_m.find(objName);
+							if (f != ptr->functions_m.end()) {
+								out = *f->second;
+								return true;
+							}
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return out;
+				}
+			};
+
+			// Finds either an object or function with the given name, with preference to objects when searching within a scope. 
+			// Name may include specialization for the namespace to expect the object or function in. E.g.: 
+			// std::string::npos -> finds namespace "::std::string::" and finds function "npos"
+			bool FindObjectOrFunction(std::string name, std::shared_ptr<Any>& out1, Proxy_Function& out2) const {
+				name = Breadcrumb::CleanUpScopeName(name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				std::string objName;
+				std::string_view namespaceName;
+				if (auto f = sv.rfind("::"); f != std::string::npos) {
+					objName = std::string(sv.substr(f + 2, sv.length() - f));
+					namespaceName = sv.substr(0, f + 2);
+				}
+
+				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &out1, &out2](Breadcrumb* namespacePtr, int search_state)->bool {
+					bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
+					// we hit a namespace during our search up the node tree -- this prevents us from finding any more objects except for the static type. 
+
+					if (namespaceName.length() > 0) {
+						long long QualifiedNameLen = namespacePtr->current_namespace.length();
+						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							// the namespace is technically a candidate
+							if (auto ptr = namespacePtr->this_m->scope.lock()) {
+								if (1) {
+									auto f = ptr->objects_m.find(objName);
+									if (f != ptr->objects_m.end()) {
+										if (StaticOnly && !f->second->is_static()) return false;
+										out1 = f->second->object;
+										return true;
+									}
+								}
+								if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(ptr)) {
+									auto f = NS_ptr->functions_m.find(objName);
+									if (f != NS_ptr->functions_m.end()) {
+										out2 = *f->second;
+										return true;
+									}
+								}
+							}
+						}
+					}
+					else {
+						// any namespace is technically a candidate
+						if (auto ptr = namespacePtr->this_m->scope.lock()) {
+							if (1) {
+								auto f = ptr->objects_m.find(objName);
+								if (f != ptr->objects_m.end()) {
+									if (StaticOnly && !f->second->is_static()) return false;
+									out1 = f->second->object;
+									return true;
+								}
+							}
+							if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(ptr)) {
+								auto f = NS_ptr->functions_m.find(objName);
+								if (f != NS_ptr->functions_m.end()) {
+									out2 = *f->second;
+									return true;
+								}
+							}
+						}
+					}
+					return false;
+				})) {
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+
+			// Emplaces an object with the given name. Name may include specialization for the namespace to place the object in. E.g.:
+			// std::string::npos -> finds namespace "::std::string::" and emplaces object "npos"
+			std::shared_ptr<Any> EmplaceObject(std::string name, Any const& object, int objectState = ObjectWrapper::ObjectState::Normal)  {
+				name = Breadcrumb::CleanUpScopeName(name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				std::string objName;
+				std::string_view namespaceName;
+				if (auto f = sv.rfind("::"); f != std::string::npos) {
+					objName = std::string(sv.substr(f + 2, sv.length() - f));
+					namespaceName = sv.substr(0, f + 2);
+				}
+				std::shared_ptr<Any> out{ nullptr };
+				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &object, &out, &objectState](Breadcrumb* namespacePtr, int search_state)->bool {
+					if (namespaceName.length() > 0) {
+
+						long long QualifiedNameLen = namespacePtr->current_namespace.length();
+						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							// the namespace is technically a candidate
+							if (auto ptr = namespacePtr->this_m->scope.lock()) {
+								if (namespacePtr->this_m->is_class()) {
+									if (objectState & ObjectWrapper::ObjectState::Static) {
+										out = ptr->objects_m.emplace(objName, ObjectWrapper(object, objectState)).second.get().object;
+									}
+									else { // the user is adding a member object, NOT a static object. 
+										// ...To-Do...
+										// std::dynamic_pointer_cast<ClassScope>(ptr)->
+									}
+								}
+								else {
+									if (namespacePtr->this_m->is_namespace() && !namespacePtr->this_m->is_root()) {
+										out = ptr->objects_m.emplace(objName, ObjectWrapper(object, objectState | ObjectWrapper::ObjectState::Static)).second.get().object;
+									}
+									else {
+										out = ptr->objects_m.emplace(objName, ObjectWrapper(object, objectState)).second.get().object;
+									}
+								}
+								return true;
+							}
+						}
+					}
+					else {
+						// any namespace is technically a candidate
+						if (auto ptr = namespacePtr->this_m->scope.lock()) {
+							if (namespacePtr->this_m->is_namespace() && !namespacePtr->this_m->is_root()) {
+								out = ptr->objects_m.emplace(objName, ObjectWrapper(object, objectState | ObjectWrapper::ObjectState::Static)).second.get().object;
+							}
+							else {
+								out = ptr->objects_m.emplace(objName, ObjectWrapper(object, objectState)).second.get().object;
+							}
+							return true;							
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return out;
+				}
+			};
+
+			// Emplaces an Function with the given name. Name may include specialization for the namespace to place the function in. E.g.:
+			// std::string::npos -> finds namespace "::std::string::" and emplaces function "npos"
+			Proxy_Function EmplaceFunction(std::string name, Proxy_Function const& object)  {
+				name = Breadcrumb::CleanUpScopeName(name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				std::string objName;
+				std::string_view namespaceName;
+				if (auto f = sv.rfind("::"); f != std::string::npos) {
+					objName = std::string(sv.substr(f + 2, sv.length() - f));
+					namespaceName = sv.substr(0, f + 2);
+				}
+				Proxy_Function out{ nullptr };
+				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &object, &out](Breadcrumb* namespacePtr, int search_state)->bool {
+					if (namespaceName.length() > 0) {
+
+						long long QualifiedNameLen = namespacePtr->current_namespace.length();
+						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							// the namespace is technically a candidate
+							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
+								out = ptr->functions_m.emplace(objName, (Proxy_Function)object).second.get();
+								return true;
+							}
+						}
+					}
+					else {
+						// any namespace is technically a candidate
+						if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
+							out = ptr->functions_m.emplace(objName, (Proxy_Function)object).second.get();
+							return true;							
+						}
+					}
+					return false;
+				})) {
+					return out;
+				}
+				else {
+					return out;
+				}
+			};
+
+			// "Using" a namespace allows you to search that namespace for functions more easily.
+			bool AddUsing(std::shared_ptr<NamespaceScope> const& ns_ptr) {
+				if (ns_ptr) {
+					return (bool)(this->using_m.emplace(&ns_ptr->breadcrumb_m, &ns_ptr->breadcrumb_m).second.get());
+				}
+				return false;
+			};
 
 
 
+
+
+
+
+
+
+
+
+			std::shared_ptr<BasicScope> MakeChildScope() const {
+				auto ptr = std::make_shared<BasicScope>("", ScopeType::Basic, GetSelf());
+				ptr->SetSelf(ptr);
+				return ptr;
+			};
+		};
+
+		class NamespaceScope : public BasicScope {
+		friend class ClassScope;
+		friend class BasicScope;
+		protected:
+			std::shared_ptr<std::string> name_m;
+			GoodLang::details::flat_map< std::string, std::shared_ptr<BasicScope> >
+				children_m;
+			GoodLang::details::flat_map< std::string, Proxy_Function >
+				functions_m; // Functions that live inside this scope
+
+		public:
+			NamespaceScope(std::shared_ptr<std::string> name, int type = ScopeType::Basic | ScopeType::Namespace, std::shared_ptr< BasicScope > const& parent = nullptr)
+				: name_m(name)
+				, BasicScope(*name, type, parent)
+			{};
+			NamespaceScope(NamespaceScope const&) = delete;
+			NamespaceScope(NamespaceScope&&) = delete;
+			NamespaceScope& operator=(NamespaceScope const&) = delete;
+			NamespaceScope& operator=(NamespaceScope&&) = delete;
+			virtual ~NamespaceScope() = default;
+
+			virtual Breadcrumb* FindNearestScopeWhere(
+				std::function<bool(Breadcrumb*, int)> const& func,
+				int searchState = MayFindObject | MayFindFunction,
+				std::set< Breadcrumb* > const& CheckedSelf = {},
+				std::set< Breadcrumb* > const& CheckedAll = {}
+			) const override {
+				auto& checkedSelf = const_cast<std::set< Breadcrumb* >&>(CheckedSelf);
+				auto& checkedAll = const_cast<std::set< Breadcrumb* >&>(CheckedAll);
+
+				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
+
+				if (selfPtr.this_m->is_namespace()) {
+					searchState = searchState | SearchUpHitNamespace;
+				}
+
+				// Prevent Duplication
+				if (checkedAll.count(&selfPtr) > 0) { return nullptr; }
+				if (!(searchState & SkipChildren)) checkedAll.emplace(&selfPtr);
+
+				// test myself directly	
+				if (checkedSelf.count(&selfPtr) <= 0) {
+					checkedSelf.emplace(&selfPtr);
+					if (func(&selfPtr, searchState)) {
+						return &selfPtr;
+					}
+				}
+
+				// test my personal "using" namespaces completely
+				if (using_m.size() > 0ull) {
+					for (auto& childNamespace : using_m) {
+						if (childNamespace.first && *childNamespace.first) {
+							if (checkedSelf.count(*childNamespace.first) > 0) continue;
+							if (auto ptr = (*childNamespace.first)->this_m->scope.lock()) {
+								if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, CheckedSelf, CheckedAll)) {
+									return result;
+								}
+							}
+						}
+					}
+				}
+
+				// test all of my parents directly -- hoping to quickly find "it"
+				if (!(searchState & SkipParent)) {
+					Breadcrumb* thisParent = &selfPtr;
+					while (thisParent = thisParent->parent_m) {
+						if (checkedSelf.count(thisParent) > 0) break;
+						checkedSelf.emplace(thisParent);
+						if (func(thisParent, searchState | SearchingParents | SkipChildren)) {
+							return thisParent;
+						}
+						// check the using statements of the parent.
+						if (auto ptr = thisParent->this_m->scope.lock()) {
+							if (ptr->using_m.size() > 0ull) {
+								for (auto& childNamespace : ptr->using_m) {
+									if (childNamespace.first && *childNamespace.first) {
+										if (checkedSelf.count(*childNamespace.first) > 0) continue;
+										if (auto ptr = (*childNamespace.first)->this_m->scope.lock()) {
+											if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, CheckedSelf, CheckedAll)) {
+												return result;
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Test my children themselves. 
+				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
+					for (auto& childNamespace : this->children_m) {
+						if (childNamespace.second && *childNamespace.second) {
+							if (checkedSelf.count(&(*childNamespace.second)->breadcrumb_m) > 0) continue;
+							if (func(&(*childNamespace.second)->breadcrumb_m, searchState | SearchingChildren | SkipChildren | SkipParent)) {
+								return &(*childNamespace.second)->breadcrumb_m;
+							}
+						}
+					}
+				}
+
+				// Test my parent completely.
+				if (!(searchState & SkipParent)) {
+					if (selfPtr.parent_m) {
+						if (auto ptr = selfPtr.parent_m->this_m->scope.lock()) {
+							if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingParents, CheckedSelf, CheckedAll)) {
+								return result;
+							}
+						}
+					}
+				}
+
+				// Test my children completely. 
+				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
+					for (auto& childNamespace : this->children_m) {
+						if (childNamespace.second && *childNamespace.second) {
+							if (auto ptr = (*childNamespace.second)->self_id_m.scope.lock()) {
+								if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingChildren | SkipParent, CheckedSelf, CheckedAll)) {
+									return result;
+								}
+							}
+						}
+					}
+				}
+
+				return nullptr;
+			};
+
+			std::shared_ptr<NamespaceScope> MakeChildNamespace(std::string_view name) {
+				auto ptr = std::make_shared<NamespaceScope>(std::make_shared<std::string>(std::string(name)), ScopeType::Basic | ScopeType::Namespace, GetSelf());
+				ptr->SetSelf(ptr);
+				return std::dynamic_pointer_cast<NamespaceScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
+			};
+			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name) {
+				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, GetSelf());
+				ptr->SetSelf(ptr);
+				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
+			};
+		};
+
+		class ClassScope : public NamespaceScope {
+		public:
+			ClassScope(std::shared_ptr<std::string> name, int type = ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, std::shared_ptr< BasicScope > const& parent = nullptr)
+				: NamespaceScope(name, type, parent)
+			{};
+			ClassScope(ClassScope const&) = delete;
+			ClassScope(ClassScope&&) = delete;
+			ClassScope& operator=(ClassScope const&) = delete;
+			ClassScope& operator=(ClassScope&&) = delete;
+			virtual ~ClassScope() = default;
+
+			virtual Breadcrumb* FindNearestScopeWhere(
+				std::function<bool(Breadcrumb*, int)> const& func,
+				int searchState = MayFindObject | MayFindFunction,
+				std::set< Breadcrumb* > const& CheckedSelf = {},
+				std::set< Breadcrumb* > const& CheckedAll = {}
+			) const override {
+				auto& checkedSelf = const_cast<std::set< Breadcrumb* >&>(CheckedSelf);
+				auto& checkedAll = const_cast<std::set< Breadcrumb* >&>(CheckedAll);
+
+				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
+
+				if (selfPtr.this_m->is_namespace()) {
+					searchState = searchState | SearchUpHitNamespace;
+				}
+
+				// Prevent Duplication
+				if (checkedAll.count(&selfPtr) > 0) { return nullptr; }
+				if (!(searchState & SkipChildren)) checkedAll.emplace(&selfPtr);
+
+				// test myself directly	
+				if (checkedSelf.count(&selfPtr) <= 0) {
+					checkedSelf.emplace(&selfPtr);
+					if (func(&selfPtr, searchState)) {
+						return &selfPtr;
+					}
+				}
+
+				// test my personal "using" namespaces completely
+				if (using_m.size() > 0ull) {
+					for (auto& childNamespace : using_m) {
+						if (childNamespace.first && *childNamespace.first) {
+							if (checkedSelf.count(*childNamespace.first) > 0) continue;
+							if (auto ptr = (*childNamespace.first)->this_m->scope.lock()) {
+								if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, CheckedSelf, CheckedAll)) {
+									return result;
+								}
+							}
+						}
+					}
+				}
+
+				// test all of my parents directly -- hoping to quickly find "it"
+				if (!(searchState & SkipParent)) {
+					Breadcrumb* thisParent = &selfPtr;
+					while (thisParent = thisParent->parent_m) {
+						if (checkedSelf.count(thisParent) > 0) break;
+						checkedSelf.emplace(thisParent);
+						if (func(thisParent, searchState | SearchingParents | SkipChildren)) {
+							return thisParent;
+						}
+						// check the using statements of the parent.
+						if (auto ptr = thisParent->this_m->scope.lock()) {
+							if (ptr->using_m.size() > 0ull) {
+								for (auto& childNamespace : ptr->using_m) {
+									if (childNamespace.first && *childNamespace.first) {
+										if (checkedSelf.count(*childNamespace.first) > 0) continue;
+										if (auto ptr = (*childNamespace.first)->this_m->scope.lock()) {
+											if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, CheckedSelf, CheckedAll)) {
+												return result;
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Test my children themselves. 
+				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
+					for (auto& childNamespace : this->children_m) {
+						if (childNamespace.second && *childNamespace.second) {
+							if (checkedSelf.count(&(*childNamespace.second)->breadcrumb_m) > 0) continue;
+							if (func(&(*childNamespace.second)->breadcrumb_m, searchState | SearchingChildren | SkipChildren | SkipParent)) {
+								return &(*childNamespace.second)->breadcrumb_m;
+							}
+						}
+					}
+				}
+
+				// Test my parent completely.
+				if (!(searchState & SkipParent)) {
+					if (selfPtr.parent_m) {
+						if (auto ptr = selfPtr.parent_m->this_m->scope.lock()) {
+							if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingParents, CheckedSelf, CheckedAll)) {
+								return result;
+							}
+						}
+					}
+				}
+
+				// Test my children completely. 
+				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
+					for (auto& childNamespace : this->children_m) {
+						if (childNamespace.second && *childNamespace.second) {
+							if (auto ptr = (*childNamespace.second)->self_id_m.scope.lock()) {
+								if (auto* result = ptr->FindNearestScopeWhere(func, searchState | SearchingChildren | SkipParent, CheckedSelf, CheckedAll)) {
+									return result;
+								}
+							}
+						}
+					}
+				}
+
+				return nullptr;
+			};
 
 		};
 
-		/* 
-		During object searches: 
-		- May search parent scopes, and may search all the "using" namespaces, but may not search children
-		During type searches:
-		- May search parennt's 
-		
-		Scopes allow for searching parent's for objects or type info, but not their children for objects or type info. */
-		class Scope; 
-		// 
-		class Namespace;
-		class Class;
-		class Global;
+		class RootScope : public NamespaceScope {
+		public:
+			RootScope()
+				: NamespaceScope(
+					std::make_shared<std::string>(""), 
+					Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace | Scopes::ScopeType::Root, 
+					nullptr)
+			{};
+			RootScope(RootScope const&) = delete;
+			RootScope(RootScope&&) = delete;
+			RootScope& operator=(RootScope const&) = delete;
+			RootScope& operator=(RootScope&&) = delete;
+			virtual ~RootScope() = default;
+
+		};
+
+
 
 
 
@@ -150,39 +1152,7 @@ namespace GoodLang {
 
 	};
 
-
-
-
-
-
-
-
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 namespace GoodLang {
@@ -8895,6 +9865,176 @@ int main() {
 	for (int i = 0; i < 100000; i++) delete (new int(5));
 
 	using namespace GoodLang;
+
+	while (1) {
+		auto Root = std::make_shared<Scopes::RootScope>();
+		Root->SetSelf(Root);		
+		EXPECT_EQ(true, Root->is_root());
+		EXPECT_EQ(true, Root->is_namespace());
+		EXPECT_EQ(false, Root->is_class());
+
+		auto Namespace = Root->MakeChildNamespace("UI");
+		EXPECT_EQ(false, Namespace->is_root());
+		EXPECT_EQ(true, Namespace->is_namespace());
+		EXPECT_EQ(false, Namespace->is_class());
+
+		auto Class = Namespace->MakeChildClass("Color");
+		EXPECT_EQ(false, Class->is_root());
+		EXPECT_EQ(true, Class->is_namespace());
+		EXPECT_EQ(true, Class->is_class());
+
+		auto Scope = Class->MakeChildScope();
+		EXPECT_EQ(false, Scope->is_root());
+		EXPECT_EQ(false, Scope->is_namespace());
+		EXPECT_EQ(false, Scope->is_class());
+
+		auto Scope2 = Scope->MakeChildScope();
+		EXPECT_EQ(false, Scope2->is_root());
+		EXPECT_EQ(false, Scope2->is_namespace());
+		EXPECT_EQ(false, Scope2->is_class());
+
+		auto String = Root->MakeChildClass("string");
+		EXPECT_EQ(false, String->is_root());
+		EXPECT_EQ(true, String->is_namespace());
+		EXPECT_EQ(true, String->is_class());
+
+		EXPECT_EQ(Namespace.get(), Class->GetParent().get());
+		EXPECT_EQ(Class.get(), Class->GetNamespace().get());
+		EXPECT_EQ(Root.get(), Class->GetRoot().get());
+
+		EXPECT_EQ((bool)Root->FindClass("Color"), true);
+		EXPECT_EQ((bool)Root->FindClass("UI::Color"), true);
+		EXPECT_EQ((bool)Root->FindClass("::UI::Color::"), true);
+		EXPECT_EQ((bool)Root->FindClass("::Color"), true);
+		EXPECT_EQ((bool)Root->FindNamespace("Color"), true);
+		EXPECT_EQ((bool)Root->FindNamespace("UI::Color"), true);
+		EXPECT_EQ((bool)Root->FindNamespace("::UI::Color::"), true);
+		EXPECT_EQ((bool)Root->FindNamespace("::Color"), true);
+
+		EXPECT_EQ((bool)Namespace->FindClass("Color"), true);
+		EXPECT_EQ((bool)Namespace->FindClass("UI::Color"), true);
+		EXPECT_EQ((bool)Namespace->FindClass("::UI::Color::"), true);
+		EXPECT_EQ((bool)Namespace->FindClass("::Color"), true);
+		EXPECT_EQ((bool)Namespace->FindNamespace("Color"), true);
+		EXPECT_EQ((bool)Namespace->FindNamespace("UI::Color"), true);
+		EXPECT_EQ((bool)Namespace->FindNamespace("::UI::Color::"), true);
+		EXPECT_EQ((bool)Namespace->FindNamespace("::Color"), true);
+
+		EXPECT_EQ((bool)Class->FindClass("Color"), true);
+		EXPECT_EQ((bool)Class->FindClass("UI::Color"), true);
+		EXPECT_EQ((bool)Class->FindClass("::UI::Color::"), true);
+		EXPECT_EQ((bool)Class->FindClass("::Color"), true);
+		EXPECT_EQ((bool)Class->FindNamespace("Color"), true);
+		EXPECT_EQ((bool)Class->FindNamespace("UI::Color"), true);
+		EXPECT_EQ((bool)Class->FindNamespace("::UI::Color::"), true);
+		EXPECT_EQ((bool)Class->FindNamespace("::Color"), true);
+
+		EXPECT_EQ((bool)Class->EmplaceFunction("Color", make_callable([]() {})), true);
+		EXPECT_EQ((bool)Class->FindFunction("Color"), true);
+		EXPECT_EQ((bool)Scope2->FindFunction("::UI::Color::Color"), true);
+
+		EXPECT_EQ((bool)Root->EmplaceObject("string::npos", std::string::npos, Scopes::ObjectWrapper::ObjectState::Static), true);
+		EXPECT_EQ((bool)String->FindObject("npos"), true);
+		EXPECT_EQ((bool)Root->FindObject("string::npos"), true);
+		EXPECT_EQ((bool)String->FindObject("string::npos"), true);
+		EXPECT_EQ((bool)Class->FindObject("npos"), true);
+		EXPECT_EQ((bool)Scope->FindObject("npos"), true);
+
+		EXPECT_EQ((bool)Scope->EmplaceObject("x", 100, Scopes::ObjectWrapper::ObjectState::Normal), true);
+		EXPECT_EQ((bool)Scope->FindObject("x"), true); 
+		EXPECT_EQ((bool)Scope->EmplaceObject("npos", 50, Scopes::ObjectWrapper::ObjectState::Constant), true);
+		auto ptr = Scope->FindObject("npos");
+		EXPECT_EQ((bool)ptr, true);		
+		EXPECT_EQ((bool)Root->FindObject("x"), false);
+		EXPECT_EQ((bool)String->FindObject("x"), false);
+		EXPECT_EQ((bool)Class->FindObject("x"), false);
+
+		EXPECT_EQ((bool)Scope2->EmplaceObject("y", 50, Scopes::ObjectWrapper::ObjectState::Constant), true);
+		EXPECT_EQ((bool)Scope2->FindObject("x"), true);
+		EXPECT_EQ((bool)Scope2->FindObject("y"), true);
+		EXPECT_EQ((bool)Root->FindObject("y"), false);
+		EXPECT_EQ((bool)String->FindObject("y"), false);
+		EXPECT_EQ((bool)Class->FindObject("y"), false);
+		EXPECT_EQ((bool)Scope->FindObject("y"), false);
+
+		EXPECT_EQ(Scope2->AddUsing(Scope2->FindNamespace("string")), true);
+		ptr = Scope2->FindObject("npos");
+		EXPECT_EQ((bool)ptr, true);
+
+		// this will fail to find a namespace called "String", since the closest available is called "string". 
+		EXPECT_EQ((bool)Root->EmplaceObject("String::npos", std::string::npos, Scopes::ObjectWrapper::ObjectState::Static), false); 
+
+		
+
+
+
+
+
+
+
+
+
+
+
+
+		/* {
+			namespace string{ ... }; 
+			string::npos = 100; // appends "npos" to the string namespace
+
+			namespace UI {
+				class Color {
+					{
+						x = 100;
+						{
+							y = 50;
+						}
+					}
+				}
+			}
+		} */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		EXPECT_EQ((bool)Root->EmplaceFunction("string::replace", make_callable([]() {})), true);
+		EXPECT_EQ((bool)String->FindFunction("replace"), true);
+		EXPECT_EQ((bool)Root->FindFunction("string::replace"), true);
+
+
+		EXPECT_EQ((bool)Root->EmplaceFunction("string::npos", make_callable([]() {})), true);
+		std::shared_ptr<Any> result1;
+		Proxy_Function result2;
+		EXPECT_EQ(String->FindObjectOrFunction("npos", result1, result2), true);
+		EXPECT_EQ((bool)result1, true);
+		EXPECT_EQ((bool)result2, false);
+
+
+
+
+
+	}
+
+
+
+
+
+
+
+
+
+
 
 	if (1) {
 		std::vector<std::string_view> DebugScripts;
