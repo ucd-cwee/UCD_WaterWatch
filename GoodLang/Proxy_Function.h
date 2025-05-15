@@ -962,7 +962,9 @@ namespace GoodLang {
 		 * function classes.
 		*/
 		class Proxy_Function_Base {
-		private:
+		public:
+			static double conversion_cost(ParamTypes const& t_FromTypes, ParamTypes const& t_ToTypes, TypeConverter& t_conversions);
+		private:			
 			static double conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static double conversion_cost_fast(std::vector<Any> const& t_from, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static double conversion_cost(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);

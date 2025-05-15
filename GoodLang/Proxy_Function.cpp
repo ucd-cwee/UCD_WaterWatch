@@ -707,6 +707,28 @@ namespace GoodLang {
 // Proxy_Function_Base 
 namespace GoodLang {
 	namespace details {
+		double Proxy_Function_Base::conversion_cost(ParamTypes const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions) {
+			double out{ 0 };
+
+			// Quick return if the types exactly match.
+			if (t_to.size() > t_FromTypes.size()) return std::numeric_limits<double>::max();
+
+			size_t i = 0;
+			double conversionCost;
+			for (; i < t_to.size(); ++i) {
+				conversionCost = t_conversions.ConversionCost_Fast(t_FromTypes[i].lock(), t_to[i].lock());
+				if (conversionCost == std::numeric_limits<double>::max()) {
+					return std::numeric_limits<double>::max();
+				}
+				else {
+					out += conversionCost;
+				}
+			}
+			for (; i < t_FromTypes.size(); ++i) {
+				out += details::TypeConversionWorstCaseCost; // large penalty for not using the provided type(s).
+			}
+			return out;
+		};
 		double Proxy_Function_Base::conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions) {
 			double out{ 0 };
 

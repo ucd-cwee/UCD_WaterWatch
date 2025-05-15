@@ -1785,6 +1785,7 @@ namespace GoodLang {
 						}
 					}
 				}
+
 				// While we normally try to minimize the conversion cost, 
 				if (firstParamScopePtr) {
 					(void)firstParamScopePtr->FindNearestNamespaceWhere([&sort, &functionName, &params, &Params, &m_conversionTree](std::shared_ptr<Namespace> const& namespace_ptr) -> bool {
