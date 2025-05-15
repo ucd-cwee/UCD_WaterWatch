@@ -832,7 +832,7 @@ namespace GoodLang {
 											return true;
 										}
 										if (cost < details::TypeConversionWorstCaseCost) {
-											sort[1].emplace(cost, out);
+											sort[0].emplace(cost, out);
 										}
 									}
 									if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
@@ -842,7 +842,24 @@ namespace GoodLang {
 											return true;
 										}
 										if (cost < details::TypeConversionWorstCaseCost) {
-											sort[2].emplace(cost, out);
+											sort[1].emplace(cost, out);
+										}
+									}
+									// the user may have meant to call the constructor for a class in this namespace...
+									if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
+										if (f->second->get()->Name() == objName) {
+											if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(*f->second)) {
+												if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+													auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+													if (cost == 0) {
+														out2 = out;
+														return true;
+													}
+													if (cost < details::TypeConversionWorstCaseCost) {
+														sort[2].emplace(cost, out);
+													}
+												}
+											}
 										}
 									}
 								}
@@ -883,7 +900,7 @@ namespace GoodLang {
 										return true;
 									}
 									if (cost < details::TypeConversionWorstCaseCost) {
-										sort[1].emplace(cost + 1, out);
+										sort[0].emplace(cost + 1, out);
 									}
 									out = nullptr;
 								}
@@ -894,9 +911,26 @@ namespace GoodLang {
 										return true;
 									}
 									if (cost < details::TypeConversionWorstCaseCost) {
-										sort[2].emplace(cost + 1, out);
+										sort[1].emplace(cost + 1, out);
 									}
 									out = nullptr;
+								}
+								// the user may have meant to call the constructor for a class in this namespace...
+								if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
+									if (f->second->get()->Name() == objName) {
+										if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(*f->second)) {
+											if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+												auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+												if (cost == 0) {
+													out2 = out;
+													return true;
+												}
+												if (cost < details::TypeConversionWorstCaseCost) {
+													sort[2].emplace(cost, out);
+												}
+											}
+										}
+									}
 								}
 							}
 						}
@@ -1355,8 +1389,8 @@ namespace GoodLang {
 				ptr->SetSelf(ptr);
 				return std::dynamic_pointer_cast<NamespaceScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
 			};
-			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name) {
-				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf());				
+			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name, std::vector<std::weak_ptr<ClassScope>> inheritance = {}) {
+				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf(), nullptr, inheritance);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
 				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
@@ -1376,12 +1410,14 @@ namespace GoodLang {
 		protected:
 			std::vector<std::weak_ptr<ClassScope>>
 				DerivedFrom; // e.g. this class derives from other Classes
-			std::shared_ptr<Type_Info>
-				ClassType;
+
 			GoodLang::details::flat_map<std::string, std::pair<std::weak_ptr<Type_Info>, std::shared_ptr<Any>>>
 				p_declared_member_objects; // declared member objects for the custom, scripted class which will be instantiated upon construction of the scripted class
 			std::shared_ptr<concurrency::concurrent_vector<Function>>
 				conversion_functions{ std::make_shared<concurrency::concurrent_vector<Function>>() }; // a duplicate list of functions that meet the definition for constructor or conversions to this class type
+		public:
+			const std::shared_ptr<Type_Info>
+				ClassType;
 
 		public:
 			ClassScope(
@@ -1411,12 +1447,12 @@ namespace GoodLang {
 				}
 
 				if ((!type) || (type->is_void())) {
-					ClassType = std::dynamic_pointer_cast<Type_Info>(std::make_shared<Scripted_Type_Info>(
+					const_cast<std::shared_ptr<Type_Info>&>(ClassType) = std::dynamic_pointer_cast<Type_Info>(std::make_shared<Scripted_Type_Info>(
 						std::string(Breadcrumb::RemoveTrailing(this->breadcrumb_m.parent_m->current_namespace, ':')), std::string(this->self_id_m.scope_name), false, false
 					));
 				}
 				else {
-					ClassType = type;
+					const_cast<std::shared_ptr<Type_Info>&>(ClassType) = type;
 				}	
 			};
 			ClassScope(ClassScope const&) = delete;
@@ -10664,6 +10700,7 @@ int main() {
 			Class->EmplaceFunction("int", make_callable([](long const& rhs) -> int { return rhs; }));
 			Class->EmplaceFunction("int", make_callable([](float const& rhs) -> int { return rhs; }));
 			Class->EmplaceFunction("int", make_callable([](double const& rhs) -> int { return rhs; }));
+			Class->EmplaceFunction("=", make_callable([](int& lhs, int const& rhs) -> int& { return lhs = rhs; }));
 		}
 		if (1) {
 			auto Class = Root->MakeChildClass("long", user_type_shared_ptr<long>());
@@ -10672,6 +10709,7 @@ int main() {
 			Class->EmplaceFunction("long", make_callable([](long const& rhs) -> long { return rhs; }));
 			Class->EmplaceFunction("long", make_callable([](float const& rhs) -> long { return rhs; }));
 			Class->EmplaceFunction("long", make_callable([](double const& rhs) -> long { return rhs; }));
+			Class->EmplaceFunction("=", make_callable([](long& lhs, long const& rhs) -> long& { return lhs = rhs; }));
 		}
 		if (1) {
 			auto Class = Root->MakeChildClass("float", user_type_shared_ptr<float>());
@@ -10680,6 +10718,7 @@ int main() {
 			Class->EmplaceFunction("float", make_callable([](long const& rhs) -> float { return rhs; }));
 			Class->EmplaceFunction("float", make_callable([](float const& rhs) -> float { return rhs; }));
 			Class->EmplaceFunction("float", make_callable([](double const& rhs) -> float { return rhs; }));
+			Class->EmplaceFunction("=", make_callable([](float& lhs, float const& rhs) -> float& { return lhs = rhs; }));
 		}
 		if (1) {
 			auto Class = Root->MakeChildClass("double", user_type_shared_ptr<double>());
@@ -10688,14 +10727,10 @@ int main() {
 			Class->EmplaceFunction("double", make_callable([](long const& rhs) -> double { return rhs; }));
 			Class->EmplaceFunction("double", make_callable([](float const& rhs) -> double { return rhs; }));
 			Class->EmplaceFunction("double", make_callable([](double const& rhs) -> double { return rhs; }));
+			Class->EmplaceFunction("=", make_callable([](double& lhs, double const& rhs) -> double& { return lhs = rhs; }));
 		}
 
 		EXPECT_EQ(Root->Cast<double>(100), 100.0);
-
-
-
-
-
 
 		auto Namespace = Root->MakeChildNamespace("UI");
 		EXPECT_EQ(false, Namespace->is_root());
@@ -10709,9 +10744,68 @@ int main() {
 		Class->DeclareMemberObject("R", user_type_shared<int>(), std::make_shared<Any>((int)123));
 		Class->DeclareMemberObject("G", user_type_shared<int>(), std::make_shared<Any>((int)124));
 		Class->DeclareMemberObject("B", user_type_shared<int>(), std::make_shared<Any>((int)125));
-		Class->DeclareMemberObject("A", user_type_shared<int>(), std::make_shared<Any>((int)126));		
+		Class->DeclareMemberObject("A", user_type_shared<int>(), std::make_shared<Any>((int)126));
 		EXPECT_EQ(123, Class->Cast<int>(Class->Call("R", { Class->Call("Color", {}) })));
 		EXPECT_EQ(126, Class->Cast<int>(Class->Call("A", { Class->Call("=", { Class->Call("Color", {}), Class->Call("Color", {}) }) })));
+
+		if (1) {
+			auto FrameworkElement = Namespace->MakeChildClass("FrameworkElement");
+			FrameworkElement->DeclareMemberObject("width", user_type_shared<double>(), std::make_shared<Any>(std::numeric_limits<double>::quiet_NaN()));
+			FrameworkElement->DeclareMemberObject("height", user_type_shared<double>(), std::make_shared<Any>(std::numeric_limits<double>::quiet_NaN()));
+			FrameworkElement->EmplaceFunction("area", make_callable([selfPtr = std::weak_ptr<Scopes::ClassScope>(FrameworkElement)](Any const& obj) -> double {
+				DynamicObject& OBJ = obj.cast<DynamicObject&>();
+				if (auto self = selfPtr.lock()) {
+					auto NaN = std::numeric_limits<double>::quiet_NaN();
+					auto& w = OBJ.m_objects->at("width")->cast<double&>();
+					auto& h= OBJ.m_objects->at("height")->cast<double&>();
+					if (w == NaN || h == NaN) return NaN;
+					else return w * h;
+				}
+				else {
+					throw(exception::not_found_error("Custom class type was no longer available"));
+				}
+			}, ParamTypes({ FrameworkElement->ClassType->MakeConstRef().lock() })));
+
+			//FrameworkElement->DeclareMemberObject("name", user_type_shared<std::string>(), std::make_shared<Any>(std::string("")));
+			//FrameworkElement->DeclareMemberObject("tag", user_type_shared<Var>(), std::make_shared<Any>(Var()));
+
+			if (1) {
+				auto Rectangle = Namespace->MakeChildClass("Rectangle", { FrameworkElement });
+				FrameworkElement->DeclareMemberObject("fill", Class->ClassType);
+				FrameworkElement->DeclareMemberObject("border", Class->ClassType);
+				// FrameworkElement->DeclareMemberObject("thickness", user_type_shared<std::string>(), std::make_shared<Any>(std::string("0,0,0,0")));
+			}
+		}
+
+		auto rect = Root->Call("::UI::Rectangle", {});
+		auto rect_fill = Root->Call("fill", { rect });
+		auto rect_fill_R = Root->Call("R", { rect_fill });
+		Root->Call("=", { rect_fill_R, 256 });
+		EXPECT_EQ(Root->Cast<double>(rect_fill_R), 256);
+
+
+		Root->Call("=", { Root->Call("width", { rect }), 20 });
+		Root->Call("=", { Root->Call("height", { rect }), 10 });
+		EXPECT_EQ(200, Root->Cast<int>(Root->Call("area", { rect })));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
