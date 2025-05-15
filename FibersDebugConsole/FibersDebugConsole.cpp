@@ -931,7 +931,6 @@ namespace GoodLang {
 				std::shared_ptr<Any> out{ nullptr };
 				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &object, &out, &objectState](Breadcrumb* namespacePtr, int search_state)->bool {
 					if (namespaceName.length() > 0) {
-
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
 						auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
@@ -942,8 +941,15 @@ namespace GoodLang {
 										out = ptr->objects_m.emplace(objName, ObjectWrapper(object, objectState)).second.get().object;
 									}
 									else { // the user is adding a member object, NOT a static object. 
-										// ...To-Do...
-										// std::dynamic_pointer_cast<ClassScope>(ptr)->
+										if (auto classPtr = std::dynamic_pointer_cast<ClassScope>(ptr)) {
+											if (classPtr->ClassType->IsBuiltInType()) {
+												// cannot add member vars to a built-in type. This should not be possible in a real script.
+												throw std::runtime_error("Attempting to add a member object to a built-in type, such as an int or double. This is not legal.");
+											}
+											else {
+												classPtr->DeclareMemberObject(objName, object.Type(), std::make_shared<Any>(object));
+											}
+										}										
 									}
 								}
 								else {
@@ -1196,7 +1202,7 @@ namespace GoodLang {
 
 				// one argument, and this is a class...
 				if (this->self_id_m.is_class() && (function.m_function->GetSignature().Arguments().size() == 1)) {
-					// the function name matches the class name... 					
+					// the function name matches the class name... 							
 					if (!function.m_isCached) {
 						if (!function.m_isEplicit) {
 							if (auto type_ptr = function.m_function->GetSignature().Arguments().Type(0).lock()) {
@@ -1205,10 +1211,12 @@ namespace GoodLang {
 										if (!type_ptr->is_any()) {
 											// the function seems to meet our needs. Update our list of conversion functions, which will be grabbed when making a conversion tree
 											if (auto ptr = std::dynamic_pointer_cast<ClassScope>(this->self_id_m.scope.lock())) {
-												ptr->conversion_functions->push_back(function);
-												// let the Root know that a new conversion function was added
-												if (auto Root = std::dynamic_pointer_cast<RootScope>(this->breadcrumb_m.root_m->this_m->scope.lock())) {
-													++Root->conversion_function_live_version;
+												if (name == ptr->Name()) {
+													ptr->conversion_functions->push_back(function);
+													// let the Root know that a new conversion function was added
+													if (auto Root = std::dynamic_pointer_cast<RootScope>(this->breadcrumb_m.root_m->this_m->scope.lock())) {
+														++Root->conversion_function_live_version;
+													}
 												}
 											}
 										}
@@ -1348,8 +1356,15 @@ namespace GoodLang {
 				return std::dynamic_pointer_cast<NamespaceScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
 			};
 			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name) {
-				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf());
+				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf());				
 				ptr->SetSelf(ptr);
+				ptr->AddDefaultConstructors();
+				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
+			};
+			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name, std::shared_ptr<Type_Info> type) {
+				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf(), type);
+				ptr->SetSelf(ptr);
+				ptr->AddDefaultConstructors();
 				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
 			};
 		};
@@ -1366,7 +1381,7 @@ namespace GoodLang {
 			GoodLang::details::flat_map<std::string, std::pair<std::weak_ptr<Type_Info>, std::shared_ptr<Any>>>
 				p_declared_member_objects; // declared member objects for the custom, scripted class which will be instantiated upon construction of the scripted class
 			std::shared_ptr<concurrency::concurrent_vector<Function>>
-				conversion_functions; // a duplicate list of functions that meet the definition for constructor or conversions to this class type
+				conversion_functions{ std::make_shared<concurrency::concurrent_vector<Function>>() }; // a duplicate list of functions that meet the definition for constructor or conversions to this class type
 
 		public:
 			ClassScope(
@@ -1662,8 +1677,8 @@ namespace GoodLang {
 				}
 				return out;
 			};
-			void AddDefaultConstructors() {
-				// note, only do this if this class is a scripted type
+			// note, only call this if this class is a scripted type
+			void AddDefaultConstructors() {				
 				if (ClassType && !ClassType->IsBuiltInType()) {
 					// Default constructor
 					this->AddFunction(this->self_id_m.scope_name, make_callable([selfPtr = std::weak_ptr<ClassScope>(std::dynamic_pointer_cast<ClassScope>(this->self_id_m.scope.lock()))]()->Any {
@@ -1675,7 +1690,7 @@ namespace GoodLang {
 						else {
 							throw(exception::not_found_error("Custom class type was no longer available"));
 						}
-					}));
+					}, {}, ClassType));
 
 					// Copy constructor
 					this->AddFunction(this->self_id_m.scope_name, make_callable([selfPtr = std::weak_ptr<ClassScope>(std::dynamic_pointer_cast<ClassScope>(this->self_id_m.scope.lock()))](Any const& from)->Any {
@@ -1688,7 +1703,7 @@ namespace GoodLang {
 						else {
 							throw(exception::not_found_error("Custom class type was no longer available"));
 						}
-					}, ParamTypes({ ClassType->MakeConstRef() })));
+					}, ParamTypes({ ClassType->MakeConstRef() }), ClassType));
 
 					// assignment operator
 					this->AddFunction("=", make_callable([selfPtr = std::weak_ptr<ClassScope>(std::dynamic_pointer_cast<ClassScope>(this->self_id_m.scope.lock()))](Any const& to, Any const& from)->Any {
@@ -1802,26 +1817,6 @@ namespace GoodLang {
 						}, ParamTypes({ ClassType->MakeConstRef() }), type.lock()->MakeConstRef()));
 				}
 			};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 		};
 
@@ -10662,6 +10657,46 @@ int main() {
 		EXPECT_EQ(true, Root->is_namespace());
 		EXPECT_EQ(false, Root->is_class());
 
+		if (1) {
+			auto Class = Root->MakeChildClass("int", user_type_shared_ptr<int>());
+			Class->EmplaceFunction("int", make_callable([]() -> int { return 0; }));
+			Class->EmplaceFunction("int", make_callable([](int const& rhs) -> int { return rhs; }));
+			Class->EmplaceFunction("int", make_callable([](long const& rhs) -> int { return rhs; }));
+			Class->EmplaceFunction("int", make_callable([](float const& rhs) -> int { return rhs; }));
+			Class->EmplaceFunction("int", make_callable([](double const& rhs) -> int { return rhs; }));
+		}
+		if (1) {
+			auto Class = Root->MakeChildClass("long", user_type_shared_ptr<long>());
+			Class->EmplaceFunction("long", make_callable([]() -> long { return 0; }));
+			Class->EmplaceFunction("long", make_callable([](int const& rhs) -> long { return rhs; }));
+			Class->EmplaceFunction("long", make_callable([](long const& rhs) -> long { return rhs; }));
+			Class->EmplaceFunction("long", make_callable([](float const& rhs) -> long { return rhs; }));
+			Class->EmplaceFunction("long", make_callable([](double const& rhs) -> long { return rhs; }));
+		}
+		if (1) {
+			auto Class = Root->MakeChildClass("float", user_type_shared_ptr<float>());
+			Class->EmplaceFunction("float", make_callable([]() -> float { return 0; }));
+			Class->EmplaceFunction("float", make_callable([](int const& rhs) -> float { return rhs; }));
+			Class->EmplaceFunction("float", make_callable([](long const& rhs) -> float { return rhs; }));
+			Class->EmplaceFunction("float", make_callable([](float const& rhs) -> float { return rhs; }));
+			Class->EmplaceFunction("float", make_callable([](double const& rhs) -> float { return rhs; }));
+		}
+		if (1) {
+			auto Class = Root->MakeChildClass("double", user_type_shared_ptr<double>());
+			Class->EmplaceFunction("double", make_callable([]() -> double { return 0; }));
+			Class->EmplaceFunction("double", make_callable([](int const& rhs) -> double { return rhs; }));
+			Class->EmplaceFunction("double", make_callable([](long const& rhs) -> double { return rhs; }));
+			Class->EmplaceFunction("double", make_callable([](float const& rhs) -> double { return rhs; }));
+			Class->EmplaceFunction("double", make_callable([](double const& rhs) -> double { return rhs; }));
+		}
+
+		EXPECT_EQ(Root->Cast<double>(100), 100.0);
+
+
+
+
+
+
 		auto Namespace = Root->MakeChildNamespace("UI");
 		EXPECT_EQ(false, Namespace->is_root());
 		EXPECT_EQ(true, Namespace->is_namespace());
@@ -10671,6 +10706,14 @@ int main() {
 		EXPECT_EQ(false, Class->is_root());
 		EXPECT_EQ(true, Class->is_namespace());
 		EXPECT_EQ(true, Class->is_class());
+		Class->DeclareMemberObject("R", user_type_shared<int>(), std::make_shared<Any>((int)123));
+		Class->DeclareMemberObject("G", user_type_shared<int>(), std::make_shared<Any>((int)124));
+		Class->DeclareMemberObject("B", user_type_shared<int>(), std::make_shared<Any>((int)125));
+		Class->DeclareMemberObject("A", user_type_shared<int>(), std::make_shared<Any>((int)126));		
+		EXPECT_EQ(123, Class->Cast<int>(Class->Call("R", { Class->Call("Color", {}) })));
+		EXPECT_EQ(126, Class->Cast<int>(Class->Call("A", { Class->Call("=", { Class->Call("Color", {}), Class->Call("Color", {}) }) })));
+
+
 
 		auto Scope = Class->MakeChildScope();
 		EXPECT_EQ(false, Scope->is_root());
@@ -10727,7 +10770,6 @@ int main() {
 		EXPECT_EQ((bool)Class->FindNamespace("::UI::Color::"), true);
 		EXPECT_EQ((bool)Class->FindNamespace("::Color"), true);
 
-		EXPECT_EQ((bool)Class->EmplaceFunction("Color", make_callable([]() {})), true);
 		EXPECT_EQ((bool)Class->FindFunction("Color", {}), true);
 		EXPECT_EQ((bool)Scope2->FindFunction("::UI::Color::Color", {}), true);
 
