@@ -425,7 +425,7 @@ namespace GoodLang {
 					}
 
 					for (auto& unit_type : Units::value::GetValueTypes()) {
-						auto abbreviation = std::string("_") + std::string(unit_type.second.UnitAbbreviation());
+						auto abbreviation = std::string("_") + std::string(unit_type.second.first.UnitAbbreviation());
 						auto type_info = unit_type.first.lock();
 						if (auto Class = std_namespace->FindClass(type_info)) {
 

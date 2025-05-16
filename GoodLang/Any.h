@@ -659,6 +659,7 @@ namespace GoodLang {
 		virtual std::weak_ptr<Type_Info> RemoveRef() const;
 
 		virtual std::function<Any(Any const&)>& GetCopyConstructor() const; 
+		virtual std::function<Any(Any const&)>& GetConstructorFromValue() const;
 		virtual bool IsBuiltInType() const;
 
 		const size_t uniqueHash;
@@ -844,7 +845,7 @@ namespace GoodLang {
 					return out;
 				}
 			}
-		};;
+		};
 		virtual std::weak_ptr<Type_Info> RemoveRef() const override {
 			constexpr bool thisIsConst = std::is_const<T>::value;
 			constexpr bool thisIsRef = std::is_reference<T>::value;
@@ -878,6 +879,7 @@ namespace GoodLang {
 			}
 		};
 		virtual std::function<Any(Any const&)>& GetCopyConstructor() const override; 
+		virtual std::function<Any(Any const&)>& GetConstructorFromValue() const override;
 
 	private:
 		impl::underlying_type_info m_type_info;
@@ -922,6 +924,7 @@ namespace GoodLang {
 		virtual std::weak_ptr<Type_Info> RemoveConst() const override;
 		virtual std::weak_ptr<Type_Info> RemoveRef() const override;
 		virtual std::function<Any(Any const&)>& GetCopyConstructor() const override;
+		virtual std::function<Any(Any const&)>& GetConstructorFromValue() const override;
 		virtual bool IsBuiltInType() const override;
 
 		const std::string m_full_name; // namespace::name
@@ -1953,6 +1956,15 @@ namespace GoodLang {
 			m_classType;
 		std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<Any>>>
 			m_objects;
+
+		std::shared_ptr<Any> operator[](std::string_view sv) {
+			if (m_objects) {
+				if (auto ptr = m_objects->operator[](std::string(sv))) {
+					return ptr;
+				}
+			}
+			return nullptr;
+		};
 	};
 	namespace Impl {
 		__forceinline void ToString(Tag<DynamicObject>, DynamicObject const& r, std::string& out) {
@@ -2678,6 +2690,22 @@ namespace GoodLang {
 					return from;
 				}
 			}
+		}) };
+		return out;
+	};
+};
+
+// GetCopyConstructor
+namespace GoodLang {
+	__forceinline std::function<Any(Any const&)>& Type_Info::GetConstructorFromValue() const {
+		static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+			return from;
+		}) };
+		return out;
+	};
+	__forceinline std::function<Any(Any const&)>& Scripted_Type_Info::GetConstructorFromValue() const {
+		static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+			return from;
 		}) };
 		return out;
 	};

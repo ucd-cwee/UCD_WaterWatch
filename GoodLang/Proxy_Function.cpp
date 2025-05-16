@@ -1,5 +1,8 @@
 #pragma once
 #include "Proxy_Function.h"
+
+#include "Units_Base.h"
+
 // #include <priority_queue>
 #include <queue>
 #include <map>
@@ -994,10 +997,20 @@ namespace GoodLang {
 	Proxy_Function Functions::BuildMatch(std::string const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
 		static auto hasher{ std::hash<std::string>() };
 		static auto hasher2{ std::hash<ParamTypes>() };
-		if (auto func = at(functionName, Params)) {
-			// cache (or actual) found
-			if (func->m_function) {
-				return func->m_function;
+
+		if (auto func = at(functionName, Params)) {		
+			if (func->m_function) { // cache (or actual) found
+				bool isTemplateFunc = func->m_function->GetSignature().IsTemplate();
+				bool isExplicitFunc = func->m_isEplicit;
+
+				if (isTemplateFunc) {
+					if (AllowTemplateInstantiation) {
+						return func->m_function;
+					}
+				}
+				else {
+					return func->m_function;
+				}
 			}
 		}
 		if (1) {
@@ -1192,3 +1205,4 @@ namespace GoodLang {
 	};
 
 };
+

@@ -36,7 +36,7 @@ namespace GoodLang {
 		template <typename T> static constexpr T abs(T x) { return x > (T)0 ? x : -x; };
 
 		namespace impl {
-			using TreeType = GoodLang::Map<uint64_t, std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>>>; // look-up with unit ratio
+			using TreeType = GoodLang::Map<uint64_t, std::pair<Units::value, Any>>; // look-up with unit ratio
 			using ModelType = GoodLang::Map<size_t, TreeType>; // look-up with unit category
 
 			static ModelType& Shared_Data() noexcept {
@@ -47,10 +47,10 @@ namespace GoodLang {
 	((long double)std::metric::num / (long double)std::metric::den)
 
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
-    model.UniqueAt(HashUnits(Categories::category::unitType_m))->insert_or_assign(Encode( type ::conversion_ratio), std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>>{ type(), GoodLang::user_type_shared< type >() });
+    model.UniqueAt(HashUnits(Categories::category::unitType_m))->insert_or_assign(Encode( type ::conversion_ratio), std::pair<Units::value, Any>{ type(), Any(type()) });
 
 #define DerivedUnitTypeWithMetricPrefix(type, category, prefix) \
-    model.UniqueAt(HashUnits(Categories::category::unitType_m))->insert_or_assign(Encode( prefix ## type ::conversion_ratio), std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>>{ prefix ## type(), GoodLang::user_type_shared< prefix ## type >() });
+    model.UniqueAt(HashUnits(Categories::category::unitType_m))->insert_or_assign(Encode( prefix ## type ::conversion_ratio), std::pair<Units::value, Any>{ prefix ## type(), Any(prefix ## type()) });
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
 	DerivedUnitType(type, category, abbreviation, ratio); \
@@ -83,10 +83,10 @@ namespace GoodLang {
 			UnitHash determines the class of unit (length, time, length/time, length/time^2, length^1.25, etc.
 			UnitRatio determines the specific ratio within that class (meter, foot, inch, etc.)
 			*/
-			static const std::pair< Units::value, std::weak_ptr<GoodLang::Type_Info>>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
+			static const std::pair< Units::value, Any>& lookup_impl(size_t UnitHash, double& UnitRatio) noexcept {
 				auto targetRatio = Encode(UnitRatio);
 
-				static std::pair<Units::value, std::weak_ptr<GoodLang::Type_Info>> out{ Units::value(), std::weak_ptr<GoodLang::Type_Info>() };
+				static std::pair<Units::value, Any> out{ Units::value(), Any() };
 
 				auto& model = Shared_Data();
 
@@ -131,13 +131,12 @@ namespace GoodLang {
 			};
 		};
 
-		Map<std::weak_ptr<GoodLang::Type_Info>, Units::value> value::GetValueTypes() noexcept {
-			Map<std::weak_ptr<GoodLang::Type_Info>, Units::value> out;
+		Map<std::weak_ptr<GoodLang::Type_Info>, std::pair<Units::value, Any>> value::GetValueTypes() noexcept {
+			Map<std::weak_ptr<GoodLang::Type_Info>, std::pair<Units::value, Any>> out;
 			for (auto& x : impl::Shared_Data()) {
 				for (auto& y : x.second) {
 					const auto& T = y.second.second;
-					const auto& v = y.second.first;
-					out.try_emplace(T, v);
+					out.try_emplace(T.Type(), y.second);
 				}
 			}
 			return out;

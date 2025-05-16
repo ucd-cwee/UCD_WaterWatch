@@ -1,9 +1,11 @@
 #pragma once
+#include "Any.h"
 #include "ThreadSafeContainers.h"
 #include "../WaterWatchCpp/enum.h"
 #include <string_view>
 #include <initializer_list>
 #include <WinDNS.h>
+#include <array>
 
 namespace GoodLang {
 	namespace Units {
@@ -252,7 +254,7 @@ namespace GoodLang {
 			size_t hash() const;
 
 		public:
-			static Map<std::weak_ptr<GoodLang::Type_Info>, Units::value> GetValueTypes() noexcept;
+			static Map<std::weak_ptr<GoodLang::Type_Info>, std::pair<Units::value, Any>> GetValueTypes() noexcept;
 
 		};
 		using scalar = value;
@@ -367,6 +369,18 @@ namespace GoodLang {
 		// __forceinline void GetChildren(Tag<Units::value>, Units::value const& r, std::vector< NodeCache >& out) { };
 	};
 
+	template <typename T> __forceinline std::function<Any(Any const&)>& BuiltIn_Type_Info<T>::GetConstructorFromValue() const {
+		static auto out{ std::function<Any(Any const&)>([](Any const& from) -> Any {
+			// from BETTER BE a value type
+			if (from.IsTypeOf<Units::value>()) {
+				if constexpr (std::is_constructible_v<typename std::decay_t<T>, Units::value&>) {
+					return typename std::decay_t<T>{ from.cast<Units::value&>() };
+				}
+			}
+			return from;
+		}) };
+		return out;
+	};
 };
 
 namespace std {
