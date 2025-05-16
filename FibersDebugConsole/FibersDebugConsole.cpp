@@ -685,6 +685,10 @@ namespace GoodLang {
 							long long QualifiedNameLen = namespacePtr->current_namespace.length();
 							auto F = namespacePtr->current_namespace.rfind(namespaceName);
 							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+								if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+									if (namespacePtr->current_namespace != namespaceName) return false;
+								}
+
 								// the namespace is technically a candidate
 								if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
 									//if (out = ptr->functions_m.BuildMatch(objName, params, *converter, false, false)) {
@@ -718,6 +722,10 @@ namespace GoodLang {
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
 						auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+								if (namespacePtr->current_namespace != namespaceName) return false;
+							}
+
 							// the namespace is technically a candidate
 							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
 								//if (out = ptr->functions_m.BuildMatch(objName, params, *converter, false, false)) {
@@ -809,6 +817,10 @@ namespace GoodLang {
 							long long QualifiedNameLen = namespacePtr->current_namespace.length();
 							auto F = namespacePtr->current_namespace.rfind(namespaceName);
 							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+								if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+									if (namespacePtr->current_namespace != namespaceName) return false;
+								}
+
 								// the namespace is technically a candidate
 								if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
 									if (!out1) {
@@ -881,6 +893,10 @@ namespace GoodLang {
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
 						auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+								if (namespacePtr->current_namespace != namespaceName) return false;
+							}
+
 							// the namespace is technically a candidate
 							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
 								if (!out1) {
@@ -979,6 +995,10 @@ namespace GoodLang {
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
 						auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+								if (namespacePtr->current_namespace != namespaceName) return false;
+							}
+
 							// the namespace is technically a candidate
 							if (auto ptr = namespacePtr->this_m->scope.lock()) {
 								if (namespacePtr->this_m->is_class()) {
@@ -1046,6 +1066,10 @@ namespace GoodLang {
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
 						auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+							if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+								if (namespacePtr->current_namespace != namespaceName) return false;
+							}
+
 							// the namespace is technically a candidate
 							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
 								ptr->AddFunction(objName, object);
@@ -3414,8 +3438,8 @@ namespace GoodLang {
 				}
 
 				// Functions
-				classPtr->EmplaceFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));
-				classPtr->EmplaceFunction("min", make_callable([]() { return std::numeric_limits<T>::lowest(); }));
+				//classPtr->EmplaceFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));
+				//classPtr->EmplaceFunction("min", make_callable([]() { return std::numeric_limits<T>::lowest(); }));
 				classPtr->EmplaceFunction("to_string", make_callable([](T const& o) -> std::string { return std::to_string(o); }));
 				if constexpr (utilities::is_std_hashable_v<T>) {
 					classPtr->EmplaceFunction("to_hash", make_callable([](T const& o) -> size_t { return std::hash<T>()(o); }));
@@ -3425,6 +3449,10 @@ namespace GoodLang {
 						classPtr->EmplaceFunction("to_hash", make_callable([](T const& o) -> size_t { size_t out{ 37 }; details::hash_combine(out, (double)o); return out; }));
 					}
 				}
+
+				// static data
+				classPtr->EmplaceObject("max", std::numeric_limits<T>::max(), Scopes::ObjectWrapper::ObjectState::Static);
+				classPtr->EmplaceObject("min", std::numeric_limits<T>::lowest(), Scopes::ObjectWrapper::ObjectState::Static);
 			};
 
 			void AddBasicTypes(RootScope* This) {
@@ -12170,7 +12198,7 @@ int main() {
 		Root->SetSelf(Root);	
 		Root->AddBuiltIns();
 
-		print(Root->Cast<std::string>(Root->Call("to_string", { Root->Call("DateTime::Now", {}) })));
+		(void)(Root->Cast<std::string>(Root->Call("to_string", { Root->Call("DateTime::Now", {}) })));
 
 		EXPECT_EQ(true, Root->is_root());
 		EXPECT_EQ(true, Root->is_namespace());
@@ -12223,7 +12251,9 @@ int main() {
 
 			if (1) {
 				auto Rectangle = Namespace->MakeChildClass("Rectangle", { FrameworkElement });
+				// static object 
 				Rectangle->EmplaceObject("type_name", std::string("Rectangle"), Scopes::ObjectWrapper::ObjectState::Static);
+				// member objects
 				Rectangle->EmplaceObject("fill", Class->Call(Class->Name(), {}), Scopes::ObjectWrapper::ObjectState::Normal);
 				Rectangle->EmplaceObject("border", Class->Call(Class->Name(), {}), Scopes::ObjectWrapper::ObjectState::Normal);
 				Rectangle->EmplaceObject("thickness", std::string("0,0,0,0"), Scopes::ObjectWrapper::ObjectState::Normal);
@@ -12232,7 +12262,7 @@ int main() {
 				// Rectangle->DeclareMemberObject("thickness", user_type_shared<std::string>(), std::make_shared<Any>(std::string("0,0,0,0")));
 
 				auto rect = Root->Call("::UI::Rectangle", {});
-				(void)Root->Call("print", { Rectangle->Call("type_name", { rect }) });
+				(void)Root->Call("to_string", { Rectangle->Call("type_name", { rect }) });
 			}
 		}
 
@@ -12250,27 +12280,25 @@ int main() {
 		Root->Call("=", { Root->Call("height", { rect }), 10 });
 		EXPECT_EQ(200, Root->Cast<int>(Root->Call("area", { rect })));
 
-		(void)Root->Call("print", { Root->Call("Rectangle::type_name", { rect }) });
+		(void)Root->Call("to_string", { Root->Call("Rectangle::type_name", { rect }) });
 		
-		(void)Root->Call("print", { rect }); // defaults to the template function, since one wasn't provided for this type. 
+		(void)Root->Call("to_string", { rect }); // defaults to the template function, since one wasn't provided for this type. 
 
 
+		(void)Root->Call("to_string", { Root->Call("max", { 100 }) });
+		(void)Root->Call("to_string", { Root->Call("min", { 100 }) });
 
+		(void)Root->Call("to_string", { Root->Call("max", { 100.0 }) });
+		(void)Root->Call("to_string", { Root->Call("min", { 100.0 }) });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+		try {
+			(void)Root->Call("print", { Root->Call("max", { }) });
+			assert(false);
+		}catch (exception::not_found_error&) {}
+		try {
+			(void)Root->Call("print", { Root->Call("min", { }) });
+			assert(false);
+		}catch (exception::not_found_error&) {}
 
 		auto Scope = Class->MakeChildScope();
 		EXPECT_EQ(false, Scope->is_root());
@@ -12313,6 +12341,8 @@ int main() {
 		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](long const& x, long const& y) { return std::max(x, y); })), true);
 		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](float const& x, float const& y) { return std::max(x, y); })), true);
 		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](double const& x, double const& y) { return std::max(x, y); })), true);
+		
+		// To-Do: Figure out why this is failing. 
 		EXPECT_EQ(Namespace->Cast<int>(Namespace->Call("max", { -50, 50 })), 50);
 		EXPECT_EQ(Namespace->Cast<long>(Namespace->Call("max", { -50l, 50l })), 50l);
 		EXPECT_EQ(Namespace->Cast<float>(Namespace->Call("max", { -50.0f, 50.0f })), 50.0f);
