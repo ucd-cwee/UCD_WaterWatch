@@ -611,11 +611,13 @@ namespace GoodLang {
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
 							// the namespace is technically a candidate
 							if (auto ptr = namespacePtr->this_m->scope.lock()) {
-								auto f = ptr->objects_m.find(objName);
-								if (f != ptr->objects_m.end()) {
-									if (StaticOnly && !f->second->is_static()) return false;
-									out = f->second->object;
-									return true;
+								if (ptr->objects_m.size() > 0) {
+									auto f = ptr->objects_m.find(objName);
+									if (f != ptr->objects_m.end()) {
+										if (StaticOnly && !f->second->is_static()) return false;
+										out = f->second->object;
+										return true;
+									}
 								}
 							}
 						}
@@ -623,11 +625,13 @@ namespace GoodLang {
 					else {
 						// any namespace is technically a candidate
 						if (auto ptr = namespacePtr->this_m->scope.lock()) {
-							auto f = ptr->objects_m.find(objName);
-							if (f != ptr->objects_m.end()) {
-								if (StaticOnly && !f->second->is_static()) return false;
-								out = f->second->object;
-								return true;
+							if (ptr->objects_m.size() > 0) {
+								auto f = ptr->objects_m.find(objName);
+								if (f != ptr->objects_m.end()) {
+									if (StaticOnly && !f->second->is_static()) return false;
+									out = f->second->object;
+									return true;
+								}
 							}
 						}
 					}
@@ -824,55 +828,80 @@ namespace GoodLang {
 								// the namespace is technically a candidate
 								if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
 									if (!out1) {
-										auto f = ptr->objects_m.find(objName);
-										if (f != ptr->objects_m.end()) {
-											if (!(StaticOnly && !f->second->is_static())) {
-												if (params.size() == 0) {
-													out1 = f->second->object;
-													return true;
-												}
-												else if (f->second->object && f->second->object->IsTypeOf<Proxy_Function>()) {
-													out1 = f->second->object;
-													return true;
-												}
-												else {
-													out1 = f->second->object;
+										if (ptr->objects_m.size() > 0) {
+											auto f = ptr->objects_m.find(objName);
+											if (f != ptr->objects_m.end()) {
+												if (!(StaticOnly && !f->second->is_static())) {
+													if (params.size() == 0) {
+														out1 = f->second->object;
+														return true;
+													}
+													else if (f->second->object && f->second->object->IsTypeOf<Proxy_Function>()) {
+														out1 = f->second->object;
+														return true;
+													}
+													else {
+														out1 = f->second->object;
+													}
 												}
 											}
 										}
 									}
-									if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
-										auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-										//if (cost == 0) {
-										//	out2 = out;
-										//	return true;
-										//}
-										if (cost < details::TypeConversionWorstCaseCost) {
-											sort[0].emplace(cost + searchDepth++, out);
+									
+									if (sort[0].size() == 0) {
+										if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+											if (1) {
+												auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+												//if (cost == 0) {
+												//	out2 = out;
+												//	return true;
+												//}
+												if (cost < details::TypeConversionWorstCaseCost) {
+													sort[1].emplace(cost + searchDepth++, out);
+												}
+											}
+											if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
+												auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+												if (cost == 0) {
+													out1 = nullptr;
+													out2 = out;
+													return true;
+												}
+												if (cost < details::TypeConversionWorstCaseCost) {
+													sort[0].emplace(cost + searchDepth++, out);
+												}
+											}
 										}
 									}
-									if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
-										auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-										//if (cost == 0) {
-										//	out2 = out;
-										//	return true;
-										//}
-										if (cost < details::TypeConversionWorstCaseCost) {
-											sort[1].emplace(cost + searchDepth++, out);
+									else {
+										if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
+											auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+											if (cost == 0) {
+												out1 = nullptr;
+												out2 = out;
+												return true;
+											}
+											if (cost < details::TypeConversionWorstCaseCost) {
+												sort[0].emplace(cost + searchDepth++, out);
+											}
 										}
 									}
+
 									// the user may have meant to call the constructor for a class in this namespace...
-									if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
-										if (f->second->get()->Name() == objName) {
-											if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(*f->second)) {
-												if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
-													auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-													//if (cost == 0) {
-													//	out2 = out;
-													//	return true;
-													//}
-													if (cost < details::TypeConversionWorstCaseCost) {
-														sort[2].emplace(cost + searchDepth++, out);
+									if ((sort[0].size() == 0) && (sort[1].size() == 0)) {
+										if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
+											if (f->second->get()->Name() == objName) {
+												if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(*f->second)) {
+													if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+														auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+														//if (cost == 0) {
+														//	out1 = nullptr;
+														//	out2 = out;
+														//	return true;
+														//}
+														if (cost < details::TypeConversionWorstCaseCost) {
+															sort[2].emplace(cost + searchDepth++, out);
+														}
 													}
 												}
 											}
@@ -886,87 +915,124 @@ namespace GoodLang {
 						}
 					}
 
-					searchDepth = 0;
-					// try to find the function from nearby scopes... 
-					if (FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> bool {
-						bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
-						long long QualifiedNameLen = namespacePtr->current_namespace.length();
-						auto F = namespacePtr->current_namespace.rfind(namespaceName);
-						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
-							if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
-								if (namespacePtr->current_namespace != namespaceName) return false;
+					// walk through it!
+					for (auto& s1 : sort) {
+						for (auto& s : s1) {
+							if (s.first < details::TypeConversionWorstCaseCost) {
+								out1 = nullptr;
+								out2 = s.second;
+								return true;
 							}
+						}
+					}
 
-							// the namespace is technically a candidate
-							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
-								if (!out1) {
-									auto f = ptr->objects_m.find(objName);
-									if (f != ptr->objects_m.end()) {
-										if (!(StaticOnly && !f->second->is_static())) {
-											if (params.size() == 0) {
-												out1 = f->second->object;
-												return true;
-											}
-											else if (f->second->object && f->second->object->IsTypeOf<Proxy_Function>()) {
-												out1 = f->second->object;
-												return true;
-											}
-											else {
-												out1 = f->second->object;
+					{
+						searchDepth = 0;
+						// try to find the function from nearby scopes... 
+						if (FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> bool {
+							bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
+							long long QualifiedNameLen = namespacePtr->current_namespace.length();
+							auto F = namespacePtr->current_namespace.rfind(namespaceName);
+							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
+								if ((search_state & SearchUpHitNamespace) && (search_state & SearchingChildren)) {
+									if (namespacePtr->current_namespace != namespaceName) return false;
+								}
+
+								// the namespace is technically a candidate
+								if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
+									if (!out1) {
+										if (ptr->objects_m.size() > 0) {
+											auto f = ptr->objects_m.find(objName);
+											if (f != ptr->objects_m.end()) {
+												if (!(StaticOnly && !f->second->is_static())) {
+													if (params.size() == 0) {
+														out1 = f->second->object;
+														return true;
+													}
+													else if (f->second->object && f->second->object->IsTypeOf<Proxy_Function>()) {
+														out1 = f->second->object;
+														return true;
+													}
+													else {
+														out1 = f->second->object;
+													}
+												}
 											}
 										}
 									}
-								}
-								if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
-									auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-									//if (cost == 0) {
-									//	out2 = out;
-									//	return true;
-									//}
-									if (cost < details::TypeConversionWorstCaseCost) {
-										sort[0].emplace(cost + searchDepth++, out);
-									}
-									out = nullptr;
-								}
-								if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
-									auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-									//if (cost == 0) {
-									//	out2 = out;
-									//	return true;
-									//}
-									if (cost < details::TypeConversionWorstCaseCost) {
-										sort[1].emplace(cost + searchDepth++, out);
-									}
-									out = nullptr;
-								}
-								// the user may have meant to call the constructor for a class in this namespace...
-								if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
-									if (f->second->get()->Name() == objName) {
-										if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(*f->second)) {
-											if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+									if (sort[0].size() == 0) {
+										if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+											if (1) {
 												auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
 												//if (cost == 0) {
 												//	out2 = out;
 												//	return true;
 												//}
 												if (cost < details::TypeConversionWorstCaseCost) {
-													sort[2].emplace(cost + searchDepth++, out);
+													sort[1].emplace(cost + searchDepth++, out);
+												}
+												out = nullptr;
+											}
+											if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
+												auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+												if (cost == 0) {
+													out1 = nullptr;
+													out2 = out;
+													return true;
+												}
+												if (cost < details::TypeConversionWorstCaseCost) {
+													sort[0].emplace(cost + searchDepth++, out);
+												}
+												out = nullptr;
+											}
+										}
+									}
+									else {
+										if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
+											auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+											if (cost == 0) {
+												out1 = nullptr;
+												out2 = out;
+												return true;
+											}
+											if (cost < details::TypeConversionWorstCaseCost) {
+												sort[0].emplace(cost + searchDepth++, out);
+											}
+											out = nullptr;
+										}
+									}
+									// the user may have meant to call the constructor for a class in this namespace...
+									if ((sort[0].size() == 0) && (sort[1].size() == 0)) {
+										if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
+											if (f->second->get()->Name() == objName) {
+												if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(*f->second)) {
+													if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+														auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+														//if (cost == 0) {
+														//	out2 = out;
+														//	return true;
+														//}
+														if (cost < details::TypeConversionWorstCaseCost) {
+															sort[2].emplace(cost + searchDepth++, out);
+														}
+													}
 												}
 											}
 										}
 									}
 								}
 							}
-						}
-						return false;
-					})) {
-						return true;
-					};
+							return false;
+							})) {
+							return true;
+						};
+					}
 
 					// walk through it!
 					for (auto& s1 : sort) {
 						for (auto& s : s1) {
 							if (s.first < details::TypeConversionWorstCaseCost) {
+								out1 = nullptr;
 								out2 = s.second;
 								return true;
 							}
@@ -1240,13 +1306,6 @@ namespace GoodLang {
 				return user_type<void>().name();
 			};
 
-
-
-
-
-
-
-
 			std::shared_ptr<BasicScope> MakeChildScope() const {
 				auto ptr = std::make_shared<BasicScope>("", ScopeType::Basic, GetSelf());
 				ptr->SetSelf(ptr);
@@ -1259,7 +1318,8 @@ namespace GoodLang {
 		friend class BasicScope;
 		friend class RootScope;
 		protected:
-			std::shared_ptr<std::string> name_m;
+			std::shared_ptr<std::string> 
+				name_m;
 			GoodLang::details::flat_map< std::string, std::shared_ptr<BasicScope> >
 				children_m;
 			Functions
@@ -1305,6 +1365,10 @@ namespace GoodLang {
 			NamespaceScope(std::shared_ptr<std::string> name, int type = ScopeType::Basic | ScopeType::Namespace, std::shared_ptr< BasicScope > const& parent = nullptr)
 				: name_m(name)
 				, BasicScope(*name, type, parent)
+			{};
+			NamespaceScope(std::string_view const& name, int type = ScopeType::Basic | ScopeType::Namespace, std::shared_ptr< BasicScope > const& parent = nullptr)
+				: name_m(nullptr)
+				, BasicScope(name, type, parent)
 			{};
 			NamespaceScope(NamespaceScope const&) = delete;
 			NamespaceScope(NamespaceScope&&) = delete;
@@ -1420,21 +1484,39 @@ namespace GoodLang {
 			};
 
 			std::shared_ptr<NamespaceScope> MakeChildNamespace(std::string_view name) {
-				auto ptr = std::make_shared<NamespaceScope>(std::make_shared<std::string>(std::string(name)), ScopeType::Basic | ScopeType::Namespace, GetSelf());
+				auto ptr = std::make_shared<NamespaceScope>(name, ScopeType::Basic | ScopeType::Namespace, GetSelf());
 				ptr->SetSelf(ptr);
 				return std::dynamic_pointer_cast<NamespaceScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
 			};
 			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name, std::vector<std::weak_ptr<ClassScope>> inheritance = {}) {
-				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf(), nullptr, inheritance);
+				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), nullptr, inheritance);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
 				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
 			};
 			std::shared_ptr<ClassScope> MakeChildClass(std::string_view name, std::shared_ptr<Type_Info> type) {
-				auto ptr = std::make_shared<ClassScope>(std::make_shared<std::string>(std::string(name)), GetSelf(), type);
+				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), type);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
 				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(std::string(name), std::move(ptr)).second.get());
+			};
+
+			std::shared_ptr<NamespaceScope> MakeChildNamespace(std::shared_ptr<std::string> const& name) {
+				auto ptr = std::make_shared<NamespaceScope>(name, ScopeType::Basic | ScopeType::Namespace, GetSelf());
+				ptr->SetSelf(ptr);
+				return std::dynamic_pointer_cast<NamespaceScope>(this->children_m.emplace(*name, std::move(ptr)).second.get());
+			};
+			std::shared_ptr<ClassScope> MakeChildClass(std::shared_ptr<std::string> const& name, std::vector<std::weak_ptr<ClassScope>> inheritance = {}) {
+				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), nullptr, inheritance);
+				ptr->SetSelf(ptr);
+				ptr->AddDefaultConstructors();
+				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(*name, std::move(ptr)).second.get());
+			};
+			std::shared_ptr<ClassScope> MakeChildClass(std::shared_ptr<std::string> const& name, std::shared_ptr<Type_Info> type) {
+				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), type);
+				ptr->SetSelf(ptr);
+				ptr->AddDefaultConstructors();
+				return std::dynamic_pointer_cast<ClassScope>(this->children_m.emplace(*name, std::move(ptr)).second.get());
 			};
 		};
 
@@ -1456,7 +1538,43 @@ namespace GoodLang {
 
 		public:
 			ClassScope(
-				std::shared_ptr<std::string> name, 
+				std::shared_ptr<std::string> name,
+				std::shared_ptr< BasicScope > const& parent = nullptr,
+				std::shared_ptr<Type_Info> type = nullptr,
+				std::vector<std::weak_ptr<ClassScope>> inheritance = {} // e.g. this class derives from another Class
+			)
+				: NamespaceScope(name, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, parent)
+				, DerivedFrom(inheritance)
+			{
+				for (int i = DerivedFrom.size() - 1; i >= 0; i--) {
+					if (auto InteritedClass = DerivedFrom[i].lock()) {
+						if (auto InteritedClassType = InteritedClass->ClassType) {
+							if (InteritedClassType->IsBuiltInType()) { // cannot include built-in types
+								DerivedFrom.erase(DerivedFrom.begin() + i); // remove this inheritance from the list, and consider throwing an error
+								// currently not throwing because that would prevent calling the destructor, which is 100% a requirement to prevent a memory leak.
+							}
+						}
+					}
+				}
+				// loops over inheritance instead of DerivedFrom on purpose, since DerivedFrom may have deleted the inheritance (for good reason) but we still want the using statement
+				for (auto& p : inheritance) {
+					if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(p.lock())) {
+						this->AddUsing(ptr);
+					}
+				}
+
+				if ((!type) || (type->is_void())) {
+					const_cast<std::shared_ptr<Type_Info>&>(ClassType) = std::dynamic_pointer_cast<Type_Info>(std::make_shared<Scripted_Type_Info>(
+						std::string(Breadcrumb::RemoveTrailing(this->breadcrumb_m.parent_m->current_namespace, ':')), std::string(this->self_id_m.scope_name), false, false
+						));
+				}
+				else {
+					const_cast<std::shared_ptr<Type_Info>&>(ClassType) = type;
+				}
+			};
+
+			ClassScope(
+				std::string_view const& name, 
 				std::shared_ptr< BasicScope > const& parent = nullptr,
 				std::shared_ptr<Type_Info> type = nullptr,
 				std::vector<std::weak_ptr<ClassScope>> inheritance = {} // e.g. this class derives from another Class
@@ -1490,6 +1608,7 @@ namespace GoodLang {
 					const_cast<std::shared_ptr<Type_Info>&>(ClassType) = type;
 				}	
 			};
+
 			ClassScope(ClassScope const&) = delete;
 			ClassScope(ClassScope&&) = delete;
 			ClassScope& operator=(ClassScope const&) = delete;
@@ -2015,7 +2134,7 @@ namespace GoodLang {
 		public:
 			RootScope()
 				: NamespaceScope(
-					std::make_shared<std::string>(""), 
+					"", 
 					Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace | Scopes::ScopeType::Root, 
 					nullptr)
 			{};
@@ -2052,58 +2171,58 @@ namespace GoodLang {
 						std::shared_ptr<ClassScope> classPtr{ this->MakeChildClass("string", user_type_shared_ptr<std::string>()) };
 
 						// add converters
-						classPtr->EmplaceFunction("string", make_callable([](bool const& from) -> std::string { if (from) return "true"; else return "false"; }));
-						classPtr->EmplaceFunction("string", make_callable([](char const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](int const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](long const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](float const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](double const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](size_t const& from) -> std::string { return std::to_string(from); }));
-						// classPtr->EmplaceFunction("string", make_callable([](fibers::containers::number < double > const& from) -> std::string { return std::to_string(from.load()); }));
-						classPtr->EmplaceFunction("string", make_callable([](signed char const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](unsigned char const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](char16_t const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](char32_t const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](wchar_t const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](short const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](unsigned short const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](unsigned int const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](unsigned long const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](long long const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([](long double const& from) -> std::string { return std::to_string(from); }));
-						classPtr->EmplaceFunction("string", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
+						classPtr->AddFunction("string", make_callable([](bool const& from) -> std::string { if (from) return "true"; else return "false"; }));
+						classPtr->AddFunction("string", make_callable([](char const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](int const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](long const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](float const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](double const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](size_t const& from) -> std::string { return std::to_string(from); }));
+						// classPtr->AddFunction("string", make_callable([](fibers::containers::number < double > const& from) -> std::string { return std::to_string(from.load()); }));
+						classPtr->AddFunction("string", make_callable([](signed char const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](unsigned char const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](char16_t const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](char32_t const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](wchar_t const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](short const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](unsigned short const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](unsigned int const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](unsigned long const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](long long const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([](long double const& from) -> std::string { return std::to_string(from); }));
+						classPtr->AddFunction("string", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
 							if (auto p = self.lock()) return p->GetTypeName(from);
 							if (auto p = from.lock()) return p->name();
 							else return user_type<void>().name();
 						}));
 
 						// Constructors
-						classPtr->EmplaceFunction("string", make_callable([]() -> std::string { return std::string{}; }));
-						classPtr->EmplaceFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
-						classPtr->EmplaceFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() }), user_type_shared<std::string>().lock()->MakeRef()));
+						classPtr->AddFunction("string", make_callable([]() -> std::string { return std::string{}; }));
+						classPtr->AddFunction("string", make_callable([](std::string const& makeCopy) -> std::string { return makeCopy; }));
+						classPtr->AddFunction("=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out = b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() }), user_type_shared<std::string>().lock()->MakeRef()));
 
 						// Comparisons
-						classPtr->EmplaceFunction("==", make_callable([](std::string const& x, std::string const& y) -> bool { return x == y; }));
-						classPtr->EmplaceFunction("!=", make_callable([](std::string const& x, std::string const& y) -> bool { return x != y; }));
-						classPtr->EmplaceFunction("<", make_callable([](std::string const& x, std::string const& y) -> bool { return x < y; }));
-						classPtr->EmplaceFunction("<=", make_callable([](std::string const& x, std::string const& y) -> bool { return x <= y; }));
-						classPtr->EmplaceFunction(">", make_callable([](std::string const& x, std::string const& y) -> bool { return x > y; }));
-						classPtr->EmplaceFunction(">=", make_callable([](std::string const& x, std::string const& y) -> bool { return x >= y; }));
-						classPtr->EmplaceFunction("+", make_callable([](std::string const& x, std::string const& y) -> std::string { return x + y; }));
-						classPtr->EmplaceFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() }), user_type_shared<std::string>().lock()->MakeRef()));
+						classPtr->AddFunction("==", make_callable([](std::string const& x, std::string const& y) -> bool { return x == y; }));
+						classPtr->AddFunction("!=", make_callable([](std::string const& x, std::string const& y) -> bool { return x != y; }));
+						classPtr->AddFunction("<", make_callable([](std::string const& x, std::string const& y) -> bool { return x < y; }));
+						classPtr->AddFunction("<=", make_callable([](std::string const& x, std::string const& y) -> bool { return x <= y; }));
+						classPtr->AddFunction(">", make_callable([](std::string const& x, std::string const& y) -> bool { return x > y; }));
+						classPtr->AddFunction(">=", make_callable([](std::string const& x, std::string const& y) -> bool { return x >= y; }));
+						classPtr->AddFunction("+", make_callable([](std::string const& x, std::string const& y) -> std::string { return x + y; }));
+						classPtr->AddFunction("+=", make_callable([](Any const& a, std::string const& b) -> Any { std::string& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<std::string>().lock()->MakeRef(), user_type_shared<std::string>().lock()->MakeConstRef() }), user_type_shared<std::string>().lock()->MakeRef()));
 
 						// Functions
-						classPtr->EmplaceFunction("length", make_callable([](std::string const& a) -> size_t { return a.length(); }));
-						classPtr->EmplaceFunction("size", make_callable([](std::string const& a) -> size_t { return a.size(); }));
-						classPtr->EmplaceFunction("[]", make_callable([](std::string const& a, size_t index) -> char { return a[index]; }));
-						classPtr->EmplaceFunction("front", make_callable([](std::string const& a) -> char { return a.front(); }));
-						classPtr->EmplaceFunction("back", make_callable([](std::string const& a) -> char { return a.back(); }));
-						classPtr->EmplaceFunction("find", make_callable([](std::string const& a, std::string const& toFind) -> size_t { return a.find(toFind); }));
-						classPtr->EmplaceFunction("find", make_callable([](std::string const& a, std::string const& toFind, size_t startPos) -> size_t { return a.find(toFind, startPos); }));
-						classPtr->EmplaceFunction("substr", make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); })/*, { "input", "Off" }*/);
-						classPtr->EmplaceFunction("substr", make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); })/*, { "input", "Off", "Count" }*/);
-						classPtr->EmplaceFunction("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
-						classPtr->EmplaceFunction("to_hash", make_callable([](std::string const& o) -> size_t { return std::hash<std::string>()(o); }));
+						classPtr->AddFunction("length", make_callable([](std::string const& a) -> size_t { return a.length(); }));
+						classPtr->AddFunction("size", make_callable([](std::string const& a) -> size_t { return a.size(); }));
+						classPtr->AddFunction("[]", make_callable([](std::string const& a, size_t index) -> char { return a[index]; }));
+						classPtr->AddFunction("front", make_callable([](std::string const& a) -> char { return a.front(); }));
+						classPtr->AddFunction("back", make_callable([](std::string const& a) -> char { return a.back(); }));
+						classPtr->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind) -> size_t { return a.find(toFind); }));
+						classPtr->AddFunction("find", make_callable([](std::string const& a, std::string const& toFind, size_t startPos) -> size_t { return a.find(toFind, startPos); }));
+						classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); })/*, { "input", "Off" }*/);
+						classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); })/*, { "input", "Off", "Count" }*/);
+						classPtr->AddFunction("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
+						classPtr->AddFunction("to_hash", make_callable([](std::string const& o) -> size_t { return std::hash<std::string>()(o); }));
 
 						// Objects or Constants
 						classPtr->EmplaceObject("npos", std::make_shared<Any>(std::string::npos), ObjectWrapper::ObjectState::Static | ObjectWrapper::ObjectState::Constant);
@@ -2114,50 +2233,50 @@ namespace GoodLang {
 						std::shared_ptr<ClassScope> classPtr{ this->MakeChildClass("Type_Info", user_type_shared_ptr<std::weak_ptr<Type_Info>>()) };
 
 						// Constructors
-						classPtr->EmplaceFunction("=", make_callable([](Any const& a, std::weak_ptr<Type_Info> const& b) -> Any { std::weak_ptr<Type_Info>& out = a.cast(); out = b; return a;
+						classPtr->AddFunction("=", make_callable([](Any const& a, std::weak_ptr<Type_Info> const& b) -> Any { std::weak_ptr<Type_Info>& out = a.cast(); out = b; return a;
 							}, ParamTypes({ user_type_shared<std::weak_ptr<Type_Info>>().lock()->MakeRef(), user_type_shared<std::weak_ptr<Type_Info>>().lock()->MakeConstRef() }), user_type_shared<std::weak_ptr<Type_Info>>().lock()->MakeRef()));
 
 						// Comparisons
-						classPtr->EmplaceFunction("==", make_callable([](std::weak_ptr<Type_Info> const& x, std::weak_ptr<Type_Info> const& y) -> bool { return x == y; }));
-						classPtr->EmplaceFunction("!=", make_callable([](std::weak_ptr<Type_Info> const& x, std::weak_ptr<Type_Info> const& y) -> bool { return x != y; }));
+						classPtr->AddFunction("==", make_callable([](std::weak_ptr<Type_Info> const& x, std::weak_ptr<Type_Info> const& y) -> bool { return x == y; }));
+						classPtr->AddFunction("!=", make_callable([](std::weak_ptr<Type_Info> const& x, std::weak_ptr<Type_Info> const& y) -> bool { return x != y; }));
 
 						// Functions
-						classPtr->EmplaceFunction("to_string", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
+						classPtr->AddFunction("to_string", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
 							if (auto p = self.lock()) return p->GetTypeName(from);
 							else if (auto p = from.lock()) return p->name();
 							else return user_type<void>().name();
 						}));
-						classPtr->EmplaceFunction("to_hash", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->size_t {
+						classPtr->AddFunction("to_hash", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->size_t {
 							if (auto p = self.lock()) return std::hash<std::string>()(p->GetTypeName(from));
 							else if (auto p = from.lock()) return std::hash<std::string>()(p->name());
 							else return std::hash<std::string>()(user_type<void>().name());
 						}));
-						classPtr->EmplaceFunction("name", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
+						classPtr->AddFunction("name", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
 							if (auto p = self.lock()) return p->GetTypeName(from);
 							else if (auto p = from.lock()) return p->name();
 							else return user_type<void>().name();
 						}));
-						classPtr->EmplaceFunction("cpp_name", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
+						classPtr->AddFunction("cpp_name", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
 							if (auto p = from.lock()) return p->name();
 							else return user_type<void>().name();
 						}));
-						classPtr->EmplaceFunction("is_const", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
+						classPtr->AddFunction("is_const", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
 							if (auto p = from.lock()) return p->is_const();
 							else return false;
 						}));
-						classPtr->EmplaceFunction("is_ref", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
+						classPtr->AddFunction("is_ref", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
 							if (auto p = from.lock()) return p->is_ref();
 							else return false;
 						}));
-						classPtr->EmplaceFunction("is_void", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
+						classPtr->AddFunction("is_void", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
 							if (auto p = from.lock()) return p->is_void();
 							else return true;
 						}));
-						classPtr->EmplaceFunction("is_ref", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
+						classPtr->AddFunction("is_ref", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
 							if (auto p = from.lock()) return p->is_ref();
 							else return false;
 						}));
-						classPtr->EmplaceFunction("is_const", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
+						classPtr->AddFunction("is_const", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)-> bool {
 							if (auto p = from.lock()) return p->is_const();
 							else return true;
 						}));
@@ -2175,41 +2294,41 @@ namespace GoodLang {
 							{
 								// value -> double
 								if (auto p = std_namespace->FindClass(user_type_shared_ptr<double>())) {
-									p->EmplaceFunction(p->Name(), make_callable([](Units::value const& o) -> double { return o(); }));
+									p->AddFunction(p->Name(), make_callable([](Units::value const& o) -> double { return o(); }));
 								}
 								// value -> float
 								if (auto p = std_namespace->FindClass(user_type_shared_ptr<float>())) {
-									p->EmplaceFunction(p->Name(), make_callable([](Units::value const& o) -> float { return o(); }));
+									p->AddFunction(p->Name(), make_callable([](Units::value const& o) -> float { return o(); }));
 								}
 								// value -> int
 								if (auto p = std_namespace->FindClass(user_type_shared_ptr<int>())) {
-									p->EmplaceFunction(p->Name(), make_callable([](Units::value const& o) -> int { return o(); }));
+									p->AddFunction(p->Name(), make_callable([](Units::value const& o) -> int { return o(); }));
 								}
 								// value -> string
 								if (auto p = std_namespace->FindClass(user_type_shared_ptr<std::string>())) {
-									p->EmplaceFunction(p->Name(), make_callable([](Units::value const& o) -> std::string { return o.ToString(); }));
+									p->AddFunction(p->Name(), make_callable([](Units::value const& o) -> std::string { return o.ToString(); }));
 								}
 
-								value_namespace->EmplaceFunction("abbreviation", make_callable([](Units::value const& x)->std::string {
+								value_namespace->AddFunction("abbreviation", make_callable([](Units::value const& x)->std::string {
 									return x.UnitAbbreviation().data();
 								}));
-								value_namespace->EmplaceFunction("name", make_callable([](Units::value const& x)->std::string {
+								value_namespace->AddFunction("name", make_callable([](Units::value const& x)->std::string {
 									return x.UnitName().data();
 								}));
-								value_namespace->EmplaceFunction("to_string", make_callable([](Units::value const& x)->std::string {
+								value_namespace->AddFunction("to_string", make_callable([](Units::value const& x)->std::string {
 									return x.ToString();
 								}));
-								value_namespace->EmplaceFunction("to_hash", make_callable([](Units::value const& x)->size_t {
+								value_namespace->AddFunction("to_hash", make_callable([](Units::value const& x)->size_t {
 									return x.hash();
 								}));
 
 								// Constructors
-								value_namespace->EmplaceFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
-								value_namespace->EmplaceFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
-								value_namespace->EmplaceFunction("value", make_callable([](int const& o)->Units::value { return o; }));
-								value_namespace->EmplaceFunction("value", make_callable([](float const& o)->Units::value { return o; }));
-								value_namespace->EmplaceFunction("value", make_callable([](double const& o)->Units::value { return o; }));
-								value_namespace->EmplaceFunction("=", make_callable(
+								value_namespace->AddFunction("value", make_callable([]() -> Units::value { return Units::value{}; }));
+								value_namespace->AddFunction("value", make_callable([](Units::value const& makeCopy) -> Units::value { return makeCopy; }));
+								value_namespace->AddFunction("value", make_callable([](int const& o)->Units::value { return o; }));
+								value_namespace->AddFunction("value", make_callable([](float const& o)->Units::value { return o; }));
+								value_namespace->AddFunction("value", make_callable([](double const& o)->Units::value { return o; }));
+								value_namespace->AddFunction("=", make_callable(
 									[](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out = b; return a;
 									}, ParamTypes({
 											user_type_shared<Units::value>().lock()->MakeRef(),
@@ -2217,47 +2336,47 @@ namespace GoodLang {
 										}), user_type_shared<Units::value>().lock()->MakeRef()));
 
 								// Comparisons & operators
-								value_namespace->EmplaceFunction("==", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));
-								value_namespace->EmplaceFunction("!=", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x != y; }));
-								value_namespace->EmplaceFunction("<", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x < y; }));
-								value_namespace->EmplaceFunction(">", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x > y; }));
-								value_namespace->EmplaceFunction("<=", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x <= y; }));
-								value_namespace->EmplaceFunction(">=", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x >= y; }));
-								value_namespace->EmplaceFunction("+", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x + y; }));
-								value_namespace->EmplaceFunction("-", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x - y; }));
-								value_namespace->EmplaceFunction("*", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x * y; }));
-								value_namespace->EmplaceFunction("/", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x / y; }));
-								value_namespace->EmplaceFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
-								value_namespace->EmplaceFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
-								value_namespace->EmplaceFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
-								value_namespace->EmplaceFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
-								value_namespace->EmplaceFunction("%", make_callable([](Units::value const& x, Units::value const& y) -> Units::value {
+								value_namespace->AddFunction("==", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x == y; }));
+								value_namespace->AddFunction("!=", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x != y; }));
+								value_namespace->AddFunction("<", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x < y; }));
+								value_namespace->AddFunction(">", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x > y; }));
+								value_namespace->AddFunction("<=", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x <= y; }));
+								value_namespace->AddFunction(">=", make_callable([](Units::value const& x, Units::value const& y) -> bool { return x >= y; }));
+								value_namespace->AddFunction("+", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x + y; }));
+								value_namespace->AddFunction("-", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x - y; }));
+								value_namespace->AddFunction("*", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x * y; }));
+								value_namespace->AddFunction("/", make_callable([](Units::value const& x, Units::value const& y) -> Units::value { return x / y; }));
+								value_namespace->AddFunction("+=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out += b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+								value_namespace->AddFunction("-=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out -= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+								value_namespace->AddFunction("*=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out *= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+								value_namespace->AddFunction("/=", make_callable([](Any const& a, Units::value const& b) -> Any { Units::value& out = a.cast(); out /= b; return a; }, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
+								value_namespace->AddFunction("%", make_callable([](Units::value const& x, Units::value const& y) -> Units::value {
 									return x - (y * Units::math::floor(x / y));
 								}));
-								value_namespace->EmplaceFunction("^", make_callable([](Units::value const& x, Units::value const& y) -> Units::value {
+								value_namespace->AddFunction("^", make_callable([](Units::value const& x, Units::value const& y) -> Units::value {
 									return x.pow(y);
 								}));
-								value_namespace->EmplaceFunction("^=", make_callable([](Any const& a, Units::value const& b) -> Any {
+								value_namespace->AddFunction("^=", make_callable([](Any const& a, Units::value const& b) -> Any {
 									Units::value& out = a.cast();
 									out = out.pow(b);
 									return a;
 								}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef(), user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
 
-								value_namespace->EmplaceFunction("++", make_callable([](Any const& a) -> Any {
+								value_namespace->AddFunction("++", make_callable([](Any const& a) -> Any {
 									Units::value& out = a.cast(); ++out; return a;
 								}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
-								value_namespace->EmplaceFunction("--", make_callable([](Any const& a) -> Any {
+								value_namespace->AddFunction("--", make_callable([](Any const& a) -> Any {
 									Units::value& out = a.cast(); --out; return a;
 								}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeRef() }), user_type_shared<Units::value>().lock()->MakeRef()));
-								value_namespace->EmplaceFunction("-", make_callable([](Any const& a) -> Any {
+								value_namespace->AddFunction("-", make_callable([](Any const& a) -> Any {
 									Units::value& out = a.cast();
 									return -out;
 								}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()));
-								value_namespace->EmplaceFunction("+", make_callable([](Any const& a) -> Any {
+								value_namespace->AddFunction("+", make_callable([](Any const& a) -> Any {
 									Units::value& out = a.cast();
 									return Units::math::abs(out);
 								}, ParamTypes({ user_type_shared<Units::value>().lock()->MakeConstRef() }), user_type_shared<Units::value>().lock()));
-								value_namespace->EmplaceFunction("~", make_callable([](Any const& a) -> Any {
+								value_namespace->AddFunction("~", make_callable([](Any const& a) -> Any {
 									Units::value out = a.cast();
 									out = ~(int)(double)out;
 									return out;
@@ -2275,34 +2394,34 @@ namespace GoodLang {
 
 									std::string_view UnitName = unit_type.second.first.UnitName();
 									std::shared_ptr<ClassScope> foot_namespace{
-										std::make_shared<ClassScope>(std::make_shared<std::string>(UnitName), std_namespace, unit_type.second.second.Type().lock(), std::vector<std::weak_ptr<ClassScope>>{ value_namespace })
+										std::make_shared<ClassScope>(UnitName, std_namespace, unit_type.second.second.Type().lock(), std::vector<std::weak_ptr<ClassScope>>{ value_namespace })
 									};
 									foot_namespace->SetSelf(foot_namespace);
 									std_namespace->children_m.emplace(std::string(UnitName), foot_namespace);
 									{
 										// Constructors
 										// foot()
-										foot_namespace->EmplaceFunction(UnitName, Function(make_callable([&this_copy_constructor, TypeObj = unit_type.second.second]() -> Any { return this_copy_constructor(TypeObj); }, ParamTypes(), foot_namespace->ClassType)));
+										foot_namespace->AddFunction(UnitName, Function(make_callable([&this_copy_constructor, TypeObj = unit_type.second.second]() -> Any { return this_copy_constructor(TypeObj); }, ParamTypes(), foot_namespace->ClassType)));
 										// foot(value)
-										foot_namespace->EmplaceFunction(UnitName, Function(make_callable([&this_constructor_from_value, TypeObj = unit_type.second.second](Units::value const& makeCopy) -> Any {
+										foot_namespace->AddFunction(UnitName, Function(make_callable([&this_constructor_from_value, TypeObj = unit_type.second.second](Units::value const& makeCopy) -> Any {
 											return this_constructor_from_value(makeCopy); // builds a "foot" from a value generic
 										}, ParamTypes({ user_type_shared<Units::value>() }), foot_namespace->ClassType)));
 										// foot() = value();
-										foot_namespace->EmplaceFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any {
+										foot_namespace->AddFunction("=", Function(make_callable([](Any const& a, Units::value const& b) -> Any {
 											if (std::shared_ptr<Units::value> val = std::static_pointer_cast<Units::value>(a.container->shared_ptr())) {
 												*val = b;
 											}
 											return a;
 										}, ParamTypes({ foot_namespace->ClassType->MakeRef(), user_type_shared_ptr<Units::value>()->MakeConstRef() }), foot_namespace->ClassType->MakeRef())));
 										// value(foot const&)
-										value_namespace->EmplaceFunction(
+										value_namespace->AddFunction(
 											value_namespace->Name(),
 											make_callable([](Any const& from) -> Any { 
 												return Any(std::static_pointer_cast<Units::value>(from.container->shared_ptr()));
 											}, ParamTypes({ foot_namespace->ClassType->MakeConstRef() }), GoodLang::user_type_shared_ptr<Units::value>()->MakeConstRef())
 										);
 										// value(foot&)
-										value_namespace->EmplaceFunction(
+										value_namespace->AddFunction(
 											value_namespace->Name(),
 											make_callable([](Any const& from) -> Any {
 												return Any(std::static_pointer_cast<Units::value>(from.container->shared_ptr()));
@@ -2316,65 +2435,65 @@ namespace GoodLang {
 									};
 
 									// Comparisons & operators
-									Class->EmplaceFunction("==", make_callable([&](Any const& x, Any const& y) -> bool {
+									Class->AddFunction("==", make_callable([&](Any const& x, Any const& y) -> bool {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x == *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("!=", make_callable([&](Any const& x, Any const& y) -> bool {
+									Class->AddFunction("!=", make_callable([&](Any const& x, Any const& y) -> bool {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x != *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction(">", make_callable([&](Any const& x, Any const& y) -> bool {
+									Class->AddFunction(">", make_callable([&](Any const& x, Any const& y) -> bool {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x > *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("<", make_callable([&](Any const& x, Any const& y) -> bool {
+									Class->AddFunction("<", make_callable([&](Any const& x, Any const& y) -> bool {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x < *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction(">=", make_callable([&](Any const& x, Any const& y) -> bool {
+									Class->AddFunction(">=", make_callable([&](Any const& x, Any const& y) -> bool {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x >= *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("<=", make_callable([&](Any const& x, Any const& y) -> bool {
+									Class->AddFunction("<=", make_callable([&](Any const& x, Any const& y) -> bool {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x <= *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("+", make_callable([&](Any const& x, Any const& y) -> Units::value {
+									Class->AddFunction("+", make_callable([&](Any const& x, Any const& y) -> Units::value {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x + *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("-", make_callable([&](Any const& x, Any const& y) -> Units::value {
+									Class->AddFunction("-", make_callable([&](Any const& x, Any const& y) -> Units::value {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x - *y; }); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("%", make_callable([&](Any const& x, Any const& y) -> Units::value {
+									Class->AddFunction("%", make_callable([&](Any const& x, Any const& y) -> Units::value {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return *x - (*y * Units::math::floor(*x / *y));
 										}); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("^", make_callable([&](Any const& x, Any const& y) -> Units::value {
+									Class->AddFunction("^", make_callable([&](Any const& x, Any const& y) -> Units::value {
 										return LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											return x->pow(*y);
 										}); }, ParamTypes({ type_info->MakeConstRef(), type_info->MakeConstRef() })));
-									Class->EmplaceFunction("+=", make_callable([&](Any const& x, Any const& y) -> Any {
+									Class->AddFunction("+=", make_callable([&](Any const& x, Any const& y) -> Any {
 										(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											*x += *y;
 											});
 										return x;
 									}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
-									Class->EmplaceFunction("-=", make_callable([&](Any const& x, Any const& y) -> Any {
+									Class->AddFunction("-=", make_callable([&](Any const& x, Any const& y) -> Any {
 										(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											*x -= *y;
 											});
 										return x;
 									}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
-									Class->EmplaceFunction("^=", make_callable([&](Any const& x, Any const& y) -> Any {
+									Class->AddFunction("^=", make_callable([&](Any const& x, Any const& y) -> Any {
 										(void)LambdaWrapped(x, y, [](auto const& x, auto const& y) {
 											*x = x->pow(*y);
 											});
 										return x;
 									}, ParamTypes({ type_info->MakeRef(), type_info->MakeConstRef() }), type_info->MakeRef()));
-									Class->EmplaceFunction("++", make_callable([&](Any const& x) -> Any {
+									Class->AddFunction("++", make_callable([&](Any const& x) -> Any {
 										x.cast<std::shared_ptr<Units::value>>()->operator++();
 										return x;
 									}, ParamTypes({ type_info->MakeRef() }), type_info->MakeRef()));
-									Class->EmplaceFunction("--", make_callable([&](Any const& x) -> Any {
+									Class->AddFunction("--", make_callable([&](Any const& x) -> Any {
 										x.cast<std::shared_ptr<Units::value>>()->operator--();
 										return x;
 									}, ParamTypes({ type_info->MakeRef() }), type_info->MakeRef()));
-									Class->EmplaceFunction("-", make_callable([&](Any const& x) -> Units::value {
+									Class->AddFunction("-", make_callable([&](Any const& x) -> Units::value {
 										return x.cast<std::shared_ptr<Units::value>>()->operator-();
 									}, ParamTypes({ type_info->MakeConstRef() })));
 								}
@@ -2393,72 +2512,72 @@ namespace GoodLang {
 						auto thisTypeInfo = classPtr->ClassType;
 
 						// Constructors
-						classPtr->EmplaceFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-						classPtr->EmplaceFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](Units::second const& from) -> thisType { return from; }));
-						classPtr->EmplaceFunction(thisTypeName, Function(make_callable([](std::string const& from) -> thisType { return thisType(from); }), true)); // explicit = cannot be used for conversion trees, and must be called directly with exact type match, e.g. DateTime("string")
+						classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+						classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+						classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
+						classPtr->AddFunction(thisTypeName, make_callable([](Units::second const& from) -> thisType { return from; }));
+						classPtr->AddFunction(thisTypeName, Function(make_callable([](std::string const& from) -> thisType { return thisType(from); }), true)); // explicit = cannot be used for conversion trees, and must be called directly with exact type match, e.g. DateTime("string")
 
 						// Converters
 						if (auto p = this->FindClass(user_type_shared_ptr<std::string>())) {
-							p->EmplaceFunction(p->Name(), Function(make_callable([](thisType const& from) -> std::string { return from.c_str(); }), true)); // explicit
+							p->AddFunction(p->Name(), Function(make_callable([](thisType const& from) -> std::string { return from.c_str(); }), true)); // explicit
 						}
 						if (auto p = this->FindClass(user_type_shared_ptr<Units::second>())) {
-							p->EmplaceFunction(p->Name(), make_callable([](thisType const& from) -> Units::second { return (Units::second)from; }));
+							p->AddFunction(p->Name(), make_callable([](thisType const& from) -> Units::second { return (Units::second)from; }));
 						}
 
 						// Comparisons
-						classPtr->EmplaceFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
-						classPtr->EmplaceFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
-						classPtr->EmplaceFunction("<", make_callable([](thisType const& x, thisType const& y) -> bool { return x < y; }));
-						classPtr->EmplaceFunction("<=", make_callable([](thisType const& x, thisType const& y) -> bool { return x <= y; }));
-						classPtr->EmplaceFunction(">", make_callable([](thisType const& x, thisType const& y) -> bool { return x > y; }));
-						classPtr->EmplaceFunction(">=", make_callable([](thisType const& x, thisType const& y) -> bool { return x >= y; }));
+						classPtr->AddFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+						classPtr->AddFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+						classPtr->AddFunction("<", make_callable([](thisType const& x, thisType const& y) -> bool { return x < y; }));
+						classPtr->AddFunction("<=", make_callable([](thisType const& x, thisType const& y) -> bool { return x <= y; }));
+						classPtr->AddFunction(">", make_callable([](thisType const& x, thisType const& y) -> bool { return x > y; }));
+						classPtr->AddFunction(">=", make_callable([](thisType const& x, thisType const& y) -> bool { return x >= y; }));
 
 						// Operators
-						classPtr->EmplaceFunction("+", make_callable([](thisType const& x, thisType const& y) -> thisType { return x + y; }));
-						classPtr->EmplaceFunction("-", make_callable([](thisType const& x, thisType const& y) -> thisType { return x - y; }));
-						classPtr->EmplaceFunction("*", make_callable([](thisType const& x, thisType const& y) -> thisType { return x * y; }));
-						classPtr->EmplaceFunction("/", make_callable([](thisType const& x, thisType const& y) -> thisType { if (y == 0) return (Units::second)(std::numeric_limits<Units::second>::max()); else return x / y; }));
-						classPtr->EmplaceFunction("+=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x += b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
-						classPtr->EmplaceFunction("-=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x -= b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
-						classPtr->EmplaceFunction("*=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x *= b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
-						classPtr->EmplaceFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
+						classPtr->AddFunction("+", make_callable([](thisType const& x, thisType const& y) -> thisType { return x + y; }));
+						classPtr->AddFunction("-", make_callable([](thisType const& x, thisType const& y) -> thisType { return x - y; }));
+						classPtr->AddFunction("*", make_callable([](thisType const& x, thisType const& y) -> thisType { return x * y; }));
+						classPtr->AddFunction("/", make_callable([](thisType const& x, thisType const& y) -> thisType { if (y == 0) return (Units::second)(std::numeric_limits<Units::second>::max()); else return x / y; }));
+						classPtr->AddFunction("+=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x += b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
+						classPtr->AddFunction("-=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x -= b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
+						classPtr->AddFunction("*=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); x *= b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
+						classPtr->AddFunction("/=", make_callable([](Any const& a, Units::second const& b) -> Any { thisType& x = a.cast(); if (b != 0) x /= b; else x = (Units::second)(std::numeric_limits<Units::second>::max()); return a; }, ParamTypes({ thisTypeInfo->MakeRef(), user_type_shared<Units::second>().lock()->MakeConstRef() }), thisTypeInfo->MakeRef()));
 
 						// Functions
-						classPtr->EmplaceFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
-						classPtr->EmplaceFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
-						classPtr->EmplaceFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
-						classPtr->EmplaceFunction("to_hash", make_callable([](thisType const& o) -> size_t { return ((Units::second)o).hash(); }));
+						classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<thisType>::max(); }));
+						classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<thisType>::lowest(); }));
+						classPtr->AddFunction("to_string", make_callable([](thisType const& o) -> std::string { return o.c_str(); }));
+						classPtr->AddFunction("to_hash", make_callable([](thisType const& o) -> size_t { return ((Units::second)o).hash(); }));
 
-						classPtr->EmplaceFunction("Epoch", make_callable(&DateTime::Epoch));
-						classPtr->EmplaceFunction("Now", make_callable(&DateTime::Now));				
-						classPtr->EmplaceFunction("tm_fractionalsec", make_callable(&DateTime::tm_fractionalsec));
-						classPtr->EmplaceFunction("tm_sec", make_callable(&DateTime::tm_sec));
-						classPtr->EmplaceFunction("tm_min", make_callable(&DateTime::tm_min));
-						classPtr->EmplaceFunction("tm_hour", make_callable(&DateTime::tm_hour));
-						classPtr->EmplaceFunction("tm_mday", make_callable(&DateTime::tm_mday));
-						classPtr->EmplaceFunction("tm_mon", make_callable(&DateTime::tm_mon));
-						classPtr->EmplaceFunction("tm_yday", make_callable(&DateTime::tm_yday));
-						classPtr->EmplaceFunction("tm_wday", make_callable(&DateTime::tm_wday));
-						classPtr->EmplaceFunction("tm_year", make_callable(&DateTime::tm_year));
-						classPtr->EmplaceFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
-						classPtr->EmplaceFunction("make_time", make_callable([]() { return DateTime::make_time(); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year) { return DateTime::make_time(year); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year, int month) { return DateTime::make_time(year, month); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year, int month, int day) { return DateTime::make_time(year, month, day); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year, int month, int day, int hour) { return DateTime::make_time(year, month, day, hour); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute) { return DateTime::make_time(year, month, day, hour, minute); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute, float second) { return DateTime::make_time(year, month, day, hour, minute, second); }));
-						classPtr->EmplaceFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute, float second, bool useLocalTime) { return DateTime::make_time(year, month, day, hour, minute, second, useLocalTime); }));
-						classPtr->EmplaceFunction("ToStartOfMonth", make_callable([](DateTime from) -> DateTime { return from.ToStartOfMonth(); }));
-						classPtr->EmplaceFunction("ToEndOfMonth", make_callable([](DateTime from) -> DateTime { return from.ToEndOfMonth(); }));
-						classPtr->EmplaceFunction("ToStartOfDay", make_callable([](DateTime from) -> DateTime { return from.ToStartOfDay(); }));
-						classPtr->EmplaceFunction("ToEndOfDay", make_callable([](DateTime from) -> DateTime { return from.ToEndOfDay(); }));
-						classPtr->EmplaceFunction("ToStartOfHour", make_callable([](DateTime from) -> DateTime { return from.ToStartOfHour(); }));
-						classPtr->EmplaceFunction("ToEndOfHour", make_callable([](DateTime from) -> DateTime { return from.ToEndOfHour(); }));
-						classPtr->EmplaceFunction("ToStartOfMinute", make_callable([](DateTime from) -> DateTime { return from.ToStartOfMinute(); }));
-						classPtr->EmplaceFunction("ToEndOfMinute", make_callable([](DateTime from) -> DateTime { return from.ToEndOfMinute(); }));
+						classPtr->AddFunction("Epoch", make_callable(&DateTime::Epoch));
+						classPtr->AddFunction("Now", make_callable(&DateTime::Now));				
+						classPtr->AddFunction("tm_fractionalsec", make_callable(&DateTime::tm_fractionalsec));
+						classPtr->AddFunction("tm_sec", make_callable(&DateTime::tm_sec));
+						classPtr->AddFunction("tm_min", make_callable(&DateTime::tm_min));
+						classPtr->AddFunction("tm_hour", make_callable(&DateTime::tm_hour));
+						classPtr->AddFunction("tm_mday", make_callable(&DateTime::tm_mday));
+						classPtr->AddFunction("tm_mon", make_callable(&DateTime::tm_mon));
+						classPtr->AddFunction("tm_yday", make_callable(&DateTime::tm_yday));
+						classPtr->AddFunction("tm_wday", make_callable(&DateTime::tm_wday));
+						classPtr->AddFunction("tm_year", make_callable(&DateTime::tm_year));
+						classPtr->AddFunction("getNumDaysInSameMonth", make_callable(&DateTime::getNumDaysInSameMonth));
+						classPtr->AddFunction("make_time", make_callable([]() { return DateTime::make_time(); }));
+						classPtr->AddFunction("make_time", make_callable([](int year) { return DateTime::make_time(year); }));
+						classPtr->AddFunction("make_time", make_callable([](int year, int month) { return DateTime::make_time(year, month); }));
+						classPtr->AddFunction("make_time", make_callable([](int year, int month, int day) { return DateTime::make_time(year, month, day); }));
+						classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour) { return DateTime::make_time(year, month, day, hour); }));
+						classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute) { return DateTime::make_time(year, month, day, hour, minute); }));
+						classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute, float second) { return DateTime::make_time(year, month, day, hour, minute, second); }));
+						classPtr->AddFunction("make_time", make_callable([](int year, int month, int day, int hour, int minute, float second, bool useLocalTime) { return DateTime::make_time(year, month, day, hour, minute, second, useLocalTime); }));
+						classPtr->AddFunction("ToStartOfMonth", make_callable([](DateTime from) -> DateTime { return from.ToStartOfMonth(); }));
+						classPtr->AddFunction("ToEndOfMonth", make_callable([](DateTime from) -> DateTime { return from.ToEndOfMonth(); }));
+						classPtr->AddFunction("ToStartOfDay", make_callable([](DateTime from) -> DateTime { return from.ToStartOfDay(); }));
+						classPtr->AddFunction("ToEndOfDay", make_callable([](DateTime from) -> DateTime { return from.ToEndOfDay(); }));
+						classPtr->AddFunction("ToStartOfHour", make_callable([](DateTime from) -> DateTime { return from.ToStartOfHour(); }));
+						classPtr->AddFunction("ToEndOfHour", make_callable([](DateTime from) -> DateTime { return from.ToEndOfHour(); }));
+						classPtr->AddFunction("ToStartOfMinute", make_callable([](DateTime from) -> DateTime { return from.ToStartOfMinute(); }));
+						classPtr->AddFunction("ToEndOfMinute", make_callable([](DateTime from) -> DateTime { return from.ToEndOfMinute(); }));
 
 						// Parameters
 						classPtr->AddFunction("time", make_callable(&DateTime::time));
@@ -2470,15 +2589,15 @@ namespace GoodLang {
 
 						// Constructors
 						// Var()
-						classPtr->EmplaceFunction("Var", make_callable([]() -> Var {
+						classPtr->AddFunction("Var", make_callable([]() -> Var {
 							return Var();
 							})); // explicit = cannot be used for conversion trees
 							// Var(Var const&)
-						classPtr->EmplaceFunction("Var", make_callable([](Var const& obj) -> Var {
+						classPtr->AddFunction("Var", make_callable([](Var const& obj) -> Var {
 							return obj;
 							})); // explicit = cannot be used for conversion trees
 							// Var(Any)
-						classPtr->EmplaceFunction("Var", Function(make_callable([](Any const& obj) -> Var {
+						classPtr->AddFunction("Var", Function(make_callable([](Any const& obj) -> Var {
 							if (obj.IsTypeOf<Var>()) {
 								return obj.cast<Var&>();
 							}
@@ -2487,7 +2606,7 @@ namespace GoodLang {
 							}
 							}), true)); // explicit = cannot be used for conversion trees
 							// Var& = Var const&
-						classPtr->EmplaceFunction("=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Var const& b)->Any {
+						classPtr->AddFunction("=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Var const& b)->Any {
 							Var& out = a.cast();
 							if (*out.p_data) {
 								if (auto Self = self.lock()) Self->Call("=", { out.p_data, b.p_data });	else *out.p_data = *b.p_data;
@@ -2499,7 +2618,7 @@ namespace GoodLang {
 							return a;
 						}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Var>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeRef()));
 						// Var& = Any
-						classPtr->EmplaceFunction("=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Any const& b)->Any {
+						classPtr->AddFunction("=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Any const& b)->Any {
 							Var& out = a.cast();
 							if (*out.p_data) {
 								if (auto Self = self.lock()) Self->Call("=", { out.p_data, b }); else *out.p_data = b;
@@ -2511,7 +2630,7 @@ namespace GoodLang {
 							return a;
 						}, ParamTypes({ user_type_shared<Var>().lock()->MakeRef(), user_type_shared<Any>() }), user_type_shared<Var>().lock()->MakeRef()));
 						// Reset a Var
-						this->EmplaceFunction("try_reset", make_callable([](Any const& a) -> bool {
+						this->AddFunction("try_reset", make_callable([](Any const& a) -> bool {
 							if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 								p->p_data = std::make_shared<Any>();
 								return true;
@@ -2519,7 +2638,7 @@ namespace GoodLang {
 							return false;
 							}/*, ParamTypes({ user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
 							// Reset a Var
-						this->EmplaceFunction("try_reset", make_callable([](Any const& a, Any const& b) -> bool {
+						this->AddFunction("try_reset", make_callable([](Any const& a, Any const& b) -> bool {
 							if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 								p->p_data = std::make_shared<Any>(b);
 								return true;
@@ -2527,7 +2646,7 @@ namespace GoodLang {
 							return false;
 							}/*, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
 							// Reset a Var
-						this->EmplaceFunction("reset", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Any const& b)->Any {
+						this->AddFunction("reset", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Any const& b)->Any {
 							if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 								p->p_data = std::make_shared<Any>(b);
 								return a;
@@ -2542,7 +2661,7 @@ namespace GoodLang {
 							}
 						}/*, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
 						// Reset a Var
-						this->EmplaceFunction(":=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Any const& b)->Any {
+						this->AddFunction(":=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Any const& b)->Any {
 							if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 								p->p_data = std::make_shared<Any>(b);
 								return a;
@@ -2557,7 +2676,7 @@ namespace GoodLang {
 							}
 						}/*, ParamTypes({ user_type_shared<Any>(), user_type_shared<Any>() })*/)); // not specifying "Var" was on-purpose.
 						// Reset a Var
-						this->EmplaceFunction(":=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Var const& b)->Any {
+						this->AddFunction(":=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& a, Var const& b)->Any {
 							if (Var* p = a.cast<Var*>()) { // will succeed for "Var" types. Note that Var's with any value will LIE about their types -- can only find out by trying to do this cast on an Any.
 								p->p_data = b.p_data;
 								return a;
@@ -2572,7 +2691,7 @@ namespace GoodLang {
 							}
 						}, ParamTypes({ user_type_shared<Any>(), user_type_shared<Var>().lock()->MakeConstRef() }))); // not specifying "Var" was on-purpose.
 						// template func, Any = Var const&
-						this->EmplaceFunction("=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any& a, Var const& b)->Any {
+						this->AddFunction("=", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any& a, Var const& b)->Any {
 							if (auto Self = self.lock()) {
 								return Self->Call("=", { a, b.p_data });
 							}
@@ -2583,15 +2702,15 @@ namespace GoodLang {
 						}));
 
 						// Returns the type of the contained object. By not specifying the type, the Any is treated like a Template
-						this->EmplaceFunction("Type_Info", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
+						this->AddFunction("Type_Info", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
 							return obj.p_data->Type();
 							}));
 						// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
-						this->EmplaceFunction("Type", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
+						this->AddFunction("Type", make_callable([](Var const& obj) -> std::weak_ptr<Type_Info> {
 							return obj.p_data->Type();
 							}));
 						// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-						this->EmplaceFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Var const& x)->std::string {
+						this->AddFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Var const& x)->std::string {
 							if (auto Self = self.lock()) {
 								return Self->Cast<std::string>(Self->Call("to_string", { x.p_data }));
 							}
@@ -2601,7 +2720,7 @@ namespace GoodLang {
 							}
 						}));
 						// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-						this->EmplaceFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Var const& x)->size_t {
+						this->AddFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Var const& x)->size_t {
 							if (auto Self = self.lock()) {
 								return Self->Cast<size_t>(Self->Call("to_hash", { x.p_data }));
 							}
@@ -2621,14 +2740,14 @@ namespace GoodLang {
 						auto thisTypeInfo = classPtr->ClassType;
 
 						// Constructors
-						classPtr->EmplaceFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-						classPtr->EmplaceFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
+						classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+						classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+						classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
 
 						// Functions
-						classPtr->EmplaceFunction("Done", make_callable([](thisType& o) -> bool { return o.try_wait(); }));
-						classPtr->EmplaceFunction("Await", make_callable([](thisType& o) -> Var { return Var(o.wait_get_any()); }));
-						classPtr->EmplaceFunction("Returns", make_callable([](thisType const& o) -> std::weak_ptr<Type_Info> { return o.Type(); }));
+						classPtr->AddFunction("Done", make_callable([](thisType& o) -> bool { return o.try_wait(); }));
+						classPtr->AddFunction("Await", make_callable([](thisType& o) -> Var { return Var(o.wait_get_any()); }));
+						classPtr->AddFunction("Returns", make_callable([](thisType const& o) -> std::weak_ptr<Type_Info> { return o.Type(); }));
 					}
 
 					// Pair
@@ -2641,22 +2760,22 @@ namespace GoodLang {
 						auto thisTypeInfo = classPtr->ClassType;
 
 						// Constructors
-						classPtr->EmplaceFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](Any const& a, Any const& b) -> thisType { return thisType{ Var(a), Var(b) }; }));
-						classPtr->EmplaceFunction("=", make_callable([](Any const& a, thisType const& b) -> Any {
+						classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+						classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+						classPtr->AddFunction(thisTypeName, make_callable([](Any const& a, Any const& b) -> thisType { return thisType{ Var(a), Var(b) }; }));
+						classPtr->AddFunction("=", make_callable([](Any const& a, thisType const& b) -> Any {
 							thisType& out = a.cast(); out = b; return a;
 							},
 							ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
 
 						// Functions
-						classPtr->EmplaceFunction("first", make_callable([](thisType& r) -> Any { return r.first; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeRef() }), user_type_shared<Var>().lock()->MakeRef()));
-						classPtr->EmplaceFunction("first", make_callable([](thisType const& r) -> Any { return r.first; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeConstRef()));
-						classPtr->EmplaceFunction("second", make_callable([](thisType& r) -> Any { return r.second; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeRef() }), user_type_shared<Var>().lock()->MakeRef()));
-						classPtr->EmplaceFunction("second", make_callable([](thisType const& r) -> Any { return r.second; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeConstRef()));
+						classPtr->AddFunction("first", make_callable([](thisType& r) -> Any { return r.first; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeRef() }), user_type_shared<Var>().lock()->MakeRef()));
+						classPtr->AddFunction("first", make_callable([](thisType const& r) -> Any { return r.first; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeConstRef()));
+						classPtr->AddFunction("second", make_callable([](thisType& r) -> Any { return r.second; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeRef() }), user_type_shared<Var>().lock()->MakeRef()));
+						classPtr->AddFunction("second", make_callable([](thisType const& r) -> Any { return r.second; }, ParamTypes({ user_type_shared<thisType>().lock()->MakeConstRef() }), user_type_shared<Var>().lock()->MakeConstRef()));
 
 						// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-						this->EmplaceFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->std::string {
+						this->AddFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->std::string {
 							if (auto Self = self.lock()) {
 								std::string a = Self->Cast<std::string>(Self->Call("to_string", { x.first.p_data }));
 								std::string b = Self->Cast<std::string>(Self->Call("to_string", { x.second.p_data }));
@@ -2667,7 +2786,7 @@ namespace GoodLang {
 							}
 						}));
 						// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-						this->EmplaceFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->size_t {
+						this->AddFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->size_t {
 							if (auto Self = self.lock()) {
 								size_t a = Self->Cast<size_t>(Self->Call("to_hash", { x.first.p_data }));
 								size_t b = Self->Cast<size_t>(Self->Call("to_hash", { x.second.p_data }));
@@ -2690,34 +2809,34 @@ namespace GoodLang {
 						auto thisTypeInfo = classPtr->ClassType;
 
 						// Constructors
-						classPtr->EmplaceFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-						classPtr->EmplaceFunction("=", make_callable(
+						classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+						classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+						classPtr->AddFunction("=", make_callable(
 							[](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }
 							, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })
 							, thisTypeInfo->MakeRef()
 						));
 
 						// Comparisons
-						classPtr->EmplaceFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
-						classPtr->EmplaceFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+						classPtr->AddFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+						classPtr->AddFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
 
 						// Functions
-						classPtr->EmplaceFunction("size", make_callable(&thisType::size));
-						classPtr->EmplaceFunction("empty", make_callable(&thisType::empty));
-						classPtr->EmplaceFunction("capacity", make_callable(&thisType::capacity));
-						classPtr->EmplaceFunction("reserve", make_callable(&thisType::reserve));
-						classPtr->EmplaceFunction("max_size", make_callable(&thisType::max_size));
-						classPtr->EmplaceFunction("clear", make_callable(&thisType::clear));
-						classPtr->EmplaceFunction("erase", make_callable(&thisType::erase));
-						classPtr->EmplaceFunction("erase_fast", make_callable(&thisType::erase_fast));
-						classPtr->EmplaceFunction("pop_back", make_callable(&thisType::pop_back));
-						classPtr->EmplaceFunction("push_back", make_callable([](thisType& o, Any const& r) { o.push_back(Var(r)); }));
-						classPtr->EmplaceFunction("resize", make_callable([](thisType& o, size_t N) { o.resize(N); }));
-						classPtr->EmplaceFunction("resize", make_callable([](thisType& o, size_t N, Any const& r) { o.resize(N, Var(r)); }));
+						classPtr->AddFunction("size", make_callable(&thisType::size));
+						classPtr->AddFunction("empty", make_callable(&thisType::empty));
+						classPtr->AddFunction("capacity", make_callable(&thisType::capacity));
+						classPtr->AddFunction("reserve", make_callable(&thisType::reserve));
+						classPtr->AddFunction("max_size", make_callable(&thisType::max_size));
+						classPtr->AddFunction("clear", make_callable(&thisType::clear));
+						classPtr->AddFunction("erase", make_callable(&thisType::erase));
+						classPtr->AddFunction("erase_fast", make_callable(&thisType::erase_fast));
+						classPtr->AddFunction("pop_back", make_callable(&thisType::pop_back));
+						classPtr->AddFunction("push_back", make_callable([](thisType& o, Any const& r) { o.push_back(Var(r)); }));
+						classPtr->AddFunction("resize", make_callable([](thisType& o, size_t N) { o.resize(N); }));
+						classPtr->AddFunction("resize", make_callable([](thisType& o, size_t N, Any const& r) { o.resize(N, Var(r)); }));
 
 						// operator[], at, front, back
-						classPtr->EmplaceFunction("at", make_callable([](thisType const& o, size_t _Keyval) -> Var {
+						classPtr->AddFunction("at", make_callable([](thisType const& o, size_t _Keyval) -> Var {
 							auto Shared = o.at(_Keyval);
 							auto& var = *Shared;
 							std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
@@ -2725,7 +2844,7 @@ namespace GoodLang {
 							});
 							return Var(toReturn);
 							}));
-						classPtr->EmplaceFunction("[]", make_callable([](thisType& o, size_t _Keyval) -> Var {
+						classPtr->AddFunction("[]", make_callable([](thisType& o, size_t _Keyval) -> Var {
 							auto Shared = o[_Keyval];
 							auto& var = *Shared;
 							std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
@@ -2733,7 +2852,7 @@ namespace GoodLang {
 							});
 							return Var(toReturn);
 							}));
-						classPtr->EmplaceFunction("[]", make_callable([](thisType const& o, size_t _Keyval) -> Var {
+						classPtr->AddFunction("[]", make_callable([](thisType const& o, size_t _Keyval) -> Var {
 							auto Shared = o[_Keyval];
 							auto& var = *Shared;
 							std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
@@ -2741,7 +2860,7 @@ namespace GoodLang {
 							});
 							return Var(toReturn);
 							}));
-						classPtr->EmplaceFunction("front", make_callable([](thisType const& o) -> Var {
+						classPtr->AddFunction("front", make_callable([](thisType const& o) -> Var {
 							auto Shared = o.front();
 							auto& var = *Shared;
 							std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
@@ -2749,7 +2868,7 @@ namespace GoodLang {
 							});
 							return Var(toReturn);
 							}));
-						classPtr->EmplaceFunction("back", make_callable([](thisType const& o) -> Var {
+						classPtr->AddFunction("back", make_callable([](thisType const& o) -> Var {
 							auto Shared = o.back();
 							auto& var = *Shared;
 							std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(var), [_lock = Shared.ForwardLock(), _shared = Shared->p_data](Any* p) {
@@ -2758,7 +2877,7 @@ namespace GoodLang {
 							return Var(toReturn);
 							}));
 						// Returns a string
-						this->EmplaceFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->std::string {
+						this->AddFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->std::string {
 							if (auto Self = self.lock()) {
 								std::string r;
 								for (auto& i : x) {
@@ -2776,7 +2895,7 @@ namespace GoodLang {
 							}
 						}));
 						// Returns a hash
-						this->EmplaceFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->size_t {
+						this->AddFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->size_t {
 							if (auto Self = self.lock()) {
 								size_t o{ 0 };
 								for (auto& i : x) {
@@ -2804,45 +2923,45 @@ namespace GoodLang {
 							auto thisIteratorTypeInfo = classPtr->ClassType;
 
 							// Constructor
-							iterator_classPtr->EmplaceFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
+							iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
 							// Copy constructor
-							iterator_classPtr->EmplaceFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
+							iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
 							// assignment operator
-							iterator_classPtr->EmplaceFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
+							iterator_classPtr->AddFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
 								thisIteratorType& out = a.cast(); out = b; return a;
 								}, ParamTypes({ thisIteratorTypeInfo->MakeRef(), thisIteratorTypeInfo->MakeConstRef() }), thisIteratorTypeInfo->MakeRef()));
 
 							// equality
-							iterator_classPtr->EmplaceFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
-							iterator_classPtr->EmplaceFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+							iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
+							iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
 
 							// (optional) distance
-							iterator_classPtr->EmplaceFunction("-", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> size_t { return lhs - rhs; }));
+							iterator_classPtr->AddFunction("-", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> size_t { return lhs - rhs; }));
 
 							// iter
-							iterator_classPtr->EmplaceFunction("++", make_callable([](Any const& a) -> Any {
+							iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
 								thisIteratorType& out = a.cast();
 								out.operator++();
 								return a;
 							}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
 							// (optional) jump
-							iterator_classPtr->EmplaceFunction("+=", make_callable([](Any const& a, size_t diff) -> Any {
+							iterator_classPtr->AddFunction("+=", make_callable([](Any const& a, size_t diff) -> Any {
 								thisIteratorType& out = a.cast();
 								out.operator+=(diff);
 								return a;
 							}, ParamTypes({ thisIteratorTypeInfo->MakeRef(), user_type_shared<size_t>() }), thisIteratorTypeInfo->MakeRef()));
 							// get // must be implimented by the iterator
-							iterator_classPtr->EmplaceFunction("get", make_callable([](thisIteratorType const& makeCopy) -> Var {
+							iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> Var {
 								std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(*makeCopy), [_lock = makeCopy](Any* p) {
 									delete p;
 									});
 								return Var(toReturn);
 							}));
 						}
-						classPtr->EmplaceFunction("begin", make_callable([](thisType const& r)->thisType::iterator {
+						classPtr->AddFunction("begin", make_callable([](thisType const& r)->thisType::iterator {
 							return r.begin();
 						}));
-						classPtr->EmplaceFunction("end", make_callable([](thisType const& r)->thisType::iterator {
+						classPtr->AddFunction("end", make_callable([](thisType const& r)->thisType::iterator {
 							return r.end();
 						}));
 
@@ -2858,23 +2977,23 @@ namespace GoodLang {
 						auto thisTypeInfo = classPtr->ClassType;
 
 						// Constructors
-						classPtr->EmplaceFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
-						classPtr->EmplaceFunction("=", make_callable(
+						classPtr->AddFunction(thisTypeName, make_callable([]() -> thisType { return thisType{}; }));
+						classPtr->AddFunction(thisTypeName, make_callable([](thisType const& makeCopy) -> thisType { return makeCopy; }));
+						classPtr->AddFunction("=", make_callable(
 							[](Any const& a, thisType const& b) -> Any { thisType& out = a.cast(); out = b; return a; }
 							, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() })
 							, thisTypeInfo->MakeRef()
 						));
 
 						// Comparisons
-						classPtr->EmplaceFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
-						classPtr->EmplaceFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
+						classPtr->AddFunction("==", make_callable([](thisType const& x, thisType const& y) -> bool { return x == y; }));
+						classPtr->AddFunction("!=", make_callable([](thisType const& x, thisType const& y) -> bool { return x != y; }));
 
 						// Functions
-						classPtr->EmplaceFunction("size", make_callable(&thisType::size));
-						classPtr->EmplaceFunction("empty", make_callable(&thisType::empty));
-						classPtr->EmplaceFunction("clear", make_callable(&thisType::clear));
-						classPtr->EmplaceFunction("erase", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& r, Any const& key)->size_t {
+						classPtr->AddFunction("size", make_callable(&thisType::size));
+						classPtr->AddFunction("empty", make_callable(&thisType::empty));
+						classPtr->AddFunction("clear", make_callable(&thisType::clear));
+						classPtr->AddFunction("erase", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& r, Any const& key)->size_t {
 							if (auto scope = Self.lock()) {
 								auto _key = scope->Cast<size_t>(scope->Call("to_hash", { key }));
 								return r.erase(_key);
@@ -2883,7 +3002,7 @@ namespace GoodLang {
 								throw std::runtime_error("Class not available");
 							}
 						}));
-						classPtr->EmplaceFunction("count", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& r, Any const& key)->size_t {
+						classPtr->AddFunction("count", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& r, Any const& key)->size_t {
 							if (auto scope = Self.lock()) {
 								auto _key = scope->Cast<size_t>(scope->Call("to_hash", { key }));
 								return r.count(_key);
@@ -2892,7 +3011,7 @@ namespace GoodLang {
 								throw std::runtime_error("Class not available");
 							}
 						}));
-						classPtr->EmplaceFunction("at", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& o, Any const& key)->Var {
+						classPtr->AddFunction("at", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& o, Any const& key)->Var {
 							if (auto scope = Self.lock()) {
 								auto _key = scope->Cast<size_t>(scope->Call("to_hash", { key }));
 								auto Shared = o.at(_key);
@@ -2905,7 +3024,7 @@ namespace GoodLang {
 								throw std::runtime_error("Class not available");
 							}
 						}));
-						classPtr->EmplaceFunction("[]", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& o, Any const& key)->Var {
+						classPtr->AddFunction("[]", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& o, Any const& key)->Var {
 							if (auto scope = Self.lock()) {
 								auto _key = scope->Cast<size_t>(scope->Call("to_hash", { key }));
 								auto Shared = o.at(_key);
@@ -2919,7 +3038,7 @@ namespace GoodLang {
 								throw std::runtime_error("Class not available");
 							}
 						}));
-						classPtr->EmplaceFunction("[]", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& o, Any const& key)->Var {
+						classPtr->AddFunction("[]", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& o, Any const& key)->Var {
 							if (auto scope = Self.lock()) {
 								auto _key = scope->Cast<size_t>(scope->Call("to_hash", { key }));
 								auto Shared = o.get_or_insert(_key, std::pair<Var, Var>{ Var(key), Var() });
@@ -2933,7 +3052,7 @@ namespace GoodLang {
 								throw std::runtime_error("Class not available");
 							}
 						}));
-						classPtr->EmplaceFunction("emplace", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& o, Any const& key, Any const& value) -> void {
+						classPtr->AddFunction("emplace", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType& o, Any const& key, Any const& value) -> void {
 							if (auto scope = Self.lock()) {
 								auto _key = scope->Cast<size_t>(scope->Call("to_hash", { key }));
 								o.get_or_insert(_key, std::pair<Var, Var>{ Var(key), Var(value) });
@@ -2944,7 +3063,7 @@ namespace GoodLang {
 						}));
 
 						// Returns a string
-						this->EmplaceFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->std::string {
+						this->AddFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->std::string {
 							if (auto Self = self.lock()) {
 								std::string r;
 								for (auto& i : x) {
@@ -2962,7 +3081,7 @@ namespace GoodLang {
 							}
 						}));
 						// Returns a hash
-						this->EmplaceFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->size_t {
+						this->AddFunction("to_hash", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](thisType const& x)->size_t {
 							if (auto Self = self.lock()) {
 								size_t o{ 0 };
 								for (auto& i : x) {
@@ -2990,40 +3109,40 @@ namespace GoodLang {
 							auto thisIteratorTypeInfo = classPtr->ClassType;
 
 							// Constructor
-							iterator_classPtr->EmplaceFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
+							iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([]() -> thisIteratorType { return thisIteratorType{}; }));
 							// Copy constructor
-							iterator_classPtr->EmplaceFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
+							iterator_classPtr->AddFunction(thisIteratorTypeName, make_callable([](thisIteratorType const& makeCopy) -> thisIteratorType { return makeCopy; }));
 							// assignment operator
-							iterator_classPtr->EmplaceFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
+							iterator_classPtr->AddFunction("=", make_callable([](Any const& a, thisIteratorType const& b) -> Any {
 								thisIteratorType& out = a.cast(); out = b; return a;
 								}, ParamTypes({ thisIteratorTypeInfo->MakeRef(), thisIteratorTypeInfo->MakeConstRef() }), thisIteratorTypeInfo->MakeRef()));
 
 							// equality
-							iterator_classPtr->EmplaceFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
-							iterator_classPtr->EmplaceFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
+							iterator_classPtr->AddFunction("==", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs == rhs; }));
+							iterator_classPtr->AddFunction("!=", make_callable([](thisIteratorType const& lhs, thisIteratorType const& rhs) -> bool { return lhs != rhs; }));
 
 							// iter
-							iterator_classPtr->EmplaceFunction("++", make_callable([](Any const& a) -> Any {
+							iterator_classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
 								thisIteratorType& out = a.cast();
 								out.operator++();
 								return a;
 								}, ParamTypes({ thisIteratorTypeInfo->MakeRef() }), thisIteratorTypeInfo->MakeRef()));
 							// first (convenience function for this specialization)
-							iterator_classPtr->EmplaceFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
+							iterator_classPtr->AddFunction("first", make_callable([](thisIteratorType const& makeCopy) -> Any {
 								std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(makeCopy->second.first), [_lock = makeCopy](Any* p) {
 									delete p;
 									});
 								return Var(toReturn);
 								}));
 							// second (convenience function for this specialization)
-							iterator_classPtr->EmplaceFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
+							iterator_classPtr->AddFunction("second", make_callable([](thisIteratorType const& makeCopy) -> Any {
 								std::shared_ptr<Any> toReturn = std::shared_ptr<Any>(new Any(makeCopy->second.second), [_lock = makeCopy](Any* p) {
 									delete p;
 									});
 								return Var(toReturn);
 								}));
 							// get // must be implimented by the iterator
-							iterator_classPtr->EmplaceFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
+							iterator_classPtr->AddFunction("get", make_callable([](thisIteratorType const& makeCopy) -> std::pair<Var, Var> {
 								std::shared_ptr<Any> toReturn1 = std::shared_ptr<Any>(new Any(makeCopy->second.first), [_lock = makeCopy](Any* p) {
 									delete p;
 									});
@@ -3033,10 +3152,10 @@ namespace GoodLang {
 								return std::pair<Var, Var>{ Var(toReturn1), Var(toReturn2) };
 								}));
 						}
-						classPtr->EmplaceFunction("begin", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& r)->thisType::iterator {
+						classPtr->AddFunction("begin", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& r)->thisType::iterator {
 							return r.begin();
 						}));
-						classPtr->EmplaceFunction("end", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& r)->thisType::iterator {
+						classPtr->AddFunction("end", make_callable([Self = std::weak_ptr<ClassScope>(classPtr)](thisType const& r)->thisType::iterator {
 							return r.end();
 						}));
 
@@ -3054,19 +3173,19 @@ namespace GoodLang {
 						auto thisTypeInfo = classPtr->ClassType;
 
 						// Constructors
-						classPtr->EmplaceFunction(thisTypeName, make_callable([]() -> Any { return thisTypeShared{}; }, ParamTypes(), thisTypeInfo));
-						classPtr->EmplaceFunction(thisTypeName, make_callable([](Any const& makeCopy) -> Any {
+						classPtr->AddFunction(thisTypeName, make_callable([]() -> Any { return thisTypeShared{}; }, ParamTypes(), thisTypeInfo));
+						classPtr->AddFunction(thisTypeName, make_callable([](Any const& makeCopy) -> Any {
 							return makeCopy;
 							}, ParamTypes({ thisTypeInfo->MakeConstRef() }), thisTypeInfo));
-						classPtr->EmplaceFunction("=", make_callable([](Any const& a, Any const& makeCopy) -> Any {
+						classPtr->AddFunction("=", make_callable([](Any const& a, Any const& makeCopy) -> Any {
 							return makeCopy;
 							}, ParamTypes({ thisTypeInfo->MakeRef(), thisTypeInfo->MakeConstRef() }), thisTypeInfo->MakeRef()));
 
 						// Comparisons
-						classPtr->EmplaceFunction("==", make_callable([](Any const& x, Any const& y) -> bool { return x == y; }, ParamTypes({ thisTypeInfo->MakeConstRef(), thisTypeInfo->MakeConstRef() })));
-						classPtr->EmplaceFunction("!=", make_callable([](Any const& x, Any const& y) -> bool { return x != y; }, ParamTypes({ thisTypeInfo->MakeConstRef(), thisTypeInfo->MakeConstRef() })));
+						classPtr->AddFunction("==", make_callable([](Any const& x, Any const& y) -> bool { return x == y; }, ParamTypes({ thisTypeInfo->MakeConstRef(), thisTypeInfo->MakeConstRef() })));
+						classPtr->AddFunction("!=", make_callable([](Any const& x, Any const& y) -> bool { return x != y; }, ParamTypes({ thisTypeInfo->MakeConstRef(), thisTypeInfo->MakeConstRef() })));
 
-						classPtr->EmplaceFunction("Returns", make_callable([](Any const& o) -> std::weak_ptr<Type_Info> {
+						classPtr->AddFunction("Returns", make_callable([](Any const& o) -> std::weak_ptr<Type_Info> {
 							if (auto ptr = o.cast<thisTypeShared>()) {
 								return ptr->Returns();
 							}
@@ -3074,7 +3193,7 @@ namespace GoodLang {
 								return user_type_shared<void>();
 							}
 							}, ParamTypes({ thisTypeInfo->MakeConstRef() })));
-						classPtr->EmplaceFunction("Argument", make_callable([](Any const& o, size_t i) -> std::weak_ptr<Type_Info> {
+						classPtr->AddFunction("Argument", make_callable([](Any const& o, size_t i) -> std::weak_ptr<Type_Info> {
 							if (auto ptr = o.cast<thisTypeShared>()) {
 								return ptr->Argument(i);
 							}
@@ -3082,7 +3201,7 @@ namespace GoodLang {
 								return user_type_shared<void>();
 							}
 							}, ParamTypes({ thisTypeInfo->MakeConstRef(), user_type_shared<size_t>() })));
-						classPtr->EmplaceFunction("Arguments", make_callable([](Any const& o) -> Vector<Var> {
+						classPtr->AddFunction("Arguments", make_callable([](Any const& o) -> Vector<Var> {
 							Vector<Var> out;
 							if (auto ptr = o.cast<thisTypeShared>()) {
 								for (auto& x : ptr->Arguments()) {
@@ -3091,19 +3210,19 @@ namespace GoodLang {
 							}
 							return out;
 							}, ParamTypes({ thisTypeInfo->MakeConstRef() })));
-						classPtr->EmplaceFunction("NumArguments", make_callable([](Any const& o) -> size_t {
+						classPtr->AddFunction("NumArguments", make_callable([](Any const& o) -> size_t {
 							if (auto ptr = o.cast<thisTypeShared>()) {
 								return ptr->NumArguments();
 							}
 							else return 0;
 							}, ParamTypes({ thisTypeInfo->MakeConstRef() })));
-						classPtr->EmplaceFunction("to_hash", make_callable([](Any const& o) -> size_t {
+						classPtr->AddFunction("to_hash", make_callable([](Any const& o) -> size_t {
 							if (auto ptr = o.cast<thisTypeShared>()) {
 								return ptr->hash();
 							}
 							else return 0;
 							}, ParamTypes({ thisTypeInfo->MakeConstRef() })));
-						classPtr->EmplaceFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o)->std::string {
+						classPtr->AddFunction("to_string", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o)->std::string {
 							if (auto Self = self.lock()) {
 								if (auto ptr = o.cast<thisTypeShared>()) {
 									auto sig = ptr->GetSignature();
@@ -3148,7 +3267,7 @@ namespace GoodLang {
 							else throw exception::not_found_error("to_string");
 						}, ParamTypes({ thisTypeInfo->MakeConstRef() })));
 
-						classPtr->EmplaceFunction("Invoke", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Vector<Var> const& Params)->Var {
+						classPtr->AddFunction("Invoke", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Vector<Var> const& Params)->Var {
 							std::vector<Any> T; for (auto& x : Params) { T.push_back(x.p_data); }
 							if (auto Self = self.lock()) {
 								auto tree = Self->GetRoot()->GetTypeConverterTree();
@@ -3157,7 +3276,7 @@ namespace GoodLang {
 							return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), user_type_shared<Vector<Var>>().lock()->MakeConstRef() })));
 
-						classPtr->EmplaceFunction("()", make_callable([](Any const& o) -> Var {
+						classPtr->AddFunction("()", make_callable([](Any const& o) -> Var {
 							if (auto ptr = o.cast<thisTypeShared>()) {
 								return Var(ptr->operator()(std::vector<Any>{}));
 							}
@@ -3210,63 +3329,63 @@ namespace GoodLang {
 #define Repeat15(x) Repeat(x, 1), Repeat(x, 2), Repeat(x, 3), Repeat(x, 4), Repeat(x, 5), Repeat(x, 6), Repeat(x, 7), Repeat(x, 8), \
                 Repeat(x, 9), Repeat(x, 10), Repeat(x, 11), Repeat(x, 12), Repeat(x, 13), Repeat(x, 14), Repeat(x, 15)
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do1(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do1(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do1(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat1(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do2(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do2(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do2(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat2(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do3(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do3(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do3(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat3(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do4(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do4(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do4(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat4(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do5(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do5(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do5(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat5(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do6(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do6(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do6(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat6(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do7(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do7(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do7(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat7(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do8(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do8(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do8(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat8(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do9(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do9(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do9(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat9(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do10(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do10(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do10(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat10(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do11(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do11(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do11(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat11(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do12(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do12(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do12(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat12(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do13(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do13(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do13(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat13(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do14(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do14(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do14(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat14(anyType) })));
 
-						classPtr->EmplaceFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do15(Any const& p))->Var {
+						classPtr->AddFunction("()", make_callable([self = std::weak_ptr<ClassScope>(classPtr)](Any const& o, Do15(Any const& p))->Var {
 							if (auto Self = self.lock()) { auto tree = Self->GetRoot()->GetTypeConverterTree(); if (auto ptr = o.cast<thisTypeShared>()) return Var(call(ptr, std::vector<Any>{ Do15(p) }, * tree)); } return {};
 						}, ParamTypes({ thisTypeInfo->MakeConstRef(), Repeat15(anyType) })));
 
@@ -3308,19 +3427,19 @@ namespace GoodLang {
 				// Built-In static, templated functions
 				if (1) {
 					// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
-					this->EmplaceFunction("Type_Info", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
+					this->AddFunction("Type_Info", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
 						return obj.Type();
 					}));
 					// Returns the type of Any object. By not specifying the type, the Any is treated like a Template
-					this->EmplaceFunction("Type", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
+					this->AddFunction("Type", make_callable([](Any const& obj) -> std::weak_ptr<Type_Info> {
 						return obj.Type();
 					}));
 					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-					this->EmplaceFunction("to_string", make_callable([](Any const& x) -> std::string {
+					this->AddFunction("to_string", make_callable([](Any const& x) -> std::string {
 						return GoodLang::ToString(x);
 					}));
 					// Returns a stringified version of the provided Any obj. This is meant to be a fall-back template whenever no specialization is available. 
-					this->EmplaceFunction("print", make_callable([Self = this->self_id_m.scope](Any const& x) -> void {
+					this->AddFunction("print", make_callable([Self = this->self_id_m.scope](Any const& x) -> void {
 						if (auto p = Self.lock()) {
 							std::cout << p->Cast<std::string>(p->Call("to_string", { x })) + "\n";
 						}
@@ -3329,7 +3448,7 @@ namespace GoodLang {
 						}
 					}));
 					// Sleep the thread for a specified amount of time
-					this->EmplaceFunction("Sleep", make_callable([](Units::second const& time) -> void {
+					this->AddFunction("Sleep", make_callable([](Units::second const& time) -> void {
 						::Sleep((long long)(Units::millisecond(time)()));
 					}));
 				}
@@ -3341,7 +3460,7 @@ namespace GoodLang {
 
 			template<typename A, typename B>
 			static void add_converter(std::shared_ptr<ClassScope>& classPtr, std::string const& Name) {
-				classPtr->EmplaceFunction(Name, Function(make_callable(&convert<A, B>)));
+				classPtr->AddFunction(Name, Function(make_callable(&convert<A, B>)));
 			};
 
 			template<typename T>
@@ -3374,79 +3493,79 @@ namespace GoodLang {
 				add_converters<T>(classPtr, Name);
 
 				// Constructors
-				classPtr->EmplaceFunction(Name, make_callable([]() ->  T { return  T{}; }));
-				classPtr->EmplaceFunction(Name, make_callable([](T const& makeCopy) ->  T { return makeCopy; }));
-				classPtr->EmplaceFunction("=", make_callable(
+				classPtr->AddFunction(Name, make_callable([]() ->  T { return  T{}; }));
+				classPtr->AddFunction(Name, make_callable([](T const& makeCopy) ->  T { return makeCopy; }));
+				classPtr->AddFunction("=", make_callable(
 					[](Any const& a, T const& b) -> Any { T& x = a.cast(); x = b; return a; }
 					, ParamTypes({ user_type_shared<T>().lock()->MakeRef(), user_type_shared<T>().lock()->MakeConstRef() })
 					, user_type_shared<T>().lock()->MakeRef()
 				));
 
 				// Comparisons
-				classPtr->EmplaceFunction("==", make_callable([](T const& x, T const& y) -> bool { return x == y; }));
-				classPtr->EmplaceFunction("!=", make_callable([](T const& x, T const& y) -> bool { return x != y; }));
-				classPtr->EmplaceFunction("<", make_callable([](T const& x, T const& y) -> bool { return x < y; }));
-				classPtr->EmplaceFunction("<=", make_callable([](T const& x, T const& y) -> bool { return x <= y; }));
-				classPtr->EmplaceFunction(">", make_callable([](T const& x, T const& y) -> bool { return x > y; }));
-				classPtr->EmplaceFunction(">=", make_callable([](T const& x, T const& y) -> bool { return x >= y; }));
-				classPtr->EmplaceFunction("+", make_callable([](T const& x, T const& y) -> T { return x + y; }));
-				classPtr->EmplaceFunction("-", make_callable([](T const& x, T const& y) -> T { return x - y; }));
-				classPtr->EmplaceFunction("*", make_callable([](T const& x, T const& y) -> T { return x * y; }));
+				classPtr->AddFunction("==", make_callable([](T const& x, T const& y) -> bool { return x == y; }));
+				classPtr->AddFunction("!=", make_callable([](T const& x, T const& y) -> bool { return x != y; }));
+				classPtr->AddFunction("<", make_callable([](T const& x, T const& y) -> bool { return x < y; }));
+				classPtr->AddFunction("<=", make_callable([](T const& x, T const& y) -> bool { return x <= y; }));
+				classPtr->AddFunction(">", make_callable([](T const& x, T const& y) -> bool { return x > y; }));
+				classPtr->AddFunction(">=", make_callable([](T const& x, T const& y) -> bool { return x >= y; }));
+				classPtr->AddFunction("+", make_callable([](T const& x, T const& y) -> T { return x + y; }));
+				classPtr->AddFunction("-", make_callable([](T const& x, T const& y) -> T { return x - y; }));
+				classPtr->AddFunction("*", make_callable([](T const& x, T const& y) -> T { return x * y; }));
 				if constexpr (!std::is_same_v<bool, T>) {
-					classPtr->EmplaceFunction("^", make_callable([](T const& x, T const& y) -> T { return std::pow(x, y); }));
-					classPtr->EmplaceFunction("/", make_callable([](T const& x, T const& y) -> T { if (y == 0) return std::numeric_limits<T>::max(); else return x / y; }));
-					classPtr->EmplaceFunction("+=", make_callable([](T& x, T const& y) -> void { x += y; }));
-					classPtr->EmplaceFunction("-=", make_callable([](T& x, T const& y) -> void { x -= y; }));
-					classPtr->EmplaceFunction("*=", make_callable([](T& x, T const& y) -> void { x *= y; }));
-					classPtr->EmplaceFunction("/=", make_callable([](T& x, T const& y) -> void { if (y == 0) x = std::numeric_limits<T>::max(); else x /= y; }));
-					classPtr->EmplaceFunction("^=", make_callable([](T& x, T const& y) -> void { x = std::pow(x, y); }));
+					classPtr->AddFunction("^", make_callable([](T const& x, T const& y) -> T { return std::pow(x, y); }));
+					classPtr->AddFunction("/", make_callable([](T const& x, T const& y) -> T { if (y == 0) return std::numeric_limits<T>::max(); else return x / y; }));
+					classPtr->AddFunction("+=", make_callable([](T& x, T const& y) -> void { x += y; }));
+					classPtr->AddFunction("-=", make_callable([](T& x, T const& y) -> void { x -= y; }));
+					classPtr->AddFunction("*=", make_callable([](T& x, T const& y) -> void { x *= y; }));
+					classPtr->AddFunction("/=", make_callable([](T& x, T const& y) -> void { if (y == 0) x = std::numeric_limits<T>::max(); else x /= y; }));
+					classPtr->AddFunction("^=", make_callable([](T& x, T const& y) -> void { x = std::pow(x, y); }));
 
-					classPtr->EmplaceFunction("++", make_callable([](Any const& a) -> Any {
+					classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
 						T& x = a.cast();
 						x++;
 						return a;
 					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
-					classPtr->EmplaceFunction("--", make_callable([](Any const& a) -> Any {
+					classPtr->AddFunction("--", make_callable([](Any const& a) -> Any {
 						T& x = a.cast();
 						x--;
 						return a;
 					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
 					if constexpr (std::is_signed_v<T>) {
-						classPtr->EmplaceFunction("-", make_callable([](Any const& a) -> T {
+						classPtr->AddFunction("-", make_callable([](Any const& a) -> T {
 							T& x = a.cast();
 							return -x;
 						}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
 					}
-					classPtr->EmplaceFunction("+", make_callable([](Any const& a) -> T {
+					classPtr->AddFunction("+", make_callable([](Any const& a) -> T {
 						T& x = a.cast();
 						return +x;
 					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
 					if constexpr (std::is_integral_v<T>) {
-						classPtr->EmplaceFunction("~", make_callable([](Any const& a) -> T {
+						classPtr->AddFunction("~", make_callable([](Any const& a) -> T {
 							T& x = a.cast();
 							return ~x;
 						}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
-						classPtr->EmplaceFunction("%", make_callable([](T const& x, T const& y) -> T {
+						classPtr->AddFunction("%", make_callable([](T const& x, T const& y) -> T {
 							return x % y;
 						}));
 					}
 				}
 				else {
-					classPtr->EmplaceFunction("!", make_callable([](bool const& a) -> bool {
+					classPtr->AddFunction("!", make_callable([](bool const& a) -> bool {
 						return !a;
 					}));
 				}
 
 				// Functions
-				//classPtr->EmplaceFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));
-				//classPtr->EmplaceFunction("min", make_callable([]() { return std::numeric_limits<T>::lowest(); }));
-				classPtr->EmplaceFunction("to_string", make_callable([](T const& o) -> std::string { return std::to_string(o); }));
+				//classPtr->AddFunction("max", make_callable([]() { return std::numeric_limits<T>::max(); }));
+				//classPtr->AddFunction("min", make_callable([]() { return std::numeric_limits<T>::lowest(); }));
+				classPtr->AddFunction("to_string", make_callable([](T const& o) -> std::string { return std::to_string(o); }));
 				if constexpr (utilities::is_std_hashable_v<T>) {
-					classPtr->EmplaceFunction("to_hash", make_callable([](T const& o) -> size_t { return std::hash<T>()(o); }));
+					classPtr->AddFunction("to_hash", make_callable([](T const& o) -> size_t { return std::hash<T>()(o); }));
 				}
 				else {
 					if constexpr (std::is_floating_point_v<T>) {
-						classPtr->EmplaceFunction("to_hash", make_callable([](T const& o) -> size_t { size_t out{ 37 }; details::hash_combine(out, (double)o); return out; }));
+						classPtr->AddFunction("to_hash", make_callable([](T const& o) -> size_t { size_t out{ 37 }; details::hash_combine(out, (double)o); return out; }));
 					}
 				}
 
@@ -3476,7 +3595,7 @@ namespace GoodLang {
 			};
 
 		};
-
+ 
 	};
 
 };
@@ -12197,13 +12316,11 @@ int main() {
 		auto Root = std::make_shared<Scopes::RootScope>();
 		Root->SetSelf(Root);	
 		Root->AddBuiltIns();
-
-		(void)(Root->Cast<std::string>(Root->Call("to_string", { Root->Call("DateTime::Now", {}) })));
-
 		EXPECT_EQ(true, Root->is_root());
 		EXPECT_EQ(true, Root->is_namespace());
 		EXPECT_EQ(false, Root->is_class());
 
+		(void)(Root->Cast<std::string>(Root->Call("to_string", { Root->Call("DateTime::Now", {}) })));
 		EXPECT_EQ(Root->Cast<double>(100), 100.0);
 
 		auto Namespace = Root->MakeChildNamespace("UI");
@@ -12211,6 +12328,7 @@ int main() {
 		EXPECT_EQ(true, Namespace->is_namespace());
 		EXPECT_EQ(false, Namespace->is_class());
 
+#if 1
 		auto Class = Namespace->MakeChildClass("Color");
 		EXPECT_EQ(false, Class->is_root());
 		EXPECT_EQ(true, Class->is_namespace());
@@ -12228,6 +12346,15 @@ int main() {
 		}, ParamTypes({ Class->ClassType->MakeConstRef() })));
 		EXPECT_EQ(123, Class->Cast<int>(Class->Call("R", { Class->Call("Color", {}) })));
 		EXPECT_EQ(126, Class->Cast<int>(Class->Call("A", { Class->Call("=", { Class->Call("Color", {}), Class->Call("Color", {}) }) })));
+
+		EXPECT_EQ(Namespace.get(), Class->GetParent().get());
+		EXPECT_EQ(Class.get(), Class->GetNamespace().get());
+		EXPECT_EQ(Root.get(), Class->GetRoot().get());
+
+		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](int const& x, int const& y) { return std::max(x, y); })), true);
+		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](long const& x, long const& y) { return std::max(x, y); })), true);
+		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](float const& x, float const& y) { return std::max(x, y); })), true);
+		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](double const& x, double const& y) { return std::max(x, y); })), true);
 
 		if (1) {
 			auto FrameworkElement = Namespace->MakeChildClass("FrameworkElement");
@@ -12300,156 +12427,83 @@ int main() {
 			assert(false);
 		}catch (exception::not_found_error&) {}
 
-		auto Scope = Class->MakeChildScope();
-		EXPECT_EQ(false, Scope->is_root());
-		EXPECT_EQ(false, Scope->is_namespace());
-		EXPECT_EQ(false, Scope->is_class());
-
-		auto Scope2 = Scope->MakeChildScope();
-		EXPECT_EQ(false, Scope2->is_root());
-		EXPECT_EQ(false, Scope2->is_namespace());
-		EXPECT_EQ(false, Scope2->is_class());
-
-		auto String = Root->MakeChildClass("string");
-		EXPECT_EQ(false, String->is_root());
-		EXPECT_EQ(true, String->is_namespace());
-		EXPECT_EQ(true, String->is_class());
-
-		EXPECT_EQ(Namespace.get(), Class->GetParent().get());
-		EXPECT_EQ(Class.get(), Class->GetNamespace().get());
-		EXPECT_EQ(Root.get(), Class->GetRoot().get());
-
-		EXPECT_EQ((bool)Root->FindClass("Color"), true);
-		EXPECT_EQ((bool)Root->FindClass("UI::Color"), true);
-		EXPECT_EQ((bool)Root->FindClass("::UI::Color::"), true);
-		EXPECT_EQ((bool)Root->FindClass("::Color"), true);
-		EXPECT_EQ((bool)Root->FindNamespace("Color"), true);
-		EXPECT_EQ((bool)Root->FindNamespace("UI::Color"), true);
-		EXPECT_EQ((bool)Root->FindNamespace("::UI::Color::"), true);
-		EXPECT_EQ((bool)Root->FindNamespace("::Color"), true);
-
-		EXPECT_EQ((bool)Namespace->FindClass("Color"), true);
-		EXPECT_EQ((bool)Namespace->FindClass("UI::Color"), true);
-		EXPECT_EQ((bool)Namespace->FindClass("::UI::Color::"), true);
-		EXPECT_EQ((bool)Namespace->FindClass("::Color"), true);
-		EXPECT_EQ((bool)Namespace->FindNamespace("Color"), true);
-		EXPECT_EQ((bool)Namespace->FindNamespace("UI::Color"), true);
-		EXPECT_EQ((bool)Namespace->FindNamespace("::UI::Color::"), true);
-		EXPECT_EQ((bool)Namespace->FindNamespace("::Color"), true);
-
-		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](int const& x, int const& y) { return std::max(x, y); })), true);
-		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](long const& x, long const& y) { return std::max(x, y); })), true);
-		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](float const& x, float const& y) { return std::max(x, y); })), true);
-		EXPECT_EQ((bool)Namespace->EmplaceFunction("max", make_callable([](double const& x, double const& y) { return std::max(x, y); })), true);
-		
-		// To-Do: Figure out why this is failing. 
-		EXPECT_EQ(Namespace->Cast<int>(Namespace->Call("max", { -50, 50 })), 50);
-		EXPECT_EQ(Namespace->Cast<long>(Namespace->Call("max", { -50l, 50l })), 50l);
-		EXPECT_EQ(Namespace->Cast<float>(Namespace->Call("max", { -50.0f, 50.0f })), 50.0f);
-		EXPECT_EQ(Namespace->Cast<double>(Namespace->Call("max", { -50.0, 50.0 })), 50.0);
-
-		EXPECT_EQ((bool)Class->FindClass("Color"), true);
-		EXPECT_EQ((bool)Class->FindClass("UI::Color"), true);
-		EXPECT_EQ((bool)Class->FindClass("::UI::Color::"), true);
-		EXPECT_EQ((bool)Class->FindClass("::Color"), true);
-		EXPECT_EQ((bool)Class->FindNamespace("Color"), true);
-		EXPECT_EQ((bool)Class->FindNamespace("UI::Color"), true);
-		EXPECT_EQ((bool)Class->FindNamespace("::UI::Color::"), true);
-		EXPECT_EQ((bool)Class->FindNamespace("::Color"), true);
-
-		EXPECT_EQ((bool)Class->FindFunction("Color", {}), true);
-		EXPECT_EQ((bool)Scope2->FindFunction("::UI::Color::Color", {}), true);
-
-		EXPECT_EQ((bool)Root->EmplaceObject("string::npos", std::string::npos, Scopes::ObjectWrapper::ObjectState::Static), true);
-		EXPECT_EQ((bool)String->FindObject("npos"), true);
-		EXPECT_EQ((bool)Root->FindObject("string::npos"), true);
-		EXPECT_EQ((bool)String->FindObject("string::npos"), true);
-		EXPECT_EQ((bool)Class->FindObject("npos"), true);
-		EXPECT_EQ((bool)Scope->FindObject("npos"), true);
-
-		EXPECT_EQ((bool)Scope->EmplaceObject("x", 100, Scopes::ObjectWrapper::ObjectState::Normal), true);
-		EXPECT_EQ((bool)Scope->FindObject("x"), true); 
-		EXPECT_EQ((bool)Scope->EmplaceObject("npos", 50, Scopes::ObjectWrapper::ObjectState::Constant), true);
-		auto ptr = Scope->FindObject("npos");
-		EXPECT_EQ((bool)ptr, true);		
-		EXPECT_EQ((bool)Root->FindObject("x"), false);
-		EXPECT_EQ((bool)String->FindObject("x"), false);
-		EXPECT_EQ((bool)Class->FindObject("x"), false);
-
-		EXPECT_EQ((bool)Scope2->EmplaceObject("y", 50, Scopes::ObjectWrapper::ObjectState::Constant), true);
-		EXPECT_EQ((bool)Scope2->FindObject("x"), true);
-		EXPECT_EQ((bool)Scope2->FindObject("y"), true);
-		EXPECT_EQ((bool)Root->FindObject("y"), false);
-		EXPECT_EQ((bool)String->FindObject("y"), false);
-		EXPECT_EQ((bool)Class->FindObject("y"), false);
-		EXPECT_EQ((bool)Scope->FindObject("y"), false);
-
-		EXPECT_EQ(Scope2->AddUsing(Scope2->FindNamespace("string")), true);
-		ptr = Scope2->FindObject("npos");
-		EXPECT_EQ((bool)ptr, true);
-
-		// this will fail to find a namespace called "String", since the closest available is called "string". 
-		EXPECT_EQ((bool)Root->EmplaceObject("String::npos", std::string::npos, Scopes::ObjectWrapper::ObjectState::Static), false); 
-
-		
 
 
 
 
+		Stopwatch sw;
+		sw.Start();
+		for (int i = 0; i < 1000000; ++i) {
+			auto Scope = Class->MakeChildScope();
+			EXPECT_EQ(false, Scope->is_root());
+			EXPECT_EQ(false, Scope->is_namespace());
+			EXPECT_EQ(false, Scope->is_class());
 
+			auto Scope2 = Scope->MakeChildScope();
+			EXPECT_EQ(false, Scope2->is_root());
+			EXPECT_EQ(false, Scope2->is_namespace());
+			EXPECT_EQ(false, Scope2->is_class());
+			EXPECT_EQ(Scope2->AddUsing(Scope2->FindNamespace("string")), true);
 
+			EXPECT_EQ((bool)Root->FindClass("Color"), true);
+			EXPECT_EQ((bool)Root->FindClass("UI::Color"), true);
+			EXPECT_EQ((bool)Root->FindClass("::UI::Color::"), true);
+			EXPECT_EQ((bool)Root->FindClass("::Color"), true);
+			EXPECT_EQ((bool)Root->FindNamespace("Color"), true);
+			EXPECT_EQ((bool)Root->FindNamespace("UI::Color"), true);
+			EXPECT_EQ((bool)Root->FindNamespace("::UI::Color::"), true);
+			EXPECT_EQ((bool)Root->FindNamespace("::Color"), true);
 
+			EXPECT_EQ((bool)Namespace->FindClass("Color"), true);
+			EXPECT_EQ((bool)Namespace->FindClass("UI::Color"), true);
+			EXPECT_EQ((bool)Namespace->FindClass("::UI::Color::"), true);
+			EXPECT_EQ((bool)Namespace->FindClass("::Color"), true);
+			EXPECT_EQ((bool)Namespace->FindNamespace("Color"), true);
+			EXPECT_EQ((bool)Namespace->FindNamespace("UI::Color"), true);
+			EXPECT_EQ((bool)Namespace->FindNamespace("::UI::Color::"), true);
+			EXPECT_EQ((bool)Namespace->FindNamespace("::Color"), true);
 
+			EXPECT_EQ(Namespace->Cast<int>(Namespace->Call("max", { -50, 50 })), 50);
+			EXPECT_EQ(Namespace->Cast<long>(Namespace->Call("max", { -50l, 50l })), 50l);
+			EXPECT_EQ(Namespace->Cast<float>(Namespace->Call("max", { -50.0f, 50.0f })), 50.0f);
+			EXPECT_EQ(Namespace->Cast<double>(Namespace->Call("max", { -50.0, 50.0 })), 50.0);
 
+			EXPECT_EQ((bool)Class->FindClass("Color"), true);
+			EXPECT_EQ((bool)Class->FindClass("UI::Color"), true);
+			EXPECT_EQ((bool)Class->FindClass("::UI::Color::"), true);
+			EXPECT_EQ((bool)Class->FindClass("::Color"), true);
+			EXPECT_EQ((bool)Class->FindNamespace("Color"), true);
+			EXPECT_EQ((bool)Class->FindNamespace("UI::Color"), true);
+			EXPECT_EQ((bool)Class->FindNamespace("::UI::Color::"), true);
+			EXPECT_EQ((bool)Class->FindNamespace("::Color"), true);
 
+			EXPECT_EQ((bool)Class->FindFunction("Color", {}), true);
+			EXPECT_EQ((bool)Scope2->FindFunction("::UI::Color::Color", {}), true);
 
+			EXPECT_EQ((bool)Root->FindObject("string::npos"), true);
+			EXPECT_EQ((bool)Class->FindObject("npos"), true);
+			EXPECT_EQ((bool)Scope->FindObject("npos"), true);
 
-		/* {
-			namespace string{ ... }; 
-			string::npos = 100; // appends "npos" to the string namespace
+			EXPECT_EQ((bool)Scope->EmplaceObject("x", 100, Scopes::ObjectWrapper::ObjectState::Normal), true);
+			EXPECT_EQ((bool)Scope->FindObject("x"), true);
+			EXPECT_EQ((bool)Scope->EmplaceObject("npos", 50, Scopes::ObjectWrapper::ObjectState::Constant), true);
+			auto ptr = Scope->FindObject("npos");
+			EXPECT_EQ((bool)ptr, true);
+			EXPECT_EQ((bool)Root->FindObject("x"), false);
+			EXPECT_EQ((bool)Class->FindObject("x"), false);
 
-			namespace UI {
-				class Color {
-					{
-						x = 100;
-						{
-							y = 50;
-						}
-					}
-				}
-			}
-		} */
+			EXPECT_EQ((bool)Scope2->EmplaceObject("y", 50, Scopes::ObjectWrapper::ObjectState::Constant), true);
+			EXPECT_EQ((bool)Scope2->FindObject("x"), true);
+			EXPECT_EQ((bool)Scope2->FindObject("y"), true);
+			EXPECT_EQ((bool)Root->FindObject("y"), false);
+			EXPECT_EQ((bool)Class->FindObject("y"), false);
+			EXPECT_EQ((bool)Scope->FindObject("y"), false);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-		EXPECT_EQ((bool)Root->EmplaceFunction("string::replace", make_callable([]() {})), true);
-		EXPECT_EQ((bool)String->FindFunction("replace", {}), true);
-		EXPECT_EQ((bool)Root->FindFunction("string::replace", {}), true);
-
-
-		EXPECT_EQ((bool)Root->EmplaceFunction("string::npos", make_callable([]() {})), true);
-		std::shared_ptr<Any> result1;
-		Proxy_Function result2;
-		EXPECT_EQ(String->FindObjectOrFunction("npos", {}, result1, result2), true);
-		EXPECT_EQ((bool)result1, true);
-		EXPECT_EQ((bool)result2, false);
-
-
-
-
+			ptr = Scope2->FindObject("npos");
+			EXPECT_EQ((bool)ptr, true);
+		}
+		print(Units::second(sw.Stop_s()).ToString());
+#endif
 
 	}
 

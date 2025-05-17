@@ -420,6 +420,7 @@ namespace GoodLang {
 			>
 		> conversionTreeType;
 		conversionTreeType AllConversions;
+		concurrency::concurrent_unordered_set<size_t> default_converters_handled;
 
 	public:
 		std::string print();

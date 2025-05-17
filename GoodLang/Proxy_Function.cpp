@@ -459,6 +459,8 @@ namespace GoodLang {
 		if (auto ptr = Type.lock()) {
 			auto baseType = ptr->MakeBase().lock();
 			if (baseType) {
+				if (default_converters_handled.find(GetHash(baseType)) != default_converters_handled.end()) { return; }
+
 				auto refType = baseType->MakeRef().lock();
 				auto constType = baseType->MakeConst().lock();
 				if (refType && constType) {
@@ -552,6 +554,8 @@ namespace GoodLang {
 								pair.second = func;
 							}
 						}
+
+						default_converters_handled.insert(GetHash(baseType));
 					}
 				}
 			}
