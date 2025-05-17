@@ -4307,33 +4307,33 @@ namespace GoodLang {
 			mutable fast_shared_mutex
 				lock;
 			mutable size_t
-				count;
+				count_m;
 		public:
 			flat_map()
 				: tree{}
 				, lock{}
-				, count{ 0 }
+				, count_m{ 0 }
 			{};
 			flat_map(flat_map const& rhs)
 				: tree{}
 				, lock{}
-				, count{ 0 }
+				, count_m{ 0 }
 			{
 				std::shared_lock locked{ rhs.lock };
 				tree = rhs.tree;
-				InterlockedExchangeNoFence(&count, rhs.count);
+				InterlockedExchangeNoFence(&count_m, rhs.count_m);
 			};
 			flat_map(flat_map&& rhs)
 				: tree{ std::move(rhs.tree) }
 				, lock{}
-				, count{ rhs.count }
+				, count_m{ rhs.count_m }
 			{};
 			flat_map& operator=(flat_map const& rhs) {
 				if (this == &rhs) return *this;
 				std::unique_lock locked1{ lock };
 				std::shared_lock locked2{ rhs.lock };
 				tree = rhs.tree;
-				InterlockedExchangeNoFence(&count, rhs.count);
+				InterlockedExchangeNoFence(&count_m, rhs.count_m);
 				return *this;
 			};
 			flat_map& operator=(flat_map&& rhs) {
@@ -4341,13 +4341,13 @@ namespace GoodLang {
 				std::unique_lock locked1{ lock };
 				std::shared_lock locked2{ rhs.lock };
 				tree = rhs.tree;
-				InterlockedExchangeNoFence(&count, rhs.count);
+				InterlockedExchangeNoFence(&count_m, rhs.count_m);
 				return *this;
 			};
 			~flat_map() = default;
 
 			size_t const& size() const {
-				return count;
+				return count_m;
 			};			
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>				
 				insert(const KeyType& time, ValueType&& value) {
@@ -4355,7 +4355,7 @@ namespace GoodLang {
 				bool alreadyExisted = false;
 				auto* p = tree.Add(std::move(value), time, true, &alreadyExisted);
 				if (!alreadyExisted)
-					InterlockedIncrementNoFence(&count);
+					InterlockedIncrementNoFence(&count_m);
 				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(p->key), std::ref(*p->object) };
 			};
 			std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>
@@ -4364,8 +4364,18 @@ namespace GoodLang {
 				bool alreadyExisted = false; 				
 				auto* p = tree.Add(std::move(value), time, true, &alreadyExisted);
 				if (!alreadyExisted)
-					InterlockedIncrementNoFence(&count);
+					InterlockedIncrementNoFence(&count_m);
 				return std::pair<std::reference_wrapper<KeyType>, std::reference_wrapper<ValueType>>{ std::ref(p->key), std::ref(*p->object) };
+			};
+			size_t 
+				count(const KeyType& time) const {
+				std::shared_lock locked{ lock };
+				if (ValueType* p = tree.Find(time)) {
+					return 1;
+				}
+				else {
+					return 0;
+				}
 			};
 
 			ValueType&
@@ -4410,7 +4420,7 @@ namespace GoodLang {
 				pop_front() const {
 				std::unique_lock locked{ lock };
 				if (auto* p = tree.GetFirst()) {
-					InterlockedDecrementNoFence(&count);
+					InterlockedDecrementNoFence(&count_m);
 					tree.Remove(p);					
 					return true;
 				}
@@ -4420,7 +4430,7 @@ namespace GoodLang {
 				pop_back() const {
 				std::unique_lock locked{ lock };
 				if (auto* p = tree.GetLast()) {
-					InterlockedDecrementNoFence(&count);
+					InterlockedDecrementNoFence(&count_m);
 					tree.Remove(p);					
 					return true;
 				}
@@ -4457,7 +4467,7 @@ namespace GoodLang {
 					(void)lock.upgrade_lock();
 					if (auto* p = tree.Add(func(), time, true, &ExistedAlready)) {
 						lock.unlock();
-						if (!ExistedAlready) InterlockedIncrementNoFence(&count);
+						if (!ExistedAlready) InterlockedIncrementNoFence(&count_m);
 						return *p->object;
 					}
 					else {
@@ -4470,7 +4480,7 @@ namespace GoodLang {
 				erase(const KeyType& time, ValueType* out = nullptr) {
 				lock.lock_shared();
 				if (auto* p = tree.NodeFind(time)) {					
-					InterlockedDecrementNoFence(&count);
+					InterlockedDecrementNoFence(&count_m);
 					if (out) *out = *p->object;
 					(void)lock.upgrade_lock();
 					tree.Remove(p);
@@ -4483,7 +4493,7 @@ namespace GoodLang {
 			void
 				clear() {
 				std::unique_lock locked{ lock };
-				InterlockedExchangeNoFence(&count, 0);
+				InterlockedExchangeNoFence(&count_m, 0);
 				tree.Clear();
 			};
 
