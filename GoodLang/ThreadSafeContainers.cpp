@@ -4,7 +4,38 @@
 #include <ShlDisp.h> // InterlockedExchangePointer
 #include <iostream>
 
-namespace GoodLang {	
+namespace GoodLang {
+	std::atomic_bool* EpochGarbageCollectorImpl::ThreadManager::id_vec() {
+		static std::shared_ptr<std::atomic_bool[kMaxThreadNum]> vec{ new std::atomic_bool[kMaxThreadNum] };
+		return vec.get();
+	};
+	long long EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() {
+		//return std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count();
+		// return clock_ms();
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+	};
+	[[nodiscard]] const EpochGarbageCollectorImpl::HeartBeater& EpochGarbageCollectorImpl::IDManager::GetHeartBeater() {
+		static thread_local HeartBeater hb{};
+		static std::atomic_bool* ptr{ ThreadManager::id_vec() };
+		static thread_local size_t id_default{ std::hash<std::thread::id>{}(std::this_thread::get_id()) % ThreadManager::kMaxThreadNum };
+		size_t id;
+		bool reserved;
+		if (!hb.HasID()) {			
+			id = id_default;
+			while (ptr) {
+				reserved = ptr[id].load(std::memory_order_relaxed);
+				if (!reserved && ptr[id].compare_exchange_strong(reserved, true, std::memory_order_relaxed)) {
+					hb.SetID(id);
+					break;
+				}
+				if (++id >= ThreadManager::kMaxThreadNum) {
+					id = 0;
+				}
+			}
+		}
+		return hb;
+	};
+
 	// InterlockedLong
 	long InterlockedLong::Increment() { return InterlockedIncrementAcquire(&value); } // atomically increments the integer and returns the new value
 	long InterlockedLong::Decrement() { return InterlockedDecrementRelease(&value); } // atomically decrements the integer and returns the new value

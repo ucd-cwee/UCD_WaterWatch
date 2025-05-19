@@ -122,22 +122,24 @@ namespace GoodLang {
 		/// <summary>
 		/// Finally is a pure virtual base class, implemented by the templated FinallyImpl.
 		/// </summary>
-		class Finally {
-		public:
-			virtual ~Finally() = default;
-		};
+		//class Finally {
+		//public:
+		//	virtual ~Finally() = default;
+		//};
 
 		/// <summary>
 		/// FinallyImpl implements a Finally. The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
 		/// </summary>
 		/// <typeparam name="F"></typeparam>
-		template <typename F> class FinallyImpl : public Finally {
+		template <typename F> class FinallyImpl /*: public Finally*/ {
 		public:
 			inline FinallyImpl(const F& func_) : func(func_) {};
 			inline FinallyImpl(F&& func_) : func(std::move(func_)) {};
 			inline FinallyImpl(FinallyImpl<F>&& other) : func(std::move(other.func)) { other.valid = false; };
 			inline ~FinallyImpl() { if (valid) { func(); } };
-
+			void MakeInvalid() {
+				valid = false;
+			};
 		private:
 			FinallyImpl(const FinallyImpl<F>& other) = delete;
 			FinallyImpl<F>& operator=(const FinallyImpl<F>& other) = delete;

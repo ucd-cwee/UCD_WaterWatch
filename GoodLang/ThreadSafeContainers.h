@@ -1945,16 +1945,8 @@ namespace GoodLang {
 		class ThreadManager {
 		public:
 			static const size_t kMaxThreadNum{ 128 };
-			static std::shared_ptr<std::atomic_bool[kMaxThreadNum]> id_vec() {
-				static std::shared_ptr<std::atomic_bool[kMaxThreadNum]> vec{ new std::atomic_bool[kMaxThreadNum] };
-				return vec;
-			}; // should be extern
-			static auto GetCurrentEpoch() {
-				//return std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count();
-				// return clock_ms();
-				return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-			};
-
+			static std::atomic_bool* id_vec();
+			static long long GetCurrentEpoch();
 		};
 		class HeartBeater {
 		public:
@@ -1970,7 +1962,7 @@ namespace GoodLang {
 			  * This destructor removes the heart beat and thread reservation flags.
 			  */
 			~HeartBeater() {
-				ThreadManager::id_vec()[*id_].store(false, std::memory_order_relaxed);
+				if (HasID()) ThreadManager::id_vec()[id_.load()].store(false, std::memory_order_relaxed);
 			};
 
 			/**
@@ -1978,21 +1970,14 @@ namespace GoodLang {
 			  * @retval false otherwise.
 			  */
 			[[nodiscard]] bool HasID() const {
-				return id_.use_count() > 0;
+				return id_ >= 0;
 			};
 
 			/**
 			 * @return The assigned ID for this object.
 			 */
-			[[nodiscard]] size_t GetID() const {
-				return *id_;
-			};
-
-			/**
-			 * @return A weak pointer object to check heart beats of this object.
-			 */
-			[[nodiscard]] std::weak_ptr<size_t> GetHeartBeat() const {
-				return std::weak_ptr<size_t>{id_};
+			[[nodiscard]] long GetID() const {
+				return id_.load();
 			};
 
 			/**
@@ -2000,13 +1985,13 @@ namespace GoodLang {
 			  *
 			  * @param id The thread ID to be assigned.
 			  */
-			void SetID(const size_t id) {
-				id_ = std::make_shared<size_t>(id);
+			void SetID(const long id) {
+				id_ = id;
 			};
 
 		private:
 			/// @brief The assigned ID for this object.
-			std::shared_ptr<size_t> id_{};
+			GoodLang::InterlockedLong id_{ -1 };
 
 		};
 		class IDManager {
@@ -2027,13 +2012,6 @@ namespace GoodLang {
 				return GetHeartBeater().GetID();
 			};
 
-			/**
-			 * @return A weak pointer object to check heart beats of the current thread.
-			 */
-			[[nodiscard]] static std::weak_ptr<size_t> GetHeartBeat() {
-				return GetHeartBeater().GetHeartBeat();
-			};
-
 		private:
 			/**
 			 * @brief Get the reference to a heart beater.
@@ -2043,24 +2021,7 @@ namespace GoodLang {
 			 *
 			 * @return The reference to a heart beater.
 			 */
-			[[nodiscard]] static const HeartBeater& GetHeartBeater() {
-				thread_local HeartBeater hb{};
-				if (!hb.HasID()) {
-					auto id = std::hash<std::thread::id>{}(std::this_thread::get_id()) % ThreadManager::kMaxThreadNum;
-					while (auto ptr = ThreadManager::id_vec()) {
-						auto& dst = ptr[id];
-						auto reserved = dst.load(std::memory_order_relaxed);
-						if (!reserved && dst.compare_exchange_strong(reserved, true, std::memory_order_relaxed)) {
-							hb.SetID(id);
-							break;
-						}
-						if (++id >= ThreadManager::kMaxThreadNum) {
-							id = 0;
-						}
-					}
-				}
-				return hb;
-			};
+			[[nodiscard]] static const HeartBeater& GetHeartBeater();
 
 		};
 		class ThreadLocalStorage {
