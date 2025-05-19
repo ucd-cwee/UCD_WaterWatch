@@ -3258,6 +3258,12 @@ namespace GoodLang {
 		private:
 			veque::veque<T> queue;
 		public:
+			flat_set() = default;
+			flat_set(int Reserve) {
+				queue.reserve(Reserve);
+			};
+			~flat_set() = default;
+
 			auto emplace(T const& item) {
 				return queue.insert(
 					std::upper_bound(queue.begin(), queue.end(), item),
@@ -3266,6 +3272,12 @@ namespace GoodLang {
 			};
 			void clear() {
 				queue.clear();
+			};
+			size_t count(T const& find) {
+				return contains(find) ? 1 : 0;
+			};
+			size_t count(T&& v) {
+				return contains(std::move(v)) ? 1 : 0;
 			};
 			void emplace_fast(T&& val) {
 				queue.push_back(std::move(val));
