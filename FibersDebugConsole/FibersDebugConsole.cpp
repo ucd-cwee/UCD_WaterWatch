@@ -382,7 +382,7 @@ namespace GoodLang {
 				breadcrumb_m; // contains the self ptr
 			concurrency::concurrent_unordered_map< std::string, ObjectWrapper >
 				objects_m; // Objects that live inside this scope
-			concurrency::concurrent_unordered_set< Breadcrumb* >
+			concurrency::concurrent_vector< Breadcrumb* >
 				using_m;
 
 
@@ -774,14 +774,16 @@ namespace GoodLang {
 					// While we normally try to minimize the conversion cost, 
 					if (firstParamScopePtr) {
 						if (firstParamScopePtr->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> bool {
+							if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
+								if (namespacePtr->current_namespace != namespaceName) return false;
+							}
+
 							bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
 							long long QualifiedNameLen = namespacePtr->current_namespace.length();
+							if (QualifiedNameLen < namespaceName.length()) return false;
+
 							auto F = namespacePtr->current_namespace.rfind(namespaceName);
 							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
-								if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-									if (namespacePtr->current_namespace != namespaceName) return false;
-								}
-
 								// the namespace is technically a candidate
 								if (auto scope_ptr = namespacePtr->this_m->scope.lock()) {
 									if (!out1) {
@@ -891,14 +893,16 @@ namespace GoodLang {
 					if (1) {
 						// try to find the function from nearby scopes... 
 						if (FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> bool {
+							if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
+								if (namespacePtr->current_namespace != namespaceName) return false;
+							}
+
 							bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
 							long long QualifiedNameLen = namespacePtr->current_namespace.length();
+							if (QualifiedNameLen < namespaceName.length()) return false;
+
 							auto F = namespacePtr->current_namespace.rfind(namespaceName);
 							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
-								if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-									if (namespacePtr->current_namespace != namespaceName) return false;
-								}
-
 								// the namespace is technically a candidate
 								if (auto scope_ptr = namespacePtr->this_m->scope.lock()) {
 									if (!out1) {
@@ -1127,7 +1131,8 @@ namespace GoodLang {
 			// "Using" a namespace allows you to search that namespace for functions more easily.
 			bool AddUsing(std::shared_ptr<NamespaceScope> const& ns_ptr) {
 				if (ns_ptr) {
-					return this->using_m.insert(&ns_ptr->breadcrumb_m).second;
+					this->using_m.push_back(&ns_ptr->breadcrumb_m);
+					return true;
 				}
 				return false;
 			};

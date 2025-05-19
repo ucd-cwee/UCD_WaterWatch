@@ -346,7 +346,7 @@ namespace GoodLang {
 			if (1) {
 				std::shared_ptr<Type_Info> currentNodeType;
 				std::vector<std::weak_ptr<Type_Info>> pathToFollow;
-				std::vector<GoodLang::shared_ptr<details::Type_Conversion_Base>> functors;
+				thread_local std::vector<GoodLang::shared_ptr<details::Type_Conversion_Base>> functors;
 				TypeConverterFunc newConverter;
 				conversionTreeType::iterator p1;
 				conversionTreeType::value_type::second_type::iterator p2;
@@ -403,7 +403,8 @@ namespace GoodLang {
 											}
 										}
 										if (functors.size() > 1) {
-											newConverter = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(std::move(functors)));
+											newConverter = GoodLang::make_shared<details::DaisyChained_Type_Conversion_Impl>(std::move(functors));
+											// newConverter = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(std::move(functors)));
 										}
 										else {
 											continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
@@ -419,6 +420,7 @@ namespace GoodLang {
 						}
 					}
 				}
+				functors.clear();
 			}
 
 			if (1) {
@@ -1020,8 +1022,9 @@ namespace GoodLang {
 		if (1) {
 			// Three sorted groups of candidates. 
 			// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
-			std::map< size_t, std::array<std::map<double, FunctionPtr, std::less<double>>, 3>, std::greater<size_t>>
+			thread_local std::map< size_t, std::array<std::map<double, FunctionPtr, std::less<double>>, 3>, std::greater<size_t>>
 				candidates;
+			candidates.clear();
 
 			// Create candidates.
 			{
