@@ -15,12 +15,12 @@ namespace GoodLang {
 		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 	};
 	[[nodiscard]] const EpochGarbageCollectorImpl::HeartBeater& EpochGarbageCollectorImpl::IDManager::GetHeartBeater() {
-		static thread_local HeartBeater hb{};
-		static std::atomic_bool* ptr{ ThreadManager::id_vec() };
-		static thread_local size_t id_default{ std::hash<std::thread::id>{}(std::this_thread::get_id()) % ThreadManager::kMaxThreadNum };
-		size_t id;
-		bool reserved;
-		if (!hb.HasID()) {			
+		thread_local HeartBeater hb{};
+		if (!hb.HasID()) {	
+			static std::atomic_bool* ptr{ ThreadManager::id_vec() };
+			thread_local size_t id_default{ std::hash<std::thread::id>{}(std::this_thread::get_id()) % ThreadManager::kMaxThreadNum };
+			size_t id;
+			bool reserved;
 			id = id_default;
 			while (ptr) {
 				reserved = ptr[id].load(std::memory_order_relaxed);
