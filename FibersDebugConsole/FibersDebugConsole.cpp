@@ -1651,21 +1651,24 @@ namespace GoodLang {
 
 				// Test my children themselves. 
 				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
-					for (auto& childNamespace : this->children_m) {
-						if (childNamespace.second) {
-							auto& flag = childNamespace.second->breadcrumb_m.check_flag[threadIndex];
-							if (flag.first) continue;
-							flag.first = true;
-							push_back_if_not_at_end(requiringReset, &childNamespace.second->breadcrumb_m);
-							auto res = func(&childNamespace.second->breadcrumb_m, searchState | SearchingChildren | SkipChildren | SkipParent);
-							if (res & SearchResult::Success) {
-								finalResult = &childNamespace.second->breadcrumb_m;
-								return finalResult;
-							}
-							else if (res & SearchResult::StaticFailure) {
-								flag.second = true;
-							}
+					auto* child_bc = this->breadcrumb_m.child_m.load();
+					while (child_bc) {
+						auto& flag = child_bc->check_flag[threadIndex];
+						if (flag.first) {
+							child_bc = child_bc->next_m.load();
+							continue;
 						}
+						flag.first = true;
+						push_back_if_not_at_end(requiringReset, child_bc);
+						auto res = func(child_bc, searchState | SearchingChildren | SkipChildren | SkipParent);
+						if (res & SearchResult::Success) {
+							finalResult = child_bc;
+							return finalResult;
+						}
+						else if (res & SearchResult::StaticFailure) {
+							flag.second = true;
+						}
+						child_bc = child_bc->next_m.load();
 					}
 				}
 
@@ -1703,17 +1706,23 @@ namespace GoodLang {
 							}
 						}
 					}
-					for (auto& childNamespace : this->children_m) {
-						if (childNamespace.second) {
-							auto& flag = childNamespace.second->breadcrumb_m.check_flag[threadIndex];
-							if (flag.second) { continue; }
-							if (auto ptr = childNamespace.second->self_id_m.scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
-									SetChildCache(childNamespace.first);
-									return finalResult;
-								}
+
+					auto* child_bc = this->breadcrumb_m.child_m.load();
+					while (child_bc) {
+						auto& flag = child_bc->check_flag[threadIndex];
+						if (flag.second) {
+							child_bc = child_bc->next_m.load();
+							continue;
+						}
+
+						if (auto ptr = child_bc->this_m->scope.lock()) {
+							if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
+								SetChildCache(ptr->Name());
+								return finalResult;
 							}
 						}
+
+						child_bc = child_bc->next_m.load();
 					}
 				}
 
