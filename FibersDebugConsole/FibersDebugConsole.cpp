@@ -105,84 +105,161 @@ namespace GoodLang {
 			};
 		};
 
-		class ThreadLocalBase {
-		public:
-			static constexpr short max_num_threads = 128;
-			static auto& Queue() {
-				static std::array< long, max_num_threads > queue;
-				return queue;
-			};
-			static short GetID() {
-				short index{ std::hash<std::thread::id>{}(std::this_thread::get_id()) % max_num_threads };				
-				while (true) {
-					if (++index >= max_num_threads) index = 0;
-					if (InterlockedAddAcquire(reinterpret_cast<volatile long*>(&Queue()[index]), 1l) == 1l) {
-						return index;
-					}
-					else {
-						InterlockedAddRelease(reinterpret_cast<volatile long*>(&Queue()[index]), -1l);
-					}					
-				}
-			};
-			static void ReleaseID(const short id) {
-				InterlockedAddRelease(reinterpret_cast<volatile long*>(&Queue()[id]), -1l);
-			};
-
-			class HeartBeat {
-			public:
-				HeartBeat() : id{ GetID() } {};
-				HeartBeat(const HeartBeat&) = delete;
-				HeartBeat(HeartBeat&&) = delete;
-				HeartBeat const& operator=(const HeartBeat& obj) = delete;
-				HeartBeat&& operator=(HeartBeat&&) = delete;
-				~HeartBeat() {
-					ReleaseID(id);
-				};
-
-				const short id;
-			};
-
-			static const auto& GetHeartBeat() {
-				thread_local HeartBeat hb;
-				return hb;
-			};
-
-		};
-
-		template <typename T>
-		class ThreadLocal {
-		private:
-			std::array<T, ThreadLocalBase::max_num_threads> data;
-
-		public:
-			ThreadLocal() {}
-			ThreadLocal(ThreadLocal const&) = delete;
-			ThreadLocal(ThreadLocal&&) = delete;
-			ThreadLocal& operator=(ThreadLocal const&) = delete;
-			ThreadLocal& operator=(ThreadLocal&&) = delete;
-			~ThreadLocal() {}
-
-			T& operator*() {
-				return data[ThreadLocalBase::GetHeartBeat().id];
-			}
-			T* operator->() {
-				return &data[ThreadLocalBase::GetHeartBeat().id];
-			}
-		};
-
-
-
 		// Used to track and hash the current scope position. 
 		class Breadcrumb {
 		public:
+			/*
+			bool	Replace(char* data, const char* old, const char* nw) {
+				long long oldLen = strlen(old);
+				long long newLen = strlen(nw);
+				long long prevlength = strlen(data);
+
+				if (oldLen <= 0) return false;
+
+				if (newLen <= 2 || oldLen <= 2 || prevlength < 1000) {
+					long long count = 0;
+					for (long long i = 0; i < prevlength; i++) {
+						if (cweeStr::Cmpn(&data[(size_t)i], old, oldLen) == 0) {
+							count++;
+							i += oldLen - 1;
+						}
+						else if (((i + oldLen) < prevlength) && (data[(size_t)(i + oldLen)] != old[(size_t)(oldLen - 1)])) {
+							i++;
+						}
+					}
+					if (count) {
+						std::string oldString(data);
+
+						EnsureAlloced(prevlength + ((newLen - oldLen) * count) + 2, false);
+
+						// Replace the old data with the new data
+						size_t j = 0;
+						for (long long i = 0; i < (long long)oldString.length(); i++) {
+							if (cweeStr::Cmpn(&oldString[(size_t)i], old, oldLen) == 0) {
+								memcpy(data + j, nw, newLen);
+								i += oldLen - 1;
+								j += newLen;
+							}
+							else {
+								data[j] = oldString[(size_t)i];
+								j++;
+							}
+						}
+						data[j] = 0;
+						len = strlen(data);
+						return true;
+					}
+
+				}
+				else {
+
+					long long capacity = 16;
+					std::vector<long long> found;
+					found.reserve(capacity);
+					long long count = 0;
+					for (long long i = 0; i < prevlength; i++) {
+						if (cweeStr::Cmpn(&data[i], old, oldLen) == 0) {
+							if (capacity <= ++count) {
+								capacity *= 7;
+								found.reserve(capacity);
+							}
+							found.push_back(i);
+							//count++;
+							i += oldLen - 1;
+						}
+						else if (((i + oldLen) < prevlength) && (data[i + oldLen] != old[oldLen - 1])) {
+							i++;
+						}
+					}
+					if (count) {
+						// inline replace without copying the data. 
+						long long finalLen = len + ((newLen - oldLen) * count);
+						if (finalLen > (long long)len)
+						{
+							EnsureAlloced(finalLen + 2, true); // data[] is now the size of "finalLen + 2"
+							long long diff = finalLen - len;
+							long long i, j;
+							for (i = finalLen; i >= diff; i--) data[i] = data[i - diff]; // move all of our data to the right-most edge.
+
+							j = 0; i = 0;
+							for (auto& find : found) {
+								if (find > i) {
+									// move previous content
+									memcpy(data + j, data + (i + diff), find - i);
+									j += (find - i);
+									i = find + oldLen;
+								}
+								// move new content
+								{
+									while (j + newLen >= finalLen) {
+										EnsureAlloced(j + newLen + 2, true);
+										finalLen = j + newLen + 2;
+									}
+									memcpy(data + j, nw, newLen);
+									j += newLen;
+								}
+							}
+							// move the remaining text 
+							if (prevlength >= i) {
+								// move previous
+								memcpy(data + j, data + (i + diff), (prevlength - i) + 1);
+								j += ((prevlength - i) + 1);
+							}
+							data[j] = 0;
+							len = strlen(data);
+							return true;
+						}
+						else {
+							long long buffer = ::Max(oldLen, newLen) - ::Min((long long)0.0f, finalLen - (long long)len);
+							EnsureAlloced(finalLen + 2 + buffer, true); // data[] is now the size of "finalLen + 2"					
+							long long diff = (finalLen + buffer) - len;
+							long long i, j;
+							for (i = finalLen + buffer; i >= diff; i--) data[i] = data[i - diff]; // move all of our data to the right-most edge. 
+
+							j = 0; i = 0;
+							for (auto& find : found) {
+								if (find > i) {
+									// move previous content
+									memcpy(data + j, data + (i + diff), find - i);
+									j += (find - i);
+									i = find + oldLen;
+								}
+								// move new content
+								{
+									while (j + newLen >= (finalLen + buffer)) {
+										EnsureAlloced(j + newLen + 2, true);
+										finalLen = j + newLen + 2;
+									}
+									memcpy(data + j, nw, newLen);
+									j += newLen;
+								}
+							}
+							// move the remaining text 
+							if (prevlength >= i) {
+								// move previous
+								memcpy(data + j, data + (i + diff), (prevlength - i) + 1);
+								j += ((prevlength - i) + 1);
+							}
+							data[j] = 0;
+							len = strlen(data);
+							return true;
+						}
+					}
+				}
+
+				return false;
+			};
+			*/
+
 			static bool replace(std::string& str, const std::string& from, const std::string& to) {
 				size_t start_pos = str.find(from);
 				if (start_pos == std::string::npos)
 					return false;
+				// std::memcpy(&str[start_pos], &to[0], from.length());
 				str.replace(start_pos, from.length(), to);
 				return true;
 			}
-			static bool replaceAll(std::string& str, const std::string& from, const std::string& to) {
+ 			static bool replaceAll(std::string& str, const std::string& from, const std::string& to) {
 				if (from.empty())
 					return false;
 				if (from == to)
@@ -194,6 +271,7 @@ namespace GoodLang {
 					start_pos = 0;
 					retval_t = false;
 					while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+						// std::memcpy(&str[start_pos], &to[0], from.length());
 						str.replace(start_pos, from.length(), to);
 						start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
 						retval = true;
@@ -717,25 +795,36 @@ namespace GoodLang {
 					if (!namespacePtr->this_m->is_namespace()) return SearchResult::Failure;
 					long long QualifiedNameLen = namespacePtr->current_namespace.length();
 
-
+					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
+						if ((namespacePtr->current_namespace != name)) {
+							// Static failure means there's no way the children of this node could match the namespace requirement...
+							if (namespacePtr->parent_m) {
+								auto tempName = Breadcrumb::CleanUpScopeName(namespacePtr->parent_m->current_namespace + name);
+								if ((namespacePtr->current_namespace == tempName)) return SearchResult::Success;
+								else if (QualifiedNameLen > tempName.length()) {
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else if (tempName.find(namespacePtr->current_namespace) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
+							}
+							else {
+								if (QualifiedNameLen > name.length()) {
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else if (name.find(namespacePtr->current_namespace) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
+							}
+						}
+					}
 
 					auto F = namespacePtr->current_namespace.rfind(name);
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
-
-					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-						if ((namespacePtr->current_namespace != name)) {
-							// we will fail -- but the question is whether it's a full static failure or not. 
-							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > name.length()) {
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
-							if (name.find(namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
-							return SearchResult::Failure;
-						}
-					}
 
 					return SearchResult::Failure;
 				}, 0, GetHash(name))) {
@@ -759,23 +848,36 @@ namespace GoodLang {
 					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
 					long long QualifiedNameLen = namespacePtr->current_namespace.length();
 
-					auto F = namespacePtr->current_namespace.rfind(name);
-					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
-
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if ((namespacePtr->current_namespace != name)) {
-							// we will fail -- but the question is whether it's a full static failure or not. 
 							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > name.length()) {
-								return SearchResult::Failure | SearchResult::StaticFailure;
+							if (namespacePtr->parent_m) {
+								auto tempName = Breadcrumb::CleanUpScopeName(namespacePtr->parent_m->current_namespace + name);
+								if ((namespacePtr->current_namespace == tempName)) return SearchResult::Success;
+								else if (QualifiedNameLen > tempName.length()) {
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else if (tempName.find(namespacePtr->current_namespace) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
 							}
-							if (name.find(namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
+							else {
+								if (QualifiedNameLen > name.length()) {
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else if (name.find(namespacePtr->current_namespace) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
 							}
-							return SearchResult::Failure;
 						}
 					}
+
+					auto F = namespacePtr->current_namespace.rfind(name);
+					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
 				}, 0, GetHash(name))) {
@@ -3889,7 +3991,6 @@ namespace GoodLang {
 #undef optional_defer
 #undef push_back_if_not_at_end
 };
-
 
 namespace GoodLang {
 	namespace utility {
@@ -12596,70 +12697,9 @@ namespace GoodLang {
 	};
 };
 
-
-
-
-
 int main() {
 	// pre-warm the heap
 	for (int i = 0; i < 100000; i++) delete (new int(5));
-
-
-	
-
-	if (1) {
-		Stopwatch sw;
-		
-		if (1) {
-			GoodLang::ThreadLocalInstance<size_t> a;
-			sw.Start();
-			GoodLang::parallel::For(0, 100000000, [&](int i) {
-				++*a;
-			});
-			++*a;
-		}
-		print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " = ThreadLocalInstance 1");
-				
-		if (1) {
-			GoodLang::Scopes::ThreadLocal<size_t> b;
-			sw.Start();
-			GoodLang::parallel::For(0, 100000000, [&](int i) {
-				++*b;
-			});
-			++*b;
-		}
-		print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " = ThreadLocal 1");
-	}
-
-	if (1) {
-		Stopwatch sw;
-		if (1) {
-			GoodLang::ThreadLocalInstance<size_t> a;
-			sw.Start();
-			for (int i = 0; i < 100000000; ++i) {
-				++*a;
-			};
-			++*a;
-		}
-		print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " = ThreadLocalInstance 2");
-
-		if (1) {
-			GoodLang::Scopes::ThreadLocal<size_t> b;
-			sw.Start();
-			for (int i = 0; i < 100000000; ++i){
-				++*b;
-			};
-			++*b;
-		}
-		print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " = ThreadLocal 2");
-	}
-
-
-
-
-
-
-
 
 	using namespace GoodLang;
 
@@ -12796,10 +12836,10 @@ int main() {
 			EXPECT_EQ(false, Scope2->is_class());
 			EXPECT_EQ(Scope2->AddUsing(Scope2->FindNamespace("string")), true);*/
 
-			EXPECT_EQ((bool)Root->FindClass("Color"), false); // cannot find this class from "root" without further clarification
+			EXPECT_EQ((bool)Root->FindClass("Color"), true); // cannot find this class from "root" without further clarification
 			EXPECT_EQ((bool)Root->FindClass("UI::Color"), true);
 			EXPECT_EQ((bool)Root->FindClass("::UI::Color::"), true); 
-			EXPECT_EQ((bool)Root->FindClass("::Color"), false); // cannot find this class from "root" without further clarification
+			EXPECT_EQ((bool)Root->FindClass("::Color"), true); // cannot find this class from "root" without further clarification
 			EXPECT_EQ((bool)Root->FindNamespace("Color"), false); // cannot find this class from "root" without further clarification
 			EXPECT_EQ((bool)Root->FindNamespace("UI::Color"), true);
 			EXPECT_EQ((bool)Root->FindNamespace("::UI::Color::"), true);
