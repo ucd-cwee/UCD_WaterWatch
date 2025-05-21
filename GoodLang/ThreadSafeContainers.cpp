@@ -5,35 +5,68 @@
 #include <iostream>
 
 namespace GoodLang {
-	std::atomic_bool* EpochGarbageCollectorImpl::ThreadManager::id_vec() {
-		static std::shared_ptr<std::atomic_bool[kMaxThreadNum]> vec{ new std::atomic_bool[kMaxThreadNum] };
-		return vec.get();
+	void on_thread_exit(std::function<void()> func) {
+		thread_local struct ThreadExiter {
+			std::deque<std::function<void()>> callbacks;
+			~ThreadExiter() {
+				for (auto& callback : callbacks) {
+					callback();
+				}
+			}
+		} exiter;
+		exiter.callbacks.emplace_front(std::move(func));
+	};
+
+	long* id_vec() {
+		static long vec[EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum];
+		static long* out{ &vec[0] };
+		return out;
 	};
 	long long EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() {
 		//return std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count();
 		// return clock_ms();
 		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 	};
-	[[nodiscard]] const EpochGarbageCollectorImpl::HeartBeater& EpochGarbageCollectorImpl::IDManager::GetHeartBeater() {
-		thread_local HeartBeater hb{};
-		if (!hb.HasID()) {	
-			static std::atomic_bool* ptr{ ThreadManager::id_vec() };
-			thread_local size_t id_default{ std::hash<std::thread::id>{}(std::this_thread::get_id()) % ThreadManager::kMaxThreadNum };
-			size_t id;
-			bool reserved;
-			id = id_default;
-			while (ptr) {
-				reserved = ptr[id].load(std::memory_order_relaxed);
-				if (!reserved && ptr[id].compare_exchange_strong(reserved, true, std::memory_order_relaxed)) {
-					hb.SetID(id);
-					break;
-				}
-				if (++id >= ThreadManager::kMaxThreadNum) {
+	static size_t GetNewId() {
+		static auto* ptr{ id_vec() };
+		thread_local size_t id{ std::hash<std::thread::id>{}(std::this_thread::get_id()) % EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum };
+		bool reserved;
+		while (true) {
+			if (InterlockedCompareExchange(static_cast<volatile long*>(&ptr[id]), 1, 0) == 0) { return id; }
+			//if (InterlockedAdd(static_cast<volatile long*>(&ptr[id]), 1) == 1) { return id; }
+			else {
+				//InterlockedAdd(static_cast<volatile long*>(&ptr[id]), -1);
+				if (++id >= EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum) {
 					id = 0;
 				}
 			}
 		}
+	};
+	/**
+	 * @return The unique thread ID in [0, DBGROUP_MAX_THREAD_NUM).
+	 */
+	[[nodiscard]] const size_t& EpochGarbageCollectorImpl::IDManager::GetThreadID() {
+		// return GetHeartBeater().GetID();
+		thread_local size_t index{ EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum };
+		if (EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum == index) {
+			index = GetNewId();
+			on_thread_exit([]() {
+				InterlockedAdd(static_cast<volatile long*>(&id_vec()[index]), -1);
+			});
+		}
+		return index;
+	};
+	[[nodiscard]] const EpochGarbageCollectorImpl::HeartBeater& EpochGarbageCollectorImpl::IDManager::GetHeartBeater() {
+		thread_local HeartBeater hb{}; // instances it but doesn't grab an ID till it's needed
+		if (!hb.HasID()) {
+			hb.SetID(EpochGarbageCollectorImpl::IDManager::GetThreadID()); // GetNewId()); // 
+		}
 		return hb;
+	};
+	EpochGarbageCollectorImpl::HeartBeater::~HeartBeater() {
+		//if (HasID()) {
+		//	InterlockedAdd(static_cast<volatile long*>(&id_vec()[id_]), -1);
+		//}
 	};
 
 	// InterlockedLong

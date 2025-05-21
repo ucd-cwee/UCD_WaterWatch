@@ -1945,12 +1945,12 @@ namespace GoodLang {
 		class ThreadManager {
 		public:
 			static const size_t kMaxThreadNum{ 128 };
-			static std::atomic_bool* id_vec();
 			static long long GetCurrentEpoch();
 		};
 		class HeartBeater {
 		public:
 			constexpr HeartBeater() = default;
+			constexpr HeartBeater(long id) : id_{id} {};
 			HeartBeater(const HeartBeater&) = delete;
 			HeartBeater(HeartBeater&&) noexcept = delete;
 			auto operator=(const HeartBeater& obj)->HeartBeater & = delete;
@@ -1961,9 +1961,7 @@ namespace GoodLang {
 			  *
 			  * This destructor removes the heart beat and thread reservation flags.
 			  */
-			~HeartBeater() {
-				if (HasID()) ThreadManager::id_vec()[id_.load()].store(false, std::memory_order_relaxed);
-			};
+			~HeartBeater();
 
 			/**
 			  * @retval true if this object has a unique thread ID.
@@ -1977,7 +1975,7 @@ namespace GoodLang {
 			 * @return The assigned ID for this object.
 			 */
 			[[nodiscard]] long GetID() const {
-				return id_.load();
+				return id_;
 			};
 
 			/**
@@ -1991,7 +1989,7 @@ namespace GoodLang {
 
 		private:
 			/// @brief The assigned ID for this object.
-			GoodLang::InterlockedLong id_{ -1 };
+			long id_{ -1 };
 
 		};
 		class IDManager {
@@ -2008,9 +2006,7 @@ namespace GoodLang {
 			/**
 			 * @return The unique thread ID in [0, DBGROUP_MAX_THREAD_NUM).
 			 */
-			[[nodiscard]] static size_t GetThreadID() {
-				return GetHeartBeater().GetID();
-			};
+			[[nodiscard]] static const size_t& GetThreadID();
 
 		private:
 			/**
