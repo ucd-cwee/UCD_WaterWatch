@@ -175,22 +175,152 @@ namespace GoodLang {
 				return retval;
 			}
 #else
-			static bool replaceAll(std::string& string, const std::string_view& from, const std::string_view& to) {
-				bool ret;
-				size_t startPos;
+			static size_t	        FindString(std::string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
+				long long l, j, k;
+				k = text.length();
+				if (end == -1) {
+					end = str.length();
+				}
+				l = end - k;
 
+				if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+				if (casesensitive) {
+					const char sample = text[0];
+					if (!sample) {
+						return (size_t)start;
+					}
+					for (; start <= l; ++start) { // starting at the search position ... 
+						if (str[start] == sample) { // found a match for the first character ...
+							for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+								if (j >= k) return start;
+								else {
+									if (str[start + j] != text[j]) {
+										break;
+									}
+								}
+							}
+						}
+					}
+				}
+				else {
+					for (; start <= l; ++start)
+						for (j = 0;; j++) {
+							if (j >= k) return (size_t)start;
+							if (::toupper(str[start + j]) != ::toupper(text[j]))
+								break;
+						}
+				}
+				return std::string::npos;
+			};
+			static size_t	        rFindString(std::string_view const& str, std::string_view const& text) {
+#if 1				
+				std::string 
+					Str(str),
+					toFind(text);
+				std::reverse(Str.begin(), Str.end());
+				std::reverse(toFind.begin(), toFind.end());
+				size_t out = FindString(Str, toFind, casesensitive);
+				if (out != std::string::npos) {
+					out = str.length() - (out + text.length());
+				}
+				return out;	
+#else
+				long long start = 0;
+				long long end = str.length();
+				long long l, j, k;
+				k = text.length();
+				l = end - k;
+
+				if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+				const char sample = text[k - 1];
+				if (!sample) {
+					return std::string::npos;
+				}
+
+
+
+
+
+
+				
+
+
+
+
+
+				for (; start <= l; ++start) { // starting at the search position ... 
+					if (str[start] == sample) { // found a match for the first character ...
+						
+						
+						
+						for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+							if (j >= k) return start;
+							else {
+								if (str[k - (start + j)] != text[k - j]) {
+									break;
+								}
+							}
+						}
+
+
+
+
+					}
+				}
+				
+				return std::string::npos;
+#endif
+			};
+			static size_t			Find(std::string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
+				if (end == -1) {
+					end = WITHIN.length();
+				}
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+
+				return FindString(WITHIN, FIND, casesensitive, start, end);
+			};
+			static size_t			rFind(std::string_view const& WITHIN, std::string_view const& FIND) {
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				return rFindString(WITHIN, FIND);
+			};
+
+			static bool replaceAll(std::string& string, const std::string_view& from, const std::string_view& to) {
+				size_t startPos;
+				bool ret;
+				
 				ret = false;
 				if (from.empty() || (from == to)) return ret;
-				while ((startPos = string.find(from, 0)) != std::string::npos) {
+
+				startPos = Find(string, from, true, 0);
+				while (startPos != std::string::npos) {
 					ret = true;
-					while (startPos != std::string::npos) {
-						string.replace(startPos, from.length(), to);
-						startPos = string.find(from, to.length() + startPos);
-					}
+					string.replace(startPos, from.length(), to);
+					startPos = Find(string, from, true, to.length() + startPos);
 				}
 				return ret;
 			}
+			static bool replaceAll(std::string_view const& strV, const std::string_view& from, const std::string_view& to, std::string& out) {
+				size_t startPos;
+				bool ret;
 
+				ret = false;
+				if (from.empty() || (from == to)) return ret;				
+
+				startPos = Find(strV, from, true, 0);
+				if (startPos != std::string::npos) {
+					ret = true;
+					out.resize(strV.length());
+					std::memcpy(&out[0], &strV[0], strV.length());
+					out[out.length()] = '\0';
+				}
+				while (startPos != std::string::npos) {
+					out.replace(startPos, from.length(), to);
+					startPos = Find(out, from, true, to.length() + startPos);
+				}
+				return ret;
+			}
 #endif
 			static void RemoveLeadingAndTrailing(std::string_view& x, char what) {
 				while (
@@ -226,10 +356,57 @@ namespace GoodLang {
 			};
 
 			// clean-up the name of a scope
-			static std::string CleanUpScopeName(std::string x) {	
-				x = "::" + x + "::"; // std::string(RemoveLeadingAndTrailing(x, ':'))
-				(bool)replaceAll(x, "::::", "::");
-				return x;
+			static std::string CleanUpScopeName(std::string_view x) {	
+				bool AddToFront{ true }, AddToBack{ true }; 
+				if (x.length() >= 2) {					
+					if (x.substr(0, 2) == "::") {
+						AddToFront = false;
+					}
+					if (x.substr(x.length() - 2, 2) == "::") {
+						AddToBack = false;
+					}
+				}
+				
+				if (AddToFront && AddToBack) {
+					std::string out;
+					out.resize(x.length() + 4);
+					out[0] = out[1] = ':';
+					std::memcpy(&out[2], &x[0], x.length());
+					out[out.length()-2] = out[out.length() - 1] = ':';
+					out[out.length()] = '\0';
+
+					(bool)replaceAll(out, "::::", "::");
+					return out;
+				}
+				else if (AddToFront && !AddToBack) {
+					std::string out;
+					out.resize(x.length() + 2);
+					out[0] = out[1] = ':';
+					std::memcpy(&out[2], &x[0], x.length());
+					out[out.length()] = '\0';
+
+					(bool)replaceAll(out, "::::", "::");
+					return out;
+				}
+				else if (!AddToFront && AddToBack) {
+					std::string out;
+					out.resize(x.length() + 2);
+					std::memcpy(&out[0], &x[0], x.length());
+					out[out.length() - 2] = out[out.length() - 1] = ':';
+					out[out.length()] = '\0';
+
+					(bool)replaceAll(out, "::::", "::");
+					return out;
+				}
+				else {
+					std::string out;
+					if (!replaceAll(x, "::::", "::", out)) {
+						out.resize(x.length());
+						std::memcpy(&out[0], &x[0], x.length());
+						out[out.length()] = '\0';
+					}
+					return out;
+				}
 			};
 
 
@@ -254,6 +431,8 @@ namespace GoodLang {
 				child_m{ nullptr }; // may point to the first child of this node
 			GoodLang::atomic_ptr<Breadcrumb>
 				next_m{ nullptr }; // may point to the next child in the parent's node list
+			std::atomic_bool
+				has_usings{ false };
 
 			Breadcrumb(ScopeID& thisNode, Breadcrumb* parent = nullptr) 
 				: hash_m(0) 
@@ -278,8 +457,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
-					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -307,8 +486,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
-					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -336,8 +515,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
-					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -362,8 +541,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
-					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -390,8 +569,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name) + "::");
-					else current_namespace = CleanUpScopeName("::" + std::string(this_m->scope_name) + "::");
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -666,15 +845,17 @@ namespace GoodLang {
 							}
 						}
 						// check the using statements of the parent.
-						if (auto ptr = thisParent->this_m->scope.lock()) {
-							if (ptr->using_m.size() > 0ull) {
-								for (auto& childNamespace : ptr->using_m) {
-									if (childNamespace) {
-										auto& flag2 = childNamespace->check_flag[threadIndex];
-										if (flag2.second) continue;
-										if (auto ptr = childNamespace->this_m->scope.lock()) {
-											if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
-												return finalResult;
+						if (thisParent->has_usings.load()) {
+							if (auto ptr = thisParent->this_m->scope.lock()) {
+								if (ptr->using_m.size() > 0ull) {
+									for (auto& childNamespace : ptr->using_m) {
+										if (childNamespace) {
+											auto& flag2 = childNamespace->check_flag[threadIndex];
+											if (flag2.second) continue;
+											if (auto ptr = childNamespace->this_m->scope.lock()) {
+												if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
+													return finalResult;
+												}
 											}
 										}
 									}
@@ -715,7 +896,7 @@ namespace GoodLang {
 				}*/
 
 				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
-				std::string name2 = Breadcrumb::CleanUpScopeName(this->breadcrumb_m.current_namespace + "::" + name); // instead of "Color", it searches for "::UI::Color::"
+				std::string name2 = Breadcrumb::CleanUpScopeName(this->breadcrumb_m.current_namespace + name); // instead of "Color", it searches for "::UI::Color::"
 
 				auto name_hash = GetHash(name);
 				auto name2_hash = GetHash(name2);
@@ -734,7 +915,7 @@ namespace GoodLang {
 							if (QualifiedNameLen > name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (name.find(namespacePtr->current_namespace) == std::string::npos) {
+							else if (Breadcrumb::Find(name, namespacePtr->current_namespace) == std::string::npos) {
 								// e.g. looking for "std::string::" but this namespace was "::UI::"
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
@@ -742,7 +923,8 @@ namespace GoodLang {
 						}
 					}
 
-					auto F = namespacePtr->current_namespace.rfind(name);
+					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, name);
+					// auto F = namespacePtr->current_namespace.rfind(name);
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
@@ -762,7 +944,7 @@ namespace GoodLang {
 
 				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
 				auto len = name.length();
-				std::string name2 = Breadcrumb::CleanUpScopeName(this->breadcrumb_m.current_namespace + "::" + name); // instead of "Color", it searches for "::UI::Color::"
+				std::string name2 = Breadcrumb::CleanUpScopeName(this->breadcrumb_m.current_namespace + name); // instead of "Color", it searches for "::UI::Color::"
 
 				auto name_hash = GetHash(name);
 				auto name2_hash = GetHash(name2);
@@ -780,15 +962,15 @@ namespace GoodLang {
 							if (QualifiedNameLen > name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (name.find(namespacePtr->current_namespace) == std::string::npos) {
+							else if (Breadcrumb::Find(name, namespacePtr->current_namespace) == std::string::npos) {
 								// e.g. looking for "std::string::" but this namespace was "::UI::"
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
 							else return SearchResult::Failure;							
 						}
 					}
-
-					auto F = namespacePtr->current_namespace.rfind(name);
+					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, name);
+					//auto F = namespacePtr->current_namespace.rfind(name);
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
@@ -870,11 +1052,12 @@ namespace GoodLang {
 			// Name may include specialization for the namespace to expect the object or function in. E.g.: 
 			// std::string::npos -> finds namespace "::std::string::" and finds function "npos"
 			bool FindObjectOrFunction(std::string_view Name, ParamTypes const& params, std::shared_ptr<Any>& out1, Proxy_Function& out2) const {
-				auto name = Breadcrumb::CleanUpScopeName(std::string(Name)); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto name = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
 				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
 				std::string objName;
 				std::string_view namespaceName;
-				if (auto f = sv.rfind("::"); f != std::string::npos) {
+				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
+				//if (auto f = sv.rfind("::"); f != std::string::npos) {
 					objName = std::string(sv.substr(f + 2, sv.length() - f));
 					namespaceName = sv.substr(0, f + 2);
 				}
@@ -920,7 +1103,7 @@ namespace GoodLang {
 									if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 										return SearchResult::Failure | SearchResult::StaticFailure;
 									}
-									if (namespaceName.find(namespacePtr->current_namespace) == std::string::npos) {
+									if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
 										// e.g. looking for "std::string::" but this namespace was "::UI::"
 										return SearchResult::Failure | SearchResult::StaticFailure;
 									}
@@ -931,8 +1114,8 @@ namespace GoodLang {
 							bool StaticOnly = (search_state & SearchUpHitNamespace) | (search_state & SearchingChildren);
 							long long QualifiedNameLen = namespacePtr->current_namespace.length();
 							if (QualifiedNameLen < namespaceName.length()) return SearchResult::Failure;
-
-							auto F = namespacePtr->current_namespace.rfind(namespaceName);
+							auto F = Breadcrumb::rFind(namespacePtr->current_namespace, namespaceName);
+							//auto F = namespacePtr->current_namespace.rfind(namespaceName);
 							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
 								// the namespace is technically a candidate
 								if (auto scope_ptr = namespacePtr->this_m->scope.lock()) {
@@ -1050,7 +1233,7 @@ namespace GoodLang {
 									if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 										return SearchResult::Failure | SearchResult::StaticFailure;
 									}
-									if (namespaceName.find(namespacePtr->current_namespace) == std::string::npos) {
+									if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
 										// e.g. looking for "std::string::" but this namespace was "::UI::"
 										return SearchResult::Failure | SearchResult::StaticFailure;
 									}
@@ -1062,7 +1245,8 @@ namespace GoodLang {
 							long long QualifiedNameLen = namespacePtr->current_namespace.length();
 							if (QualifiedNameLen < namespaceName.length()) return SearchResult::Failure;
 
-							auto F = namespacePtr->current_namespace.rfind(namespaceName);
+							auto F = Breadcrumb::rFind(namespacePtr->current_namespace, namespaceName);
+							//auto F = namespacePtr->current_namespace.rfind(namespaceName);
 							if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
 								// the namespace is technically a candidate
 								if (auto scope_ptr = namespacePtr->this_m->scope.lock()) {
@@ -1177,11 +1361,12 @@ namespace GoodLang {
 			// Emplaces an object with the given name. Name may include specialization for the namespace to place the object in. E.g.:
 			// std::string::npos -> finds namespace "::std::string::" and emplaces object "npos"
 			std::shared_ptr<Any> EmplaceObject(std::string_view Name, Any const& object, int objectState = ObjectWrapper::ObjectState::Normal)  {
-				auto name = Breadcrumb::CleanUpScopeName(std::string(Name)); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto name = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
 				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
 				std::string objName;
 				std::string_view namespaceName;
-				if (auto f = sv.rfind("::"); f != std::string::npos) {
+				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
+				//if (auto f = sv.rfind("::"); f != std::string::npos) {
 					objName = std::string(sv.substr(f + 2, sv.length() - f));
 					namespaceName = sv.substr(0, f + 2);
 				}
@@ -1194,7 +1379,7 @@ namespace GoodLang {
 							if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							if (namespaceName.find(namespacePtr->current_namespace) == std::string::npos) {
+							if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
 								// e.g. looking for "std::string::" but this namespace was "::UI::"
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
@@ -1204,7 +1389,9 @@ namespace GoodLang {
 
 					if (namespaceName.length() > 0) {
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
-						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+						
+						auto F = Breadcrumb::rFind(namespacePtr->current_namespace, namespaceName);
+						// auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
 							// the namespace is technically a candidate
 							if (auto ptr = namespacePtr->this_m->scope.lock()) {
@@ -1260,11 +1447,13 @@ namespace GoodLang {
 			// Emplaces an Function with the given name. Name may include specialization for the namespace to place the function in. E.g.:
 			// std::string::npos -> finds namespace "::std::string::" and emplaces function "npos"
 			bool EmplaceFunction(std::string_view Name, Function const& object)  {
-				auto name = Breadcrumb::CleanUpScopeName(std::string(Name)); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				auto name = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
 				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
 				std::string objName;
 				std::string_view namespaceName;
-				if (auto f = sv.rfind("::"); f != std::string::npos) {
+				
+				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
+				//if (auto f = sv.rfind("::"); f != std::string::npos) {
 					objName = std::string(sv.substr(f + 2, sv.length() - f));
 					namespaceName = sv.substr(0, f + 2);
 				}
@@ -1276,7 +1465,7 @@ namespace GoodLang {
 							if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							if (namespaceName.find(namespacePtr->current_namespace) == std::string::npos) {
+							if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
 								// e.g. looking for "std::string::" but this namespace was "::UI::"
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
@@ -1286,7 +1475,9 @@ namespace GoodLang {
 
 					if (namespaceName.length() > 0) {
 						long long QualifiedNameLen = namespacePtr->current_namespace.length();
-						auto F = namespacePtr->current_namespace.rfind(namespaceName);
+
+						auto F = Breadcrumb::rFind(namespacePtr->current_namespace, namespaceName);
+						// auto F = namespacePtr->current_namespace.rfind(namespaceName);
 						if ((F != std::string::npos) && (F == (QualifiedNameLen - namespaceName.length()))) {
 							// the namespace is technically a candidate
 							if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(namespacePtr->this_m->scope.lock())) {
@@ -1314,7 +1505,8 @@ namespace GoodLang {
 			// "Using" a namespace allows you to search that namespace for functions more easily.
 			bool AddUsing(std::shared_ptr<NamespaceScope> const& ns_ptr) {
 				if (ns_ptr) {
-					this->using_m.push_back(&ns_ptr->breadcrumb_m);
+					this->breadcrumb_m.has_usings = true;
+					this->using_m.push_back(&ns_ptr->breadcrumb_m);					
 					return true;
 				}
 				return false;
@@ -1631,15 +1823,17 @@ namespace GoodLang {
 							}
 						}
 						// check the using statements of the parent.
-						if (auto ptr = thisParent->this_m->scope.lock()) {
-							if (ptr->using_m.size() > 0ull) {
-								for (auto& childNamespace : ptr->using_m) {
-									if (childNamespace) {
-										auto& flag2 = childNamespace->check_flag[threadIndex];
-										if (flag2.second) continue;
-										if (auto ptr = childNamespace->this_m->scope.lock()) {
-											if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
-												return finalResult;
+						if (thisParent->has_usings.load()) {
+							if (auto ptr = thisParent->this_m->scope.lock()) {
+								if (ptr->using_m.size() > 0ull) {
+									for (auto& childNamespace : ptr->using_m) {
+										if (childNamespace) {
+											auto& flag2 = childNamespace->check_flag[threadIndex];
+											if (flag2.second) continue;
+											if (auto ptr = childNamespace->this_m->scope.lock()) {
+												if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
+													return finalResult;
+												}
 											}
 										}
 									}
