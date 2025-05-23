@@ -130,6 +130,21 @@ namespace GoodLang {
 		}
 	};
 
+	template <> size_t GetHash<std::string>(std::string const& r) {
+		size_t out{ 0 };
+		for (auto& x : r) {
+			out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+		}
+		return out;
+	};
+	template <> size_t GetHash<std::string_view>(std::string_view const& r) {
+		size_t out{ 0 };
+		for (auto& x : r) {
+			out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+		}
+		return out;
+	};
+
 	template<> size_t GetHash<Type_Info>(Type_Info const& r) {
 		return r.GetHash();
 	};

@@ -58,6 +58,66 @@ namespace GoodLang {
 #define optional_defer(ifstatement, x) decltype(auto) FINALLY_CONCAT(defer_, __LINE__) { GoodLang::utilities::make_finally([&] { x; }) }; if (!(ifstatement)) FINALLY_CONCAT(defer_, __LINE__).MakeInvalid()
 #define push_back_if_not_at_end(vec, item) if (vec.size() <= 0) { vec.push_back(item); } else if (vec[vec.size()-1] != item) { vec.push_back(item); }
 
+	class compound_string_view {
+		std::string_view a;
+		std::string_view b;
+		std::string_view c;
+		size_t len;
+	public:
+		compound_string_view(std::string_view A = "", std::string_view B = "", std::string_view C = "") : a{ A }, b{ B }, c{ C }, len{ A.length() + B.length() + C.length() } {};
+		compound_string_view(compound_string_view const&) = default;
+		compound_string_view(compound_string_view &&) = default;
+		compound_string_view& operator=(compound_string_view const&) = default;
+		compound_string_view& operator=(compound_string_view&&) = default;
+		~compound_string_view() = default;
+
+		const char& operator[](size_t index) const {
+			if (index < a.length()) {
+				return a[index];
+			}
+			index -= a.length();
+			if (index < b.length()){
+				return b[index];
+			}
+			index -= b.length();
+			return c[index];
+		}
+		size_t length() const {
+			return len;
+		}
+		explicit operator std::string() const {
+			std::string out(a);
+			out.append(b.data(), b.length());
+			out.append(c.data(), c.length());
+			return out;
+		};
+		size_t hash() const {
+			size_t out{ 0 };
+			for (auto& x : a) {
+				out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+			}
+			for (auto& x : b) {
+				out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+			}
+			for (auto& x : c) {
+				out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+			}
+			return out;
+		}
+		bool empty() const {
+			return len == 0;
+		};
+		bool operator==(const std::string_view rhs) const {
+			if (rhs.length() != length()) return false;
+			for (long long j = length() - 1; j >= 0; --j) {
+				if (rhs[j] != operator[](j)) return false;
+			}
+			return true;
+		};
+
+
+	};
+
 	class Scopes {
 	public:
 		class ScopeID;
@@ -205,6 +265,36 @@ namespace GoodLang {
 				}
 				return std::string::npos;
 			};
+			static size_t	        FindString(compound_string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
+				long long l, j, k;
+				k = text.length();
+				if (end == -1) {
+					end = str.length();
+				}
+				l = end - k;
+
+				if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+				if (casesensitive) {
+					const char sample = text[0];
+					if (!sample) return (size_t)start;
+					for (; start <= l; ++start) // starting at the search position ... 
+						if (str[start] == sample)  // found a match for the first character ...
+							for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+								if (j >= k) return start;
+								if (str[start + j] != text[j]) break;
+							}
+				}
+				else {
+					for (; start <= l; ++start)
+						for (j = 0;; j++) {
+							if (j >= k) return (size_t)start;
+							if (::toupper(str[start + j]) != ::toupper(text[j]))
+								break;
+						}
+				}
+				return std::string::npos;
+			};
 			static size_t	        rFindString(std::string_view const& str, std::string_view const& text) {
 #if 1				
 				return str.rfind(text);
@@ -247,18 +337,77 @@ namespace GoodLang {
 				}
 #endif
 			};
+			static size_t	        rFindString(std::string_view const& str, compound_string_view const& text) {
+#if 0				
+				return str.rfind(text);
+#else
+				long long start = 0;
+				long long end = str.length();
+				long long l, j, k;
+				k = text.length();
+				l = end - k;
+
+				if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+				const char sample = text[0];
+				if (!sample) {
+					return std::string::npos;
+				}
+
+
+				start = end - 1;
+				for (; start >= (k - 1); --start) { // starting at the search position ... 
+					if (str[start] == sample) { // found a match for the first character ...						
+						for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+							if (j >= k) {
+								return start - (k - 1);
+							}
+							else {
+								if (str[start - j] != text[j]) {
+									break;
+								}
+							}
+						}
+					}
+				}
+				if (text == str.substr(str.length() - text.length())) {
+					return str.length() - text.length();
+				}else{
+					return std::string::npos;
+				}
+#endif
+			};
 			static size_t			Find(std::string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
 				if (end == -1) {
 					end = WITHIN.length();
 				}
 				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
 
 				return FindString(WITHIN, FIND, casesensitive, start, end);
 			};
+			static size_t			Find(compound_string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
+				if (end == -1) {
+					end = WITHIN.length();
+				}
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
+				return FindString(WITHIN, FIND, casesensitive, start, end);
+			};
+
+
+
 			static size_t			rFind(std::string_view const& WITHIN, std::string_view const& FIND) {
 				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
 				return rFindString(WITHIN, FIND);
 			};
+			static size_t			rFind(std::string_view const& WITHIN, compound_string_view const& FIND) {
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
+				return rFindString(WITHIN, FIND);
+			};
+
 
 			static bool replaceAll(std::string& string, const std::string_view& from, const std::string_view& to) {
 				size_t startPos;
@@ -345,7 +494,11 @@ namespace GoodLang {
 
 
 			// clean-up the name of a scope
-			static std::string CleanUpScopeName(std::string_view x) {	
+			static std::string CleanUpScopeName(std::string_view x) {
+				//if (Find(x, "::::") != std::string::npos) {
+				//	print("ISSUE");
+				//}
+
 				bool AddToFront{ true }, AddToBack{ true }; 
 				if (x.length() >= 2) {					
 					if (x.substr(0, 2) == "::") {
@@ -364,7 +517,7 @@ namespace GoodLang {
 					out[out.length()-2] = out[out.length() - 1] = ':';
 					out[out.length()] = '\0';
 
-					(bool)replaceAll(out, "::::", "::");
+					//(bool)replaceAll(out, "::::", "::");
 					return out;
 				}
 				else if (AddToFront && !AddToBack) {
@@ -374,7 +527,7 @@ namespace GoodLang {
 					std::memcpy(&out[2], &x[0], x.length());
 					out[out.length()] = '\0';
 
-					(bool)replaceAll(out, "::::", "::");
+					//(bool)replaceAll(out, "::::", "::");
 					return out;
 				}
 				else if (!AddToFront && AddToBack) {
@@ -384,16 +537,16 @@ namespace GoodLang {
 					out[out.length() - 2] = out[out.length() - 1] = ':';
 					out[out.length()] = '\0';
 
-					(bool)replaceAll(out, "::::", "::");
+					//(bool)replaceAll(out, "::::", "::");
 					return out;
 				}
 				else {
 					std::string out;
-					if (!replaceAll(x, "::::", "::", out)) {
+					//if (!replaceAll(x, "::::", "::", out)) {
 						out.resize(x.length());
 						std::memcpy(&out[0], &x[0], x.length());
 						out[out.length()] = '\0';
-					}
+					//}
 					return out;
 				}
 			};
@@ -446,7 +599,7 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
 					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
@@ -475,7 +628,7 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
 					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
@@ -504,7 +657,7 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
 					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
@@ -530,7 +683,7 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
 					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
@@ -558,7 +711,7 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + "::" + std::string(this_m->scope_name));
+					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
 					else current_namespace = CleanUpScopeName(this_m->scope_name);
 				}
 				else {
@@ -877,20 +1030,26 @@ namespace GoodLang {
 				return finalResult;
 			};
 
-			std::shared_ptr<NamespaceScope> FindNamespace(std::string name) const {
-				/*if (!this->is_namespace()) {
-					if (auto ptr = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
-						return ptr->FindNamespace(name);
-					}
-				}*/
+			std::shared_ptr<NamespaceScope> FindNamespace(std::string_view name) const {
+				static size_t default_namespace_hash{ GetHash(std::string("::")) };
 
 				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
-				std::string name2 = Breadcrumb::CleanUpScopeName(this->breadcrumb_m.current_namespace + name); // instead of "Color", it searches for "::UI::Color::"
-
-				auto name_hash = GetHash(name);
-				auto name2_hash = GetHash(name2);
-
+				size_t name_hash = GetHash(name);
+				size_t name2_hash;
 				auto len = name.length();
+				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
+					name2_hash = name_hash;
+				}
+				else {
+					name2_hash = this->breadcrumb_m.current_namespace_hash;
+					std::string_view temp = name;
+					Breadcrumb::RemoveLeading(temp, ':');
+					for (auto& x : temp) {
+						name2_hash ^= x + 0x9e3779b9 + (name2_hash << 6) + (name2_hash >> 2);
+					}
+					// instead of "Color", it searches for "::UI::Color::"
+				}
+
 				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
 					if (!namespacePtr->this_m->is_namespace()) return SearchResult::Failure;
 					long long QualifiedNameLen = namespacePtr->current_namespace.length();
@@ -917,7 +1076,7 @@ namespace GoodLang {
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
-				}, 0, GetHash(name))) {
+				}, 0, name_hash)) {
 					return std::dynamic_pointer_cast<NamespaceScope>(BC->this_m->scope.lock());
 				}
 				else {
@@ -927,13 +1086,6 @@ namespace GoodLang {
 			std::shared_ptr<ClassScope> FindClass(std::string name) const {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
 
-
-				//if (!this->is_namespace()) {
-				//	if (auto ptr = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
-				//		return ptr->FindClass(name);
-				//	}
-				//}
-
 				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
 				size_t name_hash = GetHash(name);
 				size_t name2_hash;
@@ -942,10 +1094,13 @@ namespace GoodLang {
 					name2_hash = name_hash;
 				}
 				else {
-					std::string name2{ this->breadcrumb_m.current_namespace };
-					auto L = Breadcrumb::RemoveLeading(name, ':');
-					name2.append(L.data(), L.length()); // instead of "Color", it searches for "::UI::Color::"
-					name2_hash = GetHash(name2);
+					name2_hash = this->breadcrumb_m.current_namespace_hash;
+					std::string_view temp = name;
+					Breadcrumb::RemoveLeading(temp, ':');
+					for (auto& x : temp) {
+						name2_hash ^= x + 0x9e3779b9 + (name2_hash << 6) + (name2_hash >> 2);
+					}
+					// instead of "Color", it searches for "::UI::Color::"
 				}
 
 				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
@@ -973,7 +1128,7 @@ namespace GoodLang {
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
-				}, 0, GetHash(name))) {
+				}, 0, name_hash)) {
 					return std::dynamic_pointer_cast<ClassScope>(BC->this_m->scope.lock());
 				}
 				else {
@@ -1051,24 +1206,40 @@ namespace GoodLang {
 			// Name may include specialization for the namespace to expect the object or function in. E.g.: 
 			// std::string::npos -> finds namespace "::std::string::" and finds function "npos"
 			bool FindObjectOrFunction(std::string_view Name, ParamTypes const& params, std::shared_ptr<Any>& out1, Proxy_Function& out2) const {
-				auto name = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
-				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
-				std::string objName;
-				std::string_view namespaceName;
-				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
-				//if (auto f = sv.rfind("::"); f != std::string::npos) {
-					objName = std::string(sv.substr(f + 2, sv.length() - f));
-					namespaceName = sv.substr(0, f + 2);
-				}
-				auto namespaceName_hash = GetHash(namespaceName);
-
+				if (Name.empty()) return false;
+				
 				auto converter = this->GetRoot()->GetTypeConverterTree();
-				Proxy_Function out{ nullptr };
-				size_t hashed = 0;
+				std::shared_ptr<ClassScope>
+					firstParamScopePtr{ nullptr },
+					constructorScopePtr{ nullptr };
+
+				std::string_view 
+					temp_name{ Name };				
+				std::string 
+					objName;
+				compound_string_view 
+					namespaceName;
+				Proxy_Function 
+					out{ nullptr };
+				size_t 
+					hashed{ 0 };
+
+				Breadcrumb::RemoveLeadingAndTrailing(temp_name, ':'); //  "npos" or "std::string::npos"
+				if (auto f = Breadcrumb::rFind(temp_name, "::"); f != std::string::npos) {
+					objName = std::string(temp_name.substr(f + 2, temp_name.length() - f));
+					auto str1 = temp_name.substr(0, f + 2);
+					Breadcrumb::RemoveLeading(str1, ':');
+					namespaceName = compound_string_view("::", str1);
+				}
+				else {
+					objName = std::string(temp_name);
+					namespaceName = compound_string_view("::");
+				}
+				auto namespaceName_hash = namespaceName.hash();
+
 				GoodLang::details::hash_combine(hashed, GetHash(Name), params.hash());
 
-				std::shared_ptr<ClassScope> firstParamScopePtr{ nullptr };
-				std::shared_ptr<ClassScope> constructorScopePtr{ nullptr };
+
 
 				// FIRST SEARCH PREFERENCES EXACT MATCHES
 				// SECOND SEARCH DOES ALLOW FOR CONVERSIONS, BUT NO TEMPLATES

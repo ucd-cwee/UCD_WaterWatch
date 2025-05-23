@@ -982,6 +982,8 @@ namespace GoodLang {
 	template <typename T> size_t GetHash(const T& a) {
 		return GetHash<T>()(a);
 	};
+	template <> size_t GetHash(std::string const& a);
+	template <> size_t GetHash(std::string_view const& a);
 	template<> size_t GetHash<Type_Info>(Type_Info const& r);
 	template<> size_t GetHash<std::shared_ptr<Type_Info>>(std::shared_ptr<Type_Info> const& r);
 	template<> size_t GetHash<std::weak_ptr<Type_Info>>(std::weak_ptr<Type_Info> const& r);
