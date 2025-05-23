@@ -215,16 +215,7 @@ namespace GoodLang {
 			};
 			static size_t	        rFindString(std::string_view const& str, std::string_view const& text) {
 #if 1				
-				std::string 
-					Str(str),
-					toFind(text);
-				std::reverse(Str.begin(), Str.end());
-				std::reverse(toFind.begin(), toFind.end());
-				size_t out = FindString(Str, toFind, casesensitive);
-				if (out != std::string::npos) {
-					out = str.length() - (out + text.length());
-				}
-				return out;	
+				return str.rfind(text);
 #else
 				long long start = 0;
 				long long end = str.length();
@@ -234,43 +225,34 @@ namespace GoodLang {
 
 				if (k <= 0 || (l - start) < 0) return std::string::npos;
 
-				const char sample = text[k - 1];
+				const char sample = text[0];
 				if (!sample) {
 					return std::string::npos;
 				}
 
 
-
-
-
-
-				
-
-
-
-
-
-				for (; start <= l; ++start) { // starting at the search position ... 
-					if (str[start] == sample) { // found a match for the first character ...
-						
-						
-						
+				start = end - 1;
+				for (; start >= (k-1); --start) { // starting at the search position ... 
+					if (str[start] == sample) { // found a match for the first character ...						
 						for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
-							if (j >= k) return start;
+							if (j >= k) {
+								return start - (k - 1);
+							}
 							else {
-								if (str[k - (start + j)] != text[k - j]) {
+								if (str[start - j] != text[j]) {
 									break;
 								}
 							}
 						}
-
-
-
-
 					}
 				}
-				
-				return std::string::npos;
+				// check the end
+				if (std::memcmp(&str[str.length() - text.length()], &text[0], text.length()) == 0) {
+					return str.length() - text.length();
+				}
+				else {
+					return std::string::npos;
+				}
 #endif
 			};
 			static size_t			Find(std::string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
@@ -1669,14 +1651,6 @@ namespace GoodLang {
 				children_m;
 			Functions
 				functions_m; // Functions that live inside this scope
-			GoodLang::SharedLockable<std::string>
-				child_cache;
-			std::string GetChildCache() const {
-				return const_cast<decltype(child_cache)&>(child_cache).load();
-			};
-			void SetChildCache(std::string_view str) const {
-				const_cast<decltype(child_cache)&>(child_cache).store(std::string(str));
-			};
 
 			bool AddFunction(std::string_view const& name, Function const& function) {
 				const_cast<Function&>(function).m_function->GetSignature().Name(std::string(name));
@@ -1890,17 +1864,6 @@ namespace GoodLang {
 
 				// Test my children completely. 
 				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
-					if (auto e = this->children_m.end(), f = this->children_m.find(GetChildCache()); f != e) {
-						auto& flag = f->second->breadcrumb_m.check_flag[threadIndex];
-						if (!flag.second) {
-							if (auto ptr = f->second->self_id_m.scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
-									return finalResult;
-								}
-							}
-						}
-					}
-
 					auto* child_bc = this->breadcrumb_m.child_m.load();
 					while (child_bc) {
 						auto& flag = child_bc->check_flag[threadIndex];
@@ -1911,7 +1874,6 @@ namespace GoodLang {
 
 						if (auto ptr = child_bc->this_m->scope.lock()) {
 							if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
-								SetChildCache(ptr->Name());
 								return finalResult;
 							}
 						}
