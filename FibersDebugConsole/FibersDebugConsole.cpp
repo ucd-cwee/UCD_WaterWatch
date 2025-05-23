@@ -187,21 +187,13 @@ namespace GoodLang {
 
 				if (casesensitive) {
 					const char sample = text[0];
-					if (!sample) {
-						return (size_t)start;
-					}
-					for (; start <= l; ++start) { // starting at the search position ... 
-						if (str[start] == sample) { // found a match for the first character ...
+					if (!sample) return (size_t)start;					
+					for (; start <= l; ++start) // starting at the search position ... 
+						if (str[start] == sample)  // found a match for the first character ...
 							for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
-								if (j >= k) return start;
-								else {
-									if (str[start + j] != text[j]) {
-										break;
-									}
-								}
+								if (j >= k) return start;								
+								if (str[start + j] != text[j]) break;
 							}
-						}
-					}
 				}
 				else {
 					for (; start <= l; ++start)
@@ -318,6 +310,12 @@ namespace GoodLang {
 					x.remove_suffix(1);
 				}
 			};
+			
+			static std::string_view RemoveLeadingAndTrailing(std::string const& text, char what) {
+				std::string_view x(text);
+				RemoveLeadingAndTrailing(x, what);
+				return x;
+			};
 			static void RemoveTrailing(std::string_view& x, char what) {
 				while (
 					(x.length() > 0)
@@ -325,17 +323,26 @@ namespace GoodLang {
 					) {
 					x.remove_suffix(1);
 				}
-			};
-			static std::string_view RemoveLeadingAndTrailing(std::string const& text, char what) {
-				std::string_view x(text);
-				RemoveLeadingAndTrailing(x, what);
-				return x;
-			};
+			}; 
 			static std::string_view RemoveTrailing(std::string const& text, char what) {
 				std::string_view x(text);
 				RemoveTrailing(x, what);
 				return x;
 			};
+			static void RemoveLeading(std::string_view& x, char what) {
+				while (
+					(x.length() > 0)
+					&& (x[0] == what)
+					) {
+					x.remove_prefix(1);
+				}
+			};
+			static std::string_view RemoveLeading(std::string const& text, char what) {
+				std::string_view x(text);
+				RemoveLeading(x, what);
+				return x;
+			};
+
 
 			// clean-up the name of a scope
 			static std::string CleanUpScopeName(std::string_view x) {	
@@ -413,8 +420,8 @@ namespace GoodLang {
 				child_m{ nullptr }; // may point to the first child of this node
 			GoodLang::atomic_ptr<Breadcrumb>
 				next_m{ nullptr }; // may point to the next child in the parent's node list
-			std::atomic_bool
-				has_usings{ false };
+			long
+				has_usings{ 0 };
 
 			Breadcrumb(ScopeID& thisNode, Breadcrumb* parent = nullptr) 
 				: hash_m(0) 
@@ -827,7 +834,7 @@ namespace GoodLang {
 							}
 						}
 						// check the using statements of the parent.
-						if (thisParent->has_usings.load()) {
+						if (thisParent->has_usings) {
 							if (auto ptr = thisParent->this_m->scope.lock()) {
 								if (ptr->using_m.size() > 0ull) {
 									for (auto& childNamespace : ptr->using_m) {
@@ -918,6 +925,9 @@ namespace GoodLang {
 				}
 			};
 			std::shared_ptr<ClassScope> FindClass(std::string name) const {
+				static size_t default_namespace_hash{ GetHash(std::string("::")) };
+
+
 				//if (!this->is_namespace()) {
 				//	if (auto ptr = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
 				//		return ptr->FindClass(name);
@@ -925,11 +935,18 @@ namespace GoodLang {
 				//}
 
 				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
+				size_t name_hash = GetHash(name);
+				size_t name2_hash;
 				auto len = name.length();
-				std::string name2 = Breadcrumb::CleanUpScopeName(this->breadcrumb_m.current_namespace + name); // instead of "Color", it searches for "::UI::Color::"
-
-				auto name_hash = GetHash(name);
-				auto name2_hash = GetHash(name2);
+				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
+					name2_hash = name_hash;
+				}
+				else {
+					std::string name2{ this->breadcrumb_m.current_namespace };
+					auto L = Breadcrumb::RemoveLeading(name, ':');
+					name2.append(L.data(), L.length()); // instead of "Color", it searches for "::UI::Color::"
+					name2_hash = GetHash(name2);
+				}
 
 				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
 					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
@@ -1487,7 +1504,7 @@ namespace GoodLang {
 			// "Using" a namespace allows you to search that namespace for functions more easily.
 			bool AddUsing(std::shared_ptr<NamespaceScope> const& ns_ptr) {
 				if (ns_ptr) {
-					this->breadcrumb_m.has_usings = true;
+					InterlockedAdd(static_cast<volatile long*>(&this->breadcrumb_m.has_usings), 1);
 					this->using_m.push_back(&ns_ptr->breadcrumb_m);					
 					return true;
 				}
@@ -1797,7 +1814,7 @@ namespace GoodLang {
 							}
 						}
 						// check the using statements of the parent.
-						if (thisParent->has_usings.load()) {
+						if (thisParent->has_usings) {
 							if (auto ptr = thisParent->this_m->scope.lock()) {
 								if (ptr->using_m.size() > 0ull) {
 									for (auto& childNamespace : ptr->using_m) {
@@ -2785,7 +2802,7 @@ namespace GoodLang {
 						classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off) -> std::string { return x.substr(Off); })/*, { "input", "Off" }*/);
 						classPtr->AddFunction("substr", make_callable([](std::string const& x, size_t Off, size_t Count) -> std::string { return x.substr(Off, Count); })/*, { "input", "Off", "Count" }*/);
 						classPtr->AddFunction("to_string", make_callable([](std::string const& o) -> std::string { return o; }));
-						classPtr->AddFunction("to_hash", make_callable([](std::string const& o) -> size_t { return std::hash<std::string>()(o); }));
+						classPtr->AddFunction("to_hash", make_callable([](std::string const& o) -> size_t { return GetHash(o); }));
 
 						// Objects or Constants
 						classPtr->EmplaceObject("npos", std::make_shared<Any>(std::string::npos), ObjectWrapper::ObjectState::Static | ObjectWrapper::ObjectState::Constant);
@@ -2810,9 +2827,9 @@ namespace GoodLang {
 							else return user_type<void>().name();
 						}));
 						classPtr->AddFunction("to_hash", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->size_t {
-							if (auto p = self.lock()) return std::hash<std::string>()(p->GetTypeName(from));
-							else if (auto p = from.lock()) return std::hash<std::string>()(p->name());
-							else return std::hash<std::string>()(user_type<void>().name());
+							if (auto p = self.lock()) return GetHash(p->GetTypeName(from));
+							else if (auto p = from.lock()) return GetHash(p->name());
+							else return GetHash(user_type<void>().name());
 						}));
 						classPtr->AddFunction("name", make_callable([self = classPtr->self_id_m.scope](std::weak_ptr<Type_Info> const& from)->std::string {
 							if (auto p = self.lock()) return p->GetTypeName(from);

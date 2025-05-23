@@ -943,15 +943,12 @@ namespace GoodLang {
 // "Functions" definitions
 namespace GoodLang {
 	Functions::FunctionPtr Functions::at_unsafe(std::string const& key, ParamTypes const& params) const {
-		static auto hasher{ std::hash<std::string>() };
-		static auto hasher2{ std::hash<ParamTypes>() };
-
 		if (key.size() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
 
-			auto functionMapPtr = m_functions.find(hasher(key));
+			auto functionMapPtr = m_functions.find(GetHash(key));
 			if (functionMapPtr != m_functions.end()) {
-				auto FunctionSortPtr = functionMapPtr->second.second.find(hasher2(params));
+				auto FunctionSortPtr = functionMapPtr->second.second.find(params.hash());
 				if (FunctionSortPtr != functionMapPtr->second.second.end()) {
 					return FunctionSortPtr->second.second;
 				}
@@ -967,13 +964,10 @@ namespace GoodLang {
 		return operator()(key, params);
 	};
 	Functions::FunctionPtr Functions::emplace(std::string const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists) {
-		static auto hasher{ std::hash<std::string>() };
-		static auto hasher2{ std::hash<ParamTypes>() };
-
 		if (key.size() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
 
-			auto& ptr = m_functions[hasher(key)].second[hasher2(params)].second;
+			auto& ptr = m_functions[GetHash(key)].second[params.hash()].second;
 			if (!ptr || (ptr && replaceIfAlreadyExists))
 				ptr = GoodLang::make_shared<Function>(func);
 			return ptr;
@@ -983,13 +977,10 @@ namespace GoodLang {
 		}
 	};
 	Functions::FunctionPtr Functions::emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists) {
-		static auto hasher{ std::hash<std::string>() };
-		static auto hasher2{ std::hash<ParamTypes>() };
-
 		if (key.size() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
 
-			auto& ptr = m_functions[hasher(key)].second[hasher2(func.m_function->Arguments().Types())].second;
+			auto& ptr = m_functions[GetHash(key)].second[func.m_function->Arguments().Types().hash()].second;
 			if (!ptr || (ptr && replaceIfAlreadyExists))
 				ptr = GoodLang::make_shared<Function>(func);
 			return ptr;
@@ -1001,9 +992,6 @@ namespace GoodLang {
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 	Proxy_Function Functions::BuildMatch(std::string const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
-		static auto hasher{ std::hash<std::string>() };
-		static auto hasher2{ std::hash<ParamTypes>() };
-
 		if (auto func = at(functionName, Params)) {		
 			if (func->m_function) { // cache (or actual) found
 				bool isTemplateFunc = func->m_function->GetSignature().IsTemplate();
@@ -1034,7 +1022,7 @@ namespace GoodLang {
 
 				if (functionName.size() > 0) {
 					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
-					auto& m_func_find = m_functions[hasher(functionName)];
+					auto& m_func_find = m_functions[GetHash(functionName)];
 					for (auto& function : m_func_find.second) {
 						if (!function.second.second) continue;
 						if (!function.second.second->m_function) continue;
@@ -1085,9 +1073,6 @@ namespace GoodLang {
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 	Proxy_Function Functions::BuildMatch(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
-		static auto hasher{ std::hash<std::string>() };
-		static auto hasher2{ std::hash<ParamTypes>() };
-
 		if (auto func = at(functionName, Params)) {
 			// cache (or actual) found
 			if (func->m_function) {
@@ -1103,12 +1088,13 @@ namespace GoodLang {
 
 			// Create candidates.
 			{
-				std::vector<std::shared_ptr<Type_Info>> paramTypes;
+				thread_local std::vector<std::shared_ptr<Type_Info>> paramTypes{ Params.size() };
+				defer(paramTypes.clear());
 				for (auto& x : Params) paramTypes.push_back(x.lock());
 
 				if (functionName.size() > 0) {
 					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
-					auto& m_func_find = m_functions[hasher(functionName)];
+					auto& m_func_find = m_functions[GetHash(functionName)];
 					double conversionCost;
 					for (auto& function : m_func_find.second) {
 						if (!function.second.second) continue;
