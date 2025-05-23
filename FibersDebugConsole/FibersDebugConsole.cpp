@@ -62,9 +62,9 @@ namespace GoodLang {
 		std::string_view a;
 		std::string_view b;
 		std::string_view c;
-		size_t len;
+
 	public:
-		compound_string_view(std::string_view A = "", std::string_view B = "", std::string_view C = "") : a{ A }, b{ B }, c{ C }, len{ A.length() + B.length() + C.length() } {};
+		compound_string_view(std::string_view A = "", std::string_view B = "", std::string_view C = "") : a{ A }, b{ B }, c{ C } {};
 		compound_string_view(compound_string_view const&) = default;
 		compound_string_view(compound_string_view &&) = default;
 		compound_string_view& operator=(compound_string_view const&) = default;
@@ -83,7 +83,7 @@ namespace GoodLang {
 			return c[index];
 		}
 		size_t length() const {
-			return len;
+			return a.length() + b.length() + c.length();
 		}
 		explicit operator std::string() const {
 			std::string out(a);
@@ -91,8 +91,7 @@ namespace GoodLang {
 			out.append(c.data(), c.length());
 			return out;
 		};
-		size_t hash() const {
-			size_t out{ 0 };
+		size_t hash(size_t out = 0) const {
 			for (auto& x : a) {
 				out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
 			}
@@ -105,17 +104,82 @@ namespace GoodLang {
 			return out;
 		}
 		bool empty() const {
-			return len == 0;
+			return length() == 0;
 		};
-		bool operator==(const std::string_view rhs) const {
-			if (rhs.length() != length()) return false;
-			for (long long j = length() - 1; j >= 0; --j) {
-				if (rhs[j] != operator[](j)) return false;
+		friend bool operator==(compound_string_view const& lhs, const std::string_view& rhs) {
+			if (rhs.length() != lhs.length()) return false;
+			for (long long j = lhs.length() - 1; j >= 0; --j) {
+				if (rhs[j] != lhs[j]) return false;
 			}
 			return true;
 		};
+		friend bool operator==(const std::string_view& rhs, compound_string_view const& lhs) {
+			if (rhs.length() != lhs.length()) return false;
+			for (long long j = lhs.length() - 1; j >= 0; --j) {
+				if (rhs[j] != lhs[j]) return false;
+			}
+			return true;
+		};
+		friend bool operator!=(compound_string_view const& lhs, const std::string_view& rhs) {
+			return !operator==(lhs, rhs);
+		};
+		friend bool operator!=(const std::string_view& rhs, compound_string_view const& lhs) {
+			return !operator==(lhs, rhs);
+		};
 
 
+		void remove_prefix(long long n) {
+			if ((n > 0) && a.length() > 0) {
+				long long toRemove = std::min<long long>(n, a.length());
+				if (toRemove > 0) {
+					n -= toRemove;
+					a.remove_prefix(toRemove);
+				}
+			}
+			if ((n > 0) && b.length() > 0) {
+				long long toRemove = std::min<long long>(n, b.length());
+				if (toRemove > 0) {
+					n -= toRemove;
+					b.remove_prefix(toRemove);
+				}
+			}
+			if ((n > 0) && c.length() > 0) {
+				long long toRemove = std::min<long long>(n, c.length());
+				if (toRemove > 0) {
+					n -= toRemove;
+					c.remove_prefix(toRemove);
+				}
+			}
+		};
+		void remove_suffix(long long n) {
+			if ((n > 0) && c.length() > 0) {
+				long long toRemove = std::min<long long>(n, c.length());
+				if (toRemove > 0) {
+					n -= toRemove;
+					c.remove_suffix(toRemove);
+				}
+			}
+			if ((n > 0) && b.length() > 0) {
+				long long toRemove = std::min<long long>(n, b.length());
+				if (toRemove > 0) {
+					n -= toRemove;
+					b.remove_suffix(toRemove);
+				}
+			}
+			if ((n > 0) && a.length() > 0) {
+				long long toRemove = std::min<long long>(n, a.length());
+				if (toRemove > 0) {
+					n -= toRemove;
+					a.remove_suffix(toRemove);
+				}
+			}
+		};
+		compound_string_view substr(size_t offset = 0, size_t count = std::string::npos) const {
+			compound_string_view copy = *this;
+			if (offset > 0) copy.remove_prefix(offset);
+			if (count < copy.length()) copy.remove_suffix(copy.length() - count);
+			return copy;
+		}
 	};
 
 	class Scopes {
@@ -377,6 +441,49 @@ namespace GoodLang {
 				}
 #endif
 			};
+
+			static size_t	        rFindString(compound_string_view const& str, std::string_view const& text) {
+#if 0				
+				return str.rfind(text);
+#else
+				long long start = 0;
+				long long end = str.length();
+				long long l, j, k;
+				k = text.length();
+				l = end - k;
+
+				if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+				const char sample = text[0];
+				if (!sample) {
+					return std::string::npos;
+				}
+
+
+				start = end - 1;
+				for (; start >= (k - 1); --start) { // starting at the search position ... 
+					if (str[start] == sample) { // found a match for the first character ...						
+						for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+							if (j >= k) {
+								return start - (k - 1);
+							}
+							else {
+								if (str[start - j] != text[j]) {
+									break;
+								}
+							}
+						}
+					}
+				}
+				if (text == str.substr(str.length() - text.length())) {
+					return str.length() - text.length();
+				}
+				else {
+					return std::string::npos;
+				}
+#endif
+			};
+
 			static size_t			Find(std::string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
 				if (end == -1) {
 					end = WITHIN.length();
@@ -403,6 +510,11 @@ namespace GoodLang {
 				return rFindString(WITHIN, FIND);
 			};
 			static size_t			rFind(std::string_view const& WITHIN, compound_string_view const& FIND) {
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
+				return rFindString(WITHIN, FIND);
+			};
+			static size_t			rFind(compound_string_view const& WITHIN, std::string_view const& FIND) {
 				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
 				if (FIND.length() > WITHIN.length()) return std::string::npos;
 				return rFindString(WITHIN, FIND);
@@ -458,8 +570,7 @@ namespace GoodLang {
 				) {
 					x.remove_suffix(1);
 				}
-			};
-			
+			};			
 			static std::string_view RemoveLeadingAndTrailing(std::string const& text, char what) {
 				std::string_view x(text);
 				RemoveLeadingAndTrailing(x, what);
@@ -492,9 +603,39 @@ namespace GoodLang {
 				return x;
 			};
 
+			static void RemoveLeadingAndTrailing(compound_string_view& x, char what) {
+				while (
+					(x.length() > 0)
+					&& (x[0] == what)
+					) {
+					x.remove_prefix(1);
+				}
+				while (
+					(x.length() > 0)
+					&& ((x[x.length() - 1] == what))
+					) {
+					x.remove_suffix(1);
+				}
+			};
+			static void RemoveTrailing(compound_string_view& x, char what) {
+				while (
+					(x.length() > 0)
+					&& ((x[x.length() - 1] == what))
+					) {
+					x.remove_suffix(1);
+				}
+			};
+			static void RemoveLeading(compound_string_view& x, char what) {
+				while (
+					(x.length() > 0)
+					&& (x[0] == what)
+					) {
+					x.remove_prefix(1);
+				}
+			};
 
-			// clean-up the name of a scope
-			static std::string CleanUpScopeName(std::string_view x) {
+			// clean-up the name of a scope: e.g. "::" becomes "::", "Units" becomes "::Units::"
+			static compound_string_view CleanUpScopeName(std::string_view x) {
 				//if (Find(x, "::::") != std::string::npos) {
 				//	print("ISSUE");
 				//}
@@ -510,47 +651,18 @@ namespace GoodLang {
 				}
 				
 				if (AddToFront && AddToBack) {
-					std::string out;
-					out.resize(x.length() + 4);
-					out[0] = out[1] = ':';
-					std::memcpy(&out[2], &x[0], x.length());
-					out[out.length()-2] = out[out.length() - 1] = ':';
-					out[out.length()] = '\0';
-
-					//(bool)replaceAll(out, "::::", "::");
-					return out;
+					return compound_string_view("::", x, "::");
 				}
 				else if (AddToFront && !AddToBack) {
-					std::string out;
-					out.resize(x.length() + 2);
-					out[0] = out[1] = ':';
-					std::memcpy(&out[2], &x[0], x.length());
-					out[out.length()] = '\0';
-
-					//(bool)replaceAll(out, "::::", "::");
-					return out;
+					return compound_string_view("::", x);
 				}
 				else if (!AddToFront && AddToBack) {
-					std::string out;
-					out.resize(x.length() + 2);
-					std::memcpy(&out[0], &x[0], x.length());
-					out[out.length() - 2] = out[out.length() - 1] = ':';
-					out[out.length()] = '\0';
-
-					//(bool)replaceAll(out, "::::", "::");
-					return out;
+					return compound_string_view(x, "::");
 				}
 				else {
-					std::string out;
-					//if (!replaceAll(x, "::::", "::", out)) {
-						out.resize(x.length());
-						std::memcpy(&out[0], &x[0], x.length());
-						out[out.length()] = '\0';
-					//}
-					return out;
+					return compound_string_view(x);
 				}
 			};
-
 
 		public:
 			size_t
@@ -575,6 +687,8 @@ namespace GoodLang {
 				next_m{ nullptr }; // may point to the next child in the parent's node list
 			long
 				has_usings{ 0 };
+			size_t 
+				class_type_hash{ 0 };
 
 			Breadcrumb(ScopeID& thisNode, Breadcrumb* parent = nullptr) 
 				: hash_m(0) 
@@ -599,8 +713,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
-					else current_namespace = CleanUpScopeName(this_m->scope_name);
+					if (parent_m) current_namespace = (std::string)CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
+					else current_namespace = (std::string)CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -628,8 +742,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
-					else current_namespace = CleanUpScopeName(this_m->scope_name);
+					if (parent_m) current_namespace = (std::string)CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
+					else current_namespace = (std::string)CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -657,8 +771,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
-					else current_namespace = CleanUpScopeName(this_m->scope_name);
+					if (parent_m) current_namespace = (std::string)CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
+					else current_namespace = (std::string)CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -683,8 +797,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
-					else current_namespace = CleanUpScopeName(this_m->scope_name);
+					if (parent_m) current_namespace = (std::string)CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
+					else current_namespace = (std::string)CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -711,8 +825,8 @@ namespace GoodLang {
 
 				// current_namespace
 				if (this_m->scope_name != "") {
-					if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
-					else current_namespace = CleanUpScopeName(this_m->scope_name);
+					if (parent_m) current_namespace = (std::string)CleanUpScopeName(parent_m->current_namespace + std::string(this_m->scope_name));
+					else current_namespace = (std::string)CleanUpScopeName(this_m->scope_name);
 				}
 				else {
 					if (parent_m) current_namespace = parent_m->current_namespace;
@@ -857,36 +971,6 @@ namespace GoodLang {
 				Success = 2,
 				StaticFailure = 4
 			};
-
-
-
-			//using cache_inner = concurrency::concurrent_unordered_map<size_t, // search terms
-			//	GoodLang::SharedLockable<std::weak_ptr<BasicScope>> // final scope for search result
-			//>;
-
-			//static auto& GetCache() {
-			//	static std::array<cache_middle, 6> list;
-			//	return list;
-			//}
-			//[[nodiscard]] static bool TryGetCache(size_t SearchNumber, size_t ScopeID, size_t SearchTerms, std::shared_ptr<BasicScope>& ptr) {
-			//	auto& x = GetCache()[SearchNumber][ScopeID][SearchTerms];
-			//	if (x.DataExists()) {
-			//		auto shared = x.Shared();
-			//		ptr = shared->lock();
-			//		return true;
-			//	}
-			//	return false;				
-			//};
-			//[[nodiscard]] static void EmplaceCache(size_t SearchNumber, size_t ScopeID, size_t SearchTerms, Breadcrumb* insert) {
-			//	auto& x = GetCache()[SearchNumber][ScopeID][SearchTerms];
-			//	auto UQ = x.Unique();
-			//	if (insert) {
-			//		*UQ = insert->this_m->scope;
-			//	}
-			//	else {
-			//		*UQ = std::weak_ptr<BasicScope>();
-			//	}
-			//};
 			
 			using check_cache = std::vector<Breadcrumb*>;
 			static check_cache& GetCheckMap() {
@@ -896,8 +980,6 @@ namespace GoodLang {
 			};
 			virtual Breadcrumb* FindNearestScopeWhere(
 				std::function<int(Breadcrumb*, int)> const& func,
-				int SearchNumber,
-				std::optional<size_t> SearchTerms,
 				int searchState = 0,
 				check_cache& requiringReset = GetCheckMap(),
 				int depth = 0
@@ -906,21 +988,6 @@ namespace GoodLang {
 				Breadcrumb* finalResult = nullptr;
 				size_t threadIndex = ThreadLocal<bool>::GetThreadID();
 				optional_defer((depth == 0), for (auto& x : requiringReset) x->check_flag[threadIndex].first = x->check_flag[threadIndex].second = false);
-
-				//if ((depth == 0) && SearchTerms.has_value()) {
-				//	if (std::shared_ptr<BasicScope> ptr{ nullptr }; TryGetCache(SearchNumber, selfPtr.hash_m, SearchTerms.value(), ptr)) {
-				//		if (ptr) {
-				//			ptr->breadcrumb_m.check_self_flag = true;
-				//			push_back_if_not_at_end(requiringReset, &ptr->breadcrumb_m);
-				//			// test myself directly	
-				//			if (func(&ptr->breadcrumb_m, searchState) & SearchResult::Success) {
-				//				finalResult = &ptr->breadcrumb_m;
-				//				return finalResult;
-				//			}
-				//		}
-				//	}
-				//}
-				//optional_defer((depth == 0) && SearchTerms.has_value(), EmplaceCache(SearchNumber, selfPtr.hash_m, SearchTerms.value(), finalResult));
 
 				// Prevent Duplication
 				auto& self_flag = selfPtr.check_flag[threadIndex];
@@ -956,7 +1023,7 @@ namespace GoodLang {
 							auto& flag = childNamespace->check_flag[threadIndex];
 							if (flag.second) { continue; }
 							if (auto ptr = childNamespace->this_m->scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth+1)) {
+								if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, requiringReset, depth+1)) {
 									return finalResult;
 								}
 							}
@@ -987,7 +1054,7 @@ namespace GoodLang {
 							}
 						}
 						// check the using statements of the parent.
-						if (thisParent->has_usings) {
+						if (thisParent->has_usings > 0) {
 							if (auto ptr = thisParent->this_m->scope.lock()) {
 								if (ptr->using_m.size() > 0ull) {
 									for (auto& childNamespace : ptr->using_m) {
@@ -995,7 +1062,7 @@ namespace GoodLang {
 											auto& flag2 = childNamespace->check_flag[threadIndex];
 											if (flag2.second) continue;
 											if (auto ptr = childNamespace->this_m->scope.lock()) {
-												if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
+												if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, requiringReset, depth + 1)) {
 													return finalResult;
 												}
 											}
@@ -1014,12 +1081,12 @@ namespace GoodLang {
 						if (!flag.second) {
 							if (auto ptr = selfPtr.parent_m->this_m->scope.lock()) {
 								if (ptr->self_id_m.is_namespace()) {
-									if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingParents | SearchUpHitNamespace, requiringReset, depth + 1)) {
+									if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingParents | SearchUpHitNamespace, requiringReset, depth + 1)) {
 										return finalResult;
 									}
 								}
 								else {
-									if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingParents, requiringReset, depth + 1)) {
+									if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingParents, requiringReset, depth + 1)) {
 										return finalResult;
 									}
 								}
@@ -1033,20 +1100,17 @@ namespace GoodLang {
 			std::shared_ptr<NamespaceScope> FindNamespace(std::string_view name) const {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
 
-				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
-				size_t name_hash = GetHash(name);
+				auto Name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
+				size_t name_hash = Name.hash();
 				size_t name2_hash;
-				auto len = name.length();
+				auto len = Name.length();
 				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
 				}
 				else {
-					name2_hash = this->breadcrumb_m.current_namespace_hash;
-					std::string_view temp = name;
+					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
-					for (auto& x : temp) {
-						name2_hash ^= x + 0x9e3779b9 + (name2_hash << 6) + (name2_hash >> 2);
-					}
+					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
 					// instead of "Color", it searches for "::UI::Color::"
 				}
 
@@ -1060,10 +1124,10 @@ namespace GoodLang {
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if ((namespacePtr->current_namespace_hash != name_hash)) {
 							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > name.length()) {
+							if (QualifiedNameLen > Name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (Breadcrumb::Find(name, namespacePtr->current_namespace) == std::string::npos) {
+							else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
 								// e.g. looking for "std::string::" but this namespace was "::UI::"
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
@@ -1071,35 +1135,31 @@ namespace GoodLang {
 						}
 					}
 
-					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, name);
-					// auto F = namespacePtr->current_namespace.rfind(name);
+					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
-				}, 0, name_hash)) {
+				})) {
 					return std::dynamic_pointer_cast<NamespaceScope>(BC->this_m->scope.lock());
 				}
 				else {
 					return nullptr;
 				}
 			};
-			std::shared_ptr<ClassScope> FindClass(std::string name) const {
+			std::shared_ptr<ClassScope> FindClass(std::string_view name) const {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
 
-				name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
-				size_t name_hash = GetHash(name);
+				auto Name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
+				size_t name_hash = Name.hash();
 				size_t name2_hash;
-				auto len = name.length();
+				auto len = Name.length();
 				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
 				}
 				else {
-					name2_hash = this->breadcrumb_m.current_namespace_hash;
-					std::string_view temp = name;
+					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
-					for (auto& x : temp) {
-						name2_hash ^= x + 0x9e3779b9 + (name2_hash << 6) + (name2_hash >> 2);
-					}
+					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
 					// instead of "Color", it searches for "::UI::Color::"
 				}
 
@@ -1113,22 +1173,21 @@ namespace GoodLang {
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if ((namespacePtr->current_namespace_hash != name_hash)) {
 							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > name.length()) {
+							if (QualifiedNameLen > Name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (Breadcrumb::Find(name, namespacePtr->current_namespace) == std::string::npos) {
+							else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
 								// e.g. looking for "std::string::" but this namespace was "::UI::"
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
 							else return SearchResult::Failure;							
 						}
 					}
-					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, name);
-					//auto F = namespacePtr->current_namespace.rfind(name);
+					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
 					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
 
 					return SearchResult::Failure;
-				}, 0, name_hash)) {
+				})) {
 					return std::dynamic_pointer_cast<ClassScope>(BC->this_m->scope.lock());
 				}
 				else {
@@ -1145,16 +1204,14 @@ namespace GoodLang {
 							return ptr->FindClass(type);
 						}
 					}
-					auto hash = GetHash(type);
+					size_t hash = type->uniqueHash;
 					if (auto BC = FindNearestScopeWhere([&hash](Breadcrumb* namespacePtr, int search_state)->int {
 						if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
-						if (auto p = std::dynamic_pointer_cast<ClassScope>(namespacePtr->this_m->scope.lock())) {
-							if (GetHash(p->ClassType) == hash) {
-								return SearchResult::Success;
-							}
+						if (namespacePtr->class_type_hash == hash) {
+							return SearchResult::Success;
 						}
 						return SearchResult::Failure;
-					}, 2, hash)) {
+					})) {
 						return std::dynamic_pointer_cast<ClassScope>(BC->this_m->scope.lock());
 					}
 					else {
@@ -1171,9 +1228,10 @@ namespace GoodLang {
 					return f->second.object;
 				}
 				else {
+					auto converter = this->GetRoot()->GetTypeConverterTree();
 					std::shared_ptr<Any> out;
 					Proxy_Function out2;
-					if (FindObjectOrFunction(Name, {}, out, out2)) {
+					if (FindObjectOrFunction(Name, {}, out, out2, &*converter)) {
 						if (out) return out;
 					}
 					return nullptr;
@@ -1183,11 +1241,12 @@ namespace GoodLang {
 			// Explicitely looks for a function with the given name. Name may include specialization for the namespace to expect the function in. E.g.: 
 			// std::string::npos -> finds namespace "::std::string::" and finds function "npos"
 			Proxy_Function FindFunction(std::string_view Name, ParamTypes const& params) const {
+				auto converter = this->GetRoot()->GetTypeConverterTree();
 				// Only namespaces can have functions, so jump to it.
 				if (auto p = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
 					std::shared_ptr<Any> out;
 					Proxy_Function out2;
-					if (p->FindObjectOrFunction(Name, params, out, out2)) {
+					if (p->FindObjectOrFunction(Name, params, out, out2, &*converter)) {
 						if (out2) return out2;
 					}
 					return nullptr;
@@ -1195,7 +1254,7 @@ namespace GoodLang {
 				else {
 					std::shared_ptr<Any> out;
 					Proxy_Function out2;
-					if (FindObjectOrFunction(Name, params, out, out2)) {
+					if (FindObjectOrFunction(Name, params, out, out2, &*converter)) {
 						if (out2) return out2;
 					}
 					return nullptr;
@@ -1205,10 +1264,10 @@ namespace GoodLang {
 			// Finds either an object or function with the given name, with preference to objects when searching within a scope. 
 			// Name may include specialization for the namespace to expect the object or function in. E.g.: 
 			// std::string::npos -> finds namespace "::std::string::" and finds function "npos"
-			bool FindObjectOrFunction(std::string_view Name, ParamTypes const& params, std::shared_ptr<Any>& out1, Proxy_Function& out2) const {
+			bool FindObjectOrFunction(std::string_view Name, ParamTypes const& params, std::shared_ptr<Any>& out1, Proxy_Function& out2, TypeConverter* converter) const {
+				static size_t default_namespace_hash{ GetHash(std::string("::")) };
 				if (Name.empty()) return false;
-				
-				auto converter = this->GetRoot()->GetTypeConverterTree();
+
 				std::shared_ptr<ClassScope>
 					firstParamScopePtr{ nullptr },
 					constructorScopePtr{ nullptr };
@@ -1221,8 +1280,8 @@ namespace GoodLang {
 					namespaceName;
 				Proxy_Function 
 					out{ nullptr };
-				size_t 
-					hashed{ 0 };
+				size_t
+					namespaceName_hash;
 
 				Breadcrumb::RemoveLeadingAndTrailing(temp_name, ':'); //  "npos" or "std::string::npos"
 				if (auto f = Breadcrumb::rFind(temp_name, "::"); f != std::string::npos) {
@@ -1230,22 +1289,20 @@ namespace GoodLang {
 					auto str1 = temp_name.substr(0, f + 2);
 					Breadcrumb::RemoveLeading(str1, ':');
 					namespaceName = compound_string_view("::", str1);
+					namespaceName_hash = namespaceName.hash();
 				}
 				else {
 					objName = std::string(temp_name);
 					namespaceName = compound_string_view("::");
+					namespaceName_hash = default_namespace_hash;
 				}
-				auto namespaceName_hash = namespaceName.hash();
-
-				GoodLang::details::hash_combine(hashed, GetHash(Name), params.hash());
-
-
-
+				
 				// FIRST SEARCH PREFERENCES EXACT MATCHES
 				// SECOND SEARCH DOES ALLOW FOR CONVERSIONS, BUT NO TEMPLATES
 				// FINAL SEARCH ALLOWS FOR TEMPLATE FUNCTIONS
 				if (1) {
-					std::array<std::multimap<double, Proxy_Function>,3> sort;
+					thread_local std::array<std::multimap<double, Proxy_Function>,3> sort;
+					defer(sort[0].clear(); sort[1].clear(); sort[2].clear());
 
 					// FIRST, WE CHECK TO SEE IF THE DESIRED FUNCTION IS AVAILABLE FROM THE CLASS OF THE FIRST PARAM (e.g. to_string(Units::foot()) would search the Units::foot class before anything else)
 					{
@@ -1375,7 +1432,7 @@ namespace GoodLang {
 								}
 							}
 							return SearchResult::Failure;
-						}, 3, hashed)) {
+						})) {
 							return true;
 						}
 
@@ -1443,20 +1500,15 @@ namespace GoodLang {
 									if (namespacePtr->this_m->is_namespace()) {
 										if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(scope_ptr)) {
 											if (sort[0].size() == 0) {
-												if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
+												double cost{ details::TypeConversionWorstCaseCost };
+												if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true, &cost)) {
 													if (1) {
-														auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-														//if (cost == 0) {
-														//	out2 = out;
-														//	return true;
-														//}
 														if (cost < details::TypeConversionWorstCaseCost) {
 															sort[1].emplace(cost + searchDepth++, out);
 														}
 														out = nullptr;
 													}
-													if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
-														auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+													if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true, &cost)) {
 														if (cost == 0) {
 															out1 = nullptr;
 															out2 = out;
@@ -1470,8 +1522,8 @@ namespace GoodLang {
 												}
 											}
 											else {
-												if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true)) {
-													auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
+												double cost{ details::TypeConversionWorstCaseCost };
+												if (out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true, &cost)) {
 													if (cost == 0) {
 														out1 = nullptr;
 														out2 = out;
@@ -1488,12 +1540,8 @@ namespace GoodLang {
 												if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
 													if (f->second->Name() == objName) {
 														if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(f->second)) {
-															if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true)) {
-																auto cost = out->conversion_cost(params, out->GetSignature().Arguments().Types(), *converter);
-																//if (cost == 0) {
-																//	out2 = out;
-																//	return true;
-																//}
+															double cost{ details::TypeConversionWorstCaseCost };
+															if (out = NS_ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true, &cost)) {
 																if (cost < details::TypeConversionWorstCaseCost) {
 																	sort[2].emplace(cost + searchDepth++, out);
 																}
@@ -1507,7 +1555,7 @@ namespace GoodLang {
 								}
 							}
 							return SearchResult::Failure;
-						}, 3, hashed)) {
+						})) {
 							return true;
 						};
 					}
@@ -1531,12 +1579,11 @@ namespace GoodLang {
 			// Emplaces an object with the given name. Name may include specialization for the namespace to place the object in. E.g.:
 			// std::string::npos -> finds namespace "::std::string::" and emplaces object "npos"
 			std::shared_ptr<Any> EmplaceObject(std::string_view Name, Any const& object, int objectState = ObjectWrapper::ObjectState::Normal)  {
-				auto name = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
-				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				auto sv = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				Breadcrumb::RemoveTrailing(sv, ':'); // "::npos::" -> "::npos"   OR    "::std::string::npos::" -> "::std::string::npos"
 				std::string objName;
-				std::string_view namespaceName;
+				compound_string_view namespaceName;
 				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
-				//if (auto f = sv.rfind("::"); f != std::string::npos) {
 					objName = std::string(sv.substr(f + 2, sv.length() - f));
 					namespaceName = sv.substr(0, f + 2);
 				}
@@ -1606,7 +1653,7 @@ namespace GoodLang {
 						}
 					}
 					return SearchResult::Failure;
-				}, 0, std::nullopt)) {
+				})) {
 					return out;
 				}
 				else {
@@ -1617,13 +1664,11 @@ namespace GoodLang {
 			// Emplaces an Function with the given name. Name may include specialization for the namespace to place the function in. E.g.:
 			// std::string::npos -> finds namespace "::std::string::" and emplaces function "npos"
 			bool EmplaceFunction(std::string_view Name, Function const& object)  {
-				auto name = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
-				auto sv = Breadcrumb::RemoveTrailing(name, ':'); // "npos" -> "::npos"   OR    "std::string::npos" -> "::std::string::npos"
+				auto sv = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
+				Breadcrumb::RemoveTrailing(sv, ':'); // "::npos::" -> "::npos"   OR    "::std::string::npos::" -> "::std::string::npos"
 				std::string objName;
-				std::string_view namespaceName;
-				
+				compound_string_view namespaceName;
 				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
-				//if (auto f = sv.rfind("::"); f != std::string::npos) {
 					objName = std::string(sv.substr(f + 2, sv.length() - f));
 					namespaceName = sv.substr(0, f + 2);
 				}
@@ -1664,7 +1709,7 @@ namespace GoodLang {
 						}
 					}
 					return SearchResult::Failure;
-				}, 0, std::nullopt)) {
+				})) {
 					return true;
 				}
 				else {
@@ -1687,9 +1732,10 @@ namespace GoodLang {
 				std::shared_ptr<Any> out1;
 				Proxy_Function out2;
 				
-				if (FindObjectOrFunction(functionName, Params, out1, out2)) {
+				auto converter = this->GetRoot()->GetTypeConverterTree();
+				if (FindObjectOrFunction(functionName, Params, out1, out2, &*converter)) {
 					if (out1) return out1;
-					auto converter = this->GetRoot()->GetTypeConverterTree();
+					
 					if (out2) return out2->operator()(params, *converter);
 				}
 
@@ -1894,8 +1940,6 @@ namespace GoodLang {
 
 			virtual Breadcrumb* FindNearestScopeWhere(
 				std::function<int(Breadcrumb*, int)> const& func,
-				int SearchNumber,
-				std::optional<size_t> SearchTerms,
 				int searchState = 0,
 				check_cache& requiringReset = GetCheckMap(),
 				int depth = 0
@@ -1954,7 +1998,7 @@ namespace GoodLang {
 							auto& flag = childNamespace->check_flag[threadIndex];
 							if (flag.second) { continue; }
 							if (auto ptr = childNamespace->this_m->scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
+								if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, requiringReset, depth + 1)) {
 									return finalResult;
 								}
 							}
@@ -1985,7 +2029,7 @@ namespace GoodLang {
 							}
 						}
 						// check the using statements of the parent.
-						if (thisParent->has_usings) {
+						if (thisParent->has_usings > 0) {
 							if (auto ptr = thisParent->this_m->scope.lock()) {
 								if (ptr->using_m.size() > 0ull) {
 									for (auto& childNamespace : ptr->using_m) {
@@ -1993,7 +2037,7 @@ namespace GoodLang {
 											auto& flag2 = childNamespace->check_flag[threadIndex];
 											if (flag2.second) continue;
 											if (auto ptr = childNamespace->this_m->scope.lock()) {
-												if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
+												if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingUsings, requiringReset, depth + 1)) {
 													return finalResult;
 												}
 											}
@@ -2036,12 +2080,12 @@ namespace GoodLang {
 						if (!flag.second) {
 							if (auto ptr = selfPtr.parent_m->this_m->scope.lock()) {
 								if (ptr->self_id_m.is_namespace()) {
-									if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingParents | SearchUpHitNamespace, requiringReset, depth + 1)) {
+									if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingParents | SearchUpHitNamespace, requiringReset, depth + 1)) {
 										return finalResult;
 									}
 								}
 								else {
-									if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingParents, requiringReset, depth + 1)) {
+									if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingParents, requiringReset, depth + 1)) {
 										return finalResult;
 									}
 								}
@@ -2061,7 +2105,7 @@ namespace GoodLang {
 						}
 
 						if (auto ptr = child_bc->this_m->scope.lock()) {
-							if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
+							if (finalResult = ptr->FindNearestScopeWhere(func, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
 								return finalResult;
 							}
 						}
@@ -2096,7 +2140,8 @@ namespace GoodLang {
 				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), nullptr, inheritance);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
-		
+				ptr->breadcrumb_m.class_type_hash = ptr->ClassType->uniqueHash;
+
 				if (this->breadcrumb_m.child_m.CompareExchange(nullptr, &ptr->breadcrumb_m) == nullptr) {}
 				else {
 					Breadcrumb* temp{ this->breadcrumb_m.child_m.load() };
@@ -2116,6 +2161,7 @@ namespace GoodLang {
 				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), type);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
+				ptr->breadcrumb_m.class_type_hash = ptr->ClassType->uniqueHash;
 
 				if (this->breadcrumb_m.child_m.CompareExchange(nullptr, &ptr->breadcrumb_m) == nullptr) {}
 				else {
@@ -2156,6 +2202,7 @@ namespace GoodLang {
 				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), nullptr, inheritance);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
+				ptr->breadcrumb_m.class_type_hash = ptr->ClassType->uniqueHash;
 
 				if (this->breadcrumb_m.child_m.CompareExchange(nullptr, &ptr->breadcrumb_m) == nullptr) {}
 				else {
@@ -2176,6 +2223,7 @@ namespace GoodLang {
 				auto ptr = std::make_shared<ClassScope>(name, GetSelf(), type);
 				ptr->SetSelf(ptr);
 				ptr->AddDefaultConstructors();
+				ptr->breadcrumb_m.class_type_hash = ptr->ClassType->uniqueHash;
 
 				if (this->breadcrumb_m.child_m.CompareExchange(nullptr, &ptr->breadcrumb_m) == nullptr) {}
 				else {
@@ -2294,201 +2342,7 @@ namespace GoodLang {
 					Root->ReferenceConversionFunction(std::dynamic_pointer_cast<ClassScope>(Self), this->conversion_functions);
 				}
 			};
-
-#if 0
-			virtual Breadcrumb* FindNearestScopeWhere(
-				std::function<int(Breadcrumb*, int)> const& func,
-				int SearchNumber,
-				std::optional<size_t> SearchTerms,
-				int searchState = 0,
-				check_cache& requiringReset = GetCheckMap(),
-				int depth = 0
-			) const override {
-				Breadcrumb* finalResult = nullptr;
-				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
-				optional_defer((depth == 0), for (auto& x : requiringReset) x->check_flag->first = x->check_flag->second = false);
-
-				//if ((depth == 0) && SearchTerms.has_value()) {
-				//	if (std::shared_ptr<BasicScope> ptr{ nullptr }; TryGetCache(SearchNumber, selfPtr.hash_m, SearchTerms.value(), ptr)) {
-				//		if (ptr) {
-				//			ptr->breadcrumb_m.check_self_flag = true;
-				//			push_back_if_not_at_end(requiringReset, &ptr->breadcrumb_m);
-				//			// test myself directly	
-				//			if (func(&ptr->breadcrumb_m, searchState) & SearchResult::Success) {
-				//				finalResult = &ptr->breadcrumb_m;
-				//				return finalResult;
-				//			}
-				//		}
-				//	}
-				//}
-				//optional_defer((depth == 0) && SearchTerms.has_value(), EmplaceCache(SearchNumber, selfPtr.hash_m, SearchTerms.value(), finalResult));
-
-				// Prevent Duplication
-				auto& self_flag = *selfPtr.check_flag;
-				if (self_flag.second) {
-					finalResult = nullptr;
-					return finalResult;
-				}
-				if (!(searchState & SkipChildren)) {
-					self_flag.second = true;
-					push_back_if_not_at_end(requiringReset, &selfPtr);
-				}
-
-				// test myself directly	
-				if (!self_flag.first) {
-					self_flag.first = true;
-					push_back_if_not_at_end(requiringReset, &selfPtr);
-
-					auto res = func(&selfPtr, searchState);
-					if (res & SearchResult::Success) {
-						finalResult = &selfPtr;
-						return finalResult;
-					}
-					else if (res & SearchResult::StaticFailure) {
-						finalResult = nullptr;
-						return finalResult;
-					}
-				}
-
-				// test my personal "using" namespaces completely
-				if (using_m.size() > 0ull) {
-					for (auto& childNamespace : using_m) {
-						if (childNamespace) {
-							auto& flag = *childNamespace->check_flag;
-							if (flag.second) { continue; }
-							if (auto ptr = childNamespace->this_m->scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
-									return finalResult;
-								}
-							}
-						}
-					}
-				}
-
-				// test my inherited namespace.
-				for (auto& Parent : DerivedFrom) {
-					if (auto ptr = Parent.lock()) {
-						auto& flag = *ptr->breadcrumb_m.check_flag;
-						if (flag.second) { continue; }
-						if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
-							return finalResult;
-						}
-					}
-				}
-
-				// test all of my parents directly -- hoping to quickly find "it"
-				if (!(searchState & SkipParent)) {
-					Breadcrumb* thisParent = &selfPtr;
-					while (thisParent = thisParent->parent_m) {
-						auto& flag = *thisParent->check_flag;
-						if (flag.first) break;
-						else {
-							flag.first = true;
-							push_back_if_not_at_end(requiringReset, thisParent);
-						}
-						if (thisParent->this_m->is_namespace()) {
-							if (func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace) & SearchResult::Success) {
-								finalResult = thisParent;
-								return finalResult;
-							}
-						}
-						else {
-							if (func(thisParent, searchState | SearchingParents | SkipChildren) & SearchResult::Success) {
-								finalResult = thisParent;
-								return finalResult;
-							}
-						}
-						// check the using statements of the parent.
-						if (auto ptr = thisParent->this_m->scope.lock()) {
-							if (ptr->using_m.size() > 0ull) {
-								for (auto& childNamespace : ptr->using_m) {
-									if (childNamespace) {
-										auto& flag2 = *childNamespace->check_flag;
-										if (flag2.second) continue;
-										if (auto ptr = childNamespace->this_m->scope.lock()) {
-											if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingUsings, requiringReset, depth + 1)) {
-												return finalResult;
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Test my children themselves. 
-				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
-					for (auto& childNamespace : this->children_m) {
-						if (childNamespace.second) {
-							auto& flag = *childNamespace.second->breadcrumb_m.check_flag;
-							if (flag.first) continue;
-							flag.first = true;
-							push_back_if_not_at_end(requiringReset, &childNamespace.second->breadcrumb_m);
-							auto res = func(&childNamespace.second->breadcrumb_m, searchState | SearchingChildren | SkipChildren | SkipParent);
-							if (res & SearchResult::Success) {
-								finalResult = &childNamespace.second->breadcrumb_m;
-								return finalResult;
-							}
-							else if (res & SearchResult::StaticFailure) {
-								flag.second = true;
-							}
-						}
-					}
-				}
-
-
-				// Test my parent completely.
-				if (!(searchState & SkipParent)) {
-					if (selfPtr.parent_m) {
-						auto& flag = *selfPtr.parent_m->check_flag;
-						if (!flag.second) {
-							if (auto ptr = selfPtr.parent_m->this_m->scope.lock()) {
-								if (ptr->self_id_m.is_namespace()) {
-									if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingParents | SearchUpHitNamespace, requiringReset, depth + 1)) {
-										return finalResult;
-									}
-								}
-								else {
-									if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingParents, requiringReset, depth + 1)) {
-										return finalResult;
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Test my children completely. 
-				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
-					if (auto e = this->children_m.end(), f = this->children_m.find(GetChildCache()); f != e) {
-						auto& flag = *f->second->breadcrumb_m.check_flag;
-						if (!flag.second) {
-							if (auto ptr = f->second->self_id_m.scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
-									return finalResult;
-								}
-							}
-						}
-					}
-					for (auto& childNamespace : this->children_m) {
-						if (childNamespace.second) {
-							auto& flag = *childNamespace.second->breadcrumb_m.check_flag;
-							if (flag.second) { continue; }
-							if (auto ptr = childNamespace.second->self_id_m.scope.lock()) {
-								if (finalResult = ptr->FindNearestScopeWhere(func, SearchNumber, SearchTerms, searchState | SearchingChildren | SkipParent, requiringReset, depth + 1)) {
-									SetChildCache(childNamespace.first);
-									return finalResult;
-								}
-							}
-						}
-					}
-				}
-
-				return finalResult;
-			};
-#endif
-
+			
 			void ConstructMemberObjects(DynamicObject& obj) const {
 				for (auto& Parent : DerivedFrom) {
 					if (auto parentType = Parent.lock()) {

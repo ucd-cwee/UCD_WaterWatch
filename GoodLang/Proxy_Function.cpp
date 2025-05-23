@@ -991,7 +991,7 @@ namespace GoodLang {
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-	Proxy_Function Functions::BuildMatch(std::string const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
+	Proxy_Function Functions::BuildMatch(std::string const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
 		if (auto func = at(functionName, Params)) {		
 			if (func->m_function) { // cache (or actual) found
 				bool isTemplateFunc = func->m_function->GetSignature().IsTemplate();
@@ -999,10 +999,22 @@ namespace GoodLang {
 
 				if (isTemplateFunc) {
 					if (AllowTemplateInstantiation) {
+						if (finalCost) {
+							if (func->cost >= details::TypeConversionWorstCaseCost) {
+								func->cost = func->m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+							}
+							*finalCost = func->cost; //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+						}
 						return func->m_function;
 					}
 				}
 				else {
+					if (finalCost) {
+						if (func->cost >= details::TypeConversionWorstCaseCost) {
+							func->cost = func->m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+						}
+						*finalCost = func->cost; //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+					}
 					return func->m_function;
 				}
 			}
@@ -1033,6 +1045,25 @@ namespace GoodLang {
 						auto conversionCost = function.second.second->m_function->conversion_cost_fast(paramTypes, m_typeConverters);
 						if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
 
+						// try to early exit...
+						if (Params.size() == function.second.second->m_function->Arguments().size()) {
+							if (!isTemplateFunc) {
+								if (conversionCost == 0) {
+									if (function.second.second) {
+										// ParamTypes ParamTypesToCache{ params };
+										Function FunctionToCache{ function.second.second->m_function };
+										FunctionToCache.m_isCached = true;
+										FunctionToCache.cost = 0;
+										// if someone already beat us to it, it should return the "current" value
+										if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+											if (finalCost) *finalCost = 0;
+											return func->m_function;
+										}
+									}
+								}
+							}
+						}
+
 						if (isTemplateFunc) {
 							if (AllowTemplateInstantiation) {
 								candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
@@ -1060,8 +1091,10 @@ namespace GoodLang {
 						// ParamTypes ParamTypesToCache{ params };
 						Function FunctionToCache{ candidate.second->m_function };
 						FunctionToCache.m_isCached = true;
+						FunctionToCache.cost = candidate.first;
 						// if someone already beat us to it, it should return the "current" value
 						if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+							if (finalCost) *finalCost = candidate.first;
 							return func->m_function;
 						}
 					}
@@ -1072,10 +1105,16 @@ namespace GoodLang {
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-	Proxy_Function Functions::BuildMatch(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion) {
+	Proxy_Function Functions::BuildMatch(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
 		if (auto func = at(functionName, Params)) {
 			// cache (or actual) found
 			if (func->m_function) {
+				if (finalCost) {
+					if (func->cost >= details::TypeConversionWorstCaseCost) {
+						func->cost = func->m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+					}
+					*finalCost = func->cost; //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+				}
 				return func->m_function;
 			}
 		}
@@ -1125,8 +1164,10 @@ namespace GoodLang {
 										// ParamTypes ParamTypesToCache{ params };
 										Function FunctionToCache{ function.second.second->m_function };
 										FunctionToCache.m_isCached = true;
+										FunctionToCache.cost = 0;
 										// if someone already beat us to it, it should return the "current" value
 										if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+											if (finalCost) *finalCost = 0;
 											return func->m_function;
 										}
 									}
@@ -1162,8 +1203,10 @@ namespace GoodLang {
 						// ParamTypes ParamTypesToCache{ params };
 						Function FunctionToCache{ candidate.second->m_function };
 						FunctionToCache.m_isCached = true;
+						FunctionToCache.cost = candidate.first;
 						// if someone already beat us to it, it should return the "current" value
 						if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+							if (finalCost) *finalCost = candidate.first;
 							return func->m_function;
 						}
 					}
