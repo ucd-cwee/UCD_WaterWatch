@@ -942,29 +942,43 @@ namespace GoodLang {
 
 // "Functions" definitions
 namespace GoodLang {
-	Functions::FunctionPtr Functions::at_unsafe(std::string const& key, ParamTypes const& params) const {
-		if (key.size() > 0) {
+	Functions::FunctionPtr Functions::at_unsafe(std::string_view const& key, ParamTypes const& params) const {
+		if (key.length() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
-
-			auto functionMapPtr = m_functions.find(GetHash(key));
-			if (functionMapPtr != m_functions.end()) {
-				auto FunctionSortPtr = functionMapPtr->second.second.find(params.hash());
-				if (FunctionSortPtr != functionMapPtr->second.second.end()) {
+			if (auto functionMapPtr = m_functions.find(GetHash(key)), e = m_functions.end(); functionMapPtr != e) {
+				if (auto FunctionSortPtr = functionMapPtr->second.second.find(params.hash()), e2 = functionMapPtr->second.second.end(); FunctionSortPtr != e2) {
 					return FunctionSortPtr->second.second;
 				}
 			}
 		}
 		return nullptr;
 	};
-	Functions::FunctionPtr Functions::operator()(std::string const& key, ParamTypes const& params) const {
-		// auto locked{ std::shared_lock(m_mut) };
+	Functions::FunctionPtr Functions::operator()(std::string_view const& key, ParamTypes const& params) const {
 		return at_unsafe(key, params);
 	};
-	Functions::FunctionPtr Functions::at(std::string const& key, ParamTypes const& params) const {
+	Functions::FunctionPtr Functions::at(std::string_view const& key, ParamTypes const& params) const {
 		return operator()(key, params);
 	};
-	Functions::FunctionPtr Functions::emplace(std::string const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists) {
-		if (key.size() > 0) {
+
+	Functions::FunctionPtr Functions::at_unsafe(char c, size_t key, ParamTypes const& params) const {
+		auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(c)]; // try to reduce conflict by splitting on the first letter
+		if (auto functionMapPtr = m_functions.find(key), e = m_functions.end(); functionMapPtr != e) {
+			if (auto FunctionSortPtr = functionMapPtr->second.second.find(params.hash()), e2 = functionMapPtr->second.second.end(); FunctionSortPtr != e2) {
+				return FunctionSortPtr->second.second;
+			}
+		}
+		return nullptr;
+	};
+	Functions::FunctionPtr Functions::operator()(char c, size_t key, ParamTypes const& params) const {
+		return at_unsafe(c, key, params);
+	};
+	Functions::FunctionPtr Functions::at(char c, size_t key, ParamTypes const& params) const {
+		return operator()(c, key, params);
+	};
+
+
+	Functions::FunctionPtr Functions::emplace(std::string_view const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists) {
+		if (key.length() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
 
 			auto& ptr = m_functions[GetHash(key)].second[params.hash()].second;
@@ -976,8 +990,8 @@ namespace GoodLang {
 			return nullptr;
 		}
 	};
-	Functions::FunctionPtr Functions::emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists) {
-		if (key.size() > 0) {
+	Functions::FunctionPtr Functions::emplace(std::string_view const& key, Function const& func, bool replaceIfAlreadyExists) {
+		if (key.length() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
 
 			auto& ptr = m_functions[GetHash(key)].second[func.m_function->Arguments().Types().hash()].second;
@@ -991,8 +1005,10 @@ namespace GoodLang {
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-	Proxy_Function Functions::BuildMatch(std::string const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
-		if (auto func = at(functionName, Params)) {		
+	Proxy_Function Functions::BuildMatch(std::string_view const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
+		if (functionName.length() == 0) return nullptr;		
+		size_t functionNameHash = GetHash(functionName);
+		if (auto func = at(functionName[0], functionNameHash, Params)) {
 			if (func->m_function) { // cache (or actual) found
 				bool isTemplateFunc = func->m_function->GetSignature().IsTemplate();
 				bool isExplicitFunc = func->m_isEplicit;
@@ -1034,7 +1050,7 @@ namespace GoodLang {
 
 				if (functionName.size() > 0) {
 					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
-					auto& m_func_find = m_functions[GetHash(functionName)];
+					auto& m_func_find = m_functions[functionNameHash];
 					for (auto& function : m_func_find.second) {
 						if (!function.second.second) continue;
 						if (!function.second.second->m_function) continue;
@@ -1105,8 +1121,10 @@ namespace GoodLang {
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-	Proxy_Function Functions::BuildMatch(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
-		if (auto func = at(functionName, Params)) {
+	Proxy_Function Functions::BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
+		if (functionName.length() == 0) return nullptr;
+		size_t functionNameHash = GetHash(functionName);
+		if (auto func = at(functionName[0], functionNameHash, Params)) {
 			// cache (or actual) found
 			if (func->m_function) {
 				if (finalCost) {
@@ -1133,7 +1151,7 @@ namespace GoodLang {
 
 				if (functionName.size() > 0) {
 					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
-					auto& m_func_find = m_functions[GetHash(functionName)];
+					auto& m_func_find = m_functions[functionNameHash];
 					double conversionCost;
 					for (auto& function : m_func_find.second) {
 						if (!function.second.second) continue;

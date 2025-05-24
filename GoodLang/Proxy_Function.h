@@ -3573,18 +3573,21 @@ namespace GoodLang {
 			//m_functions;
 
 	private:
-		FunctionPtr at_unsafe(std::string const& key, ParamTypes const& params) const;
+		FunctionPtr at_unsafe(std::string_view const& key, ParamTypes const& params) const;
+		FunctionPtr at_unsafe(char c, size_t key, ParamTypes const& params) const;
 
 	public:
-		FunctionPtr operator()(std::string const& key, ParamTypes const& params) const;
-		FunctionPtr at(std::string const& key, ParamTypes const& params) const;
+		FunctionPtr operator()(std::string_view const& key, ParamTypes const& params) const;
+		FunctionPtr at(std::string_view const& key, ParamTypes const& params) const;
+		FunctionPtr operator()(char c, size_t key, ParamTypes const& params) const;
+		FunctionPtr at(char c, size_t key, ParamTypes const& params) const;
 
-		FunctionPtr emplace(std::string const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists = false);
-		FunctionPtr emplace(std::string const& key, Function const& func, bool replaceIfAlreadyExists = false);
+		FunctionPtr emplace(std::string_view const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists = false);
+		FunctionPtr emplace(std::string_view const& key, Function const& func, bool replaceIfAlreadyExists = false);
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		Proxy_Function BuildMatch(std::string const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
-		Proxy_Function BuildMatch(std::string const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
+		Proxy_Function BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
+		Proxy_Function BuildMatch(std::string_view const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
 		Any Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
 
 	};
