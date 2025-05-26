@@ -1220,7 +1220,11 @@ namespace GoodLang {
 				size_t name_hash = Name.hash();
 				size_t name2_hash;
 				auto len = Name.length();
-				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
+
+				if (name_hash == default_namespace_hash) {
+					return this->breadcrumb_m.root_m;
+				}
+				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
 				}
 				else {
@@ -1264,11 +1268,14 @@ namespace GoodLang {
 			};
 			Breadcrumb* FindNamespace(compound_string_view const& Name) const {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
-
 				size_t name_hash = Name.hash();
 				size_t name2_hash;
 				auto len = Name.length();
-				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
+
+				if (name_hash == default_namespace_hash) {
+					return this->breadcrumb_m.root_m;
+				}
+				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
 				}
 				else {
@@ -1317,7 +1324,10 @@ namespace GoodLang {
 				size_t name_hash = Name.hash();
 				size_t name2_hash;
 				auto len = Name.length();
-				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
+				if (name_hash == default_namespace_hash) {
+					return this->breadcrumb_m.root_m;
+				}
+				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
 				}
 				else {
@@ -1357,77 +1367,26 @@ namespace GoodLang {
 				else {
 					return nullptr;
 				}
-			};
-			Breadcrumb* FindClass(compound_string_view const& Name) const {
-				static size_t default_namespace_hash{ GetHash(std::string("::")) };
-				size_t name_hash = Name.hash();
-				size_t name2_hash;
-				auto len = Name.length();
-				if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
-					name2_hash = name_hash;
-				}
-				else {
-					compound_string_view temp = Name;
-					Breadcrumb::RemoveLeading(temp, ':');
-					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
-					// instead of "Color", it searches for "::UI::Color::"
-				}
-
-				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
-					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
-					long long QualifiedNameLen = namespacePtr->current_namespace.length();
-
-					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
-
-					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > Name.length()) {
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
-							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-							//	return SearchResult::Failure | SearchResult::StaticFailure;
-							//}
-							else return SearchResult::Failure;
-						}
+			};			
+			Breadcrumb* FindClass(std::shared_ptr<Type_Info> const& type) const {
+				if (!this->is_namespace()) {
+					if (auto ptr = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
+						return ptr->FindClass(type);
 					}
-					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
-					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
-
+				}
+				size_t hash = type->uniqueHash;
+				if (auto BC = FindNearestScopeWhere([&hash](Breadcrumb* namespacePtr, int search_state)->int {
+					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
+					if (namespacePtr->class_type_hash == hash) {
+						return SearchResult::Success;
+					}
 					return SearchResult::Failure;
-					})) {
+				})) {
 					return BC;
 				}
 				else {
 					return nullptr;
 				}
-			};
-			Breadcrumb* FindClass(std::shared_ptr<Type_Info> const& type) const {
-				//if (!type->name().empty()) {
-				//	return FindClass(type->name());
-				//}
-				//else {
-					if (!this->is_namespace()) {
-						if (auto ptr = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
-							return ptr->FindClass(type);
-						}
-					}
-					size_t hash = type->uniqueHash;
-					if (auto BC = FindNearestScopeWhere([&hash](Breadcrumb* namespacePtr, int search_state)->int {
-						if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
-						if (namespacePtr->class_type_hash == hash) {
-							return SearchResult::Success;
-						}
-						return SearchResult::Failure;
-					})) {
-						return BC;
-					}
-					else {
-						return nullptr;
-					}
-				//}
 			};
 
 			// Explicitely looks for an object with the given name. Name may include specialization for the namespace to expect the object in. E.g.: 
