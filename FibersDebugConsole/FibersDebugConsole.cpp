@@ -107,6 +107,14 @@ namespace GoodLang {
 		bool empty() const {
 			return length() == 0;
 		};
+		size_t Cmpn(const std::string_view& rhs, size_t n = std::string::npos) const {
+			long long j = std::min<long long>(rhs.length(), length());
+			if (n > j) return false;
+			for (j = j - 1; (j >= 0) && (n > 0); --j, --n) {
+				if (rhs[j] != operator[](j)) return false;
+			}
+			return true;
+		};
 		friend bool operator==(compound_string_view const& lhs, const std::string_view& rhs) {
 			if (rhs.length() != lhs.length()) return false;
 			for (long long j = lhs.length() - 1; j >= 0; --j) {
@@ -127,7 +135,6 @@ namespace GoodLang {
 		friend bool operator!=(const std::string_view& rhs, compound_string_view const& lhs) {
 			return !operator==(lhs, rhs);
 		};
-
 
 		void remove_prefix(long long n) {
 			if ((n > 0) && a.length() > 0) {
@@ -502,7 +509,20 @@ namespace GoodLang {
 				if (FIND.length() > WITHIN.length()) return std::string::npos;
 				return FindString(WITHIN, FIND, casesensitive, start, end);
 			};
+			static size_t			FindPrefixOrSuffix(compound_string_view const& WITHIN, std::string_view const& FIND) {
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
 
+				if (WITHIN.Cmpn(FIND, FIND.length())) {
+					return 0;
+				}
+				else if (WITHIN.substr(WITHIN.length() - FIND.length(), FIND.length()).Cmpn(FIND, FIND.length())) {
+					return 0;
+				}
+				else {
+					return std::string::npos;
+				}
+			};
 
 
 			static size_t			rFind(std::string_view const& WITHIN, std::string_view const& FIND) {
@@ -1193,10 +1213,10 @@ namespace GoodLang {
 							if (QualifiedNameLen > Name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
+							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
+							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+							//	return SearchResult::Failure | SearchResult::StaticFailure;
+							//}
 							else return SearchResult::Failure;
 						}
 					}
@@ -1241,10 +1261,10 @@ namespace GoodLang {
 							if (QualifiedNameLen > Name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
+							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
+							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+							//	return SearchResult::Failure | SearchResult::StaticFailure;
+							//}
 							else return SearchResult::Failure;
 						}
 					}
@@ -1290,10 +1310,10 @@ namespace GoodLang {
 							if (QualifiedNameLen > Name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
+							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
+							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+							//	return SearchResult::Failure | SearchResult::StaticFailure;
+							//}
 							else return SearchResult::Failure;							
 						}
 					}
@@ -1336,10 +1356,10 @@ namespace GoodLang {
 							if (QualifiedNameLen > Name.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
+							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
+							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+							//	return SearchResult::Failure | SearchResult::StaticFailure;
+							//}
 							else return SearchResult::Failure;
 						}
 					}
@@ -1496,10 +1516,10 @@ namespace GoodLang {
 									if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 										return SearchResult::Failure | SearchResult::StaticFailure;
 									}
-									if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
-										// e.g. looking for "std::string::" but this namespace was "::UI::"
-										return SearchResult::Failure | SearchResult::StaticFailure;
-									}
+									//if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
+									//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+									//	return SearchResult::Failure | SearchResult::StaticFailure;
+									//}
 									return SearchResult::Failure;
 								}
 							}
@@ -1632,10 +1652,10 @@ namespace GoodLang {
 							if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
+							//if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
+							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+							//	return SearchResult::Failure | SearchResult::StaticFailure;
+							//}
 							return SearchResult::Failure;
 						}
 					}
@@ -1716,10 +1736,10 @@ namespace GoodLang {
 							if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
-								// e.g. looking for "std::string::" but this namespace was "::UI::"
-								return SearchResult::Failure | SearchResult::StaticFailure;
-							}
+							//if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
+							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
+							//	return SearchResult::Failure | SearchResult::StaticFailure;
+							//}
 							return SearchResult::Failure;
 						}
 					}
