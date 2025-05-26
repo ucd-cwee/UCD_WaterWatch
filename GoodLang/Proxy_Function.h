@@ -202,7 +202,7 @@ namespace GoodLang {
 
 		class DaisyChained_Type_Conversion_Impl : public Type_Conversion_Base {
 		public:
-			DaisyChained_Type_Conversion_Impl(std::vector<GoodLang::shared_ptr<Type_Conversion_Base>>&& t_converters);
+			DaisyChained_Type_Conversion_Impl(std::vector<std::shared_ptr<Type_Conversion_Base>>&& t_converters);
 
 			// To -> From
 			Any convert_down(const Any&) const override;
@@ -222,7 +222,7 @@ namespace GoodLang {
 			virtual bool IsDaisyChained() const override;
 			virtual size_t NumConversions() const override;
 		private:
-			std::vector<GoodLang::shared_ptr<Type_Conversion_Base>> m_converters;
+			std::vector<std::shared_ptr<Type_Conversion_Base>> m_converters;
 			double m_cost;
 		};
 
@@ -319,7 +319,7 @@ namespace GoodLang {
 		};
 
 		// Create a wrapped user-defined function to cast provided types. Must have one (and only one) argument in the function. Argument may be an Any and do wild stuff.
-		template<class Callable> __forceinline GoodLang::shared_ptr<Type_Conversion_Base> MakeConversionFunc(Callable func) {
+		template<class Callable> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc(Callable func) {
 			typedef decltype(std::function(std::declval<Callable>())) CallableTypeAsStdFunc;
 			typedef typename utilities::function_traits< CallableTypeAsStdFunc >::arguments CallableArguments;
 			if constexpr (std::tuple_size_v< CallableArguments > != 1) {
@@ -332,26 +332,26 @@ namespace GoodLang {
 				constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
 				constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
 
-				return GoodLang::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl(std::move(func)));
+				return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl(std::move(func)));
 			}
 
 		};
 
 		// Create a function to cast from "From" to "To". Supports static or dynamic (polymorphic) casting. 
-		template<typename From, typename To> __forceinline GoodLang::shared_ptr<Type_Conversion_Base> MakeConversionFunc() {
+		template<typename From, typename To> __forceinline std::shared_ptr<Type_Conversion_Base> MakeConversionFunc() {
 			constexpr static bool is_convertable = impl::is_explicitly_convertible_to<From, To>::value;
 			constexpr static bool is_bidir_convertable = impl::is_explicitly_convertible_to<To, From>::value;
 			constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
 
 			if constexpr (is_polymorphic) {
-				return GoodLang::shared_ptr<Type_Conversion_Base >(new Dynamic_Type_Conversion_Impl<From, To>());
+				return std::shared_ptr<Type_Conversion_Base >(new Dynamic_Type_Conversion_Impl<From, To>());
 			}
 			else {
 				if constexpr (is_convertable) {
-					return GoodLang::shared_ptr< Type_Conversion_Base >(new Static_Type_Conversion_Impl<From, To>());
+					return std::shared_ptr< Type_Conversion_Base >(new Static_Type_Conversion_Impl<From, To>());
 				}
 				else {
-					return GoodLang::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl([](From const& i) -> To { return To(i); }));
+					return std::shared_ptr< Type_Conversion_Base >(new Custom_Type_Conversion_Impl([](From const& i) -> To { return To(i); }));
 				}
 			}
 		};
@@ -395,7 +395,7 @@ namespace GoodLang {
 		};
 
 	public:
-		typedef GoodLang::shared_ptr< details::Type_Conversion_Base > TypeConverterFunc;
+		typedef std::shared_ptr< details::Type_Conversion_Base > TypeConverterFunc;
 
 		TypeConverter() = default;
 		TypeConverter(TypeConverter const& rhs) {
@@ -416,7 +416,7 @@ namespace GoodLang {
 		// All conversions, will include "real" and cached conversions.
 		typedef concurrency::concurrent_unordered_map< std::shared_ptr<Type_Info>, // From
 			concurrency::concurrent_unordered_map< size_t, // To
-			std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc> // Function (lock allows for overwriting functions)
+			std::pair<std::shared_ptr<Type_Info>, const TypeConverterFunc> // Function (lock allows for overwriting functions)
 			>
 		> conversionTreeType;
 		conversionTreeType AllConversions;
@@ -455,11 +455,13 @@ namespace GoodLang {
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					if (1) {
-						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
-						if (!pair.first) pair.first = To.lock();
-						pair.second = func;
-					}
+					AllConversions[From.lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{
+						GetHash(To.lock()),
+						std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{
+							To.lock(),
+							func
+						}
+					});
 					AddDefaultConverters(From);
 				}
 			}
@@ -469,11 +471,13 @@ namespace GoodLang {
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					if (1) {
-						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
-						if (!pair.first) pair.first = To.lock();
-						pair.second = func;
-					}
+					AllConversions[From.lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{
+						GetHash(To.lock()),
+							std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{
+							To.lock(),
+								func
+						}
+					});
 					AddDefaultConverters(From);
 				}
 			}
@@ -484,11 +488,13 @@ namespace GoodLang {
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					if (1) {
-						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
-						if (!pair.first) pair.first = To.lock();
-						pair.second = func;
-					}
+					AllConversions[From.lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{
+						GetHash(To.lock()),
+							std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{
+							To.lock(),
+								func
+						}
+					});
 				}
 			}
 			if constexpr (std::is_copy_constructible<typename std::decay_t<To_t>>::value) {
@@ -496,11 +502,13 @@ namespace GoodLang {
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					if (1) {
-						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
-						if (!pair.first) pair.first = To.lock();
-						pair.second = func;
-					}
+					AllConversions[From.lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{
+						GetHash(To.lock()),
+							std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{
+							To.lock(),
+								func
+						}
+					});
 				}
 			}
 
@@ -517,11 +525,13 @@ namespace GoodLang {
 				if (func) {
 					auto& From = func->from();
 					auto& To = func->to();
-					if (1) {
-						auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
-						if (!pair.first) pair.first = To.lock();
-						pair.second = func;
-					}
+					AllConversions[From.lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{
+						GetHash(To.lock()),
+							std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{
+							To.lock(),
+								func
+						}
+					});
 					AddDefaultConverters(From);
 					AddDefaultConverters(To);
 				}
@@ -545,18 +555,20 @@ namespace GoodLang {
 					AddConverter(Func);
 				}
 				else {
-					GoodLang::shared_ptr<details::Type_Conversion_Base> func = details::MakeConversionFunc(std::move(Func));
-					if (auto func_actual = GoodLang::shared_ptr<details::Custom_Type_Conversion_Impl<Callable>>(func)) {
+					auto func = details::MakeConversionFunc(std::move(Func));
+					if (auto func_actual = std::dynamic_pointer_cast<details::Custom_Type_Conversion_Impl<Callable>>(func)) {
 						func_actual->SetTemplateTypes(FromType, ToType);
 
 						if (func) {
 							auto& From = func->from();
 							auto& To = func->to();
-							if (1) {
-								auto& pair = AllConversions[From.lock()][GetHash(To.lock())];
-								if (!pair.first) pair.first = To.lock();
-								pair.second = func;
-							}
+							AllConversions[From.lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{
+								GetHash(To.lock()),
+									std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{
+									To.lock(),
+										func
+								}
+							});
 							AddDefaultConverters(From);
 							AddDefaultConverters(To);
 						}
@@ -3573,21 +3585,21 @@ namespace GoodLang {
 			//m_functions;
 
 	private:
-		FunctionPtr at_unsafe(std::string_view const& key, ParamTypes const& params) const;
-		FunctionPtr at_unsafe(char c, size_t key, ParamTypes const& params) const;
+		FunctionPtr const& at_unsafe(std::string_view const& key, ParamTypes const& params) const;
+		FunctionPtr const& at_unsafe(char c, size_t key, ParamTypes const& params) const;
 
 	public:
-		FunctionPtr operator()(std::string_view const& key, ParamTypes const& params) const;
-		FunctionPtr at(std::string_view const& key, ParamTypes const& params) const;
-		FunctionPtr operator()(char c, size_t key, ParamTypes const& params) const;
-		FunctionPtr at(char c, size_t key, ParamTypes const& params) const;
+		FunctionPtr const& operator()(std::string_view const& key, ParamTypes const& params) const;
+		FunctionPtr const& at(std::string_view const& key, ParamTypes const& params) const;
+		FunctionPtr const& operator()(char c, size_t key, ParamTypes const& params) const;
+		FunctionPtr const& at(char c, size_t key, ParamTypes const& params) const;
 
 		FunctionPtr emplace(std::string_view const& key, ParamTypes const& params, Function const& func, bool replaceIfAlreadyExists = false);
 		FunctionPtr emplace(std::string_view const& key, Function const& func, bool replaceIfAlreadyExists = false);
 
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-		Proxy_Function BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
-		Proxy_Function BuildMatch(std::string_view const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
+		Proxy_Function const& BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
+		Proxy_Function const& BuildMatch(std::string_view const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
 		Any Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
 
 	};

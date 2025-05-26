@@ -11,9 +11,9 @@
 // Type_Conversion_Base, its impl's, & TypeConverter wrapper
 namespace GoodLang {
 	namespace details {
-		DaisyChained_Type_Conversion_Impl::DaisyChained_Type_Conversion_Impl(std::vector<GoodLang::shared_ptr<Type_Conversion_Base>>&& t_converters)
+		DaisyChained_Type_Conversion_Impl::DaisyChained_Type_Conversion_Impl(std::vector<std::shared_ptr<Type_Conversion_Base>>&& t_converters)
 			: Type_Conversion_Base()
-			, m_converters(std::forward<std::vector<GoodLang::shared_ptr<Type_Conversion_Base>>>(t_converters))
+			, m_converters(std::forward<std::vector<std::shared_ptr<Type_Conversion_Base>>>(t_converters))
 			, m_cost(0)
 		{
 			for (int index = m_converters.size() - 2; index >= 1; --index) {
@@ -265,10 +265,8 @@ namespace GoodLang {
 			utilities::FastAllocator<UniformCostSearchNodeBestPath, 1024>& alloc2,
 			conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
 				// create the shortest paths from "From" to all possible vertices. 
-				std::unordered_map <
-					size_t
-					, std::pair<std::shared_ptr<Type_Info>, UniformCostSearchNode*>
-				> vertices;
+				// details::flat_map< size_t, std::pair<std::shared_ptr<Type_Info>, UniformCostSearchNode*> > vertices;
+				std::unordered_map <size_t, std::pair<std::shared_ptr<Type_Info>, UniformCostSearchNode*>> vertices;
 
 				if (1) {
 					// create an empty vertex set
@@ -346,7 +344,7 @@ namespace GoodLang {
 			if (1) {
 				std::shared_ptr<Type_Info> currentNodeType;
 				std::vector<std::weak_ptr<Type_Info>> pathToFollow;
-				thread_local std::vector<GoodLang::shared_ptr<details::Type_Conversion_Base>> functors;
+				thread_local std::vector<std::shared_ptr<details::Type_Conversion_Base>> functors;
 				TypeConverterFunc newConverter;
 				conversionTreeType::iterator p1;
 				conversionTreeType::value_type::second_type::iterator p2;
@@ -403,8 +401,7 @@ namespace GoodLang {
 											}
 										}
 										if (functors.size() > 1) {
-											newConverter = GoodLang::make_shared<details::DaisyChained_Type_Conversion_Impl>(std::move(functors));
-											// newConverter = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::DaisyChained_Type_Conversion_Impl(std::move(functors)));
+											newConverter = std::make_shared<details::DaisyChained_Type_Conversion_Impl>(std::move(functors));
 										}
 										else {
 											continue; // do nothing, assuming either the conversion failed or the shorter version was obviously already in the list.
@@ -429,16 +426,15 @@ namespace GoodLang {
 				while (!toAdd.empty()) {
 					auto& toDo = toAdd.front();
 					{
-						auto& pair = FromPair[GetHash(std::get<0>(toDo))];
-
-						if (!pair.first) pair.first = std::get<0>(toDo);
-
-						if ((pair.second && (pair.second->NumConversions() < std::get<2>(toDo))) || (pair.second && (pair.second->cost() <= std::get<3>(toDo)))) {
+						if (FromPair.find(GetHash(std::get<0>(toDo))) == FromPair.end()) {
+							FromPair.insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ 
+								GetHash(std::get<0>(toDo)),
+								std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ 
+									std::get<0>(toDo),
+									std::get<1>(toDo)
+								}
+							});
 						}
-						else {
-							pair.second = std::get<1>(toDo);
-						}
-
 					}
 					toAdd.pop_front();
 				}
@@ -471,89 +467,47 @@ namespace GoodLang {
 						bool ExistsAlready = false;
 
 						// Base -> const Base
-						{
-							auto& pair = AllConversions[baseType][GetHash(constType)];
-							if (!pair.first) pair.first = constType;
-							ExistsAlready = pair.second.operator bool();
-						}
-						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, constType))) {
-								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
-								if (!pair.first) pair.first = func->to().lock();
-								pair.second = func;
+						if (AllConversions[baseType].find(GetHash(constType)) == AllConversions[baseType].end()) {
+							if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, constType))) {
+								AllConversions[func->from().lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ GetHash(func->to().lock()), std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ func->to().lock(), func } });
 							}
 						}
 
 						// Base -> Base&
-						{
-							auto& pair = AllConversions[baseType][GetHash(refType)];
-							if (!pair.first) pair.first = refType;
-							ExistsAlready = pair.second.operator bool();
-						}
-						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, refType))) {
-								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
-								if (!pair.first) pair.first = func->to().lock();
-								pair.second = func;
+						if (AllConversions[baseType].find(GetHash(refType)) == AllConversions[baseType].end()) {
+							if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, refType))) {
+								AllConversions[func->from().lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ GetHash(func->to().lock()), std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ func->to().lock(), func } });
 							}
 						}
 
 						// Base -> const Base&
-						{
-							auto& pair = AllConversions[baseType][GetHash(constRefType)];
-							if (!pair.first) pair.first = constRefType;
-							ExistsAlready = pair.second.operator bool();
-						}
-						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, constRefType))) {
-								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
-								if (!pair.first) pair.first = func->to().lock();
-								pair.second = func;
+						if (AllConversions[baseType].find(GetHash(constRefType)) == AllConversions[baseType].end()) {
+							if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(baseType, constRefType))) {
+								AllConversions[func->from().lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ GetHash(func->to().lock()), std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ func->to().lock(), func } });
 							}
 						}
 
 						// const Base -> const Base&
-						{
-							auto& pair = AllConversions[constType][GetHash(constRefType)];
-							if (!pair.first) pair.first = constRefType;
-							ExistsAlready = pair.second.operator bool();
-						}
-						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(constType, constRefType))) {
-								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
-								if (!pair.first) pair.first = func->to().lock();
-								pair.second = func;
+						if (AllConversions[constType].find(GetHash(constRefType)) == AllConversions[constType].end()) {
+							if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(constType, constRefType))) {
+								AllConversions[func->from().lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ GetHash(func->to().lock()), std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ func->to().lock(), func } });
 							}
 						}
 
 						// Base& -> const Base&
-						{
-							auto& pair = AllConversions[refType][GetHash(constRefType)];
-							if (!pair.first) pair.first = constRefType;
-							ExistsAlready = pair.second.operator bool();
-						}
-						if (!ExistsAlready) {
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(refType, constRefType))) {
-								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
-								if (!pair.first) pair.first = func->to().lock();
-								pair.second = func;
+						if (AllConversions[refType].find(GetHash(constRefType)) == AllConversions[refType].end()) {
+							if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Type_Override_Conversion_Impl(refType, constRefType))) {
+								AllConversions[func->from().lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ GetHash(func->to().lock()), std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ func->to().lock(), func } });
 							}
 						}
 
 						// const Base& -> Base
-						{
-							auto& pair = AllConversions[constRefType][GetHash(baseType)];
-							if (!pair.first) pair.first = baseType;
-							ExistsAlready = pair.second.operator bool();
-						}
-						if (!ExistsAlready) {
+						if (AllConversions[constRefType].find(GetHash(baseType)) == AllConversions[constRefType].end()) {
 							auto& copyConstructor = baseType->GetCopyConstructor();
-							if (auto func = GoodLang::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([&copyConstructor](Any const& x)->Any {
+							if (auto func = std::shared_ptr< details::Type_Conversion_Base >(new details::Custom_Type_Conversion_Impl([&copyConstructor](Any const& x)->Any {
 								return copyConstructor(x);
 							}, constRefType, baseType))) {
-								auto& pair = AllConversions[func->from().lock()][GetHash(func->to().lock())];
-								if (!pair.first) pair.first = func->to().lock();
-								pair.second = func;
+								AllConversions[func->from().lock()].insert(std::pair<size_t, std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>>{ GetHash(func->to().lock()), std::pair<std::shared_ptr<Type_Info>, TypeConverterFunc>{ func->to().lock(), func } });
 							}
 						}
 
@@ -942,7 +896,8 @@ namespace GoodLang {
 
 // "Functions" definitions
 namespace GoodLang {
-	Functions::FunctionPtr Functions::at_unsafe(std::string_view const& key, ParamTypes const& params) const {
+	Functions::FunctionPtr const& Functions::at_unsafe(std::string_view const& key, ParamTypes const& params) const {
+		static Functions::FunctionPtr out{ nullptr };
 		if (key.length() > 0) {
 			auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(key[0])]; // try to reduce conflict by splitting on the first letter
 			if (auto functionMapPtr = m_functions.find(GetHash(key)), e = m_functions.end(); functionMapPtr != e) {
@@ -951,28 +906,31 @@ namespace GoodLang {
 				}
 			}
 		}
-		return nullptr;
+		return out;
 	};
-	Functions::FunctionPtr Functions::operator()(std::string_view const& key, ParamTypes const& params) const {
+	Functions::FunctionPtr const& Functions::operator()(std::string_view const& key, ParamTypes const& params) const {
 		return at_unsafe(key, params);
 	};
-	Functions::FunctionPtr Functions::at(std::string_view const& key, ParamTypes const& params) const {
+	Functions::FunctionPtr const& Functions::at(std::string_view const& key, ParamTypes const& params) const {
 		return operator()(key, params);
 	};
 
-	Functions::FunctionPtr Functions::at_unsafe(char c, size_t key, ParamTypes const& params) const {
+	Functions::FunctionPtr const& Functions::at_unsafe(char c, size_t key, ParamTypes const& params) const {
+		static Functions::FunctionPtr out{ nullptr };
 		auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(c)]; // try to reduce conflict by splitting on the first letter
+		if (m_functions.size() == 0ull) return out;
 		if (auto functionMapPtr = m_functions.find(key), e = m_functions.end(); functionMapPtr != e) {
+			if (functionMapPtr->second.second.size() == 0ull) return out;
 			if (auto FunctionSortPtr = functionMapPtr->second.second.find(params.hash()), e2 = functionMapPtr->second.second.end(); FunctionSortPtr != e2) {
 				return FunctionSortPtr->second.second;
 			}
 		}
-		return nullptr;
+		return out;
 	};
-	Functions::FunctionPtr Functions::operator()(char c, size_t key, ParamTypes const& params) const {
+	Functions::FunctionPtr const& Functions::operator()(char c, size_t key, ParamTypes const& params) const {
 		return at_unsafe(c, key, params);
 	};
-	Functions::FunctionPtr Functions::at(char c, size_t key, ParamTypes const& params) const {
+	Functions::FunctionPtr const& Functions::at(char c, size_t key, ParamTypes const& params) const {
 		return operator()(c, key, params);
 	};
 
@@ -1005,8 +963,10 @@ namespace GoodLang {
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-	Proxy_Function Functions::BuildMatch(std::string_view const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
-		if (functionName.length() == 0) return nullptr;		
+	Proxy_Function const& Functions::BuildMatch(std::string_view const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
+		static Proxy_Function null_func{ nullptr };
+		
+		if (functionName.length() == 0) return null_func;
 		size_t functionNameHash = GetHash(functionName);
 		if (auto func = at(functionName[0], functionNameHash, Params)) {
 			if (func->m_function) { // cache (or actual) found
@@ -1117,12 +1077,14 @@ namespace GoodLang {
 				}
 			}
 		}
-		return nullptr;
+		return null_func;
 	};
 
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
-	Proxy_Function Functions::BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
-		if (functionName.length() == 0) return nullptr;
+	Proxy_Function const& Functions::BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
+		static Proxy_Function null_func{ nullptr }; 
+		
+		if (functionName.length() == 0) return null_func;
 		size_t functionNameHash = GetHash(functionName);
 		if (auto func = at(functionName[0], functionNameHash, Params)) {
 			// cache (or actual) found
@@ -1231,11 +1193,11 @@ namespace GoodLang {
 				}
 			}
 		}
-		return nullptr;
+		return null_func;
 	};
 
 	Any Functions::Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters) {
-		if (auto f = BuildMatch(functionName, params, ParamTypes(params), m_typeConverters)) {
+		if (auto& f = BuildMatch(functionName, params, ParamTypes(params), m_typeConverters)) {
 			return f->operator()(params, m_typeConverters);
 		}
 		else {
