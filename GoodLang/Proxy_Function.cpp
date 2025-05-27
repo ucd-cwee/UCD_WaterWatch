@@ -1004,8 +1004,8 @@ namespace GoodLang {
 
 			// Create candidates.
 			{
-				thread_local std::vector<std::shared_ptr<Type_Info>> paramTypes{ Params.size() };
-				defer(paramTypes.clear());
+				std::vector<std::shared_ptr<Type_Info>> paramTypes;
+				paramTypes.reserve(Params.size());
 				for (auto& x : Params) paramTypes.push_back(x.lock());
 
 				if (functionName.size() > 0) {

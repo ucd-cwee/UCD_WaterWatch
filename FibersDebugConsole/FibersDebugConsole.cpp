@@ -237,38 +237,114 @@ namespace GoodLang {
 			};
 		};
 
+		class ThreadFlagsImpl {
+		protected:
+			size_t scope_index;
+
+		public:
+			static concurrency::concurrent_vector<ThreadFlagsImpl>& Instances() {
+				concurrency::concurrent_vector<ThreadFlagsImpl> out;
+				return out;
+			}
+			static concurrency::concurrent_queue<size_t>& Free() {
+				concurrency::concurrent_queue<size_t> out;
+				return out;
+			}
+
+			// when a new Breadcrumb shows up, it can register with the global shared quantity.
+			static ThreadFlagsImpl& GetInstance() {
+				size_t scope_index;
+				if (Free().try_pop(scope_index)) {
+					auto bg = Instances().grow_by(1);
+					bg->scope_index = scope_index;
+					scope_index = std::distance(Instances().begin(), bg);
+				}
+				auto& out{ Instances()[scope_index] };
+
+				return out;
+			};
+			static void ReturnInstance(ThreadFlagsImpl& ptr) {				
+				Free().push(ptr.scope_index);
+			};
+		};
+		class ThreadFlags {
+		private:
+			ThreadFlagsImpl& source;
+
+		public:
+			ThreadFlags() : source(ThreadFlagsImpl::GetInstance()) {};
+			~ThreadFlags() { ThreadFlagsImpl::ReturnInstance(source); };
+
+		};
+
+
+
+		class ThreadLocalFlags {
+		private:
+			class ThreadLocalFlagsIndex {
+			public:
+				ThreadLocalFlagsIndex(size_t id) : index(id) {};
+				~ThreadLocalFlagsIndex() {
+					indexes().push(index);
+				};
+				size_t index;
+			};
+			static ThreadLocalFlagsIndex GetThreadID_impl() {
+				static std::atomic<size_t> T;
+				size_t out;
+				while (!indexes().try_pop(out)) {
+					indexes().push(T.fetch_add(1));
+				}
+				return ThreadLocalFlagsIndex(out);
+			};
+			static concurrency::concurrent_queue<size_t>& indexes() {
+				static concurrency::concurrent_queue<size_t> out;
+				return out;
+			};
+			std::pair<bool, bool> TLS_arr[GoodLang::EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum];
+		public:
+			static ThreadLocalFlagsIndex& GetThreadID() {
+				thread_local ThreadLocalFlagsIndex out{ GetThreadID_impl() };
+				return out;
+			};
+			std::pair<bool, bool>& operator[](ThreadLocalFlagsIndex const& index) {
+				return TLS_arr[index.index];
+			};
+			const std::pair<bool, bool>& operator[](ThreadLocalFlagsIndex const& index) const {
+				return TLS_arr[index.index];
+			};
+		};
+
 		template <typename T> class ThreadLocal {
 		private:
 			std::array<T, GoodLang::EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum> TLS_arr;
-			
+						
 			auto& GetTLS() { 
 				return TLS_arr[GetThreadID()];
 			};
 			auto& GetTLS() const { 
-				return TLS_arr[GetThreadID()]; 
+				return TLS_arr[GetThreadID()];
 			};
 
 		public:
+			ThreadLocal() {};
+
 			static const auto& GetThreadID() {
-				static thread_local auto x{ GoodLang::EpochGarbageCollectorImpl::IDManager::GetThreadID() };
-				return x;
+				return GoodLang::EpochGarbageCollectorImpl::IDManager::GetThreadID();
 			};
 
 			T* operator->() { return &GetTLS(); };
 			const T* operator->() const { return &GetTLS(); };
 			T& operator*() { return GetTLS(); };
 			const T& operator*() const { return GetTLS(); };
-			T& operator[](size_t index) { return TLS_arr[index]; };
-			const T& operator[](size_t index) const { return TLS_arr[index]; };
-
-			ThreadLocal& operator=(T const& val) {
-				for (auto& x : TLS_arr) {
-					x = val;
-				}
-				return *this;
+			T& operator[](size_t index) { 
+				return TLS_arr[index];
+			};
+			const T& operator[](size_t index) const {
+				return TLS_arr[index]; 
 			};
 		};
-
+		
 		// Used to track and hash the current scope position. 
 		class Breadcrumb {
 		public:
@@ -338,6 +414,36 @@ namespace GoodLang {
 				return std::string::npos;
 			};
 			static size_t	        FindString(compound_string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
+				long long l, j, k;
+				k = text.length();
+				if (end == -1) {
+					end = str.length();
+				}
+				l = end - k;
+
+				if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+				if (casesensitive) {
+					const char sample = text[0];
+					if (!sample) return (size_t)start;
+					for (; start <= l; ++start) // starting at the search position ... 
+						if (str[start] == sample)  // found a match for the first character ...
+							for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+								if (j >= k) return start;
+								if (str[start + j] != text[j]) break;
+							}
+				}
+				else {
+					for (; start <= l; ++start)
+						for (j = 0;; j++) {
+							if (j >= k) return (size_t)start;
+							if (::toupper(str[start + j]) != ::toupper(text[j]))
+								break;
+						}
+				}
+				return std::string::npos;
+			};
+			static size_t	        FindString(std::string_view const& str, compound_string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
 				long long l, j, k;
 				k = text.length();
 				if (end == -1) {
@@ -449,7 +555,6 @@ namespace GoodLang {
 				}
 #endif
 			};
-
 			static size_t	        rFindString(compound_string_view const& str, std::string_view const& text) {
 #if 0				
 				return str.rfind(text);
@@ -491,7 +596,6 @@ namespace GoodLang {
 				}
 #endif
 			};
-
 			static size_t			Find(std::string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
 				if (end == -1) {
 					end = WITHIN.length();
@@ -509,6 +613,15 @@ namespace GoodLang {
 				if (FIND.length() > WITHIN.length()) return std::string::npos;
 				return FindString(WITHIN, FIND, casesensitive, start, end);
 			};
+			static size_t			Find(std::string_view const& WITHIN, compound_string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
+				if (end == -1) {
+					end = WITHIN.length();
+				}
+				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
+				if (FIND.length() > WITHIN.length()) return std::string::npos;
+				return FindString(WITHIN, FIND, casesensitive, start, end);
+			};
+
 			static size_t			FindPrefixOrSuffix(compound_string_view const& WITHIN, std::string_view const& FIND) {
 				if (WITHIN.length() == 0 || FIND.length() == 0) return std::string::npos;
 				if (FIND.length() > WITHIN.length()) return std::string::npos;
@@ -684,7 +797,7 @@ namespace GoodLang {
 				current_namespace; // e.g. "::" or "::UI::Color::"
 			size_t
 				current_namespace_hash;
-			ThreadLocal<std::pair<bool, bool>>
+			ThreadLocal<std::pair<bool, bool>> // ThreadLocalFlags // 
 				check_flag; // self, all
 			GoodLang::atomic_ptr<Breadcrumb>
 				child_m{ nullptr }; // may point to the first child of this node
@@ -992,7 +1105,7 @@ namespace GoodLang {
 			) const {
 				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
 				Breadcrumb* finalResult = nullptr;
-				size_t threadIndex = ThreadLocal<bool>::GetThreadID();
+				auto& threadIndex{ ThreadLocal<bool>::GetThreadID() }; // ThreadLocalFlags::GetThreadID()
 
 				// Prevent Duplication
 				auto& self_flag = selfPtr.check_flag[threadIndex];
@@ -1219,6 +1332,7 @@ namespace GoodLang {
 				auto Name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
 				size_t name_hash = Name.hash();
 				size_t name2_hash;
+				size_t name3_hash;
 				auto len = Name.length();
 
 				if (name_hash == default_namespace_hash) {
@@ -1226,12 +1340,20 @@ namespace GoodLang {
 				}
 				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
+					name3_hash = name_hash;
 				}
 				else {
 					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
 					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
 					// instead of "Color", it searches for "::UI::Color::"
+
+					if (this->breadcrumb_m.parent_m) {
+						name3_hash = temp.hash(this->breadcrumb_m.parent_m->current_namespace_hash);
+					}
+					else {
+						name3_hash = name2_hash;
+					}
 				}
 
 				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
@@ -1240,18 +1362,27 @@ namespace GoodLang {
 
 					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
 					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
+					if (namespacePtr->current_namespace_hash == name3_hash) return SearchResult::Success;
 
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > Name.length()) {
-								return SearchResult::Failure | SearchResult::StaticFailure;
+							if (Name.length() < QualifiedNameLen) {
+								//if (Breadcrumb::Find(namespacePtr->current_namespace, Name, true, QualifiedNameLen - Name.length()) == (QualifiedNameLen - Name.length())) {
+								//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
+								//	return SearchResult::Success;
+								//}
+								//else 
+								{
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
 							}
-							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-							//	return SearchResult::Failure | SearchResult::StaticFailure;
-							//}
-							else return SearchResult::Failure;
+							else {
+								if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
+							}
 						}
 					}
 
@@ -1270,6 +1401,7 @@ namespace GoodLang {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
 				size_t name_hash = Name.hash();
 				size_t name2_hash;
+				size_t name3_hash;
 				auto len = Name.length();
 
 				if (name_hash == default_namespace_hash) {
@@ -1277,12 +1409,19 @@ namespace GoodLang {
 				}
 				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
+					name3_hash = name_hash;
 				}
 				else {
 					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
 					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
 					// instead of "Color", it searches for "::UI::Color::"
+					if (this->breadcrumb_m.parent_m) {
+						name3_hash = temp.hash(this->breadcrumb_m.parent_m->current_namespace_hash);
+					}
+					else {
+						name3_hash = name2_hash;
+					}
 				}
 
 				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
@@ -1291,18 +1430,27 @@ namespace GoodLang {
 
 					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
 					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
+					if (namespacePtr->current_namespace_hash == name3_hash) return SearchResult::Success;
 
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > Name.length()) {
-								return SearchResult::Failure | SearchResult::StaticFailure;
+							if (Name.length() < QualifiedNameLen) {
+								//if (Breadcrumb::Find(namespacePtr->current_namespace, Name, true, QualifiedNameLen - Name.length()) == (QualifiedNameLen - Name.length())) {
+								//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
+								//	return SearchResult::Success;
+								//}
+								//else 
+								{
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
 							}
-							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-							//	return SearchResult::Failure | SearchResult::StaticFailure;
-							//}
-							else return SearchResult::Failure;
+							else {
+								if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
+							}
 						}
 					}
 
@@ -1323,18 +1471,26 @@ namespace GoodLang {
 				auto Name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
 				size_t name_hash = Name.hash();
 				size_t name2_hash;
+				size_t name3_hash;
 				auto len = Name.length();
 				if (name_hash == default_namespace_hash) {
 					return this->breadcrumb_m.root_m;
 				}
 				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
 					name2_hash = name_hash;
+					name3_hash = name_hash;
 				}
 				else {
 					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
 					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
 					// instead of "Color", it searches for "::UI::Color::"
+					if (this->breadcrumb_m.parent_m) {
+						name3_hash = temp.hash(this->breadcrumb_m.parent_m->current_namespace_hash);
+					}
+					else {
+						name3_hash = name2_hash;
+					}
 				}
 
 				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
@@ -1343,18 +1499,27 @@ namespace GoodLang {
 
 					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
 					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
+					if (namespacePtr->current_namespace_hash == name3_hash) return SearchResult::Success;
 
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							// Static failure means there's no way the children of this node could match the namespace requirement...
-							if (QualifiedNameLen > Name.length()) {
-								return SearchResult::Failure | SearchResult::StaticFailure;
+							if (Name.length() < QualifiedNameLen) {
+								//if (Breadcrumb::Find(namespacePtr->current_namespace, Name, true, QualifiedNameLen - Name.length()) == (QualifiedNameLen - Name.length())) {
+								//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
+								//	return SearchResult::Success;
+								//}
+								//else 
+								{
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
 							}
-							//else if (Breadcrumb::Find(Name, namespacePtr->current_namespace) == std::string::npos) {
-							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-							//	return SearchResult::Failure | SearchResult::StaticFailure;
-							//}
-							else return SearchResult::Failure;							
+							else {
+								if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
+									// e.g. looking for "std::string::" but this namespace was "::UI::"
+									return SearchResult::Failure | SearchResult::StaticFailure;
+								}
+								else return SearchResult::Failure;
+							}					
 						}
 					}
 					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
@@ -1488,16 +1653,24 @@ namespace GoodLang {
 						if (FindNearestScopeWhere([namespaceName_hash, namespaceName, &out1, &out2, &objName, &params, &searchDepth, &sort, converter](Breadcrumb* namespacePtr, int search_state) -> int {
 							if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 								if (namespacePtr->current_namespace_hash != namespaceName_hash) {
-									// we will fail -- but the question is whether it's a full static failure or not. 
-									// Static failure means there's no way the children of this node could match the namespace requirement...
-									if (namespacePtr->current_namespace.length() > namespaceName.length()) {
-										return SearchResult::Failure | SearchResult::StaticFailure;
+									auto QualifiedNameLen = namespacePtr->current_namespace.length();
+									if (namespaceName.length() < QualifiedNameLen) {
+										//if (Breadcrumb::Find(namespacePtr->current_namespace, namespaceName, true, QualifiedNameLen - namespaceName.length()) == (QualifiedNameLen - namespaceName.length())) {
+										//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
+										//	return SearchResult::Success;
+										//}
+										//else 
+										{
+											return SearchResult::Failure | SearchResult::StaticFailure;
+										}
 									}
-									//if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
-									//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-									//	return SearchResult::Failure | SearchResult::StaticFailure;
-									//}
-									return SearchResult::Failure;
+									else {
+										if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
+											// e.g. looking for "std::string::" but this namespace was "::UI::"
+											return SearchResult::Failure | SearchResult::StaticFailure;
+										}
+										else return SearchResult::Failure;
+									}
 								}
 							}
 
@@ -1531,7 +1704,7 @@ namespace GoodLang {
 									}
 									if (namespacePtr->this_m->is_namespace()) {
 										if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(scope_ptr)) {
-											if (sort[0].first == details::TypeConversionWorstCaseCost) {
+											if (!sort[0].second) {
 												double cost{ details::TypeConversionWorstCaseCost };
 												if (auto& out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true, &cost)) {
 													if (1) {
@@ -1540,15 +1713,29 @@ namespace GoodLang {
 															sort[1].second = &ptr->breadcrumb_m;
 														}
 													}
-													if (auto& out3 = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true, &cost)) {
-														if (cost == 0) {
-															out1 = nullptr;
-															out2 = out3;
-															return SearchResult::Success;
-														}
+													if (!out->GetSignature().IsTemplate()) {
 														if ((cost + searchDepth) < sort[0].first) {
 															sort[0].first = cost + searchDepth++;
 															sort[0].second = &ptr->breadcrumb_m;
+
+															if (cost == 0) {
+																out1 = nullptr;
+																out2 = out;
+																return SearchResult::Success;
+															}
+														}
+													}
+													else {
+														if (auto& out3 = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true, &cost)) {
+															if (cost == 0) {
+																out1 = nullptr;
+																out2 = out3;
+																return SearchResult::Success;
+															}
+															if ((cost + searchDepth) < sort[0].first) {
+																sort[0].first = cost + searchDepth++;
+																sort[0].second = &ptr->breadcrumb_m;
+															}
 														}
 													}
 												}
@@ -1568,7 +1755,7 @@ namespace GoodLang {
 												}
 											}
 											// the user may have meant to call the constructor for a class in this namespace...
-											if ((sort[0].first == details::TypeConversionWorstCaseCost) && (sort[1].first == details::TypeConversionWorstCaseCost) && (ptr->children_m.size() > 0)) {
+											if ((!sort[0].second) && (!sort[1].second) && (ptr->children_m.size() > 0)) {
 												if (auto f = ptr->children_m.find(objName); f != ptr->children_m.end()) {
 													if (f->second->Name() == objName) {
 														if (auto NS_ptr = std::dynamic_pointer_cast<NamespaceScope>(f->second)) {
@@ -1595,7 +1782,7 @@ namespace GoodLang {
 
 					// walk through it!
 					for (auto& s1 : sort) {
-						if (s1.first < details::TypeConversionWorstCaseCost) {
+						if (s1.second && (s1.first < details::TypeConversionWorstCaseCost)) {
 							out1 = nullptr; 
 							out2 = std::dynamic_pointer_cast<NamespaceScope>(s1.second->this_m->scope.lock())->functions_m.at(objName, const_cast<ParamTypes&>(params))->m_function;
 							return true;
@@ -1627,10 +1814,6 @@ namespace GoodLang {
 							if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							//if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
-							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-							//	return SearchResult::Failure | SearchResult::StaticFailure;
-							//}
 							return SearchResult::Failure;
 						}
 					}
@@ -1711,10 +1894,6 @@ namespace GoodLang {
 							if (namespacePtr->current_namespace.length() > namespaceName.length()) {
 								return SearchResult::Failure | SearchResult::StaticFailure;
 							}
-							//if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace) == std::string::npos) {
-							//	// e.g. looking for "std::string::" but this namespace was "::UI::"
-							//	return SearchResult::Failure | SearchResult::StaticFailure;
-							//}
 							return SearchResult::Failure;
 						}
 					}
@@ -1803,26 +1982,33 @@ namespace GoodLang {
 
 				// see if it already matches (best option)
 				if ((int)FromType->is_const() <= (int)ToType->is_const()) {
-					// if (ToType->is_ref()) {
+					 //if (ToType->is_ref()) {
 						if (FromType->underlyingHash == ToType->underlyingHash) {
 							return from.cast<T>();
 						}
-					// }
+					 //}
 				}
 
 				return Cast(from, user_type_shared<T>()).cast<T>();
 			};
-			Any Cast(Any const& from, std::weak_ptr<Type_Info> const& To) const {
+			Any Cast(Any const& from, std::weak_ptr<Type_Info> const& To, bool requireExplicitReferenceToPreventInstancing = false) const {
 				auto ToType = To.lock();
 				auto FromType = from.Type().lock();
 
 				// see if it already matches (best option)
 				if ((int)FromType->is_const() <= (int)ToType->is_const()) {
-					//if (ToType->is_ref()) {
+					if (requireExplicitReferenceToPreventInstancing) {
+						if (ToType->is_ref()) {
+							if (FromType->underlyingHash == ToType->underlyingHash) {
+								return from;
+							}
+						}
+					}
+					else {
 						if (FromType->underlyingHash == ToType->underlyingHash) {
 							return from;
 						}
-					//}
+					}
 				}
 
 				// see if we can convert (fastest option)
@@ -1984,7 +2170,8 @@ namespace GoodLang {
 				check_cache& requiringReset = GetCheckMap(),
 				int depth = 0
 			) const override {
-				size_t threadIndex{ ThreadLocal<bool>::GetThreadID() };
+				auto& threadIndex{ ThreadLocal<bool>::GetThreadID() }; // ThreadLocalFlags::GetThreadID()
+
 				Breadcrumb
 					*finalResult{ nullptr }, 
 					*thisParent, 
@@ -1992,29 +2179,10 @@ namespace GoodLang {
 				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);		
 				auto& self_flag = selfPtr.check_flag[threadIndex];
 
-				//if ((depth == 0) && SearchTerms.has_value()) {
-				//	if (std::shared_ptr<BasicScope> ptr{ nullptr }; TryGetCache(SearchNumber, selfPtr.hash_m, SearchTerms.value(), ptr)) {
-				//		if (ptr) {
-				//			ptr->breadcrumb_m.check_self_flag = true;
-				//			push_back_if_not_at_end(requiringReset, &ptr->breadcrumb_m);
-				//			// test myself directly	
-				//			if (func(&ptr->breadcrumb_m, searchState) & SearchResult::Success) {
-				//				finalResult = &ptr->breadcrumb_m;
-				//				return finalResult;
-				//			}
-				//		}
-				//	}
-				//}
-				//optional_defer((depth == 0) && SearchTerms.has_value(), EmplaceCache(SearchNumber, selfPtr.hash_m, SearchTerms.value(), finalResult));
-
 				// Prevent Duplication
 				if (self_flag.second) {
 					finalResult = nullptr;
 					return finalResult;
-				}
-				if (!(searchState & SkipChildren)) {
-					self_flag.second = true;
-					push_back_if_not_at_end(requiringReset, &selfPtr);
 				}
 
 				// test myself directly	
@@ -2033,6 +2201,12 @@ namespace GoodLang {
 						if (depth == 0) for (auto& x : requiringReset) x->check_flag[threadIndex].first = x->check_flag[threadIndex].second = false;
 						return finalResult;
 					}
+				}
+
+				bool RequestedSkipChildren = self_flag.second;
+				if (!(searchState & SkipChildren)) {
+					self_flag.second = true;
+					push_back_if_not_at_end(requiringReset, &selfPtr);
 				}
 
 				// test my personal "using" namespaces completely
@@ -2108,7 +2282,7 @@ namespace GoodLang {
 				}
 
 				// Test my children themselves. 
-				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
+				if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && children_m.size() > 0ull) {
 					child_bc = this->breadcrumb_m.child_m.load();
 					while (child_bc) {
 						auto& flag = child_bc->check_flag[threadIndex];
@@ -2249,7 +2423,7 @@ namespace GoodLang {
 				}
 
 				// Test my children completely. 
-				if ((!(searchState & SkipChildren)) && children_m.size() > 0ull) {
+				if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && children_m.size() > 0ull) {
 					child_bc = this->breadcrumb_m.child_m.load();
 					while (child_bc) {
 						auto& flag = child_bc->check_flag[threadIndex];
@@ -3170,7 +3344,21 @@ namespace GoodLang {
 										std::make_shared<ClassScope>(UnitName, std_namespace, unit_type.second.second.Type().lock(), std::vector<std::weak_ptr<ClassScope>>{ value_namespace })
 									};
 									foot_namespace->SetSelf(foot_namespace);
+									foot_namespace->breadcrumb_m.class_type_hash = foot_namespace->ClassType->uniqueHash;
 									std_namespace->children_m.insert({ std::string(UnitName), foot_namespace });
+									if (std_namespace->breadcrumb_m.child_m.CompareExchange(nullptr, &foot_namespace->breadcrumb_m) == nullptr) {}
+									else {
+										Breadcrumb* temp{ std_namespace->breadcrumb_m.child_m.load() };
+										while (temp) {
+											if (temp->next_m.CompareExchange(nullptr, &foot_namespace->breadcrumb_m) == nullptr) {
+												break;
+											}
+											else {
+												temp = temp->next_m.load();
+											}
+										}
+									}
+
 									{
 										// Constructors
 										// foot()
@@ -4275,8 +4463,8 @@ namespace GoodLang {
 				classPtr->AddFunction(Name, make_callable([](T const& makeCopy) ->  T { return makeCopy; }));
 				classPtr->AddFunction("=", make_callable(
 					[](Any const& a, T const& b) -> Any { T& x = a.cast(); x = b; return a; }
-					, ParamTypes({ user_type_shared<T>().lock()->MakeRef(), user_type_shared<T>().lock()->MakeConstRef() })
-					, user_type_shared<T>().lock()->MakeRef()
+					, ParamTypes({ user_type_shared_ptr<T>()->MakeRef(), user_type_shared_ptr<T>()->MakeConstRef() })
+					, user_type_shared_ptr<T>()->MakeRef()
 				));
 
 				// Comparisons
@@ -4292,37 +4480,56 @@ namespace GoodLang {
 				if constexpr (!std::is_same_v<bool, T>) {
 					classPtr->AddFunction("^", make_callable([](T const& x, T const& y) -> T { return std::pow(x, y); }));
 					classPtr->AddFunction("/", make_callable([](T const& x, T const& y) -> T { if (y == 0) return std::numeric_limits<T>::max(); else return x / y; }));
-					classPtr->AddFunction("+=", make_callable([](T& x, T const& y) -> void { x += y; }));
-					classPtr->AddFunction("-=", make_callable([](T& x, T const& y) -> void { x -= y; }));
-					classPtr->AddFunction("*=", make_callable([](T& x, T const& y) -> void { x *= y; }));
-					classPtr->AddFunction("/=", make_callable([](T& x, T const& y) -> void { if (y == 0) x = std::numeric_limits<T>::max(); else x /= y; }));
-					classPtr->AddFunction("^=", make_callable([](T& x, T const& y) -> void { x = std::pow(x, y); }));
-
+					classPtr->AddFunction("+=", make_callable([](Any const& a, T const& y) -> Any { 
+						T& x = a.cast();
+						x += y; 
+						return a;
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef(), user_type_shared_ptr<T>()->MakeConstRef() }), user_type_shared_ptr<T>()->MakeRef()));
+					classPtr->AddFunction("-=", make_callable([](Any const& a, T const& y) -> Any {
+						T& x = a.cast();
+						x -= y;
+						return a;
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef(), user_type_shared_ptr<T>()->MakeConstRef() }), user_type_shared_ptr<T>()->MakeRef()));
+					classPtr->AddFunction("*=", make_callable([](Any const& a, T const& y) -> Any {
+						T& x = a.cast();
+						x *= y;
+						return a;
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef(), user_type_shared_ptr<T>()->MakeConstRef() }), user_type_shared_ptr<T>()->MakeRef()));
+					classPtr->AddFunction("/=", make_callable([](Any const& a, T const& y) -> Any {
+						T& x = a.cast();
+						if (y == 0) x = std::numeric_limits<T>::max(); else x /= y;
+						return a;
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef(), user_type_shared_ptr<T>()->MakeConstRef() }), user_type_shared_ptr<T>()->MakeRef()));
+					classPtr->AddFunction("^=", make_callable([](Any const& a, T const& y) -> Any {
+						T& x = a.cast();
+						x = std::pow(x, y);
+						return a;
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef(), user_type_shared_ptr<T>()->MakeConstRef() }), user_type_shared_ptr<T>()->MakeRef()));
 					classPtr->AddFunction("++", make_callable([](Any const& a) -> Any {
 						T& x = a.cast();
 						x++;
 						return a;
-					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef() }), user_type_shared_ptr<T>()->MakeRef()));
 					classPtr->AddFunction("--", make_callable([](Any const& a) -> Any {
 						T& x = a.cast();
 						x--;
 						return a;
-					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() }), user_type_shared<T>().lock()->MakeRef()));
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef() }), user_type_shared_ptr<T>()->MakeRef()));
 					if constexpr (std::is_signed_v<T>) {
 						classPtr->AddFunction("-", make_callable([](Any const& a) -> T {
 							T& x = a.cast();
 							return -x;
-						}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+						}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef() })));
 					}
 					classPtr->AddFunction("+", make_callable([](Any const& a) -> T {
 						T& x = a.cast();
 						return +x;
-					}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+					}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef() })));
 					if constexpr (std::is_integral_v<T>) {
 						classPtr->AddFunction("~", make_callable([](Any const& a) -> T {
 							T& x = a.cast();
 							return ~x;
-						}, ParamTypes({ user_type_shared<T>().lock()->MakeRef() })));
+						}, ParamTypes({ user_type_shared_ptr<T>()->MakeRef() })));
 						classPtr->AddFunction("%", make_callable([](T const& x, T const& y) -> T {
 							return x % y;
 						}));
@@ -6770,11 +6977,11 @@ namespace GoodLang {
 				};
 
 				static std::weak_ptr<Type_Info> GetClassType(AST_Node_Impl_Ptr const& r, std::shared_ptr<Scopes::BasicScope> const& currentScope) {
-					std::weak_ptr<Type_Info> out;
+					std::weak_ptr<Type_Info> out; // { user_type_shared<void>() }
 					if (r) {
 						if (!detail::GetClassTypeImpl(r, out)) {
 							auto sv = GetText(r);
-							if (auto Class = currentScope->FindClass(std::string(sv))) {
+							if (auto Class = currentScope->FindClass(sv)) {
 								if (auto ClassPtr = std::dynamic_pointer_cast<Scopes::ClassScope>(Class->this_m->scope.lock())) {
 									out = ClassPtr->ClassType;
 								}
@@ -7387,7 +7594,7 @@ namespace GoodLang {
 							}
 
 							if (currentScope->is_class()) {
-								if (auto ClassPtr = std::dynamic_pointer_cast<Class>(currentScope)) {
+								if (auto ClassPtr = std::dynamic_pointer_cast<Scopes::ClassScope>(currentScope)) {
 									std::weak_ptr<Type_Info> out;
 									if (detail::GetClassTypeImpl(this->children[0], out)) {
 										if (out.lock()->is_ref()) {
@@ -7782,7 +7989,10 @@ namespace GoodLang {
 
 
 							std::weak_ptr<Type_Info> returnType = GetClassType(this->children[2], currentScope);
-							bool returnVoid = (GetHash(returnType) == GetHash(user_type_shared<void>()));
+							//if (returnType.expired()) {
+							//	returnType = user_type_shared<void>();
+							//}
+							bool returnVoid = false; // (GetHash(returnType) == GetHash(user_type_shared<void>()));
 
 							if (is_async) {
 								if (returnVoid) {
@@ -7804,7 +8014,7 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i], true)), false);
 												// function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
@@ -7846,7 +8056,7 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i], true)), false);
 												// function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
@@ -7895,7 +8105,7 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i], true)), false);
 												// function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
@@ -7932,7 +8142,7 @@ namespace GoodLang {
 
 											// insert the function params
 											for (int i = 0; (i < param_names.size()) && (i < params->size()); ++i) {
-												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i])), false);
+												function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(currentScope->Cast(params->operator[](i), paramTypes[i], true)), false);
 												// function_scope->EmplaceObject(param_names[i], std::make_shared<Any>(params->operator[](i)), false);
 											}
 
@@ -8611,23 +8821,24 @@ namespace GoodLang {
 							FunctionBlock = this->children[3] = optimizer::optimize(this->children[3], currentScope);
 							return_type_name = GetText(this->children[0]);
 							returnArgType = GetClassType(this->children[0], currentScope);
+							// if (returnArgType.expired()) returnArgType = user_type_shared<void>();
 						};
 
 						static void AddObjects(int startposition, std::shared_ptr< Scopes::BasicScope> const& thisScope, std::vector<std::string_view> const& argNames, std::vector<std::weak_ptr<Type_Info>> const& argTypes) {};
 						template<typename T, typename... R> static void AddObjects(int startposition, std::shared_ptr< Scopes::BasicScope> const& thisScope, std::vector<std::string_view> const& argNames, std::vector<std::weak_ptr<Type_Info>> const& argTypes, T const& argument, R const&... arguments) {
-							thisScope->EmplaceObject(argNames[startposition], std::make_shared<Any>(thisScope->Cast(argument, argTypes[startposition])), false);
+							thisScope->EmplaceObject(argNames[startposition], std::make_shared<Any>(thisScope->Cast(argument, argTypes[startposition], true)), false);
 							AddObjects(startposition + 1, thisScope, argNames, argTypes, arguments...);
 						};
 
 						Any eval_internal(const std::shared_ptr<Scopes::BasicScope>& currentScope) const override {
 							if (currentScope->is_class()) {
-								if (auto ptr = std::dynamic_pointer_cast<Class>(currentScope)) {
+								if (auto ptr = std::dynamic_pointer_cast<Scopes::ClassScope>(currentScope)) {
 									auto p_locked = initialized.Unique();
 									if (!*p_locked) {
 										auto& types = const_cast<std::vector<std::weak_ptr<Type_Info>>&>(inputArgTypes);
 										auto& names = const_cast<std::vector<std::string_view>&>(inputArgNames);
 
-										types.insert(types.begin(), ptr->GetClassType().lock()->MakeConstRef());
+										types.insert(types.begin(), ptr->ClassType->MakeConstRef());
 										names.insert(names.begin(), "this");
 										const_cast<int&>(numArgs)++;
 										const_cast<bool&>(*p_locked) = true;
@@ -8637,7 +8848,7 @@ namespace GoodLang {
 
 							// the current scope should be a namespace... HOPEFULLY! Need to confirm... Perhaps also need to change the impl based on whether we are in a Class or in a Namespace or in a Global?
 							Proxy_Function func;
-							if (GetHash(this->returnArgType) == GetHash(user_type<void>())) {
+							if ((!this->returnArgType.expired()) && (GetHash(this->returnArgType) == GetHash(user_type<void>()))) {
 								switch (numArgs) {
 								case 0:
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
@@ -8902,7 +9113,8 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }											
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -8919,7 +9131,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -8936,7 +9148,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -8953,7 +9165,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -8970,7 +9182,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -8987,7 +9199,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9004,7 +9216,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9021,7 +9233,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9039,7 +9251,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9057,7 +9269,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9075,7 +9287,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9093,7 +9305,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9111,7 +9323,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9129,7 +9341,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9147,7 +9359,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -9165,7 +9377,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->returnArgType);
@@ -11146,7 +11358,7 @@ namespace GoodLang {
 									m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
 									return true;
 								}
-								else if (auto Class = currentScope->FindClass(std::string(className))) {
+								else if (auto Class = currentScope->FindClass(className)) {
 									if (auto ClassPtr = std::dynamic_pointer_cast<Scopes::ClassScope>(Class->this_m->scope.lock())) {
 										auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, className, prev_pos));
 										if (Const && Ref) {
@@ -11290,7 +11502,11 @@ namespace GoodLang {
 								ptr->TypeInfo = user_type_shared<Any>();
 								m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
 							}
-							else {
+							else if (Keyword("var")) {
+								auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, Engine::Position::str(prev_pos, m_position), prev_pos));
+								ptr->TypeInfo = user_type_shared<Any>();
+								m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
+							} else {
 								return false;
 							}
 						}
@@ -12472,7 +12688,7 @@ namespace GoodLang {
 								newNamespace = std::dynamic_pointer_cast<Scopes::ClassScope>(f->this_m->scope.lock());
 							}
 							if (!newNamespace) {
-								newNamespace = currentScope->GetNamespace()->MakeChildClass(GetText(m_match_stack.back().first));
+								newNamespace = currentScope->GetNamespace()->MakeChildClass(std::make_shared<std::string>(GetText(m_match_stack.back().first)));
 							}
 
 							// instead of collecting statements, we want to collect declarations...
@@ -12516,7 +12732,7 @@ namespace GoodLang {
 								newNamespace = std::dynamic_pointer_cast<Scopes::NamespaceScope>(f->this_m->scope.lock());
 							}
 							if (!newNamespace) {
-								newNamespace = currentScope->GetNamespace()->MakeChildNamespace(GetText(m_match_stack.back().first));
+								newNamespace = currentScope->GetNamespace()->MakeChildNamespace(std::make_shared<std::string>(GetText(m_match_stack.back().first)));
 							}
 
 							// instead of collecting statements, we want to collect declarations...
@@ -17167,7 +17383,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17185,7 +17401,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17203,7 +17419,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17221,7 +17437,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17239,7 +17455,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17257,7 +17473,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17275,7 +17491,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17293,7 +17509,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17312,7 +17528,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17331,7 +17547,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17350,7 +17566,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17369,7 +17585,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17388,7 +17604,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17407,7 +17623,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17426,7 +17642,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -17445,7 +17661,7 @@ namespace GoodLang {
 
 											try { result = lambda->eval(thisScope); }
 											catch (detail::Return_Value& rv) { result = rv.retval; }
-											return thisScope->Cast(result, returnType);
+											if (returnType.expired()) { return result; } else { return thisScope->Cast(result, returnType); }
 										}
 										else { throw exception::eval_error("Namespace with declared function is no longer available"); }
 									}, ParamTypes(inputArgTypes), this->return_type);
@@ -21366,7 +21582,7 @@ int main() {
 		print(Units::second(sw.Stop_s()).ToString());
 #endif
 
-		if (1) {
+		if (0) {
 			std::string Script = R"(
 				print(ONE_HUNDRED);
 
@@ -21416,11 +21632,15 @@ int main() {
 			}
 		}
 
-		if (1) {
+		if (0) {
 			if (1) {
 				std::vector<std::string_view> DebugScripts;
 				if (1) {
 					DebugScripts = {
+#if 0
+					R"(
+						Units::meter x;
+					)",
 					R"(
 						var x;
 					)",
@@ -21438,9 +21658,6 @@ int main() {
 					)",
 					R"(
 						return 10_ft;
-					)",
-					R"(
-						Units::meter x;
 					)",
 					R"(
 						Var String() { 
@@ -21490,19 +21707,19 @@ int main() {
 								x.double;
 								x++;
 								x*x;
-								var& y = x % x ^ x.double;						
+								//var& y = x % ((x ^ x).double);						
 							};
 							void DoWork(int x){
 								x.double;
 								x++;
 								x*x;
-								var& y = x * x ^ x.double;
+								//var& y = x * x ^ x.double;
 							};
 							void DoWork(int x, int y){
 								x.double;
 								x++;
 								x*x;
-								x ^ (x % x).double;
+								//var& y = x ^ (x % (x.double));
 							};
 						};
 						for (int i = 0; i < 1000; ++i) {
@@ -21517,7 +21734,8 @@ int main() {
 						};
 						return lambda().Await();
 					)",
-												R"(
+
+					R"(
 						namespace UI {
 							class Color{
 								double R = 0;
@@ -21561,7 +21779,7 @@ int main() {
 								Vector border_thickness = [0.0, 0.0, 0.0, 0.0];							
 
 								string to_string() {
-									return "Fill: ${ fill }, Border: ${ border } @ ${ border_thickness }"
+									return "Fill: ${ this.fill }, Border: ${ this.border } @ ${ this.border_thickness }"
 								};
 							};
 
@@ -21571,9 +21789,9 @@ int main() {
 							rect.fill().G() = 0;
 							rect.fill().B() = 0;
 							rect.border_thickness()[0] = 1.0;
-							rect.border_thickness()[0] = 1.1;
-							rect.border_thickness()[0] = 1.2;
-							rect.border_thickness()[0] = 1.3;
+							rect.border_thickness()[1] = 1.1;
+							rect.border_thickness()[2] = 1.2;
+							rect.border_thickness()[3] = 1.3;
 						}
 						return rect.to_string();
 					)",
@@ -21747,6 +21965,7 @@ int main() {
 						auto lambda := [](){ 100; };
 						return "100 == ${ "100" } == ${ [ 100 ] } == ${ [ "100":100, 100:"100" ] } == ${ x } == ${ lambda() }";
 					)",
+
 					R"(
 						float x = 0;
 						float& y := x;
@@ -21781,6 +22000,7 @@ int main() {
 						Lambda(x, x, x, x, x);
 						return [x,y,z,w];
 					)",
+#endif
 					R"(
 						auto lambda = []() async -> int {
 							Sleep(2_s); // ...sleeping...
@@ -21980,25 +22200,25 @@ int main() {
 					)",
 					R"(
 						for (int i = 0; i < 100; i++){
-							!i;
+							!i.bool;
 							return ~i;
 						}
 					)",
 					R"(
 						for (int& i : [0, 20, 30, 50]){
-							!i;
+							!i.bool;
 							return ~i;
 						}
 					)",
 					R"(
 						parallel_for (int i = 0 ; 100){
-							!i;
+							!i.bool;
 							return ~i;
 						}
 					)",
 					R"(
 						parallel_for (int& i : [0, 20, 30, 50]){
-							!i;
+							!i.bool;
 							return ~i;
 						}
 					)",
@@ -22238,9 +22458,7 @@ int main() {
 					auto expandedScript = state.GetFinalScript();
 
 					print(ToString("\nScript #") + ToString(scriptN++) + ToString(": "));
-
-					print(expandedScript);
-
+					// print(expandedScript);
 					auto this_scope = std::make_shared<Scopes::RootScope>();
 					this_scope->SetSelf(this_scope);
 					this_scope->AddBuiltIns();
@@ -22248,7 +22466,9 @@ int main() {
 						auto parsed_result = GoodLang::Engine2::Compiler::Interpreter::Parser().Parse(expandedScript, this_scope);
 						Stopwatch sw;
 						sw.Start();
+						GoodLang::parallel::options::RethrowsExceptions(false);
 						auto result = parsed_result.first->eval(parsed_result.second);
+						GoodLang::parallel::options::RethrowsExceptions(true);
 						sw.Stop();
 						print(ToString(parsed_result));
 						print(GoodLang::printf("\t (%f sec) -> \t", (float)sw.Seconds_Passed()) + ToString(result));
