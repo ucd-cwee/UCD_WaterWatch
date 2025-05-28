@@ -962,6 +962,208 @@ namespace GoodLang {
 		}
 	};
 
+	std::pair<Proxy_Function*, Proxy_Function*> Functions::BuildMatches(std::string_view const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, double* finalCost) {
+		std::pair<Proxy_Function*, Proxy_Function*> out{ nullptr, nullptr };
+		
+		if (functionName.length() == 0) return out;
+		size_t functionNameHash = GetHash(functionName);
+		if (auto func = at(functionName[0], functionNameHash, Params)) {
+			if (func->m_function) { // cache (or actual) found
+				bool isTemplateFunc = func->m_function->GetSignature().IsTemplate();
+				bool isExplicitFunc = func->m_isEplicit;
+
+				if (isTemplateFunc) {
+					if (!out.second) {
+						if (finalCost) {
+							if (func->cost >= details::TypeConversionWorstCaseCost) {
+								func->cost = func->m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+							}
+							*finalCost = func->cost; //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+						}
+						out.second = &func->m_function;
+					}
+				}
+				else {
+					if (!out.first) {
+						if (finalCost) {
+							if (func->cost >= details::TypeConversionWorstCaseCost) {
+								func->cost = func->m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+							}
+							*finalCost = func->cost; //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+						}
+						out.second = out.first = &func->m_function;
+						return out;
+					}
+				}
+			}
+		}
+		if (1) {
+			// Three sorted groups of candidates. 
+			// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
+			thread_local static std::map< size_t, std::array<std::pair<double, FunctionPtr>, 3>, std::greater<size_t>>
+				candidates;
+			defer(candidates.clear());
+
+			// Create candidates.
+			{
+				std::vector<std::shared_ptr<Type_Info>> paramTypes;
+				paramTypes.reserve(Params.size());
+				for (auto& x : Params) paramTypes.push_back(x.lock());
+
+				if (functionName.size() > 0) {
+					auto& m_functions = FirstCharToFunctionNameMap[CharToIndex(functionName[0])]; // try to reduce conflict by splitting on the first letter
+					auto& m_func_find = m_functions[functionNameHash];
+					for (auto& function : m_func_find.second) {
+						if (!function.second.second) continue;
+						if (!function.second.second->m_function) continue;
+						if (function.second.second->m_isCached) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+						bool isTemplateFunc = function.second.second->m_function->GetSignature().IsTemplate();
+						bool isExplicitFunc = function.second.second->m_isEplicit;
+
+						auto conversionCost = function.second.second->m_function->conversion_cost_fast(paramTypes, m_typeConverters);
+						if (conversionCost >= details::TypeConversionWorstCaseCost) continue;
+
+						// try to early exit...
+						if (Params.size() == function.second.second->m_function->Arguments().size()) {
+							if (!isTemplateFunc) {
+								if (conversionCost == 0) {
+									if (function.second.second) {
+										// ParamTypes ParamTypesToCache{ params };
+										Function FunctionToCache{ function.second.second->m_function };
+										FunctionToCache.m_isCached = true;
+										FunctionToCache.cost = 0;
+										// if someone already beat us to it, it should return the "current" value
+										if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+											if (finalCost) *finalCost = 0;
+											if (!out.first) {
+												out.second = out.first = &func->m_function;
+												return out;
+											}
+										}
+									}
+								}
+							}
+						}
+
+						if (isTemplateFunc) {
+							if (!out.second) {
+								auto& pair = candidates[function.second.second->m_function->NumArguments()][2];
+								if (pair.second) {
+									if (pair.first > conversionCost) {
+										pair.first = conversionCost;
+										pair.second = function.second.second;
+									}
+								}
+								else {
+									pair.first = conversionCost;
+									pair.second = function.second.second;
+								}
+							}
+						}
+						else {
+							if (conversionCost == 0) {
+								auto& pair = candidates[function.second.second->m_function->NumArguments()][0];
+								if (pair.second) {
+									if (pair.first > conversionCost) {
+										pair.first = conversionCost;
+										pair.second = function.second.second;
+									}
+								}
+								else {
+									pair.first = conversionCost;
+									pair.second = function.second.second;
+								}
+							}
+							else if (!isExplicitFunc) {
+								auto& pair = candidates[function.second.second->m_function->NumArguments()][1];
+								if (pair.second) {
+									if (pair.first > conversionCost) {
+										pair.first = conversionCost;
+										pair.second = function.second.second;
+									}
+								}
+								else {
+									pair.first = conversionCost;
+									pair.second = function.second.second;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).			
+			for (auto& numParams : candidates) {
+				if (!out.first) {
+					auto& candidate = numParams.second[0];
+					if (candidate.first < details::TypeConversionWorstCaseCost) {
+						if (candidate.second) {
+							Function FunctionToCache{ candidate.second->m_function };
+							FunctionToCache.m_isCached = true;
+							FunctionToCache.cost = candidate.first;
+							// if someone already beat us to it, it should return the "current" value
+							if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+								if (finalCost) {
+									if (*finalCost > candidate.first) {
+										*finalCost = candidate.first;
+									}
+								}
+								out.first = &func->m_function;
+							}
+						}
+					}
+				}
+				if (!out.first) {
+					auto& candidate = numParams.second[1];
+					if (candidate.first < details::TypeConversionWorstCaseCost) {
+						if (candidate.second) {
+							Function FunctionToCache{ candidate.second->m_function };
+							FunctionToCache.m_isCached = true;
+							FunctionToCache.cost = candidate.first;
+							// if someone already beat us to it, it should return the "current" value
+							if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+								if (finalCost) {
+									if (*finalCost > candidate.first) {
+										*finalCost = candidate.first;
+									}
+								}
+								out.first = &func->m_function;
+							}
+						}
+					}
+				}
+				if (!out.second) {
+					auto& candidate = numParams.second[2];
+					if (candidate.first < details::TypeConversionWorstCaseCost) {
+						if (candidate.second) {
+							Function FunctionToCache{ candidate.second->m_function };
+							FunctionToCache.m_isCached = true;
+							FunctionToCache.cost = candidate.first;
+							// if someone already beat us to it, it should return the "current" value
+							if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+								if (finalCost) {
+									if (out.first) {
+										if (*finalCost > candidate.first) {
+											out.first = nullptr;
+											*finalCost = candidate.first;
+										}
+									}
+									else {
+										*finalCost = candidate.first;
+									}									
+								}
+								out.second = &func->m_function;
+							}
+						}
+					}
+				}
+
+				if (out.first && out.second) break;
+			}
+		}
+		return out;
+	};
+
 	/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 	Proxy_Function const& Functions::BuildMatch(std::string_view const& functionName, ParamTypes& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation, bool AllowTypeConversion, double* finalCost) {
 		static Proxy_Function null_func{ nullptr };

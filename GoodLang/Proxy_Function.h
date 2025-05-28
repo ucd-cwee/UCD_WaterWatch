@@ -3600,6 +3600,8 @@ namespace GoodLang {
 		/* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
 		Proxy_Function const& BuildMatch(std::string_view const& functionName, std::vector<Any> const& params, ParamTypes const& Params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
 		Proxy_Function const& BuildMatch(std::string_view const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr);
+		std::pair<Proxy_Function*, Proxy_Function*> BuildMatches(std::string_view const& functionName, ParamTypes& params, TypeConverter& m_typeConverters, double* finalCost = nullptr);
+
 		Any Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters);
 
 	};

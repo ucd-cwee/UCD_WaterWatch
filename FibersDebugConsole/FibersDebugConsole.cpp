@@ -928,7 +928,7 @@ namespace GoodLang {
 				self_id_m; // this scope's identifiers, including its name and type
 			Breadcrumb
 				breadcrumb_m; // contains the self ptr
-			concurrency::concurrent_unordered_map< std::string, ObjectWrapper >
+			concurrency::concurrent_unordered_map< size_t, ObjectWrapper >
 				objects_m; // Objects that live inside this scope
 			concurrency::concurrent_vector< Breadcrumb* >
 				using_m;
@@ -1341,6 +1341,64 @@ namespace GoodLang {
 			static Breadcrumb* FindNamespace(std::string_view const& name, Breadcrumb* start) {
 				return FindNamespace(Breadcrumb::CleanUpScopeName(name), start);
 			};
+			static Breadcrumb* FindClass(std::shared_ptr<Type_Info> const& type, Breadcrumb* start) {
+				auto type_hash{ type->uniqueHash };
+				std::shared_ptr<concurrency::concurrent_unordered_map<size_t, Breadcrumb*>> cache{ nullptr };
+				if (1) {
+					auto currVersion = start->child_versions->load();
+					bool doDelete = false;
+					if (1) {
+						auto shared = start->cached_namespace_lookups.Shared();
+						if (shared->size() == 0) {
+							doDelete = true;
+						}
+						else if (shared->back().first >= currVersion) {
+							cache = shared->back().second;
+						}
+						else {
+							doDelete = true;
+						}
+					}
+					if (cache) {
+						if (auto f = cache->find(type_hash), e = cache->end(); f != e) {
+							return f->second;
+						}
+					}
+					if (doDelete) {
+						auto shared = start->cached_namespace_lookups.Unique();
+						while (shared->size() > 0) {
+							if (shared->front().first < currVersion) {
+								shared->pop_front();
+							}
+							else if (shared->back().first < currVersion) {
+								shared->pop_back();
+							}
+							else {
+								break;
+							}
+						}
+						cache = std::make_shared<concurrency::concurrent_unordered_map<size_t, Breadcrumb*>>();
+						shared->push_back(std::pair<size_t, std::shared_ptr<concurrency::concurrent_unordered_map<size_t, Breadcrumb*>>>{ currVersion, cache });
+					}
+
+				}
+
+				auto Ptr = start->this_m->scope.lock();
+				if (Breadcrumb* BC = !Ptr ? (Breadcrumb*)nullptr : Ptr->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
+					if (namespacePtr->class_type_hash == type_hash) {
+						return SearchResult::Success;
+					}
+					return SearchResult::Failure;
+					})) {
+					if (cache) cache->insert({ type_hash, BC });
+					return BC;
+				}
+				else {
+					if (cache) cache->insert({ type_hash, nullptr });
+					return nullptr;
+				}
+			};
 
 			Breadcrumb* FindNamespace(std::string_view name) const {
 				return FindNamespace(name, this->breadcrumb_m.namespace_m);
@@ -1350,33 +1408,16 @@ namespace GoodLang {
 			};
 			Breadcrumb* FindClass(std::string_view name) const {
 				return FindNamespace(name);
-			};			
+			};				
 			Breadcrumb* FindClass(std::shared_ptr<Type_Info> const& type) const {
-				//if (!this->is_namespace()) {
-				//	if (auto ptr = this->breadcrumb_m.namespace_m->this_m->scope.lock()) {
-				//		return ptr->FindClass(type);
-				//	}
-				//}
-				size_t hash = type->uniqueHash;
-				if (auto BC = FindNearestScopeWhere([&hash](Breadcrumb* namespacePtr, int search_state)->int {
-					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
-					if (namespacePtr->class_type_hash == hash) {
-						return SearchResult::Success;
-					}
-					return SearchResult::Failure;
-				})) {
-					return BC;
-				}
-				else {
-					return nullptr;
-				}
+				return FindClass(type, this->breadcrumb_m.namespace_m);
 			};
 
 			// Explicitely looks for an object with the given name. Name may include specialization for the namespace to expect the object in. E.g.: 
 			// std::string::npos -> finds namespace "::std::string::" and finds object "npos"
 			std::shared_ptr<Any> FindObject(std::string_view Name) const {
 				// for speed, search ourselves
-				if (auto f = this->objects_m.find(std::string(Name)), e = this->objects_m.end(); f != e) {
+				if (auto f = this->objects_m.find(GetHash(Name)), e = this->objects_m.end(); f != e) {
 					return f->second.object;
 				}
 				else {
@@ -1416,13 +1457,13 @@ namespace GoodLang {
 					*constructorScopePtr{ nullptr };
 				std::string_view 
 					temp_name{ Name };				
-				std::string 
+				std::string_view
 					objName;
 				compound_string_view 
 					namespaceName;
 				size_t
 					namespaceName_hash;
-
+								
 				Breadcrumb::RemoveLeadingAndTrailing(temp_name, ':'); //  "npos" or "std::string::npos"
 				if (auto f = Breadcrumb::rFind(temp_name, "::"); f != std::string::npos) {
 					objName = std::string(temp_name.substr(f + 2, temp_name.length() - f));
@@ -1437,6 +1478,8 @@ namespace GoodLang {
 					namespaceName_hash = default_namespace_hash;
 				}
 				
+				size_t objNameHash{ GetHash(objName) };
+
 				// FIRST SEARCH PREFERENCES EXACT MATCHES
 				// SECOND SEARCH DOES ALLOW FOR CONVERSIONS, BUT NO TEMPLATES
 				// FINAL SEARCH ALLOWS FOR TEMPLATE FUNCTIONS
@@ -1468,14 +1511,12 @@ namespace GoodLang {
 					int searchDepth = 0;
 					if (1) {
 						// try to find the function from nearby scopes... 
-						if (FindNearestScopeWhere([namespaceName_hash, namespaceName, &out1, &out2, &objName, &params, &searchDepth, &sort, converter](Breadcrumb* namespacePtr, int search_state) -> int {
+						if (FindNearestScopeWhere([&objNameHash, namespaceName_hash, namespaceName, &out1, &out2, &objName, &params, &searchDepth, &sort, converter](Breadcrumb* namespacePtr, int search_state) -> int {
 							if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 								if (namespacePtr->current_namespace_hash != namespaceName_hash) {
 									auto QualifiedNameLen = namespacePtr->current_namespace.length();
 									if (namespaceName.length() < QualifiedNameLen) {
-										{
-											return SearchResult::Failure | SearchResult::StaticFailure;
-										}
+										return SearchResult::Failure | SearchResult::StaticFailure;
 									}
 									else {
 										if (Breadcrumb::Find(namespaceName, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
@@ -1497,7 +1538,7 @@ namespace GoodLang {
 								if (auto scope_ptr = namespacePtr->this_m->scope.lock()) {
 									if (!out1) {
 										if (scope_ptr->objects_m.size() > 0) {
-											auto f = scope_ptr->objects_m.find(objName);
+											auto f = scope_ptr->objects_m.find(objNameHash);
 											if (f != scope_ptr->objects_m.end()) {
 												if (!(StaticOnly && !f->second.is_static())) {
 													if (params.size() == 0) {
@@ -1517,6 +1558,29 @@ namespace GoodLang {
 									}
 									if (namespacePtr->this_m->is_namespace()) {
 										if (auto ptr = std::dynamic_pointer_cast<NamespaceScope>(scope_ptr)) {
+											/*double cost{ details::TypeConversionWorstCaseCost };
+											auto matched_pair = ptr->functions_m.BuildMatches(objName, const_cast<ParamTypes&>(params), *converter, &cost);
+											if (matched_pair.first) {
+												if (cost == 0) {
+													out1 = nullptr;
+													out2 = *matched_pair.first;
+													return SearchResult::Success;
+												}
+												if ((cost + searchDepth) < sort[0].first) {
+													sort[0].first = cost + searchDepth++;
+													sort[0].second = &ptr->breadcrumb_m;
+												}
+											}
+											else if (matched_pair.second) {
+												if ((cost + searchDepth) < sort[1].first) {
+													sort[1].first = cost + searchDepth++;
+													sort[1].second = &ptr->breadcrumb_m;
+												}
+											}*/
+
+
+
+
 											if (!sort[0].second) {
 												double cost{ details::TypeConversionWorstCaseCost };
 												if (auto& out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true, &cost)) {
@@ -1612,14 +1676,15 @@ namespace GoodLang {
 			std::shared_ptr<Any> EmplaceObject(std::string_view Name, Any const& object, int objectState = ObjectWrapper::ObjectState::Normal)  {
 				auto sv = Breadcrumb::CleanUpScopeName(Name); // "npos" -> "::npos::"   OR    "std::string::npos" -> "::std::string::npos::"    
 				Breadcrumb::RemoveTrailing(sv, ':'); // "::npos::" -> "::npos"   OR    "::std::string::npos::" -> "::std::string::npos"
-				std::string objName;
+				std::string_view objName;
 				compound_string_view namespaceName;
 				if (auto f = Breadcrumb::rFind(sv, "::"); f != std::string::npos) {
 					objName = std::string(sv.substr(f + 2, sv.length() - f));
 					namespaceName = sv.substr(0, f + 2);
 				}
+				auto objNameHash{ GetHash(objName) };
 				std::shared_ptr<Any> out{ nullptr };
-				if (auto BC = FindNearestScopeWhere([&namespaceName, &objName, &sv, &object, &out, &objectState](Breadcrumb* namespacePtr, int search_state)->int {
+				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)->int {
 					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
 						if (namespacePtr->current_namespace != namespaceName) {
 							// we will fail -- but the question is whether it's a full static failure or not. 
@@ -1641,7 +1706,7 @@ namespace GoodLang {
 							if (auto ptr = namespacePtr->this_m->scope.lock()) {
 								if (namespacePtr->this_m->is_class()) {
 									if (objectState & ObjectWrapper::ObjectState::Static) {
-										out = ptr->objects_m.insert({ objName, ObjectWrapper(object, objectState) }).first->second.object;
+										out = ptr->objects_m.insert({ objNameHash, ObjectWrapper(object, objectState) }).first->second.object;
 									}
 									else { // the user is adding a member object, NOT a static object. 
 										if (auto classPtr = std::dynamic_pointer_cast<ClassScope>(ptr)) {
@@ -1650,17 +1715,17 @@ namespace GoodLang {
 												throw std::runtime_error("Attempting to add a member object to a built-in type, such as an int or double. This is not legal.");
 											}
 											else {
-												classPtr->DeclareMemberObject(objName, object.Type(), std::make_shared<Any>(object));
+												classPtr->DeclareMemberObject(std::string(objName), object.Type(), std::make_shared<Any>(object));
 											}
 										}										
 									}
 								}
 								else {
 									if (namespacePtr->this_m->is_namespace() && !namespacePtr->this_m->is_root()) {
-										out = ptr->objects_m.insert({ objName, ObjectWrapper(object, objectState | ObjectWrapper::ObjectState::Static) }).first->second.object;
+										out = ptr->objects_m.insert({ objNameHash, ObjectWrapper(object, objectState | ObjectWrapper::ObjectState::Static) }).first->second.object;
 									}
 									else {
-										out = ptr->objects_m.insert({ objName, ObjectWrapper(object, objectState) }).first->second.object;
+										out = ptr->objects_m.insert({ objNameHash, ObjectWrapper(object, objectState) }).first->second.object;
 									}
 								}
 								return SearchResult::Success;
@@ -1671,10 +1736,10 @@ namespace GoodLang {
 						// any namespace is technically a candidate
 						if (auto ptr = namespacePtr->this_m->scope.lock()) {
 							if (namespacePtr->this_m->is_namespace() && !namespacePtr->this_m->is_root()) {
-								out = ptr->objects_m.insert({ objName, ObjectWrapper(object, objectState | ObjectWrapper::ObjectState::Static) }).first->second.object;
+								out = ptr->objects_m.insert({ objNameHash, ObjectWrapper(object, objectState | ObjectWrapper::ObjectState::Static) }).first->second.object;
 							}
 							else {
-								out = ptr->objects_m.insert({ objName, ObjectWrapper(object, objectState) }).first->second.object;
+								out = ptr->objects_m.insert({ objNameHash, ObjectWrapper(object, objectState) }).first->second.object;
 							}
 							return SearchResult::Success;
 						}
@@ -2743,41 +2808,6 @@ namespace GoodLang {
 							throw(exception::not_found_error("Custom class type was no longer available"));
 						}
 					}, ParamTypes({ ClassType->MakeConstRef() })));
-
-					//this->GetTypeConverterTree()->AddConverter([selfPtr = std::weak_ptr<ClassScope>(std::dynamic_pointer_cast<ClassScope>(this->self_id_m.scope.lock()))](Any const& from)->Any {
-					//	DynamicObject const& obj = from.cast<DynamicObject const&>();
-					//	if (auto self = selfPtr.lock()) {
-					//		DynamicObject out{ self->ClassType };
-					//		self->ConstructMemberObjects(out, obj);
-					//		return out;
-					//	}
-					//	else {
-					//		throw(exception::not_found_error("Custom class type was no longer available"));
-					//	}
-					//}, ClassType->MakeBase(), ClassType->MakeBase());
-					//this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
-					//	return from;
-					//}, ClassType->MakeBase(), ClassType->MakeRef());
-					//this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
-					//	return from;
-					//}, ClassType->MakeBase(), ClassType->MakeConstRef());
-					//this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
-					//	return from;
-					//}, ClassType->MakeRef(), ClassType->MakeConstRef());
-					//this->GetTypeConverterTree()->AddConverter([](Any const& from)->Any {
-					//	return from;
-					//}, ClassType->MakeConstRef(), ClassType->MakeConstRef());
-					//this->GetTypeConverterTree()->AddConverter([selfPtr = std::weak_ptr<ClassScope>(std::dynamic_pointer_cast<ClassScope>(this->self_id_m.scope.lock()))](Any const& from)->Any {
-					//	DynamicObject const& obj = from.cast<DynamicObject const&>();
-					//	if (auto self = selfPtr.lock()) {
-					//		DynamicObject out{ self->ClassType };
-					//		self->ConstructMemberObjects(out, obj);
-					//		return out;
-					//	}
-					//	else {
-					//		throw(exception::not_found_error("Custom class type was no longer available"));
-					//	}
-					//}, ClassType->MakeConstRef(), ClassType->MakeBase());
 
 					// upcast constructor for inherited types
 					for (auto& derivedFrom : DerivedFrom) {
