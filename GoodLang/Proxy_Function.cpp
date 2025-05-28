@@ -263,7 +263,7 @@ namespace GoodLang {
 		static auto CreateConversionPaths{ [this](
 			utilities::FastAllocator<UniformCostSearchNode, 1024>& alloc,
 			utilities::FastAllocator<UniformCostSearchNodeBestPath, 1024>& alloc2,
-			conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {
+			conversionTreeType& AllConversions, std::shared_ptr<Type_Info> const& From, std::shared_ptr<Type_Info> const& To) {		
 				// create the shortest paths from "From" to all possible vertices. 
 				// details::flat_map< size_t, std::pair<std::shared_ptr<Type_Info>, UniformCostSearchNode*> > vertices;
 				std::unordered_map <size_t, std::pair<std::shared_ptr<Type_Info>, UniformCostSearchNode*>> vertices;
@@ -998,9 +998,9 @@ namespace GoodLang {
 		if (1) {
 			// Three sorted groups of candidates. 
 			// Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
-			thread_local std::map< size_t, std::array<std::map<double, FunctionPtr, std::less<double>>, 3>, std::greater<size_t>>
+			thread_local static std::map< size_t, std::array<std::pair<double, FunctionPtr>, 3>, std::greater<size_t>>
 				candidates;
-			candidates.clear();
+			defer(candidates.clear());
 
 			// Create candidates.
 			{
@@ -1042,15 +1042,45 @@ namespace GoodLang {
 
 						if (isTemplateFunc) {
 							if (AllowTemplateInstantiation) {
-								candidates[function.second.second->m_function->NumArguments()][2][conversionCost] = function.second.second;
+								auto& pair = candidates[function.second.second->m_function->NumArguments()][2];
+								if (pair.second) {
+									if (pair.first > conversionCost) {
+										pair.first = conversionCost;
+										pair.second = function.second.second;
+									}
+								}
+								else {
+									pair.first = conversionCost;
+									pair.second = function.second.second;
+								}
 							}
 						}
 						else {
 							if (conversionCost == 0) {
-								candidates[function.second.second->m_function->NumArguments()][0][conversionCost] = function.second.second;
+								auto& pair = candidates[function.second.second->m_function->NumArguments()][0];
+								if (pair.second) {
+									if (pair.first > conversionCost) {
+										pair.first = conversionCost;
+										pair.second = function.second.second;
+									}
+								}
+								else {
+									pair.first = conversionCost;
+									pair.second = function.second.second;
+								}
 							}
 							else if (AllowTypeConversion && !isExplicitFunc) {
-								candidates[function.second.second->m_function->NumArguments()][1][conversionCost] = function.second.second;
+								auto& pair = candidates[function.second.second->m_function->NumArguments()][1];
+								if (pair.second) {
+									if (pair.first > conversionCost) {
+										pair.first = conversionCost;
+										pair.second = function.second.second;
+									}
+								}
+								else {
+									pair.first = conversionCost;
+									pair.second = function.second.second;
+								}
 							}
 						}
 					}
@@ -1059,21 +1089,19 @@ namespace GoodLang {
 
 			// Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).
 			for (auto& numParams : candidates) {
-				for (auto& preference_order : numParams.second) {
-					for (auto& candidate : preference_order) {
-						if (candidate.first >= details::TypeConversionWorstCaseCost) continue;
-						if (!candidate.second) continue;
+				for (auto& candidate : numParams.second) {
+					if (candidate.first >= details::TypeConversionWorstCaseCost) continue;
+					if (!candidate.second) continue;
 
-						// ParamTypes ParamTypesToCache{ params };
-						Function FunctionToCache{ candidate.second->m_function };
-						FunctionToCache.m_isCached = true;
-						FunctionToCache.cost = candidate.first;
-						// if someone already beat us to it, it should return the "current" value
-						if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
-							if (finalCost) *finalCost = candidate.first;
-							return func->m_function;
-						}
-					}
+					// ParamTypes ParamTypesToCache{ params };
+					Function FunctionToCache{ candidate.second->m_function };
+					FunctionToCache.m_isCached = true;
+					FunctionToCache.cost = candidate.first;
+					// if someone already beat us to it, it should return the "current" value
+					if (auto func = this->emplace(functionName, Params, FunctionToCache, false)) {
+						if (finalCost) *finalCost = candidate.first;
+						return func->m_function;
+					}					
 				}
 			}
 		}

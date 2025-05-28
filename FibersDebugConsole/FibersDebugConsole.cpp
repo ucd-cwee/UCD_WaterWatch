@@ -237,114 +237,38 @@ namespace GoodLang {
 			};
 		};
 
-		class ThreadFlagsImpl {
-		protected:
-			size_t scope_index;
-
-		public:
-			static concurrency::concurrent_vector<ThreadFlagsImpl>& Instances() {
-				concurrency::concurrent_vector<ThreadFlagsImpl> out;
-				return out;
-			}
-			static concurrency::concurrent_queue<size_t>& Free() {
-				concurrency::concurrent_queue<size_t> out;
-				return out;
-			}
-
-			// when a new Breadcrumb shows up, it can register with the global shared quantity.
-			static ThreadFlagsImpl& GetInstance() {
-				size_t scope_index;
-				if (Free().try_pop(scope_index)) {
-					auto bg = Instances().grow_by(1);
-					bg->scope_index = scope_index;
-					scope_index = std::distance(Instances().begin(), bg);
-				}
-				auto& out{ Instances()[scope_index] };
-
-				return out;
-			};
-			static void ReturnInstance(ThreadFlagsImpl& ptr) {				
-				Free().push(ptr.scope_index);
-			};
-		};
-		class ThreadFlags {
-		private:
-			ThreadFlagsImpl& source;
-
-		public:
-			ThreadFlags() : source(ThreadFlagsImpl::GetInstance()) {};
-			~ThreadFlags() { ThreadFlagsImpl::ReturnInstance(source); };
-
-		};
-
-
-
-		class ThreadLocalFlags {
-		private:
-			class ThreadLocalFlagsIndex {
-			public:
-				ThreadLocalFlagsIndex(size_t id) : index(id) {};
-				~ThreadLocalFlagsIndex() {
-					indexes().push(index);
-				};
-				size_t index;
-			};
-			static ThreadLocalFlagsIndex GetThreadID_impl() {
-				static std::atomic<size_t> T;
-				size_t out;
-				while (!indexes().try_pop(out)) {
-					indexes().push(T.fetch_add(1));
-				}
-				return ThreadLocalFlagsIndex(out);
-			};
-			static concurrency::concurrent_queue<size_t>& indexes() {
-				static concurrency::concurrent_queue<size_t> out;
-				return out;
-			};
-			std::pair<bool, bool> TLS_arr[GoodLang::EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum];
-		public:
-			static ThreadLocalFlagsIndex& GetThreadID() {
-				thread_local ThreadLocalFlagsIndex out{ GetThreadID_impl() };
-				return out;
-			};
-			std::pair<bool, bool>& operator[](ThreadLocalFlagsIndex const& index) {
-				return TLS_arr[index.index];
-			};
-			const std::pair<bool, bool>& operator[](ThreadLocalFlagsIndex const& index) const {
-				return TLS_arr[index.index];
-			};
-		};
-
 		template <typename T> class ThreadLocal {
 		private:
 			std::array<T, GoodLang::EpochGarbageCollectorImpl::ThreadManager::kMaxThreadNum> TLS_arr;
-						
+			
 			auto& GetTLS() { 
 				return TLS_arr[GetThreadID()];
 			};
 			auto& GetTLS() const { 
-				return TLS_arr[GetThreadID()];
+				return TLS_arr[GetThreadID()]; 
 			};
 
 		public:
-			ThreadLocal() {};
-
 			static const auto& GetThreadID() {
-				return GoodLang::EpochGarbageCollectorImpl::IDManager::GetThreadID();
+				static thread_local auto x{ GoodLang::EpochGarbageCollectorImpl::IDManager::GetThreadID() };
+				return x;
 			};
 
 			T* operator->() { return &GetTLS(); };
 			const T* operator->() const { return &GetTLS(); };
 			T& operator*() { return GetTLS(); };
 			const T& operator*() const { return GetTLS(); };
-			T& operator[](size_t index) { 
-				return TLS_arr[index];
-			};
-			const T& operator[](size_t index) const {
-				return TLS_arr[index]; 
+			T& operator[](size_t index) { return TLS_arr[index]; };
+			const T& operator[](size_t index) const { return TLS_arr[index]; };
+
+			ThreadLocal& operator=(T const& val) {
+				for (auto& x : TLS_arr) {
+					x = val;
+				}
+				return *this;
 			};
 		};
-		
+
 		// Used to track and hash the current scope position. 
 		class Breadcrumb {
 		public:
@@ -555,6 +479,7 @@ namespace GoodLang {
 				}
 #endif
 			};
+
 			static size_t	        rFindString(compound_string_view const& str, std::string_view const& text) {
 #if 0				
 				return str.rfind(text);
@@ -596,6 +521,7 @@ namespace GoodLang {
 				}
 #endif
 			};
+
 			static size_t			Find(std::string_view const& WITHIN, std::string_view const& FIND, bool casesensitive = true, long long start = 0, long long end = -1) {
 				if (end == -1) {
 					end = WITHIN.length();
@@ -797,7 +723,7 @@ namespace GoodLang {
 				current_namespace; // e.g. "::" or "::UI::Color::"
 			size_t
 				current_namespace_hash;
-			ThreadLocal<std::pair<bool, bool>> // ThreadLocalFlags // 
+			ThreadLocal<std::pair<bool, bool>>
 				check_flag; // self, all
 			GoodLang::atomic_ptr<Breadcrumb>
 				child_m{ nullptr }; // may point to the first child of this node
@@ -1105,7 +1031,7 @@ namespace GoodLang {
 			) const {
 				auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
 				Breadcrumb* finalResult = nullptr;
-				auto& threadIndex{ ThreadLocal<bool>::GetThreadID() }; // ThreadLocalFlags::GetThreadID()
+				size_t threadIndex = ThreadLocal<bool>::GetThreadID();
 
 				// Prevent Duplication
 				auto& self_flag = selfPtr.check_flag[threadIndex];
@@ -1328,210 +1254,71 @@ namespace GoodLang {
 
 			Breadcrumb* FindNamespace(std::string_view name) const {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
-
 				auto Name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
-				size_t name_hash = Name.hash();
-				size_t name2_hash;
-				size_t name3_hash;
 				auto len = Name.length();
+				std::set< size_t> target_hash; {
+					size_t name_hash = Name.hash();
+					target_hash.insert(name_hash);
 
-				if (name_hash == default_namespace_hash) {
-					return this->breadcrumb_m.root_m;
-				}
-				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
-					name2_hash = name_hash;
-					name3_hash = name_hash;
-				}
-				else {
 					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
-					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
-					// instead of "Color", it searches for "::UI::Color::"
-
-					if (this->breadcrumb_m.parent_m) {
-						name3_hash = temp.hash(this->breadcrumb_m.parent_m->current_namespace_hash);
-					}
-					else {
-						name3_hash = name2_hash;
+					
+					auto* BC = &this->breadcrumb_m;
+					while (BC) {
+						target_hash.insert(temp.hash(BC->current_namespace_hash));
+						BC = BC->parent_m;
 					}
 				}
 
-				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+				long long QualifiedNameLen;
+				if (target_hash.count(default_namespace_hash) > 0) return this->breadcrumb_m.root_m;				
+				else if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
 					if (!namespacePtr->this_m->is_namespace()) return SearchResult::Failure;
-					long long QualifiedNameLen = namespacePtr->current_namespace.length();
-
-					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name3_hash) return SearchResult::Success;
-
-					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							if (Name.length() < QualifiedNameLen) {
-								//if (Breadcrumb::Find(namespacePtr->current_namespace, Name, true, QualifiedNameLen - Name.length()) == (QualifiedNameLen - Name.length())) {
-								//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
-								//	return SearchResult::Success;
-								//}
-								//else 
-								{
-									return SearchResult::Failure | SearchResult::StaticFailure;
-								}
-							}
-							else {
-								if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
-									// e.g. looking for "std::string::" but this namespace was "::UI::"
-									return SearchResult::Failure | SearchResult::StaticFailure;
-								}
-								else return SearchResult::Failure;
-							}
-						}
+					QualifiedNameLen = namespacePtr->current_namespace.length();
+					if (target_hash.count(namespacePtr->current_namespace_hash) > 0) return SearchResult::Success;					
+					else if (search_state & SearchingChildren) {
+						if (len < QualifiedNameLen) return SearchResult::Failure | SearchResult::StaticFailure;
+						else if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
+						else return SearchResult::Failure;										
 					}
-
-					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
-					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
-
-					return SearchResult::Failure;
-				})) {
-					return BC;
-				}
-				else {
-					return nullptr;
-				}
+					else return SearchResult::Failure;
+				})) return BC;
+				else return nullptr;				
 			};
 			Breadcrumb* FindNamespace(compound_string_view const& Name) const {
 				static size_t default_namespace_hash{ GetHash(std::string("::")) };
-				size_t name_hash = Name.hash();
-				size_t name2_hash;
-				size_t name3_hash;
 				auto len = Name.length();
+				std::set< size_t> target_hash; {
+					size_t name_hash = Name.hash();
+					target_hash.insert(name_hash);
 
-				if (name_hash == default_namespace_hash) {
-					return this->breadcrumb_m.root_m;
-				}
-				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
-					name2_hash = name_hash;
-					name3_hash = name_hash;
-				}
-				else {
 					compound_string_view temp = Name;
 					Breadcrumb::RemoveLeading(temp, ':');
-					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
-					// instead of "Color", it searches for "::UI::Color::"
-					if (this->breadcrumb_m.parent_m) {
-						name3_hash = temp.hash(this->breadcrumb_m.parent_m->current_namespace_hash);
-					}
-					else {
-						name3_hash = name2_hash;
+
+					auto* BC = &this->breadcrumb_m;
+					while (BC) {
+						target_hash.insert(temp.hash(BC->current_namespace_hash));
+						BC = BC->parent_m;
 					}
 				}
 
-				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+				long long QualifiedNameLen;
+				if (target_hash.count(default_namespace_hash) > 0) return this->breadcrumb_m.root_m;
+				else if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
 					if (!namespacePtr->this_m->is_namespace()) return SearchResult::Failure;
-					long long QualifiedNameLen = namespacePtr->current_namespace.length();
-
-					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name3_hash) return SearchResult::Success;
-
-					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							if (Name.length() < QualifiedNameLen) {
-								//if (Breadcrumb::Find(namespacePtr->current_namespace, Name, true, QualifiedNameLen - Name.length()) == (QualifiedNameLen - Name.length())) {
-								//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
-								//	return SearchResult::Success;
-								//}
-								//else 
-								{
-									return SearchResult::Failure | SearchResult::StaticFailure;
-								}
-							}
-							else {
-								if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
-									// e.g. looking for "std::string::" but this namespace was "::UI::"
-									return SearchResult::Failure | SearchResult::StaticFailure;
-								}
-								else return SearchResult::Failure;
-							}
-						}
+					QualifiedNameLen = namespacePtr->current_namespace.length();
+					if (target_hash.count(namespacePtr->current_namespace_hash) > 0) return SearchResult::Success;
+					else if (search_state & SearchingChildren) {
+						if (len < QualifiedNameLen) return SearchResult::Failure | SearchResult::StaticFailure;
+						else if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
+						else return SearchResult::Failure;
 					}
-
-					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
-					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
-
-					return SearchResult::Failure;
-					})) {
-					return BC;
-				}
-				else {
-					return nullptr;
-				}
+					else return SearchResult::Failure;
+					})) return BC;
+				else return nullptr;
 			};
 			Breadcrumb* FindClass(std::string_view name) const {
-				static size_t default_namespace_hash{ GetHash(std::string("::")) };
-
-				auto Name = Breadcrumb::CleanUpScopeName(name); // instead of "Color", it searches for "::Color::"
-				size_t name_hash = Name.hash();
-				size_t name2_hash;
-				size_t name3_hash;
-				auto len = Name.length();
-				if (name_hash == default_namespace_hash) {
-					return this->breadcrumb_m.root_m;
-				}
-				else if (default_namespace_hash == this->breadcrumb_m.current_namespace_hash) {
-					name2_hash = name_hash;
-					name3_hash = name_hash;
-				}
-				else {
-					compound_string_view temp = Name;
-					Breadcrumb::RemoveLeading(temp, ':');
-					name2_hash = temp.hash(this->breadcrumb_m.current_namespace_hash);
-					// instead of "Color", it searches for "::UI::Color::"
-					if (this->breadcrumb_m.parent_m) {
-						name3_hash = temp.hash(this->breadcrumb_m.parent_m->current_namespace_hash);
-					}
-					else {
-						name3_hash = name2_hash;
-					}
-				}
-
-				if (auto BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
-					if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
-					long long QualifiedNameLen = namespacePtr->current_namespace.length();
-
-					if (namespacePtr->current_namespace_hash == name_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name2_hash) return SearchResult::Success;
-					if (namespacePtr->current_namespace_hash == name3_hash) return SearchResult::Success;
-
-					if (/*(search_state & SearchUpHitNamespace) && */(search_state & SearchingChildren)) {
-						if ((namespacePtr->current_namespace_hash != name_hash)) {
-							if (Name.length() < QualifiedNameLen) {
-								//if (Breadcrumb::Find(namespacePtr->current_namespace, Name, true, QualifiedNameLen - Name.length()) == (QualifiedNameLen - Name.length())) {
-								//	// e.g. looking for "::Color::" but this namespace was "::UI::Color::", which technically works!
-								//	return SearchResult::Success;
-								//}
-								//else 
-								{
-									return SearchResult::Failure | SearchResult::StaticFailure;
-								}
-							}
-							else {
-								if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) {
-									// e.g. looking for "std::string::" but this namespace was "::UI::"
-									return SearchResult::Failure | SearchResult::StaticFailure;
-								}
-								else return SearchResult::Failure;
-							}					
-						}
-					}
-					auto F = Breadcrumb::rFind(namespacePtr->current_namespace, Name);
-					if ((F != std::string::npos) && (F == (QualifiedNameLen - len))) return SearchResult::Success;
-
-					return SearchResult::Failure;
-				})) {
-					return BC;
-				}
-				else {
-					return nullptr;
-				}
+				return FindNamespace(name);
 			};			
 			Breadcrumb* FindClass(std::shared_ptr<Type_Info> const& type) const {
 				if (!this->is_namespace()) {
@@ -2170,8 +1957,7 @@ namespace GoodLang {
 				check_cache& requiringReset = GetCheckMap(),
 				int depth = 0
 			) const override {
-				auto& threadIndex{ ThreadLocal<bool>::GetThreadID() }; // ThreadLocalFlags::GetThreadID()
-
+				size_t threadIndex{ ThreadLocal<bool>::GetThreadID() };
 				Breadcrumb
 					*finalResult{ nullptr }, 
 					*thisParent, 
@@ -13112,11 +12898,6 @@ namespace GoodLang {
 
 	};
 
-
-
-
-
-
 #undef optional_defer
 #undef push_back_if_not_at_end
 };
@@ -21382,6 +21163,12 @@ namespace GoodLang {
 		__forceinline void GetChildren(Tag< GoodLang::Engine::Compiler::Interpreter::Parser::ParseNode >, GoodLang::Engine::Compiler::Interpreter::Parser::ParseNode const& r, std::vector< NodeCache >& out) {
 			// out.push_back(GoodLang::GetChildren(r.load()));
 		};
+		__forceinline void ToString(Tag< GoodLang::Engine2::Compiler::Interpreter::Parser::ParseNode >, GoodLang::Engine2::Compiler::Interpreter::Parser::ParseNode const& r, std::string& out) {
+			out = r.first->to_string();
+		};
+		__forceinline void GetChildren(Tag< GoodLang::Engine2::Compiler::Interpreter::Parser::ParseNode >, GoodLang::Engine2::Compiler::Interpreter::Parser::ParseNode const& r, std::vector< NodeCache >& out) {
+			// out.push_back(GoodLang::GetChildren(r.load()));
+		};
 	};
 };
 
@@ -21506,9 +21293,6 @@ int main() {
 			assert(false);
 		}catch (exception::not_found_error&) {}
 
-
-
-
 #if 1
 		Stopwatch sw;
 		sw.Start();
@@ -21582,7 +21366,7 @@ int main() {
 		print(Units::second(sw.Stop_s()).ToString());
 #endif
 
-		if (0) {
+		if (1) {
 			std::string Script = R"(
 				print(ONE_HUNDRED);
 
@@ -21632,12 +21416,12 @@ int main() {
 			}
 		}
 
-		if (0) {
+		if (1) {
 			if (1) {
 				std::vector<std::string_view> DebugScripts;
 				if (1) {
 					DebugScripts = {
-#if 0
+#if 1
 					R"(
 						Units::meter x;
 					)",
@@ -22458,7 +22242,7 @@ int main() {
 					auto expandedScript = state.GetFinalScript();
 
 					print(ToString("\nScript #") + ToString(scriptN++) + ToString(": "));
-					// print(expandedScript);
+					print(expandedScript);
 					auto this_scope = std::make_shared<Scopes::RootScope>();
 					this_scope->SetSelf(this_scope);
 					this_scope->AddBuiltIns();
@@ -22466,9 +22250,9 @@ int main() {
 						auto parsed_result = GoodLang::Engine2::Compiler::Interpreter::Parser().Parse(expandedScript, this_scope);
 						Stopwatch sw;
 						sw.Start();
-						GoodLang::parallel::options::RethrowsExceptions(false);
+						//GoodLang::parallel::options::RethrowsExceptions(false);
 						auto result = parsed_result.first->eval(parsed_result.second);
-						GoodLang::parallel::options::RethrowsExceptions(true);
+						//GoodLang::parallel::options::RethrowsExceptions(true);
 						sw.Stop();
 						print(ToString(parsed_result));
 						print(GoodLang::printf("\t (%f sec) -> \t", (float)sw.Seconds_Passed()) + ToString(result));
