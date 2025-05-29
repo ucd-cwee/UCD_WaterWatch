@@ -242,23 +242,26 @@ namespace GoodLang {
 		// Allows adding and removing of listeners in parallel
 		class Callback {
 		private:
-			GoodLang::details::flat_map<Breadcrumb*, std::function<void(Breadcrumb*)>>
+			GoodLang::details::flat_map<BasicScope*, std::pair<std::weak_ptr<BasicScope>, std::function<void(BasicScope*)>>>
 				listeners;
 
 		public:
 			// add a listener to the list
-			void add_listener(Breadcrumb* p, std::function<void(Breadcrumb*)>&& listener) {
-				listeners.insert(p, std::move(listener));
-			};
-			// does NOT maintain order.
-			void remove_listener(Breadcrumb* index) {
-				listeners.erase(index);
+			void add_listener(std::shared_ptr<BasicScope> const& p, std::function<void(BasicScope*)>&& listener) {
+				if (p) listeners.insert(p.get(), { p, std::move(listener) });
 			};
 			// callback performed on all listeners
 			void speak() {
+				std::vector< BasicScope* > deleteMe;
 				for (auto& x : listeners) {
-					x.second->operator()(*x.first);
+					if (auto L = x.second->first.lock()) {
+						x.second->second(&*L);
+					}
+					else {
+						deleteMe.push_back(*x.first);
+					}
 				}
+				for (auto& x : deleteMe) listeners.erase(x);
 			};
 
 		};
@@ -989,13 +992,7 @@ namespace GoodLang {
 			BasicScope(BasicScope &&) = delete;
 			BasicScope& operator=(BasicScope const&) = delete;
 			BasicScope& operator=(BasicScope&&) = delete;
-			virtual ~BasicScope() {
-				if (this->breadcrumb_m.parent_m) {
-					if (this->breadcrumb_m.parent_m->this_m->scope_ptr) {
-						this->breadcrumb_m.parent_m->this_m->scope_ptr->children_listeners.remove_listener(&this->breadcrumb_m);
-					}
-				}
-			};
+			virtual ~BasicScope() {};
 			virtual void SetSelf(std::shared_ptr<BasicScope> const& Self) {
 				self_id_m.scope = Self;
 				self_id_m.scope_ptr = Self.get();
@@ -1005,8 +1002,8 @@ namespace GoodLang {
 
 				if (this->breadcrumb_m.parent_m) {
 					if (this->breadcrumb_m.parent_m->this_m->scope_ptr) {
-						this->breadcrumb_m.parent_m->this_m->scope_ptr->children_listeners.add_listener(&this->breadcrumb_m, [](Breadcrumb* p) {
-							p->this_m->scope_ptr->UpdateObjectFunctionVersion();
+						this->breadcrumb_m.parent_m->this_m->scope_ptr->children_listeners.add_listener(Self, [](BasicScope* p) {
+							p->UpdateObjectFunctionVersion();
 						});
 					}
 				}
@@ -1765,57 +1762,7 @@ namespace GoodLang {
 														sort[0].second = &ptr->breadcrumb_m;
 													}
 												}
-											}
-
-											//if (!sort[0].second) {
-											//	double cost{ details::TypeConversionWorstCaseCost };
-											//	if (auto& out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, true, true, &cost)) {
-											//		if (1) {
-											//			if ((cost + searchDepth) < sort[1].first) {
-											//				sort[1].first = cost + searchDepth++;
-											//				sort[1].second = &ptr->breadcrumb_m;
-											//			}
-											//		}
-											//		if (!out->GetSignature().IsTemplate()) {
-											//			if ((cost + searchDepth) < sort[0].first) {
-											//				sort[0].first = cost + searchDepth++;
-											//				sort[0].second = &ptr->breadcrumb_m;
-											//				if (cost == 0) {
-											//					out1 = nullptr;
-											//					out2 = out;
-											//					return SearchResult::Success;
-											//				}
-											//			}
-											//		}
-											//		else {
-											//			if (auto& out3 = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true, &cost)) {
-											//				if (cost == 0) {
-											//					out1 = nullptr;
-											//					out2 = out3;
-											//					return SearchResult::Success;
-											//				}
-											//				if ((cost + searchDepth) < sort[0].first) {
-											//					sort[0].first = cost + searchDepth++;
-											//					sort[0].second = &ptr->breadcrumb_m;
-											//				}
-											//			}
-											//		}
-											//	}
-											//}
-											//else {
-											//	double cost{ details::TypeConversionWorstCaseCost };
-											//	if (auto& out = ptr->functions_m.BuildMatch(objName, const_cast<ParamTypes&>(params), *converter, false, true, &cost)) {
-											//		if (cost == 0) {
-											//			out1 = nullptr;
-											//			out2 = out;
-											//			return SearchResult::Success;
-											//		}
-											//		if ((cost + searchDepth) < sort[0].first) {
-											//			sort[0].first = cost + searchDepth++;
-											//			sort[0].second = &ptr->breadcrumb_m;
-											//		}
-											//	}
-											//}
+											}											
 										}
 									}
 								}
@@ -2028,7 +1975,7 @@ namespace GoodLang {
 				for (auto& p : Params) {
 					std::string className = p.lock()->name(); 
 					if (auto ptr = this->FindClass(p.lock())) {
-						className = ptr->this_m->scope_name;
+						className = std::string(ptr->this_m->scope_name);
 					}
 
 					if (params_str.empty()) {
@@ -2763,8 +2710,8 @@ namespace GoodLang {
 					this->breadcrumb_m.child_versions = this->breadcrumb_m.root_m->child_versions;
 				if (this->breadcrumb_m.parent_m) {
 					if (this->breadcrumb_m.parent_m->this_m->scope_ptr) {
-						this->breadcrumb_m.parent_m->this_m->scope_ptr->children_listeners.add_listener(&this->breadcrumb_m, [](Breadcrumb* p) {
-							p->this_m->scope_ptr->UpdateObjectFunctionVersion();
+						this->breadcrumb_m.parent_m->this_m->scope_ptr->children_listeners.add_listener(Self, [](BasicScope* p) {
+							p->UpdateObjectFunctionVersion();
 						});
 					}
 				}
@@ -21436,7 +21383,6 @@ namespace GoodLang {
 			};
 		};
 		
-
 	};
 
 	namespace Impl {
@@ -22510,26 +22456,31 @@ int main() {
 				for (auto& script : DebugScripts) {
 					GoodLang::Engine2::Compiler::Preprocessor::PreprocessorState state;					
 					std::string expandedScript;
+					Engine2::Compiler::Preprocessor::PreprocessorTokenPtr Interpretted;
+					Engine2::Compiler::Interpreter::Parser::ParseNode parsed_result;
 					try {
-						auto Interpretted = GoodLang::Engine2::Compiler::Preprocessor().Parse(script);
+						Interpretted = GoodLang::Engine2::Compiler::Preprocessor().Parse(script);
 						Interpretted->GenerateExpandedCode(state);
 						expandedScript = state.GetFinalScript();
 
 						print(ToString("\nScript #") + ToString(scriptN++) + ToString(": "));
-						print(expandedScript);
+						
 						auto this_scope = std::make_shared<Scopes::RootScope>();
 						this_scope->SetSelf(this_scope);
 						this_scope->AddBuiltIns();
 					
-						auto parsed_result = GoodLang::Engine2::Compiler::Interpreter::Parser().Parse(expandedScript, this_scope);
+						parsed_result = GoodLang::Engine2::Compiler::Interpreter::Parser().Parse(expandedScript, this_scope);
 						Stopwatch sw;
 						sw.Start();
 						auto result = parsed_result.first->eval(parsed_result.second);
 						sw.Stop();
-						print(ToString(parsed_result));
+						
 						print(GoodLang::printf("\t (%f sec) -> \t", (float)sw.Seconds_Passed()) + ToString(result));
 					}
 					catch (GoodLang::Engine2::exception::eval_error& e) {
+						// print(ToString(parsed_result));
+						print(expandedScript);
+
 						if (e.start_position.pos >= 0 && e.start_position.pos < expandedScript.length()) {
 							print("####");
 							print(expandedScript.substr(0, e.start_position.pos));
