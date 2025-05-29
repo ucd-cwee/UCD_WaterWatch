@@ -761,19 +761,35 @@ namespace GoodLang {
 			}
 			return out;
 		};
-		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
+		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any>& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
+			long long s{ (long long)t_to.size() };
 			std::vector<Any> out{ t_from };
 
-			if (t_to.size() > t_from.size()) 
+			if (s > t_from.size()) 
 				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
 
-			out.resize(t_to.size());
+			out.resize(s);
 			
-			for (long long i = t_to.size() - 1; i >= 0; --i) {
+			for (long long i = s - 1ull; i >= 0; --i) {
 				t_conversions.Convert_In_Place(out[i], t_to[i].lock());
 			}
 			return out;
 		};
+		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any>&& t_from, ParamTypes const& t_to, TypeConverter& t_conversions) {
+			long long s{ (long long)t_to.size() };
+			
+			if (s > t_from.size())
+				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
+
+			t_from.resize(s);
+
+			for (long long i = s - 1ull; i >= 0; --i) {
+				t_conversions.Convert_In_Place(t_from[i], t_to[i].lock());
+			}
+
+			return std::move(t_from);
+		};
+
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_from, ParamTypes const& t_to) {
 			if (t_to.size() > t_from.size()) 
 				throw exception::arity_error(t_to.size(), t_to.size(), __LINE__);
@@ -822,11 +838,20 @@ namespace GoodLang {
 		};
 
 		// Does want conversions -- ensure types match if possible.
-		Any Proxy_Function_Base::operator()(const std::vector<Any>& params, TypeConverter& t_conversions) const {
-			if (params.size() >= NumArguments()) {
-				return this->do_call(convert(params, t_conversions));
+		Any Proxy_Function_Base::operator()(std::vector<Any>& params, TypeConverter& t_conversions) const {
+			size_t s{ params.size() };
+			if (s >= NumArguments()) {
+				return this->do_call(convert(params, m_signature.Arguments().Types(), t_conversions));
 			}
-			throw exception::arity_error(static_cast<int>(params.size()), NumArguments(), __LINE__);
+			throw exception::arity_error(static_cast<int>(s), NumArguments(), __LINE__);
+		};
+		// Does want conversions -- ensure types match if possible.
+		Any Proxy_Function_Base::operator()(std::vector<Any>&& params, TypeConverter& t_conversions) const {
+			size_t s{ params.size() };
+			if (s >= NumArguments()) {
+				return this->do_call(convert(std::move(params), m_signature.Arguments().Types(), t_conversions));
+			}
+			throw exception::arity_error(static_cast<int>(s), NumArguments(), __LINE__);
 		};
 		// Does want conversions -- ensure types match if possible.
 		Any Proxy_Function_Base::operator()(const std::vector<Any>& params) const {
@@ -853,7 +878,7 @@ namespace GoodLang {
 
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_params, TypeConverter& t_conversions) const {
-			return Proxy_Function_Base::convert(t_params, m_signature.Arguments().Types(), t_conversions);
+			return Proxy_Function_Base::convert(const_cast<std::vector<Any>&>(t_params), m_signature.Arguments().Types(), t_conversions);
 		};
 		// Performs the conversion from the input parameters to the necessary types, if possible. Throws otherwise. 
 		std::vector<Any> Proxy_Function_Base::convert(std::vector<Any> const& t_params) const {
@@ -885,7 +910,7 @@ namespace GoodLang {
 				return callable->operator()(const_cast<Any&>(inputs[0]), conversionTree);
 			}
 			else {
-				return callable->operator()(inputs, conversionTree);
+				return callable->operator()(const_cast<std::vector<Any>&>(inputs), conversionTree);
 			}
 		}
 		else {
@@ -1428,7 +1453,7 @@ namespace GoodLang {
 
 	Any Functions::Call(std::string const& functionName, std::vector<Any> const& params, TypeConverter& m_typeConverters) {
 		if (auto& f = BuildMatch(functionName, params, ParamTypes(params), m_typeConverters)) {
-			return f->operator()(params, m_typeConverters);
+			return f->operator()(const_cast<std::vector<Any>&>(params), m_typeConverters);
 		}
 		else {
 			std::string params_str;

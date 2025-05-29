@@ -981,7 +981,10 @@ namespace GoodLang {
 			static double conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static double conversion_cost_fast(std::vector<Any> const& t_from, std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, ParamTypes const& t_to, TypeConverter& t_conversions);
 			static double conversion_cost(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
-			static std::vector<Any> convert(std::vector<Any> const& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
+			static std::vector<Any> convert(std::vector<Any>& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
+			static std::vector<Any> convert(std::vector<Any>&& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
+
+
 			static std::vector<Any> convert(std::vector<Any> const& t_from, ParamTypes const& t_to);
 			static Any convert(Any& t_from, ParamTypes const& t_to);
 			static Any convert(Any& t_from, ParamTypes const& t_to, TypeConverter& t_conversions);
@@ -1007,7 +1010,8 @@ namespace GoodLang {
 			double conversion_cost_fast(std::vector<std::shared_ptr<Type_Info>> const& t_FromTypes, TypeConverter& t_conversions) const;
 
 			// Does want conversions -- ensure types match if possible.
-			Any operator()(const std::vector<Any>& params, TypeConverter& t_conversions) const;
+			Any operator()(std::vector<Any>& params, TypeConverter& t_conversions) const;
+			Any operator()(std::vector<Any>&& params, TypeConverter& t_conversions) const;
 			// Does want conversions -- ensure types match if possible.
 			Any operator()(const std::vector<Any>& params) const;
 			// Does want conversions -- ensure types match if possible.

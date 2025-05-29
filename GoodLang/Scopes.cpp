@@ -263,7 +263,7 @@ namespace GoodLang {
 				if (f->get<4>()) {
 					// function
 					if (f->get<2>().m_function) {
-						return f->get<2>().m_function->operator()(params, m_typeConverters);
+						return f->get<2>().m_function->operator()(const_cast<std::vector<Any>&>(params), m_typeConverters);
 					}
 				}
 				else {
