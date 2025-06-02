@@ -4376,6 +4376,15 @@ namespace GoodLang {
 				}
 				return false;
 			};
+			template <typename Func> void
+				for_all(Func const& func) const {
+				std::shared_lock locked{ lock };
+				auto p = tree.GetFirst();
+				while (p) {
+					func(p->key, *p->object);
+					p = tree.GetNextLeaf(p);
+				}
+			};
 			template <typename Func> bool
 				do_at_end(Func const& func) const {
 				std::shared_lock locked{ lock };

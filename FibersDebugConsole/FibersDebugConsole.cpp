@@ -10,9 +10,7 @@
 #include "../GoodLang/Parallel.h"
 #include "../WaterWatchCpp/Clock.h"
 #include "../GoodLang/Scopes.h"
-
 #include <concurrent_vector.h>
-
 #include "../FiberTasks/Concurrent_Queue.h"
 #include <regex>
 
