@@ -201,6 +201,16 @@ namespace utilities {
             shared_string out{ *this };
             return out.remove_trailing(_Right).remove_leading(_Right);
         };
+
+    public:
+        static const shared_string& empty_string() {
+            static shared_string out{ "" };
+            return out;
+        };
+        static const shared_string& namespace_colons() {
+            static shared_string out{ "::" };
+            return out;
+        };
     };    
     // all const-functions are thread-safe
     class compound_shared_string {
@@ -363,6 +373,37 @@ namespace utilities {
     // Allows adding and removing of listeners in parallel
     template <typename T = void*>
     class Callback {
+    public:
+        class ScopedListener {
+        public:
+            ScopedListener()
+                : _index(0), _parent(nullptr) {};
+            ScopedListener(size_t index, Callback& parent) 
+                : _index(index), _parent(&parent) {};
+            ScopedListener(ScopedListener const& rhs) = delete;
+            ScopedListener(ScopedListener&& rhs) 
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent)) 
+            {
+                rhs._index = 0;
+            };
+            ScopedListener& operator=(ScopedListener const& rhs) = delete;
+            ScopedListener& operator=(ScopedListener&& rhs) 
+            {
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+                return *this;
+            };            
+            ~ScopedListener() {
+                if (_index > 0)
+                    _parent->remove_listener(_index);
+            };
+
+        private:
+            size_t _index;
+            Callback* _parent;
+        };
+
     private:
         struct Wrap {
             std::atomic_bool alive;
@@ -385,16 +426,17 @@ namespace utilities {
         // add a listener to the list
         void add_listener(size_t index, T* p) {            
             if (size.load(std::memory_order_relaxed) <= index) {
-                if (listeners.size() <= index) (void)listeners.grow_to_at_least(index + 16);                
+                if (listeners.size() <= index) (void)listeners.grow_to_at_least((index + 1) + ((index + 1) % 16));
                 size.store(listeners.size(), std::memory_order_relaxed);
             }
-            Callback<T>::Wrap& wrap = listeners[index];
+            Callback<T>::Wrap& wrap = listeners[index-1];
             wrap.ptr = p;
             wrap.count.fetch_add(1 << 8, std::memory_order_relaxed);
             wrap.alive.store(true, std::memory_order_relaxed);
         };
+        // remove a listener from the list
         void remove_listener(size_t index) {
-            Callback<T>::Wrap& wrap = listeners[index];
+            Callback<T>::Wrap& wrap = listeners[index-1];
                         
             wrap.alive.store(false, std::memory_order_relaxed);
             if (wrap.count.fetch_add(-(1 << 8), std::memory_order_relaxed) == (1 << 8)) {}
@@ -405,6 +447,10 @@ namespace utilities {
                 }
             }
             wrap.ptr = nullptr;
+        };
+        ScopedListener listener(size_t index, T* p) {
+            add_listener(index, p);
+            return ScopedListener(index, *this);
         };
 
         // callback performed on all listeners
@@ -463,26 +509,19 @@ namespace utilities {
     public:
         std::atomic<size_t>
             indexes{ 0 };
-        moodycamel::ConcurrentQueue<size_t>
+        GoodLang::impl::Queue<size_t>
             free{};
         std::atomic<size_t>
             last_free{ 0 }; // avoids using  "free" queue for the first free scope. 
 
     public:
-        size_t get_ticket() {    
-            size_t out{ last_free.exchange(0) };
-            if (out == 0) {                
-                if (!free.try_pop(out)) out = ++indexes;
-            }
-            if (out == 0) {
-                out = ++indexes;
-            }
+        size_t get_ticket() {
+            size_t out;
+            if (0 == (out = last_free.exchange(0ull))) if (!free.try_pop(out)) out = ++indexes;  
             return out;            
         };
         void return_ticket(size_t ticket) {
-            if (0 < (ticket = last_free.exchange(ticket))) {
-                free.push(ticket);
-            }
+            if (0ull < (ticket = last_free.exchange(ticket))) free.push(ticket);            
         };
         size_t num_tickets() const {
             return indexes.load() + 1;
@@ -607,13 +646,13 @@ private:
             else namespace_m = this->root_m;
 
             // current_namespace
-            if (this_m.scope_name != "") {
+            if (this_m.scope_name != utilities::shared_string::empty_string()) {
                 if (parent_m) this_m.current_namespace = CleanUpScopeName(parent_m->this_m.current_namespace + this_m.scope_name);
                 else this_m.current_namespace = CleanUpScopeName(this_m.scope_name);
             }
             else {
                 if (parent_m) this_m.current_namespace = parent_m->this_m.current_namespace;
-                else this_m.current_namespace = "::";
+                else this_m.current_namespace = utilities::shared_string::namespace_colons();
             }
 
             // scope_index
@@ -644,13 +683,16 @@ public:
             breadcrumb_m;
         concurrency::concurrent_vector< utilities::shared_string >
             using_m; // NOTE: calling "using" should split the scope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-        concurrency::concurrent_unordered_map< utilities::shared_string, utilities::ObjectWrapper>
+        GoodLang::SharedLockable<std::map< utilities::shared_string, utilities::ObjectWrapper>>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
         
         std::atomic<size_t>
             object_or_function_versions{ 0 };
         utilities::Callback<BasicScope>
             children_listeners;
+        utilities::Callback<BasicScope>::ScopedListener
+            listener;
+
         void UpdateObjectFunctionVersion(std::atomic_bool* parent_alive = nullptr) {
             ++object_or_function_versions;
             children_listeners.speak(parent_alive);
@@ -663,15 +705,10 @@ public:
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
-                this->object_or_function_versions = this->breadcrumb_m.parent_m->this_m.scope->object_or_function_versions.load();
-                this->breadcrumb_m.parent_m->this_m.scope->children_listeners.add_listener(this->breadcrumb_m.this_m.scope_index, this);
+                listener = this->breadcrumb_m.parent_m->this_m.scope->children_listeners.listener(this->breadcrumb_m.this_m.scope_index, this);
             }
         };
-        virtual ~BasicScope() {
-            if (this->breadcrumb_m.parent_m) {
-                this->breadcrumb_m.parent_m->this_m.scope->children_listeners.remove_listener(this->breadcrumb_m.this_m.scope_index);
-            }
-        };
+        virtual ~BasicScope() = default;
     };
 
     class NamespaceScope : public BasicScope {
@@ -754,11 +791,36 @@ int main() {
 
         if (1) {
             Scopes::RootScope root;
+
+            sw.Start();
+            for(int i = 0; i < 1000000; ++i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                scope.UpdateObjectFunctionVersion();
+                EXPECT_EQ(scope.object_or_function_versions.load(), 1);
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                scope.UpdateObjectFunctionVersion();
+                root.UpdateObjectFunctionVersion();
+                EXPECT_EQ(true, scope.object_or_function_versions.load() >= 2);
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
@@ -766,6 +828,7 @@ int main() {
                 EXPECT_EQ(scope.object_or_function_versions.load(), 1);
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
@@ -774,6 +837,7 @@ int main() {
                 EXPECT_EQ(true, scope.object_or_function_versions.load() >= 2);
             });            
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
             print(root.scope_indexs.num_tickets());
         }
 
