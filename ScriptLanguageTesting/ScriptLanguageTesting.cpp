@@ -372,43 +372,54 @@ namespace utilities {
 
         std::atomic<size_t>
             size{ 0 };
-        concurrency::concurrent_vector<Wrap>
+        concurrency::concurrent_vector<Callback<T>::Wrap>
             listeners;
-        std::function<void(T*)>
+        std::function<void(T*, std::atomic_bool*)>
             func;
 
     public:
-        Callback(std::function<void(T*)>&& listener)
+        Callback(std::function<void(T*, std::atomic_bool*)>&& listener)
             : func{ std::move(listener) }
         {};
 
         // add a listener to the list
         void add_listener(size_t index, T* p) {            
-            if (size <= index) {
+            if (size.load(std::memory_order_relaxed) <= index) {
                 if (listeners.size() <= index) (void)listeners.grow_to_at_least(index + 16);                
-                size = listeners.size();
+                size.store(listeners.size(), std::memory_order_relaxed);
             }
-            Wrap& wrap = listeners[index];
+            Callback<T>::Wrap& wrap = listeners[index];
             wrap.ptr = p;
-            wrap.count += (1 << 8);
-            wrap.alive = true;
+            wrap.count.fetch_add(1 << 8, std::memory_order_relaxed);
+            wrap.alive.store(true, std::memory_order_relaxed);
         };
         void remove_listener(size_t index) {
-            Wrap& wrap = listeners[index];
-            wrap.alive = false;
-            wrap.count -= (1 << 8);
-            while (wrap.count.load(std::memory_order_relaxed) > 0) {}
+            Callback<T>::Wrap& wrap = listeners[index];
+                        
+            wrap.alive.store(false, std::memory_order_relaxed);
+            if (wrap.count.fetch_add(-(1 << 8), std::memory_order_relaxed) == (1 << 8)) {}
+            else {
+                int loop = 0;
+                while (wrap.count.load(std::memory_order_relaxed) > 0) {
+                    if (++loop > 40) std::this_thread::yield();
+                }
+            }
             wrap.ptr = nullptr;
         };
 
         // callback performed on all listeners
-        void speak() {
-            for (Wrap& x : listeners) {
-                if (x.alive) {
-                    if (++x.count > (1 << 8)) {
-                        func(x.ptr);
+        void speak(std::atomic_bool* parent_alive) {
+            for (Callback<T>::Wrap& x : listeners) {
+                if (x.alive.load(std::memory_order_relaxed)) {
+                    if (!parent_alive || parent_alive->load(std::memory_order_relaxed)) {
+                        if (x.count.fetch_add(1, std::memory_order_relaxed) >= (1 << 8)) {
+                            func(x.ptr, &x.alive);
+                        }
+                        x.count.fetch_add(-1, std::memory_order_relaxed);
                     }
-                    --x.count;
+                    else {
+                        break;
+                    }
                 }
             }
         };
@@ -640,15 +651,15 @@ public:
             object_or_function_versions{ 0 };
         utilities::Callback<BasicScope>
             children_listeners;
-        void UpdateObjectFunctionVersion() {
+        void UpdateObjectFunctionVersion(std::atomic_bool* parent_alive = nullptr) {
             ++object_or_function_versions;
-            children_listeners.speak();
+            children_listeners.speak(parent_alive);
         };
 
     public:
         BasicScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : breadcrumb_m{ ScopeID(name, scope_type_p), parent }
-            , children_listeners([](BasicScope* ptr) -> void { ptr->UpdateObjectFunctionVersion(); })
+            , children_listeners([](BasicScope* ptr, std::atomic_bool* parent_alive) -> void { ptr->UpdateObjectFunctionVersion(parent_alive); })
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
@@ -701,10 +712,8 @@ int main() {
     using namespace utilities;
 
     while (true) {
-        Stopwatch sw;
-
         print("");
-
+        Stopwatch sw;
         for (int loopN = 0; loopN < 1000; loopN++) {
             Scopes::RootScope root;
             if (1) {
@@ -743,7 +752,6 @@ int main() {
             }
         }
 
-        Stopwatch sw;
         if (1) {
             Scopes::RootScope root;
             sw.Start();
