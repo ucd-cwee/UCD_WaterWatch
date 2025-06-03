@@ -2713,6 +2713,50 @@ namespace GoodLang {
 			const T& result = shared->back();
 			return typename SharedLockable<T>::SharedConstObj(result, shared.ForwardLock());
 		};
+		auto grow_to_at_least(size_t index) {
+			data.EnsureDataExists();
+			data.lock.lock_shared();
+			if (auto* p = data.data.get()) {
+				data.lock.unlock_shared();
+				std::scoped_lock locked(data.lock);
+				if (p->size() < index) {
+					p->resize(index + 1);
+				}
+			}
+			else {
+				data.lock.unlock_shared();
+			}
+			return operator[](index);
+		};
+		template <typename AllocType>
+		auto grow_to_at_least(size_t index, AllocType& Allocator) {
+			data.EnsureDataExists();
+			data.lock.lock_shared();
+			if (auto* p = data.data.get()) {
+				if (p->size() <= index) {
+					data.lock.unlock_shared();
+					std::scoped_lock locked(data.lock);
+					while (p->size() <= (index + 1)) {
+						p->push_back(Allocator.Alloc());
+					}
+				}
+			}
+			else {
+				data.lock.unlock_shared();
+			}
+			return operator[](index);
+		};
+		template <typename Func> void
+			for_all(Func const& func) const {
+			data.EnsureDataExists();
+			std::shared_lock locked(data.lock);
+
+			if (auto* p = data.data.get()) {
+				for (auto& x : *p) {
+					func(x);
+				}
+			}			
+		};
 		size_t size() const {
 			auto shared = data.Shared();
 			return shared->size();
@@ -4354,7 +4398,7 @@ namespace GoodLang {
 					return *p;
 				}
 				else {
-					throw std::range_error("Could not find " + GoodLang::ToString(time));
+					throw std::range_error("Could not find key");
 				}
 			};
 			ValueType*
@@ -4429,7 +4473,7 @@ namespace GoodLang {
 					}
 					else {
 						lock.unlock();
-						throw std::range_error("Could not find " + GoodLang::ToString(time));
+						throw std::range_error("Could not find key");
 					}
 				}
 			};
@@ -4450,7 +4494,7 @@ namespace GoodLang {
 					}
 					else {
 						lock.unlock();
-						throw std::range_error("Could not find " + GoodLang::ToString(time));
+						throw std::range_error("Could not find key");
 					}
 				}
 			};

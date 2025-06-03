@@ -97,7 +97,7 @@ namespace utilities {
             return os;
         };
         size_type hash(size_type out = 0) const {
-            if (out == 0 && length() > 16) {
+            if (out == 0 /*&& length() > 16*/) {
                 if (_hash == npos) {
                     for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);                    
                     InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
@@ -366,7 +366,7 @@ namespace utilities {
     private:
         mutable std::shared_mutex
             lock;
-        std::map<T, std::function<void(T const&)>> 
+        std::map<T, std::function<void(T const&)>>
             listeners;
 
     public:
@@ -384,7 +384,7 @@ namespace utilities {
         void speak() {
             std::shared_lock locked{ lock };
             for (auto& x : listeners)
-                x.second(x.first);            
+                x.second(x.first);
         };
 
     };
@@ -420,7 +420,37 @@ namespace utilities {
         };
     };
 
+    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of TicketDispensor
+    // Prints new tickets as needed, but recycles old tickets as much as possible. 
+    class TicketDispensor {
+    public:
+        std::atomic<size_t>
+            indexes{ 0 };
+        moodycamel::ConcurrentQueue<size_t>
+            free{};
+        std::atomic<size_t>
+            last_free{ 0 }; // avoids using  "free" queue for the first free scope. 
 
+    public:
+        size_t get_ticket() {    
+            size_t out{ last_free.exchange(0) };
+            if (out == 0) {                
+                if (!free.try_pop(out)) out = ++indexes;
+            }
+            if (out == 0) {
+                out = ++indexes;
+            }
+            return out;            
+        };
+        void return_ticket(size_t ticket) {
+            if (0 < (ticket = last_free.exchange(ticket))) {
+                free.push(ticket);
+            }
+        };
+        size_t num_tickets() const {
+            return indexes.load() + 1;
+        };
+    };
 };
 namespace std {
     template <> struct hash<utilities::shared_string> {
@@ -491,12 +521,15 @@ private:
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
         size_t
             scope_index; // unique index of this scope for check_flags
+        utilities::shared_string
+            current_namespace_m; // e.g. "::" or "::UI::Color::"
 
         ScopeID(utilities::shared_string const& scope_name_p = "", int scope_type_p = ScopeType::Basic)
             : scope_name{ scope_name_p }
             , scope{ nullptr }
             , scope_type{ scope_type_p }
             , scope_index{ 0 }
+            , current_namespace_m{ "::" }
         {}
         ~ScopeID() = default;
 
@@ -553,9 +586,7 @@ private:
             this_m.scope_index = 0;
             if (parent_m) {
                 if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope)) {
-                    if (!root_ptr->free_scope_indexes.try_pop(this_m.scope_index)) {
-                        this_m.scope_index = ++root_ptr->scope_indexes;
-                    }
+                    this_m.scope_index = root_ptr->scope_indexs.get_ticket();
                 }
             }
 
@@ -564,7 +595,7 @@ private:
             // free the current scope_index
             if (parent_m) {
                 if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope)) {
-                    root_ptr->free_scope_indexes.push(this_m.scope_index);
+                    root_ptr->scope_indexs.return_ticket(this_m.scope_index);
                 }
             }
         };
@@ -594,14 +625,14 @@ public:
     public:
         BasicScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : breadcrumb_m{ ScopeID(name, scope_type_p), parent }
-           
+
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
                 this->object_or_function_versions = this->breadcrumb_m.parent_m->this_m.scope->object_or_function_versions.load();
                 this->breadcrumb_m.parent_m->this_m.scope->children_listeners.add_listener(this, [](BasicScope* const& ptr) -> void {
                     ptr->UpdateObjectFunctionVersion();
-                });
+                    });
             }
         };
         virtual ~BasicScope() {
@@ -613,8 +644,10 @@ public:
 
     class NamespaceScope : public BasicScope {
     public:
+        // explicit children namespaces, with strongly-held protections to their memory.
         concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
             children;
+
     public:
         NamespaceScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic & ScopeType::Namespace, Breadcrumb* parent = nullptr)
             : BasicScope(name, scope_type_p, parent)
@@ -627,12 +660,14 @@ public:
 
     class RootScope : public NamespaceScope {
     public:
-        std::atomic<size_t> scope_indexes{ 0 };
-        concurrency::concurrent_queue<size_t> free_scope_indexes;
+        // when a scope is born it will get the smallest-possible unique index for itself. 
+        utilities::TicketDispensor 
+            scope_indexs;
 
     public:
         RootScope() 
-            : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr) {};
+            : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr) 
+        {};
         virtual ~RootScope() = default;
 
     };
@@ -645,6 +680,8 @@ int main() {
     using namespace utilities;
 
     while (true) {
+        print("");
+
         for (int loopN = 0; loopN < 1000; loopN++) {
             Scopes::RootScope root;
             if (1) {
@@ -683,22 +720,33 @@ int main() {
             }
         }
 
+        Stopwatch sw;
         if (1) {
             Scopes::RootScope root;
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
                 EXPECT_EQ(scope.object_or_function_versions.load(), 1);
             });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
                 root.UpdateObjectFunctionVersion();
-            });
-            print(root.scope_indexes.load());
+                EXPECT_EQ(true, scope.object_or_function_versions.load() >= 2);
+            });            
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            print(root.scope_indexs.num_tickets());
         }
 
-        Stopwatch sw;
+       
         if (1) {
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
@@ -739,29 +787,25 @@ int main() {
         EXPECT_EQ(shared_string("Hello World!"), "Hello World!");
         EXPECT_EQ(false, (shared_string("Hello World!\n") == shared_string("TEST")));
 
-        if (1) {
-            sw.Start();
-            shared_string shared = "TEMPTING TEMPTING TEMPTING TEMPTING";
-            concurrency::concurrent_unordered_set<size_t> Set;
-            GoodLang::parallel::For(0, 1000000, [&shared, &Set](int i) {
-                Set.insert(shared.hash(1));
-                });
-            EXPECT_EQ(1, Set.size());
+        if (0) {
+            sw.Start();            
+            concurrency::concurrent_unordered_map<std::string, size_t> Set;
+            GoodLang::parallel::For(0, 1000000, [&Set](int i) {
+                Set.insert({ GoodLang::ToString(i % 100), 0 });
+            });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
-            shared_string shared = "TEMPTING TEMPTING TEMPTING TEMPTING";
-            concurrency::concurrent_unordered_set<size_t> Set;
-            GoodLang::parallel::For(0, 1000000, [&shared, &Set](int i) {
-                Set.insert(shared.hash(0));
-                });
-            EXPECT_EQ(1, Set.size());
+            concurrency::concurrent_unordered_map<shared_string, size_t> Set;
+            GoodLang::parallel::For(0, 1000000, [&Set](int i) {
+                Set.insert({ GoodLang::ToString(i % 100), 0 });
+            });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
         EXPECT_EQ(shared_string("").hash(), compound_shared_string("").hash());
-        EXPECT_EQ(shared_string("Hello World!\n").hash(), compound_shared_string("Hello World!\n").hash());
+        EXPECT_EQ(shared_string("Hello World!\n").hash(), compound_shared_string("Hello World!\n").hash());        
     }
 
 };
