@@ -364,27 +364,53 @@ namespace utilities {
     template <typename T = void*>
     class Callback {
     private:
-        mutable std::shared_mutex
-            lock;
-        std::map<T, std::function<void(T const&)>> 
+        struct Wrap {
+            std::atomic_bool alive;
+            std::atomic<unsigned long> count;
+            T* ptr;
+        };
+
+        std::atomic<size_t>
+            size{ 0 };
+        concurrency::concurrent_vector<Wrap>
             listeners;
+        std::function<void(T*)>
+            func;
 
     public:
+        Callback(std::function<void(T*)>&& listener)
+            : func{ std::move(listener) }
+        {};
+
         // add a listener to the list
-        void add_listener(T p, std::function<void(T const&)>&& listener) {
-            std::scoped_lock locked{ lock };
-            listeners.insert({ std::move(p), std::move(listener) });
+        void add_listener(size_t index, T* p) {            
+            if (size <= index) {
+                if (listeners.size() <= index) (void)listeners.grow_to_at_least(index + 16);                
+                size = listeners.size();
+            }
+            Wrap& wrap = listeners[index];
+            wrap.ptr = p;
+            wrap.count += (1 << 8);
+            wrap.alive = true;
         };
-        void remove_listener(T p) {
-            std::scoped_lock locked{ lock };
-            listeners.erase(p);
+        void remove_listener(size_t index) {
+            Wrap& wrap = listeners[index];
+            wrap.alive = false;
+            wrap.count -= (1 << 8);
+            while (wrap.count.load(std::memory_order_relaxed) > 0) {}
+            wrap.ptr = nullptr;
         };
 
         // callback performed on all listeners
         void speak() {
-            std::shared_lock locked{ lock };
-            for (auto& x : listeners)
-                x.second(x.first);            
+            for (Wrap& x : listeners) {
+                if (x.alive) {
+                    if (++x.count > (1 << 8)) {
+                        func(x.ptr);
+                    }
+                    --x.count;
+                }
+            }
         };
 
     };
@@ -491,12 +517,15 @@ private:
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
         size_t
             scope_index; // unique index of this scope for check_flags
+        utilities::shared_string
+            current_namespace; // e.g. "::" or "::UI::Color::"
 
         ScopeID(utilities::shared_string const& scope_name_p = "", int scope_type_p = ScopeType::Basic)
             : scope_name{ scope_name_p }
             , scope{ nullptr }
             , scope_type{ scope_type_p }
             , scope_index{ 0 }
+            , current_namespace{}
         {}
         ~ScopeID() = default;
 
@@ -522,9 +551,6 @@ private:
             root_m; // may point to this
         Breadcrumb*
             namespace_m; // may point to this
-        utilities::shared_string
-            current_namespace; // e.g. "::" or "::UI::Color::"
-
 
         Breadcrumb(ScopeID thisNode, Breadcrumb* parent = nullptr)
             : this_m(std::move(thisNode))
@@ -541,12 +567,12 @@ private:
 
             // current_namespace
             if (this_m.scope_name != "") {
-                if (parent_m) current_namespace = CleanUpScopeName(parent_m->current_namespace + this_m.scope_name);
-                else current_namespace = CleanUpScopeName(this_m.scope_name);
+                if (parent_m) this_m.current_namespace = CleanUpScopeName(parent_m->this_m.current_namespace + this_m.scope_name);
+                else this_m.current_namespace = CleanUpScopeName(this_m.scope_name);
             }
             else {
-                if (parent_m) current_namespace = parent_m->current_namespace;
-                else current_namespace = "::";
+                if (parent_m) this_m.current_namespace = parent_m->this_m.current_namespace;
+                else this_m.current_namespace = "::";
             }
 
             // scope_index
@@ -584,7 +610,7 @@ public:
         
         std::atomic<size_t>
             object_or_function_versions{ 0 };
-        utilities::Callback<BasicScope*>
+        utilities::Callback<BasicScope>
             children_listeners;
         void UpdateObjectFunctionVersion() {
             ++object_or_function_versions;
@@ -594,19 +620,17 @@ public:
     public:
         BasicScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : breadcrumb_m{ ScopeID(name, scope_type_p), parent }
-           
+            , children_listeners([](BasicScope* ptr) -> void { ptr->UpdateObjectFunctionVersion(); })
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
                 this->object_or_function_versions = this->breadcrumb_m.parent_m->this_m.scope->object_or_function_versions.load();
-                this->breadcrumb_m.parent_m->this_m.scope->children_listeners.add_listener(this, [](BasicScope* const& ptr) -> void {
-                    ptr->UpdateObjectFunctionVersion();
-                });
+                this->breadcrumb_m.parent_m->this_m.scope->children_listeners.add_listener(this->breadcrumb_m.this_m.scope_index, this);
             }
         };
         virtual ~BasicScope() {
             if (this->breadcrumb_m.parent_m) {
-                this->breadcrumb_m.parent_m->this_m.scope->children_listeners.remove_listener(this);
+                this->breadcrumb_m.parent_m->this_m.scope->children_listeners.remove_listener(this->breadcrumb_m.this_m.scope_index);
             }
         };
     };
@@ -645,6 +669,8 @@ int main() {
     using namespace utilities;
 
     while (true) {
+        Stopwatch sw;
+
         for (int loopN = 0; loopN < 1000; loopN++) {
             Scopes::RootScope root;
             if (1) {
@@ -685,20 +711,29 @@ int main() {
 
         if (1) {
             Scopes::RootScope root;
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
                 EXPECT_EQ(scope.object_or_function_versions.load(), 1);
             });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
                 root.UpdateObjectFunctionVersion();
             });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             print(root.scope_indexes.load());
         }
 
-        Stopwatch sw;
+        
         if (1) {
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
