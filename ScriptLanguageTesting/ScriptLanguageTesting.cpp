@@ -745,8 +745,105 @@ public:
 
 
 
+
+namespace utilities {
+    struct TNode {
+        TNode* m_pNext;
+    };
+
+    template<class T>
+    union THead {
+    public:
+        struct bitset {
+        public:
+            uint64_t
+                m_nABA : 4,
+                m_pNode : 60;  // Windows only supports 44 bits addressing anyway.
+        };
+        uint64_t
+            m_n64; // for CAS
+        bitset
+            m_bits;
+
+        // this constructor will make an atomic copy on intel 
+        THead() {}
+        THead(THead& r) { m_n64 = r.m_n64; }
+        T* Node() { return (T*)m_bits.m_pNode; }
+        // changeing Node bumps aba
+        decltype(auto) Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
+    };
+
+    static bool CAS(uint64_t* Destination, uint64_t& Comperand, uint64_t& Exchange) {
+        return InterlockedCompareExchange(static_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
+    };
+
+    // pop pNode from head of list.
+    template<class T>
+    __declspec(noinline) T* Pop(THead<T>& Head) {
+        while (1) { // race loop
+            // Get an atomic copy of head and call it old.
+            THead<T> Old(Head);
+            if (!Old.Node())
+                return NULL;
+            // Copy old and call it new.
+            THead<T> New(Old);
+            // change New's Node, which bumps internal aba
+            New.Node(Old.Node()->m_pNext);
+            // compare and swap New with Head if it still matches Old.
+            if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                return Old.Node(); // success
+            // race, try again
+        }
+    }
+
+    // push pNode onto head of list.
+    template<class T>
+    __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
+        while (1) { // race loop
+            // Get an atomic copy of head and call it old.
+            // Copy old and call it new.
+            THead<T> Old(Head), New(Old);
+            // Wire node t Head
+            pNode->m_pNext = New.Node();
+
+            // change New's head ptr, which bumps internal aba
+            New.Node(pNode);
+            // compare and swap New with Head if it still matches Old.
+            if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                break; // success
+            // race, try again
+        }
+    }
+
+};
+
+
+
+
+
 int main() {
     using namespace utilities;
+
+    struct element_t {
+        size_t data;
+        element_t* m_pNext;
+    };
+    THead<element_t> head;
+    Push(head, new element_t{ 1, nullptr });
+    Push(head, new element_t{ 2, nullptr });
+    Push(head, new element_t{ 3, nullptr });
+    if (auto* z = Pop(head)) {
+        print(z->data);
+    }
+    if (auto* z = Pop(head)) {
+        print(z->data);
+    }
+    if (auto* z = Pop(head)) {
+        print(z->data);
+    }
+    if (auto* z = Pop(head)) {
+        print(z->data);
+    }
 
     while (true) {
         print("");
