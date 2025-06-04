@@ -370,6 +370,264 @@ namespace utilities {
 
     };
 
+    namespace ABA_Problem {
+        template <typename T>
+        class Node {
+        public:
+            T data;
+            Node* m_pNext;
+
+            Node() = default;
+            Node(T&& _data, Node*&& _m_pNext) : data(std::move(_data)), m_pNext(std::move(_m_pNext)) {};
+            Node(Node const&) = default;
+            Node(Node&&) = default;
+            Node& operator=(Node const&) = default;
+            Node& operator=(Node&&) = default;
+            ~Node() = default;
+        };
+
+        template<class T>
+        union THead {
+        public:
+            struct bitset {
+            public:
+                uint64_t // must sum to 64
+                    m_nABA : 12, // 8, 12, and 18 work. Larger = less likelihood of crashing due to ABA bug.
+                    m_pNode : 52; // Windows only supports 44 bits addressing anyway.
+            };
+            uint64_t
+                m_n64; // for CAS
+            bitset
+                m_bits;
+
+            // this constructor will make an atomic copy on intel 
+            // THead() : m_n64{ 0 } {}
+            // THead(THead& r) { m_n64 = r.m_n64; }
+            T* Node() { return (T*)m_bits.m_pNode; }
+            // changeing Node bumps aba
+            THead* Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
+        };
+
+        static bool CAS(uint64_t* Destination, uint64_t& Comperand, uint64_t& Exchange) {
+            return InterlockedCompareExchange(static_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
+        };
+
+        // pop pNode from head of list.
+        template<class T>
+        __declspec(noinline) T* Pop(THead<T>& Head) {
+            THead<T> Old, New;
+            while (1) { // race loop
+                // Get an atomic copy of head and call it old.
+                THead<T> Old(Head);
+                if (!Old.Node())
+                    return NULL;
+                // Copy old and call it new.
+                THead<T> New(Old);
+                // change New's Node, which bumps internal aba
+                New.Node(Old.Node()->m_pNext);
+                // compare and swap New with Head if it still matches Old.
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                    return Old.Node(); // success
+                // race, try again
+
+
+
+                //New.m_n64 = Old.m_n64 = Head.m_n64;
+                //if (!Old.Node()) return nullptr;
+                //// change New's Node, which bumps internal aba
+                //New.Node(Old.Node()->m_pNext);
+                //// compare and swap New with Head if it still matches Old.
+                //if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                //    return Old.Node(); // success
+                //// race, try again
+            }
+        }
+
+        // push pNode onto head of list.
+        template<class T>
+        __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
+            THead<T> Old, New;
+            while (1) { // race loop
+                // Get an atomic copy of head and call it old.
+                // Copy old and call it new.
+                THead<T> Old(Head), New(Old);
+                // Wire node t Head
+                pNode->m_pNext = New.Node();
+                // change New's head ptr, which bumps internal aba
+                New.Node(pNode);
+                // compare and swap New with Head if it still matches Old.
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                    break; // success
+                // race, try again
+
+
+
+
+
+
+                //New.m_n64 = Old.m_n64 = Head.m_n64;
+
+                //// Wire node t Head
+                //pNode->m_pNext = Old.Node();
+
+                //// change New's head ptr, which bumps internal aba
+                //New.Node(pNode);
+                //// compare and swap New with Head if it still matches Old.
+                //if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                //    break; // success
+                //// race, try again
+            }
+        }
+
+        template <typename T, size_t BlockSize, bool skipInitialization = false> class BlockAlloc {
+        private:
+            class element_t {
+            public:
+                unsigned char data[sizeof(T)];
+                bool initialized{ false };
+                element_t* m_pNext;
+
+                element_t() = default;
+                element_t(T&& _data, element_t*&& _m_pNext) : m_pNext(std::move(_m_pNext)) {
+                    new (&data[0]) T(std::forward<T>(_data));
+                    initialized = true;
+                };
+                element_t(element_t const&) = default;
+                element_t(element_t&&) = default;
+                element_t& operator=(element_t const&) = default;
+                element_t& operator=(element_t&&) = default;
+                ~element_t() = default;
+            };
+            // block_t is a contiguous block of elements
+            struct block_t {
+                element_t elements[BlockSize];
+            };
+
+            // Allocate one new block of contiguous elements
+            __declspec(noinline) void AllocBlock() {
+                block_t* block = &*blocks.grow_by(1);
+
+                // add the new elements to the list
+                for (int i = 0; i < BlockSize - 1; ++i) {
+                    block->elements[i].m_pNext = &block->elements[i + 1];
+                    std::memset(&block->elements[i].data[0], 0, sizeof(T));
+                }
+                block->elements[BlockSize - 1].m_pNext = nullptr;
+                std::memset(&block->elements[BlockSize - 1].data[0], 0, sizeof(T));
+
+                // push pNode onto head of list.
+                uint64_t old;
+                while (true) { // race loop
+                    // Get an atomic copy of head and call it old.
+                    // Copy old and call it new.
+                    THead<element_t>
+                        New(free);
+                    old = New.m_n64;
+                    // Wire the tail of this block to connect to the old head ptr
+                    block->elements[BlockSize - 1].m_pNext = New.Node();
+
+                    // change New's head ptr, which bumps internal aba
+                    New.Node(&block->elements[0]); // head shall be the start of this block
+
+                    // compare and swap New with Head if it still matches Old.
+                    if (CAS(&free.m_n64, old, New.m_n64))
+                        break; // success
+                    // race, try again
+                }
+            };
+
+            // Release all memory held by all blocks
+            void ReleaseBlocks() {
+                if constexpr (!std::is_pod<T>::value) {
+                    for (auto& block : blocks) for (auto& element : block.elements) if (element.initialized) {
+                        reinterpret_cast<T*>(&element.data[0])->~T();
+                        element.initialized = false;
+                    }                    
+                }
+            };
+
+        public:
+            BlockAlloc() : blocks{}, free{} {
+                free.m_n64 = 0;
+                // AllocBlock(); 
+            };
+            ~BlockAlloc() { ReleaseBlocks(); };
+
+            // Acquire a new element from the free list and construct it.
+            template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
+                T* data{ nullptr };
+                element_t* element{ nullptr };
+
+                // Grab the free element and set free to the next item in that list
+                // Update made with compare-and-swap loop:
+                while (true) {
+                    if (element = Pop(free)) {
+                        data = (T*)&element->data[0];
+                        if constexpr (!std::is_pod<T>::value || !skipInitialization) {
+                            new (data) T(std::forward<TArgs>(a)...);
+                        }
+                        element->initialized = true;
+                        break;
+                    }
+                    else {
+                        AllocBlock();
+                    }
+                }
+                return data;
+            };
+
+            // Destroys the element and return its memory to the free list
+            __declspec(noinline) void Free(T* element) {
+                if (element == nullptr) { return; }
+                if constexpr (!std::is_pod<T>::value) {
+                    element->~T();
+                }
+                element_t* t = (element_t*)(element);
+                t->initialized = false;
+                Push(free, t);
+            };
+
+            concurrency::concurrent_vector<block_t>
+                blocks;
+            THead<element_t>
+                free;
+        };
+
+        /// <summary>
+        /// Fastest allocator to-date, leveraging a block-allocator per-thread, significantly reducing contention, to the degree that this is now the fastest way to allocate memory!
+        /// Plus, it is thread-safe and garbage-collected on end-of-scope. These features are effectively free now. 
+        /// </summary>
+        /// <typeparam name="_type_"></typeparam>
+        template <typename _type_, size_t num_items = sizeof(_type_) << 4, size_t num_parallel_allocators = 4, bool skipInitialization = false>
+        class Allocator final : public GoodLang::EpochGarbageCollectorImpl {
+        private:
+            struct innerType {
+                _type_ T;
+                size_t threadID;
+            };
+
+            std::array<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>, num_parallel_allocators> TLS_arr{};
+            static auto GetThreadID() { return IDManager::GetThreadID(); };
+
+        public:
+            template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
+                size_t thisThreadIndex = GetThreadID() % num_parallel_allocators;
+                auto& TLS = TLS_arr[thisThreadIndex];
+                innerType* out{ TLS.Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex }) };
+                return (_type_*)(out);
+            };
+            __declspec(noinline) void Free(const _type_* t) {
+                innerType* impl = static_cast<innerType*>(static_cast<void*>(const_cast<_type_*>(t)));
+                auto& TLS = TLS_arr[impl->threadID];
+                TLS.Free(impl);
+            };
+            template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
+                return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
+            };
+        };
+
+    };
+
     // Allows adding and removing of listeners in parallel
     template <typename T = void*>
     class Callback {
@@ -411,7 +669,7 @@ namespace utilities {
             T* ptr;
         };
 
-        std::atomic<size_t>
+        size_t
             size{ 0 };
         concurrency::concurrent_vector<Callback<T>::Wrap>
             listeners;
@@ -425,9 +683,9 @@ namespace utilities {
 
         // add a listener to the list
         void add_listener(size_t index, T* p) {            
-            if (size.load(std::memory_order_relaxed) <= index) {
+            if (size <= index) {
                 if (listeners.size() <= index) (void)listeners.grow_to_at_least((index + 1) + ((index + 1) % 16));
-                size.store(listeners.size(), std::memory_order_relaxed);
+                InterlockedExchangeNoFence(static_cast<volatile size_t*>(&size), listeners.size());
             }
             Callback<T>::Wrap& wrap = listeners[index-1];
             wrap.ptr = p;
@@ -435,7 +693,7 @@ namespace utilities {
             wrap.alive.store(true, std::memory_order_relaxed);
         };
         // remove a listener from the list
-        void remove_listener(size_t index) {
+        __declspec(noinline) void remove_listener(size_t index) {
             Callback<T>::Wrap& wrap = listeners[index-1];
                         
             wrap.alive.store(false, std::memory_order_relaxed);
@@ -444,6 +702,9 @@ namespace utilities {
                 int loop = 0;
                 while (wrap.count.load(std::memory_order_relaxed) > 0) {
                     if (++loop > 40) std::this_thread::yield();
+                    if (!wrap.ptr) {
+                        wrap.count = 0;
+                    }
                 }
             }
             wrap.ptr = nullptr;
@@ -454,8 +715,10 @@ namespace utilities {
         };
 
         // callback performed on all listeners
-        void speak(std::atomic_bool* parent_alive) {
-            for (Callback<T>::Wrap& x : listeners) {
+        __declspec(noinline) void speak(std::atomic_bool* parent_alive) {
+            for (size_t pos = 0; pos < size; ++pos)  // for (Callback<T>::Wrap& x : listeners)
+            {
+                Callback<T>::Wrap& x = listeners[pos];
                 if (x.alive.load(std::memory_order_relaxed)) {
                     if (!parent_alive || parent_alive->load(std::memory_order_relaxed)) {
                         if (x.count.fetch_add(1, std::memory_order_relaxed) >= (1 << 8)) {
@@ -468,6 +731,7 @@ namespace utilities {
                     }
                 }
             }
+            
         };
 
     };
@@ -507,21 +771,24 @@ namespace utilities {
     // Prints new tickets as needed, but recycles old tickets as much as possible. 
     class TicketDispensor {
     public:
+        ABA_Problem::BlockAlloc<size_t, 32, true>
+        // ABA_Problem::Allocator<size_t, 32, 2, true>
+            alloc;
         std::atomic<size_t>
             indexes{ 0 };
-        GoodLang::impl::Queue<size_t>
-            free{};
-        std::atomic<size_t>
-            last_free{ 0 }; // avoids using  "free" queue for the first free scope. 
+        std::atomic<size_t*>
+            last_free{ nullptr }; // avoids using  "free" queue for the first free scope. 
+
 
     public:
-        size_t get_ticket() {
-            size_t out;
-            if (0 == (out = last_free.exchange(0ull))) if (!free.try_pop(out)) out = ++indexes;  
-            return out;            
+        size_t* get_ticket() {
+            size_t* out{ last_free.exchange(nullptr) };
+            if (!out) out = alloc.Alloc();
+            if (*out == 0) *out = ++indexes;
+            return out; 
         };
-        void return_ticket(size_t ticket) {
-            if (0ull < (ticket = last_free.exchange(ticket))) free.push(ticket);            
+        void return_ticket(size_t* ticket) {
+            if (ticket = last_free.exchange(ticket)) alloc.Free(ticket);            
         };
         size_t num_tickets() const {
             return indexes.load() + 1;
@@ -558,7 +825,7 @@ namespace std {
 class Scopes {
 private:
     // clean-up the name of a scope: e.g. "::" becomes "::", "Units" becomes "::Units::"
-    static utilities::compound_shared_string CleanUpScopeName(utilities::shared_string x) {
+    static utilities::compound_shared_string CleanUpScopeName(utilities::shared_string const& x) {
         utilities::compound_shared_string out("::", x, "::");
         if (x.length() >= 2) {
             if (x.substr(0, 2) == "::") {
@@ -595,7 +862,7 @@ private:
             scope;
         int
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
-        size_t
+        size_t*
             scope_index; // unique index of this scope for check_flags
         utilities::shared_string
             current_namespace; // e.g. "::" or "::UI::Color::"
@@ -686,7 +953,7 @@ public:
         GoodLang::SharedLockable<std::map< utilities::shared_string, utilities::ObjectWrapper>>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
         
-        std::atomic<size_t>
+        size_t
             object_or_function_versions{ 0 };
         utilities::Callback<BasicScope>
             children_listeners;
@@ -694,7 +961,7 @@ public:
             listener;
 
         void UpdateObjectFunctionVersion(std::atomic_bool* parent_alive = nullptr) {
-            ++object_or_function_versions;
+            InterlockedIncrementNoFence(static_cast<volatile size_t*>(&object_or_function_versions));
             children_listeners.speak(parent_alive);
         };
 
@@ -705,7 +972,7 @@ public:
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
-                listener = this->breadcrumb_m.parent_m->this_m.scope->children_listeners.listener(this->breadcrumb_m.this_m.scope_index, this);
+                listener = this->breadcrumb_m.parent_m->this_m.scope->children_listeners.listener(*this->breadcrumb_m.this_m.scope_index, this);
             }
         };
         virtual ~BasicScope() = default;
@@ -745,144 +1012,154 @@ public:
 
 
 
-
-namespace utilities {
-    struct TNode {
-        TNode* m_pNext;
-    };
-
-    template<class T>
-    union THead {
-    public:
-        struct bitset {
-        public:
-            uint64_t
-                m_nABA : 4,
-                m_pNode : 60;  // Windows only supports 44 bits addressing anyway.
-        };
-        uint64_t
-            m_n64; // for CAS
-        bitset
-            m_bits;
-
-        // this constructor will make an atomic copy on intel 
-        THead() {}
-        THead(THead& r) { m_n64 = r.m_n64; }
-        T* Node() { return (T*)m_bits.m_pNode; }
-        // changeing Node bumps aba
-        decltype(auto) Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
-    };
-
-    static bool CAS(uint64_t* Destination, uint64_t& Comperand, uint64_t& Exchange) {
-        return InterlockedCompareExchange(static_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
-    };
-
-    // pop pNode from head of list.
-    template<class T>
-    __declspec(noinline) T* Pop(THead<T>& Head) {
-        while (1) { // race loop
-            // Get an atomic copy of head and call it old.
-            THead<T> Old(Head);
-            if (!Old.Node())
-                return NULL;
-            // Copy old and call it new.
-            THead<T> New(Old);
-            // change New's Node, which bumps internal aba
-            New.Node(Old.Node()->m_pNext);
-            // compare and swap New with Head if it still matches Old.
-            if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
-                return Old.Node(); // success
-            // race, try again
-        }
-    }
-
-    // push pNode onto head of list.
-    template<class T>
-    __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
-        while (1) { // race loop
-            // Get an atomic copy of head and call it old.
-            // Copy old and call it new.
-            THead<T> Old(Head), New(Old);
-            // Wire node t Head
-            pNode->m_pNext = New.Node();
-
-            // change New's head ptr, which bumps internal aba
-            New.Node(pNode);
-            // compare and swap New with Head if it still matches Old.
-            if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
-                break; // success
-            // race, try again
-        }
-    }
-
-};
-
-
-
-
-
 int main() {
     using namespace utilities;
+    using namespace ABA_Problem;
+    Stopwatch sw;
 
-    struct element_t {
-        size_t data;
-        element_t* m_pNext;
-    };
-    THead<element_t> head;
-    Push(head, new element_t{ 1, nullptr });
-    Push(head, new element_t{ 2, nullptr });
-    Push(head, new element_t{ 3, nullptr });
-    if (auto* z = Pop(head)) {
-        print(z->data);
+    if (1) {
+        ABA_Problem::Allocator<size_t, 64>
+            index_allocator;
+
+        sw.Start();
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+        };
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto* p = index_allocator.Alloc((size_t)i);
+            //Sleep(1);
+            index_allocator.Free(p);
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
-    if (auto* z = Pop(head)) {
-        print(z->data);
+    print("");
+    if (1) {
+        GoodLang::Allocator<size_t, 64>
+            index_allocator;
+
+        sw.Start();
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc(i));
+        };
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(index_allocator.Alloc(i));
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto* p = index_allocator.Alloc(i);
+            //Sleep(1);
+            index_allocator.Free(p);
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
-    if (auto* z = Pop(head)) {
-        print(z->data);
+    print("");
+    if (1) {
+        GoodLang::details::BTreeAllocator<size_t, 64>
+            index_allocator;
+
+        sw.Start();
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc(i));
+        };
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(index_allocator.Alloc(i));
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto* p = index_allocator.Alloc(i);
+            // Sleep(1);
+            index_allocator.Free(p);
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
-    if (auto* z = Pop(head)) {
-        print(z->data);
+    print("");
+
+
+    if (1) {
+        ABA_Problem::Allocator< Node<size_t> > alloc;
+        THead<Node<size_t>> head; head.m_n64 = 0;
+        for (int i = 0; i < 1000000; ++i) {
+            auto* p = new Node<size_t>((size_t)i, nullptr);
+            ABA_Problem::Push(head, p);
+            if (auto* z = Pop(head)) {
+                delete z;
+            }
+            else {
+                print("Failure1");
+            }
+        }
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto* p = new Node<size_t>((size_t)i, nullptr);
+            ABA_Problem::Push(head, p);
+            if (auto* z = ABA_Problem::Pop(head)) {
+                delete z;
+            }
+            else {
+                print("Failure2");
+            }
+        });
+        while (auto* z = ABA_Problem::Pop(head)) {
+            print(z->data);
+            delete z;
+        }
     }
+
+
+
+
+
 
     while (true) {
         print("");
-        Stopwatch sw;
+        
         for (int loopN = 0; loopN < 1000; loopN++) {
             Scopes::RootScope root;
             if (1) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                EXPECT_EQ(scope.breadcrumb_m.this_m.scope_index, 1);
+                // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
                 EXPECT_EQ(root.breadcrumb_m.this_m.scope_index, 0);
                 EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
-                EXPECT_EQ(scope.object_or_function_versions.load(), 0);
+                EXPECT_EQ(scope.object_or_function_versions, 0);
 
                 scope.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions.load(), 1);
+                EXPECT_EQ(scope.object_or_function_versions, 1);
             }
             if (1) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                EXPECT_EQ(scope.breadcrumb_m.this_m.scope_index, 1);
+                // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
                 EXPECT_EQ(root.breadcrumb_m.this_m.scope_index, 0);
                 EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
-                EXPECT_EQ(scope.object_or_function_versions.load(), 0);
+                EXPECT_EQ(scope.object_or_function_versions, 0);
 
                 Scopes::BasicScope scope2("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                EXPECT_EQ(scope2.breadcrumb_m.this_m.scope_index, 2);
+                // EXPECT_EQ(*scope2.breadcrumb_m.this_m.scope_index, 2);
                 EXPECT_EQ(root.breadcrumb_m.this_m.scope_index, 0);
                 EXPECT_EQ(scope2.breadcrumb_m.root_m, &root.breadcrumb_m);
-                EXPECT_EQ(scope2.object_or_function_versions.load(), 0);
+                EXPECT_EQ(scope2.object_or_function_versions, 0);
 
                 scope.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions.load(), 1);
+                EXPECT_EQ(scope.object_or_function_versions, 1);
 
                 scope2.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions.load(), 1);
+                EXPECT_EQ(scope.object_or_function_versions, 1);
 
                 root.UpdateObjectFunctionVersion();
-                EXPECT_EQ(root.object_or_function_versions.load(), 1);
-                EXPECT_EQ(scope.object_or_function_versions.load(), 2);
-                EXPECT_EQ(scope2.object_or_function_versions.load(), 2);
+                EXPECT_EQ(root.object_or_function_versions, 1);
+                EXPECT_EQ(scope.object_or_function_versions, 2);
+                EXPECT_EQ(scope2.object_or_function_versions, 2);
             }
         }
 
@@ -899,7 +1176,7 @@ int main() {
             for (int i = 0; i < 1000000; ++i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions.load(), 1);
+                EXPECT_EQ(scope.object_or_function_versions, 1);
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
@@ -908,7 +1185,7 @@ int main() {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
                 root.UpdateObjectFunctionVersion();
-                EXPECT_EQ(true, scope.object_or_function_versions.load() >= 2);
+                EXPECT_EQ(true, scope.object_or_function_versions >= 2);
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
@@ -922,7 +1199,7 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions.load(), 1);
+                EXPECT_EQ(scope.object_or_function_versions, 1);
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
@@ -931,7 +1208,7 @@ int main() {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
                 root.UpdateObjectFunctionVersion();
-                EXPECT_EQ(true, scope.object_or_function_versions.load() >= 2);
+                EXPECT_EQ(true, scope.object_or_function_versions >= 2);
             });            
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
