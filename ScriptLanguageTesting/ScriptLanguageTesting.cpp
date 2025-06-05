@@ -40,7 +40,6 @@ namespace utilities {
         size_type _hash{ npos };
 
     public:
-
         shared_string() {};
         shared_string(shared_string const&) = default;
         shared_string(shared_string&&) = default;
@@ -97,43 +96,42 @@ namespace utilities {
             return os;
         };
         size_type hash(size_type out = 0) const {
-            if (out == 0 /*&& length() > 16*/) {
+            if (out == 0 && length() > 16) {
                 if (_hash == npos) {
                     for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);                    
                     InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
                 }
                 return _hash;                
             }
-
             for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
             return out;
         };
         bool Equals(const shared_string& _Right, size_t _Count = npos) const {
             long long j = std::min<long long>(_Right.length(), length());
             if (_Count > j) return false;
-            for (j = j - 1; (j >= 0) && (_Count > 0); --j, --_Count) {
-                if (_Right[j] != operator[](j)) return false;
-            }
+            for (j = j - 1; (j >= 0) && (_Count > 0); --j, --_Count) if (_Right[j] != operator[](j)) return false;            
             return true;
         };        
         friend bool operator==(shared_string const& A, shared_string const& V) noexcept {
-            return A.hash() == V.hash();
+            if (A.length() != V.length()) return false;
+            else if (A.length() > 16) return A.hash() == V.hash();            
+            else return A.data == V.data;
         };
         friend bool operator<(shared_string const& A, shared_string const& V) {
-            return A.hash() < V.hash();
+            if (A.data.length() < V.length()) return true;            
+            else if (A.data.length() > V.length()) return false;            
+            else if(A.length() > 16) return A.hash() < V.hash();
+            else return A.data < V.data;
         };
         friend bool operator<=(shared_string const& A, shared_string const& V) {
-            return A.hash() <= V.hash();
+            if (A.data.length() < V.length()) return true;            
+            else if (A.data.length() > V.length()) return false;            
+            else if (A.length() > 16) return A.hash() <= V.hash();
+            else return A.data <= V.data;
         };
-        friend bool operator>(shared_string const& A, shared_string const& V) {
-            return A.hash() > V.hash();
-        };
-        friend bool operator>=(shared_string const& A, shared_string const& V) {
-            return A.hash() >= V.hash();
-        };
-        friend bool operator!=(shared_string const& A, shared_string const& V) noexcept {
-            return A.hash() != V.hash();
-        };   
+        friend bool operator>(shared_string const& A, shared_string const& V) { return !operator<=(A, V); };
+        friend bool operator>=(shared_string const& A, shared_string const& V) { return !operator<(A,V); };
+        friend bool operator!=(shared_string const& A, shared_string const& V) noexcept { return !operator==(A,V); };   
         friend shared_string operator+(shared_string const& A, shared_string const& V) noexcept {
             return std::string(A.data) + std::string(V.data);
         };
@@ -406,7 +404,9 @@ namespace utilities {
                 out.m_bits.m_nABA = 0;
                 return (T*)out.m_bits.m_pNode;
             };
-
+            bool is_null() const {
+                return m_bits.m_pNode == 0;
+            };
             // this constructor will make an atomic copy on intel 
             // THead() : m_n64{ 0 } {}
             // THead(THead& r) { m_n64 = r.m_n64; }
@@ -425,16 +425,14 @@ namespace utilities {
             THead<T> Old, New; 
             while (1) { // race loop
                 // Get an atomic copy of head and call it old.
-                New.m_n64 = Old.m_n64 = Head.m_n64;
-                if (!Old.Node())
-                    return nullptr;
+                Old.m_n64 = Head.m_n64;
+                if (Old.is_null()) return nullptr;
+                // 
+                New.m_n64 = Old.m_n64;
                 // change New's Node, which bumps internal aba
                 New.Node(Old.Node()->m_pNext);
                 // compare and swap New with Head if it still matches Old.
-                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) {
-                    return THead<T>::Finalize(Old.Node());
-                    // return Old.Node(); // success
-                }
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) return THead<T>::Finalize(Old.Node()); // success                
                 // race, try again
             }
         }
@@ -452,8 +450,7 @@ namespace utilities {
                 // change New's head ptr, which bumps internal aba
                 New.Node(pNode);
                 // compare and swap New with Head if it still matches Old.
-                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
-                    break; // success
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
                 // race, try again
             }
         }
