@@ -916,17 +916,17 @@ namespace GoodLang {
 		/* auto shared_ptr_thread = AsThread([](){}); */
 		template<typename F> std::shared_ptr<void> AsThread(F Loop, std::function<void(void)> OnThreadEnd = {}) {
 			std::atomic<bool>* shared_lock = new std::atomic<bool>(true);
-			std::shared_ptr<void> lifetimeTracker = std::shared_ptr<void>(nullptr, [Promise = async([todo = std::move(Loop), shared_lock]() {
+			return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [Promise = async([todo = std::move(Loop), shared_lock]() {
 				while (shared_lock->load()) {
 					todo();
 				}
-			}).as_promise(), shared_lock, OnThreadEnd](void* p) {
+			}).as_promise(), shared_lock, OnThreadEnd](int* p) {
 				shared_lock->store(false);
 				const_cast<promise&>(Promise).wait();
 				delete shared_lock;
 				if (OnThreadEnd) OnThreadEnd();
-			});
-			return lifetimeTracker;
+				delete p;
+			}));
 		};
 
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */

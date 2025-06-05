@@ -631,20 +631,12 @@ namespace utilities {
             T* ptr;
         };
 
-        ABA_Problem::BlockAlloc<Wrap, 64, false>
-            allocator{};
         size_t
             size{ 0 };
         concurrency::concurrent_vector<Wrap>
             listeners;
         std::function<void(T*, long*)>
             func;
-
-    public:
-        Callback(std::function<void(T*, long*)>&& listener)
-            : func{ std::move(listener) }
-        {};
-
         // add a listener to the list
         __declspec(noinline) void add_listener(size_t index, T* p) {
             if (size <= index) {
@@ -662,13 +654,17 @@ namespace utilities {
             InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
             if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
             else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
-            wrap.ptr = nullptr;            
+            wrap.ptr = nullptr;
         };
+
+    public:
+        Callback(std::function<void(T*, long*)>&& listener)
+            : func{ std::move(listener) }
+        {};
         __declspec(noinline) ScopedListener listener(size_t index, T* p) {
             add_listener(index, p);
             return ScopedListener(index, *this);
         };
-
         // callback performed on all listeners
         __declspec(noinline) void speak(long* parent_alive) {
             for (size_t i = 0; i < size; ++i) {
@@ -1162,12 +1158,15 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
-            for (int i = 0; i < 1000000; ++i) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                scope.UpdateObjectFunctionVersion();
+            if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.UpdateObjectFunctionVersion();
-                EXPECT_EQ(true, scope.object_or_function_versions >= 2);
-            };
+            })) {
+                for (int i = 0; i < 1000000; ++i) {
+                    Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                    scope.UpdateObjectFunctionVersion();
+                    EXPECT_EQ(true, scope.object_or_function_versions >= 2);
+                };
+            }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
@@ -1185,12 +1184,16 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
-            GoodLang::parallel::For(0, 1000000, [&](int i) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                scope.UpdateObjectFunctionVersion();
+            
+            if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.UpdateObjectFunctionVersion();
-                EXPECT_EQ(true, scope.object_or_function_versions >= 2);
-            });            
+            })) {
+                GoodLang::parallel::For(0, 1000000, [&](int i) {
+                    Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                    scope.UpdateObjectFunctionVersion();                    
+                    EXPECT_EQ(true, scope.object_or_function_versions >= 2);
+                });
+            }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             print(root.scope_indexs.num_tickets());
