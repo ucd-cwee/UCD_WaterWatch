@@ -400,6 +400,13 @@ namespace utilities {
             bitset
                 m_bits;
 
+            static T* Finalize(T* p) {
+                THead<T> out;
+                out.m_bits.m_pNode = (uint64_t)p;
+                out.m_bits.m_nABA = 0;
+                return (T*)out.m_bits.m_pNode;
+            };
+
             // this constructor will make an atomic copy on intel 
             // THead() : m_n64{ 0 } {}
             // THead(THead& r) { m_n64 = r.m_n64; }
@@ -424,8 +431,10 @@ namespace utilities {
                 // change New's Node, which bumps internal aba
                 New.Node(Old.Node()->m_pNext);
                 // compare and swap New with Head if it still matches Old.
-                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
-                    return Old.Node(); // success
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) {
+                    return THead<T>::Finalize(Old.Node());
+                    // return Old.Node(); // success
+                }
                 // race, try again
             }
         }
@@ -625,6 +634,8 @@ namespace utilities {
             T* ptr;
         };
 
+        ABA_Problem::BlockAlloc<Wrap, 64, false>
+            allocator{};
         size_t
             size{ 0 };
         concurrency::concurrent_vector<Wrap>
@@ -641,19 +652,19 @@ namespace utilities {
         __declspec(noinline) void add_listener(size_t index, T* p) {
             if (size <= index) {
                 if (listeners.size() <= index) (void)listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
-                InterlockedExchangeNoFence(static_cast<volatile size_t*>(&size), index);
+                InterlockedExchange(static_cast<volatile size_t*>(&size), index);
             }
-            Wrap& wrap = listeners[index - 1];            
+            Wrap& wrap = listeners[index - 1];
             wrap.ptr = p;
-            InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), 1 << 8);
-            InterlockedIncrementNoFence(static_cast<volatile long*>(&wrap.alive));
+            InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
+            InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
         };
         // remove a listener from the list
         __declspec(noinline) void remove_listener(size_t index) {
             Wrap& wrap = listeners[index - 1];
-            InterlockedDecrementNoFence(static_cast<volatile long*>(&wrap.alive));
-            if (InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
-            else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchangeNoFence(static_cast<volatile long*>(&wrap.count), 0);            
+            InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
+            if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
+            else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
             wrap.ptr = nullptr;            
         };
         __declspec(noinline) ScopedListener listener(size_t index, T* p) {
@@ -667,12 +678,11 @@ namespace utilities {
                 Wrap& wrap = listeners[i];
                 if (wrap.alive) {
                     if (!parent_alive || *parent_alive) {
-                        if (InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8)) {
+                        if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
                             func(wrap.ptr, &wrap.alive);
-                        }
-                        InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), -1);
+                        InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
                     }
-                    else break;                    
+                    else break;
                 }                
             }            
         };
@@ -942,7 +952,7 @@ public:
     public:
         BasicScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : breadcrumb_m(ScopeID(name, scope_type_p), parent)
-            , children_listeners([](BasicScope* ptr, long* parent_alive) -> void { ptr->UpdateObjectFunctionVersion(parent_alive); })
+            , children_listeners(&BasicScope::UpdateObjectFunctionVersion) // [](BasicScope* ptr, long* parent_alive) -> void { ptr->UpdateObjectFunctionVersion(parent_alive); }
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
