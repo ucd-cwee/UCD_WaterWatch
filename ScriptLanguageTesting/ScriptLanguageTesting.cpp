@@ -415,31 +415,18 @@ namespace utilities {
         // pop pNode from head of list.
         template<class T>
         __declspec(noinline) T* Pop(THead<T>& Head) {
-            THead<T> Old, New;
+            THead<T> Old, New; 
             while (1) { // race loop
                 // Get an atomic copy of head and call it old.
-                THead<T> Old(Head);
+                New.m_n64 = Old.m_n64 = Head.m_n64;
                 if (!Old.Node())
-                    return NULL;
-                // Copy old and call it new.
-                THead<T> New(Old);
+                    return nullptr;
                 // change New's Node, which bumps internal aba
                 New.Node(Old.Node()->m_pNext);
                 // compare and swap New with Head if it still matches Old.
                 if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
                     return Old.Node(); // success
                 // race, try again
-
-
-
-                //New.m_n64 = Old.m_n64 = Head.m_n64;
-                //if (!Old.Node()) return nullptr;
-                //// change New's Node, which bumps internal aba
-                //New.Node(Old.Node()->m_pNext);
-                //// compare and swap New with Head if it still matches Old.
-                //if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
-                //    return Old.Node(); // success
-                //// race, try again
             }
         }
 
@@ -450,7 +437,7 @@ namespace utilities {
             while (1) { // race loop
                 // Get an atomic copy of head and call it old.
                 // Copy old and call it new.
-                THead<T> Old(Head), New(Old);
+                New.m_n64 = Old.m_n64 = Head.m_n64;
                 // Wire node t Head
                 pNode->m_pNext = New.Node();
                 // change New's head ptr, which bumps internal aba
@@ -459,48 +446,22 @@ namespace utilities {
                 if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
                     break; // success
                 // race, try again
-
-
-
-
-
-
-                //New.m_n64 = Old.m_n64 = Head.m_n64;
-
-                //// Wire node t Head
-                //pNode->m_pNext = Old.Node();
-
-                //// change New's head ptr, which bumps internal aba
-                //New.Node(pNode);
-                //// compare and swap New with Head if it still matches Old.
-                //if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
-                //    break; // success
-                //// race, try again
             }
         }
 
         template <typename T, size_t BlockSize, bool skipInitialization = false> class BlockAlloc {
         private:
-            class element_t {
-            public:
-                unsigned char data[sizeof(T)];
-                bool initialized{ false };
-                element_t* m_pNext;
-
-                element_t() = default;
-                element_t(T&& _data, element_t*&& _m_pNext) : m_pNext(std::move(_m_pNext)) {
-                    new (&data[0]) T(std::forward<T>(_data));
-                    initialized = true;
-                };
-                element_t(element_t const&) = default;
-                element_t(element_t&&) = default;
-                element_t& operator=(element_t const&) = default;
-                element_t& operator=(element_t&&) = default;
-                ~element_t() = default;
+            struct element_t {
+                unsigned char 
+                    data[sizeof(T)];
+                bool 
+                    initialized;
+                element_t* 
+                    m_pNext;
             };
-            // block_t is a contiguous block of elements
-            struct block_t {
-                element_t elements[BlockSize];
+            struct block_t { 
+                element_t 
+                    elements[BlockSize]; 
             };
 
             // Allocate one new block of contiguous elements
@@ -517,12 +478,12 @@ namespace utilities {
 
                 // push pNode onto head of list.
                 uint64_t old;
+                THead<element_t> New;
                 while (true) { // race loop
                     // Get an atomic copy of head and call it old.
-                    // Copy old and call it new.
-                    THead<element_t>
-                        New(free);
-                    old = New.m_n64;
+                    // Copy old and call it new.                    
+                    old = New.m_n64 = free.m_n64;
+
                     // Wire the tail of this block to connect to the old head ptr
                     block->elements[BlockSize - 1].m_pNext = New.Node();
 
@@ -534,15 +495,16 @@ namespace utilities {
                         break; // success
                     // race, try again
                 }
+
             };
 
             // Release all memory held by all blocks
-            void ReleaseBlocks() {
+            __declspec(noinline) void ReleaseBlocks() {
                 if constexpr (!std::is_pod<T>::value) {
                     for (auto& block : blocks) for (auto& element : block.elements) if (element.initialized) {
                         reinterpret_cast<T*>(&element.data[0])->~T();
                         element.initialized = false;
-                    }                    
+                    }
                 }
             };
 
@@ -555,35 +517,28 @@ namespace utilities {
 
             // Acquire a new element from the free list and construct it.
             template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
-                T* data{ nullptr };
                 element_t* element{ nullptr };
-
-                // Grab the free element and set free to the next item in that list
-                // Update made with compare-and-swap loop:
-                while (true) {
+                while (1) {
                     if (element = Pop(free)) {
-                        data = (T*)&element->data[0];
-                        if constexpr (!std::is_pod<T>::value || !skipInitialization) {
-                            new (data) T(std::forward<TArgs>(a)...);
-                        }
-                        element->initialized = true;
-                        break;
+                        if constexpr (std::is_pod<T>::value) element->initialized = true;
+                        T* data{ (T*)&element->data[0] };
+                        if constexpr (!std::is_pod<T>::value || !skipInitialization) new (data) T(std::forward<TArgs>(a)...);                        
+                        return data;
                     }
                     else {
                         AllocBlock();
                     }
                 }
-                return data;
             };
 
             // Destroys the element and return its memory to the free list
             __declspec(noinline) void Free(T* element) {
-                if (element == nullptr) { return; }
+                element_t* t = (element_t*)(element);
                 if constexpr (!std::is_pod<T>::value) {
                     element->~T();
+                    t->initialized = false;
                 }
-                element_t* t = (element_t*)(element);
-                t->initialized = false;
+                           
                 Push(free, t);
             };
 
@@ -628,6 +583,7 @@ namespace utilities {
 
     };
 
+
     // Allows adding and removing of listeners in parallel
     template <typename T = void*>
     class Callback {
@@ -664,74 +620,61 @@ namespace utilities {
 
     private:
         struct Wrap {
-            std::atomic_bool alive;
-            std::atomic<unsigned long> count;
+            long alive;
+            long count;
             T* ptr;
         };
 
         size_t
             size{ 0 };
-        concurrency::concurrent_vector<Callback<T>::Wrap>
+        concurrency::concurrent_vector<Wrap>
             listeners;
-        std::function<void(T*, std::atomic_bool*)>
+        std::function<void(T*, long*)>
             func;
 
     public:
-        Callback(std::function<void(T*, std::atomic_bool*)>&& listener)
+        Callback(std::function<void(T*, long*)>&& listener)
             : func{ std::move(listener) }
         {};
 
         // add a listener to the list
-        void add_listener(size_t index, T* p) {            
+        __declspec(noinline) void add_listener(size_t index, T* p) {
             if (size <= index) {
-                if (listeners.size() <= index) (void)listeners.grow_to_at_least((index + 1) + ((index + 1) % 16));
-                InterlockedExchangeNoFence(static_cast<volatile size_t*>(&size), listeners.size());
+                if (listeners.size() <= index) (void)listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
+                InterlockedExchangeNoFence(static_cast<volatile size_t*>(&size), index);
             }
-            Callback<T>::Wrap& wrap = listeners[index-1];
+            Wrap& wrap = listeners[index - 1];            
             wrap.ptr = p;
-            wrap.count.fetch_add(1 << 8, std::memory_order_relaxed);
-            wrap.alive.store(true, std::memory_order_relaxed);
+            InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), 1 << 8);
+            InterlockedIncrementNoFence(static_cast<volatile long*>(&wrap.alive));
         };
         // remove a listener from the list
         __declspec(noinline) void remove_listener(size_t index) {
-            Callback<T>::Wrap& wrap = listeners[index-1];
-                        
-            wrap.alive.store(false, std::memory_order_relaxed);
-            if (wrap.count.fetch_add(-(1 << 8), std::memory_order_relaxed) == (1 << 8)) {}
-            else {
-                int loop = 0;
-                while (wrap.count.load(std::memory_order_relaxed) > 0) {
-                    if (++loop > 40) std::this_thread::yield();
-                    if (!wrap.ptr) {
-                        wrap.count = 0;
-                    }
-                }
-            }
-            wrap.ptr = nullptr;
+            Wrap& wrap = listeners[index - 1];
+            InterlockedDecrementNoFence(static_cast<volatile long*>(&wrap.alive));
+            if (InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
+            else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchangeNoFence(static_cast<volatile long*>(&wrap.count), 0);            
+            wrap.ptr = nullptr;            
         };
-        ScopedListener listener(size_t index, T* p) {
+        __declspec(noinline) ScopedListener listener(size_t index, T* p) {
             add_listener(index, p);
             return ScopedListener(index, *this);
         };
 
         // callback performed on all listeners
-        __declspec(noinline) void speak(std::atomic_bool* parent_alive) {
-            for (size_t pos = 0; pos < size; ++pos)  // for (Callback<T>::Wrap& x : listeners)
-            {
-                Callback<T>::Wrap& x = listeners[pos];
-                if (x.alive.load(std::memory_order_relaxed)) {
-                    if (!parent_alive || parent_alive->load(std::memory_order_relaxed)) {
-                        if (x.count.fetch_add(1, std::memory_order_relaxed) >= (1 << 8)) {
-                            func(x.ptr, &x.alive);
+        __declspec(noinline) void speak(long* parent_alive) {
+            for (size_t i = 0; i < size; ++i) {
+                Wrap& wrap = listeners[i];
+                if (wrap.alive) {
+                    if (!parent_alive || *parent_alive) {
+                        if (InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8)) {
+                            func(wrap.ptr, &wrap.alive);
                         }
-                        x.count.fetch_add(-1, std::memory_order_relaxed);
+                        InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), -1);
                     }
-                    else {
-                        break;
-                    }
-                }
-            }
-            
+                    else break;                    
+                }                
+            }            
         };
 
     };
@@ -771,28 +714,63 @@ namespace utilities {
     // Prints new tickets as needed, but recycles old tickets as much as possible. 
     class TicketDispensor {
     public:
-        ABA_Problem::BlockAlloc<size_t, 32, true>
-        // ABA_Problem::Allocator<size_t, 32, 2, true>
+        class ScopedTicket {
+        public:
+            ScopedTicket()
+                : _index(nullptr), _parent(nullptr) {};
+            ScopedTicket(size_t* index, TicketDispensor& parent)
+                : _index(index), _parent(&parent) {};
+            ScopedTicket(ScopedTicket const& rhs) = delete;
+            ScopedTicket(ScopedTicket&& rhs)
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
+            {
+                rhs._index = nullptr;
+            };
+            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
+            ScopedTicket& operator=(ScopedTicket&& rhs)
+            {
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = nullptr;
+                return *this;
+            };
+            ~ScopedTicket() {
+                if (_index)
+                    _parent->return_ticket(_index);
+            };
+
+            size_t* _index;
+        private:
+            TicketDispensor* _parent;
+        };
+            
+    public:
+        ABA_Problem::BlockAlloc<size_t, 64, true>
+        // ABA_Problem::Allocator<size_t, 32, 4, true>
             alloc;
         std::atomic<size_t>
             indexes{ 0 };
-        std::atomic<size_t*>
+        std::atomic<size_t*> 
             last_free{ nullptr }; // avoids using  "free" queue for the first free scope. 
 
-
-    public:
-        size_t* get_ticket() {
+    protected:
+        __declspec(noinline) size_t* get_ticket() {
             size_t* out{ last_free.exchange(nullptr) };
             if (!out) out = alloc.Alloc();
             if (*out == 0) *out = ++indexes;
             return out; 
         };
-        void return_ticket(size_t* ticket) {
+        __declspec(noinline) void return_ticket(size_t* ticket) {
             if (ticket = last_free.exchange(ticket)) alloc.Free(ticket);            
         };
+    public:
         size_t num_tickets() const {
             return indexes.load() + 1;
         };
+        __declspec(noinline) ScopedTicket get_scoped_ticket() {
+            return ScopedTicket(get_ticket(), *this);
+        };
+
     };
 };
 namespace std {
@@ -862,7 +840,7 @@ private:
             scope;
         int
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
-        size_t*
+        utilities::TicketDispensor::ScopedTicket
             scope_index; // unique index of this scope for check_flags
         utilities::shared_string
             current_namespace; // e.g. "::" or "::UI::Color::"
@@ -871,9 +849,13 @@ private:
             : scope_name{ scope_name_p }
             , scope{ nullptr }
             , scope_type{ scope_type_p }
-            , scope_index{ 0 }
+            , scope_index{}
             , current_namespace{}
         {}
+        ScopeID(ScopeID&&) = default;
+        ScopeID(ScopeID const&) = default;
+        ScopeID& operator=(ScopeID&&) = default;
+        ScopeID& operator=(ScopeID const&) = default;
         ~ScopeID() = default;
 
         bool is_namespace() const {
@@ -899,8 +881,8 @@ private:
         Breadcrumb*
             namespace_m; // may point to this
 
-        Breadcrumb(ScopeID thisNode, Breadcrumb* parent = nullptr)
-            : this_m(std::move(thisNode))
+        Breadcrumb(ScopeID&& thisNode, Breadcrumb* parent = nullptr)
+            : this_m(std::forward<ScopeID>(thisNode))
             , parent_m(parent)
         {
             // ROOT
@@ -923,22 +905,14 @@ private:
             }
 
             // scope_index
-            this_m.scope_index = 0;
             if (parent_m) {
                 if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope)) {
-                    this_m.scope_index = root_ptr->scope_indexs.get_ticket();
+                    this_m.scope_index = root_ptr->scope_indexs.get_scoped_ticket();
                 }
             }
 
         };
-        ~Breadcrumb() {
-            // free the current scope_index
-            if (parent_m) {
-                if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope)) {
-                    root_ptr->scope_indexs.return_ticket(this_m.scope_index);
-                }
-            }
-        };
+        ~Breadcrumb() = default;
 
     };
 
@@ -960,19 +934,19 @@ public:
         utilities::Callback<BasicScope>::ScopedListener
             listener;
 
-        void UpdateObjectFunctionVersion(std::atomic_bool* parent_alive = nullptr) {
+        void UpdateObjectFunctionVersion(long* parent_alive = nullptr) {
             InterlockedIncrementNoFence(static_cast<volatile size_t*>(&object_or_function_versions));
             children_listeners.speak(parent_alive);
         };
 
     public:
         BasicScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
-            : breadcrumb_m{ ScopeID(name, scope_type_p), parent }
-            , children_listeners([](BasicScope* ptr, std::atomic_bool* parent_alive) -> void { ptr->UpdateObjectFunctionVersion(parent_alive); })
+            : breadcrumb_m(ScopeID(name, scope_type_p), parent)
+            , children_listeners([](BasicScope* ptr, long* parent_alive) -> void { ptr->UpdateObjectFunctionVersion(parent_alive); })
         {
             breadcrumb_m.this_m.scope = this;
             if (this->breadcrumb_m.parent_m) {
-                listener = this->breadcrumb_m.parent_m->this_m.scope->children_listeners.listener(*this->breadcrumb_m.this_m.scope_index, this);
+                listener = this->breadcrumb_m.parent_m->this_m.scope->children_listeners.listener(*this->breadcrumb_m.this_m.scope_index._index, this);
             }
         };
         virtual ~BasicScope() = default;
@@ -1018,7 +992,7 @@ int main() {
     Stopwatch sw;
 
     if (1) {
-        ABA_Problem::Allocator<size_t, 64>
+        ABA_Problem::Allocator<size_t>
             index_allocator;
 
         sw.Start();
@@ -1041,7 +1015,7 @@ int main() {
     }
     print("");
     if (1) {
-        GoodLang::Allocator<size_t, 64>
+        GoodLang::Allocator<size_t>
             index_allocator;
 
         sw.Start();
@@ -1064,7 +1038,7 @@ int main() {
     }
     print("");
     if (1) {
-        GoodLang::details::BTreeAllocator<size_t, 64>
+        GoodLang::details::BTreeAllocator<size_t>
             index_allocator;
 
         sw.Start();
@@ -1130,7 +1104,7 @@ int main() {
             if (1) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index, 0);
+                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, nullptr);
                 EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
                 EXPECT_EQ(scope.object_or_function_versions, 0);
 
@@ -1140,13 +1114,13 @@ int main() {
             if (1) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index, 0);
+                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, nullptr);
                 EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
                 EXPECT_EQ(scope.object_or_function_versions, 0);
 
                 Scopes::BasicScope scope2("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 // EXPECT_EQ(*scope2.breadcrumb_m.this_m.scope_index, 2);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index, 0);
+                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, nullptr);
                 EXPECT_EQ(scope2.breadcrumb_m.root_m, &root.breadcrumb_m);
                 EXPECT_EQ(scope2.object_or_function_versions, 0);
 
