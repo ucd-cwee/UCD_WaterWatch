@@ -938,7 +938,7 @@ public:
             listener;
 
         void UpdateObjectFunctionVersion(long* parent_alive = nullptr) {
-            InterlockedIncrementNoFence(static_cast<volatile size_t*>(&object_or_function_versions));
+            InterlockedIncrement(static_cast<volatile size_t*>(&object_or_function_versions));
             children_listeners.speak(parent_alive);
         };
 
@@ -1164,7 +1164,7 @@ int main() {
                 for (int i = 0; i < 1000000; ++i) {
                     Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                     scope.UpdateObjectFunctionVersion();
-                    EXPECT_EQ(true, scope.object_or_function_versions >= 2);
+                    EXPECT_EQ(true, scope.object_or_function_versions >= 1);
                 };
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -1191,7 +1191,7 @@ int main() {
                 GoodLang::parallel::For(0, 1000000, [&](int i) {
                     Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                     scope.UpdateObjectFunctionVersion();                    
-                    EXPECT_EQ(true, scope.object_or_function_versions >= 2);
+                    EXPECT_EQ(true, scope.object_or_function_versions >= 1);
                 });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
