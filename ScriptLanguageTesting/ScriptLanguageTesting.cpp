@@ -587,12 +587,89 @@ namespace utilities {
             };
         };
 
+
+        /// <summary>
+        /// Allocator that can prevent deletion of memory until after it is safe to do so, leveraging Epoch (e.g. time of deletion) to determine safety. 
+        /// Typically, three epochs (or iterations) within a thread must pass before a memory recollection is valid. 
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        template <typename T, uint64_t CleanupFrequencyMilliseconds = 1> 
+        class EpochProtectedAllocator final : public GoodLang::EpochGarbageCollectorImpl {
+        private:
+            using EpochStorageType = typename ThreadLocalStorage::EpochStorageType;
+            using EpochQueueType = std::pair<EpochStorageType, T*>;
+
+            std::array<ThreadLocalStorage, ThreadManager::kMaxThreadNum> TLS_arr;
+            std::atomic<EpochStorageType> lastGC;
+            BlockAlloc<T, sizeof(T) << 4> _alloc;
+
+            static auto GetThreadID() { return IDManager::GetThreadID(); };
+            auto& GetTLS() { return TLS_arr[GetThreadID()]; };
+            moodycamel::ConcurrentQueue< EpochQueueType > DeleteList;
+
+        public:
+            // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
+            void RunGC() override {
+                static constexpr auto duration{ std::chrono::milliseconds(CleanupFrequencyMilliseconds) };
+                static thread_local EpochQueueType out{};
+                EpochStorageType _EpochLimit{ std::numeric_limits<EpochStorageType>::max() };
+                auto currentGC{ std::chrono::milliseconds(ThreadManager::GetCurrentEpoch()) };
+
+                if ((currentGC - std::chrono::milliseconds(lastGC.load())) > duration) {
+                    lastGC.store(currentGC.count());
+
+                    for (auto& tls : TLS_arr)
+                        if (tls.Active > 0)
+                            _EpochLimit = std::min< EpochStorageType>(_EpochLimit, tls.EpochLimit.load());
+
+                    if (_EpochLimit > 0)
+                        while (DeleteList.try_pop(out)) // while jobs are available...
+                            if (out.first < _EpochLimit) // ...if the data is in the correct time period for reclamation...
+                                _alloc.Free(out.second); // ... then do the clean-up, and try again (hoping that the list is semi-sorted).
+                            else
+                            {
+                                DeleteList.push(out);
+                                return;
+                            }// ... otherwise push to the end of the queue, which is a form of lazy sorting (also prevents endless looping without additional checks / handles). 
+                }
+            };
+
+        public:
+            // Request a new memory pointer
+            template <typename... TArgs> T* Alloc(TArgs &&... a) {
+                return _alloc.Alloc(std::forward<TArgs>(a)...);
+            };
+
+            // Frees the memory pointer
+            void				Free(const T* element) {
+                DeleteList.push({ ThreadManager::GetCurrentEpoch(), const_cast<T*>(element) });
+                RunGC();
+            };
+
+        public:
+            EpochProtectedAllocator() : EpochGarbageCollectorImpl(), TLS_arr{}, lastGC{ 0 }, DeleteList{} { 
+                for (auto& tls : TLS_arr) tls.parent = this; 
+            };
+            EpochProtectedAllocator(EpochProtectedAllocator const&) = delete;
+            EpochProtectedAllocator(EpochProtectedAllocator&&) = delete;
+            EpochProtectedAllocator& operator=(EpochProtectedAllocator const&) = delete;
+            EpochProtectedAllocator& operator=(EpochProtectedAllocator&&) = delete;
+            virtual ~EpochProtectedAllocator() = default;
+
+        public:
+            // Stalls deallocation / free calls made after this guard until at least after this guard expires.
+            [[nodiscard]] const auto CreateEpochGuard() {
+                return GetTLS().ProtectCurrentEpoch();
+            };
+
+        };
+
     };
 
 
-    // Allows adding and removing of listeners in parallel
-    template <typename T = void*>
-    class Callback {
+    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
+    // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.
+    template <typename T> class Callback {
     public:
         class ScopedListener {
         public:
@@ -625,54 +702,54 @@ namespace utilities {
         };
 
     private:
-        struct Wrap {
+        struct Wrap { 
             long alive;
             long count;
             T* ptr;
         };
 
         size_t
-            size{ 0 };
+            _size{ 0 };
         concurrency::concurrent_vector<Wrap>
-            listeners;
-        std::function<void(T*, long*)>
-            func;
+            _listeners;
+        void (T::*_callback)(long*);
+        
         // add a listener to the list
-        __declspec(noinline) void add_listener(size_t index, T* p) {
-            if (size <= index) {
-                if (listeners.size() <= index) (void)listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
-                InterlockedExchange(static_cast<volatile size_t*>(&size), index);
+        void add_listener(size_t index, T* p) {
+            if (_size <= index) {
+                if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
+                InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
             }
-            Wrap& wrap = listeners[index - 1];
-            wrap.ptr = p;
+            Wrap& wrap = _listeners[index - 1];
+            InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p)); // wrap.ptr = p;
             InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
             InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
         };
         // remove a listener from the list
-        __declspec(noinline) void remove_listener(size_t index) {
-            Wrap& wrap = listeners[index - 1];
+        void remove_listener(size_t index) {
+            Wrap& wrap = _listeners[index - 1];
             InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
             if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
             else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
-            wrap.ptr = nullptr;
+            InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr)); // wrap.ptr = nullptr;
         };
 
     public:
-        Callback(std::function<void(T*, long*)>&& listener)
-            : func{ std::move(listener) }
+        Callback(void (T::*listener)(long*))
+            : _callback{ listener }
         {};
-        __declspec(noinline) ScopedListener listener(size_t index, T* p) {
+        ScopedListener listener(size_t index, T* p) {
             add_listener(index, p);
             return ScopedListener(index, *this);
         };
         // callback performed on all listeners
-        __declspec(noinline) void speak(long* parent_alive) {
-            for (size_t i = 0; i < size; ++i) {
-                Wrap& wrap = listeners[i];
+        void speak(long* parent_alive) {
+            for (size_t i = 0; i < _size; ++i) {
+                Wrap& wrap = _listeners[i];
                 if (wrap.alive) {
                     if (!parent_alive || *parent_alive) {
                         if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
-                            func(wrap.ptr, &wrap.alive);
+                            (wrap.ptr->*_callback)(&wrap.alive); // _callback(wrap.ptr, &wrap.alive);
                         InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
                     }
                     else break;
@@ -720,21 +797,21 @@ namespace utilities {
         class ScopedTicket {
         public:
             ScopedTicket()
-                : _index(nullptr), _parent(nullptr) {};
-            ScopedTicket(size_t* index, TicketDispensor& parent)
+                : _index(0), _parent(nullptr) {};
+            ScopedTicket(size_t index, TicketDispensor& parent)
                 : _index(index), _parent(&parent) {};
             ScopedTicket(ScopedTicket const& rhs) = delete;
             ScopedTicket(ScopedTicket&& rhs)
                 : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
             {
-                rhs._index = nullptr;
+                rhs._index = 0;
             };
             ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
             ScopedTicket& operator=(ScopedTicket&& rhs)
             {
                 _index = std::move(rhs._index);
                 _parent = std::move(rhs._parent);
-                rhs._index = nullptr;
+                rhs._index = 0;
                 return *this;
             };
             ~ScopedTicket() {
@@ -742,29 +819,27 @@ namespace utilities {
                     _parent->return_ticket(_index);
             };
 
-            size_t* _index;
+            size_t _index;
         private:
             TicketDispensor* _parent;
         };
             
     public:
-        ABA_Problem::BlockAlloc<size_t, 64, true>
-        // ABA_Problem::Allocator<size_t, 32, 4, true>
-            alloc;
+        moodycamel::ConcurrentQueue<size_t>
+            queue{};
         std::atomic<size_t>
             indexes{ 0 };
-        std::atomic<size_t*> 
-            last_free{ nullptr }; // avoids using  "free" queue for the first free scope. 
 
     protected:
-        __declspec(noinline) size_t* get_ticket() {
-            size_t* out{ last_free.exchange(nullptr) };
-            if (!out) out = alloc.Alloc();
-            if (*out == 0) *out = ++indexes;
+        __declspec(noinline) size_t get_ticket() {
+            size_t out;
+            if (!queue.try_pop(out)) {
+                out = ++indexes;
+            }
             return out; 
         };
-        __declspec(noinline) void return_ticket(size_t* ticket) {
-            if (ticket = last_free.exchange(ticket)) alloc.Free(ticket);            
+        __declspec(noinline) void return_ticket(size_t ticket) {
+            queue.push(ticket);
         };
     public:
         size_t num_tickets() const {
@@ -871,7 +946,7 @@ private:
             return scope_type & ScopeType::Root;
         };
     };
-
+public:
     // Used to track and hash the current scope position. 
     class Breadcrumb {
     public:
@@ -921,6 +996,57 @@ private:
 
 
 public:
+    template <int numCategories = 4> class Cache {
+    private: // CacheVersion -> CacheCategory -> Inputs -> Result
+        using ResultType = Breadcrumb*;
+        using InputType = size_t;
+        using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>;
+        using CachedCategory = std::pair<size_t, std::array<ResultForInputType, numCategories>>;
+        
+        utilities::ABA_Problem::EpochProtectedAllocator< CachedCategory > _alloc;
+        std::atomic<CachedCategory*> _current_cache;
+
+    public:
+        template<int category>
+        void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
+            auto g{ _alloc.CreateEpochGuard() };
+            
+            CachedCategory* cached{ nullptr }, *new_ptr{ nullptr };
+            while (true) {
+                cached = _current_cache.load();
+                if (cached && cached->first >= cache_version) {
+                    break;
+                }
+                else {
+                    new_ptr = _alloc.Alloc(std::pair<size_t, std::array<ResultForInputType, numCategories>>{ cache_version, std::array<ResultForInputType, numCategories>() });
+                    if (_current_cache.compare_exchange_strong(cached, new_ptr)) {
+                        if (cached) _alloc.Free(cached);
+                        cached = new_ptr;
+                        break;
+                    }
+                    else {
+                        _alloc.Free(new_ptr);
+                    }
+                }
+            }
+
+            InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cached->second[category][input_hash]), reinterpret_cast<PVOID>(result));
+        };
+
+        template<int category>
+        Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
+            auto g{ _alloc.CreateEpochGuard() };
+            CachedCategory* cached{ _current_cache.load() };
+            if (cached && cached->first >= cache_version) {
+                return cached->second[category][input_hash];
+            }
+            else {
+                return nullptr;
+            }
+        };
+
+    };
+
     class BasicScope {
     public:
         Breadcrumb 
@@ -929,28 +1055,44 @@ public:
             using_m; // NOTE: calling "using" should split the scope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
         GoodLang::SharedLockable<std::map< utilities::shared_string, utilities::ObjectWrapper>>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
-        
+        // Cache<4> search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's
+        // TO-DO, Consider limiting the cache system (including sockets and connections!) to Namespaces, rather than scopes. 
+
+    private:
+        utilities::Callback<BasicScope>
+            sockets_for_obj_or_func_versions;
+        utilities::Callback<BasicScope>::ScopedListener
+            connection_for_obj_or_func_version; 
+    public:
         size_t
             object_or_function_versions{ 0 };
-        utilities::Callback<BasicScope>
-            children_listeners;
-        utilities::Callback<BasicScope>::ScopedListener
-            listener;
-
         void UpdateObjectFunctionVersion(long* parent_alive = nullptr) {
             InterlockedIncrement(static_cast<volatile size_t*>(&object_or_function_versions));
-            children_listeners.speak(parent_alive);
+            sockets_for_obj_or_func_versions.speak(parent_alive);
+        };
+
+    private:
+        utilities::Callback<BasicScope>
+            sockets_for_using_or_children_versions;
+        utilities::Callback<BasicScope>::ScopedListener
+            connection_for_using_or_children_version;
+    public:
+        size_t
+            using_or_children_versions{ 0 };
+        void UpdateUsingChildrenVersion(long* parent_alive = nullptr) {
+            InterlockedIncrement(static_cast<volatile size_t*>(&using_or_children_versions));
+            sockets_for_using_or_children_versions.speak(parent_alive);
         };
 
     public:
         BasicScope(utilities::shared_string const& name = "", int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : breadcrumb_m(ScopeID(name, scope_type_p), parent)
-            , children_listeners(&BasicScope::UpdateObjectFunctionVersion) // [](BasicScope* ptr, long* parent_alive) -> void { ptr->UpdateObjectFunctionVersion(parent_alive); }
+            , sockets_for_obj_or_func_versions(&BasicScope::UpdateObjectFunctionVersion)
+            , sockets_for_using_or_children_versions(&BasicScope::UpdateUsingChildrenVersion)
         {
             breadcrumb_m.this_m.scope = this;
-            if (this->breadcrumb_m.parent_m) {
-                listener = this->breadcrumb_m.parent_m->this_m.scope->children_listeners.listener(*this->breadcrumb_m.this_m.scope_index._index, this);
-            }
+            if (this->breadcrumb_m.parent_m) connection_for_obj_or_func_version = this->breadcrumb_m.parent_m->this_m.scope->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.this_m.scope_index._index, this);            
+            if (this->breadcrumb_m.parent_m) connection_for_using_or_children_version = this->breadcrumb_m.parent_m->this_m.scope->sockets_for_using_or_children_versions.listener(this->breadcrumb_m.this_m.scope_index._index, this);            
         };
         virtual ~BasicScope() = default;
     };
@@ -1015,6 +1157,16 @@ int main() {
             index_allocator.Free(p);
         });
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+        std::vector<size_t*> ptrs(1000000, nullptr);
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            ptrs[i] = index_allocator.Alloc((size_t)i);
+        });
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(ptrs[i]);
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
     print("");
     if (1) {
@@ -1037,6 +1189,16 @@ int main() {
             //Sleep(1);
             index_allocator.Free(p);
         });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+        std::vector<size_t*> ptrs(1000000, nullptr);
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            ptrs[i] = index_allocator.Alloc((size_t)i);
+            });
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(ptrs[i]);
+            });
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
     print("");
@@ -1061,53 +1223,52 @@ int main() {
             index_allocator.Free(p);
         });
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+        std::vector<size_t*> ptrs(1000000, nullptr);
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            ptrs[i] = index_allocator.Alloc((size_t)i);
+            });
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(ptrs[i]);
+            });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
     print("");
 
-
-    if (1) {
-        ABA_Problem::Allocator< Node<size_t> > alloc;
-        THead<Node<size_t>> head; head.m_n64 = 0;
-        for (int i = 0; i < 1000000; ++i) {
-            auto* p = new Node<size_t>((size_t)i, nullptr);
-            ABA_Problem::Push(head, p);
-            if (auto* z = Pop(head)) {
-                delete z;
-            }
-            else {
-                print("Failure1");
-            }
-        }
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto* p = new Node<size_t>((size_t)i, nullptr);
-            ABA_Problem::Push(head, p);
-            if (auto* z = ABA_Problem::Pop(head)) {
-                delete z;
-            }
-            else {
-                print("Failure2");
-            }
-        });
-        while (auto* z = ABA_Problem::Pop(head)) {
-            print(z->data);
-            delete z;
-        }
-    }
-
-
-
-
-
-
     while (true) {
         print("");
-        
+
+        if (1) {
+            Scopes::Cache<4> cache;
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                cache.EmplaceCache<0>(1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
+                EXPECT_EQ(cache.TryGetCache<0>(1, 0), reinterpret_cast<Scopes::Breadcrumb*>(1));
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                cache.EmplaceCache<0>(1, i, reinterpret_cast<Scopes::Breadcrumb*>(i));
+                EXPECT_EQ(cache.TryGetCache<0>(1, i), reinterpret_cast<Scopes::Breadcrumb*>(i));
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                cache.EmplaceCache<0>(i + 1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
+                cache.TryGetCache<0>(i + 1, 0);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
         for (int loopN = 0; loopN < 1000; loopN++) {
             Scopes::RootScope root;
             if (1) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, nullptr);
+                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, 0);
                 EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
                 EXPECT_EQ(scope.object_or_function_versions, 0);
 
@@ -1117,13 +1278,13 @@ int main() {
             if (1) {
                 Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, nullptr);
+                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, 0);
                 EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
                 EXPECT_EQ(scope.object_or_function_versions, 0);
 
                 Scopes::BasicScope scope2("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
                 // EXPECT_EQ(*scope2.breadcrumb_m.this_m.scope_index, 2);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, nullptr);
+                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, 0);
                 EXPECT_EQ(scope2.breadcrumb_m.root_m, &root.breadcrumb_m);
                 EXPECT_EQ(scope2.object_or_function_versions, 0);
 
@@ -1199,16 +1360,8 @@ int main() {
             print(root.scope_indexs.num_tickets());
         }
 
-       
-        if (1) {
-            sw.Start();
-            for (int i = 0; i < 1000000; ++i) {
-                shared_string test = shared_string("TEST");
-                (void*)test.c_str();
-            }
-            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        }
-        if (1) {
+        // In order of slowest to fastest way to manage strings using shared_string...
+        if (1) { // Copying std::strings
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 shared_string test = shared_string(std::string("TEST"));
@@ -1216,7 +1369,7 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (1) { // Copying std::string_views
             sw.Start();
             std::string_view sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
@@ -1225,12 +1378,29 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (1) { // Creating a new reference from a globally constant string
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                shared_string test = shared_string("TEST");
+                (void*)test.c_str();
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) { // Copying a reference to an existing shared_string
             sw.Start();
             shared_string sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
                 shared_string test = shared_string(sv);
                 (void*)test.c_str();
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) { // using std::string_view without scope guarrantees. (This particular example gets optimized-out entirely down to 0.00 seconds)
+            sw.Start();
+            std::string_view sv{ "TEST" };
+            for (int i = 0; i < 1000000; ++i) {
+                std::string_view test = std::string_view(sv);
+                (void*)test.data();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
