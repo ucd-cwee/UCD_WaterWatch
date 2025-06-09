@@ -322,6 +322,33 @@ namespace utilities {
         };
     };
 
+    template <typename T>
+    class DelayedInstantiation {
+    private:
+        std::unique_ptr<T> ptr{ nullptr };
+        GoodLang::fast_shared_mutex mut;
+        bool initialized{ 0 };
+
+    public:
+        bool valid() const {
+            return initialized;
+        };
+        T* operator->() {
+            if (!initialized) {
+                mut.lock();
+                if (!initialized) {
+                    ptr = std::make_unique<T>();
+                    InterlockedIncrement(reinterpret_cast<volatile long*>(&initialized));
+                }
+                mut.unlock();
+            }
+            return ptr.get();
+        };
+        T& operator*() {
+            return *operator->();
+        };
+    };
+
     namespace ABA_Problem {
         template <typename T>
         class Node {
@@ -518,104 +545,158 @@ namespace utilities {
                 size_t threadID;
             };
 
-            std::array<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>, num_parallel_allocators> TLS_arr{};
+            std::array<utilities::DelayedInstantiation<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>>, num_parallel_allocators> TLS_arr{};
             static auto GetThreadID() { return IDManager::GetThreadID(); };
 
         public:
             template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
                 size_t thisThreadIndex = GetThreadID() % num_parallel_allocators;
                 auto& TLS = TLS_arr[thisThreadIndex];
-                innerType* out{ TLS.Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex }) };
+                innerType* out{ TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex }) };
                 return (_type_*)(out);
             };
             __declspec(noinline) void Free(const _type_* t) {
                 innerType* impl = static_cast<innerType*>(static_cast<void*>(const_cast<_type_*>(t)));
                 auto& TLS = TLS_arr[impl->threadID];
-                TLS.Free(impl);
+                TLS->Free(impl);
             };
             template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
                 return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
             };
         };
 
-
-        /// <summary>
-        /// Allocator that can prevent deletion of memory until after it is safe to do so, leveraging Epoch (e.g. time of deletion) to determine safety. 
-        /// Typically, three epochs (or iterations) within a thread must pass before a memory recollection is valid. 
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        template <typename T, uint64_t CleanupFrequencyMilliseconds = 1> 
-        class EpochProtectedAllocator final : public GoodLang::EpochGarbageCollectorImpl {
+        template <typename _type_>
+        class EpochAllocator {
         private:
-            using EpochStorageType = typename ThreadLocalStorage::EpochStorageType;
-            using EpochQueueType = std::pair<EpochStorageType, T*>;
+            class TLS {
+            public:
+                long long
+                    _scope_count;
+                std::atomic<long long>
+                    EpochLimit{ -1 };
+                long long
+                    Epoch_3{ -1 }; // oldest Epoch
+                long long
+                    Epoch_2{ -1 }; // middle Epoch
+                long long
+                    Epoch_1{ -1 }; // youngest Epoch
 
-            std::array<ThreadLocalStorage, ThreadManager::kMaxThreadNum> TLS_arr;
-            std::atomic<EpochStorageType> lastGC;
-            BlockAlloc<T, sizeof(T) << 4> _alloc;
+                long long ForwardEpoch(long long CurrentEpoch) {
+                    EpochLimit = Epoch_3;
+                    Epoch_3 = Epoch_2;
+                    Epoch_2 = Epoch_1;
+                    Epoch_1 = CurrentEpoch;
+                    return EpochLimit.load();
+                };
+                bool EpochCheck(long long CurrentEpoch) {
+                    if (_scope_count == 0) {
+                        return ForwardEpoch(CurrentEpoch) >= 0;
+                    }
+                    else {
+                        return false;
+                    }
+                };
+                class EpochGuard {
+                private:
+                    EpochAllocator* _parent_parent;
+                    TLS* _parent;
+                    long long _CurrentEpoch;
 
-            static auto GetThreadID() { return IDManager::GetThreadID(); };
-            auto& GetTLS() { return TLS_arr[GetThreadID()]; };
-            moodycamel::ConcurrentQueue< EpochQueueType > DeleteList;
+                    void RunGC() {
+                        if (_parent_parent && _parent) {
+                            if (--_parent->_scope_count == 0) {
+                                if (_parent->ForwardEpoch(_CurrentEpoch) >= 0) {
+                                    _parent_parent->RunGC();
+                                }
+                            }
+                        }
+                    }
 
-        public:
+                public:
+                    EpochGuard() : _parent_parent{ nullptr }, _parent{ nullptr }, _CurrentEpoch{} {};
+                    EpochGuard(EpochAllocator* parent_parent, TLS* parent, long long CurrentEpoch) : _parent_parent{ parent_parent }, _parent{ parent }, _CurrentEpoch{ CurrentEpoch } {
+                        ++parent->_scope_count;
+                    };
+                    EpochGuard(EpochGuard const&) = delete;
+                    EpochGuard(EpochGuard&& rhs) : _parent_parent{ std::move(rhs._parent_parent) }, _parent{ std::move(rhs._parent) }, _CurrentEpoch{ std::move(rhs._CurrentEpoch) } {
+                        rhs._parent = nullptr;
+                    };
+                    EpochGuard& operator=(EpochGuard const&) = delete;
+                    EpochGuard& operator=(EpochGuard&& rhs) {
+                        RunGC();
+                        _parent_parent = std::move(rhs.__parent_parentparent);
+                        _parent = std::move(rhs._parent);
+                        _CurrentEpoch = std::move(rhs._CurrentEpoch);
+                        rhs._parent_parent = nullptr;
+                        rhs._parent = nullptr;
+                    }
+                    ~EpochGuard() {
+                        RunGC();
+                    };
+                };
+            };
+            // Allocator means larger memory footprint, but faster when multiple threads are in use. 
+            Allocator<_type_, sizeof(_type_) << 4>
+                _alloc;
+            moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
+                _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
+            GoodLang::ThreadLocalInstance<TLS>
+                _TLS;
+            std::atomic<long long> 
+                _lastGC;
+
             // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
-            void RunGC() override {
-                static constexpr auto duration{ std::chrono::milliseconds(CleanupFrequencyMilliseconds) };
-                static thread_local EpochQueueType out{};
-                EpochStorageType _EpochLimit{ std::numeric_limits<EpochStorageType>::max() };
-                auto currentGC{ std::chrono::milliseconds(ThreadManager::GetCurrentEpoch()) };
+            void RunGC()  {
+                static constexpr auto duration{ std::chrono::milliseconds(1) };
+                static thread_local std::pair<long long, _type_*> out{};
+                auto currentGC{ std::chrono::milliseconds(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch()) };
 
-                if ((currentGC - std::chrono::milliseconds(lastGC.load())) > duration) {
-                    lastGC.store(currentGC.count());
+                if ((currentGC - std::chrono::milliseconds(_lastGC.load())) > duration) {
+                    _lastGC.store(currentGC.count());
 
-                    for (auto& tls : TLS_arr)
-                        if (tls.Active > 0)
-                            _EpochLimit = std::min< EpochStorageType>(_EpochLimit, tls.EpochLimit.load());
+                    long long _EpochLimit{ std::numeric_limits<long long>::max() };
 
-                    if (_EpochLimit > 0)
-                        while (DeleteList.try_pop(out)) // while jobs are available...
-                            if (out.first < _EpochLimit) // ...if the data is in the correct time period for reclamation...
-                                _alloc.Free(out.second); // ... then do the clean-up, and try again (hoping that the list is semi-sorted).
-                            else
-                            {
-                                DeleteList.push(out);
-                                return;
-                            }// ... otherwise push to the end of the queue, which is a form of lazy sorting (also prevents endless looping without additional checks / handles). 
+                    _TLS.for_each([&_EpochLimit](TLS& _tls) {
+                        long long L = _tls.EpochLimit.load();
+                        if (L >= 0) {
+                            _EpochLimit = std::min<long long>(_EpochLimit, L);
+                        }
+                    });
+
+                    if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
+                        while (_delete_list.try_pop(out)) {
+                            if (out.first < _EpochLimit) {
+                                // deemed safe to delete
+                                _alloc.Free(out.second);
+                            }
+                            else {
+                                // deemed unsafe to delete just yet
+                                _delete_list.push(out); // pushing to the end of the queue is lazy deferred sorting -- literally wasting time and hoping it'll be sorted later-on.
+                                break;
+                            }
+                        }
+                    }
                 }
+
             };
 
         public:
+            const auto ProtectCurrentEpoch() {                
+                return TLS::EpochGuard(this, &*_TLS, GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
+            };
+
             // Request a new memory pointer
-            template <typename... TArgs> T* Alloc(TArgs &&... a) {
+            template <typename... TArgs> _type_* Alloc(TArgs &&... a) {
                 return _alloc.Alloc(std::forward<TArgs>(a)...);
             };
 
             // Frees the memory pointer
-            void				Free(const T* element) {
-                DeleteList.push({ ThreadManager::GetCurrentEpoch(), const_cast<T*>(element) });
-                RunGC();
-            };
-
-        public:
-            EpochProtectedAllocator() 
-                : EpochGarbageCollectorImpl()
-                , TLS_arr{}
-                , lastGC{ 0 }
-                , DeleteList{} 
-            { 
-                for (auto& tls : TLS_arr) tls.parent = this; 
-            };
-            EpochProtectedAllocator(EpochProtectedAllocator const&) = delete;
-            EpochProtectedAllocator(EpochProtectedAllocator&&) = delete;
-            EpochProtectedAllocator& operator=(EpochProtectedAllocator const&) = delete;
-            EpochProtectedAllocator& operator=(EpochProtectedAllocator&&) = delete;
-            virtual ~EpochProtectedAllocator() = default;
-
-        public:
-            // Stalls deallocation / free calls made after this guard until at least after this guard expires.
-            [[nodiscard]] const auto CreateEpochGuard() {
-                return GetTLS().ProtectCurrentEpoch();
+            void Free(const _type_* element) {
+                _delete_list.push({ GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch(), const_cast<_type_*>(element) });                
+                if (_TLS->EpochCheck(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch())) {
+                    // will only succeed if we are in scope-level 0, which only happens if this thread has not made any protecting guards.
+                    RunGC();
+                }
             };
 
         };
@@ -661,16 +742,22 @@ namespace utilities {
             long alive;
             long count;
             T* ptr;
+            size_t call_version;
         };
 
+        static size_t&
+            _call_version() {
+            static size_t call_version{ 0 };
+            return call_version;
+        };
         size_t
             _size{ 0 };
         concurrency::concurrent_vector<Wrap>
             _listeners;
-        void (T::*_callback)(long*);
+        void (T::*_callback)(long*, size_t);
         
         // add a listener to the list
-        void add_listener(size_t index, T* p) {
+        __declspec(noinline) void add_listener(size_t index, T* p) {
             if (_size <= index) {
                 if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
                 InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
@@ -681,16 +768,18 @@ namespace utilities {
             InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
         };
         // remove a listener from the list
-        void remove_listener(size_t index) {
-            Wrap& wrap = _listeners[index - 1];
-            InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
-            if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
-            else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
-            InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr)); 
+        __declspec(noinline) void remove_listener(size_t index) {
+            if (_listeners.size() >= index) {
+                Wrap& wrap = _listeners[index - 1];
+                InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
+                if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
+                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
+                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
+            }
         };
 
     public:
-        Callback(void (T::*listener)(long*))
+        Callback(void (T::*listener)(long*, size_t))
             : _callback{ listener }
         {};
         ScopedListener listener(size_t index, T* p) {
@@ -698,13 +787,21 @@ namespace utilities {
             return ScopedListener(index, *this);
         };
         // callback performed on all listeners
-        void speak(long* parent_alive) {
+        __declspec(noinline) void speak(long* parent_alive, size_t call_number = 0) {
+            if (call_number == 0) 
+                call_number = InterlockedIncrement(static_cast<volatile size_t*>(&_call_version()));
+
             for (size_t i = 0; i < _size; ++i) {
                 Wrap& wrap = _listeners[i];
                 if (wrap.alive) {
                     if (!parent_alive || *parent_alive) {
+                        if (wrap.call_version >= call_number) { continue; }
+                        else {
+                            InterlockedExchange(static_cast<volatile size_t*>(&wrap.call_version), call_number);
+                        }
+
                         if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
-                            (wrap.ptr->*_callback)(&wrap.alive); // _callback(wrap.ptr, &wrap.alive);
+                            (wrap.ptr->*_callback)(&wrap.alive, call_number); // _callback(wrap.ptr, &wrap.alive);
                         InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
                     }
                     else break;
@@ -813,32 +910,765 @@ namespace utilities {
         };
     };
 
-    template <typename T>
-    class DelayedInstantiation {
-    private:
-        std::unique_ptr<T> ptr{ nullptr };
-        GoodLang::fast_shared_mutex mut;
-        bool initialized{ 0 };       
-        
+
+
+#if 0
+    template< class objType, class keyType, int maxChildrenPerNode = 10 >
+    class BTree {
     public:
-        bool valid() const {
-            return initialized;
+        struct TreeNode {
+            GoodLang::fast_shared_mutex
+                mut;
+            keyType // key used for sorting
+                key;				
+            objType* // if != NULL pointer to object stored in leaf node
+                object;			
+            TreeNode* // parent node 
+                parent;			
+            TreeNode* // next sibling
+                next;				
+            TreeNode* // prev sibling
+                prev;				
+            long long // number of children
+                numChildren;		
+            TreeNode* // first child
+                firstChild;		
+            TreeNode* // last child
+                lastChild;		
         };
-        T* operator->() {
-            if (!initialized) {
-                mut.lock();
-                if (!initialized) {
-                    ptr = std::make_unique<T>();
-                    InterlockedIncrement(reinterpret_cast<volatile long*>(&initialized));
+        typedef TreeNode _iterType;
+
+        static _iterType* InitNode(_iterType* p) {
+            p->key = {};
+            p->object = nullptr;
+            p->parent = nullptr;
+            p->next = nullptr;
+            p->prev = nullptr;
+            p->numChildren = 0;
+            p->firstChild = nullptr;
+            p->lastChild = nullptr;
+            return p;
+        };
+
+    private:
+        std::atomic< long long >
+            Num;
+        std::atomic< _iterType* >
+            root,
+            first,
+            last;
+        ABA_Problem::EpochAllocator<objType>
+            objAllocator;
+        ABA_Problem::EpochAllocator<_iterType>
+            nodeAllocator;
+    
+    public:
+        _iterType* 
+            AllocNode() {
+            _iterType* node{ nodeAllocator.Alloc() };
+            return InitNode(node);
+        };
+        _iterType* // goes through all leaf nodes of the tree;
+            GetNextLeaf(_iterType* node) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            if (node) {
+                node->mut.lock_shared();
+                if (node->firstChild) {
+                    while (node->firstChild) {
+                        auto* old_node = node;
+                        node = node->firstChild;
+                        old_node->mut.unlock_shared();
+                        node->mut.lock_shared();
+                    }
+                    node->mut.unlock_shared();
                 }
-                mut.unlock();                
+                else {
+                    while (node && !node->next) {
+                        auto* old_node = node;
+                        node = node->parent;
+                        old_node->mut.unlock_shared();
+                        if (node) node->mut.lock_shared();
+                    }
+                    if (node) {
+                        node = node->next;
+                        while (node->firstChild) {
+                            auto* old_node = node;
+                            node = node->firstChild;
+                            old_node->mut.unlock_shared();
+                            node->mut.lock_shared();
+                        }
+                        node->mut.unlock_shared();
+                    }
+                    else {
+                        return nullptr;
+                    }
+                }                
             }
-            return ptr.get();
+            return node;
+        };	
+        _iterType* // goes through all leaf nodes of the tree;
+            GetPrevLeaf(_iterType* node) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            if (node) {
+                node->mut.lock_shared();
+                if (node->lastChild) {
+                    while (node->lastChild) {
+                        auto* old_node = node;
+                        node = node->lastChild;
+                        old_node->mut.unlock_shared();
+                        node->mut.lock_shared();
+                    }
+                    node->mut.unlock_shared();
+                }
+                else {
+                    while (node && !node->prev) {
+                        auto* old_node = node;
+                        node = node->parent;
+                        old_node->mut.unlock_shared();
+                        if (node) node->mut.lock_shared();
+                    }
+                    if (node) {
+                        node = node->prev;
+                        while (node->lastChild) {
+                            auto* old_node = node;
+                            node = node->lastChild;
+                            old_node->mut.unlock_shared();
+                            node->mut.lock_shared();
+                        }
+                        node->mut.unlock_shared();
+                    }
+                    else {
+                        return nullptr;
+                    }
+                }
+            }
+            return node;
+        };	
+        _iterType* // goes through all nodes of the tree;
+            GetNext(_iterType* node) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            if (node) {
+                node->mut.lock_shared();
+                if (node->firstChild) {
+                    auto* old_node = node;
+                    node = node->firstChild;
+                    old_node->mut.unlock_shared();
+                }
+                else {
+                    while (node && node->next == nullptr) {
+                        auto* old_node = node;
+                        node = node->parent;
+                        old_node->mut.unlock_shared();
+                        if (node) node->mut.lock_shared();
+                    }
+                    if (node) node->mut.unlock_shared();
+                }
+            }
+            return node;
         };
-        T& operator*() {
-            return *operator->();
+        _iterType* // find a node whose 
+            NodeFind(keyType  const& key, _iterType* root) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            _iterType* node = NodeFindLargestSmallerEqual(key, root);
+            if (node) {
+                auto locked { std::shared_lock(node->mut) };
+                if (node->object && node->key == key) 
+                    return node;                
+            }
+            return nullptr;
+        };								// find an object using the given key;
+        _iterType* // find an object with the largest key smaller equal the given key;
+            NodeFindByIndex(int index, _iterType* Root) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            int startIndex{ 0 };
+
+            if (!Root) return nullptr;
+            
+            while (Root) {
+                Root->mut.lock_shared();
+                if (index == startIndex && Root->object) { 
+                    Root->mut.unlock_shared();
+                    return Root; 
+                }
+                else {
+                    if (startIndex <= index && (startIndex + Root->numChildren) > index) {
+                        // one of my children has this index				
+                        auto* old_node = Root;
+                        Root = Root->firstChild;
+                        old_node->mut.unlock_shared();
+                    }
+                    else {
+                        // one of my neighbors has this index			                        
+                        if (Root->object) ++startIndex;
+                        else startIndex += Root->numChildren;
+
+                        auto* old_node = Root;
+                        Root = Root->next;
+                        old_node->mut.unlock_shared();
+                    }
+                }
+            }
+
+            return Root;
+        };	
+        _iterType* // find an object with the smallest key larger equal the given key;
+            NodeFindSmallestLargerEqual(keyType const& key, _iterType* Root) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            _iterType *node, *smaller;
+
+            if (!Root) return nullptr;
+            
+            smaller = nullptr;
+            Root->mut.lock_shared();
+            if (node = Root->lastChild) {
+                while (node) {
+                    node->mut.lock_shared();                    
+                    while (node->prev) {
+                        if (node->key <= key) {
+                            if (!smaller) smaller = GetPrevLeaf(Root);                            
+                            break;
+                        }
+                        else {
+                            smaller = node;
+                            auto* old_node = node;
+                            node = node->prev;
+                            node->mut.lock_shared();
+                            old_node->mut.unlock_shared();
+                        }
+                    }
+                    if (node->object) {
+                        if (node->key >= key) {
+                            node->mut.unlock_shared();
+                            break;
+                        }
+                        else if (smaller == nullptr) {
+                            node->mut.unlock_shared();
+                            node = nullptr;
+                            break;
+                        }
+                        else {
+                            node->mut.unlock_shared();
+                            node = smaller;
+                            node->mut.lock_shared();
+                            if (node->object) {
+                                node->mut.unlock_shared();
+                                break;
+                            }
+                        }
+                    }                     
+                    auto* old_node = node;
+                    node = node->lastChild;
+                    old_node->mut.unlock_shared();
+                }
+            }
+            Root->mut.unlock_shared();
+            return node;
+        };			
+        _iterType* // find an object with the largest key smaller equal the given key;
+            NodeFindLargestSmallerEqual(keyType const& key, _iterType* Root) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            _iterType *node, *smaller;
+
+            if (!Root) return nullptr;
+
+            smaller = nullptr;
+            Root->mut.lock_shared();
+            if (node = Root->firstChild) {
+                while (node) {
+                    node->mut.lock_shared();                    
+                    while (node->next) {
+                        if (node->key >= key) {
+                            if (!smaller) smaller = GetNextLeaf(Root);                            
+                            break;
+                        }
+                        else {
+                            smaller = node;
+                            auto* old_node = node;
+                            node = node->next;
+                            node->mut.lock_shared();
+                            old_node->mut.unlock_shared();
+                        }
+                    }
+                    if (node->object) {
+                        if (node->key <= key) {
+                            node->mut.unlock_shared();
+                            break;
+                        }
+                        else if (smaller == nullptr) {
+                            node->mut.unlock_shared();
+                            node = nullptr;
+                            break;
+                        }
+                        else {
+                            node->mut.unlock_shared();
+                            node = smaller;
+                            node->mut.lock_shared();
+                            if (node->object) {
+                                node->mut.unlock_shared();
+                                break;
+                            }
+                        }
+                    }                    
+                    auto* old_node = node;
+                    node = node->firstChild;
+                    old_node->mut.unlock_shared();
+                }
+            }
+            Root->mut.unlock_shared();
+            return node;
+        };			
+        _iterType* 
+            CheckFirstNode(_iterType* newNode) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            auto f = first.load();
+            if (newNode && f) {
+                newNode->mut.lock_shared();
+                f->mut.lock_shared();
+                if (newNode->key < f->key) {
+                    first.store(newNode);
+                }
+                newNode->mut.unlock_shared();
+                f->mut.unlock_shared();
+            }
+            else {
+                first.store(newNode);
+            }
+            return newNode;
         };
+        _iterType* 
+            CheckLastNode(_iterType* newNode) {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+
+            auto f = last.load();
+            if (newNode && f) {
+                newNode->mut.lock_shared();
+                f->mut.lock_shared();
+                if (newNode->key > f->key) {
+                    last.store(newNode);
+                }
+                newNode->mut.unlock_shared();
+                f->mut.unlock_shared();
+            }
+            else {
+                last.store(newNode);
+            }
+            return newNode;
+        };
+        _iterType* 
+            GetFirst() const { 
+            return first.load(); 
+        };
+        _iterType* 
+            GetLast() const { 
+            return last.load(); 
+        };
+        _iterType* 
+            GetRoot() const { 
+            return root.load(); 
+        };
+        long long // returns the total number of nodes in the tree;
+            GetNodeCount() const {
+            return Num.load();
+        };										
+        _iterType* 
+            NodeFindByIndex(int index) const {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            if (index <= 0) return first.load();
+            else if (index >= (Num - 1)) return last.load();
+            else return NodeFindByIndex(index, root.load());
+        };
+        _iterType* // find an object using the given key;
+            NodeFind(keyType  const& key) const {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            return NodeFind(key, root.load());
+        };
+        _iterType* // find an object with the smallest key larger equal the given key;
+            NodeFindSmallestLargerEqual(keyType const& key) const {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            return NodeFindSmallestLargerEqual(key, root.load());
+        };
+        _iterType* // find an object with the largest key smaller equal the given key;
+            NodeFindLargestSmallerEqual(keyType const& key) const {
+            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            return NodeFindLargestSmallerEqual(key, root.load());
+        };
+        objType* // find an object using the given key;
+            Find(keyType  const& key) const {
+            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+            auto g2{ objAllocator.ProtectCurrentEpoch() };
+
+            _iterType* node = NodeFind(key, root.load());
+            if (!node) {
+                return nullptr;
+            }
+            else {
+                auto locked{ std::shared_lock(node->mut.lock) };
+                return node->object;
+            }
+        };									
+        objType* // find an object with the smallest key larger equal the given key;
+            FindSmallestLargerEqual(keyType const& key) const {
+            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+            auto g2{ objAllocator.ProtectCurrentEpoch() };
+
+            _iterType* node = NodeFindSmallestLargerEqual(key, root.load());
+            if (!node) {
+                return nullptr;
+            }
+            else {
+                auto locked{ std::shared_lock(node->mut.lock) };
+                return node->object;
+            }
+        };				
+        objType* // find an object with the largest key smaller equal the given key;
+            FindLargestSmallerEqual(keyType const& key) const {
+            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+            auto g2{ objAllocator.ProtectCurrentEpoch() };
+
+            _iterType* node = NodeFindLargestSmallerEqual(key, root.load());
+            if (!node) {
+                return nullptr;
+            }
+            else {
+                auto locked{ std::shared_lock(node->mut.lock) };
+                return node->object;
+            }
+        };				
+        void
+            FreeNode(_iterType* node) {
+            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+            auto g2{ objAllocator.ProtectCurrentEpoch() };
+
+            if (node) {
+                if (node->object) {
+                    objAllocator.Free(node->object);
+                    --Num;
+                }
+                nodeAllocator.Free(node);
+            }
+        };
+        void // split the node in half and share its children with a new node									
+            SplitNode(_iterType* node) {
+            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+
+            long long
+                i;
+            _iterType
+                * child,
+                * newNode;
+
+            if (node) {
+                if (newNode = AllocNode()) {
+                    std::vector< std::unique_ptr<std::scoped_lock<GoodLang::fast_shared_mutex>> >
+                        locks;
+                    auto 
+                        node_locked{ std::scoped_lock(node->mut.lock) };
+                    auto 
+                        newNode_locked{ std::scoped_lock(newNode->mut.lock) };
+
+                    newNode->parent = node->parent;
+                    newNode->key = child->key;
+                    newNode->numChildren = node->numChildren / 2;
+                    newNode->firstChild = child = node->firstChild;
+
+                    // divide the children over the two nodes                    
+                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
+                    child->parent = newNode;
+                    for (i = 3; i < node->numChildren; i += 2) {
+                        child = child->next;
+                        locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
+                        child->parent = newNode;
+                    }
+                    newNode->lastChild = child;
+
+                    node->numChildren -= newNode->numChildren;
+                    node->firstChild = child->next;
+
+                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->next->lock));
+
+                    child->next->prev = nullptr;
+                    child->next = nullptr;
+
+                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node->parent->lock));
+
+                    if (node->prev) {
+                        locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node->prev->lock));
+                        node->prev->next = newNode;
+                    }
+                    else {                        
+                        node->parent->firstChild = newNode;
+                    }
+                    newNode->prev = node->prev;
+                    newNode->next = node;
+                    node->prev = newNode;
+
+                    node->parent->numChildren++;
+                } 
+            }
+        };
+        _iterType* 
+            MergeNodes(_iterType* node1, _iterType* node2) {
+            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+
+            _iterType* 
+                child;
+            std::vector< std::unique_ptr<std::scoped_lock<GoodLang::fast_shared_mutex>> >
+                locks;
+
+            if (node1 && node2) {
+                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node1->lock));
+                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node2->lock));
+
+                for (child = node1->firstChild; child->next; child = child->next) {
+                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
+                    child->parent = node2;
+                }
+                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
+                child->parent = node2;
+                child->next = node2->firstChild;
+
+                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node2->firstChild->lock));
+
+                node2->firstChild->prev = child;
+                node2->firstChild = node1->firstChild;
+                node2->numChildren += node1->numChildren;
+
+                // unlink the first node from the parent
+                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node1->parent->lock));
+                if (node1->prev) {
+                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node1->prev->lock));
+                    node1->prev->next = node2;
+                }
+                else {
+                    node1->parent->firstChild = node2;
+                }
+                node2->prev = node1->prev;
+                node2->parent->numChildren--;
+
+                FreeNode(node1);
+            }
+            return node2;
+        };
+
+    public:
+        BTree() 
+            : Num{ 0 }
+            , root(nullptr)
+            , first(nullptr)
+            , last(nullptr)
+            , objAllocator{}
+            , nodeAllocator{} 
+        {
+            static_assert(maxChildrenPerNode >= 4);
+            root.store(AllocNode());
+        };
+        ~BTree() = default;
+
+        // ToDo...
+
+        _iterType* Add(objType const& object, keyType const& key, bool addUnique = true, bool* AlreadyExisted = nullptr) {
+            _iterType* node, * child, * newNode; objType* OBJ;
+
+            if (root == nullptr) {
+                root = AllocNode();
+            }
+
+            // check that the key does not already exist		
+            if (addUnique) {
+                node = NodeFind(key);
+                if (node && node->object) {
+                    *node->object = const_cast<objType&>(object);
+                    if (AlreadyExisted) *AlreadyExisted = true;
+                    return CheckLastNode(CheckFirstNode(node));
+                }
+            }
+
+            if (AlreadyExisted) *AlreadyExisted = false;
+
+            if (root->numChildren >= maxChildrenPerNode) {
+                newNode = AllocNode();
+                newNode->key = root->key;
+                newNode->firstChild = root;
+                newNode->lastChild = root;
+                newNode->numChildren = 1;
+                root->parent = newNode;
+                SplitNode(root);
+                root = newNode;
+            }
+
+            newNode = AllocNode();
+            newNode->key = key;
+
+            OBJ = nullptr;
+            {
+                OBJ = objAllocator.Alloc();
+                *OBJ = const_cast<objType&>(object);
+                Num++;
+            }
+
+            newNode->object = OBJ;
+
+            for (node = root; node->firstChild != nullptr; node = child) {
+
+                if (key > node->key) {
+                    node->key = key;
+                }
+
+                // find the first child with a key larger equal to the key of the new node
+                for (child = node->firstChild; child->next; child = child->next) {
+                    if (key <= child->key) {
+                        break;
+                    }
+                }
+
+                if (child->object) {
+
+                    if (key <= child->key) {
+                        // insert new node before child
+                        if (child->prev) {
+                            child->prev->next = newNode;
+                        }
+                        else {
+                            node->firstChild = newNode;
+                        }
+                        newNode->prev = child->prev;
+                        newNode->next = child;
+                        child->prev = newNode;
+                    }
+                    else {
+                        // insert new node after child
+                        if (child->next) {
+                            child->next->prev = newNode;
+                        }
+                        else {
+                            node->lastChild = newNode;
+                        }
+                        newNode->prev = child;
+                        newNode->next = child->next;
+                        child->next = newNode;
+                    }
+
+                    newNode->parent = node;
+                    node->numChildren++;
+
+                    return CheckLastNode(CheckFirstNode(newNode));
+                }
+
+                // make sure the child has room to store another node
+                if (child->numChildren >= maxChildrenPerNode) {
+                    SplitNode(child);
+                    if (key <= child->prev->key) {
+                        child = child->prev;
+                    }
+                }
+            }
+
+            // we only end up here if the root node is empty
+            newNode->parent = root;
+            root->key = key;
+            root->firstChild = newNode;
+            root->lastChild = newNode;
+            root->numChildren++;
+
+            return CheckLastNode(CheckFirstNode(newNode));
+        };
+
+        void									Remove(_iterType* node) {
+            if (!node) return;
+
+            if (first == node) {
+                first = this->GetNextLeaf(node);
+            }
+
+            if (last == node) {
+                last = this->GetPrevLeaf(node);
+            }
+
+            _iterType* parent, * oldRoot;
+
+            // unlink the node from it's parent
+            if (node->prev) {
+                node->prev->next = node->next;
+            }
+            else {
+                node->parent->firstChild = node->next;
+            }
+            if (node->next) {
+                node->next->prev = node->prev;
+            }
+            else {
+                node->parent->lastChild = node->prev;
+            }
+            node->parent->numChildren--;
+
+            // make sure there are no parent nodes with a single child
+            for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
+
+                if (parent->next) {
+                    parent = MergeNodes(parent, parent->next);
+                }
+                else if (parent->prev) {
+                    parent = MergeNodes(parent->prev, parent);
+                }
+
+                // a parent may not use a key higher than the key of it's last child
+                if (parent->key > parent->lastChild->key) {
+                    parent->key = parent->lastChild->key;
+                }
+
+                if (parent->numChildren > maxChildrenPerNode) {
+                    SplitNode(parent);
+                    break;
+                }
+            }
+            for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent) {
+                // a parent may not use a key higher than the key of it's last child
+                if (parent->key > parent->lastChild->key) {
+                    parent->key = parent->lastChild->key;
+                }
+            }
+
+            // free the node
+            FreeNode(node);
+
+            // remove the root node if it has a single internal node as child
+            if (root->numChildren == 1 && root->firstChild->object == nullptr) {
+                oldRoot = root;
+                root->firstChild->parent = nullptr;
+                root = root->firstChild;
+                FreeNode(oldRoot);
+            }
+        };				// remove an object node from the tree
+        void									Clear(bool destroyAllocator = false) {
+            // remove all
+            nodeAllocator.Clear(destroyAllocator);
+            objAllocator.Clear(destroyAllocator);
+            root = nullptr;
+            first = nullptr;
+            last = nullptr;
+            Num = 0;
+            if (!destroyAllocator) Init();
+        };
+
     };
+#endif
+
+
+
+
+
+
+
+
+
+
 
 };
 namespace std {
@@ -864,9 +1694,6 @@ namespace std {
     };
 
 };
-
-
-
 
 class Scopes {
 private:
@@ -1027,22 +1854,80 @@ public:
 
 
 public:
+#if 0
+    template <int numCategories = 4> class Cache {
+    private: // CacheVersion -> CacheCategory -> Inputs -> Result
+        using ResultType = 
+            Breadcrumb*;
+        using InputType = 
+            size_t;
+        using ResultForInputType = 
+            GoodLang::details::flat_map<InputType, ResultType>;
+        using CachedCategory = 
+            std::pair<size_t, std::array<ResultForInputType, numCategories>>;
+
+        GoodLang::fast_shared_mutex 
+            _mut;
+        utilities::DelayedInstantiation< CachedCategory > 
+            _current_cache;
+
+    public:
+        // updating the cache version should clear all categories. 
+        template<int category>
+        __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
+            while (true) {
+                if (_current_cache->first >= cache_version) {
+                    ResultForInputType& map = _current_cache->second[category];
+                    map.emplace(input_hash, (Breadcrumb*)result);
+                    return;
+                }
+                else {
+                    _mut.lock();
+                    if (_current_cache->first < cache_version) {
+                        for (auto& map : _current_cache->second) {
+                            map.clear();
+                        }
+                        InterlockedExchange(static_cast<volatile size_t*>(&_current_cache->first), cache_version);
+                    }
+                    _mut.unlock();
+                }
+            }
+        };
+
+        // updating the cache version should clear all categories. 
+        template<int category>
+        __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash){
+            Breadcrumb* out{ nullptr };
+            if (_current_cache->first >= cache_version) {
+                ResultForInputType& map = _current_cache->second[category];
+                thread_local long hint{ 0 };
+                if (auto* p = map.try_at(input_hash, hint)) {
+                    out = *p;
+                }
+            }
+            return out;
+        };
+
+    };
+#else
+    // leverages the Epoch Allocator to protect access to old pointers while new pointers are still being added. 
+    // Higher memory footprint, but faster once initialized. 
     template <int numCategories = 4> class Cache {
     private: // CacheVersion -> CacheCategory -> Inputs -> Result
         using ResultType = Breadcrumb*;
         using InputType = size_t;
         using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>;
         using CachedCategory = std::pair<size_t, std::array<ResultForInputType, numCategories>>;
-        
-        utilities::ABA_Problem::EpochProtectedAllocator< CachedCategory > _alloc;
+
+        utilities::ABA_Problem::EpochAllocator< CachedCategory > _alloc;
         std::atomic<CachedCategory*> _current_cache;
 
     public:
         template<int category>
         void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
-            auto g{ _alloc.CreateEpochGuard() };
-            
-            CachedCategory* cached{ nullptr }, *new_ptr{ nullptr };
+            auto g{ _alloc.ProtectCurrentEpoch() };
+
+            CachedCategory* cached{ nullptr }, * new_ptr{ nullptr };
             while (true) {
                 cached = _current_cache.load();
                 if (cached && cached->first >= cache_version) {
@@ -1066,7 +1951,7 @@ public:
 
         template<int category>
         Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
-            auto g{ _alloc.CreateEpochGuard() };
+            auto g{ _alloc.ProtectCurrentEpoch() };
             CachedCategory* cached{ _current_cache.load() };
             if (cached && cached->first >= cache_version) {
                 return cached->second[category][input_hash];
@@ -1077,15 +1962,25 @@ public:
         };
 
     };
+#endif
 
     class BasicScope {
     public:
         Breadcrumb 
             breadcrumb_m;
-        utilities::DelayedInstantiation<concurrency::concurrent_vector< utilities::string_view >>
+        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>>
             using_m; // NOTE: calling "using" should split the scope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
         utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< utilities::string_view, utilities::ObjectWrapper>>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
+
+        void EmplaceObject_Impl(utilities::string_view const& sv, utilities::ObjectWrapper const& Obj) {
+            objects_m->insert(std::pair<const utilities::string_view, utilities::ObjectWrapper>{ sv, Obj });
+        };
+        virtual void AddUsing_Impl(Breadcrumb* scope) {
+            if (scope) {
+                using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener{} });
+            }
+        };
 
     public:
         BasicScope(utilities::string_view&& name = {}, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
@@ -1097,59 +1992,63 @@ public:
     };
 
     class NamespaceScope : public BasicScope {
+    friend class BasicScope;
     public:
         // explicit children namespaces, with strongly-held protections to their memory.
-        concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
+        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>>
             children;
     private:
-        //Scopes::Cache<4> 
-            //search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's
+        Scopes::Cache<4> 
+            search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's
+
     private:
         utilities::Callback<NamespaceScope>
             sockets_for_obj_or_func_versions;
-        utilities::Callback<NamespaceScope>::ScopedListener
+        concurrency::concurrent_vector<utilities::Callback<NamespaceScope>::ScopedListener>
             connection_for_obj_or_func_version;
     public:
         size_t
             object_or_function_versions;
-        void UpdateObjectFunctionVersion(long* parent_alive = nullptr) {
+        void UpdateObjectFunctionVersion(long* parent_alive = nullptr, size_t call_number = 0) {
             InterlockedIncrement(static_cast<volatile size_t*>(&object_or_function_versions));
-            sockets_for_obj_or_func_versions.speak(parent_alive);
+            sockets_for_obj_or_func_versions.speak(parent_alive, call_number);
         };
-
-    private:
-        utilities::Callback<NamespaceScope>
-            sockets_for_using_or_children_versions;
-        utilities::Callback<NamespaceScope>::ScopedListener
-            connection_for_using_or_children_version;
-    public:
-        size_t
-            using_or_children_versions;
-        void UpdateUsingChildrenVersion(long* parent_alive = nullptr) {
-            InterlockedIncrement(static_cast<volatile size_t*>(&using_or_children_versions));
-            sockets_for_using_or_children_versions.speak(parent_alive);
+        virtual void AddUsing_Impl(Breadcrumb* scope) override {
+            if (scope) {
+                if (auto* ns_ptr = scope->namespace_m) {
+                    if (ns_ptr->this_m.is_namespace()) {
+                        if (auto* p = dynamic_cast<NamespaceScope*>(ns_ptr->this_m.scope)) {
+                            // suddenly, we require our scope index, now that we are "using" a namespace
+                            using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
+                        }
+                    }
+                }
+            }
         };
 
     public:
         NamespaceScope(utilities::string_view&& name = {}, int scope_type_p = ScopeType::Basic & ScopeType::Namespace, Breadcrumb* parent = nullptr)
             : BasicScope(std::move(name), scope_type_p, parent)
             , children{}
-            //, search_cache{}
+            , search_cache{}
             , sockets_for_obj_or_func_versions(&NamespaceScope::UpdateObjectFunctionVersion)
             , connection_for_obj_or_func_version{}
             , object_or_function_versions{ 0 }
-            , sockets_for_using_or_children_versions(&NamespaceScope::UpdateUsingChildrenVersion)
-            , connection_for_using_or_children_version{}
-            , using_or_children_versions{ 0 }
         {
             if (this->breadcrumb_m.parent_m) {
                 if (auto* p = dynamic_cast<NamespaceScope*>(this->breadcrumb_m.parent_m->namespace_m->this_m.scope)) {
-                    connection_for_obj_or_func_version = p->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.GetScopeIndex(), this);
-                    connection_for_using_or_children_version = p->sockets_for_using_or_children_versions.listener(this->breadcrumb_m.GetScopeIndex(), this);
+                    connection_for_obj_or_func_version.push_back(p->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.GetScopeIndex(), this));
                 }
             }
         };
-        virtual ~NamespaceScope() = default;
+        virtual ~NamespaceScope() {
+            // unload the using statements and children scopes...
+            //this->using_m.clear();
+            //this->children.clear();
+
+        };
+
+
 
 
     };
@@ -1278,11 +2177,109 @@ int main() {
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
     print("");
+    if (1) {
+        ABA_Problem::EpochAllocator<size_t>
+            index_allocator;
+
+        sw.Start();
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+        };
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+            });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto* p = index_allocator.Alloc((size_t)i);
+            //Sleep(1);
+            index_allocator.Free(p);
+            });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+        std::vector<size_t*> ptrs(1000000, nullptr);
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            ptrs[i] = index_allocator.Alloc((size_t)i);
+        });
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(ptrs[i]);
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    }
+    print("");
+    if (1) {
+        ABA_Problem::EpochAllocator<size_t>
+            index_allocator;
+
+        sw.Start();
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+        };
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+            });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto g{ index_allocator.ProtectCurrentEpoch() };
+            auto* p = index_allocator.Alloc((size_t)i);
+            index_allocator.Free(p);
+            ++*p;
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    }
+    print("");
+    if (1) {
+        GoodLang::EpochProtectedAllocator<size_t, 1>
+            index_allocator;
+
+        sw.Start();
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+        };
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            index_allocator.Free(index_allocator.Alloc((size_t)i));
+            });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [&](int i) {
+            auto g{ index_allocator.CreateEpochGuard() };
+            auto* p = index_allocator.Alloc((size_t)i);
+            index_allocator.Free(p);
+            ++*p;
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    }
+    print("");
+
+    if (1) {
+        ABA_Problem::EpochAllocator<size_t>
+            index_allocator;
+        auto g{ index_allocator.ProtectCurrentEpoch() };
+        for (int i = 0; i < 1000000; ++i) {
+            index_allocator.Free(index_allocator.Alloc());
+        }     
+    }
+
+
+
+
+
+
+
+
 
     while (true) {
         print("");
 
-        if (0) {
+        if (1) {
             Scopes::Cache<4> cache;
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -1372,6 +2369,20 @@ int main() {
                 });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+
+            // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
+            if (1) {
+                Scopes::NamespaceScope scope1("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
+                Scopes::NamespaceScope scope2("UI", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
+                scope2.AddUsing_Impl(&scope1.breadcrumb_m);
+                scope1.AddUsing_Impl(&scope2.breadcrumb_m);
+
+                scope1.UpdateObjectFunctionVersion();
+                scope2.UpdateObjectFunctionVersion();
+                root.UpdateObjectFunctionVersion();
+            }
+
 
 
 

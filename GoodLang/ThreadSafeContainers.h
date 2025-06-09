@@ -2223,7 +2223,9 @@ namespace GoodLang {
 		const T* operator->() const { return &GetTLS(); };
 		T& operator*() { return GetTLS(); };
 		const T& operator*() const { return GetTLS(); };
-
+		template <typename T> void for_each(T func) {
+			for (auto& x : TLS_arr) func(x);
+		};
 		ThreadLocalInstance& operator=(T const& val) {
 			for (auto& x : TLS_arr) {
 				x = val;
