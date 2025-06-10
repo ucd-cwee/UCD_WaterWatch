@@ -552,7 +552,14 @@ namespace utilities {
             template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
                 size_t thisThreadIndex = GetThreadID() % num_parallel_allocators;
                 auto& TLS = TLS_arr[thisThreadIndex];
-                innerType* out{ TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex }) };
+                innerType* out;
+                if constexpr (sizeof...(a) > 0) {
+                    out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex });
+                }
+                else {
+                    out = TLS->Alloc();
+                    out->threadID = thisThreadIndex;
+                }
                 return (_type_*)(out);
             };
             __declspec(noinline) void Free(const _type_* t) {
@@ -679,10 +686,12 @@ namespace utilities {
                 }
 
             };
+        public:
+            using GuardType = typename TLS::EpochGuard;
 
         public:
-            const auto ProtectCurrentEpoch() {                
-                return TLS::EpochGuard(this, &*_TLS, GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
+            GuardType ProtectCurrentEpoch() const {
+                return TLS::EpochGuard(const_cast<EpochAllocator*>(this), const_cast<TLS*>(&*_TLS), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
             };
 
             // Request a new memory pointer
@@ -912,33 +921,35 @@ namespace utilities {
 
 
 
-#if 0
-    template< class objType, class keyType, int maxChildrenPerNode = 10 >
-    class BTree {
+#if 1
+    /* Thread-safe ordered B-Tree, which guarrantees valid and safe access to 
+    pointers during erasure or modification of the tree when using the Epoch-guard 
+    protection, which will delay actual deletion until the guard is satisfactorily old. */
+    template< class objType, class keyType, int maxChildrenPerNode = 10 > class BTree {
     public:
         struct TreeNode {
-            GoodLang::fast_shared_mutex
-                mut;
             keyType // key used for sorting
-                key;				
-            objType* // if != NULL pointer to object stored in leaf node
-                object;			
+                key;							
+            objType* // if != NULL pointer to object stored in leaf node 
+                object;						            
             TreeNode* // parent node 
-                parent;			
+                parent;						
             TreeNode* // next sibling
-                next;				
+                next;							
             TreeNode* // prev sibling
-                prev;				
-            long long // number of children
-                numChildren;		
-            TreeNode* // first child
-                firstChild;		
+                prev;							
+            long long // number of children	  
+                numChildren;					
+            TreeNode* // first child 
+                firstChild;					
             TreeNode* // last child
-                lastChild;		
+                lastChild;					
         };
         typedef TreeNode _iterType;
-
-        static _iterType* InitNode(_iterType* p) {
+    
+    private:
+        static _iterType* 
+            InitNode(_iterType* p) {
             p->key = {};
             p->object = nullptr;
             p->parent = nullptr;
@@ -951,710 +962,537 @@ namespace utilities {
         };
 
     private:
-        std::atomic< long long >
+        std::atomic<long long>
             Num;
-        std::atomic< _iterType* >
-            root,
-            first,
-            last;
-        ABA_Problem::EpochAllocator<objType>
+        _iterType
+            * root,
+            * first,
+            * last;
+        utilities::ABA_Problem::EpochAllocator<objType>
             objAllocator;
-        ABA_Problem::EpochAllocator<_iterType>
+        utilities::ABA_Problem::EpochAllocator<_iterType>
             nodeAllocator;
-    
-    public:
-        _iterType* 
-            AllocNode() {
-            _iterType* node{ nodeAllocator.Alloc() };
-            return InitNode(node);
+        GoodLang::fast_shared_mutex
+            mutex;
+
+        class EpochGuard {
+        private:
+            typename decltype(BTree::objAllocator)::GuardType guard_1;
+            typename decltype(BTree::nodeAllocator)::GuardType guard_2;
+
+        public:
+            EpochGuard(BTree const* parent) : guard_1{ parent->objAllocator.ProtectCurrentEpoch() }, guard_2{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
+            EpochGuard(EpochGuard const&) = delete;
+            EpochGuard(EpochGuard&& rhs) = delete;
+            EpochGuard& operator=(EpochGuard const&) = delete;
+            EpochGuard& operator=(EpochGuard&&) = delete;
+            ~EpochGuard() = default;
         };
-        _iterType* // goes through all leaf nodes of the tree;
+
+    public:
+        static _iterType*
             GetNextLeaf(_iterType* node) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
             if (node) {
-                node->mut.lock_shared();
                 if (node->firstChild) {
                     while (node->firstChild) {
-                        auto* old_node = node;
                         node = node->firstChild;
-                        old_node->mut.unlock_shared();
-                        node->mut.lock_shared();
                     }
-                    node->mut.unlock_shared();
                 }
                 else {
                     while (node && !node->next) {
-                        auto* old_node = node;
                         node = node->parent;
-                        old_node->mut.unlock_shared();
-                        if (node) node->mut.lock_shared();
                     }
                     if (node) {
                         node = node->next;
                         while (node->firstChild) {
-                            auto* old_node = node;
                             node = node->firstChild;
-                            old_node->mut.unlock_shared();
-                            node->mut.lock_shared();
                         }
-                        node->mut.unlock_shared();
                     }
                     else {
-                        return nullptr;
+                        node = nullptr;
                     }
-                }                
+                }
             }
             return node;
-        };	
-        _iterType* // goes through all leaf nodes of the tree;
+        };	// goes through all leaf nodes of the tree;
+        static _iterType*
             GetPrevLeaf(_iterType* node) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-
-            if (node) {
-                node->mut.lock_shared();
-                if (node->lastChild) {
+            if (!node) return nullptr;
+            if (node->lastChild) {
+                while (node->lastChild) {
+                    node = node->lastChild;
+                }
+                return node;
+            }
+            else {
+                while (node && node->prev == nullptr) {
+                    node = node->parent;
+                }
+                if (node) {
+                    node = node->prev;
                     while (node->lastChild) {
-                        auto* old_node = node;
                         node = node->lastChild;
-                        old_node->mut.unlock_shared();
-                        node->mut.lock_shared();
                     }
-                    node->mut.unlock_shared();
+                    return node;
                 }
                 else {
-                    while (node && !node->prev) {
-                        auto* old_node = node;
-                        node = node->parent;
-                        old_node->mut.unlock_shared();
-                        if (node) node->mut.lock_shared();
-                    }
-                    if (node) {
-                        node = node->prev;
-                        while (node->lastChild) {
-                            auto* old_node = node;
-                            node = node->lastChild;
-                            old_node->mut.unlock_shared();
-                            node->mut.lock_shared();
-                        }
-                        node->mut.unlock_shared();
-                    }
-                    else {
-                        return nullptr;
-                    }
+                    return nullptr;
                 }
             }
-            return node;
-        };	
-        _iterType* // goes through all nodes of the tree;
+        };	// goes through all leaf nodes of the tree;
+        static _iterType*
             GetNext(_iterType* node) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-
             if (node) {
-                node->mut.lock_shared();
                 if (node->firstChild) {
-                    auto* old_node = node;
                     node = node->firstChild;
-                    old_node->mut.unlock_shared();
                 }
                 else {
                     while (node && node->next == nullptr) {
-                        auto* old_node = node;
                         node = node->parent;
-                        old_node->mut.unlock_shared();
-                        if (node) node->mut.lock_shared();
                     }
-                    if (node) node->mut.unlock_shared();
                 }
             }
             return node;
-        };
-        _iterType* // find a node whose 
+        };		// goes through all nodes of the tree;
+        static _iterType*
             NodeFind(keyType  const& key, _iterType* root) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-
             _iterType* node = NodeFindLargestSmallerEqual(key, root);
-            if (node) {
-                auto locked { std::shared_lock(node->mut) };
-                if (node->object && node->key == key) 
-                    return node;                
-            }
+            if (node && node->object && node->key == key) return node;
             return nullptr;
         };								// find an object using the given key;
-        _iterType* // find an object with the largest key smaller equal the given key;
+        static _iterType*
             NodeFindByIndex(int index, _iterType* Root) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-
             int startIndex{ 0 };
 
-            if (!Root) return nullptr;
-            
+            if (Root == nullptr) {
+                return nullptr;
+            }
+
             while (Root) {
-                Root->mut.lock_shared();
-                if (index == startIndex && Root->object) { 
-                    Root->mut.unlock_shared();
-                    return Root; 
+                if (index == startIndex && Root->object) { return Root; }
+
+                if (startIndex <= index && (startIndex + Root->numChildren) > index) {
+                    // one of my children has this index				
+                    Root = Root->firstChild;
                 }
                 else {
-                    if (startIndex <= index && (startIndex + Root->numChildren) > index) {
-                        // one of my children has this index				
-                        auto* old_node = Root;
-                        Root = Root->firstChild;
-                        old_node->mut.unlock_shared();
-                    }
-                    else {
-                        // one of my neighbors has this index			                        
-                        if (Root->object) ++startIndex;
-                        else startIndex += Root->numChildren;
+                    // one of my neighbors has this index				
+                    if (Root->object) ++startIndex;
+                    else startIndex += Root->numChildren;
 
-                        auto* old_node = Root;
-                        Root = Root->next;
-                        old_node->mut.unlock_shared();
-                    }
+                    Root = Root->next;
                 }
             }
 
             return Root;
-        };	
-        _iterType* // find an object with the smallest key larger equal the given key;
+        };			// find an object with the largest key smaller equal the given key;
+        static _iterType*
             NodeFindSmallestLargerEqual(keyType const& key, _iterType* Root) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            _iterType* node, * smaller;
 
-            _iterType *node, *smaller;
+            if (Root == nullptr) {
+                return nullptr;
+            }
 
-            if (!Root) return nullptr;
-            
             smaller = nullptr;
-            Root->mut.lock_shared();
-            if (node = Root->lastChild) {
-                while (node) {
-                    node->mut.lock_shared();                    
-                    while (node->prev) {
-                        if (node->key <= key) {
-                            if (!smaller) smaller = GetPrevLeaf(Root);                            
-                            break;
+            for (node = Root->lastChild; node != nullptr; node = node->lastChild) {
+                while (node->prev) {
+                    if (node->key <= key) {
+                        if (!smaller) {
+                            smaller = GetPrevLeaf(Root);
                         }
-                        else {
-                            smaller = node;
-                            auto* old_node = node;
-                            node = node->prev;
-                            node->mut.lock_shared();
-                            old_node->mut.unlock_shared();
+                        break;
+                    }
+                    smaller = node;
+                    node = node->prev;
+                }
+                if (node->object) {
+                    if (node->key >= key) {
+                        break;
+                    }
+                    else if (smaller == nullptr) {
+                        return nullptr;
+                    }
+                    else {
+                        node = smaller;
+                        if (node->object) {
+                            break;
                         }
                     }
-                    if (node->object) {
-                        if (node->key >= key) {
-                            node->mut.unlock_shared();
-                            break;
-                        }
-                        else if (smaller == nullptr) {
-                            node->mut.unlock_shared();
-                            node = nullptr;
-                            break;
-                        }
-                        else {
-                            node->mut.unlock_shared();
-                            node = smaller;
-                            node->mut.lock_shared();
-                            if (node->object) {
-                                node->mut.unlock_shared();
-                                break;
-                            }
-                        }
-                    }                     
-                    auto* old_node = node;
-                    node = node->lastChild;
-                    old_node->mut.unlock_shared();
                 }
             }
-            Root->mut.unlock_shared();
+
             return node;
-        };			
-        _iterType* // find an object with the largest key smaller equal the given key;
+        };			// find an object with the smallest key larger equal the given key;
+        static _iterType*
             NodeFindLargestSmallerEqual(keyType const& key, _iterType* Root) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
+            _iterType* node, * smaller;
 
-            _iterType *node, *smaller;
-
-            if (!Root) return nullptr;
+            if (Root == nullptr) {
+                return nullptr;
+            }
 
             smaller = nullptr;
-            Root->mut.lock_shared();
-            if (node = Root->firstChild) {
-                while (node) {
-                    node->mut.lock_shared();                    
-                    while (node->next) {
-                        if (node->key >= key) {
-                            if (!smaller) smaller = GetNextLeaf(Root);                            
-                            break;
+            for (node = Root->firstChild; node != nullptr; node = node->firstChild) {
+                while (node->next) {
+                    if (node->key >= key) {
+                        if (!smaller) {
+                            smaller = GetNextLeaf(Root);
                         }
-                        else {
-                            smaller = node;
-                            auto* old_node = node;
-                            node = node->next;
-                            node->mut.lock_shared();
-                            old_node->mut.unlock_shared();
+                        break;
+                    }
+                    smaller = node;
+                    node = node->next;
+                }
+                if (node->object) {
+                    if (node->key <= key) {
+                        break;
+                    }
+                    else if (smaller == nullptr) {
+                        return nullptr;
+                    }
+                    else {
+                        node = smaller;
+                        if (node->object) {
+                            break;
                         }
                     }
-                    if (node->object) {
-                        if (node->key <= key) {
-                            node->mut.unlock_shared();
-                            break;
-                        }
-                        else if (smaller == nullptr) {
-                            node->mut.unlock_shared();
-                            node = nullptr;
-                            break;
+                }
+            }
+            return node;
+        };			// find an object with the largest key smaller equal the given key;
+
+    public:
+        using GuardType = typename EpochGuard;
+        EpochGuard ProtectCurrentEpoch() const { return EpochGuard(this); };
+
+        BTree() 
+            : Num(0)
+            , root(nullptr)
+            , first(nullptr)
+            , last(nullptr)
+            , objAllocator()
+            , nodeAllocator()
+            , mutex()
+        {
+            static_assert(maxChildrenPerNode >= 4);
+            root = AllocNode();
+        };
+        ~BTree() = default;
+
+        template <bool EmplaceIfExists = true>
+        _iterType* 
+            Add(objType const& object, keyType const& key) {
+            _iterType
+                *node, 
+                *child, 
+                *newNode; 
+
+            // check that the key does not already exist		
+            if constexpr (EmplaceIfExists) {
+                auto locked{ std::shared_lock(mutex) };
+                node = NodeFind(key);
+                if (node && node->object) {
+                    *node->object = object;
+                    return node;
+                }
+            }
+
+            newNode = AllocNode();
+            newNode->key = key;
+            newNode->object = objAllocator.Alloc(object);
+            Num++;
+
+            auto locked{ std::scoped_lock(mutex) };
+            if (root->numChildren >= maxChildrenPerNode) {
+                // DOING MODIFICATIONS
+                if (1) {
+                    node = AllocNode();
+                    node->key = root->key;
+                    node->firstChild = root;
+                    node->lastChild = root;
+                    node->numChildren = 1;
+                    root->parent = node;
+                    SplitNode(root);
+                    root = node;
+                }
+            };
+
+            for (node = root; node->firstChild; node = child) {
+                if (key > node->key) node->key = key;                
+
+                // find the first child with a key larger equal to the key of the new node
+                for (child = node->firstChild; child->next; child = child->next) 
+                    if (key <= child->key) 
+                        break; 
+
+                if (child->object) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        if (key <= child->key) {
+                            // insert new node before child
+                            if (child->prev) child->prev->next = newNode;
+                            else node->firstChild = newNode;
+                            newNode->prev = child->prev;
+                            newNode->next = child;
+                            child->prev = newNode;
                         }
                         else {
-                            node->mut.unlock_shared();
-                            node = smaller;
-                            node->mut.lock_shared();
-                            if (node->object) {
-                                node->mut.unlock_shared();
-                                break;
-                            }
+                            // insert new node after child
+                            if (child->next) child->next->prev = newNode;
+                            else node->lastChild = newNode;
+                            newNode->prev = child;
+                            newNode->next = child->next;
+                            child->next = newNode;
                         }
-                    }                    
-                    auto* old_node = node;
-                    node = node->firstChild;
-                    old_node->mut.unlock_shared();
+                        newNode->parent = node;
+                        ++node->numChildren;
+                        return CheckLastNode(CheckFirstNode(newNode));
+                    }
                 }
-            }
-            Root->mut.unlock_shared();
-            return node;
-        };			
-        _iterType* 
-            CheckFirstNode(_iterType* newNode) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
 
-            auto f = first.load();
-            if (newNode && f) {
-                newNode->mut.lock_shared();
-                f->mut.lock_shared();
-                if (newNode->key < f->key) {
-                    first.store(newNode);
+                // make sure the child has room to store another node
+                if (child->numChildren >= maxChildrenPerNode) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        SplitNode(child);
+                        if (key <= child->prev->key)
+                            child = child->prev;
+                    }
                 }
-                newNode->mut.unlock_shared();
-                f->mut.unlock_shared();
             }
-            else {
-                first.store(newNode);
-            }
-            return newNode;
-        };
-        _iterType* 
-            CheckLastNode(_iterType* newNode) {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
 
-            auto f = last.load();
-            if (newNode && f) {
-                newNode->mut.lock_shared();
-                f->mut.lock_shared();
-                if (newNode->key > f->key) {
-                    last.store(newNode);
-                }
-                newNode->mut.unlock_shared();
-                f->mut.unlock_shared();
+            // DOING MODIFICATIONS
+            if (1) {
+                // we only end up here if the root node is empty
+                newNode->parent = root;
+                root->key = key;
+                root->firstChild = newNode;
+                root->lastChild = newNode;
+                ++root->numChildren;
+                return CheckLastNode(CheckFirstNode(newNode));
             }
+        };
+        void // remove an object node from the tree								
+            Remove(_iterType* node) {
+            _iterType
+                * parent,
+                * oldRoot;
+
+            if (!node) return;
             else {
-                last.store(newNode);
+                auto locked{ std::scoped_lock(mutex) };
+                if (first == node) first = this->GetNextLeaf(node);
+                if (last == node) last = this->GetPrevLeaf(node);
+
+                // unlink the node from it's parent
+                if (node->prev) node->prev->next = node->next;
+                else node->parent->firstChild = node->next;
+                if (node->next) node->next->prev = node->prev;
+                else node->parent->lastChild = node->prev;
+                node->parent->numChildren--;
+
+                // make sure there are no parent nodes with a single child
+                for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
+                    if (parent->next)
+                        parent = MergeNodes(parent, parent->next);
+                    else if (parent->prev)
+                        parent = MergeNodes(parent->prev, parent);
+
+                    // a parent may not use a key higher than the key of it's last child
+                    if (parent->key > parent->lastChild->key)
+                        parent->key = parent->lastChild->key;
+
+                    if (parent->numChildren > maxChildrenPerNode) {
+                        SplitNode(parent);
+                        break;
+                    }
+                }
+                for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent)
+                    // a parent may not use a key higher than the key of it's last child
+                    if (parent->key > parent->lastChild->key)
+                        parent->key = parent->lastChild->key;
+
+                // remove the root node if it has a single internal node as child
+                if (root->numChildren == 1 && root->firstChild->object == nullptr) {
+                    oldRoot = root;
+                    root->firstChild->parent = nullptr;
+                    root = root->firstChild;
+                }
             }
-            return newNode;
-        };
-        _iterType* 
-            GetFirst() const { 
-            return first.load(); 
-        };
-        _iterType* 
-            GetLast() const { 
-            return last.load(); 
-        };
-        _iterType* 
-            GetRoot() const { 
-            return root.load(); 
-        };
-        long long // returns the total number of nodes in the tree;
-            GetNodeCount() const {
-            return Num.load();
-        };										
+
+            // free the nodes
+            FreeNode(node);
+            if (oldRoot) FreeNode(oldRoot);
+        };				
         _iterType* 
             NodeFindByIndex(int index) const {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-            if (index <= 0) return first.load();
-            else if (index >= (Num - 1)) return last.load();
-            else return NodeFindByIndex(index, root.load());
+            if (index <= 0) return GetFirst();
+            else if (index >= (Num - 1)) return GetLast();
+            else {
+                auto locked{ std::shared_lock(mutex) };
+                return NodeFindByIndex(index, root);
+            }
         };
-        _iterType* // find an object using the given key;
+        _iterType* 
             NodeFind(keyType  const& key) const {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-            return NodeFind(key, root.load());
-        };
+            auto locked{ std::shared_lock(mutex) };
+            return NodeFind(key, root);
+        };								// find an object using the given key;
         _iterType* // find an object with the smallest key larger equal the given key;
             NodeFindSmallestLargerEqual(keyType const& key) const {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-            return NodeFindSmallestLargerEqual(key, root.load());
-        };
+            auto locked{ std::shared_lock(mutex) };
+            return NodeFindSmallestLargerEqual(key, root);
+        };			
         _iterType* // find an object with the largest key smaller equal the given key;
             NodeFindLargestSmallerEqual(keyType const& key) const {
-            auto g{ nodeAllocator.ProtectCurrentEpoch() };
-            return NodeFindLargestSmallerEqual(key, root.load());
+            auto locked{ std::shared_lock(mutex) };
+            return NodeFindLargestSmallerEqual(key, root);
         };
         objType* // find an object using the given key;
             Find(keyType  const& key) const {
-            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
-            auto g2{ objAllocator.ProtectCurrentEpoch() };
-
-            _iterType* node = NodeFind(key, root.load());
-            if (!node) {
-                return nullptr;
-            }
-            else {
-                auto locked{ std::shared_lock(node->mut.lock) };
-                return node->object;
-            }
+            auto locked{ std::shared_lock(mutex) };
+            _iterType* node = NodeFind(key, root);
+            if (node) return node->object; 
+            else return nullptr;            
         };									
         objType* // find an object with the smallest key larger equal the given key;
             FindSmallestLargerEqual(keyType const& key) const {
-            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
-            auto g2{ objAllocator.ProtectCurrentEpoch() };
-
-            _iterType* node = NodeFindSmallestLargerEqual(key, root.load());
-            if (!node) {
+            auto locked{ std::shared_lock(mutex) };
+            _iterType* node = NodeFindSmallestLargerEqual(key, root);
+            if (node == nullptr) {
                 return nullptr;
             }
             else {
-                auto locked{ std::shared_lock(node->mut.lock) };
                 return node->object;
             }
         };				
         objType* // find an object with the largest key smaller equal the given key;
             FindLargestSmallerEqual(keyType const& key) const {
-            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
-            auto g2{ objAllocator.ProtectCurrentEpoch() };
-
-            _iterType* node = NodeFindLargestSmallerEqual(key, root.load());
-            if (!node) {
+            auto locked{ std::shared_lock(mutex) };
+            _iterType* node = NodeFindLargestSmallerEqual(key, root);
+            if (node == nullptr) {
                 return nullptr;
             }
             else {
-                auto locked{ std::shared_lock(node->mut.lock) };
                 return node->object;
             }
         };				
-        void
-            FreeNode(_iterType* node) {
-            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
-            auto g2{ objAllocator.ProtectCurrentEpoch() };
-
-            if (node) {
-                if (node->object) {
-                    objAllocator.Free(node->object);
-                    --Num;
-                }
-                nodeAllocator.Free(node);
-            }
+        _iterType* 
+            GetFirst() const { 
+            auto locked{ std::shared_lock(mutex) };
+            return first; 
         };
-        void // split the node in half and share its children with a new node									
-            SplitNode(_iterType* node) {
-            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+        _iterType* 
+            GetLast() const { 
+            auto locked{ std::shared_lock(mutex) };
+            return last; 
+        };
+        _iterType* 
+            GetRoot() const {
+            auto locked{ std::shared_lock(mutex) };
+            return root; 
+        };
+        long long // returns the total number of nodes in the tree;							
+            GetNodeCount() const {
+            return Num.load();
+        };	
 
-            long long
+    private:
+        _iterType* 
+            CheckFirstNode(_iterType* newNode) {
+            if (newNode && first) {
+                if (newNode->key < first->key) first = newNode;                
+            }
+            else first = newNode;            
+            return newNode;
+        };
+        _iterType* 
+            CheckLastNode(_iterType* newNode) {
+            if (newNode && last) {
+                if (newNode->key > last->key) last = newNode;                
+            }
+            else last = newNode;            
+            return newNode;
+        };
+        _iterType* 
+            AllocNode() {
+            _iterType* node;
+            node = nodeAllocator.Alloc();
+            return InitNode(node);
+        };
+        void									
+            FreeNode(_iterType* node) {
+            if (node && node->object) {
+                objAllocator.Free(node->object);  // RemoveFast(node->object); // 
+                Num--;
+            }
+            nodeAllocator.Free(node); // RemoveFast(node); //  
+        };
+        void									
+            SplitNode(_iterType* node) {
+            long long 
                 i;
             _iterType
-                * child,
-                * newNode;
+                *child, 
+                *newNode;
 
-            if (node) {
-                if (newNode = AllocNode()) {
-                    std::vector< std::unique_ptr<std::scoped_lock<GoodLang::fast_shared_mutex>> >
-                        locks;
-                    auto 
-                        node_locked{ std::scoped_lock(node->mut.lock) };
-                    auto 
-                        newNode_locked{ std::scoped_lock(newNode->mut.lock) };
+            // allocate a new node
+            newNode = AllocNode();
+            newNode->parent = node->parent;
 
-                    newNode->parent = node->parent;
-                    newNode->key = child->key;
-                    newNode->numChildren = node->numChildren / 2;
-                    newNode->firstChild = child = node->firstChild;
-
-                    // divide the children over the two nodes                    
-                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
-                    child->parent = newNode;
-                    for (i = 3; i < node->numChildren; i += 2) {
-                        child = child->next;
-                        locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
-                        child->parent = newNode;
-                    }
-                    newNode->lastChild = child;
-
-                    node->numChildren -= newNode->numChildren;
-                    node->firstChild = child->next;
-
-                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->next->lock));
-
-                    child->next->prev = nullptr;
-                    child->next = nullptr;
-
-                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node->parent->lock));
-
-                    if (node->prev) {
-                        locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node->prev->lock));
-                        node->prev->next = newNode;
-                    }
-                    else {                        
-                        node->parent->firstChild = newNode;
-                    }
-                    newNode->prev = node->prev;
-                    newNode->next = node;
-                    node->prev = newNode;
-
-                    node->parent->numChildren++;
-                } 
+            // divide the children over the two nodes
+            child = node->firstChild;
+            child->parent = newNode;
+            for (i = 3; i < node->numChildren; i += 2) {
+                child = child->next;
+                child->parent = newNode;
             }
+
+            newNode->key = child->key;
+            newNode->numChildren = node->numChildren / 2;
+            newNode->firstChild = node->firstChild;
+            newNode->lastChild = child;
+
+            node->numChildren -= newNode->numChildren;
+            node->firstChild = child->next;
+
+            child->next->prev = nullptr;
+            child->next = nullptr;
+
+            // add the new child to the parent before the split node
+            assert(node->parent->numChildren < maxChildrenPerNode);
+
+            if (node->prev) node->prev->next = newNode;            
+            else node->parent->firstChild = newNode;
+            
+            newNode->prev = node->prev;
+            newNode->next = node;
+            node->prev = newNode;
+
+            node->parent->numChildren++;
         };
         _iterType* 
             MergeNodes(_iterType* node1, _iterType* node2) {
-            auto g1{ nodeAllocator.ProtectCurrentEpoch() };
+            _iterType* child;
 
-            _iterType* 
-                child;
-            std::vector< std::unique_ptr<std::scoped_lock<GoodLang::fast_shared_mutex>> >
-                locks;
+            for (child = node1->firstChild; child->next; child = child->next) child->parent = node2;            
+            child->parent = node2;
+            child->next = node2->firstChild;
+            node2->firstChild->prev = child;
+            node2->firstChild = node1->firstChild;
+            node2->numChildren += node1->numChildren;
 
-            if (node1 && node2) {
-                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node1->lock));
-                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node2->lock));
+            // unlink the first node from the parent
+            if (node1->prev) node1->prev->next = node2;            
+            else node1->parent->firstChild = node2;
+            
+            node2->prev = node1->prev;
+            node2->parent->numChildren--;
 
-                for (child = node1->firstChild; child->next; child = child->next) {
-                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
-                    child->parent = node2;
-                }
-                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(child->lock));
-                child->parent = node2;
-                child->next = node2->firstChild;
+            FreeNode(node1);
 
-                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node2->firstChild->lock));
-
-                node2->firstChild->prev = child;
-                node2->firstChild = node1->firstChild;
-                node2->numChildren += node1->numChildren;
-
-                // unlink the first node from the parent
-                locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node1->parent->lock));
-                if (node1->prev) {
-                    locks.emplace_back(std::make_unique<std::scoped_lock<GoodLang::fast_shared_mutex>>(node1->prev->lock));
-                    node1->prev->next = node2;
-                }
-                else {
-                    node1->parent->firstChild = node2;
-                }
-                node2->prev = node1->prev;
-                node2->parent->numChildren--;
-
-                FreeNode(node1);
-            }
             return node2;
-        };
-
-    public:
-        BTree() 
-            : Num{ 0 }
-            , root(nullptr)
-            , first(nullptr)
-            , last(nullptr)
-            , objAllocator{}
-            , nodeAllocator{} 
-        {
-            static_assert(maxChildrenPerNode >= 4);
-            root.store(AllocNode());
-        };
-        ~BTree() = default;
-
-        // ToDo...
-
-        _iterType* Add(objType const& object, keyType const& key, bool addUnique = true, bool* AlreadyExisted = nullptr) {
-            _iterType* node, * child, * newNode; objType* OBJ;
-
-            if (root == nullptr) {
-                root = AllocNode();
-            }
-
-            // check that the key does not already exist		
-            if (addUnique) {
-                node = NodeFind(key);
-                if (node && node->object) {
-                    *node->object = const_cast<objType&>(object);
-                    if (AlreadyExisted) *AlreadyExisted = true;
-                    return CheckLastNode(CheckFirstNode(node));
-                }
-            }
-
-            if (AlreadyExisted) *AlreadyExisted = false;
-
-            if (root->numChildren >= maxChildrenPerNode) {
-                newNode = AllocNode();
-                newNode->key = root->key;
-                newNode->firstChild = root;
-                newNode->lastChild = root;
-                newNode->numChildren = 1;
-                root->parent = newNode;
-                SplitNode(root);
-                root = newNode;
-            }
-
-            newNode = AllocNode();
-            newNode->key = key;
-
-            OBJ = nullptr;
-            {
-                OBJ = objAllocator.Alloc();
-                *OBJ = const_cast<objType&>(object);
-                Num++;
-            }
-
-            newNode->object = OBJ;
-
-            for (node = root; node->firstChild != nullptr; node = child) {
-
-                if (key > node->key) {
-                    node->key = key;
-                }
-
-                // find the first child with a key larger equal to the key of the new node
-                for (child = node->firstChild; child->next; child = child->next) {
-                    if (key <= child->key) {
-                        break;
-                    }
-                }
-
-                if (child->object) {
-
-                    if (key <= child->key) {
-                        // insert new node before child
-                        if (child->prev) {
-                            child->prev->next = newNode;
-                        }
-                        else {
-                            node->firstChild = newNode;
-                        }
-                        newNode->prev = child->prev;
-                        newNode->next = child;
-                        child->prev = newNode;
-                    }
-                    else {
-                        // insert new node after child
-                        if (child->next) {
-                            child->next->prev = newNode;
-                        }
-                        else {
-                            node->lastChild = newNode;
-                        }
-                        newNode->prev = child;
-                        newNode->next = child->next;
-                        child->next = newNode;
-                    }
-
-                    newNode->parent = node;
-                    node->numChildren++;
-
-                    return CheckLastNode(CheckFirstNode(newNode));
-                }
-
-                // make sure the child has room to store another node
-                if (child->numChildren >= maxChildrenPerNode) {
-                    SplitNode(child);
-                    if (key <= child->prev->key) {
-                        child = child->prev;
-                    }
-                }
-            }
-
-            // we only end up here if the root node is empty
-            newNode->parent = root;
-            root->key = key;
-            root->firstChild = newNode;
-            root->lastChild = newNode;
-            root->numChildren++;
-
-            return CheckLastNode(CheckFirstNode(newNode));
-        };
-
-        void									Remove(_iterType* node) {
-            if (!node) return;
-
-            if (first == node) {
-                first = this->GetNextLeaf(node);
-            }
-
-            if (last == node) {
-                last = this->GetPrevLeaf(node);
-            }
-
-            _iterType* parent, * oldRoot;
-
-            // unlink the node from it's parent
-            if (node->prev) {
-                node->prev->next = node->next;
-            }
-            else {
-                node->parent->firstChild = node->next;
-            }
-            if (node->next) {
-                node->next->prev = node->prev;
-            }
-            else {
-                node->parent->lastChild = node->prev;
-            }
-            node->parent->numChildren--;
-
-            // make sure there are no parent nodes with a single child
-            for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
-
-                if (parent->next) {
-                    parent = MergeNodes(parent, parent->next);
-                }
-                else if (parent->prev) {
-                    parent = MergeNodes(parent->prev, parent);
-                }
-
-                // a parent may not use a key higher than the key of it's last child
-                if (parent->key > parent->lastChild->key) {
-                    parent->key = parent->lastChild->key;
-                }
-
-                if (parent->numChildren > maxChildrenPerNode) {
-                    SplitNode(parent);
-                    break;
-                }
-            }
-            for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent) {
-                // a parent may not use a key higher than the key of it's last child
-                if (parent->key > parent->lastChild->key) {
-                    parent->key = parent->lastChild->key;
-                }
-            }
-
-            // free the node
-            FreeNode(node);
-
-            // remove the root node if it has a single internal node as child
-            if (root->numChildren == 1 && root->firstChild->object == nullptr) {
-                oldRoot = root;
-                root->firstChild->parent = nullptr;
-                root = root->firstChild;
-                FreeNode(oldRoot);
-            }
-        };				// remove an object node from the tree
-        void									Clear(bool destroyAllocator = false) {
-            // remove all
-            nodeAllocator.Clear(destroyAllocator);
-            objAllocator.Clear(destroyAllocator);
-            root = nullptr;
-            first = nullptr;
-            last = nullptr;
-            Num = 0;
-            if (!destroyAllocator) Init();
         };
 
     };
@@ -2270,6 +2108,125 @@ int main() {
 
 
 
+    if (1) {
+        BTree<std::string, size_t, 10> tree{};
+        for (char c = 'a'; c <= 'z'; ++c) {
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+        for (char c = 'a'; c <= 'z'; ++c) {
+            tree.Add(std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = 'Z'; c >= 'A'; --c) {
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+        for (char c = 'A'; c <= 'Z'; ++c) {
+            tree.Add(std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = '0'; c <= '9'; ++c) {
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+        for (char c = '0'; c <= '9'; ++c) {
+            tree.Add(std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = '0'; c <= '9'; ++c) {
+            tree.Add(std::string("OVERWRITTEN: ") + std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = 'A'; c <= 'Z'; ++c) {
+            tree.Remove(tree.NodeFind((int)c));
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+    }
+
+    if (1) {
+        BTree<std::string, size_t, 4> tree{};
+        for (char c = 'a'; c <= 'z'; ++c) {
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+        for (char c = 'a'; c <= 'z'; ++c) {
+            tree.Add(std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = 'Z'; c >= 'A'; --c) {
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+        for (char c = 'A'; c <= 'Z'; ++c) {
+            tree.Add(std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = '0'; c <= '9'; ++c) {
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+        for (char c = '0'; c <= '9'; ++c) {
+            tree.Add(std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = '0'; c <= '9'; ++c) {
+            tree.Add(std::string("OVERWRITTEN: ") + std::string(1, c), (int)c);
+            print(*tree.Find((int)c));
+        }
+        for (char c = 'A'; c <= 'Z'; ++c) {
+            tree.Remove(tree.NodeFind((int)c));
+            EXPECT_EQ(nullptr, tree.Find((int)c));
+        }
+    }
+
+    if (1) {
+        BTree<std::string, size_t, 10> tree{};
+        GoodLang::parallel::For(0, 255, [&](int i) {
+            tree.Add(GoodLang::ToString(i), i);
+        });
+        auto g{ tree.ProtectCurrentEpoch() };
+        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+            print(iter->key);
+        }
+    }
+    if (1) {
+        BTree<std::string, size_t, 10> tree{};
+        GoodLang::parallel::For(0, 255, [&](int i) {
+            tree.Add(GoodLang::ToString(i), i);
+            EXPECT_EQ(GoodLang::ToString(i), *tree.Find(i));
+        });
+        auto g{ tree.ProtectCurrentEpoch() };
+        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+            print(iter->key);
+        }
+    }
+    if (1) {
+        BTree<std::string, size_t, 10> tree{};
+        GoodLang::parallel::For(0, 255, [&](int i) {
+            tree.Add(GoodLang::ToString(i), i);
+            tree.Remove(tree.NodeFind(i));
+            EXPECT_EQ(nullptr, tree.Find(i));
+        });
+        auto g{ tree.ProtectCurrentEpoch() };
+        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+            print(iter->key);
+        }
+    }
+    if (1) {
+        BTree<std::string, size_t, 10> tree{};
+        if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
+            for (int i = 0; i < 254; ++i) {
+                auto g{ tree.ProtectCurrentEpoch() };
+                tree.Remove(tree.NodeFind(i));
+            };
+        })) {
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                auto g{ tree.ProtectCurrentEpoch() };
+                tree.Add(GoodLang::ToString(i), i);
+                if (auto* p = tree.NodeFind(i)) print(p->key);                
+            });
+        }
+
+        auto g{ tree.ProtectCurrentEpoch() };
+        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+            print(iter->key);
+        }
+    }
 
 
 
