@@ -643,7 +643,7 @@ namespace utilities {
                 };
             };
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
-            Allocator<_type_, sizeof(_type_) << 4>
+            Allocator<_type_, 1024>
                 _alloc;
             moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
@@ -920,12 +920,10 @@ namespace utilities {
     };
 
 
-
-#if 1
     /* Thread-safe ordered B-Tree, which guarrantees valid and safe access to 
     pointers during erasure or modification of the tree when using the Epoch-guard 
     protection, which will delay actual deletion until the guard is satisfactorily old. */
-    template< class objType, class keyType, int maxChildrenPerNode = 10 > class BTree {
+    template< class objType, class keyType, int maxChildrenPerNode = 10> class BTree {
     public:
         struct TreeNode {
             keyType // key used for sorting
@@ -965,9 +963,9 @@ namespace utilities {
         std::atomic<long long>
             Num;
         _iterType
-            * root,
-            * first,
-            * last;
+            * root, // must be locked when handled
+            * first, // will be exchanged using atomics
+            * last; // will be exchanged using atomics
         utilities::ABA_Problem::EpochAllocator<objType>
             objAllocator;
         utilities::ABA_Problem::EpochAllocator<_iterType>
@@ -1204,6 +1202,16 @@ namespace utilities {
             Num++;
 
             auto locked{ std::scoped_lock(mutex) };
+
+            // check that the key does not already exist		
+            if (1) {
+                node = NodeFind(key);
+                if (node && node->object) {
+                    FreeNode(newNode);
+                    return node;
+                }
+            }
+
             if (root->numChildren >= maxChildrenPerNode) {
                 // DOING MODIFICATIONS
                 if (1) {
@@ -1273,17 +1281,231 @@ namespace utilities {
                 return CheckLastNode(CheckFirstNode(newNode));
             }
         };
+
+        __declspec(noinline) _iterType*
+            GetOrInstance(keyType const& key) {
+            _iterType
+                * node,
+                * child,
+                * newNode;
+
+            // check that the key does not already exist		
+            if (1) {
+                auto locked{ std::shared_lock(mutex) };
+                node = NodeFind(key);
+                if (node && node->object) {
+                    return node;
+                }
+            }
+
+            newNode = AllocNode();
+            newNode->key = key;
+            newNode->object = objAllocator.Alloc();
+            Num++;
+
+            auto locked{ std::scoped_lock(mutex) };
+
+            // check that the key does not already exist		
+            if (1) {
+                node = NodeFind(key);
+                if (node && node->object) {
+                    FreeNode(newNode);
+                    return node;
+                }
+            }
+
+            if (root->numChildren >= maxChildrenPerNode) {
+                // DOING MODIFICATIONS
+                if (1) {
+                    node = AllocNode();
+                    node->key = root->key;
+                    node->firstChild = root;
+                    node->lastChild = root;
+                    node->numChildren = 1;
+                    root->parent = node;
+                    SplitNode(root);
+                    root = node;
+                }
+            };
+
+            for (node = root; node->firstChild; node = child) {
+                if (key > node->key) node->key = key;
+
+                // find the first child with a key larger equal to the key of the new node
+                for (child = node->firstChild; child->next; child = child->next)
+                    if (key <= child->key)
+                        break;
+
+                if (child->object) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        if (key <= child->key) {
+                            // insert new node before child
+                            if (child->prev) child->prev->next = newNode;
+                            else node->firstChild = newNode;
+                            newNode->prev = child->prev;
+                            newNode->next = child;
+                            child->prev = newNode;
+                        }
+                        else {
+                            // insert new node after child
+                            if (child->next) child->next->prev = newNode;
+                            else node->lastChild = newNode;
+                            newNode->prev = child;
+                            newNode->next = child->next;
+                            child->next = newNode;
+                        }
+                        newNode->parent = node;
+                        ++node->numChildren;
+                        return CheckLastNode(CheckFirstNode(newNode));
+                    }
+                }
+
+                // make sure the child has room to store another node
+                if (child->numChildren >= maxChildrenPerNode) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        SplitNode(child);
+                        if (key <= child->prev->key)
+                            child = child->prev;
+                    }
+                }
+            }
+
+            // DOING MODIFICATIONS
+            if (1) {
+                // we only end up here if the root node is empty
+                newNode->parent = root;
+                root->key = key;
+                root->firstChild = newNode;
+                root->lastChild = newNode;
+                ++root->numChildren;
+                return CheckLastNode(CheckFirstNode(newNode));
+            }
+        };
+
+        template <typename iter_type, bool EmplaceIfExists = true>
+        void
+            Add_Bulk(iter_type begin, iter_type const& end) {
+            _iterType
+                * node,
+                * child,
+                * newNode;
+
+            auto locked{ std::scoped_lock(mutex) };
+            for (; begin != end; begin++) {
+                // check that the key does not already exist		
+                if constexpr (EmplaceIfExists) {
+                    node = NodeFind(begin->first);
+                    if (node && node->object) {
+                        *node->object = begin->second;
+                        continue;
+                    }
+                }
+
+                newNode = AllocNode();
+                newNode->key = begin->first;
+                newNode->object = objAllocator.Alloc(begin->second);
+                Num++;
+
+                if (root->numChildren >= maxChildrenPerNode) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        node = AllocNode();
+                        node->key = root->key;
+                        node->firstChild = root;
+                        node->lastChild = root;
+                        node->numChildren = 1;
+                        root->parent = node;
+                        SplitNode(root);
+                        root = node;
+                    }
+                };
+
+                bool should_continue = false;
+                for (node = root; node->firstChild; node = child) {
+                    if (begin->first > node->key) node->key = begin->first;
+
+                    // find the first child with a key larger equal to the key of the new node
+                    for (child = node->firstChild; child->next; child = child->next)
+                        if (begin->first <= child->key)
+                            break;
+
+                    if (child->object) {
+                        // DOING MODIFICATIONS
+                        if (1) {
+                            if (begin->first <= child->key) {
+                                // insert new node before child
+                                if (child->prev) child->prev->next = newNode;
+                                else node->firstChild = newNode;
+                                newNode->prev = child->prev;
+                                newNode->next = child;
+                                child->prev = newNode;
+                            }
+                            else {
+                                // insert new node after child
+                                if (child->next) child->next->prev = newNode;
+                                else node->lastChild = newNode;
+                                newNode->prev = child;
+                                newNode->next = child->next;
+                                child->next = newNode;
+                            }
+                            newNode->parent = node;
+                            ++node->numChildren;
+                            should_continue = true;
+                            break;
+                        }
+                    }
+
+                    // make sure the child has room to store another node
+                    if (child->numChildren >= maxChildrenPerNode) {
+                        // DOING MODIFICATIONS
+                        if (1) {
+                            SplitNode(child);
+                            if (begin->first <= child->prev->key)
+                                child = child->prev;
+                        }
+                    }
+                }
+                if (should_continue) continue;
+
+                // DOING MODIFICATIONS
+                if (1) {
+                    // we only end up here if the root node is empty
+                    newNode->parent = root;
+                    root->key = begin->first;
+                    root->firstChild = newNode;
+                    root->lastChild = newNode;
+                    ++root->numChildren;
+                    continue;
+                }
+            }
+        };
         void // remove an object node from the tree								
             Remove(_iterType* node) {
             _iterType
                 * parent,
-                * oldRoot;
+                * oldRoot{ nullptr };
 
             if (!node) return;
             else {
+                auto g{ this->nodeAllocator.ProtectCurrentEpoch() };
+                while (first == node) {
+                    auto* next_node = this->GetNextLeaf(first);
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&first), next_node, node) == node) {
+                        break;
+                    }
+                }
+                while (last == node) {
+                    auto* next_node = this->GetPrevLeaf(last);
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&last), next_node, node) == node) {
+                        break;
+                    }
+                }
+                // if (first == node) first = this->GetNextLeaf(node);
+                // if (last == node) last = this->GetPrevLeaf(node);
+
                 auto locked{ std::scoped_lock(mutex) };
-                if (first == node) first = this->GetNextLeaf(node);
-                if (last == node) last = this->GetPrevLeaf(node);
 
                 // unlink the node from it's parent
                 if (node->prev) node->prev->next = node->next;
@@ -1379,13 +1601,11 @@ namespace utilities {
             }
         };				
         _iterType* 
-            GetFirst() const { 
-            auto locked{ std::shared_lock(mutex) };
+            GetFirst() const {
             return first; 
         };
         _iterType* 
-            GetLast() const { 
-            auto locked{ std::shared_lock(mutex) };
+            GetLast() const {
             return last; 
         };
         _iterType* 
@@ -1400,19 +1620,35 @@ namespace utilities {
 
     private:
         _iterType* 
-            CheckFirstNode(_iterType* newNode) {
-            if (newNode && first) {
-                if (newNode->key < first->key) first = newNode;                
-            }
-            else first = newNode;            
+            CheckFirstNode(_iterType* newNode) {            
+            while (newNode) {
+                auto* old_first = first;
+                if (old_first && (newNode->key >= old_first->key)) {
+                    break;
+                }
+                else {
+                    // do exchange
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&first), newNode, old_first) == old_first) {
+                        break;
+                    }
+                }
+            }         
             return newNode;
         };
         _iterType* 
             CheckLastNode(_iterType* newNode) {
-            if (newNode && last) {
-                if (newNode->key > last->key) last = newNode;                
-            }
-            else last = newNode;            
+            while (newNode) {
+                auto* old_last = last;
+                if (old_last && (newNode->key <= old_last->key)) {
+                    break;
+                }
+                else {
+                    // do exchange
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&last), newNode, old_last) == old_last) {
+                        break;
+                    }
+                }
+            }      
             return newNode;
         };
         _iterType* 
@@ -1496,9 +1732,246 @@ namespace utilities {
         };
 
     };
-#endif
 
+    // fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
+    template<class KeyType, class ValueType> class atomic_map {
+        friend class it_state;
+    protected:
+        BTree<ValueType, KeyType>
+            tree;
 
+    public:
+        class WrappedReference {
+        private:
+            typename BTree<ValueType, KeyType>::GuardType
+                guard;
+
+        public:
+            const KeyType&
+                first;
+            ValueType&
+                second;
+
+            // WrappedReference() = delete;
+            WrappedReference(const KeyType& _first, ValueType& _second, BTree<ValueType, KeyType>* _parent)
+                : first{ _first }
+                , second{ _second }
+                , guard{ _parent->ProtectCurrentEpoch() }
+            {};
+            WrappedReference(WrappedReference const&) = delete;
+            WrappedReference(WrappedReference &&) = delete;
+            WrappedReference& operator=(WrappedReference const&) = delete;
+            WrappedReference& operator=(WrappedReference&&) = delete;
+            ~WrappedReference() = default;
+        };
+
+    public:
+        atomic_map()
+            : tree{}
+        {};
+        atomic_map(atomic_map const& rhs) = delete;
+        atomic_map(atomic_map&& rhs) = delete;
+        atomic_map& operator=(atomic_map const& rhs) = delete;
+        atomic_map& operator=(atomic_map&& rhs) = delete;
+        ~atomic_map() = default;
+
+        auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
+            ProtectCurrentEpoch() const {
+            return tree.ProtectCurrentEpoch();
+        };
+        size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
+            size() const {
+            return tree.GetNodeCount();
+        };
+        WrappedReference // if already exists, returns the existing value pair. 
+            insert(const KeyType& time, ValueType&& value) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto* iter = tree.Add<false>(std::move(value), time);
+            return WrappedReference(iter->key, *iter->object, &tree);
+        };
+        WrappedReference // if already exists, overwrites the value and returns the value pair. 
+            emplace(const KeyType& time, ValueType&& value) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto* iter = tree.Add<true>(std::move(value), time);
+            return WrappedReference(iter->key, *iter->object, &tree);
+        };
+        template <typename iter_type> void // bulk insertion. if already exists, does nothing.
+            insert_bulk(iter_type begin, iter_type const& end) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            tree.Add_Bulk<iter_type, false>(std::move(begin), end);
+        };
+        template <typename iter_type> void // bulk insertion. if already exists, overwrites the value. 
+            emplace_bulk(iter_type begin, iter_type const& end) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            tree.Add_Bulk<iter_type, true>(std::move(begin), end);
+        };
+        size_t // returns 1 if the key is found, otherwise 0.
+            count(const KeyType& time) const {
+            return (bool)tree.NodeFind(time) ? 1 : 0;
+        };
+        ValueType& // throws if the key is not found. 
+            at(const KeyType& time) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* iter = tree.NodeFind(time)) {
+                return *iter->object;
+            }
+            else {
+                throw std::range_error("Could not find key");
+            }
+        };
+        ValueType* // returns nullptr if the key is not found. 
+            try_at(const KeyType& time) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* iter = tree.NodeFind(time)) {
+                return iter->object;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        template <typename Func> __declspec(noinline) bool // calls func(key, object) on the first (smallest key) node in the map
+            do_at_beginning(Func const& func) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* p = tree.GetFirst()) {
+                func(p->key, *p->object);
+                return true;
+            }
+            return false;
+        };
+        template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
+            for_all(Func const& func) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto p = tree.GetFirst();
+            while (p) {
+                func(p->key, *p->object);
+                p = tree.GetNextLeaf(p);
+            }
+        };
+        template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
+            do_at_end(Func const& func) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* p = tree.GetLast()) {
+                func(p->key, *p->object);
+                return true;
+            }
+            return false;
+        };
+        bool // removes the first (smallest key) node in the map
+            pop_front() {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* p = tree.GetFirst()) {
+                tree.Remove(p);
+                return true;
+            }
+            return false;
+        };
+        bool // removes the last (largest key) node in the map
+            pop_back() {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* p = tree.GetLast()) {
+                tree.Remove(p);
+                return true;
+            }
+            return false;
+        };
+        __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+            operator[](const KeyType& time) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (ValueType* p = tree.Find(time)) {                
+                return *p;
+            }
+            else {
+                if (auto* p = tree.GetOrInstance(time)) {
+                    return *p->object;
+                }
+                else {
+                    throw std::range_error("Could not find key");
+                }
+            }
+        };
+        template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
+            get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (ValueType* p = tree.Find(time)) {
+                if (ExistedAlready) *ExistedAlready = true;
+                return *p;
+            }
+            else {
+                if (ExistedAlready) *ExistedAlready = false;
+                if (auto* p = tree.Add(func(), time)) {
+                    return *p->object;
+                }
+                else {
+                    throw std::range_error("Could not find key");
+                }
+            }
+        };
+        bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
+            erase(const KeyType& time, ValueType* out = nullptr) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* p = tree.NodeFind(time)) {
+                if constexpr (std::is_copy_assignable< ValueType >::value) {
+                    if (out) *out = *p->object;
+                }
+                tree.Remove(p);
+                return true;
+            }
+            return false;
+        };
+
+    private:
+        class it_state {
+        public:
+            using thisType = atomic_map;
+            using value_type = WrappedReference;
+            using iterator_category = std::forward_iterator_tag;
+            using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+            // data
+            mutable typename BTree<ValueType, KeyType>::_iterType*
+                _ptr{};
+            mutable std::unique_ptr<value_type>
+                _out;
+
+            // functions
+            void Initialize(thisType* ref) {};
+            void ToBeginning(thisType* ref) {
+                _ptr = ref->tree.GetFirst();
+            };
+            void ToEnd(thisType* ref) {
+                _ptr = nullptr;
+            };
+            void Next(thisType* ref) {
+                this->_ptr = ref->tree.GetNextLeaf(this->_ptr);
+            };
+            void Prev(thisType* ref) {
+                this->_ptr = ref->tree.GetPrevLeaf(this->_ptr);
+            };
+            value_type& Get(thisType* ref) const {
+                _out = std::make_unique<value_type>(_ptr->key, *_ptr->object, &ref->tree);
+                return *_out;
+            };
+            bool operator==(it_state const& rhs) const {
+                return _ptr == rhs._ptr;
+            };
+            difference_type Distance(it_state const& other) const {
+                return _ptr - other._ptr;
+            };
+        };
+
+    public:
+        SETUP_ITERATOR(atomic_map, it_state);
+        iterator // returns an iterator 
+            find(const KeyType& _Keyval) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = this->tree.NodeFind(_Keyval)) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        };
+
+    };
 
 
 
@@ -1754,49 +2227,48 @@ public:
     private: // CacheVersion -> CacheCategory -> Inputs -> Result
         using ResultType = Breadcrumb*;
         using InputType = size_t;
-        using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>;
-        using CachedCategory = std::pair<size_t, std::array<ResultForInputType, numCategories>>;
-
-        utilities::ABA_Problem::EpochAllocator< CachedCategory > _alloc;
-        std::atomic<CachedCategory*> _current_cache;
+        using ResultForInputType = utilities::atomic_map<InputType, ResultType>;
+        utilities::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
+            _current_cache;
 
     public:
         template<int category>
         void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
-            auto g{ _alloc.ProtectCurrentEpoch() };
+            auto g{ _current_cache.ProtectCurrentEpoch() };
+            bool success = false;
+            while (!success) {
 
-            CachedCategory* cached{ nullptr }, * new_ptr{ nullptr };
-            while (true) {
-                cached = _current_cache.load();
-                if (cached && cached->first >= cache_version) {
-                    break;
-                }
-                else {
-                    new_ptr = _alloc.Alloc(std::pair<size_t, std::array<ResultForInputType, numCategories>>{ cache_version, std::array<ResultForInputType, numCategories>() });
-                    if (_current_cache.compare_exchange_strong(cached, new_ptr)) {
-                        if (cached) _alloc.Free(cached);
-                        cached = new_ptr;
-                        break;
+                if (!_current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
+                    if (curr_version >= cache_version) {
+                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category][input_hash]), reinterpret_cast<PVOID>(result));
+                        success = true;
                     }
-                    else {
-                        _alloc.Free(new_ptr);
-                    }
+                })) {
+                    
+                };
+
+                if (!success) {
+                    (void)_current_cache.operator[](cache_version);
+                    if (_current_cache.do_at_beginning([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
+                        if (curr_version < cache_version) {
+                            _current_cache.erase(curr_version);
+                        }
+                    })) {}
                 }
+
             }
-
-            InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cached->second[category][input_hash]), reinterpret_cast<PVOID>(result));
         };
 
         template<int category>
         Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
-            auto g{ _alloc.ProtectCurrentEpoch() };
-            CachedCategory* cached{ _current_cache.load() };
-            if (cached && cached->first >= cache_version) {
-                return cached->second[category][input_hash];
-            }
-            else {
-                return nullptr;
-            }
+            auto g{ _current_cache.ProtectCurrentEpoch() };
+            Breadcrumb* out{ nullptr };
+            _current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
+                if (curr_version >= cache_version) {
+                    out = cache[category][input_hash];
+                }
+            });
+            return out;
         };
 
     };
@@ -2227,7 +2699,6 @@ int main() {
             print(iter->key);
         }
     }
-
 
 
 
