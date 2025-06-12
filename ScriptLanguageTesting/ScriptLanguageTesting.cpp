@@ -326,19 +326,23 @@ namespace utilities {
     class DelayedInstantiation {
     private:
         std::unique_ptr<T> ptr{ nullptr };
-        GoodLang::fast_shared_mutex mut;
-        bool initialized{ 0 };
+        GoodLang::fast_shared_mutex mut{};
+        long initialized{ 0 };
 
     public:
+        DelayedInstantiation() = default;
+        __declspec(noinline) ~DelayedInstantiation() {
+        };
+
         bool valid() const {
-            return initialized;
+            return initialized > 0;
         };
         T* operator->() {
-            if (!initialized) {
+            if (initialized == 0) {
                 mut.lock();
-                if (!initialized) {
+                if (initialized == 0) {
                     ptr = std::make_unique<T>();
-                    InterlockedIncrement(reinterpret_cast<volatile long*>(&initialized));
+                    InterlockedIncrement(static_cast<volatile long*>(&initialized));
                 }
                 mut.unlock();
             }
@@ -495,16 +499,17 @@ namespace utilities {
         public:
             BlockAlloc() : blocks{}, free{} {
                 free.m_n64 = 0;
-                // AllocBlock(); 
             };
-            ~BlockAlloc() { ReleaseBlocks(); };
+            __declspec(noinline) ~BlockAlloc() { 
+                ReleaseBlocks(); 
+            };
 
             // Acquire a new element from the free list and construct it.
             template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
                 element_t* element{ nullptr };
                 while (1) {
                     if (element = Pop(free)) {
-                        if constexpr (std::is_pod<T>::value) element->initialized = true;
+                        element->initialized = true;
                         T* data{ (T*)&element->data[0] };
                         if constexpr (!std::is_pod<T>::value || !skipInitialization) new (data) T(std::forward<TArgs>(a)...);                        
                         return data;
@@ -519,10 +524,11 @@ namespace utilities {
             __declspec(noinline) void Free(T* element) {
                 element_t* t = (element_t*)(element);
                 if constexpr (!std::is_pod<T>::value) {
-                    element->~T();
+                    if (t->initialized) element->~T();
+                }
+                else {
                     t->initialized = false;
                 }
-                           
                 Push(free, t);
             };
 
@@ -549,6 +555,10 @@ namespace utilities {
             static auto GetThreadID() { return IDManager::GetThreadID(); };
 
         public:
+            Allocator() = default;
+            __declspec(noinline) ~Allocator() {
+            };
+
             template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
                 size_t thisThreadIndex = GetThreadID() % num_parallel_allocators;
                 auto& TLS = TLS_arr[thisThreadIndex];
@@ -643,7 +653,7 @@ namespace utilities {
                 };
             };
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
-            Allocator<_type_, 1024>
+            Allocator<_type_, 32>
                 _alloc;
             moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
@@ -688,6 +698,11 @@ namespace utilities {
             };
         public:
             using GuardType = typename TLS::EpochGuard;
+
+            EpochAllocator() = default;
+            __declspec(noinline) ~EpochAllocator() {
+            };
+
 
         public:
             GuardType ProtectCurrentEpoch() const {
@@ -988,6 +1003,14 @@ namespace utilities {
         };
 
     public:
+        void
+            lock() {
+            mutex.lock();
+        };
+        void
+            unlock() {
+            mutex.unlock();
+        };
         static _iterType*
             GetNextLeaf(_iterType* node) {
             if (node) {
@@ -1176,7 +1199,9 @@ namespace utilities {
             static_assert(maxChildrenPerNode >= 4);
             root = AllocNode();
         };
-        ~BTree() = default;
+        __declspec(noinline) ~BTree() {
+            
+        };
 
         template <bool EmplaceIfExists = true>
         _iterType* 
@@ -1481,6 +1506,70 @@ namespace utilities {
                 }
             }
         };
+        void // remove an object node from the tree, if already locked.						
+            Remove_Unsafe(_iterType* node) {
+            _iterType
+                * parent,
+                * oldRoot{ nullptr };
+
+            if (!node) return;
+            else {
+                auto g{ this->nodeAllocator.ProtectCurrentEpoch() };
+                while (first == node) {
+                    auto* next_node = this->GetNextLeaf(first);
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&first), next_node, node) == node) {
+                        break;
+                    }
+                }
+                while (last == node) {
+                    auto* next_node = this->GetPrevLeaf(last);
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&last), next_node, node) == node) {
+                        break;
+                    }
+                }
+                // if (first == node) first = this->GetNextLeaf(node);
+                // if (last == node) last = this->GetPrevLeaf(node);
+
+                // unlink the node from it's parent
+                if (node->prev) node->prev->next = node->next;
+                else node->parent->firstChild = node->next;
+                if (node->next) node->next->prev = node->prev;
+                else node->parent->lastChild = node->prev;
+                node->parent->numChildren--;
+
+                // make sure there are no parent nodes with a single child
+                for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
+                    if (parent->next)
+                        parent = MergeNodes(parent, parent->next);
+                    else if (parent->prev)
+                        parent = MergeNodes(parent->prev, parent);
+
+                    // a parent may not use a key higher than the key of it's last child
+                    if (parent->key > parent->lastChild->key)
+                        parent->key = parent->lastChild->key;
+
+                    if (parent->numChildren > maxChildrenPerNode) {
+                        SplitNode(parent);
+                        break;
+                    }
+                }
+                for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent)
+                    // a parent may not use a key higher than the key of it's last child
+                    if (parent->key > parent->lastChild->key)
+                        parent->key = parent->lastChild->key;
+
+                // remove the root node if it has a single internal node as child
+                if (root->numChildren == 1 && root->firstChild->object == nullptr) {
+                    oldRoot = root;
+                    root->firstChild->parent = nullptr;
+                    root = root->firstChild;
+                }
+            }
+
+            // free the nodes
+            FreeNode(node);
+            if (oldRoot) FreeNode(oldRoot);
+        };
         void // remove an object node from the tree								
             Remove(_iterType* node) {
             _iterType
@@ -1659,11 +1748,13 @@ namespace utilities {
         };
         void									
             FreeNode(_iterType* node) {
-            if (node && node->object) {
-                objAllocator.Free(node->object);  // RemoveFast(node->object); // 
-                Num--;
-            }
-            nodeAllocator.Free(node); // RemoveFast(node); //  
+            if (node) {
+                if (node->object) {
+                    objAllocator.Free(node->object);
+                    Num--;
+                }
+                nodeAllocator.Free(node);   
+            }            
         };
         void									
             SplitNode(_iterType* node) {
@@ -1773,7 +1864,8 @@ namespace utilities {
         atomic_map(atomic_map&& rhs) = delete;
         atomic_map& operator=(atomic_map const& rhs) = delete;
         atomic_map& operator=(atomic_map&& rhs) = delete;
-        ~atomic_map() = default;
+        __declspec(noinline) ~atomic_map() {
+        };
 
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
@@ -1874,6 +1966,34 @@ namespace utilities {
             }
             return false;
         };
+        template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
+            pop_front_if(Func const& func) {
+            bool out = false;
+            auto g{ tree.ProtectCurrentEpoch() };
+            tree.lock();
+            if (auto* p = tree.GetFirst()) {
+                if (func(p->key, *p->object)) {
+                    tree.Remove_Unsafe(p);
+                    out = true;
+                }                
+            }
+            tree.unlock();
+            return out;
+        };
+        template <typename Func> __declspec(noinline) bool // removes the last (largest key) node in the map if func(key, object) returns true
+            pop_back_if(Func const& func) {
+            bool out = false;
+            auto g{ tree.ProtectCurrentEpoch() };
+            tree.lock();
+            if (auto* p = tree.GetLast()) {
+                if (func(p->key, *p->object)) {
+                    tree.Remove_Unsafe(p);
+                    out = true;
+                }
+            }
+            tree.unlock();
+            return out;
+        };
         __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
             operator[](const KeyType& time) {
             auto g{ tree.ProtectCurrentEpoch() };
@@ -1963,7 +2083,7 @@ namespace utilities {
         SETUP_ITERATOR(atomic_map, it_state);
         iterator // returns an iterator 
             find(const KeyType& _Keyval) const {
-            auto g{ tree->ProtectCurrentEpoch() };
+            auto g{ tree.ProtectCurrentEpoch() };
             auto iter = this->end();
             if (auto* p = this->tree.NodeFind(_Keyval)) {
                 iter.state._ptr = p;
@@ -2227,45 +2347,47 @@ public:
     private: // CacheVersion -> CacheCategory -> Inputs -> Result
         using ResultType = Breadcrumb*;
         using InputType = size_t;
-        using ResultForInputType = utilities::atomic_map<InputType, ResultType>;
-        utilities::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
+        using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>;
+        utilities::atomic_map<size_t, std::vector<std::shared_ptr<ResultForInputType>>>
             _current_cache;
 
     public:
+        Cache() = default;
+        __declspec(noinline) ~Cache() {
+        };
+
         template<int category>
-        void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
+        __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
             auto g{ _current_cache.ProtectCurrentEpoch() };
             bool success = false;
             while (!success) {
-
-                if (!_current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
+                if (!_current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<ResultForInputType>>& cache) {
                     if (curr_version >= cache_version) {
-                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category][input_hash]), reinterpret_cast<PVOID>(result));
+                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
                         success = true;
                     }
-                })) {
-                    
-                };
-
+                })) {};
                 if (!success) {
-                    (void)_current_cache.operator[](cache_version);
-                    if (_current_cache.do_at_beginning([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
-                        if (curr_version < cache_version) {
-                            _current_cache.erase(curr_version);
-                        }
-                    })) {}
+                    (void)_current_cache.get_or_make(cache_version, []() -> std::vector<std::shared_ptr<ResultForInputType>> {
+                        std::vector<std::shared_ptr<ResultForInputType>> out{};
+                        for (int i = 0; i < numCategories; ++i) 
+                            out.emplace_back(std::make_shared<ResultForInputType>());
+                        return out;
+                    });
+                    _current_cache.pop_front_if([&](size_t curr_version, std::vector<std::shared_ptr<ResultForInputType>>& cache) -> bool {
+                         return curr_version < cache_version;
+                    });
                 }
-
             }
         };
 
         template<int category>
-        Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
+        __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
             auto g{ _current_cache.ProtectCurrentEpoch() };
             Breadcrumb* out{ nullptr };
-            _current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
+            _current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<ResultForInputType>>& cache) {
                 if (curr_version >= cache_version) {
-                    out = cache[category][input_hash];
+                    out = cache[category]->operator[](input_hash);
                 }
             });
             return out;
@@ -2388,324 +2510,386 @@ int main() {
     using namespace ABA_Problem;
     Stopwatch sw;
 
-    if (1) {
-        ABA_Problem::Allocator<size_t>
-            index_allocator;
-
-        sw.Start();
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-        };
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto* p = index_allocator.Alloc((size_t)i);
-            //Sleep(1);
-            index_allocator.Free(p);
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-        std::vector<size_t*> ptrs(1000000, nullptr);
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            ptrs[i] = index_allocator.Alloc((size_t)i);
-        });
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(ptrs[i]);
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    print("");
-    if (1) {
-        GoodLang::Allocator<size_t>
-            index_allocator;
-
-        sw.Start();
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc(i));
-        };
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(index_allocator.Alloc(i));
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto* p = index_allocator.Alloc(i);
-            //Sleep(1);
-            index_allocator.Free(p);
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-        std::vector<size_t*> ptrs(1000000, nullptr);
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            ptrs[i] = index_allocator.Alloc((size_t)i);
-            });
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(ptrs[i]);
-            });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    print("");
-    if (1) {
-        GoodLang::details::BTreeAllocator<size_t>
-            index_allocator;
-
-        sw.Start();
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc(i));
-        };
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(index_allocator.Alloc(i));
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto* p = index_allocator.Alloc(i);
-            // Sleep(1);
-            index_allocator.Free(p);
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-        std::vector<size_t*> ptrs(1000000, nullptr);
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            ptrs[i] = index_allocator.Alloc((size_t)i);
-            });
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(ptrs[i]);
-            });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    print("");
-    if (1) {
-        ABA_Problem::EpochAllocator<size_t>
-            index_allocator;
-
-        sw.Start();
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-        };
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-            });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto* p = index_allocator.Alloc((size_t)i);
-            //Sleep(1);
-            index_allocator.Free(p);
-            });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-        std::vector<size_t*> ptrs(1000000, nullptr);
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            ptrs[i] = index_allocator.Alloc((size_t)i);
-        });
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(ptrs[i]);
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    print("");
-    if (1) {
-        ABA_Problem::EpochAllocator<size_t>
-            index_allocator;
-
-        sw.Start();
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-        };
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-            });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto g{ index_allocator.ProtectCurrentEpoch() };
-            auto* p = index_allocator.Alloc((size_t)i);
-            index_allocator.Free(p);
-            ++*p;
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    print("");
-    if (1) {
-        GoodLang::EpochProtectedAllocator<size_t, 1>
-            index_allocator;
-
-        sw.Start();
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-        };
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            index_allocator.Free(index_allocator.Alloc((size_t)i));
-            });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [&](int i) {
-            auto g{ index_allocator.CreateEpochGuard() };
-            auto* p = index_allocator.Alloc((size_t)i);
-            index_allocator.Free(p);
-            ++*p;
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    print("");
-
-    if (1) {
-        ABA_Problem::EpochAllocator<size_t>
-            index_allocator;
-        auto g{ index_allocator.ProtectCurrentEpoch() };
-        for (int i = 0; i < 1000000; ++i) {
-            index_allocator.Free(index_allocator.Alloc());
-        }     
-    }
-
-
-
-    if (1) {
-        BTree<std::string, size_t, 10> tree{};
-        for (char c = 'a'; c <= 'z'; ++c) {
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-        for (char c = 'a'; c <= 'z'; ++c) {
-            tree.Add(std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = 'Z'; c >= 'A'; --c) {
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-        for (char c = 'A'; c <= 'Z'; ++c) {
-            tree.Add(std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = '0'; c <= '9'; ++c) {
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-        for (char c = '0'; c <= '9'; ++c) {
-            tree.Add(std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = '0'; c <= '9'; ++c) {
-            tree.Add(std::string("OVERWRITTEN: ") + std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = 'A'; c <= 'Z'; ++c) {
-            tree.Remove(tree.NodeFind((int)c));
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-    }
-
-    if (1) {
-        BTree<std::string, size_t, 4> tree{};
-        for (char c = 'a'; c <= 'z'; ++c) {
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-        for (char c = 'a'; c <= 'z'; ++c) {
-            tree.Add(std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = 'Z'; c >= 'A'; --c) {
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-        for (char c = 'A'; c <= 'Z'; ++c) {
-            tree.Add(std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = '0'; c <= '9'; ++c) {
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-        for (char c = '0'; c <= '9'; ++c) {
-            tree.Add(std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = '0'; c <= '9'; ++c) {
-            tree.Add(std::string("OVERWRITTEN: ") + std::string(1, c), (int)c);
-            print(*tree.Find((int)c));
-        }
-        for (char c = 'A'; c <= 'Z'; ++c) {
-            tree.Remove(tree.NodeFind((int)c));
-            EXPECT_EQ(nullptr, tree.Find((int)c));
-        }
-    }
-
-    if (1) {
-        BTree<std::string, size_t, 10> tree{};
-        GoodLang::parallel::For(0, 255, [&](int i) {
-            tree.Add(GoodLang::ToString(i), i);
-        });
-        auto g{ tree.ProtectCurrentEpoch() };
-        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
-            print(iter->key);
-        }
-    }
-    if (1) {
-        BTree<std::string, size_t, 10> tree{};
-        GoodLang::parallel::For(0, 255, [&](int i) {
-            tree.Add(GoodLang::ToString(i), i);
-            EXPECT_EQ(GoodLang::ToString(i), *tree.Find(i));
-        });
-        auto g{ tree.ProtectCurrentEpoch() };
-        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
-            print(iter->key);
-        }
-    }
-    if (1) {
-        BTree<std::string, size_t, 10> tree{};
-        GoodLang::parallel::For(0, 255, [&](int i) {
-            tree.Add(GoodLang::ToString(i), i);
-            tree.Remove(tree.NodeFind(i));
-            EXPECT_EQ(nullptr, tree.Find(i));
-        });
-        auto g{ tree.ProtectCurrentEpoch() };
-        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
-            print(iter->key);
-        }
-    }
-    if (1) {
-        BTree<std::string, size_t, 10> tree{};
-        if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
-            for (int i = 0; i < 254; ++i) {
-                auto g{ tree.ProtectCurrentEpoch() };
-                tree.Remove(tree.NodeFind(i));
-            };
-        })) {
-            GoodLang::parallel::For(0, 255, [&](int i) {
-                auto g{ tree.ProtectCurrentEpoch() };
-                tree.Add(GoodLang::ToString(i), i);
-                if (auto* p = tree.NodeFind(i)) print(p->key);                
-            });
-        }
-
-        auto g{ tree.ProtectCurrentEpoch() };
-        for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
-            print(iter->key);
-        }
-    }
-
-
-
-
-
     while (true) {
         print("");
+
+
+        if (1) {
+            ABA_Problem::Allocator<size_t>
+                index_allocator;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto* p = index_allocator.Alloc((size_t)i);
+                //Sleep(1);
+                index_allocator.Free(p);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            std::vector<size_t*> ptrs(1000000, nullptr);
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                ptrs[i] = index_allocator.Alloc((size_t)i);
+                });
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(ptrs[i]);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+        if (1) {
+            GoodLang::Allocator<size_t>
+                index_allocator;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc(i));
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(index_allocator.Alloc(i));
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto* p = index_allocator.Alloc(i);
+                //Sleep(1);
+                index_allocator.Free(p);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            std::vector<size_t*> ptrs(1000000, nullptr);
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                ptrs[i] = index_allocator.Alloc((size_t)i);
+                });
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(ptrs[i]);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+        if (1) {
+            GoodLang::details::BTreeAllocator<size_t>
+                index_allocator;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc(i));
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(index_allocator.Alloc(i));
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto* p = index_allocator.Alloc(i);
+                // Sleep(1);
+                index_allocator.Free(p);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            std::vector<size_t*> ptrs(1000000, nullptr);
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                ptrs[i] = index_allocator.Alloc((size_t)i);
+                });
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(ptrs[i]);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+        if (1) {
+            ABA_Problem::EpochAllocator<size_t>
+                index_allocator;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto* p = index_allocator.Alloc((size_t)i);
+                //Sleep(1);
+                index_allocator.Free(p);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            std::vector<size_t*> ptrs(1000000, nullptr);
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                ptrs[i] = index_allocator.Alloc((size_t)i);
+                });
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(ptrs[i]);
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+        if (1) {
+            ABA_Problem::EpochAllocator<size_t>
+                index_allocator;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto g{ index_allocator.ProtectCurrentEpoch() };
+                auto* p = index_allocator.Alloc((size_t)i);
+                index_allocator.Free(p);
+                ++* p;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+        if (1) {
+            GoodLang::EpochProtectedAllocator<size_t, 1>
+                index_allocator;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                index_allocator.Free(index_allocator.Alloc((size_t)i));
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto g{ index_allocator.CreateEpochGuard() };
+                auto* p = index_allocator.Alloc((size_t)i);
+                index_allocator.Free(p);
+                ++* p;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+
+        if (1) {
+            ABA_Problem::EpochAllocator<size_t>
+                index_allocator;
+            auto g{ index_allocator.ProtectCurrentEpoch() };
+            for (int i = 0; i < 1000000; ++i) {
+                index_allocator.Free(index_allocator.Alloc());
+            }
+        }
+
+
+
+        if (1) {
+            BTree<std::string, size_t, 10> tree{};
+            for (char c = 'a'; c <= 'z'; ++c) {
+                EXPECT_EQ(nullptr, tree.Find((int)c));
+            }
+            for (char c = 'a'; c <= 'z'; ++c) {
+                tree.Add(std::string(1, c), (int)c);
+                //print(*tree.Find((int)c));
+            }
+            for (char c = 'Z'; c >= 'A'; --c) {
+                EXPECT_EQ(nullptr, tree.Find((int)c));
+            }
+            for (char c = 'A'; c <= 'Z'; ++c) {
+                tree.Add(std::string(1, c), (int)c);
+               // print(*tree.Find((int)c));
+            }
+            for (char c = '0'; c <= '9'; ++c) {
+                EXPECT_EQ(nullptr, tree.Find((int)c));
+            }
+            for (char c = '0'; c <= '9'; ++c) {
+                tree.Add(std::string(1, c), (int)c);
+                //print(*tree.Find((int)c));
+            }
+            for (char c = '0'; c <= '9'; ++c) {
+                tree.Add(std::string("OVERWRITTEN: ") + std::string(1, c), (int)c);
+                //print(*tree.Find((int)c));
+            }
+            for (char c = 'A'; c <= 'Z'; ++c) {
+                tree.Remove(tree.NodeFind((int)c));
+                EXPECT_EQ(nullptr, tree.Find((int)c));
+            }
+        }
+        if (1) {
+            BTree<std::string, size_t, 10> tree{};
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                tree.Add(GoodLang::ToString(i), i);
+                });
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+                //print(iter->key);
+            }
+        }
+        if (1) {
+            BTree<std::string, size_t, 10> tree{};
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                tree.Add(GoodLang::ToString(i), i);
+                EXPECT_EQ(GoodLang::ToString(i), *tree.Find(i));
+                });
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+                //print(iter->key);
+            }
+        }
+        if (1) {
+            BTree<std::string, size_t, 10> tree{};
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                tree.Add(GoodLang::ToString(i), i);
+                tree.Remove(tree.NodeFind(i));
+                EXPECT_EQ(nullptr, tree.Find(i));
+                });
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+                //print(iter->key);
+            }
+        }
+        if (1) {
+            BTree<std::string, size_t, 10> tree{};
+            if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
+                for (int i = 0; i < 254; ++i) {
+                    auto g{ tree.ProtectCurrentEpoch() };
+                    tree.Remove(tree.NodeFind(i));
+                };
+            })) {
+                GoodLang::parallel::For(0, 255, [&](int i) {
+                    auto g{ tree.ProtectCurrentEpoch() };
+                    tree.Add(GoodLang::ToString(i), i);
+                    if (auto* p = tree.NodeFind(i)) {
+                        // print(p->key);
+                    }
+                });
+            }
+
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
+                //print(iter->key);
+            }
+        }
+
+
+
+
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            for (char c = 'a'; c <= 'z'; ++c) {
+                EXPECT_EQ(tree.find((int)c), tree.end());
+            }
+            for (char c = 'a'; c <= 'z'; ++c) {
+                tree.insert((int)c, std::string(1, c));
+            }
+            for (char c = 'Z'; c >= 'A'; --c) {
+                EXPECT_EQ(tree.find((int)c), tree.end());
+            }
+            for (char c = 'A'; c <= 'Z'; ++c) {
+                tree.insert((int)c, std::string(1, c));
+            }
+            for (char c = '0'; c <= '9'; ++c) {
+                EXPECT_EQ(tree.find((int)c), tree.end());
+            }
+            for (char c = '0'; c <= '9'; ++c) {
+                tree.insert((int)c, std::string(1, c));
+            }
+            for (char c = '0'; c <= '9'; ++c) {
+                tree.emplace((int)c, std::string("OVERWRITTEN: ") + std::string(1, c));
+            }
+            for (char c = 'A'; c <= 'Z'; ++c) {
+                tree.erase((int)c);
+                EXPECT_EQ(tree.find((int)c), tree.end());
+            }
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                tree.insert(i, GoodLang::ToString(i));
+            });
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto& x : tree) {
+                //print(iter->key);
+            }
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                tree.insert(i, GoodLang::ToString(i));
+            });
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto& x : tree) {
+                //print(iter->key);
+            }
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            GoodLang::parallel::For(0, 255, [&](int i) {
+                auto g{ tree.ProtectCurrentEpoch() };
+                tree.insert(i, GoodLang::ToString(i));
+                tree.erase(i);
+                EXPECT_EQ(tree.find(i), tree.end());
+            });
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto& x : tree) {
+                //print(iter->key);
+            }
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
+                for (int i = 0; i < 254; ++i) {
+                    auto g{ tree.ProtectCurrentEpoch() };
+                    tree.erase(i);
+                };
+            })) {
+                GoodLang::parallel::For(0, 255, [&](int i) {
+                    auto g{ tree.ProtectCurrentEpoch() };
+                    tree.insert(i, GoodLang::ToString(i));
+                    for (auto& x : tree) {
+                        // print(p->key);
+                    }
+                });
+            }
+
+            auto g{ tree.ProtectCurrentEpoch() };
+            for (auto& x : tree) {
+                //print(iter->key);
+            }
+        }
+
+
+
+
+
+
+
+
+
+
 
         if (1) {
             Scopes::Cache<4> cache;
@@ -2730,6 +2914,9 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
+
+
+
 
 #if 0
         for (int loopN = 0; loopN < 1000; loopN++) {
