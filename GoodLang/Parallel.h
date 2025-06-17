@@ -27,6 +27,7 @@ namespace GoodLang {
 		// Defines a state of execution, can be waited on
 		class context {
 		public:
+			std::atomic<size_t> waiters{ 0 }; // how many threads are waiting for this context to be finished
 			std::atomic<size_t> counter{ 0 }; // how many Tasks* are awaited
 			atomic_ptr<std::exception_ptr> e{ nullptr }; // shared error PTR for re-throwing at the end of the Tasks.
 
@@ -48,6 +49,7 @@ namespace GoodLang {
 			long long sharedmemory_size;
 			std::shared_ptr < std::function<void(void*)>> GroupStartJob; // callback func with memory for type T
 			std::shared_ptr < std::function<void(void*)>> GroupEndJob; // callback func with memory for type T
+			bool SafeForMainThread;
 		};
 
 		template <typename T> class Queue {
@@ -119,7 +121,7 @@ namespace GoodLang {
 		__forceinline long long GetThreadCount() { return internal_state.numThreads; };
 
 		// Add a task to execute asynchronously. Any idle thread will execute this.
-		void Execute(context& ctx, std::function<void(JobArgs const&)> task) noexcept;
+		void Execute(context& ctx, std::function<void(JobArgs const&)> task, bool SafeForMainThread = true) noexcept;
 
 		// Divide a task onto multiple jobs and execute in parallel.
 		//	jobCount	: how many jobs to generate for this task.
@@ -163,9 +165,19 @@ namespace GoodLang {
 			TaskGroup& operator=(TaskGroup&&) = delete;
 			~TaskGroup() = default;
 
+			bool Waiting() const { 
+				if (ctx.counter > 0) {
+					return ctx.waiters > 0;
+				}
+				else {
+					return false;
+				}				
+			};
 			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
-			auto Queue(std::function<void(JobArgs const&)> task) { return impl::Execute(ctx, std::move(task)); };
+			auto Queue(std::function<void(JobArgs const&)> task, bool SafeForMainThread = true) { 
+				return impl::Execute(ctx, std::move(task), SafeForMainThread);
+			};
 
 			/* Dispatch a function that does not need to share memory within a group / cluster of the Task jobs. */
 			auto Dispatch(
@@ -205,6 +217,7 @@ namespace GoodLang {
 		mutable std::shared_ptr<GoodLang::Lockable<std::shared_ptr<Any>>> result{
 			std::make_shared<GoodLang::Lockable<std::shared_ptr<Any>>>()
 		};
+		bool is_safe_for_main_thread{ true };
 
 		static void AddItem(std::vector<Any>&) {};
 		template<typename T, typename... Args> static void AddItem(std::vector<Any>& AddTo, T const& I, Args const&...  A) {
@@ -445,6 +458,10 @@ namespace GoodLang {
 				return {};
 			}
 		};
+		void SetNotSafeForMainThread() {
+			is_safe_for_main_thread = false;
+		};
+		bool IsSafeForMainThread() const { return is_safe_for_main_thread; };
 	};
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -466,6 +483,7 @@ namespace GoodLang {
 			void Queue(Job const& job);
 			void Queue(std::vector<Job> const& listOfJobs);
 			void Wait();
+			bool Waiting() const;
 			bool TryWait();
 			~JobGroupImpl() { Wait(); };
 		};
@@ -512,7 +530,10 @@ namespace GoodLang {
 		void Wait() {
 			impl->Wait();
 		};
-
+		/* Returns true if at least one thread is waiting for this task to finish. */
+		bool Waiting() {
+			return impl->Waiting();
+		};
 		/* Await all jobs in this group */
 		bool TryWait() {
 			return impl->TryWait();
@@ -787,6 +808,13 @@ namespace GoodLang {
 					}
 				}
 			};
+			/* Returns true if at least one thread is waiting for this task to finish. */
+			bool waiting() const {
+				if (shared_state && result) {
+					return shared_state->Waiting();
+				}
+				return false;
+			};
 			/* Returns true if the job is done, otherwise false. */
 			bool try_wait() const noexcept {
 				if (shared_state && result) {
@@ -910,7 +938,9 @@ namespace GoodLang {
 		/* returns a future<T> object for awaiting the results of the job. */
 		template < typename F, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<F>> && !std::is_same_v<GoodLang::Any, std::decay_t<F>> >>
 		__forceinline static decltype(auto) async(F function, Args... Fargs) {
-			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
+			Job job(function, Fargs...);
+			job.SetNotSafeForMainThread();
+			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(std::move(job));
 		};
 
 		/* while (G()) { Do(); } */

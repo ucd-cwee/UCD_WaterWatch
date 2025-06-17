@@ -306,6 +306,7 @@ namespace GoodLang {
 
 
 	namespace impl {
+		// potentially (not always) called by the main thread
 		inline void work(long long startingQueue, const context* parentCtx) noexcept {
 			long long i, j, threadID;
 			Queue<Task>* job_queue;
@@ -328,6 +329,12 @@ namespace GoodLang {
 					threadID = (i + startingQueue) % internal_state.numThreads;
 					job_queue = &internal_state.jobQueuePerThread[threadID];
 					while (job_queue->try_pop(job)) {
+						if (!job.SafeForMainThread) {
+							job_queue->push(job);
+							std::this_thread::yield();
+							break;
+						}
+
 						didWork = true;
 						defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
 						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
@@ -388,6 +395,7 @@ namespace GoodLang {
 				}
 			}
 		};
+		// called by the worker threads
 		inline void work(long long startingQueue) noexcept {
 			long long i, j, threadID;
 			Queue<Task>* job_queue;
@@ -491,9 +499,10 @@ namespace GoodLang {
 
 						// go to sleep, to be awoken when new jobs are added
 						auto lock{ std::unique_lock(internal_state.wakeMutex) };
-						internal_state.wakeCondition.wait(lock);
+						internal_state.wakeCondition.wait_for(lock, std::chrono::milliseconds(1000/60));
+						// internal_state.wakeCondition.wait(lock);
 					}
-					});
+				});
 				std::thread& worker = internal_state.threads.back();
 
 #ifdef _WIN32
@@ -541,10 +550,12 @@ namespace GoodLang {
 			return true;
 		};
 		void ShutDown() { internal_state.ShutDown(); };
-		void Execute(context& ctx, std::function<void(JobArgs const&)> task) noexcept {
+		void Execute(context& ctx, std::function<void(JobArgs const&)> task, bool SafeForMainThread) noexcept {
 			++ctx.counter; // Context state is updated:
-			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0 });
-			internal_state.wakeCondition.notify_one(); // 
+			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ 
+				std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0, nullptr, nullptr, SafeForMainThread
+		    });
+			internal_state.wakeCondition.notify_all(); // 
 		};
 		void DoDispatch(Task job, long long groupSize, long long jobCount) {
 			// submit groups evenly into the thread pool:
@@ -630,7 +641,7 @@ namespace GoodLang {
 			else {
 				DoDispatch(Task{
 					std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)),
-					&ctx, 0, 0, 1, 0, nullptr, nullptr
+					&ctx, 0, 0, 1, 0, nullptr, nullptr, true
 				}, groupSize, jobCount);
 			}
 		};
@@ -733,7 +744,8 @@ namespace GoodLang {
 					std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)),
 					&ctx, 0, 0, 1, (long long)sharedmemory_size,
 					std::make_shared<std::function<void(void*)>>(std::move(GroupStartJob)),
-					std::make_shared<std::function<void(void*)>>(std::move(GroupEndJob))
+					std::make_shared<std::function<void(void*)>>(std::move(GroupEndJob)),
+					true
 				}, groupSize, jobCount);
 			}
 		};
@@ -755,6 +767,8 @@ namespace GoodLang {
 			}
 		};
 		void Wait(context& ctx) {
+			++ctx.waiters;
+
 			++wait_depth; // allows detection of when job dispatch may be from within an existing job
 			internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
 #if 0 // Does not support jobs calling jobs 
@@ -775,7 +789,7 @@ namespace GoodLang {
 			--wait_depth; // allows detection of when job dispatch may be from within an existing job
 			HandleExceptions(ctx);  // re-throw any exceptions that were caught during the workload
 
-
+			--ctx.waiters;
 #endif
 		};
 	};
@@ -793,7 +807,7 @@ namespace GoodLang {
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Queue([impl = job](impl::JobArgs const& args) {
 			impl.Invoke();
-		});
+		}, job.IsSafeForMainThread());
 		last_job = job;
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
@@ -812,6 +826,11 @@ namespace GoodLang {
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Wait();
 	};
+	bool JobGroup::JobGroupImpl::Waiting() const {
+		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+		return wg->Waiting();
+	};
 	bool JobGroup::JobGroupImpl::TryWait() {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
@@ -829,37 +848,26 @@ namespace GoodLang {
 	namespace parallel {
 		/* auto shared_ptr_thread = AsThread([](){}); */
 		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd) {
-			std::pair<long, GoodLang::parallel::promise>* _promise = new std::pair<long, GoodLang::parallel::promise>{ 0, GoodLang::parallel::promise{} };
-			auto lifetime = std::shared_ptr<std::pair<long, GoodLang::parallel::promise>>(_promise, [_OnThreadEnd = std::move(OnThreadEnd)](std::pair<long, GoodLang::parallel::promise>* _promise) {
-
-
+			auto lifetime = std::shared_ptr<std::pair<long, GoodLang::parallel::promise>>(
+				new std::pair<long, GoodLang::parallel::promise>{ 0, GoodLang::parallel::promise{} }, 
+				[_OnThreadEnd = std::move(OnThreadEnd)](std::pair<long, GoodLang::parallel::promise>* _promise) {
 				InterlockedIncrement(static_cast<volatile long*>(&_promise->first));
 
-				Stopwatch sw;
-				sw.Start();
-				// _promise->second.wait(); // will return once the last "Loop" call finished... should be nearly instant, since the hard-lock was retrieved in the above line. 
-				
-				while (!_promise->second.try_wait()) {
-					if (sw.Stop_s() > 1) {
-						std::cout << "I AM STUCK! HELP ME!" << std::endl;
-					}
-				}
+				// Increment the "waiters" so that the promise knows someone is waiting on it...
+				_promise->second.wait(); 
+				// will return once the last "Loop" call finished... should be nearly instant, since the hard-lock was retrieved in the above line. 
+				_promise->second = {};
 
 				if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
 				delete _promise;
 			});
-			_promise->second = async([_promise, todo = std::move(Loop)]() {
+			lifetime->second = async([_promise = lifetime.get(), todo = std::move(Loop)]() {
 				if (todo) { // if task is valid...					
 					Stopwatch sw;
 					sw.Start();
 
-					while (_promise->first == 0) { // shared lock will not succeed when the parent scope is finished
+					while ((!_promise->second.waiting()) && (_promise->first == 0)) { // shared lock will not succeed when the parent scope is finished
 						todo(); // ... do task.
-
-						if (sw.Stop_s() > 5) {
-							std::this_thread::yield();
-							std::cout << "I AM STUCK ^ 2! HELP ME ^ 2!" << std::endl;
-						}
 					}
 				}
 			}).as_promise();
