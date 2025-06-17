@@ -25,9 +25,17 @@ namespace GoodLang {
 		};
 
 		// Defines a state of execution, can be waited on
-		struct context {
-			InterlockedLong counter{ 0 }; // how many Tasks* are awaited
+		class context {
+		public:
+			std::atomic<size_t> counter{ 0 }; // how many Tasks* are awaited
 			atomic_ptr<std::exception_ptr> e{ nullptr }; // shared error PTR for re-throwing at the end of the Tasks.
+
+			context() = default;
+			context(context const&) = delete;
+			context(context&&) = delete;
+			context& operator=(context const&) = delete;
+			context& operator=(context&&) = delete;
+			~context() = default;
 		};
 
 		/* job arguments used to perform work as part of a loop over a Task */
@@ -143,11 +151,18 @@ namespace GoodLang {
 		// Wait until all threads become idle. Current thread will become a worker thread, executing jobs.
 		void Wait(context& ctx);
 
-		struct TaskGroup {
+		class TaskGroup {
 		private:
-			context ctx{ 0, nullptr };
+			context ctx;
 
 		public:
+			TaskGroup() = default;
+			TaskGroup(TaskGroup const&) = delete;
+			TaskGroup(TaskGroup &&) = delete;
+			TaskGroup& operator=(TaskGroup const&) = delete;
+			TaskGroup& operator=(TaskGroup&&) = delete;
+			~TaskGroup() = default;
+
 			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
 			auto Queue(std::function<void(JobArgs const&)> task) { return impl::Execute(ctx, std::move(task)); };
@@ -914,20 +929,7 @@ namespace GoodLang {
 		};
 
 		/* auto shared_ptr_thread = AsThread([](){}); */
-		template<typename F> std::shared_ptr<void> AsThread(F Loop, std::function<void(void)> OnThreadEnd = {}) {
-			std::atomic<bool>* shared_lock = new std::atomic<bool>(true);
-			return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [Promise = async([todo = std::move(Loop), shared_lock]() {
-				while (shared_lock->load()) {
-					todo();
-				}
-			}).as_promise(), shared_lock, OnThreadEnd](int* p) {
-				shared_lock->store(false);
-				const_cast<promise&>(Promise).wait();
-				delete shared_lock;
-				if (OnThreadEnd) OnThreadEnd();
-				delete p;
-			}));
-		};
+		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd = {});
 
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {

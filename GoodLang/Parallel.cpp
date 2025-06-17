@@ -1,6 +1,6 @@
 #pragma once
 #include "Parallel.h"
-
+#include "../WaterWatchCpp/Clock.h"
 // FiberPool based on:
 // http://roar11.com/2016/01/a-platform-independent-thread-pool-using-c14/
 #include <assert.h>
@@ -329,6 +329,7 @@ namespace GoodLang {
 					job_queue = &internal_state.jobQueuePerThread[threadID];
 					while (job_queue->try_pop(job)) {
 						didWork = true;
+						defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
 						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
 							args.groupID = job.groupID;
 							// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
@@ -375,7 +376,6 @@ namespace GoodLang {
 							// Deallocate Shared Group Memory
 							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
 						}
-						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
 
 						if (!parentCtx || (parentCtx && IsBusy(*parentCtx))) {
 
@@ -411,6 +411,9 @@ namespace GoodLang {
 					job_queue = &internal_state.jobQueuePerThread[threadID];
 					while (job_queue->try_pop(job)) {
 						didWork = true;
+
+						defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
+
 						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
 							args.groupID = job.groupID;
 							// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
@@ -458,7 +461,6 @@ namespace GoodLang {
 							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
 
 						}
-						job.ctx->counter.Decrement(); // one group got finished, regardless of the outcome.
 					}
 					startingQueue++; // go to next queue
 				}
@@ -540,7 +542,7 @@ namespace GoodLang {
 		};
 		void ShutDown() { internal_state.ShutDown(); };
 		void Execute(context& ctx, std::function<void(JobArgs const&)> task) noexcept {
-			ctx.counter.Increment(); // Context state is updated:
+			++ctx.counter; // Context state is updated:
 			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0 });
 			internal_state.wakeCondition.notify_one(); // 
 		};
@@ -579,7 +581,7 @@ namespace GoodLang {
 			while ((long long)(groupCount * groupSize) < jobCount) groupCount++;
 
 			// context state is updated to its maximum:
-			ctx.counter.Add(groupCount);
+			ctx.counter += groupCount;
 
 			if ((wait_depth > 0) && (groupCount <= 1)) {
 				// do the work directly:
@@ -587,6 +589,8 @@ namespace GoodLang {
 					auto groupJobOffset = groupID * groupSize;
 					auto groupJobEnd = std::min(groupJobOffset + groupSize, jobCount);
 					if (groupJobOffset >= groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+
+					defer(--ctx.counter); // one group got finished, regardless of the outcome.
 
 					if (1) {
 						JobArgs args{
@@ -620,7 +624,6 @@ namespace GoodLang {
 								}
 							}
 						}
-						ctx.counter.Decrement(); // one group got finished, regardless of the outcome.
 					}
 				}
 			}
@@ -654,7 +657,7 @@ namespace GoodLang {
 			while ((long long)(groupCount * groupSize) < jobCount) groupCount++;
 
 			// context state is updated to its maximum:
-			ctx.counter.Add(groupCount);
+			ctx.counter += groupCount;
 
 			if ((wait_depth > 0) && (groupCount <= 1)) {
 				// do the work directly:
@@ -663,6 +666,8 @@ namespace GoodLang {
 					auto groupJobOffset = groupID * groupSize;
 					auto groupJobEnd = std::min(groupJobOffset + groupSize, jobCount);
 					if (groupJobOffset >= groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+
+					defer(--ctx.counter); // one group got finished, regardless of the outcome.
 
 					if (1) {
 						JobArgs args{
@@ -719,8 +724,7 @@ namespace GoodLang {
 
 							// Deallocate Shared Group Memory
 							if (args.sharedmemory && GroupEndJob) GroupEndJob(args.sharedmemory);
-						}
-						ctx.counter.Decrement(); // one group got finished, regardless of the outcome.
+						}						 
 					}
 				}
 			}
@@ -733,7 +737,7 @@ namespace GoodLang {
 				}, groupSize, jobCount);
 			}
 		};
-		bool IsBusy(const context& ctx) { return ctx.counter.GetValue() > 0; /* Whenever the context label is greater than zero, it means that there is still work that needs to be done */ };
+		bool IsBusy(const context& ctx) { return ctx.counter > 0; /* Whenever the context label is greater than zero, it means that there is still work that needs to be done */ };
 		void HandleExceptions(context& ctx) {
 			if (ctx.e) {
 				auto eptr = ctx.e.Set(nullptr);
@@ -821,6 +825,48 @@ namespace GoodLang {
 		}
 		return JobGroup(out);
 	};
+
+	namespace parallel {
+		/* auto shared_ptr_thread = AsThread([](){}); */
+		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd) {
+			std::pair<long, GoodLang::parallel::promise>* _promise = new std::pair<long, GoodLang::parallel::promise>{ 0, GoodLang::parallel::promise{} };
+			auto lifetime = std::shared_ptr<std::pair<long, GoodLang::parallel::promise>>(_promise, [_OnThreadEnd = std::move(OnThreadEnd)](std::pair<long, GoodLang::parallel::promise>* _promise) {
+
+
+				InterlockedIncrement(static_cast<volatile long*>(&_promise->first));
+
+				Stopwatch sw;
+				sw.Start();
+				// _promise->second.wait(); // will return once the last "Loop" call finished... should be nearly instant, since the hard-lock was retrieved in the above line. 
+				
+				while (!_promise->second.try_wait()) {
+					if (sw.Stop_s() > 1) {
+						std::cout << "I AM STUCK! HELP ME!" << std::endl;
+					}
+				}
+
+				if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
+				delete _promise;
+			});
+			_promise->second = async([_promise, todo = std::move(Loop)]() {
+				if (todo) { // if task is valid...					
+					Stopwatch sw;
+					sw.Start();
+
+					while (_promise->first == 0) { // shared lock will not succeed when the parent scope is finished
+						todo(); // ... do task.
+
+						if (sw.Stop_s() > 5) {
+							std::this_thread::yield();
+							std::cout << "I AM STUCK ^ 2! HELP ME ^ 2!" << std::endl;
+						}
+					}
+				}
+			}).as_promise();
+			return std::static_pointer_cast<void>(lifetime);
+		};
+	};
+
 };
 
 namespace {

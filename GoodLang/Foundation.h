@@ -382,8 +382,12 @@ namespace GoodLang {
 
 		protected:
 			mutable returnType _out;
+			mutable Type _prev_pos{ std::numeric_limits<Type>::max() };
 			void DoConversion(Type pos) const {
-				_out = (*Converter)(pos);
+				if (_prev_pos != pos) {
+					_prev_pos = pos;
+					_out = (*Converter)(pos);
+				}
 			};
 
 			std::function<returnType(Type)>* Converter;

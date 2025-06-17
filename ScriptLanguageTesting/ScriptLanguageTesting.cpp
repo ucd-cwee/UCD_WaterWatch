@@ -547,35 +547,36 @@ namespace utilities {
         class Allocator final : public GoodLang::EpochGarbageCollectorImpl {
         private:
             struct innerType {
-                _type_ T;
-                size_t threadID;
+                _type_ // actual object, must be the first item...
+                    T;
+                size_t // ... and attached data comes after the actual object.
+                    threadID;
             };
 
-            std::array<utilities::DelayedInstantiation<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>>, num_parallel_allocators> TLS_arr{};
-            static auto GetThreadID() { return IDManager::GetThreadID(); };
+            std::atomic<size_t> 
+                parallel_allocator_index{ 0 };
+            std::array<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>, num_parallel_allocators> 
+                TLS_arr{};
 
         public:
             Allocator() = default;
-            __declspec(noinline) ~Allocator() {
-            };
+            ~Allocator() = default;
 
             template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
-                size_t thisThreadIndex = GetThreadID() % num_parallel_allocators;
-                auto& TLS = TLS_arr[thisThreadIndex];
+                size_t thisThreadIndex = ++parallel_allocator_index % num_parallel_allocators;
                 innerType* out;
                 if constexpr (sizeof...(a) > 0) {
-                    out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex });
+                    out = TLS_arr[thisThreadIndex].Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, thisThreadIndex });
                 }
                 else {
-                    out = TLS->Alloc();
+                    out = TLS_arr[thisThreadIndex].Alloc();
                     out->threadID = thisThreadIndex;
                 }
                 return (_type_*)(out);
             };
             __declspec(noinline) void Free(const _type_* t) {
                 innerType* impl = static_cast<innerType*>(static_cast<void*>(const_cast<_type_*>(t)));
-                auto& TLS = TLS_arr[impl->threadID];
-                TLS->Free(impl);
+                TLS_arr[impl->threadID].Free(impl);
             };
             template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
                 return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
@@ -653,7 +654,7 @@ namespace utilities {
                 };
             };
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
-            Allocator<_type_, 32>
+            Allocator<_type_> // , 32
                 _alloc;
             moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
@@ -700,9 +701,7 @@ namespace utilities {
             using GuardType = typename TLS::EpochGuard;
 
             EpochAllocator() = default;
-            __declspec(noinline) ~EpochAllocator() {
-            };
-
+            ~EpochAllocator() = default;
 
         public:
             GuardType ProtectCurrentEpoch() const {
@@ -1003,14 +1002,14 @@ namespace utilities {
         };
 
     public:
-        void
-            lock() {
-            mutex.lock();
-        };
-        void
-            unlock() {
-            mutex.unlock();
-        };
+        //void
+        //    lock() {
+        //    mutex.lock();
+        //};
+        //void
+        //    unlock() {
+        //    mutex.unlock();
+        //};
         static _iterType*
             GetNextLeaf(_iterType* node) {
             if (node) {
@@ -1199,12 +1198,9 @@ namespace utilities {
             static_assert(maxChildrenPerNode >= 4);
             root = AllocNode();
         };
-        __declspec(noinline) ~BTree() {
-            
-        };
+        ~BTree() = default;
 
-        template <bool EmplaceIfExists = true>
-        _iterType* 
+        template <bool EmplaceIfExists = true> _iterType* 
             Add(objType const& object, keyType const& key) {
             _iterType
                 *node, 
@@ -1214,7 +1210,18 @@ namespace utilities {
             // check that the key does not already exist		
             if constexpr (EmplaceIfExists) {
                 auto locked{ std::shared_lock(mutex) };
-                node = NodeFind(key);
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    *node->object = object;
+                    return node;
+                }
+            }
+
+            auto locked{ std::scoped_lock(mutex) };
+
+            // check that the key does not already exist		
+            if constexpr (EmplaceIfExists) {
+                node = NodeFind(key, root);
                 if (node && node->object) {
                     *node->object = object;
                     return node;
@@ -1225,17 +1232,6 @@ namespace utilities {
             newNode->key = key;
             newNode->object = objAllocator.Alloc(object);
             Num++;
-
-            auto locked{ std::scoped_lock(mutex) };
-
-            // check that the key does not already exist		
-            if (1) {
-                node = NodeFind(key);
-                if (node && node->object) {
-                    FreeNode(newNode);
-                    return node;
-                }
-            }
 
             if (root->numChildren >= maxChildrenPerNode) {
                 // DOING MODIFICATIONS
@@ -1317,7 +1313,17 @@ namespace utilities {
             // check that the key does not already exist		
             if (1) {
                 auto locked{ std::shared_lock(mutex) };
-                node = NodeFind(key);
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    return node;
+                }
+            }
+
+            auto locked{ std::scoped_lock(mutex) };
+
+            // check that the key does not already exist		
+            if (1) {
+                node = NodeFind(key, root);
                 if (node && node->object) {
                     return node;
                 }
@@ -1327,17 +1333,6 @@ namespace utilities {
             newNode->key = key;
             newNode->object = objAllocator.Alloc();
             Num++;
-
-            auto locked{ std::scoped_lock(mutex) };
-
-            // check that the key does not already exist		
-            if (1) {
-                node = NodeFind(key);
-                if (node && node->object) {
-                    FreeNode(newNode);
-                    return node;
-                }
-            }
 
             if (root->numChildren >= maxChildrenPerNode) {
                 // DOING MODIFICATIONS
@@ -1408,9 +1403,7 @@ namespace utilities {
                 return CheckLastNode(CheckFirstNode(newNode));
             }
         };
-
-        template <typename iter_type, bool EmplaceIfExists = true>
-        void
+        template <typename iter_type, bool EmplaceIfExists = true> void
             Add_Bulk(iter_type begin, iter_type const& end) {
             _iterType
                 * node,
@@ -1421,7 +1414,7 @@ namespace utilities {
             for (; begin != end; begin++) {
                 // check that the key does not already exist		
                 if constexpr (EmplaceIfExists) {
-                    node = NodeFind(begin->first);
+                    node = NodeFind(begin->first, root);
                     if (node && node->object) {
                         *node->object = begin->second;
                         continue;
@@ -1477,6 +1470,8 @@ namespace utilities {
                             }
                             newNode->parent = node;
                             ++node->numChildren;
+                            CheckLastNode(CheckFirstNode(newNode));
+
                             should_continue = true;
                             break;
                         }
@@ -1502,39 +1497,37 @@ namespace utilities {
                     root->firstChild = newNode;
                     root->lastChild = newNode;
                     ++root->numChildren;
+                    CheckLastNode(CheckFirstNode(newNode));
+
                     continue;
                 }
             }
         };
-        void // remove an object node from the tree, if already locked.						
-            Remove_Unsafe(_iterType* node) {
+
+        bool // remove an object node from the tree								
+            Remove_Unsafe(_iterType* node, objType* object_copy) {
             _iterType
                 * parent,
                 * oldRoot{ nullptr };
 
-            if (!node) return;
+            if (!node) return false;
             else {
                 auto g{ this->nodeAllocator.ProtectCurrentEpoch() };
-                while (first == node) {
-                    auto* next_node = this->GetNextLeaf(first);
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&first), next_node, node) == node) {
-                        break;
-                    }
-                }
-                while (last == node) {
-                    auto* next_node = this->GetPrevLeaf(last);
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&last), next_node, node) == node) {
-                        break;
-                    }
-                }
-                // if (first == node) first = this->GetNextLeaf(node);
-                // if (last == node) last = this->GetPrevLeaf(node);
+
+                if (first == node)
+                    first = this->GetNextLeaf(node);
+                if (last == node)
+                    last = this->GetPrevLeaf(node);
 
                 // unlink the node from it's parent
-                if (node->prev) node->prev->next = node->next;
-                else node->parent->firstChild = node->next;
-                if (node->next) node->next->prev = node->prev;
-                else node->parent->lastChild = node->prev;
+                if (node->prev)
+                    node->prev->next = node->next;
+                else
+                    node->parent->firstChild = node->next;
+                if (node->next)
+                    node->next->prev = node->prev;
+                else
+                    node->parent->lastChild = node->prev;
                 node->parent->numChildren--;
 
                 // make sure there are no parent nodes with a single child
@@ -1553,7 +1546,7 @@ namespace utilities {
                         break;
                     }
                 }
-                for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent)
+                for (; parent && parent->lastChild; parent = parent->parent)
                     // a parent may not use a key higher than the key of it's last child
                     if (parent->key > parent->lastChild->key)
                         parent->key = parent->lastChild->key;
@@ -1567,75 +1560,46 @@ namespace utilities {
             }
 
             // free the nodes
+            if constexpr (std::is_copy_assignable< objType >::value) {
+                if (object_copy) *object_copy = *node->object;
+            }
             FreeNode(node);
             if (oldRoot) FreeNode(oldRoot);
+
+            return true;
         };
-        void // remove an object node from the tree								
+        bool // remove an object node from the tree								
             Remove(_iterType* node) {
-            _iterType
-                * parent,
-                * oldRoot{ nullptr };
-
-            if (!node) return;
-            else {
-                auto g{ this->nodeAllocator.ProtectCurrentEpoch() };
-                while (first == node) {
-                    auto* next_node = this->GetNextLeaf(first);
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&first), next_node, node) == node) {
-                        break;
-                    }
+            auto locked{ std::scoped_lock(this->mutex) };
+            return Remove_Unsafe(node, nullptr);
+        };	
+        bool // remove an object node from the tree								
+            RemoveAt(keyType const& key, objType* object_copy = nullptr) {
+#if 0
+            bool out{ false };
+            this->mutex.lock_shared();
+            if (auto* p = this->NodeFind(key, root)) {                
+                if (this->mutex.upgrade_lock()) {
+                    out = Remove_Unsafe(p, object_copy);
                 }
-                while (last == node) {
-                    auto* next_node = this->GetPrevLeaf(last);
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&last), next_node, node) == node) {
-                        break;
-                    }
+                else if (p = this->NodeFind(key, root)) {
+                    out = Remove_Unsafe(p, object_copy);
                 }
-                // if (first == node) first = this->GetNextLeaf(node);
-                // if (last == node) last = this->GetPrevLeaf(node);
-
-                auto locked{ std::scoped_lock(mutex) };
-
-                // unlink the node from it's parent
-                if (node->prev) node->prev->next = node->next;
-                else node->parent->firstChild = node->next;
-                if (node->next) node->next->prev = node->prev;
-                else node->parent->lastChild = node->prev;
-                node->parent->numChildren--;
-
-                // make sure there are no parent nodes with a single child
-                for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
-                    if (parent->next)
-                        parent = MergeNodes(parent, parent->next);
-                    else if (parent->prev)
-                        parent = MergeNodes(parent->prev, parent);
-
-                    // a parent may not use a key higher than the key of it's last child
-                    if (parent->key > parent->lastChild->key)
-                        parent->key = parent->lastChild->key;
-
-                    if (parent->numChildren > maxChildrenPerNode) {
-                        SplitNode(parent);
-                        break;
-                    }
-                }
-                for (; parent != nullptr && parent->lastChild != nullptr; parent = parent->parent)
-                    // a parent may not use a key higher than the key of it's last child
-                    if (parent->key > parent->lastChild->key)
-                        parent->key = parent->lastChild->key;
-
-                // remove the root node if it has a single internal node as child
-                if (root->numChildren == 1 && root->firstChild->object == nullptr) {
-                    oldRoot = root;
-                    root->firstChild->parent = nullptr;
-                    root = root->firstChild;
-                }
+                this->mutex.unlock();
             }
+            else {
+                this->mutex.unlock_shared();
+            }
+            return out;
+#else
+            auto locked{ std::scoped_lock(this->mutex) };
+            if (auto* p = this->NodeFind(key, root)) {
+                return Remove_Unsafe(p, object_copy);
+            }
+            return false;
+#endif
+        };
 
-            // free the nodes
-            FreeNode(node);
-            if (oldRoot) FreeNode(oldRoot);
-        };				
         _iterType* 
             NodeFindByIndex(int index) const {
             if (index <= 0) return GetFirst();
@@ -1691,10 +1655,12 @@ namespace utilities {
         };				
         _iterType* 
             GetFirst() const {
+            auto locked{ std::shared_lock(mutex) };
             return first; 
         };
         _iterType* 
             GetLast() const {
+            auto locked{ std::shared_lock(mutex) };
             return last; 
         };
         _iterType* 
@@ -1709,35 +1675,21 @@ namespace utilities {
 
     private:
         _iterType* 
-            CheckFirstNode(_iterType* newNode) {            
-            while (newNode) {
-                auto* old_first = first;
-                if (old_first && (newNode->key >= old_first->key)) {
-                    break;
+            CheckFirstNode(_iterType* newNode) {
+            if (newNode) {
+                if (!first || (first->key > newNode->key)) {
+                    first = newNode;
                 }
-                else {
-                    // do exchange
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&first), newNode, old_first) == old_first) {
-                        break;
-                    }
-                }
-            }         
+            }
             return newNode;
         };
         _iterType* 
             CheckLastNode(_iterType* newNode) {
-            while (newNode) {
-                auto* old_last = last;
-                if (old_last && (newNode->key <= old_last->key)) {
-                    break;
+            if (newNode) {
+                if (!last || (last->key < newNode->key)) {
+                    last = newNode;
                 }
-                else {
-                    // do exchange
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&last), newNode, old_last) == old_last) {
-                        break;
-                    }
-                }
-            }      
+            }
             return newNode;
         };
         _iterType* 
@@ -1969,29 +1921,25 @@ namespace utilities {
         template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
             pop_front_if(Func const& func) {
             bool out = false;
-            auto g{ tree.ProtectCurrentEpoch() };
-            tree.lock();
-            if (auto* p = tree.GetFirst()) {
+            auto g{ tree.ProtectCurrentEpoch() };            
+            if (auto* p = tree.GetFirst()) {                
                 if (func(p->key, *p->object)) {
-                    tree.Remove_Unsafe(p);
+                    tree.Remove(p);
                     out = true;
-                }                
-            }
-            tree.unlock();
+                }  
+            }            
             return out;
         };
         template <typename Func> __declspec(noinline) bool // removes the last (largest key) node in the map if func(key, object) returns true
             pop_back_if(Func const& func) {
             bool out = false;
             auto g{ tree.ProtectCurrentEpoch() };
-            tree.lock();
             if (auto* p = tree.GetLast()) {
                 if (func(p->key, *p->object)) {
-                    tree.Remove_Unsafe(p);
+                    tree.Remove(p);
                     out = true;
                 }
             }
-            tree.unlock();
             return out;
         };
         __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
@@ -2029,14 +1977,7 @@ namespace utilities {
         bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
             erase(const KeyType& time, ValueType* out = nullptr) {
             auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* p = tree.NodeFind(time)) {
-                if constexpr (std::is_copy_assignable< ValueType >::value) {
-                    if (out) *out = *p->object;
-                }
-                tree.Remove(p);
-                return true;
-            }
-            return false;
+            return tree.RemoveAt(time, out);
         };
 
     private:
@@ -2348,7 +2289,7 @@ public:
         using ResultType = Breadcrumb*;
         using InputType = size_t;
         using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>;
-        utilities::atomic_map<size_t, std::vector<std::shared_ptr<ResultForInputType>>>
+        utilities::atomic_map<size_t, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>>
             _current_cache;
 
     public:
@@ -2361,20 +2302,20 @@ public:
             auto g{ _current_cache.ProtectCurrentEpoch() };
             bool success = false;
             while (!success) {
-                if (!_current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<ResultForInputType>>& cache) {
+                if (!_current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) {
                     if (curr_version >= cache_version) {
-                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
+                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator*()[input_hash]), reinterpret_cast<PVOID>(result));
                         success = true;
                     }
                 })) {};
                 if (!success) {
-                    (void)_current_cache.get_or_make(cache_version, []() -> std::vector<std::shared_ptr<ResultForInputType>> {
-                        std::vector<std::shared_ptr<ResultForInputType>> out{};
+                    (void)_current_cache.get_or_make(cache_version, []() -> std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>> {
+                        std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>> out{};
                         for (int i = 0; i < numCategories; ++i) 
-                            out.emplace_back(std::make_shared<ResultForInputType>());
+                            out.emplace_back(std::make_shared<utilities::DelayedInstantiation<ResultForInputType>>());
                         return out;
                     });
-                    _current_cache.pop_front_if([&](size_t curr_version, std::vector<std::shared_ptr<ResultForInputType>>& cache) -> bool {
+                    _current_cache.pop_front_if([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) -> bool {
                          return curr_version < cache_version;
                     });
                 }
@@ -2385,9 +2326,9 @@ public:
         __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
             auto g{ _current_cache.ProtectCurrentEpoch() };
             Breadcrumb* out{ nullptr };
-            _current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<ResultForInputType>>& cache) {
+            _current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) {
                 if (curr_version >= cache_version) {
-                    out = cache[category]->operator[](input_hash);
+                    out = cache[category]->operator*()[input_hash];
                 }
             });
             return out;
@@ -2580,7 +2521,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         print("");
-        if (1) {
+        if (0) {
             GoodLang::details::BTreeAllocator<size_t>
                 index_allocator;
 
@@ -2616,6 +2557,15 @@ int main() {
         if (1) {
             ABA_Problem::EpochAllocator<size_t>
                 index_allocator;
+
+            if (1) {
+                auto iterator = GoodLang::CustomizedSequence(std::function([](size_t pos) -> std::pair<size_t, size_t> {
+                    return { pos, pos };
+                }), 1000000ull);
+                utilities::atomic_map<size_t, size_t> map;
+                map.insert_bulk(iterator.begin(), iterator.end());
+                EXPECT_EQ(map.size(), 1000000ull);
+            }
 
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
@@ -2752,8 +2702,13 @@ int main() {
             BTree<std::string, size_t, 10> tree{};
             GoodLang::parallel::For(0, 255, [&](int i) {
                 tree.Add(GoodLang::ToString(i), i);
-                EXPECT_EQ(GoodLang::ToString(i), *tree.Find(i));
-                });
+                if (auto* p = tree.Find(i)) {
+                    EXPECT_EQ(GoodLang::ToString(i), *p);
+                }
+                else {
+                    EXPECT_EQ(true, false);
+                }
+            });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
                 //print(iter->key);
@@ -2765,7 +2720,7 @@ int main() {
                 tree.Add(GoodLang::ToString(i), i);
                 tree.Remove(tree.NodeFind(i));
                 EXPECT_EQ(nullptr, tree.Find(i));
-                });
+            });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
                 //print(iter->key);
@@ -2786,6 +2741,7 @@ int main() {
                         // print(p->key);
                     }
                 });
+                thread_ptr = nullptr;
             }
 
             auto g{ tree.ProtectCurrentEpoch() };
@@ -2850,8 +2806,16 @@ int main() {
             GoodLang::parallel::For(0, 255, [&](int i) {
                 auto g{ tree.ProtectCurrentEpoch() };
                 tree.insert(i, GoodLang::ToString(i));
-                tree.erase(i);
-                EXPECT_EQ(tree.find(i), tree.end());
+                if (tree.erase(i)) {
+                    // claims to have successfully erased it. 
+                    EXPECT_EQ(tree.find(i), tree.end());
+                }
+                else {
+                    // claims to have failed to erase it
+                    EXPECT_NE(tree.find(i), tree.end());
+                    tree.erase(i);
+                }
+                
             });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto& x : tree) {
@@ -2873,6 +2837,7 @@ int main() {
                         // print(p->key);
                     }
                 });
+                thread_ptr = nullptr;
             }
 
             auto g{ tree.ProtectCurrentEpoch() };
@@ -2891,7 +2856,7 @@ int main() {
 
 
 
-        if (1) {
+        if (0) {
             Scopes::Cache<4> cache;
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -2962,13 +2927,13 @@ int main() {
             Scopes::RootScope root;
 
             sw.Start();
-            GoodLang::parallel::For(0, 1000000, [&](int i) {
+            GoodLang::parallel::For(0, 10000, [&](int i) {
                 Scopes::NamespaceScope scope("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
-            GoodLang::parallel::For(0, 1000000, [&](int i) {
+            GoodLang::parallel::For(0, 10000, [&](int i) {
                 Scopes::NamespaceScope scope("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
                 scope.UpdateObjectFunctionVersion();
             });
@@ -2978,13 +2943,13 @@ int main() {
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.UpdateObjectFunctionVersion();
             })) {
-                GoodLang::parallel::For(0, 1000000, [&](int i) {
+                GoodLang::parallel::For(0, 10000, [&](int i) {
                     Scopes::NamespaceScope scope("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
                     scope.UpdateObjectFunctionVersion();
                 });
+                main_loop = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
 
             // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
             if (1) {
@@ -3026,6 +2991,7 @@ int main() {
                     //scope.UpdateObjectFunctionVersion();
                     //EXPECT_EQ(true, scope.object_or_function_versions >= 1);
                 };
+                main_loop = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
@@ -3053,6 +3019,7 @@ int main() {
                     //scope.UpdateObjectFunctionVersion();                    
                     //EXPECT_EQ(true, scope.object_or_function_versions >= 1);
                 });
+                main_loop = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
