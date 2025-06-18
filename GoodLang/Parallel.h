@@ -27,6 +27,7 @@ namespace GoodLang {
 		// Defines a state of execution, can be waited on
 		class context {
 		public:
+			std::atomic<size_t> workers{ 0 }; // how many threads are working for this context to be finished
 			std::atomic<size_t> waiters{ 0 }; // how many threads are waiting for this context to be finished
 			std::atomic<size_t> counter{ 0 }; // how many Tasks* are awaited
 			atomic_ptr<std::exception_ptr> e{ nullptr }; // shared error PTR for re-throwing at the end of the Tasks.
@@ -49,7 +50,7 @@ namespace GoodLang {
 			long long sharedmemory_size;
 			std::shared_ptr < std::function<void(void*)>> GroupStartJob; // callback func with memory for type T
 			std::shared_ptr < std::function<void(void*)>> GroupEndJob; // callback func with memory for type T
-			bool SafeForMainThread;
+			size_t SubmittingThread;
 		};
 
 		template <typename T> class Queue {
@@ -86,6 +87,12 @@ namespace GoodLang {
 			~Queue() = default;
 		};
 
+		struct ThreadWrap {
+			std::thread thread;
+			size_t thread_hash;
+			size_t thread_index;
+		};
+
 		struct InternalState {
 			long long numCores = 0;
 			long long numThreads = 0;
@@ -96,15 +103,16 @@ namespace GoodLang {
 			std::condition_variable wakeCondition; 
 			std::mutex wakeMutex; 
 			InterlockedLong nextQueue{ 0 };
-			std::vector<std::thread> threads;
+			std::vector<ThreadWrap> threads;
+
 			void ShutDown() {
 				alive = false; // indicate that new jobs cannot be started from this point
 				bool wake_loop = true;
 				std::thread waker([&] {
 					while (wake_loop) wakeCondition.notify_all(); // wakes up sleeping worker threads
-					});
+				});
 				for (auto& thread : threads) {
-					thread.join();
+					thread.thread.join();
 				}
 				wake_loop = false;
 				waker.join();
@@ -121,7 +129,7 @@ namespace GoodLang {
 		__forceinline long long GetThreadCount() { return internal_state.numThreads; };
 
 		// Add a task to execute asynchronously. Any idle thread will execute this.
-		void Execute(context& ctx, std::function<void(JobArgs const&)> task, bool SafeForMainThread = true) noexcept;
+		void Execute(context& ctx, std::function<void(JobArgs const&)> task, size_t SubmittingThread = 0) noexcept;
 
 		// Divide a task onto multiple jobs and execute in parallel.
 		//	jobCount	: how many jobs to generate for this task.
@@ -173,10 +181,19 @@ namespace GoodLang {
 					return false;
 				}				
 			};
+			bool Working() const {
+				if (ctx.counter > 0) {
+					return ctx.workers > 0;
+				}
+				else {
+					return false;
+				}
+			};
 			auto Wait() { return impl::Wait(ctx); };
 			auto IsBusy() const { return impl::IsBusy(ctx); };
-			auto Queue(std::function<void(JobArgs const&)> task, bool SafeForMainThread = true) { 
-				return impl::Execute(ctx, std::move(task), SafeForMainThread);
+			auto Queue(std::function<void(JobArgs const&)> task, size_t SubmittingThread = 0) {
+				if (SubmittingThread == 0) SubmittingThread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+				return impl::Execute(ctx, std::move(task), SubmittingThread);
 			};
 
 			/* Dispatch a function that does not need to share memory within a group / cluster of the Task jobs. */
@@ -217,7 +234,7 @@ namespace GoodLang {
 		mutable std::shared_ptr<GoodLang::Lockable<std::shared_ptr<Any>>> result{
 			std::make_shared<GoodLang::Lockable<std::shared_ptr<Any>>>()
 		};
-		bool is_safe_for_main_thread{ true };
+		size_t SubmittingThread{ 0 };
 
 		static void AddItem(std::vector<Any>&) {};
 		template<typename T, typename... Args> static void AddItem(std::vector<Any>& AddTo, T const& I, Args const&...  A) {
@@ -403,6 +420,7 @@ namespace GoodLang {
 		{
 			impl = make_callable(std::forward<T>(function));
 			AddItem(*inputs, std::forward<Args>(Fargs)...);
+			SubmittingThread = std::hash<std::thread::id>{}(std::this_thread::get_id());
 		};		
 
 	public:
@@ -458,10 +476,9 @@ namespace GoodLang {
 				return {};
 			}
 		};
-		void SetNotSafeForMainThread() {
-			is_safe_for_main_thread = false;
+		size_t GetSubmittingThread() const {
+			return SubmittingThread; 
 		};
-		bool IsSafeForMainThread() const { return is_safe_for_main_thread; };
 	};
 
 	/*! Class used to queue and await one or multiple jobs submitted to a concurrent fiber manager. */
@@ -484,6 +501,7 @@ namespace GoodLang {
 			void Queue(std::vector<Job> const& listOfJobs);
 			void Wait();
 			bool Waiting() const;
+			bool Working() const;
 			bool TryWait();
 			~JobGroupImpl() { Wait(); };
 		};
@@ -534,6 +552,9 @@ namespace GoodLang {
 		bool Waiting() {
 			return impl->Waiting();
 		};
+		bool Working() {
+			return impl->Working();
+		};
 		/* Await all jobs in this group */
 		bool TryWait() {
 			return impl->TryWait();
@@ -541,6 +562,10 @@ namespace GoodLang {
 
 		impl::TaskGroup& GetTaskGroup() const {
 			return *static_cast<impl::TaskGroup*>(impl->waitGroup.get());
+		};
+
+		Job GetLastJob() const {
+			return impl->last_job;
 		};
 
 	protected:
@@ -786,6 +811,13 @@ namespace GoodLang {
 			promise& operator=(promise&&) = default;
 			virtual ~promise() {};
 
+			//void resubmit() {
+			//	auto job = shared_state->GetLastJob();
+			//	shared_state->GetTaskGroup().Queue([impl = job](impl::JobArgs const& args){
+			//		impl.Invoke();
+			//	}, job.GetSubmittingThread());
+			//};
+
 			/* Returns true if this promise has been initialized correctly. Otherwise, false. */
 			bool valid() const noexcept { return (bool)shared_state; };
 			/* Wait until the requested job is completed. Repeated or simultaneous waiting is OK. */
@@ -812,6 +844,13 @@ namespace GoodLang {
 			bool waiting() const {
 				if (shared_state && result) {
 					return shared_state->Waiting();
+				}
+				return false;
+			};
+			/* Returns true if the job is being worked on. */
+			bool working() const {
+				if (shared_state && result) {
+					return shared_state->Working();
 				}
 				return false;
 			};
@@ -867,9 +906,7 @@ namespace GoodLang {
 		/* A secondary type tag used to identify if a template type is a future<T> type. */
 	    class future_type { public: virtual ~future_type() {}; };
 
-		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job.
-		Note: Only the first thread that "waits" on a future<T> assists the thread pool. More waiters != more jobs, and therefore additional waiters are spin-locking.
-		Recommended that only the thread (or consuming thread) that scheduled the future<T> object should wait for it. */
+		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job. */
 		template <typename T> class future final : public promise/*, public future_type*/ {
 		private:
 			static std::weak_ptr<Type_Info> ThisType() {
@@ -938,9 +975,7 @@ namespace GoodLang {
 		/* returns a future<T> object for awaiting the results of the job. */
 		template < typename F, typename... Args, typename = std::enable_if_t< !std::is_same_v<Job, std::decay_t<F>> && !std::is_same_v<GoodLang::Any, std::decay_t<F>> >>
 		__forceinline static decltype(auto) async(F function, Args... Fargs) {
-			Job job(function, Fargs...);
-			job.SetNotSafeForMainThread();
-			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(std::move(job));
+			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
 		};
 
 		/* while (G()) { Do(); } */

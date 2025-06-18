@@ -2655,7 +2655,7 @@ int main() {
         }
 
 
-
+        sw.Start();
         if (1) {
             BTree<std::string, size_t, 10> tree{};
             for (char c = 'a'; c <= 'z'; ++c) {
@@ -2749,6 +2749,32 @@ int main() {
                 //print(iter->key);
             }
         }
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+
+        // Testing an extreme example of multithreading bullshit causing softlocks, that has hopefully been fixed. 
+        if (1) {            
+            sw.Start();
+            GoodLang::parallel::For(0, 10, [&](int i) {
+                GoodLang::parallel::For(0, 100, [i](int j) {
+                    if (auto thread_ptr = GoodLang::parallel::AsThread([]() {
+                        // Do Something...
+                    })) {
+                        GoodLang::parallel::For(0, 1000, [i, j](int k) {
+                           // print(GoodLang::printf("%i", (i * 100 * 100) + (k * 100) + j));
+                        });
+                        //print("...Releasing...");
+                    }
+                });
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
+
+
+
+
+
 
 
 

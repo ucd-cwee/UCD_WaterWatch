@@ -317,11 +317,12 @@ namespace GoodLang {
 				, 0 // groupIndex
 				, nullptr // sharedmemory
 			};
+			size_t this_thread_id_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 
 			long long sizeOfData{ 0 };
 			void* data{ nullptr };
 			defer(if (data) { Mem_Free16(data); });
-
+			
 			bool didWork = true;
 			while (didWork && (!parentCtx || (parentCtx && IsBusy(*parentCtx)))) {
 				didWork = false;
@@ -329,69 +330,76 @@ namespace GoodLang {
 					threadID = (i + startingQueue) % internal_state.numThreads;
 					job_queue = &internal_state.jobQueuePerThread[threadID];
 					while (job_queue->try_pop(job)) {
-						if (!job.SafeForMainThread) {
-							job_queue->push(job);
-							std::this_thread::yield();
-							break;
-						}
+						if ((job.ctx->waiters.load() > 1) && (job.SubmittingThread == this_thread_id_hash)) {
+							// we shouldn't be the one doing this job.
+							internal_state.jobQueuePerThread[(i + startingQueue + 1) % internal_state.numThreads].push(job);
+							internal_state.wakeCondition.notify_all();
+							continue;
+						} 
+						else {
+							++job.ctx->workers;
+							defer(--job.ctx->workers); // one group got finished, regardless of the outcome.
 
-						didWork = true;
-						defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
-						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
-							args.groupID = job.groupID;
-							// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
-							{
-								if (job.sharedmemory_size > 0) {
-									if (sizeOfData < job.sharedmemory_size) {
-										if (data) Mem_Free16(data);
-										data = Mem_Alloc16(job.sharedmemory_size);
-										sizeOfData = job.sharedmemory_size;
-									}
+							didWork = true;
+							defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
 
-									::memset(data, 0, job.sharedmemory_size);
+							if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
+								args.groupID = job.groupID;
+								// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
+								{
+									if (job.sharedmemory_size > 0) {
+										if (sizeOfData < job.sharedmemory_size) {
+											if (data) Mem_Free16(data);
+											data = Mem_Alloc16(job.sharedmemory_size);
+											sizeOfData = job.sharedmemory_size;
+										}
 
-									args.sharedmemory = data;
+										::memset(data, 0, job.sharedmemory_size);
 
-									if (job.GroupStartJob) {
-										job.GroupStartJob->operator()(args.sharedmemory);
-									}
-								}
-								else {
-									args.sharedmemory = nullptr;
-								}
-							}
+										args.sharedmemory = data;
 
-							// Do Group Jobs Until Done or Error is Thrown
-							auto& ToDo = *job.task;
-							for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
-								args.jobIndex = j;
-								args.groupIndex = j - job.groupJobOffset;
-								try {
-									ToDo(args);
-								}
-								catch (...) {
-									if (!job.ctx->e) {
-										auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-										if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-											delete eptr;
+										if (job.GroupStartJob) {
+											job.GroupStartJob->operator()(args.sharedmemory);
 										}
 									}
-									break;
+									else {
+										args.sharedmemory = nullptr;
+									}
 								}
+
+								// Do Group Jobs Until Done or Error is Thrown
+								auto& ToDo = *job.task;
+								for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
+									args.jobIndex = j;
+									args.groupIndex = j - job.groupJobOffset;
+									try {
+										ToDo(args);
+									}
+									catch (...) {
+										if (!job.ctx->e) {
+											auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+											if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+												delete eptr;
+											}
+										}
+										break;
+									}
+								}
+
+								// Deallocate Shared Group Memory
+								if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
 							}
-
-							// Deallocate Shared Group Memory
-							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
 						}
 
-						if (!parentCtx || (parentCtx && IsBusy(*parentCtx))) {
-
-						}
-						else {
-							break;
+						if (parentCtx && !IsBusy(*parentCtx)) {
+							return;
 						}
 					}
 					startingQueue++; // go to next queue
+
+					if (parentCtx && !IsBusy(*parentCtx)) {
+						return;
+					}
 				}
 			}
 		};
@@ -406,7 +414,7 @@ namespace GoodLang {
 				, 0 // groupIndex
 				, nullptr // sharedmemory
 			};
-
+			size_t this_thread_id_hash = internal_state.threads[startingQueue].thread_hash;
 			long long sizeOfData{ 0 };
 			void* data{ nullptr };
 			defer(if (data) { Mem_Free16(data); });
@@ -418,56 +426,66 @@ namespace GoodLang {
 					threadID = (i + startingQueue) % internal_state.numThreads;
 					job_queue = &internal_state.jobQueuePerThread[threadID];
 					while (job_queue->try_pop(job)) {
-						didWork = true;
+						if ((job.ctx->waiters.load() > 1) && (job.SubmittingThread == this_thread_id_hash)) {
+							// we shouldn't be the one doing this job.
+							internal_state.jobQueuePerThread[(i + startingQueue + 1) % internal_state.numThreads].push(job);
+							internal_state.wakeCondition.notify_all();
+							continue;
+						}
+						else {
+							didWork = true;
+							++job.ctx->workers;
+							defer(--job.ctx->workers); // one group got finished, regardless of the outcome.
 
-						defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
+							defer(--job.ctx->counter); // one group got finished, regardless of the outcome.
 
-						if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
-							args.groupID = job.groupID;
-							// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
-							{
-								if (job.sharedmemory_size > 0) {
-									if (sizeOfData < job.sharedmemory_size) {
-										if (data) Mem_Free16(data);
-										data = Mem_Alloc16(job.sharedmemory_size);
-										sizeOfData = job.sharedmemory_size;
-									}
+							if (!job.ctx->e) { // if another group threw an error, do not process this group at all.
+								args.groupID = job.groupID;
+								// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
+								{
+									if (job.sharedmemory_size > 0) {
+										if (sizeOfData < job.sharedmemory_size) {
+											if (data) Mem_Free16(data);
+											data = Mem_Alloc16(job.sharedmemory_size);
+											sizeOfData = job.sharedmemory_size;
+										}
 
-									::memset(data, 0, job.sharedmemory_size);
+										::memset(data, 0, job.sharedmemory_size);
 
-									args.sharedmemory = data;
+										args.sharedmemory = data;
 
-									if (job.GroupStartJob) {
-										job.GroupStartJob->operator()(args.sharedmemory);
-									}
-								}
-								else {
-									args.sharedmemory = nullptr;
-								}
-							}
-
-							// Do Group Jobs Until Done or Error is Thrown
-							auto& ToDo = *job.task;
-							for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
-								args.jobIndex = j;
-								args.groupIndex = j - job.groupJobOffset;
-								try {
-									ToDo(args);
-								}
-								catch (...) {
-									if (!job.ctx->e) {
-										auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
-										if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
-											delete eptr;
+										if (job.GroupStartJob) {
+											job.GroupStartJob->operator()(args.sharedmemory);
 										}
 									}
-									break;
+									else {
+										args.sharedmemory = nullptr;
+									}
 								}
+
+								// Do Group Jobs Until Done or Error is Thrown
+								auto& ToDo = *job.task;
+								for (j = job.groupJobOffset; !job.ctx->e && j < job.groupJobEnd; ++j) {
+									args.jobIndex = j;
+									args.groupIndex = j - job.groupJobOffset;
+									try {
+										ToDo(args);
+									}
+									catch (...) {
+										if (!job.ctx->e) {
+											auto eptr = job.ctx->e.Set(new std::exception_ptr(std::current_exception())); // Sets the error to the new PTR
+											if (eptr) { // If we accidentilly errored at the same time as another group, prevent leak
+												delete eptr;
+											}
+										}
+										break;
+									}
+								}
+
+								// Deallocate Shared Group Memory
+								if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
+
 							}
-
-							// Deallocate Shared Group Memory
-							if (args.sharedmemory && job.GroupEndJob) job.GroupEndJob->operator()(args.sharedmemory);
-
 						}
 					}
 					startingQueue++; // go to next queue
@@ -489,9 +507,12 @@ namespace GoodLang {
 			internal_state.threads.reserve(internal_state.numThreads);
 
 			for (long long threadID = 0; threadID < internal_state.numThreads; ++threadID) {
-				internal_state.threads.emplace_back([threadID] {
+				internal_state.threads.emplace_back(ThreadWrap{ std::thread{ [threadID] {
 					// pre-warm this thread's heap
 					for (int i = 0; i < 100000; i++) delete (new int(5));
+
+					internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
+					internal_state.threads[threadID].thread_index = threadID;								
 
 					while (internal_state.alive.GetValue()) {
 						// Work until no more jobs are found
@@ -499,11 +520,11 @@ namespace GoodLang {
 
 						// go to sleep, to be awoken when new jobs are added
 						auto lock{ std::unique_lock(internal_state.wakeMutex) };
-						internal_state.wakeCondition.wait_for(lock, std::chrono::milliseconds(1000/60));
+						internal_state.wakeCondition.wait_for(lock, std::chrono::milliseconds(1000 / 60));
 						// internal_state.wakeCondition.wait(lock);
 					}
-				});
-				std::thread& worker = internal_state.threads.back();
+				} }, 0, 0 });
+				std::thread& worker = internal_state.threads.back().thread;
 
 #ifdef _WIN32
 				// Do Windows-specific thread setup:
@@ -519,7 +540,7 @@ namespace GoodLang {
 				//assert(priority_result != 0);
 
 				// Name the thread:
-				std::wstring wthreadname = L"wi::jobsystem_" + std::to_wstring(threadID);
+				std::wstring wthreadname = L"GL::thread_" + std::to_wstring(threadID);
 				HRESULT hr = SetThreadDescription(handle, wthreadname.c_str());
 				assert(SUCCEEDED(hr));
 #elif defined(PLATFORM_LINUX)
@@ -537,23 +558,23 @@ namespace GoodLang {
 					handle_error_en(ret, std::string(" pthread_setaffinity_np[" + std::to_string(threadID) + ']').c_str());
 
 				// Name the thread
-				std::string thread_name = "wi::job::" + std::to_string(threadID);
+				std::string thread_name = "GL::job::" + std::to_string(threadID);
 				ret = pthread_setname_np(worker.native_handle(), thread_name.c_str());
 				if (ret != 0)
 					handle_error_en(ret, std::string(" pthread_setname_np[" + std::to_string(threadID) + ']').c_str());
 #undef handle_error_en
-#elif defined(PLATFORM_PS5)
-				wi::jobsystem::ps5::SetupWorker(worker, threadID);
 #endif // _WIN32
 			}
 
 			return true;
 		};
 		void ShutDown() { internal_state.ShutDown(); };
-		void Execute(context& ctx, std::function<void(JobArgs const&)> task, bool SafeForMainThread) noexcept {
+		void Execute(context& ctx, std::function<void(JobArgs const&)> task, size_t SubmittingThread) noexcept {
+			if (SubmittingThread == 0) SubmittingThread = std::hash<std::thread::id>{}(std::this_thread::get_id());
+
 			++ctx.counter; // Context state is updated:
 			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ 
-				std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0, nullptr, nullptr, SafeForMainThread
+				std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0, nullptr, nullptr, SubmittingThread
 		    });
 			internal_state.wakeCondition.notify_all(); // 
 		};
@@ -601,6 +622,8 @@ namespace GoodLang {
 					auto groupJobEnd = std::min(groupJobOffset + groupSize, jobCount);
 					if (groupJobOffset >= groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
 
+					++ctx.workers;
+					defer(--ctx.workers); // one group got finished, regardless of the outcome.
 					defer(--ctx.counter); // one group got finished, regardless of the outcome.
 
 					if (1) {
@@ -641,7 +664,7 @@ namespace GoodLang {
 			else {
 				DoDispatch(Task{
 					std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)),
-					&ctx, 0, 0, 1, 0, nullptr, nullptr, true
+					&ctx, 0, 0, 1, 0, nullptr, nullptr, std::hash<std::thread::id>{}(std::this_thread::get_id())
 				}, groupSize, jobCount);
 			}
 		};
@@ -678,6 +701,8 @@ namespace GoodLang {
 					auto groupJobEnd = std::min(groupJobOffset + groupSize, jobCount);
 					if (groupJobOffset >= groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
 
+					++ctx.workers;
+					defer(--ctx.workers); // one group got finished, regardless of the outcome.
 					defer(--ctx.counter); // one group got finished, regardless of the outcome.
 
 					if (1) {
@@ -745,7 +770,7 @@ namespace GoodLang {
 					&ctx, 0, 0, 1, (long long)sharedmemory_size,
 					std::make_shared<std::function<void(void*)>>(std::move(GroupStartJob)),
 					std::make_shared<std::function<void(void*)>>(std::move(GroupEndJob)),
-					true
+					std::hash<std::thread::id>{}(std::this_thread::get_id())
 				}, groupSize, jobCount);
 			}
 		};
@@ -779,12 +804,12 @@ namespace GoodLang {
 #else // supports jobs calling jobs
 			int i{ 0 };
 			while (IsBusy(ctx)) { // Do work
-				if (++i < 40) { // give the threads the chance to do their jobs
+				//if (++i < 40) { // give the threads the chance to do their jobs
 					std::this_thread::yield();
-				}
-				else { // threads need help
+				//}
+				//else { // threads need help
 					work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
-				}
+				//}
 			}
 			--wait_depth; // allows detection of when job dispatch may be from within an existing job
 			HandleExceptions(ctx);  // re-throw any exceptions that were caught during the workload
@@ -807,7 +832,7 @@ namespace GoodLang {
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		wg->Queue([impl = job](impl::JobArgs const& args) {
 			impl.Invoke();
-		}, job.IsSafeForMainThread());
+		}, job.GetSubmittingThread());
 		last_job = job;
 	};
 	void JobGroup::JobGroupImpl::Queue(std::vector<Job> const& listOfJobs) {
@@ -831,6 +856,11 @@ namespace GoodLang {
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
 		return wg->Waiting();
 	};
+	bool JobGroup::JobGroupImpl::Working() const {
+		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
+		if (!wg) throw(std::runtime_error("Job Group was empty."));
+		return wg->Working();
+	};
 	bool JobGroup::JobGroupImpl::TryWait() {
 		std::shared_ptr<impl::TaskGroup> wg = std::static_pointer_cast<impl::TaskGroup>(waitGroup);
 		if (!wg) throw(std::runtime_error("Job Group was empty."));
@@ -848,30 +878,134 @@ namespace GoodLang {
 	namespace parallel {
 		/* auto shared_ptr_thread = AsThread([](){}); */
 		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd) {
-			auto lifetime = std::shared_ptr<std::pair<long, GoodLang::parallel::promise>>(
-				new std::pair<long, GoodLang::parallel::promise>{ 0, GoodLang::parallel::promise{} }, 
-				[_OnThreadEnd = std::move(OnThreadEnd)](std::pair<long, GoodLang::parallel::promise>* _promise) {
-				InterlockedIncrement(static_cast<volatile long*>(&_promise->first));
+			// Generally speaking, AsThread should not be called from another thread. 
+			// Doing so will likely result in performance penalties. 
 
-				// Increment the "waiters" so that the promise knows someone is waiting on it...
-				_promise->second.wait(); 
-				// will return once the last "Loop" call finished... should be nearly instant, since the hard-lock was retrieved in the above line. 
-				_promise->second = {};
+			bool is_inside_thread = false;
+			long long threadIndex{ 0 };
+			size_t this_thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
+			for (int i = 0; i < impl::internal_state.numThreads; ++i) {
+				if (impl::internal_state.threads[i].thread_hash == this_thread_hash) {
+					// throw std::runtime_error("Cannot call AsThread from an existing thread, as this may result in a deadlock.");
+					is_inside_thread = true;
+					threadIndex = i;
+				}
+			}
 
-				if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
-				delete _promise;
-			});
-			lifetime->second = async([_promise = lifetime.get(), todo = std::move(Loop)]() {
-				if (todo) { // if task is valid...					
-					Stopwatch sw;
-					sw.Start();
-
+			if (!is_inside_thread) { // Best-case scenario. Most performant solution. 
+				using ptrType = std::pair<long, GoodLang::parallel::promise>;
+				auto p = new ptrType{ 0, GoodLang::parallel::promise{} };
+				p->second = async([_promise = p, todo = std::move(Loop)]() {
 					while ((!_promise->second.waiting()) && (_promise->first == 0)) { // shared lock will not succeed when the parent scope is finished
 						todo(); // ... do task.
 					}
+				}).as_promise();
+				auto lifetime = std::shared_ptr<ptrType>(p, [_OnThreadEnd = std::move(OnThreadEnd)](ptrType* _promise) {
+					InterlockedIncrement(static_cast<volatile long*>(&_promise->first));
+
+					// Increment the "waiters" so that the promise knows someone is waiting on it...
+					_promise->second.wait();
+					// will return once the last "Loop" call finished... should be nearly instant, since the hard-lock was retrieved in the above line. 
+					_promise->second = {};
+
+					if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
+					delete _promise;
+				});
+				return std::static_pointer_cast<void>(lifetime);
+			} 
+			else { // worst-case scenario. User is requesting a thread from a thread, which will (at worst) cause a memory overflow or (at best) deadlock.
+#if 0
+				using ptrType = GoodLang::Union<
+					GoodLang::fast_shared_mutex,
+					impl::context,
+					std::function<void(void)>,
+					std::function<void(void)>
+				>;
+				auto* ptr = new ptrType{};
+				ptr->get<2>() = std::move(Loop);
+				ptr->get<3>() = std::move(OnThreadEnd);
+				
+
+
+
+
+				auto lifetime = std::shared_ptr<ptrType>(ptr, [](ptrType* _promise) {
+					std::cout << GoodLang::printf("EXITING \n");
+
+					_promise->get<0>().lock();
+					std::cout << GoodLang::printf("LOCKED \n");
+					impl::Wait(_promise->get<1>());
+					std::cout << GoodLang::printf("WAITED \n");
+					_promise->get<0>().unlock();
+
+					if (_promise->get<3>()) _promise->get<3>()();
+
+					delete _promise;
+				});
+				return std::static_pointer_cast<void>(lifetime);
+
+#else  // this approach used C++ threads instead of the thread_pool. Works but will eventually create a memory overflow. 
+				using ptrType = std::pair< long, std::thread >;
+				auto p = new ptrType{ 0, std::thread{} };
+				p->second = std::thread{ [_promise = p, todo = std::move(Loop)] () {
+					while (_promise->first == 0) { // shared lock will not succeed when the parent scope is finished
+						todo(); // ... do task.
+						std::this_thread::yield();
+						// impl::work(impl::internal_state.nextQueue.Increment());
+					}
+				} };
+
+				if (1) {
+					auto& worker = p->second;
+#ifdef _WIN32
+					// Do Windows-specific thread setup:
+					HANDLE handle = (HANDLE)worker.native_handle();
+
+					// Put each thread on to dedicated core:
+					DWORD_PTR affinityMask = 1ull << threadIndex;
+					DWORD_PTR affinity_result = SetThreadAffinityMask(handle, affinityMask);
+					assert(affinity_result > 0);
+
+					//// Increase thread priority:
+					//BOOL priority_result = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST);
+					//assert(priority_result != 0);
+
+					// Name the thread:
+					std::wstring wthreadname = L"GL::temp_thread_" + std::to_wstring(threadIndex);
+					HRESULT hr = SetThreadDescription(handle, wthreadname.c_str());
+					assert(SUCCEEDED(hr));
+#elif defined(PLATFORM_LINUX)
+#define handle_error_en(en, msg) \
+				   do { errno = en; perror(msg); } while (0)
+
+					int ret;
+					cpu_set_t cpuset;
+					CPU_ZERO(&cpuset);
+					size_t cpusetsize = sizeof(cpuset);
+
+					CPU_SET(threadID, &cpuset);
+					ret = pthread_setaffinity_np(worker.native_handle(), cpusetsize, &cpuset);
+					if (ret != 0)
+						handle_error_en(ret, std::string(" pthread_setaffinity_np[" + std::to_string(threadID) + ']').c_str());
+
+					// Name the thread
+					std::string thread_name = "GL::job::" + std::to_string(threadID);
+					ret = pthread_setname_np(worker.native_handle(), thread_name.c_str());
+					if (ret != 0)
+						handle_error_en(ret, std::string(" pthread_setname_np[" + std::to_string(threadID) + ']').c_str());
+#undef handle_error_en
+#endif // _WIN32
 				}
-			}).as_promise();
-			return std::static_pointer_cast<void>(lifetime);
+
+				auto lifetime = std::shared_ptr<ptrType>(p, [_OnThreadEnd = std::move(OnThreadEnd)](ptrType* _promise) {
+					InterlockedIncrement(static_cast<volatile long*>(&_promise->first));
+					_promise->second.join();
+					if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
+					delete _promise;
+				});
+				return std::static_pointer_cast<void>(lifetime);
+#endif
+			}
 		};
 	};
 
