@@ -974,7 +974,7 @@ namespace GoodLang {
 		/* while (WhileBoolean()) { Do(); } */
 		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
 			struct WhileException : public std::exception {};
-			int num_thread_jobs = 128; 
+			int num_thread_jobs = 1024; 
 			while (WhileBoolean()) {
 				try {
 					For(0, num_thread_jobs, [&](int i) {
@@ -992,7 +992,7 @@ namespace GoodLang {
 		/* while (true){ Do(); if (Until()){ return; } } */
 		template<typename F, typename G> decltype(auto) Until(F const& Do, G const& UntilBoolean) {
 			struct UntilException : public std::exception {};
-			int num_thread_jobs = 128;
+			int num_thread_jobs = 1024;
 			while (true) {
 				try {
 					For(0, num_thread_jobs, [&](int i) {

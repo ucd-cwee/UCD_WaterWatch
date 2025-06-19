@@ -2762,6 +2762,16 @@ int main() {
             utilities::atomic_map<size_t, std::string> tree{};
             std::atomic<long> S{ 0 };
             sw.Start();
+            while (tree.size() < 1000000){
+                long s = ++S;
+                tree.insert(s, GoodLang::printf("%i", (int)s));
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            std::atomic<long> S{ 0 };
+            sw.Start();
             GoodLang::parallel::While(
                 [&](void)-> bool {
                     return tree.size() < 1000000;
