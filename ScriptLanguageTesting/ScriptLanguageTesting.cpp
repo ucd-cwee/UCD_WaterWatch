@@ -2034,14 +2034,6 @@ namespace utilities {
 
     };
 
-
-
-
-
-
-
-
-
 };
 namespace std {
     template <> struct hash<utilities::string_view> {
@@ -2751,33 +2743,110 @@ int main() {
         }
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
-
-        // Testing an extreme example of multithreading bullshit causing softlocks, that has hopefully been fixed. 
-        if (1) {            
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            std::atomic<long> S{ 0 };
             sw.Start();
-            GoodLang::parallel::For(0, 10, [&](int i) {
-                GoodLang::parallel::For(0, 100, [i](int j) {
-                    if (auto thread_ptr = GoodLang::parallel::AsThread([]() {
-                        // Do Something...
-                    })) {
-                        GoodLang::parallel::For(0, 1000, [i, j](int k) {
-                           // print(GoodLang::printf("%i", (i * 100 * 100) + (k * 100) + j));
-                        });
-                        //print("...Releasing...");
-                    }
-                });
-            });
+            GoodLang::parallel::While(
+                [&](void)-> bool {
+                    return tree.size() < 100;
+                }, 
+                [&](void) -> void {                    
+                    long s = ++S;
+                    tree.insert(s, GoodLang::printf("%i", (int)s));
+                }
+            );
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            std::atomic<long> S{ 0 };
+            sw.Start();
+            GoodLang::parallel::While(
+                [&](void)-> bool {
+                    return tree.size() < 1000000;
+                },
+                [&](void) -> void {
+                    long s = ++S;
+                    tree.insert(s, GoodLang::printf("%i", (int)s));
+                }
+            );
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            std::atomic<long> S{ 0 };
+            sw.Start();
+            GoodLang::parallel::Until(
+                [&](void) -> void {
+                    long s = ++S;
+                    tree.insert(s, GoodLang::printf("%i", (int)s));
+                },
+                [&](void)-> bool {
+                    return tree.size() >= 1000000;
+                }
+            );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
+        // Testing an extreme example of multithreading bullshit causing softlocks, that has hopefully been fixed. 
+        if (1) {            
+            utilities::atomic_map<size_t, std::string> tree{};
+            sw.Start();
+            if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
+                // this thread is using one of the GoodLang threads, and will be highly performant
+                for (int i = 0; i < 1000; ++i) {
+                    (void)tree.insert(i, GoodLang::printf("%i", i));
+                }
+            })) {
+                GoodLang::parallel::For(0, 10, [&tree](int i) {
+                    GoodLang::parallel::For(0, 100, [i, &tree](int j) {
+                        if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
+                            // this thread is using the shared C++ thread for iterative AsThread calls, and is significantly less performant. 
+                            for (int i = 0; i < 1000; ++i) {
+                                (void)tree.erase(i);
+                            }
+                        })) {
+                            GoodLang::parallel::For(0, 1000, [i, j, &tree](int k) {
+                                tree.insert((i * 100 * 100) + (k * 100) + j, GoodLang::printf("%i", (i * 100 * 100) + (k * 100) + j));
+                            });
+                        }
+                    });
+                });
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
 
-
-
-
-
-
-
-
+        // technically works but runs into a major bottleneck.. AsThread running into AsThread during the less-optimum route causes a major bottleneck. 
+        // Needs this version of the parallel atomic_map to better support it. 
+        if (0) {
+            sw.Start();
+            if (auto thread_ptr = GoodLang::parallel::AsThread([]() {
+                // Do Something...
+            })) {
+                // Meanwhile...
+                GoodLang::parallel::For(0, 100, [](int i) {
+                    if (auto thread_ptr2 = GoodLang::parallel::AsThread([]() {
+                        // Do Something...
+                    })) {
+                    //    // Meanwhile...
+                        GoodLang::parallel::For(0, 100, [&i](int j) {
+                            if (auto thread_ptr3 = GoodLang::parallel::AsThread([]() {
+                                // Do Something...
+                            })) {
+                    //            // Meanwhile...
+                    //            GoodLang::parallel::For(0, 100, [&i, &j](int k) {
+                    //            });
+                                thread_ptr3 = nullptr;
+                            }
+                        });
+                        thread_ptr2 = nullptr;
+                    }
+                });
+                thread_ptr = nullptr;
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
 
         if (1) {
             utilities::atomic_map<size_t, std::string> tree{};

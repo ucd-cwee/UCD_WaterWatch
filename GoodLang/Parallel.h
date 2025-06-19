@@ -811,13 +811,6 @@ namespace GoodLang {
 			promise& operator=(promise&&) = default;
 			virtual ~promise() {};
 
-			//void resubmit() {
-			//	auto job = shared_state->GetLastJob();
-			//	shared_state->GetTaskGroup().Queue([impl = job](impl::JobArgs const& args){
-			//		impl.Invoke();
-			//	}, job.GetSubmittingThread());
-			//};
-
 			/* Returns true if this promise has been initialized correctly. Otherwise, false. */
 			bool valid() const noexcept { return (bool)shared_state; };
 			/* Wait until the requested job is completed. Repeated or simultaneous waiting is OK. */
@@ -978,22 +971,44 @@ namespace GoodLang {
 			return future<typename GoodLang::utilities::function_traits<decltype(std::function(function))>::result_type>(Job(function, Fargs...));
 		};
 
-		/* while (G()) { Do(); } */
+		/* while (WhileBoolean()) { Do(); } */
 		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
-			while (async(WhileBoolean).wait_get()) {
-				async(Do).wait();
+			struct WhileException : public std::exception {};
+			int num_thread_jobs = 128; 
+			while (WhileBoolean()) {
+				try {
+					For(0, num_thread_jobs, [&](int i) {
+						if (WhileBoolean()) Do();						
+						else throw WhileException{};						
+					});
+				}				
+				catch (WhileException const&) {
+					break;
+				}
+				num_thread_jobs *= 10; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
 			}
 		};
 
-		/* while (true){ Do(); if (Until){ return; } } */
-		template<typename F, typename G> decltype(auto) Until(F const& Do, G const& Until) {
+		/* while (true){ Do(); if (Until()){ return; } } */
+		template<typename F, typename G> decltype(auto) Until(F const& Do, G const& UntilBoolean) {
+			struct UntilException : public std::exception {};
+			int num_thread_jobs = 128;
 			while (true) {
-				async(Do).wait();
-				if (async(Until).wait_get()) break;
+				try {
+					For(0, num_thread_jobs, [&](int i) {
+						Do();
+						if (UntilBoolean()) throw UntilException{};						
+					});
+				}				
+				catch (UntilException const&) {
+					break;
+				}
+				if (UntilBoolean()) break;	
+				num_thread_jobs *= 10; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
 			}
 		};
 
-		/* auto shared_ptr_thread = AsThread([](){}); */
+		/* auto lifetime_object = AsThread([](){ Loop Me While Lifetime Exists! }, [](){ Optionally Do Me When Lifetime Dies, As Clean-Up! }); */
 		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd = {});
 
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
@@ -1064,8 +1079,6 @@ namespace GoodLang {
 			out.push_back(GoodLang::GetChildren(const_cast<parallel::promise&>(r).wait_get_any()));
 		};
 	};
-
-
 
 	class MultithreadingInstanceManager {
 	public:

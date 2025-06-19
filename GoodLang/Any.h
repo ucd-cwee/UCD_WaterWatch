@@ -524,24 +524,40 @@ namespace GoodLang {
 		if (ret < 0 || ret >= size)  ret = -1;
 		return ret;
 	};
-	__forceinline std::string	printf(const char* fmt, ...) {
-		thread_local static std::shared_ptr<char> sp{ nullptr };
-		if (!sp) {
-			sp = std::shared_ptr<char>(new char[128000], std::default_delete<char[]>());
+	__forceinline std::string	printf(const char* format, ...) {		
+		va_list args;
+		va_start(args, format);
+
+		// Determine the required buffer size
+		int size = ::vsnprintf(nullptr, 0, format, args);
+		va_end(args);
+
+		if ((size < 0) || (size >= 128000)) {
+			// Handle error, e.g., return an empty string or throw an exception
+			return "";
+		}
+		else {
+			// Allocate buffer and print to it
+			std::string buffer(size, '\0'); // Initialize string with null characters
+			va_start(args, format);
+			::vsnprintf(&buffer[0], size + 1, format, args); // +1 for null terminator
+			va_end(args);
+			return buffer;
 		}
 
-		va_list argptr;
-
-		char* buffer = sp.get();
-		buffer[128000 - 1] = '\0';
-
-		va_start(argptr, fmt);
-		vsnPrintf(buffer, 128000 - 1, fmt, argptr);
-		va_end(argptr);
-		buffer[128000 - 1] = '\0';
-
-		std::string out(buffer);
-		return out;
+		//thread_local static std::shared_ptr<char> sp{ nullptr };
+		//if (!sp) {
+		//	sp = std::shared_ptr<char>(new char[128000], std::default_delete<char[]>());
+		//}
+		//va_list argptr;
+		//char* buffer = sp.get();
+		//buffer[128000 - 1] = '\0';
+		//va_start(argptr, format);
+		//vsnPrintf(buffer, 128000 - 1, format, argptr);
+		//va_end(argptr);
+		//buffer[128000 - 1] = '\0';
+		//std::string out(buffer);
+		//return out;
 	};
 };
 

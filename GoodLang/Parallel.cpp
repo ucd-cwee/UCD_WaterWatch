@@ -876,7 +876,7 @@ namespace GoodLang {
 	};
 
 	namespace parallel {
-		/* auto shared_ptr_thread = AsThread([](){}); */
+		/* auto lifetime_object = AsThread([](){ Loop Me While Lifetime Exists! }, [](){ Optionally Do Me When Lifetime Dies, As Clean-Up! }); */
 		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd) {
 			// Generally speaking, AsThread should not be called from another thread. 
 			// Doing so will likely result in performance penalties. 
@@ -892,7 +892,7 @@ namespace GoodLang {
 				}
 			}
 
-			if (!is_inside_thread) { // Best-case scenario. Most performant solution. 
+			if (!is_inside_thread) { // Best-case scenario. Most performant solution, using the GoodLang promise system. 
 				using ptrType = std::pair<long, GoodLang::parallel::promise>;
 				auto p = new ptrType{ 0, GoodLang::parallel::promise{} };
 				p->second = async([_promise = p, todo = std::move(Loop)]() {
@@ -909,102 +909,75 @@ namespace GoodLang {
 					_promise->second = {};
 
 					if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
+
 					delete _promise;
 				});
 				return std::static_pointer_cast<void>(lifetime);
 			} 
-			else { // worst-case scenario. User is requesting a thread from a thread, which will (at worst) cause a memory overflow or (at best) deadlock.
-#if 0
-				using ptrType = GoodLang::Union<
-					GoodLang::fast_shared_mutex,
-					impl::context,
+			else { // worst-case scenario. Uses a unique, shared thread to loop through jobs specific to this codepath every 1/60th a second. 
+				// To-Do, make this thread go to sleep when not in use using the same system as for the thread_pool. 
+				class TempThread {
+				private:
+					std::atomic<bool> alive;
+					std::thread thread;
+					std::function<void(void)> todo;
+
+				public:
+					TempThread() : alive{ false }, thread{} {};
+					TempThread(std::function<void(void)>&& t) : alive{ true }, todo(std::move(t)) {
+						if (this->todo) {
+							thread = std::thread([this]() {
+								while (this->alive.load()) {
+									this->todo();
+								}								
+							});
+						}
+					};
+					TempThread(TempThread const&) = delete;
+					TempThread(TempThread &&) = delete;
+					TempThread& operator=(TempThread const&) = delete;
+					TempThread& operator=(TempThread&&) = delete;
+					~TempThread() {
+						alive = false;						
+						if (thread.joinable()) {
+							thread.join();
+						}
+					};
+				};
+				using ptrType = GoodLang::Union<					
 					std::function<void(void)>,
 					std::function<void(void)>
 				>;
-				auto* ptr = new ptrType{};
-				ptr->get<2>() = std::move(Loop);
-				ptr->get<3>() = std::move(OnThreadEnd);
-				
+				static std::unique_ptr<std::pair<concurrency::concurrent_unordered_map<size_t, ptrType>, std::shared_mutex>> cache_map{ std::make_unique<std::pair<concurrency::concurrent_unordered_map<size_t, ptrType>, std::shared_mutex>>() };
+				static std::atomic<size_t> position{ 0 };
+				static std::unique_ptr<TempThread> cache_iterator{ std::make_unique<TempThread>([](void) -> void {
+					if (1) {
+						auto locked { std::shared_lock(cache_map->second) };
+						for (auto& x : cache_map->first) {
+							if (x.second.get<0>()) x.second.get<0>()();
+						}
+					}		
+					::Sleep(1000 / 60);
+				}) };
 
-
-
-
-				auto lifetime = std::shared_ptr<ptrType>(ptr, [](ptrType* _promise) {
-					std::cout << GoodLang::printf("EXITING \n");
-
-					_promise->get<0>().lock();
-					std::cout << GoodLang::printf("LOCKED \n");
-					impl::Wait(_promise->get<1>());
-					std::cout << GoodLang::printf("WAITED \n");
-					_promise->get<0>().unlock();
-
-					if (_promise->get<3>()) _promise->get<3>()();
-
-					delete _promise;
-				});
-				return std::static_pointer_cast<void>(lifetime);
-
-#else  // this approach used C++ threads instead of the thread_pool. Works but will eventually create a memory overflow. 
-				using ptrType = std::pair< long, std::thread >;
-				auto p = new ptrType{ 0, std::thread{} };
-				p->second = std::thread{ [_promise = p, todo = std::move(Loop)] () {
-					while (_promise->first == 0) { // shared lock will not succeed when the parent scope is finished
-						todo(); // ... do task.
-						std::this_thread::yield();
-						// impl::work(impl::internal_state.nextQueue.Increment());
-					}
-				} };
-
+				size_t pos = ++position;
 				if (1) {
-					auto& worker = p->second;
-#ifdef _WIN32
-					// Do Windows-specific thread setup:
-					HANDLE handle = (HANDLE)worker.native_handle();
-
-					// Put each thread on to dedicated core:
-					DWORD_PTR affinityMask = 1ull << threadIndex;
-					DWORD_PTR affinity_result = SetThreadAffinityMask(handle, affinityMask);
-					assert(affinity_result > 0);
-
-					//// Increase thread priority:
-					//BOOL priority_result = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST);
-					//assert(priority_result != 0);
-
-					// Name the thread:
-					std::wstring wthreadname = L"GL::temp_thread_" + std::to_wstring(threadIndex);
-					HRESULT hr = SetThreadDescription(handle, wthreadname.c_str());
-					assert(SUCCEEDED(hr));
-#elif defined(PLATFORM_LINUX)
-#define handle_error_en(en, msg) \
-				   do { errno = en; perror(msg); } while (0)
-
-					int ret;
-					cpu_set_t cpuset;
-					CPU_ZERO(&cpuset);
-					size_t cpusetsize = sizeof(cpuset);
-
-					CPU_SET(threadID, &cpuset);
-					ret = pthread_setaffinity_np(worker.native_handle(), cpusetsize, &cpuset);
-					if (ret != 0)
-						handle_error_en(ret, std::string(" pthread_setaffinity_np[" + std::to_string(threadID) + ']').c_str());
-
-					// Name the thread
-					std::string thread_name = "GL::job::" + std::to_string(threadID);
-					ret = pthread_setname_np(worker.native_handle(), thread_name.c_str());
-					if (ret != 0)
-						handle_error_en(ret, std::string(" pthread_setname_np[" + std::to_string(threadID) + ']').c_str());
-#undef handle_error_en
-#endif // _WIN32
+					auto locked{ std::shared_lock(cache_map->second) };
+					cache_map->first.insert(std::pair<size_t, ptrType>{ pos, ptrType(Loop, OnThreadEnd) });
 				}
-
-				auto lifetime = std::shared_ptr<ptrType>(p, [_OnThreadEnd = std::move(OnThreadEnd)](ptrType* _promise) {
-					InterlockedIncrement(static_cast<volatile long*>(&_promise->first));
-					_promise->second.join();
-					if (_OnThreadEnd) _OnThreadEnd(); // optionally do the on-completion task
-					delete _promise;
+				auto lifetime = std::shared_ptr<size_t>(reinterpret_cast<size_t*>(pos), [](size_t* pos) {
+					size_t POS = reinterpret_cast<size_t&>(pos);
+					if (1) {
+						auto locked{ std::shared_lock(cache_map->second) };
+						auto& _promise = cache_map->first.at(POS);
+						if (_promise.get<1>()) _promise.get<1>()();
+					}
+					if (1) {
+						auto locked{ std::unique_lock(cache_map->second) };
+						cache_map->first.unsafe_erase(POS);
+					}
 				});
 				return std::static_pointer_cast<void>(lifetime);
-#endif
 			}
 		};
 	};
