@@ -331,8 +331,7 @@ namespace utilities {
 
     public:
         DelayedInstantiation() = default;
-        __declspec(noinline) ~DelayedInstantiation() {
-        };
+        ~DelayedInstantiation() = default;
 
         bool valid() const {
             return initialized > 0;
@@ -351,6 +350,7 @@ namespace utilities {
         T& operator*() {
             return *operator->();
         };
+        operator bool() const { return valid(); };
     };
 
     namespace ABA_Problem {
@@ -933,7 +933,6 @@ namespace utilities {
         };
     };
 
-
     /* Thread-safe ordered B-Tree, which guarrantees valid and safe access to 
     pointers during erasure or modification of the tree when using the Epoch-guard 
     protection, which will delay actual deletion until the guard is satisfactorily old. */
@@ -984,7 +983,7 @@ namespace utilities {
             objAllocator;
         utilities::ABA_Problem::EpochAllocator<_iterType>
             nodeAllocator;
-        GoodLang::fast_shared_mutex
+        GoodLang::fast_shared_mutex // mutable std::shared_mutex // 
             mutex;
 
         class EpochGuard {
@@ -1504,6 +1503,10 @@ namespace utilities {
             }
         };
 
+        auto // guard-lock the tree							
+            Lock() {
+            return std::unique_lock(this->mutex);
+        };
         bool // remove an object node from the tree								
             Remove_Unsafe(_iterType* node, objType* object_copy) {
             _iterType
@@ -1652,7 +1655,15 @@ namespace utilities {
             else {
                 return node->object;
             }
-        };				
+        };		
+        _iterType*
+            GetFirst_Unsafe() const {
+            return first;
+        };
+        _iterType*
+            GetLast_Unsafe() const {
+            return last;
+        };
         _iterType* 
             GetFirst() const {
             auto locked{ std::shared_lock(mutex) };
@@ -1921,10 +1932,11 @@ namespace utilities {
         template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
             pop_front_if(Func const& func) {
             bool out = false;
-            auto g{ tree.ProtectCurrentEpoch() };            
-            if (auto* p = tree.GetFirst()) {                
+            auto g{ tree.ProtectCurrentEpoch() };     
+            auto g2{ tree.Lock() };
+            if (auto* p = tree.GetFirst_Unsafe()) {                
                 if (func(p->key, *p->object)) {
-                    tree.Remove(p);
+                    tree.Remove_Unsafe(p, nullptr);
                     out = true;
                 }  
             }            
@@ -1934,9 +1946,10 @@ namespace utilities {
             pop_back_if(Func const& func) {
             bool out = false;
             auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* p = tree.GetLast()) {
+            auto g2{ tree.Lock() };
+            if (auto* p = tree.GetLast_Unsafe()) {
                 if (func(p->key, *p->object)) {
-                    tree.Remove(p);
+                    tree.Remove_Unsafe(p, nullptr);
                     out = true;
                 }
             }
@@ -2033,7 +2046,6 @@ namespace utilities {
         };
 
     };
-
 };
 namespace std {
     template <> struct hash<utilities::string_view> {
@@ -2174,13 +2186,12 @@ public:
             }
         };
 
-
         Breadcrumb(utilities::string_view&& name = {}, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : this_m(std::move(name), scope_type_p)
             , parent_m(std::move(parent))
             , root_m{ nullptr }
             , namespace_m{ nullptr }
-            , scope_index{}
+            , scope_index()
         {
             // ROOT
             if (parent_m) root_m = parent_m->root_m;
@@ -2218,76 +2229,18 @@ public:
 
 
 public:
-#if 0
-    template <int numCategories = 4> class Cache {
-    private: // CacheVersion -> CacheCategory -> Inputs -> Result
-        using ResultType = 
-            Breadcrumb*;
-        using InputType = 
-            size_t;
-        using ResultForInputType = 
-            GoodLang::details::flat_map<InputType, ResultType>;
-        using CachedCategory = 
-            std::pair<size_t, std::array<ResultForInputType, numCategories>>;
-
-        GoodLang::fast_shared_mutex 
-            _mut;
-        utilities::DelayedInstantiation< CachedCategory > 
-            _current_cache;
-
-    public:
-        // updating the cache version should clear all categories. 
-        template<int category>
-        __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
-            while (true) {
-                if (_current_cache->first >= cache_version) {
-                    ResultForInputType& map = _current_cache->second[category];
-                    map.emplace(input_hash, (Breadcrumb*)result);
-                    return;
-                }
-                else {
-                    _mut.lock();
-                    if (_current_cache->first < cache_version) {
-                        for (auto& map : _current_cache->second) {
-                            map.clear();
-                        }
-                        InterlockedExchange(static_cast<volatile size_t*>(&_current_cache->first), cache_version);
-                    }
-                    _mut.unlock();
-                }
-            }
-        };
-
-        // updating the cache version should clear all categories. 
-        template<int category>
-        __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash){
-            Breadcrumb* out{ nullptr };
-            if (_current_cache->first >= cache_version) {
-                ResultForInputType& map = _current_cache->second[category];
-                thread_local long hint{ 0 };
-                if (auto* p = map.try_at(input_hash, hint)) {
-                    out = *p;
-                }
-            }
-            return out;
-        };
-
-    };
-#else
-    // leverages the Epoch Allocator to protect access to old pointers while new pointers are still being added. 
-    // Higher memory footprint, but faster once initialized. 
+    // leverages the Epoch Allocator to protect access to old pointers while new pointers are still being added or old pointers are queued for deletion.
     template <int numCategories = 4> class Cache {
     private: // CacheVersion -> CacheCategory -> Inputs -> Result
         using ResultType = Breadcrumb*;
         using InputType = size_t;
-        using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>;
+        using ResultForInputType = utilities::atomic_map<InputType, ResultType>;
         utilities::atomic_map<size_t, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>>
-            _current_cache;
+            _current_cache; // cache uses atomic_map since it may delete items as well as append items
 
     public:
         Cache() = default;
-        __declspec(noinline) ~Cache() {
-        };
+        __declspec(noinline) ~Cache() {};
 
         template<int category>
         __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
@@ -2303,8 +2256,7 @@ public:
                 if (!success) {
                     (void)_current_cache.get_or_make(cache_version, []() -> std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>> {
                         std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>> out{};
-                        for (int i = 0; i < numCategories; ++i) 
-                            out.emplace_back(std::make_shared<utilities::DelayedInstantiation<ResultForInputType>>());
+                        for (int i = 0; i < numCategories; ++i) out.emplace_back(std::make_shared<utilities::DelayedInstantiation<ResultForInputType>>());
                         return out;
                     });
                     _current_cache.pop_front_if([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) -> bool {
@@ -2327,23 +2279,30 @@ public:
         };
 
     };
-#endif
 
     class BasicScope {
     public:
         Breadcrumb 
             breadcrumb_m;
         utilities::DelayedInstantiation<concurrency::concurrent_unordered_map<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>>
-            using_m; // NOTE: calling "using" should split the scope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< utilities::string_view, utilities::ObjectWrapper>>
+            using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
+        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< size_t, std::pair<utilities::string, utilities::ObjectWrapper>>>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
-        void EmplaceObject_Impl(utilities::string_view const& sv, utilities::ObjectWrapper const& Obj) {
-            objects_m->insert(std::pair<const utilities::string_view, utilities::ObjectWrapper>{ sv, Obj });
+        void EmplaceObject_Impl(utilities::string_view const& sv, utilities::ObjectWrapper Obj) {
+            objects_m->insert({ sv.hash(), { utilities::string(sv.c_str()), std::move(Obj) } });
+        };
+        utilities::ObjectWrapper* GetObject_Impl(utilities::string_view const& sv) {
+            if (objects_m) {
+                if (auto f = objects_m->find(sv.hash()), e = objects_m->end(); f != e) {
+                    return &f->second.second;
+                }
+            }
+            return nullptr;
         };
         virtual void AddUsing_Impl(Breadcrumb* scope) {
             if (scope) {
-                using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener{} });
+                using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
             }
         };
 
@@ -2360,8 +2319,9 @@ public:
     friend class BasicScope;
     public:
         // explicit children namespaces, with strongly-held protections to their memory.
-        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>>
+        utilities::DelayedInstantiation<utilities::atomic_map<size_t, std::shared_ptr<NamespaceScope>>>
             children;
+
     private:
         Scopes::Cache<4> 
             search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's
@@ -2446,7 +2406,7 @@ int main() {
     while (true) {
         print("");
 
-
+#if 0
         if (1) {
             ABA_Problem::Allocator<size_t>
                 index_allocator;
@@ -2950,30 +2910,27 @@ int main() {
                 //print(iter->key);
             }
         }
+#endif
 
-
-
-
-
-
-
-
-
-
-
-        if (0) {
+        if (1) {
             Scopes::Cache<4> cache;
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 cache.EmplaceCache<0>(1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
-                EXPECT_EQ(cache.TryGetCache<0>(1, 0), reinterpret_cast<Scopes::Breadcrumb*>(1));
+                (void)cache.TryGetCache<0>(1, 0);
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 cache.EmplaceCache<0>(1, i, reinterpret_cast<Scopes::Breadcrumb*>(i));
-                EXPECT_EQ(cache.TryGetCache<0>(1, i), reinterpret_cast<Scopes::Breadcrumb*>(i));
+                (void)cache.TryGetCache<0>(1, i);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                cache.EmplaceCache<0>(i + 1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
@@ -3057,6 +3014,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
+            sw.Start();
             if (1) {
                 Scopes::NamespaceScope scope1("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
                 Scopes::NamespaceScope scope2("UI", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
@@ -3067,6 +3025,40 @@ int main() {
                 scope2.UpdateObjectFunctionVersion();
                 root.UpdateObjectFunctionVersion();
             }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+
+
+
+
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                scope.EmplaceObject_Impl(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                scope.EmplaceObject_Impl(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
+                if (auto* p = scope.GetObject_Impl(utilities::string(GoodLang::printf("%i", i)))) {}
+                else {
+                    EXPECT_EQ(true, false);
+                }
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+
+
 
 
 
