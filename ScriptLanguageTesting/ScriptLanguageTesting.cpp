@@ -354,6 +354,8 @@ namespace utilities {
     };
 
     namespace ABA_Problem {
+
+
         template <typename T>
         class Node {
         public:
@@ -399,11 +401,11 @@ namespace utilities {
             // changeing Node bumps aba
             THead* Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
         };
-
+        
         static bool CAS(uint64_t* Destination, uint64_t& Comperand, uint64_t& Exchange) {
             return InterlockedCompareExchange(static_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
         };
-
+        
         // pop pNode from head of list.
         template<class T>
         __declspec(noinline) T* Pop(THead<T>& Head) {
@@ -421,7 +423,7 @@ namespace utilities {
                 // race, try again
             }
         }
-
+       
         // push pNode onto head of list.
         template<class T>
         __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
@@ -440,6 +442,12 @@ namespace utilities {
             }
         }
 
+        /// <summary>
+        /// Block allocator atomicly allocates *BlockSize* number of T-types at a time. 
+        /// Optionally, may skip initialization, allowing the user to initialize data on their own. 
+        /// Note that for non-POD types, data must be initalized before being freed.
+        /// </summary>
+        /// <typeparam name="T">Type to be allocated. POD-types are more efficiently managed than non-POD.</typeparam>
         template <typename T, size_t BlockSize, bool skipInitialization = false> class BlockAlloc {
         private:
             struct element_t {
@@ -457,7 +465,7 @@ namespace utilities {
 
             // Allocate one new block of contiguous elements
             __declspec(noinline) void AllocBlock() {
-                block_t* block = &*blocks.grow_by(1);
+                std::unique_ptr<block_t>& block = *blocks.push_back(std::make_unique<block_t>());
 
                 // add the new elements to the list
                 // std::memset(&block->elements[0], 0, sizeof(block_t));
@@ -489,20 +497,20 @@ namespace utilities {
             // Release all memory held by all blocks
             __declspec(noinline) void ReleaseBlocks() {
                 if constexpr (!std::is_pod<T>::value) {
-                    for (auto& block : blocks) for (auto& element : block.elements) if (element.initialized) {
-                        reinterpret_cast<T*>(&element.data[0])->~T();
-                        element.initialized = false;
+                    for (auto& block : blocks) {
+                        for (auto& element : block->elements) {
+                            if (element.initialized) {
+                                reinterpret_cast<T*>(&element.data[0])->~T();
+                                element.initialized = false;
+                            }
+                        }
                     }
                 }
             };
 
         public:
-            BlockAlloc() : blocks{}, free{} {
-                free.m_n64 = 0;
-            };
-            __declspec(noinline) ~BlockAlloc() { 
-                ReleaseBlocks(); 
-            };
+            BlockAlloc() : blocks{}, free{} { free.m_n64 = 0; };
+            ~BlockAlloc() { ReleaseBlocks(); };
 
             // Acquire a new element from the free list and construct it.
             template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
@@ -511,7 +519,19 @@ namespace utilities {
                     if (element = Pop(free)) {
                         element->initialized = true;
                         T* data{ (T*)&element->data[0] };
-                        if constexpr (!std::is_pod<T>::value || !skipInitialization) new (data) T(std::forward<TArgs>(a)...);                        
+                        if constexpr (std::is_pod<T>::value) {
+                            if constexpr (!skipInitialization) {
+                                if (sizeof...(a) > 0) {
+                                    new (data) T(std::forward<TArgs>(a)...);
+                                }
+                                else {
+                                    std::memset(data, 0, sizeof(T));
+                                }
+                            }
+                        }
+                        else {
+                            new (data) T(std::forward<TArgs>(a)...);
+                        }                  
                         return data;
                     }
                     else {
@@ -524,15 +544,16 @@ namespace utilities {
             __declspec(noinline) void Free(T* element) {
                 element_t* t = (element_t*)(element);
                 if constexpr (!std::is_pod<T>::value) {
-                    if (t->initialized) element->~T();
+                    if (t->initialized) {
+                        element->~T();
+                    }
                 }
-                else {
-                    t->initialized = false;
-                }
+                t->initialized = false;
                 Push(free, t);
             };
 
-            concurrency::concurrent_vector<block_t>
+
+            concurrency::concurrent_vector<std::unique_ptr<block_t>>
                 blocks;
             THead<element_t>
                 free;
@@ -1001,14 +1022,6 @@ namespace utilities {
         };
 
     public:
-        //void
-        //    lock() {
-        //    mutex.lock();
-        //};
-        //void
-        //    unlock() {
-        //    mutex.unlock();
-        //};
         static _iterType*
             GetNextLeaf(_iterType* node) {
             if (node) {
@@ -1076,7 +1089,7 @@ namespace utilities {
         static _iterType*
             NodeFind(keyType  const& key, _iterType* root) {
             _iterType* node = NodeFindLargestSmallerEqual(key, root);
-            if (node && node->object && node->key == key) return node;
+            if (node && node->object && node->key == key) return node; // EQUALS
             return nullptr;
         };								// find an object using the given key;
         static _iterType*
@@ -1301,7 +1314,6 @@ namespace utilities {
                 return CheckLastNode(CheckFirstNode(newNode));
             }
         };
-
         __declspec(noinline) _iterType*
             GetOrInstance(keyType const& key) {
             _iterType
@@ -1502,7 +1514,6 @@ namespace utilities {
                 }
             }
         };
-
         auto // guard-lock the tree							
             Lock() {
             return std::unique_lock(this->mutex);
@@ -1578,31 +1589,12 @@ namespace utilities {
         };	
         bool // remove an object node from the tree								
             RemoveAt(keyType const& key, objType* object_copy = nullptr) {
-#if 0
-            bool out{ false };
-            this->mutex.lock_shared();
-            if (auto* p = this->NodeFind(key, root)) {                
-                if (this->mutex.upgrade_lock()) {
-                    out = Remove_Unsafe(p, object_copy);
-                }
-                else if (p = this->NodeFind(key, root)) {
-                    out = Remove_Unsafe(p, object_copy);
-                }
-                this->mutex.unlock();
-            }
-            else {
-                this->mutex.unlock_shared();
-            }
-            return out;
-#else
             auto locked{ std::scoped_lock(this->mutex) };
             if (auto* p = this->NodeFind(key, root)) {
                 return Remove_Unsafe(p, object_copy);
             }
             return false;
-#endif
         };
-
         _iterType* 
             NodeFindByIndex(int index) const {
             if (index <= 0) return GetFirst();
@@ -1787,7 +1779,7 @@ namespace utilities {
 
     };
 
-    // fast, thread-safe sorted map. Fast for single-threaded inserts, and fast for multi-threaded reading. Slower for simultaneous reading/inserting.
+    // fast, thread-safe sorted map. Allows simultaneous reading / writing / erasure. 
     template<class KeyType, class ValueType> class atomic_map {
         friend class it_state;
     protected:
@@ -1827,8 +1819,7 @@ namespace utilities {
         atomic_map(atomic_map&& rhs) = delete;
         atomic_map& operator=(atomic_map const& rhs) = delete;
         atomic_map& operator=(atomic_map&& rhs) = delete;
-        __declspec(noinline) ~atomic_map() {
-        };
+        ~atomic_map() = default;
 
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
@@ -2046,6 +2037,203 @@ namespace utilities {
         };
 
     };
+
+    // fast, thread-safe unsorted map. Allows simultaneous reading / writing / erasure. 
+    template<class KeyType, class ValueType, typename HashType = std::hash<KeyType>> class atomic_unordered_map {
+        friend class it_state;
+    protected:
+        BTree<std::pair<KeyType, ValueType>, size_t>
+            tree;
+        HashType 
+            hasher;
+        size_t 
+            hash(KeyType const& k) const {  
+            return hasher(k); 
+        };
+
+    public:
+        class WrappedReference {
+        private:
+            typename  BTree<std::pair<KeyType, ValueType>, size_t>::GuardType
+                guard;
+
+        public:
+            const KeyType&
+                first;
+            ValueType&
+                second;
+
+            // WrappedReference() = delete;
+            WrappedReference(const KeyType& _first, ValueType& _second, BTree<std::pair<KeyType, ValueType>, size_t>* _parent)
+                : first{ _first }
+                , second{ _second }
+                , guard{ _parent->ProtectCurrentEpoch() }
+            {};
+            WrappedReference(WrappedReference const&) = delete;
+            WrappedReference(WrappedReference&&) = delete;
+            WrappedReference& operator=(WrappedReference const&) = delete;
+            WrappedReference& operator=(WrappedReference&&) = delete;
+            ~WrappedReference() = default;
+        };
+
+    public:
+        atomic_unordered_map()
+            : tree{}, hasher{ HashType{} }
+        {};
+        atomic_unordered_map(atomic_unordered_map const& rhs) = delete;
+        atomic_unordered_map(atomic_unordered_map&& rhs) = delete;
+        atomic_unordered_map& operator=(atomic_unordered_map const& rhs) = delete;
+        atomic_unordered_map& operator=(atomic_unordered_map&& rhs) = delete;
+        ~atomic_unordered_map() = default;
+
+        auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
+            ProtectCurrentEpoch() const {
+            return tree.ProtectCurrentEpoch();
+        };
+        size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
+            size() const {
+            return tree.GetNodeCount();
+        };
+        WrappedReference // if already exists, returns the existing value pair. 
+            insert(const KeyType& time, ValueType&& value) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto* iter = tree.Add<false>({ time, std::move(value) }, hash(time));
+            return WrappedReference(iter->object->first, iter->object->second, &tree);
+        };
+        WrappedReference // if already exists, overwrites the value and returns the value pair. 
+            emplace(const KeyType& time, ValueType&& value) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto* iter = tree.Add<true>({ time, std::move(value) }, hash(time));
+            return WrappedReference(iter->object->first, iter->object->second, &tree);
+        };
+        template <typename iter_type> void // bulk insertion. if already exists, does nothing.
+            insert_bulk(iter_type begin, iter_type const& end) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            tree.Add_Bulk<iter_type, false>(std::move(begin), end);
+        };
+        template <typename iter_type> void // bulk insertion. if already exists, overwrites the value. 
+            emplace_bulk(iter_type begin, iter_type const& end) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            tree.Add_Bulk<iter_type, true>(std::move(begin), end);
+        };
+        size_t // returns 1 if the key is found, otherwise 0.
+            count(const KeyType& time) const {
+            return (bool)tree.NodeFind(hash(time)) ? 1 : 0;
+        };
+        ValueType& // throws if the key is not found. 
+            at(const KeyType& time) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* iter = tree.NodeFind(hash(time))) {
+                return iter->object->second;
+            }
+            else {
+                throw std::range_error("Could not find key");
+            }
+        };
+        ValueType* // returns nullptr if the key is not found. 
+            try_at(const KeyType& time) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (auto* iter = tree.NodeFind(hash(time))) {
+                return &iter->object->second;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
+            for_all(Func const& func) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto p = tree.GetFirst();
+            while (p) {
+                func(p->object->first, p->object->second);
+                p = tree.GetNextLeaf(p);
+            }
+        };
+        template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
+            get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            if (ValueType* p = tree.Find(hash(time))) {
+                if (ExistedAlready) *ExistedAlready = true;
+                return *p;
+            }
+            else {
+                if (ExistedAlready) *ExistedAlready = false;
+                if (auto* p = tree.Add(func(), time)) {
+                    return *p->object;
+                }
+                else {
+                    throw std::range_error("Could not find key");
+                }
+            }
+        };
+        __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+            operator[](const KeyType& time) {
+            return get_or_make(time, []() -> ValueType { return ValueType(); }, nullptr);
+        };
+
+        bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
+            erase(const KeyType& time, ValueType* out = nullptr) {
+            auto g{ tree.ProtectCurrentEpoch() };
+            std::pair<KeyType, ValueType> temp;
+            bool result = tree.RemoveAt(hash(time), &temp);
+            if (out) *out = temp.second;
+            return result;
+        };
+
+    private:
+        class it_state {
+        public:
+            using thisType = atomic_unordered_map;
+            using value_type = WrappedReference;
+            using iterator_category = std::forward_iterator_tag;
+            using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+            // data
+            mutable typename  BTree<std::pair<KeyType, ValueType>, size_t>::_iterType*
+                _ptr{};
+            mutable std::unique_ptr<value_type>
+                _out;
+
+            // functions
+            void Initialize(thisType* ref) {};
+            void ToBeginning(thisType* ref) {
+                _ptr = ref->tree.GetFirst();
+            };
+            void ToEnd(thisType* ref) {
+                _ptr = nullptr;
+            };
+            void Next(thisType* ref) {
+                this->_ptr = ref->tree.GetNextLeaf(this->_ptr);
+            };
+            void Prev(thisType* ref) {
+                this->_ptr = ref->tree.GetPrevLeaf(this->_ptr);
+            };
+            value_type& Get(thisType* ref) const {
+                _out = std::make_unique<value_type>(_ptr->object->first, _ptr->object->second, &ref->tree);
+                return *_out;
+            };
+            bool operator==(it_state const& rhs) const {
+                return _ptr == rhs._ptr;
+            };
+            difference_type Distance(it_state const& other) const {
+                return _ptr - other._ptr;
+            };
+        };
+
+    public:
+        SETUP_ITERATOR(atomic_unordered_map, it_state);
+        iterator // returns an iterator 
+            find(const KeyType& _Keyval) const {
+            auto g{ tree.ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = this->tree.NodeFind(hash(_Keyval))) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        };
+
+    };
+
 };
 namespace std {
     template <> struct hash<utilities::string_view> {
@@ -2069,6 +2257,26 @@ namespace std {
         };
     };
 
+    template <> struct hash<utilities::string> {
+        std::size_t operator()(const utilities::string& k) const {
+            return k.hash();
+        };
+    };
+    template <> struct less<utilities::string> {
+        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
+            return lhs < rhs;
+        };
+    };
+    template <> struct greater<utilities::string> {
+        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
+            return lhs > rhs;
+        };
+    };
+    template <> struct equal_to<utilities::string> {
+        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
+            return lhs == rhs;
+        };
+    };
 };
 
 class Scopes {
@@ -2229,50 +2437,50 @@ public:
 
 
 public:
-    // leverages the Epoch Allocator to protect access to old pointers while new pointers are still being added or old pointers are queued for deletion.
+    // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
     template <int numCategories = 4> class Cache {
     private: // CacheVersion -> CacheCategory -> Inputs -> Result
         using ResultType = Breadcrumb*;
         using InputType = size_t;
-        using ResultForInputType = utilities::atomic_map<InputType, ResultType>;
-        utilities::atomic_map<size_t, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>>
-            _current_cache; // cache uses atomic_map since it may delete items as well as append items
+        using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
+        utilities::atomic_map<size_t, std::array<utilities::DelayedInstantiation<ResultForInputType>, numCategories>>
+            _current_cache; // cache uses atomic_map since it may delete items as well as append items. Needs to be sorted since we "pop" the first item frequently. 
 
     public:
         Cache() = default;
-        __declspec(noinline) ~Cache() {};
+        Cache(Cache const&) = delete;
+        Cache(Cache &&) = delete;
+        Cache& operator=(Cache const&) = delete;
+        Cache& operator=(Cache&&) = delete;
+        ~Cache() = default;
 
-        template<int category>
-        __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
+        // Insert an item into the cache.
+        template<int category> void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
             auto g{ _current_cache.ProtectCurrentEpoch() };
             bool success = false;
             while (!success) {
-                if (!_current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) {
+                if (!_current_cache.do_at_end([&](size_t curr_version, std::array<utilities::DelayedInstantiation<ResultForInputType>, numCategories>& cache) {
                     if (curr_version >= cache_version) {
-                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator*()[input_hash]), reinterpret_cast<PVOID>(result));
+                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
                         success = true;
                     }
                 })) {};
                 if (!success) {
-                    (void)_current_cache.get_or_make(cache_version, []() -> std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>> {
-                        std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>> out{};
-                        for (int i = 0; i < numCategories; ++i) out.emplace_back(std::make_shared<utilities::DelayedInstantiation<ResultForInputType>>());
-                        return out;
-                    });
-                    _current_cache.pop_front_if([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) -> bool {
+                    (void)_current_cache.operator[](cache_version); // default-initializes the item at the specified index if it does not already exist. 
+                    _current_cache.pop_front_if([&](size_t curr_version, std::array<utilities::DelayedInstantiation<ResultForInputType>, numCategories>& cache) -> bool {
                          return curr_version < cache_version;
                     });
                 }
             }
         };
 
-        template<int category>
-        __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
+        // Try to copy an item from the cache.
+        template<int category> Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
             auto g{ _current_cache.ProtectCurrentEpoch() };
             Breadcrumb* out{ nullptr };
-            _current_cache.do_at_end([&](size_t curr_version, std::vector<std::shared_ptr<utilities::DelayedInstantiation<ResultForInputType>>>& cache) {
+            _current_cache.do_at_end([&](size_t curr_version, std::array<utilities::DelayedInstantiation<ResultForInputType>, numCategories>& cache) {
                 if (curr_version >= cache_version) {
-                    out = cache[category]->operator*()[input_hash];
+                    out = cache[category]->operator[](input_hash);
                 }
             });
             return out;
@@ -2404,7 +2612,7 @@ int main() {
     Stopwatch sw;
 
     while (true) {
-        print("");
+        print("STARTING LOOP: \n");
 
 #if 0
         if (1) {
@@ -2911,6 +3119,70 @@ int main() {
             }
         }
 #endif
+        // Test atomic_map and atomic_unordered_map
+        if (0) {
+            utilities::atomic_map<size_t, std::string> tree{};
+            std::atomic<long> S{ 0 };
+            sw.Start();
+            GoodLang::parallel::Until(
+                [&](void) -> void {
+                    long s = ++S;
+                    tree.insert(s, GoodLang::printf("%i", (int)s));
+
+                    if (s % 10000 == 0) {
+                        for (auto& x : tree) {
+                            (void)x.second.c_str();
+                        }
+                    }
+                },
+                [&](void)-> bool {
+                    return tree.size() >= 100000;
+                }
+                );
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (0) {
+            utilities::atomic_unordered_map<utilities::string, std::string> tree{};
+            std::atomic<long> S{ 0 };
+            sw.Start();
+            GoodLang::parallel::Until(
+                [&](void) -> void {
+                    long s = ++S;
+                    tree.insert(GoodLang::printf("%i", (int)s), GoodLang::printf("%i", (int)s));
+
+                    if (s % 10000 == 0) {
+                        for (auto& x : tree) {
+                            (void)x.second.c_str();
+                        }
+                    }
+                },
+                [&](void)-> bool {
+                    return tree.size() >= 100000;
+                }
+            );
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (0) {
+            concurrency::concurrent_unordered_map<utilities::string, std::string> tree{};
+            std::atomic<long> S{ 0 };
+            sw.Start();
+            GoodLang::parallel::Until(
+                [&](void) -> void {
+                    long s = ++S;
+                    tree.insert(std::pair<utilities::string, std::string>{ GoodLang::printf("%i", (int)s), GoodLang::printf("%i", (int)s) });
+
+                    if (s % 10000 == 0) {
+                        for (auto& x : tree) {
+                            (void)x.second.c_str();
+                        }
+                    }
+                },
+                [&](void)-> bool {
+                    return tree.size() >= 100000;
+                }
+            );
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
 
         if (1) {
             Scopes::Cache<4> cache;
@@ -2941,9 +3213,6 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-
-
-
 
 #if 0
         for (int loopN = 0; loopN < 1000; loopN++) {
