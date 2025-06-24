@@ -28,46 +28,53 @@
 #pragma endregion
 
 namespace utilities {       
-    class string_view {
+    class string {
     public:
         using size_type = std::string_view::size_type;
         static constexpr const auto npos = std::string_view::npos;
 
     protected:
-        std::string_view data;
-        size_type _hash{ npos };
+        std::shared_ptr<std::string> 
+            _data; // maintains ownership of the data if necessary
+        std::string_view 
+            data;
+        size_type 
+            _hash{ npos };
 
     public:
-        string_view() {};
-        string_view(string_view const&) = default;
-        string_view(string_view&&) = default;
-        string_view& operator=(string_view const&) = default;
-        string_view& operator=(string_view&&) = default;
-        virtual ~string_view() = default;
+        string() {};
+        string(string const&) = default;
+        string(string&&) = default;
+        string& operator=(string const&) = default;
+        string& operator=(string&&) = default;
+        virtual ~string() = default;
 
-        template <size_t N> __forceinline string_view(const char(&r)[N]) : data(r) {};
-        string_view(std::string_view const& _Copy) : data(_Copy) {};
+        template <size_t N> __forceinline string(const char(&r)[N]) : data(r) {};
+        string(std::string && _Copy) : _data(std::make_shared<std::string>(std::move(_Copy))) {
+            data = *_data;
+        };
+        string(std::string_view&& _Copy) : data(_Copy) {};
 
-        friend bool operator==(string_view const& A, string_view const& V) noexcept {
+        friend bool operator==(string const& A, string const& V) noexcept {
             if (A.data.length() != V.data.length()) return false;
             else if (A.data.length() > 1) return A.hash() == V.hash();
             else return A.data == V.data;
         };
-        friend bool operator<(string_view const& A, string_view const& V) {
+        friend bool operator<(string const& A, string const& V) {
             if (A.data.length() < V.data.length()) return true;
             else if (A.data.length() > V.data.length()) return false;
             else /*if (A.length() > 1)*/ return A.hash() < V.hash();
             //else return A.data < V.data;
         };
-        friend bool operator<=(string_view const& A, string_view const& V) {
+        friend bool operator<=(string const& A, string const& V) {
             if (A.data.length() < V.data.length()) return true;
             else if (A.data.length() > V.data.length()) return false;
             else /*if (A.length() > 1)*/ return A.hash() <= V.hash();
             //else return A.data <= V.data;
         };
-        friend bool operator>(string_view const& A, string_view const& V) { return !operator<=(A, V); };
-        friend bool operator>=(string_view const& A, string_view const& V) { return !operator<(A, V); };
-        friend bool operator!=(string_view const& A, string_view const& V) noexcept { return !operator==(A, V); };
+        friend bool operator>(string const& A, string const& V) { return !operator<=(A, V); };
+        friend bool operator>=(string const& A, string const& V) { return !operator<(A, V); };
+        friend bool operator!=(string const& A, string const& V) noexcept { return !operator==(A, V); };
 
     public:
         std::string to_string() const {
@@ -117,11 +124,11 @@ namespace utilities {
         void remove_suffix(const size_type _Count) noexcept {
             data.remove_suffix(_Count);
         };
-        size_type rfind(const string_view& _Right) const {
+        size_type rfind(const string& _Right) const {
             return data.rfind(_Right.data);
         };
-        string_view remove_trailing(char _Right) const {
-            string_view out{ *this };
+        string remove_trailing(char _Right) const {
+            string out{ *this };
             while (
                 (out.length() > 0)
                 && ((out.operator[](out.length() - 1) == _Right))
@@ -130,8 +137,8 @@ namespace utilities {
             }
             return out;
         };
-        string_view remove_leading(char _Right) const {
-            string_view out{ *this };
+        string remove_leading(char _Right) const {
+            string out{ *this };
             while (
                 (out.length() > 0)
                 && (out.operator[](0) == _Right)
@@ -140,49 +147,30 @@ namespace utilities {
             }
             return out;
         };
-        string_view remove_leading_and_trailing(char _Right) const {
-            string_view out{ *this };
+        string remove_leading_and_trailing(char _Right) const {
+            string out{ *this };
             return out.remove_trailing(_Right).remove_leading(_Right);
         };
 
-        static const string_view& empty_string() {
-            static string_view out{ "" };
+        static const string& empty_string() {
+            static string out{ "" };
             return out;
         };
-        static const string_view& namespace_colons() {
-            static string_view out{ "::" };
+        static const string& namespace_colons() {
+            static string out{ "::" };
             return out;
         };
-    };
-
-    class string : public string_view {
-    private:
-        std::string _data;
-
-    public:
-        string() {};
-        string(string const&) = default;
-        string(string&&) = default;
-        string& operator=(string const&) = default;
-        string& operator=(string&&) = default;
-        virtual ~string() = default;
-
-        template <size_t N> __forceinline string(const char(&r)[N]) : _data() { this->data = r; };
-        string(std::string && _Copy) : _data(std::move(_Copy)) {
-            this->data = _data;
-        };
-
     };
 
     // all const-functions are thread-safe
     class compound_shared_string {
     public:
-        string_view a;
-        string_view b;
-        string_view c;
+        string a;
+        string b;
+        string c;
 
     public:
-        compound_shared_string(string_view A = "", string_view B = "", string_view C = "") : a{ A }, b{ B }, c{ C } {};
+        compound_shared_string(string A = "", string B = "", string C = "") : a{ A }, b{ B }, c{ C } {};
         compound_shared_string(compound_shared_string const&) = default;
         compound_shared_string(compound_shared_string&&) = default;
         compound_shared_string& operator=(compound_shared_string const&) = default;
@@ -209,7 +197,7 @@ namespace utilities {
         bool empty() const {
             return length() == 0;
         };
-        size_t Cmpn(const string_view& rhs, size_t n = std::string::npos) const {
+        size_t Cmpn(const string& rhs, size_t n = std::string::npos) const {
             long long j = std::min<long long>(rhs.length(), length());
             if (n > j) return false;
             for (j = j - 1; (j >= 0) && (n > 0); --j, --n) {
@@ -217,24 +205,24 @@ namespace utilities {
             }
             return true;
         };
-        friend bool operator==(compound_shared_string const& lhs, const string_view& rhs) {
+        friend bool operator==(compound_shared_string const& lhs, const string& rhs) {
             if (rhs.length() != lhs.length()) return false;
             for (long long j = lhs.length() - 1; j >= 0; --j) {
                 if (rhs[j] != lhs[j]) return false;
             }
             return true;
         };
-        friend bool operator==(const string_view& rhs, compound_shared_string const& lhs) {
+        friend bool operator==(const string& rhs, compound_shared_string const& lhs) {
             if (rhs.length() != lhs.length()) return false;
             for (long long j = lhs.length() - 1; j >= 0; --j) {
                 if (rhs[j] != lhs[j]) return false;
             }
             return true;
         };
-        friend bool operator!=(compound_shared_string const& lhs, const string_view& rhs) {
+        friend bool operator!=(compound_shared_string const& lhs, const string& rhs) {
             return !operator==(lhs, rhs);
         };
-        friend bool operator!=(const string_view& rhs, compound_shared_string const& lhs) {
+        friend bool operator!=(const string& rhs, compound_shared_string const& lhs) {
             return !operator==(lhs, rhs);
         };
         operator string() const {
@@ -766,9 +754,13 @@ namespace utilities {
             ScopedListener& operator=(ScopedListener const& rhs) = delete;
             ScopedListener& operator=(ScopedListener&& rhs) 
             {
+                if (_index > 0)
+                    _parent->remove_listener(_index);
+
                 _index = std::move(rhs._index);
                 _parent = std::move(rhs._parent);
                 rhs._index = 0;
+
                 return *this;
             };            
             ~ScopedListener() {
@@ -799,21 +791,26 @@ namespace utilities {
         concurrency::concurrent_vector<Wrap>
             _listeners;
         void (T::*_callback)(long*, size_t);
-        
+        std::atomic<bool>
+            alive{ false };
+
         // add a listener to the list
         __declspec(noinline) void add_listener(size_t index, T* p) {
-            if (_size <= index) {
-                if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
-                InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
+            if (alive.load()) {
+                if (_size <= index) {
+                    if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
+                    // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
+                    InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
+                }
+                Wrap& wrap = _listeners[index - 1];
+                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
+                InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
+                InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
             }
-            Wrap& wrap = _listeners[index - 1];
-            InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p)); 
-            InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
-            InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
         };
         // remove a listener from the list
         __declspec(noinline) void remove_listener(size_t index) {
-            if (_listeners.size() >= index) {
+            if (alive.load() && _listeners.size() >= index) {
                 Wrap& wrap = _listeners[index - 1];
                 InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
                 if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
@@ -824,8 +821,13 @@ namespace utilities {
 
     public:
         Callback(void (T::*listener)(long*, size_t))
-            : _callback{ listener }
+            : _callback{ listener }, alive{ true }
         {};
+        ~Callback() {
+            alive = false;
+            _listeners.clear();            
+        };
+
         ScopedListener listener(size_t index, T* p) {
             add_listener(index, p);
             return ScopedListener(index, *this);
@@ -2236,27 +2238,6 @@ namespace utilities {
 
 };
 namespace std {
-    template <> struct hash<utilities::string_view> {
-        std::size_t operator()(const utilities::string_view& k) const {
-            return k.hash();
-        };
-    };
-    template <> struct less<utilities::string_view> {
-        std::size_t operator()(const utilities::string_view& lhs, const utilities::string_view& rhs) const {
-            return lhs < rhs;
-        };
-    };
-    template <> struct greater<utilities::string_view> {
-        std::size_t operator()(const utilities::string_view& lhs, const utilities::string_view& rhs) const {
-            return lhs > rhs;
-        };
-    };
-    template <> struct equal_to<utilities::string_view> {
-        std::size_t operator()(const utilities::string_view& lhs, const utilities::string_view& rhs) const {
-            return lhs == rhs;
-        };
-    };
-
     template <> struct hash<utilities::string> {
         std::size_t operator()(const utilities::string& k) const {
             return k.hash();
@@ -2282,7 +2263,7 @@ namespace std {
 class Scopes {
 private:
     // clean-up the name of a scope: e.g. "::" becomes "::", "Units" becomes "::Units::"
-    static utilities::compound_shared_string CleanUpScopeName(utilities::string_view const& x) {
+    static utilities::compound_shared_string CleanUpScopeName(utilities::string const& x) {
         utilities::compound_shared_string out("::", x, "::");
         if (x.length() >= 2) {
             if (x.substr(0, 2) == "::") {
@@ -2315,18 +2296,18 @@ private:
     class ScopeID {
     friend class Breadcrumb;
     public:
-        utilities::string_view
+        utilities::string
             scope_name; // e.g. "Color"
         Scopes::BasicScope*
             scope;
     private:
-        std::unique_ptr<utilities::string_view>
+        std::unique_ptr<utilities::string>
             current_namespace; // e.g. "::" or "::UI::Color::"
         int
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
 
     public:
-        ScopeID(utilities::string_view && scope_name_p = {}, int scope_type_p = ScopeType::Basic)
+        ScopeID(utilities::string && scope_name_p = {}, int scope_type_p = ScopeType::Basic)
             : scope_name{ std::move(scope_name_p) }
             , scope{ nullptr }            
             , current_namespace{ nullptr }
@@ -2394,7 +2375,7 @@ public:
             }
         };
 
-        Breadcrumb(utilities::string_view&& name = {}, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
+        Breadcrumb(utilities::string&& name = {}, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : this_m(std::move(name), scope_type_p)
             , parent_m(std::move(parent))
             , root_m{ nullptr }
@@ -2419,12 +2400,12 @@ public:
                 }
                 else {
                     // this shouldn't happen...
-                    this_m.current_namespace = std::make_unique<utilities::string_view>(CleanUpScopeName(this_m.scope_name));
+                    this_m.current_namespace = std::make_unique<utilities::string>(CleanUpScopeName(this_m.scope_name));
                 }
             }
             else {
                 if (parent_m) { /*this_m.current_namespace = parent_m->this_m.current_namespace;*/ }
-                else this_m.current_namespace = std::make_unique<utilities::string_view>(utilities::string_view::namespace_colons());
+                else this_m.current_namespace = std::make_unique<utilities::string>(utilities::string::namespace_colons());
             }
         };
         Breadcrumb(Breadcrumb const&) = delete;
@@ -2488,53 +2469,135 @@ public:
 
     };
 
+    /// <summary>
+    /// Foundational element of a scope. Should not be created on its own, and instead should be issued by a parent.
+    /// </summary>
     class BasicScope {
-    public:
+    friend class NamespaceScope;
+    friend class RootScope;
+    friend class Breadcrumb;
+    protected:
         Breadcrumb 
             breadcrumb_m;
         utilities::DelayedInstantiation<concurrency::concurrent_unordered_map<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>>
             using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< size_t, std::pair<utilities::string, utilities::ObjectWrapper>>>
+        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< utilities::string, utilities::ObjectWrapper >>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
-        void EmplaceObject_Impl(utilities::string_view const& sv, utilities::ObjectWrapper Obj) {
-            objects_m->insert({ sv.hash(), { utilities::string(sv.c_str()), std::move(Obj) } });
+        virtual void UpdateObjectFunctionVersion(long* parent_alive = nullptr, size_t call_number = 0) {};
+        bool EmplaceObject_Impl(utilities::string const& sv, utilities::ObjectWrapper Obj, bool overwriteIfExists = true) {
+            auto iter = objects_m->insert({ sv, Obj });
+            if (iter.second) {
+                this->UpdateObjectFunctionVersion();
+                return true;
+            }
+            else if (overwriteIfExists) {
+                iter.first->second = Obj;
+                this->UpdateObjectFunctionVersion();
+                return true;
+            }
+            else {
+                return false;
+            }
         };
-        utilities::ObjectWrapper* GetObject_Impl(utilities::string_view const& sv) {
+        utilities::ObjectWrapper* GetObject_Impl(utilities::string const& sv) {
             if (objects_m) {
-                if (auto f = objects_m->find(sv.hash()), e = objects_m->end(); f != e) {
-                    return &f->second.second;
+                if (auto f = objects_m->find(sv), e = objects_m->end(); f != e) {
+                    return &f->second;
                 }
             }
             return nullptr;
         };
         virtual void AddUsing_Impl(Breadcrumb* scope) {
             if (scope) {
-                using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
+                if (auto f = using_m->find(scope); f != using_m->end()) {
+                    using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
+                    UpdateObjectFunctionVersion();
+                }
             }
         };
 
-    public:
-        BasicScope(utilities::string_view&& name = {}, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
+    protected:
+        BasicScope(utilities::string&& name, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
             : breadcrumb_m(std::move(name), scope_type_p, parent)
         {
             breadcrumb_m.this_m.scope = this;
         };
+
+    public:
+        BasicScope() = delete;
         virtual ~BasicScope() = default;
+
+        /// <summary>
+        /// Make a child scope from this scope. 
+        /// Thread-safe, and allowed to make many children of this scope in parallel safely. 
+        /// The created scope (and its children) are destroyed at the end of this C++ scope. 
+        /// </summary>
+        BasicScope make_scope() const {
+            return BasicScope("", Scopes::ScopeType::Basic, const_cast<Breadcrumb*>(&this->breadcrumb_m));
+        };
+        
+        /// <summary>
+        /// Instruct this scope to "use" the provided namespace when searching for objects, functions, or other scopes by name. 
+        /// If this scope is a namespace, this will reset the search cache.
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        void add_using_here(NamespaceScope const& ptr) {
+            if (auto p = static_cast<const BasicScope*>(&ptr)) {
+                this->AddUsing_Impl(const_cast<Breadcrumb*>(&p->breadcrumb_m));
+            }
+        }
+        
+        /// <summary>
+        /// Insert an object into this scope only if it does not yet exist. Does not search neighbors or review the object name.
+        /// </summary>
+        /// <param name="sv"></param>
+        /// <param name="Obj"></param>
+        /// <returns>bool</returns>
+        bool insert_object_here(utilities::string const& sv, utilities::ObjectWrapper Obj) {
+            return this->EmplaceObject_Impl(sv, std::move(Obj), false);
+        };
+        
+        /// <summary>
+        /// Emplace an object into this scope whether or not it exists. Does not search neighbors or review the object name.
+        /// </summary>
+        /// <param name="sv"></param>
+        /// <param name="Obj"></param>
+        /// <returns>bool</returns>
+        bool emplace_object_here(utilities::string const& sv, utilities::ObjectWrapper Obj) {
+            return this->EmplaceObject_Impl(sv, std::move(Obj), true);
+        };
+        
+        /// <summary>
+        /// Try to find an object in this scope. Does not search neighbors or review the object name.
+        /// Since objects cannot be removed, it safely returns a pointer. 
+        /// </summary>
+        /// <returns>utilities::ObjectWrapper*</returns>
+        utilities::ObjectWrapper* find_object_here(utilities::string const& sv) const {
+            return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
+        };
+
     };
 
+    /// <summary>
+    /// A special type of scope that serves as the "nodes" in the script tree, hosting functions and the caches. 
+    /// Should not be created on its own, and instead should be issued by a parent.
+    /// </summary>
     class NamespaceScope : public BasicScope {
     friend class BasicScope;
-    public:
+    friend class RootScope;
+    friend class Breadcrumb;
+    protected:
         // explicit children namespaces, with strongly-held protections to their memory.
-        utilities::DelayedInstantiation<utilities::atomic_map<size_t, std::shared_ptr<NamespaceScope>>>
+        concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
             children;
 
-    private:
+    protected:
         Scopes::Cache<4> 
-            search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's
+            search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
 
-    private:
+    protected:
         utilities::Callback<NamespaceScope>
             sockets_for_obj_or_func_versions;
         concurrency::concurrent_vector<utilities::Callback<NamespaceScope>::ScopedListener>
@@ -2542,7 +2605,7 @@ public:
     public:
         size_t
             object_or_function_versions;
-        void UpdateObjectFunctionVersion(long* parent_alive = nullptr, size_t call_number = 0) {
+        virtual void UpdateObjectFunctionVersion(long* parent_alive = nullptr, size_t call_number = 0) override {
             InterlockedIncrement(static_cast<volatile size_t*>(&object_or_function_versions));
             sockets_for_obj_or_func_versions.speak(parent_alive, call_number);
         };
@@ -2553,14 +2616,15 @@ public:
                         if (auto* p = dynamic_cast<NamespaceScope*>(ns_ptr->this_m.scope)) {
                             // suddenly, we require our scope index, now that we are "using" a namespace
                             using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
+                            UpdateObjectFunctionVersion();
                         }
                     }
                 }
             }
         };
 
-    public:
-        NamespaceScope(utilities::string_view&& name = {}, int scope_type_p = ScopeType::Basic & ScopeType::Namespace, Breadcrumb* parent = nullptr)
+    protected:
+        NamespaceScope(utilities::string&& name, int scope_type_p = ScopeType::Basic & ScopeType::Namespace, Breadcrumb* parent = nullptr)
             : BasicScope(std::move(name), scope_type_p, parent)
             , children{}
             , search_cache{}
@@ -2574,20 +2638,49 @@ public:
                 }
             }
         };
+    public:
+        NamespaceScope() = delete;
         virtual ~NamespaceScope() {
             // unload the using statements and children scopes...
-            //this->using_m.clear();
-            //this->children.clear();
-
+            for (auto& x : this->connection_for_obj_or_func_version) x = {};
+            for (auto& x : *this->using_m) x.second = {};
+            this->connection_for_obj_or_func_version.clear();
+            this->using_m->clear();
+            std::this_thread::yield();
+            for (auto& x : this->connection_for_obj_or_func_version) x = {};
+            for (auto& x : *this->using_m) x.second = {};
+            this->children.clear();            
         };
 
+        /// <summary>
+        /// Finds or creates a new namespace scope as a child of this one, and keeps it in memory. 
+        /// The created scope will survive for the life of this parent scope. 
+        /// If a namespace already exists with the provided name, it will return the existing namespace without creating a new one or overwritting the existing one.
+        /// </summary>
+        /// <returns>NamespaceScope</returns>
+        NamespaceScope make_namespace(utilities::string const& name) {
+            return NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m));
 
+            //if (auto f = children.find(name.hash()); f != children.end()) {
+            //    return *f->second;
+            //}
+            //else {
+            //    auto ptr = std::shared_ptr<NamespaceScope>(new NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m)));
+            //    return *children.insert({ name.hash(), ptr }).first->second;
+            //}
+        };
 
 
     };
 
+    /// <summary>
+    /// The only scope that should be instanced on its own. 
+    /// </summary>
     class RootScope : public NamespaceScope {
-    public:
+    friend class BasicScope; 
+    friend class NamespaceScope;     
+    friend class Breadcrumb;
+    protected:
         // when a scope is born it will get the smallest-possible unique index for itself. 
         utilities::TicketDispensor 
             scope_indexs;
@@ -2598,7 +2691,16 @@ public:
         {
             // scope_indexs.reserve(100);
         };
-        virtual ~RootScope() = default;
+        virtual ~RootScope() {
+            for (auto& x : this->connection_for_obj_or_func_version) x = {};
+            for (auto& x : *this->using_m) x.second = {};
+            this->connection_for_obj_or_func_version.clear();
+            this->using_m->clear();
+            std::this_thread::yield();
+            for (auto& x : this->connection_for_obj_or_func_version) x = {};
+            for (auto& x : *this->using_m) x.second = {};
+            this->children.clear();            
+        };
 
     };
 
@@ -3138,7 +3240,7 @@ int main() {
                 [&](void)-> bool {
                     return tree.size() >= 100000;
                 }
-                );
+            );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (0) {
@@ -3255,17 +3357,23 @@ int main() {
 #endif
 
         if (1) {
-            Scopes::RootScope root;
+            Scopes::RootScope root; // successfully starts a new script root
 
             sw.Start();
-            GoodLang::parallel::For(0, 10000, [&](int i) {
-                Scopes::NamespaceScope scope("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                auto scope{ root.make_scope() };
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 10000, [&](int i) {
-                Scopes::NamespaceScope scope("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
+                auto scope{ root.make_namespace("std") };
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 10000, [&](int i) {
+                auto scope{ root.make_namespace("std") };
                 scope.UpdateObjectFunctionVersion();
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3275,7 +3383,7 @@ int main() {
                 root.UpdateObjectFunctionVersion();
             })) {
                 GoodLang::parallel::For(0, 10000, [&](int i) {
-                    Scopes::NamespaceScope scope("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
+                    auto scope{ root.make_namespace("std") };
                     scope.UpdateObjectFunctionVersion();
                 });
                 main_loop = nullptr;
@@ -3285,10 +3393,11 @@ int main() {
             // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
             sw.Start();
             if (1) {
-                Scopes::NamespaceScope scope1("std", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
-                Scopes::NamespaceScope scope2("UI", Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, &root.breadcrumb_m);
-                scope2.AddUsing_Impl(&scope1.breadcrumb_m);
-                scope1.AddUsing_Impl(&scope2.breadcrumb_m);
+                auto scope1{ root.make_namespace("std") };
+                auto scope2{ root.make_namespace("UI") };
+
+                scope2.add_using_here(scope1);
+                scope1.add_using_here(scope2);
 
                 scope1.UpdateObjectFunctionVersion();
                 scope2.UpdateObjectFunctionVersion();
@@ -3303,23 +3412,23 @@ int main() {
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                auto scope{ root.make_scope() };
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                scope.EmplaceObject_Impl(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
+                auto scope{ root.make_scope() };
+                scope.emplace_object_here(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                scope.EmplaceObject_Impl(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
-                if (auto* p = scope.GetObject_Impl(utilities::string(GoodLang::printf("%i", i)))) {}
+                auto scope{ root.make_scope() };
+                scope.emplace_object_here(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
+                if (auto* p = scope.find_object_here(utilities::string(GoodLang::printf("%i", i)))) {}
                 else {
                     EXPECT_EQ(true, false);
                 }
@@ -3336,13 +3445,13 @@ int main() {
 
             sw.Start();
             for(int i = 0; i < 1000000; ++i) {
-                Scopes::BasicScope scope({}, Scopes::ScopeType::Basic, & root.breadcrumb_m);
+                auto scope{ root.make_scope() };
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
-                Scopes::BasicScope scope({}, Scopes::ScopeType::Basic, & root.breadcrumb_m);
+                auto scope{ root.make_scope() };
                 //scope.UpdateObjectFunctionVersion();
                 //EXPECT_EQ(scope.object_or_function_versions, 1);
             };
@@ -3353,7 +3462,7 @@ int main() {
                 root.UpdateObjectFunctionVersion();
             })) {
                 for (int i = 0; i < 1000000; ++i) {
-                    Scopes::BasicScope scope({}, Scopes::ScopeType::Basic, & root.breadcrumb_m);
+                    auto scope{ root.make_scope() };
                     //scope.UpdateObjectFunctionVersion();
                     //EXPECT_EQ(true, scope.object_or_function_versions >= 1);
                 };
@@ -3363,13 +3472,13 @@ int main() {
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
-                Scopes::BasicScope scope({}, Scopes::ScopeType::Basic, &root.breadcrumb_m);
+                auto scope{ root.make_scope() };
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
-                Scopes::BasicScope scope({}, Scopes::ScopeType::Basic, & root.breadcrumb_m);
+                auto scope{ root.make_scope() };
                 //scope.UpdateObjectFunctionVersion();
                 //EXPECT_EQ(scope.object_or_function_versions, 1);
             });
@@ -3381,7 +3490,7 @@ int main() {
                 root.UpdateObjectFunctionVersion();
             })) {
                 GoodLang::parallel::For(0, 1000000, [&](int i) {
-                    Scopes::BasicScope scope({}, Scopes::ScopeType::Basic, & root.breadcrumb_m);
+                    auto scope{ root.make_scope() };
                     //scope.UpdateObjectFunctionVersion();                    
                     //EXPECT_EQ(true, scope.object_or_function_versions >= 1);
                 });
@@ -3389,14 +3498,14 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
-            print(root.scope_indexs.num_tickets());
+            // print(root.scope_indexs.num_tickets());
         }
 
         // In order of slowest to fastest way to manage strings using shared_string...
         if (1) { // Copying std::strings
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
-                utilities::string test = utilities::string(std::string("TEST"));
+                utilities::string test = std::string("TEST");
                 (void*)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3405,7 +3514,7 @@ int main() {
             sw.Start();
             std::string sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
-                utilities::string_view test = utilities::string_view(sv);
+                utilities::string test = utilities::string(sv);
                 (void*)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3413,7 +3522,7 @@ int main() {
         if (1) { // Creating a new reference from a globally constant string
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
-                utilities::string_view test = utilities::string_view("TEST");
+                utilities::string test{ "TEST" };
                 (void*)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3422,7 +3531,7 @@ int main() {
             sw.Start();
             std::string_view sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
-                utilities::string_view test = utilities::string_view(sv);
+                utilities::string test{ std::string_view{ sv } };
                 (void*)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3431,7 +3540,7 @@ int main() {
             sw.Start();
             utilities::string sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
-                utilities::string_view test = utilities::string_view(sv);
+                utilities::string test{ sv };
                 (void*)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3440,28 +3549,28 @@ int main() {
             sw.Start();
             std::string_view sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
-                std::string_view test = std::string_view(sv);
+                std::string_view test{ sv };
                 (void*)test.data();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
         if (1) {
-            utilities::string_view str1("::std::string::");
+            utilities::string str1("::std::string::");
             str1 = str1.remove_leading_and_trailing(':');
-            EXPECT_EQ(str1, utilities::string_view("std::string"));
+            EXPECT_EQ(str1, utilities::string("std::string"));
         }
         if (1) {
-            utilities::string_view str1("Hello World!");
-            EXPECT_EQ(str1, utilities::string_view("Hello World!"));
+            utilities::string str1("Hello World!");
+            EXPECT_EQ(str1, utilities::string("Hello World!"));
         }
         if (1) {
-            utilities::string_view str1("Hello World!\n");
-            EXPECT_EQ(str1 != utilities::string_view("Hello World!"), true);
+            utilities::string str1("Hello World!\n");
+            EXPECT_EQ(str1 != utilities::string("Hello World!"), true);
         }
 
-        EXPECT_EQ(utilities::string_view("").hash(), compound_shared_string("").hash());
-        EXPECT_EQ(utilities::string_view("Hello World!\n").hash(), compound_shared_string("Hello World!\n").hash());
+        EXPECT_EQ(utilities::string("").hash(), compound_shared_string("").hash());
+        EXPECT_EQ(utilities::string("Hello World!\n").hash(), compound_shared_string("Hello World!\n").hash());
     }
 
 };
