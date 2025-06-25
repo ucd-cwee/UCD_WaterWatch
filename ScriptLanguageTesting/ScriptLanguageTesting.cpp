@@ -2529,16 +2529,16 @@ public:
         utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< utilities::string, utilities::ObjectWrapper >>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
-        virtual void UpdateObjectFunctionVersion(long* parent_alive = nullptr, size_t call_number = 0) {};
+        virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
         bool EmplaceObject_Impl(utilities::string const& sv, utilities::ObjectWrapper Obj, bool overwriteIfExists = true) {
             auto iter = objects_m->insert({ sv, Obj });
             if (iter.second) {
-                this->UpdateObjectFunctionVersion();
+                this->invalidate_cache();
                 return true;
             }
             else if (overwriteIfExists) {
                 iter.first->second = Obj;
-                this->UpdateObjectFunctionVersion();
+                this->invalidate_cache();
                 return true;
             }
             else {
@@ -2557,7 +2557,7 @@ public:
             if (scope) {
                 if (auto f = using_m->find(scope); f != using_m->end()) {
                     using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
-                    UpdateObjectFunctionVersion();
+                    invalidate_cache();
                 }
             }
         };
@@ -2645,24 +2645,27 @@ public:
 
     protected:
         utilities::Callback<NamespaceScope>
-            sockets_for_obj_or_func_versions;
+            sockets_for_cache_versions;
         concurrency::concurrent_vector<utilities::Callback<NamespaceScope>::ScopedListener>
-            connection_for_obj_or_func_version;
-    public:
+            connection_for_cache_version;
+    
         size_t
             object_or_function_versions;
-        virtual void UpdateObjectFunctionVersion(long* parent_alive = nullptr, size_t call_number = 0) override {
+    public:
+        virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override {
             InterlockedIncrement(static_cast<volatile size_t*>(&object_or_function_versions));
-            sockets_for_obj_or_func_versions.speak(parent_alive, call_number);
+            sockets_for_cache_versions.speak(parent_alive, call_number);
         };
+
+    protected:
         virtual void AddUsing_Impl(Breadcrumb* scope) override {
             if (scope) {
                 if (auto* ns_ptr = scope->namespace_m) {
                     if (ns_ptr->this_m.is_namespace()) {
                         if (auto* p = dynamic_cast<NamespaceScope*>(ns_ptr->this_m.scope)) {
                             // suddenly, we require our scope index, now that we are "using" a namespace
-                            using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
-                            UpdateObjectFunctionVersion();
+                            using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
+                            invalidate_cache();
                         }
                     }
                 }
@@ -2670,34 +2673,38 @@ public:
         };
 
     protected:
+        // instancing a child namespace should only be done from an existing namespace
         NamespaceScope(utilities::string&& name, int scope_type_p = ScopeType::Basic & ScopeType::Namespace, Breadcrumb* parent = nullptr)
             : BasicScope(std::move(name), scope_type_p, parent)
             , children{}
             , search_cache{}
-            , sockets_for_obj_or_func_versions(&NamespaceScope::UpdateObjectFunctionVersion)
-            , connection_for_obj_or_func_version{}
+            , sockets_for_cache_versions(&NamespaceScope::invalidate_cache)
+            , connection_for_cache_version{}
             , object_or_function_versions{ 0 }
         {
             if (this->breadcrumb_m.parent_m) {
                 if (auto* p = dynamic_cast<NamespaceScope*>(this->breadcrumb_m.parent_m->namespace_m->this_m.scope)) {
-                    connection_for_obj_or_func_version.push_back(p->sockets_for_obj_or_func_versions.listener(this->breadcrumb_m.GetScopeIndex(), this));
+                    connection_for_cache_version.push_back(p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this));
                 }
             }
         };
-    public:
-        NamespaceScope() = delete;
-        virtual ~NamespaceScope() {
-            unload();
-        };
-
+        // unloads the connections to other namespaces before deletion, which can prevent a memory-access crash. 
         void unload() {
-            for (auto& x : this->connection_for_obj_or_func_version) x = {};
+            for (auto& x : this->connection_for_cache_version) x = {};
             for (auto& x : *this->using_m) x.second = {};
             this->search_cache.unsafe_unload();
+            this->using_m->clear();
+            this->connection_for_cache_version.clear();
             for (auto& child : this->children) {
                 child.second->unload();
             }
             this->children.unsafe_unload();
+        };
+
+    public:
+        NamespaceScope() = delete;
+        virtual ~NamespaceScope() {
+            unload();
         };
 
         /// <summary>
@@ -2728,16 +2735,15 @@ public:
     friend class NamespaceScope;     
     friend class Breadcrumb;
     protected:
-        // when a scope is born it will get the smallest-possible unique index for itself. 
+        // When a scope is born it will get the smallest-possible unique index for itself. 
+        // This "ticket" or unique index will be unique to 
         utilities::TicketDispensor 
             scope_indexs;
 
     public:
         RootScope() 
             : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr) 
-        {
-            // scope_indexs.reserve(100);
-        };
+        {};
         virtual ~RootScope() {
             this->unload();
         };
@@ -2745,8 +2751,6 @@ public:
     };
 
 };
-
-
 
 int main() {
     using namespace utilities;
@@ -3414,17 +3418,17 @@ int main() {
             sw.Start();
             GoodLang::parallel::For(0, 10000, [&](int i) {
                 auto& scope{ root.make_namespace("std") };
-                scope.UpdateObjectFunctionVersion();
+                scope.invalidate_cache();
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
-                root.UpdateObjectFunctionVersion();
+                root.invalidate_cache();
             })) {
                 GoodLang::parallel::For(0, 10000, [&](int i) {
                     auto& scope{ root.make_namespace("std") };
-                    scope.UpdateObjectFunctionVersion();
+                    scope.invalidate_cache();
                 });
                 main_loop = nullptr;
             }
@@ -3439,9 +3443,9 @@ int main() {
                 scope2.add_using_here(scope1);
                 scope1.add_using_here(scope2);
 
-                scope1.UpdateObjectFunctionVersion();
-                scope2.UpdateObjectFunctionVersion();
-                root.UpdateObjectFunctionVersion();
+                scope1.invalidate_cache();
+                scope2.invalidate_cache();
+                root.invalidate_cache();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
@@ -3499,7 +3503,7 @@ int main() {
 
             sw.Start();
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
-                root.UpdateObjectFunctionVersion();
+                root.invalidate_cache();
             })) {
                 for (int i = 0; i < 1000000; ++i) {
                     auto scope{ root.make_scope() };
@@ -3527,7 +3531,7 @@ int main() {
             sw.Start();
             
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
-                root.UpdateObjectFunctionVersion();
+                root.invalidate_cache();
             })) {
                 GoodLang::parallel::For(0, 1000000, [&](int i) {
                     auto scope{ root.make_scope() };
