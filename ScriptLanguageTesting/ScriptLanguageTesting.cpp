@@ -478,8 +478,7 @@ namespace utilities {
                     if (CAS(&free.m_n64, old, New.m_n64))
                         break; // success
                     // race, try again
-                }
-
+                }                
             };
 
             // Release all memory held by all blocks
@@ -499,6 +498,11 @@ namespace utilities {
         public:
             BlockAlloc() : blocks{}, free{} { free.m_n64 = 0; };
             ~BlockAlloc() { ReleaseBlocks(); };
+            
+            // calling this unloads all the data and prevents use of the allocator. Should be used when the allocator is about to be deleted but (for whatever reason) needs to be unloaded at a specific schedule.
+            void unsafe_unload() {
+                ReleaseBlocks();
+            };
 
             // Acquire a new element from the free list and construct it.
             template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
@@ -570,6 +574,11 @@ namespace utilities {
         public:
             Allocator() = default;
             ~Allocator() = default;
+
+            void unsafe_unload() {
+                for (auto& x : TLS_arr)
+                    x.unsafe_unload();
+            };
 
             template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
                 size_t thisThreadIndex = ++parallel_allocator_index % num_parallel_allocators;
@@ -706,11 +715,16 @@ namespace utilities {
                 }
 
             };
+
         public:
             using GuardType = typename TLS::EpochGuard;
 
             EpochAllocator() = default;
             ~EpochAllocator() = default;
+
+            void unsafe_unload() {
+                _alloc.unsafe_unload();
+            };
 
         public:
             GuardType ProtectCurrentEpoch() const {
@@ -1213,6 +1227,13 @@ namespace utilities {
             root = AllocNode();
         };
         ~BTree() = default;
+
+        void unsafe_unload() {
+            objAllocator.unsafe_unload();
+            nodeAllocator.unsafe_unload();
+            root = first = last = nullptr;
+            Num = 0;
+        };
 
         template <bool EmplaceIfExists = true> _iterType* 
             Add(objType const& object, keyType const& key) {
@@ -1823,6 +1844,9 @@ namespace utilities {
         atomic_map& operator=(atomic_map&& rhs) = delete;
         ~atomic_map() = default;
 
+        void unsafe_unload() {
+            tree.unsafe_unload();
+        };
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
             return tree.ProtectCurrentEpoch();
@@ -1985,7 +2009,10 @@ namespace utilities {
             auto g{ tree.ProtectCurrentEpoch() };
             return tree.RemoveAt(time, out);
         };
-
+        void // clear the map
+            clear() {
+            while (pop_front()) {}
+        };
     private:
         class it_state {
         public:
@@ -2088,6 +2115,9 @@ namespace utilities {
         atomic_unordered_map& operator=(atomic_unordered_map&& rhs) = delete;
         ~atomic_unordered_map() = default;
 
+        void unsafe_unload() {
+            tree.unsafe_unload();
+        };
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
             return tree.ProtectCurrentEpoch();
@@ -2180,6 +2210,18 @@ namespace utilities {
             bool result = tree.RemoveAt(hash(time), &temp);
             if (out) *out = temp.second;
             return result;
+        };
+        void // clear the map
+            clear() {
+            while (true) {
+                auto g{ tree.ProtectCurrentEpoch() };
+                if (auto* p = tree.GetFirst()) {
+                    tree.Remove(p);
+                }
+                else {
+                    break;
+                }
+            }
         };
 
     private:
@@ -2416,7 +2458,6 @@ public:
 
     };
 
-
 public:
     // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
     template <int numCategories = 4> class Cache {
@@ -2434,6 +2475,10 @@ public:
         Cache& operator=(Cache const&) = delete;
         Cache& operator=(Cache&&) = delete;
         ~Cache() = default;
+
+        void unsafe_unload() {
+            _current_cache.unsafe_unload();
+        };
 
         // Insert an item into the cache.
         template<int category> void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
@@ -2590,7 +2635,8 @@ public:
     friend class Breadcrumb;
     protected:
         // explicit children namespaces, with strongly-held protections to their memory.
-        concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
+        utilities::atomic_map<size_t, std::shared_ptr<NamespaceScope>>
+        // concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
             children;
 
     protected:
@@ -2641,15 +2687,17 @@ public:
     public:
         NamespaceScope() = delete;
         virtual ~NamespaceScope() {
-            // unload the using statements and children scopes...
+            unload();
+        };
+
+        void unload() {
             for (auto& x : this->connection_for_obj_or_func_version) x = {};
             for (auto& x : *this->using_m) x.second = {};
-            this->connection_for_obj_or_func_version.clear();
-            this->using_m->clear();
-            std::this_thread::yield();
-            for (auto& x : this->connection_for_obj_or_func_version) x = {};
-            for (auto& x : *this->using_m) x.second = {};
-            this->children.clear();            
+            this->search_cache.unsafe_unload();
+            for (auto& child : this->children) {
+                child.second->unload();
+            }
+            this->children.unsafe_unload();
         };
 
         /// <summary>
@@ -2658,16 +2706,15 @@ public:
         /// If a namespace already exists with the provided name, it will return the existing namespace without creating a new one or overwritting the existing one.
         /// </summary>
         /// <returns>NamespaceScope</returns>
-        NamespaceScope make_namespace(utilities::string const& name) {
-            return NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m));
+        NamespaceScope& make_namespace(utilities::string const& name) {
+            // return NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m));
 
-            //if (auto f = children.find(name.hash()); f != children.end()) {
-            //    return *f->second;
-            //}
-            //else {
-            //    auto ptr = std::shared_ptr<NamespaceScope>(new NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m)));
-            //    return *children.insert({ name.hash(), ptr }).first->second;
-            //}
+            if (auto f = children.find(name.hash()); f != children.end()) {
+                return *f->second;
+            }
+            else {
+                return *children.insert(name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m)))).second;
+            }
         };
 
 
@@ -2692,14 +2739,7 @@ public:
             // scope_indexs.reserve(100);
         };
         virtual ~RootScope() {
-            for (auto& x : this->connection_for_obj_or_func_version) x = {};
-            for (auto& x : *this->using_m) x.second = {};
-            this->connection_for_obj_or_func_version.clear();
-            this->using_m->clear();
-            std::this_thread::yield();
-            for (auto& x : this->connection_for_obj_or_func_version) x = {};
-            for (auto& x : *this->using_m) x.second = {};
-            this->children.clear();            
+            this->unload();
         };
 
     };
@@ -3367,13 +3407,13 @@ int main() {
 
             sw.Start();
             GoodLang::parallel::For(0, 10000, [&](int i) {
-                auto scope{ root.make_namespace("std") };
+                auto& scope{ root.make_namespace("std") };
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 10000, [&](int i) {
-                auto scope{ root.make_namespace("std") };
+                auto& scope{ root.make_namespace("std") };
                 scope.UpdateObjectFunctionVersion();
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -3383,7 +3423,7 @@ int main() {
                 root.UpdateObjectFunctionVersion();
             })) {
                 GoodLang::parallel::For(0, 10000, [&](int i) {
-                    auto scope{ root.make_namespace("std") };
+                    auto& scope{ root.make_namespace("std") };
                     scope.UpdateObjectFunctionVersion();
                 });
                 main_loop = nullptr;
@@ -3393,8 +3433,8 @@ int main() {
             // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
             sw.Start();
             if (1) {
-                auto scope1{ root.make_namespace("std") };
-                auto scope2{ root.make_namespace("UI") };
+                auto& scope1{ root.make_namespace("std") };
+                auto& scope2{ root.make_namespace("UI") };
 
                 scope2.add_using_here(scope1);
                 scope1.add_using_here(scope2);
