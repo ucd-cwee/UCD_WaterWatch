@@ -2623,6 +2623,7 @@ public:
             return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
         };
 
+
     };
 
     /// <summary>
@@ -2635,9 +2636,8 @@ public:
     friend class Breadcrumb;
     protected:
         // explicit children namespaces, with strongly-held protections to their memory.
-        utilities::atomic_map<size_t, std::shared_ptr<NamespaceScope>>
-        // concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
-            children;
+        concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
+            children; // children cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
 
     protected:
         Scopes::Cache<4> 
@@ -2645,15 +2645,14 @@ public:
 
     protected:
         utilities::Callback<NamespaceScope>
-            sockets_for_cache_versions;
-        concurrency::concurrent_vector<utilities::Callback<NamespaceScope>::ScopedListener>
-            connection_for_cache_version;
-    
+            sockets_for_cache_versions; // socket(s) for others to connect to for listening to changes to THIS scope. Thread-safe. 
+        utilities::Callback<NamespaceScope>::ScopedListener
+            connection_for_cache_version; // socket connection for this scope to its parent, to listen to changes to THEIR scope. Not thread-safe.
         size_t
-            object_or_function_versions;
+            cache_version; // the current cache version of this scope. Thread-safe to read. Will be updated during every call to "invalidate_cache()"
     public:
         virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override {
-            InterlockedIncrement(static_cast<volatile size_t*>(&object_or_function_versions));
+            InterlockedIncrement(static_cast<volatile size_t*>(&cache_version));
             sockets_for_cache_versions.speak(parent_alive, call_number);
         };
 
@@ -2680,25 +2679,24 @@ public:
             , search_cache{}
             , sockets_for_cache_versions(&NamespaceScope::invalidate_cache)
             , connection_for_cache_version{}
-            , object_or_function_versions{ 0 }
+            , cache_version{ 0 }
         {
             if (this->breadcrumb_m.parent_m) {
                 if (auto* p = dynamic_cast<NamespaceScope*>(this->breadcrumb_m.parent_m->namespace_m->this_m.scope)) {
-                    connection_for_cache_version.push_back(p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this));
+                    connection_for_cache_version = p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this);
                 }
             }
         };
         // unloads the connections to other namespaces before deletion, which can prevent a memory-access crash. 
         void unload() {
-            for (auto& x : this->connection_for_cache_version) x = {};
+            this->connection_for_cache_version = {};
             for (auto& x : *this->using_m) x.second = {};
             this->search_cache.unsafe_unload();
             this->using_m->clear();
-            this->connection_for_cache_version.clear();
             for (auto& child : this->children) {
                 child.second->unload();
             }
-            this->children.unsafe_unload();
+            this->children.clear(); 
         };
 
     public:
@@ -2714,13 +2712,13 @@ public:
         /// </summary>
         /// <returns>NamespaceScope</returns>
         NamespaceScope& make_namespace(utilities::string const& name) {
-            // return NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m));
-
             if (auto f = children.find(name.hash()); f != children.end()) {
                 return *f->second;
             }
             else {
-                return *children.insert(name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m)))).second;
+                return *children.insert(
+                    { name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((utilities::string)name, Scopes::ScopeType::Basic | Scopes::ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m))) }
+                ).first->second;
             }
         };
 
@@ -2736,7 +2734,7 @@ public:
     friend class Breadcrumb;
     protected:
         // When a scope is born it will get the smallest-possible unique index for itself. 
-        // This "ticket" or unique index will be unique to 
+        // This "ticket" or unique index will be unique to the scope for its life, after which it returns the ticket to here.
         utilities::TicketDispensor 
             scope_indexs;
 
@@ -2745,7 +2743,7 @@ public:
             : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr) 
         {};
         virtual ~RootScope() {
-            this->unload();
+            this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
         };
 
     };
