@@ -313,9 +313,9 @@ namespace utilities {
     template <typename T>
     class DelayedInstantiation {
     private:
-        std::unique_ptr<T> ptr{ nullptr };
-        GoodLang::fast_shared_mutex mut{};
-        long initialized{ 0 };
+        mutable std::unique_ptr<T> ptr{ nullptr };
+        mutable GoodLang::fast_shared_mutex mut{};
+        mutable long initialized{ 0 };
 
     public:
         DelayedInstantiation() = default;
@@ -324,7 +324,7 @@ namespace utilities {
         bool valid() const {
             return initialized > 0;
         };
-        T* operator->() {
+        T* operator->() const {
             if (initialized == 0) {
                 mut.lock();
                 if (initialized == 0) {
@@ -335,7 +335,7 @@ namespace utilities {
             }
             return ptr.get();
         };
-        T& operator*() {
+        T& operator*() const {
             return *operator->();
         };
         operator bool() const { return valid(); };
@@ -2570,6 +2570,257 @@ public:
         };
 
     public:
+        // Returns true if this scope is a namespace scope
+        bool is_namespace() const {
+            return this->breadcrumb_m.this_m.is_namespace();
+        };
+        // Returns true if this scope is a class scope
+        bool is_class() const {
+            return this->breadcrumb_m.this_m.is_class();
+        };
+        // Returns true if this scope is a root scope
+        bool is_root() const {
+            return this->breadcrumb_m.this_m.is_root();
+        };
+        // Get the immediate parent, if one exists.
+        BasicScope* GetParent() const {
+            if (this->breadcrumb_m.parent_m) {
+                return this->breadcrumb_m.parent_m->this_m.scope;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        // Get the current namespace (for inserting functions, etc)
+        NamespaceScope* GetNamespace() const {
+            if (this->breadcrumb_m.namespace_m) {
+                return static_cast<NamespaceScope*>(this->breadcrumb_m.namespace_m->this_m.scope);
+            }
+            else {
+                return nullptr;
+            }
+        };
+        // Get the root of the entire scope tree
+        RootScope* GetRoot() const {
+            if (this->breadcrumb_m.root_m) {
+                return static_cast<RootScope*>(this->breadcrumb_m.root_m->this_m.scope);
+            }
+            else {
+                return nullptr;
+            }
+        };
+       
+        enum CheckFlagState {
+            none = 0,
+            self = 1,
+            all = 2
+        };
+        enum SearchState {
+            SearchingParents = 1,
+            SearchingUsings = 2,
+            SearchingChildren = 4,
+            SearchUpHitNamespace = 8,
+            SkipChildren = 16,
+            SkipParent = 32
+        };
+        enum SearchResult {
+            Failure = 1,
+            Success = 2,
+            StaticFailure = 4
+        };
+        using check_cache = std::vector<short>;
+        static check_cache& GetCheckMap() {
+            thread_local check_cache out;
+            out.clear();
+            return out;
+        };
+        virtual Breadcrumb* FindNearestScopeWhere(
+            std::function<int(Breadcrumb*, int)> const& func,
+            Breadcrumb* SecondaryPriortyScope = nullptr,
+            int searchState = 0,
+            check_cache& check_flags = GetCheckMap(),
+            int depth = 0
+        ) const {
+            auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
+            Breadcrumb* finalResult = nullptr;
+            if (depth == 0) {
+                if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
+                    check_flags.resize(numTickets);
+                }
+                for (auto& x : check_flags) x = CheckFlagState::none;
+            }
+
+            // Prevent Duplication
+            if (check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) {
+                finalResult = nullptr;
+                return finalResult;
+            }
+            if (searchState & SkipChildren) {
+                check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
+            }
+
+            // test myself directly	
+            if (!(check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self)) {
+                check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
+
+                auto res = func(&selfPtr, searchState);
+                if (res & SearchResult::Success) {
+                    finalResult = &selfPtr;               
+                    return finalResult;
+                }
+                else if (res & SearchResult::StaticFailure) {
+                    finalResult = nullptr;
+                    return finalResult;
+                }
+            }
+
+            // test my personal "using" namespaces completely
+            if (using_m && (using_m->size() > 0ull)){
+                for (auto& childNamespace : *using_m) {
+                    if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
+                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                        return finalResult;
+                    }  
+                }
+            }
+
+            // test all of my parents directly -- hoping to quickly find "it"
+            if (!(searchState & SkipParent)) {
+                Breadcrumb* thisParent = &selfPtr;
+                while (thisParent = thisParent->parent_m) {
+                    auto& flag = check_flags[thisParent->GetScopeIndex()];
+                    if (flag & CheckFlagState::self) break;
+                    else {
+                        flag |= CheckFlagState::self;
+                    }
+                    if (thisParent->this_m.is_namespace()) {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    else {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    // check the using statements of the parent.
+                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
+                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                            if (flag2 & CheckFlagState::all) continue;
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // test the SecondaryPriortyScope, often the class of the first param provided in a function call
+            if ((depth == 0) && SecondaryPriortyScope) {
+                Breadcrumb* thisParent = SecondaryPriortyScope;
+                if (thisParent) {
+                    auto& flag1 = check_flags[thisParent->GetScopeIndex()];
+                    flag1 = CheckFlagState::none;
+
+                    // test myself directly
+                    if (!(flag1 & CheckFlagState::self)) {
+                        flag1 |= CheckFlagState::self;
+
+                        auto res = func(thisParent, searchState);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            finalResult = nullptr;
+                            return finalResult;
+                        }
+                    }
+
+                    // test my personal "using" namespaces completely
+                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
+                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                            auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
+                            if (flag & CheckFlagState::all) { continue; }
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }     
+                        }
+                    }
+                }
+                while (thisParent = thisParent->parent_m) {
+                    auto& flag = check_flags[thisParent->GetScopeIndex()];
+                    if (flag & CheckFlagState::self) break;
+                    else {
+                        flag |= CheckFlagState::self;
+                    }
+                    if (thisParent->this_m.is_namespace()) {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    else {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    // check the using statements of the parent.
+                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
+                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                            if (flag2 & CheckFlagState::all) continue;
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }   
+                        }
+                    }
+                }
+            }
+
+            // Test my parent completely.
+            if (!(searchState & SkipParent)) {
+                if (selfPtr.parent_m) {
+                    auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
+                    if (!(flag & CheckFlagState::all)) {
+                        if (selfPtr.parent_m->this_m.is_namespace()) {
+                            if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                        else {
+                            if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                        
+                    }
+                }
+            }
+            return finalResult;
+        };
+
+    public:
         BasicScope() = delete;
         virtual ~BasicScope() = default;
 
@@ -2623,6 +2874,180 @@ public:
             return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
         };
 
+    public:
+#if 0
+        static Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name, Breadcrumb* start) {
+            static size_t default_namespace_hash{ GoodLang::GetHash(std::string("::")) };
+            auto len = Name.length();
+            std::shared_ptr<Breadcrumb::cache_map> cache{ nullptr };
+            size_t name_hash = Name.hash();
+            if (1) {
+                auto currVersion = start->child_versions->load();
+                bool doDelete = false;
+                start->cached_namespace_lookups.EnsureDataExists();
+                auto& lock = start->cached_namespace_lookups.GetLock();
+                auto& ptr = start->cached_namespace_lookups.data;
+                if (1) {
+                    lock.lock_shared();
+                    if (1) {
+                        if (ptr->size() == 0) {
+                            doDelete = true;
+                        }
+                        else if (ptr->back().first >= currVersion) {
+                            cache = ptr->back().second;
+                        }
+                        else {
+                            doDelete = true;
+                        }
+                    }
+                    lock.unlock_shared();
+                }
+                if (cache) {
+                    if (auto f = cache->find(name_hash), e = cache->end(); f != e) {
+                        return *f->second;
+                    }
+                }
+                if (doDelete) {
+                    cache = std::make_shared<Breadcrumb::cache_map>();
+                    lock.lock();
+                    if (1) {
+                        while (ptr->size() > 0) {
+                            if (ptr->front().first < currVersion) {
+                                ptr->pop_front();
+                            }
+                            else if (ptr->back().first < currVersion) {
+                                ptr->pop_back();
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                        ptr->push_back({ currVersion, cache });
+                    }
+                    lock.unlock();
+
+                }
+            }
+
+            static thread_local std::set< size_t> target_hash; {
+                target_hash.clear();
+                target_hash.insert(name_hash);
+                compound_string_view temp = Name;
+                Breadcrumb::RemoveLeading(temp, ':');
+                auto* BC = start;
+                while (BC) {
+                    target_hash.insert(temp.hash(BC->current_namespace_hash));
+                    BC = BC->parent_m;
+                }
+            }
+            auto* Ptr = start->this_m->scope_ptr;
+            long long QualifiedNameLen;
+            if (target_hash.count(default_namespace_hash) > 0) {
+                if (cache) cache->insert(name_hash, (Breadcrumb*)(start->root_m));
+                return start->root_m;
+            }
+            else if (Breadcrumb* BC = !Ptr ? (Breadcrumb*)nullptr : Ptr->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+                if (!namespacePtr->this_m->is_namespace()) return SearchResult::Failure;
+                QualifiedNameLen = namespacePtr->current_namespace.length();
+                if (target_hash.count(namespacePtr->current_namespace_hash) > 0) return SearchResult::Success;
+                else if (search_state & SearchingChildren) {
+                    if (len < QualifiedNameLen) return SearchResult::Failure | SearchResult::StaticFailure;
+                    else if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
+                    else return SearchResult::Failure;
+                }
+                else return SearchResult::Failure;
+                })) {
+                if (cache) cache->insert(name_hash, (Breadcrumb*)BC);
+                return BC;
+            }
+            else {
+                if (cache) cache->insert(name_hash, nullptr);
+                return nullptr;
+            }
+        };
+        static Breadcrumb* FindNamespace(std::string_view const& name, Breadcrumb* start) {
+            return FindNamespace(Breadcrumb::CleanUpScopeName(name), start);
+        };
+        static Breadcrumb* FindClass(std::shared_ptr<GoodLang::Type_Info> const& type, Breadcrumb* start) {
+            auto type_hash{ type->uniqueHash };
+            std::shared_ptr<Breadcrumb::cache_map> cache{ nullptr };
+            if (1) {
+                auto currVersion = start->child_versions->load();
+                bool doDelete = false;
+                start->cached_namespace_lookups.EnsureDataExists();
+                auto& lock = start->cached_namespace_lookups.GetLock();
+                auto& ptr = start->cached_namespace_lookups.data;
+                if (1) {
+                    lock.lock_shared();
+                    if (1) {
+                        if (ptr->size() == 0) {
+                            doDelete = true;
+                        }
+                        else if (ptr->back().first >= currVersion) {
+                            cache = ptr->back().second;
+                        }
+                        else {
+                            doDelete = true;
+                        }
+                    }
+                    lock.unlock_shared();
+                }
+                if (cache) {
+                    if (auto f = cache->find(type_hash), e = cache->end(); f != e) {
+                        return *f->second;
+                    }
+                }
+                if (doDelete) {
+                    cache = std::make_shared<Breadcrumb::cache_map>();
+                    lock.lock();
+                    if (1) {
+                        while (ptr->size() > 0) {
+                            if (ptr->front().first < currVersion) {
+                                ptr->pop_front();
+                            }
+                            else if (ptr->back().first < currVersion) {
+                                ptr->pop_back();
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                        ptr->push_back({ currVersion, cache });
+                    }
+                    lock.unlock();
+                }
+            }
+
+            auto* Ptr = start->this_m->scope_ptr;
+            if (Breadcrumb* BC = !Ptr ? (Breadcrumb*)nullptr : Ptr->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+                if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
+                if (namespacePtr->class_type_hash == type_hash) {
+                    return SearchResult::Success;
+                }
+                return SearchResult::Failure;
+                })) {
+                if (cache) cache->insert(type_hash, (Breadcrumb*)BC);
+                return BC;
+            }
+            else {
+                if (cache) cache->insert(type_hash, nullptr);
+                return nullptr;
+            }
+        };
+
+        Breadcrumb* FindNamespace(std::string_view name) const {
+            return FindNamespace(name, this->breadcrumb_m.namespace_m);
+        };
+        Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name) const {
+            return FindNamespace(Name, this->breadcrumb_m.namespace_m);
+        };
+        Breadcrumb* FindClass(std::string_view name) const {
+            return FindNamespace(name);
+        };
+        Breadcrumb* FindClass(std::shared_ptr<GoodLang::Type_Info> const& type) const {
+            return FindClass(type, this->breadcrumb_m.namespace_m);
+        };
+#endif
 
     };
 
@@ -2691,12 +3116,238 @@ public:
         void unload() {
             this->connection_for_cache_version = {};
             for (auto& x : *this->using_m) x.second = {};
-            this->search_cache.unsafe_unload();
+            // this->search_cache.unsafe_unload();
             this->using_m->clear();
-            for (auto& child : this->children) {
-                child.second->unload();
+            for (auto& child : this->children) child.second->unload();            
+            // this->children.clear(); 
+        };
+
+    public:
+        virtual Breadcrumb* FindNearestScopeWhere(
+            std::function<int(Breadcrumb*, int)> const& func,
+            Breadcrumb* SecondaryPriortyScope = nullptr,
+            int searchState = 0,
+            check_cache& check_flags = GetCheckMap(),
+            int depth = 0
+        ) const override {
+            auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
+            Breadcrumb* finalResult = nullptr;
+            if (depth == 0) {
+                if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
+                    check_flags.resize(numTickets);
+                }
+                for (auto& x : check_flags) x = CheckFlagState::none;
             }
-            this->children.clear(); 
+
+            // Prevent Duplication
+            if (check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) {
+                finalResult = nullptr;
+                return finalResult;
+            }
+            if (searchState & SkipChildren) {
+                check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
+            }
+
+            // test myself directly	
+            if (!(check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self)) {
+                check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
+
+                auto res = func(&selfPtr, searchState);
+                if (res & SearchResult::Success) {
+                    finalResult = &selfPtr;
+                    return finalResult;
+                }
+                else if (res & SearchResult::StaticFailure) {
+                    finalResult = nullptr;
+                    return finalResult;
+                }
+            }
+
+            bool RequestedSkipChildren = check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all;
+            if (!(searchState & SkipChildren)) {
+                check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
+            }
+
+            // test my personal "using" namespaces completely
+            if (using_m && (using_m->size() > 0ull)) {
+                for (auto& childNamespace : *using_m) {
+                    if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
+                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                        return finalResult;
+                    }
+                }
+            }
+
+            // test all of my parents directly -- hoping to quickly find "it"
+            if (!(searchState & SkipParent)) {
+                Breadcrumb* thisParent = &selfPtr;
+                while (thisParent = thisParent->parent_m) {
+                    auto& flag = check_flags[thisParent->GetScopeIndex()];
+                    if (flag & CheckFlagState::self) break;
+                    else {
+                        flag |= CheckFlagState::self;
+                    }
+                    if (thisParent->this_m.is_namespace()) {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    else {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    // check the using statements of the parent.
+                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
+                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                            if (flag2 & CheckFlagState::all) continue;
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // test the SecondaryPriortyScope, often the class of the first param provided in a function call
+            if ((depth == 0) && SecondaryPriortyScope) {
+                Breadcrumb* thisParent = SecondaryPriortyScope;
+                if (thisParent) {
+                    auto& flag1 = check_flags[thisParent->GetScopeIndex()];
+                    flag1 = CheckFlagState::none;
+
+                    // test myself directly
+                    if (!(flag1 & CheckFlagState::self)) {
+                        flag1 |= CheckFlagState::self;
+
+                        auto res = func(thisParent, searchState);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            finalResult = nullptr;
+                            return finalResult;
+                        }
+                    }
+
+                    // test my personal "using" namespaces completely
+                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
+                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                            auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
+                            if (flag & CheckFlagState::all) { continue; }
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                    }
+                }
+                while (thisParent = thisParent->parent_m) {
+                    auto& flag = check_flags[thisParent->GetScopeIndex()];
+                    if (flag & CheckFlagState::self) break;
+                    else {
+                        flag |= CheckFlagState::self;
+                    }
+                    if (thisParent->this_m.is_namespace()) {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    else {
+                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                        if (res & SearchResult::Success) {
+                            finalResult = thisParent;
+                            return finalResult;
+                        }
+                        else if (res & SearchResult::StaticFailure) {
+                            flag |= CheckFlagState::all;
+                        }
+                    }
+                    // check the using statements of the parent.
+                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
+                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                            if (flag2 & CheckFlagState::all) continue;
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Test my children themselves. 
+            if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && this->children.size() > 0ull) {
+                for (auto& child : this->children) {
+                    auto* child_bc = &child.second->breadcrumb_m;
+                    auto& flag = check_flags[child_bc->GetScopeIndex()];
+
+                    if (flag & CheckFlagState::self) continue;
+                    
+                    flag |= CheckFlagState::self;
+
+                    auto res = func(child_bc, searchState | SearchingChildren | SkipChildren | SkipParent);
+                    if (res & SearchResult::Success) {
+                        finalResult = child_bc;
+                        return finalResult;
+                    }
+                    else if (res & SearchResult::StaticFailure) {
+                        flag |= CheckFlagState::all;
+                    }
+                }
+            }
+
+            // Test my parent completely.
+            if (!(searchState & SkipParent)) {
+                if (selfPtr.parent_m) {
+                    auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
+                    if (!(flag & CheckFlagState::all)) {
+                        if (selfPtr.parent_m->this_m.is_namespace()) {
+                            if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                        else {
+                            if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+
+                    }
+                }
+            }
+
+            // Test my children completely. 
+            if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && this->children.size() > 0ull) {
+                for (auto& child : this->children) {
+                    auto* child_bc = &child.second->breadcrumb_m;
+                    auto& flag = check_flags[child_bc->GetScopeIndex()];
+
+                    if (flag & CheckFlagState::all) continue;
+
+                    if (finalResult = child_bc->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingChildren | SkipParent, check_flags, depth + 1)) {
+                        return finalResult;
+                    }
+                }
+            }
+
+            return finalResult;
         };
 
     public:
@@ -2735,12 +3386,13 @@ public:
     protected:
         // When a scope is born it will get the smallest-possible unique index for itself. 
         // This "ticket" or unique index will be unique to the scope for its life, after which it returns the ticket to here.
-        utilities::TicketDispensor 
+        utilities::TicketDispensor
             scope_indexs;
 
     public:
         RootScope() 
-            : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr) 
+            : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr)
+            //, scope_indexs(std::make_shared<utilities::TicketDispensor>())
         {};
         virtual ~RootScope() {
             this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
@@ -3446,11 +4098,46 @@ int main() {
                 root.invalidate_cache();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            print("//\n");
+            root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
+                else { print(scope->this_m.scope_name.c_str()); }
+                return Scopes::BasicScope::SearchResult::Failure;
+            }, nullptr, 0);
 
+            if (1) {
+                auto& scope1{ root.make_namespace("std") };
+                auto& scope2{ scope1.make_namespace("string") };
+                auto& scope3{ scope2.make_namespace("impl") };
 
+                print("//\n");
+                scope3.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                    if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
+                    else { print(scope->this_m.scope_name.c_str()); }
+                    return Scopes::BasicScope::SearchResult::Failure;
+                }, nullptr, 0);
 
+                if (1) {
+                    print("//\n");
+                    auto scope4{ scope3.make_scope() };
+                    scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                        if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
+                        else { print(scope->this_m.scope_name.c_str()); }
+                        return Scopes::BasicScope::SearchResult::Failure;
+                        }, nullptr, 0);
+                }
 
+                if (1) {
+                    print("//\n");
+                    auto scope4{ scope3.make_scope() };
+                    scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                        if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
+                        else { print(scope->this_m.scope_name.c_str()); }                        
+                        return Scopes::BasicScope::SearchResult::StaticFailure; // should not search as much as before
+                    }, nullptr, 0);
+                }
 
+            }
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
