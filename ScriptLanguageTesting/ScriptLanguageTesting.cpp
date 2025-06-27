@@ -2403,6 +2403,15 @@ public:
                         if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&scope_index._index), new_index, 0) > 0) {
                             root_ptr->scope_indexs.return_ticket(new_index);
                         }
+                        else {
+                            if (this_m.is_namespace()) {
+                                // Since basic_scopes can be created and deleted without much notice,
+                                // we limit the caching to namespaces to help guarrantee that looping over the list
+                                // will likely be protected from the lifetime perspective.                                 
+                                root_ptr->scopes.grow_to_at_least(new_index + 1);
+                                root_ptr->scopes[new_index] = this;
+                            }
+                        }
                     }
                 }
             }
@@ -2454,8 +2463,10 @@ public:
         Breadcrumb(Breadcrumb &&) = delete;
         Breadcrumb& operator=(Breadcrumb const&) = delete;
         Breadcrumb& operator=(Breadcrumb&&) = delete;
-        ~Breadcrumb() = default;
-
+        ~Breadcrumb() {
+            if (this_m.is_namespace() && (scope_index._index > 0) && root_m) if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope))
+                root_ptr->scopes[scope_index._index] = nullptr;
+        }
     };
 
 public:
@@ -2610,6 +2621,7 @@ public:
             }
         };
        
+    protected:
         enum CheckFlagState {
             none = 0,
             self = 1,
@@ -2825,6 +2837,14 @@ public:
         virtual ~BasicScope() = default;
 
         /// <summary>
+        /// Get the index that is unique to this scope, which will remain unique for the life of the scope. May be re-used after the scope ends. 
+        /// </summary>
+        /// <returns>size_t</returns>
+        size_t get_unique_index() const {
+            return const_cast<BasicScope*>(this)->breadcrumb_m.GetScopeIndex();
+        };
+
+        /// <summary>
         /// Make a child scope from this scope. 
         /// Thread-safe, and allowed to make many children of this scope in parallel safely. 
         /// The created scope (and its children) are destroyed at the end of this C++ scope. 
@@ -2875,65 +2895,24 @@ public:
         };
 
     public:
+
+
 #if 0
         static Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name, Breadcrumb* start) {
             static size_t default_namespace_hash{ GoodLang::GetHash(std::string("::")) };
             auto len = Name.length();
-            std::shared_ptr<Breadcrumb::cache_map> cache{ nullptr };
             size_t name_hash = Name.hash();
-            if (1) {
-                auto currVersion = start->child_versions->load();
-                bool doDelete = false;
-                start->cached_namespace_lookups.EnsureDataExists();
-                auto& lock = start->cached_namespace_lookups.GetLock();
-                auto& ptr = start->cached_namespace_lookups.data;
-                if (1) {
-                    lock.lock_shared();
-                    if (1) {
-                        if (ptr->size() == 0) {
-                            doDelete = true;
-                        }
-                        else if (ptr->back().first >= currVersion) {
-                            cache = ptr->back().second;
-                        }
-                        else {
-                            doDelete = true;
-                        }
-                    }
-                    lock.unlock_shared();
-                }
-                if (cache) {
-                    if (auto f = cache->find(name_hash), e = cache->end(); f != e) {
-                        return *f->second;
-                    }
-                }
-                if (doDelete) {
-                    cache = std::make_shared<Breadcrumb::cache_map>();
-                    lock.lock();
-                    if (1) {
-                        while (ptr->size() > 0) {
-                            if (ptr->front().first < currVersion) {
-                                ptr->pop_front();
-                            }
-                            else if (ptr->back().first < currVersion) {
-                                ptr->pop_back();
-                            }
-                            else {
-                                break;
-                            }
-                        }
-                        ptr->push_back({ currVersion, cache });
-                    }
-                    lock.unlock();
 
-                }
-            }
+            (void)root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
+                else { print(scope->this_m.scope_name.c_str()); }
+                return Scopes::BasicScope::SearchResult::Failure;
+            }, nullptr, 0);
 
             static thread_local std::set< size_t> target_hash; {
                 target_hash.clear();
                 target_hash.insert(name_hash);
-                compound_string_view temp = Name;
-                Breadcrumb::RemoveLeading(temp, ':');
+                utilities::compound_shared_string temp = Name.remove_leading(':');
                 auto* BC = start;
                 while (BC) {
                     target_hash.insert(temp.hash(BC->current_namespace_hash));
@@ -3119,10 +3098,10 @@ public:
             // this->search_cache.unsafe_unload();
             this->using_m->clear();
             for (auto& child : this->children) child.second->unload();            
-            // this->children.clear(); 
+            this->children.clear(); 
         };
 
-    public:
+    protected:
         virtual Breadcrumb* FindNearestScopeWhere(
             std::function<int(Breadcrumb*, int)> const& func,
             Breadcrumb* SecondaryPriortyScope = nullptr,
@@ -3388,11 +3367,12 @@ public:
         // This "ticket" or unique index will be unique to the scope for its life, after which it returns the ticket to here.
         utilities::TicketDispensor
             scope_indexs;
+        concurrency::concurrent_vector<Breadcrumb*>
+            scopes; // namespaces and classes may add themselves to this list (order not guarranteed) to help with debugging or other activities. 
 
     public:
         RootScope() 
             : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr)
-            //, scope_indexs(std::make_shared<utilities::TicketDispensor>())
         {};
         virtual ~RootScope() {
             this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
@@ -4098,8 +4078,63 @@ int main() {
                 root.invalidate_cache();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                switch (i % 3) {
+                case 0: {
+                    auto& scope1{ root.make_namespace("std") };
+                    auto& scope2{ scope1.make_namespace("impl") };
+                    auto scope3{ scope2.make_scope() };
+
+                    scope3.add_using_here(scope2);
+                    scope3.add_using_here(scope1);
+                    scope3.add_using_here(root);
+
+                    auto scope5{ scope3.make_scope() };
+                    scope5.get_unique_index();
+
+                    break;
+                }
+                case 1: {
+                    auto& scope1{ root.make_namespace("std") };
+                    auto& scope2{ scope1.make_namespace("string") };
+                    auto& scope3{ scope2.make_namespace("impl") };
+                    auto scope4{ scope3.make_scope() };
+
+                    scope4.add_using_here(scope3);
+                    scope4.add_using_here(scope2);
+                    scope4.add_using_here(scope1);
+                    scope4.add_using_here(root);
+
+                    auto scope5{ scope3.make_scope() };
+                    auto scope6{ scope4.make_scope() };
+                    scope5.get_unique_index();
+                    scope6.get_unique_index();
+
+                    break;
+                }
+                case 2: {
+                    auto& scope1{ root.make_namespace("string") };
+                    auto& scope2{ scope1.make_namespace("impl") };
+                    auto scope3{ scope2.make_scope() };
+
+                    scope3.add_using_here(scope2);
+                    scope3.add_using_here(scope1);
+                    scope3.add_using_here(root);
+
+                    auto scope5{ scope3.make_scope() };
+                    scope5.get_unique_index();
+
+                    break;
+                }
+                }
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+#if 0
             print("//\n");
-            root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+            (void)root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
                 if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
                 else { print(scope->this_m.scope_name.c_str()); }
                 return Scopes::BasicScope::SearchResult::Failure;
@@ -4111,7 +4146,7 @@ int main() {
                 auto& scope3{ scope2.make_namespace("impl") };
 
                 print("//\n");
-                scope3.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                (void)scope3.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
                     if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
                     else { print(scope->this_m.scope_name.c_str()); }
                     return Scopes::BasicScope::SearchResult::Failure;
@@ -4120,17 +4155,17 @@ int main() {
                 if (1) {
                     print("//\n");
                     auto scope4{ scope3.make_scope() };
-                    scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                    (void)scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
                         if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
                         else { print(scope->this_m.scope_name.c_str()); }
                         return Scopes::BasicScope::SearchResult::Failure;
-                        }, nullptr, 0);
+                    }, nullptr, 0);
                 }
 
                 if (1) {
                     print("//\n");
                     auto scope4{ scope3.make_scope() };
-                    scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
+                    (void)scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
                         if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
                         else { print(scope->this_m.scope_name.c_str()); }                        
                         return Scopes::BasicScope::SearchResult::StaticFailure; // should not search as much as before
@@ -4138,6 +4173,9 @@ int main() {
                 }
 
             }
+#endif
+
+
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -4151,7 +4189,6 @@ int main() {
                 scope.emplace_object_here(utilities::string(GoodLang::printf("%i", i)), utilities::ObjectWrapper(i, utilities::ObjectWrapper::ObjectState::Normal)); // x = 100.0;
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -4163,6 +4200,7 @@ int main() {
                 }
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
 
 
 
