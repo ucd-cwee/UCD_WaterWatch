@@ -40,6 +40,8 @@ namespace utilities {
             data;
         size_type 
             _hash{ npos };
+        
+        string(std::shared_ptr<std::string> _d, std::string_view d) : _data(std::move(_d)), data(std::move(d)) {};
 
     public:
         string() {};
@@ -75,16 +77,64 @@ namespace utilities {
         friend bool operator>(string const& A, string const& V) { return !operator<=(A, V); };
         friend bool operator>=(string const& A, string const& V) { return !operator<(A, V); };
         friend bool operator!=(string const& A, string const& V) noexcept { return !operator==(A, V); };
+    private:
+        static size_type	        FindString(std::string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
+            long long l, j, k;
+            k = text.length();
+            if (end == -1) {
+                end = str.length();
+            }
+            l = end - k;
+
+            if (k <= 0 || (l - start) < 0) return std::string::npos;
+
+            if (casesensitive) {
+                const char sample = text[0];
+                if (!sample) return (size_t)start;
+                for (; start <= l; ++start) // starting at the search position ... 
+                    if (str[start] == sample)  // found a match for the first character ...
+                        for (j = 1; ; ++j) { // for the remaining parts of the search text ... 
+                            if (j >= k) return start;
+                            if (str[start + j] != text[j]) break;
+                        }
+            }
+            else {
+                for (; start <= l; ++start)
+                    for (j = 0;; j++) {
+                        if (j >= k) return (size_t)start;
+                        if (::toupper(str[start + j]) != ::toupper(text[j]))
+                            break;
+                    }
+            }
+            return std::string::npos;
+        };
+        static bool                 ReplaceString(string& String, const std::string_view& from, const std::string_view& to) {
+            size_t startPos;
+            bool ret;
+
+            ret = false;
+            if (from.empty() || (from == to)) return ret;
+
+            startPos = FindString(String.data, from, true, 0);
+            if (startPos != std::string::npos) String = string(std::string(String.data)); // make a new copy of the data
+            while (startPos != std::string::npos) {
+                ret = true;
+                String._data->replace(startPos, from.length(), to);
+                String.data = *String._data;
+                startPos = FindString(String.data, from, true, to.length() + startPos);
+            }
+            return ret;
+        };
 
     public:
         std::string to_string() const {
             return std::string(data);
         };
-        const char* c_str() const {
-            return data.data();
+        std::string_view const& c_str() const {
+            return data;
         };
-        std::string_view substr(const size_type _Off = 0, size_type _Count = npos) const {
-            return data.substr(_Off, _Count);
+        string substr(const size_type _Off = 0, size_type _Count = npos) const {
+            return string(this->_data, data.substr(_Off, _Count));
         };
         bool empty() const {
             return data.empty();
@@ -118,14 +168,29 @@ namespace utilities {
             for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
             return out;
         };
-        void remove_prefix(const size_type _Count) noexcept {
+        string& remove_prefix(const size_type _Count) noexcept {
             data.remove_prefix(_Count);
+            return *this;
         };
-        void remove_suffix(const size_type _Count) noexcept {
+        string& remove_suffix(const size_type _Count) noexcept {
             data.remove_suffix(_Count);
+            return *this;
         };
         size_type rfind(const string& _Right) const {
             return data.rfind(_Right.data);
+        };
+        size_type find(const string& FIND, bool casesensitive = true, long long start = 0, long long end = -1) const {
+            if (end == -1) {
+                end = this->length();
+            }
+            if (this->length() == 0 || FIND.length() == 0) return std::string::npos;
+            if (FIND.length() > this->length()) return std::string::npos;
+            return FindString(this->data, FIND.data, casesensitive, start, end);
+        };
+        string replace(const string& what, const string& with) const {
+            string out(*this);
+            (void)ReplaceString(out, what.data, with.data);
+            return out;
         };
         string remove_trailing(char _Right) const {
             string out{ *this };
@@ -151,7 +216,6 @@ namespace utilities {
             string out{ *this };
             return out.remove_trailing(_Right).remove_leading(_Right);
         };
-
         static const string& empty_string() {
             static string out{ "" };
             return out;
@@ -159,6 +223,66 @@ namespace utilities {
         static const string& namespace_colons() {
             static string out{ "::" };
             return out;
+        };
+        string right(size_type _Count) const {
+            if (_Count >= length()) return *this;
+            else return string(this->_data, this->data.substr(this->data.length() - _Count, _Count));
+        };
+        string left(size_type _Count) const {
+            if (_Count >= length()) return *this;
+            else return string(this->_data, this->data.substr(0, _Count));
+        };
+        // returns the part of this string that is left of the searched content, if found. Otherwise returns everything.
+        string left_of(const string& what) const {
+            if (auto p = this->find(what); p != npos) {
+                return substr(0, p);
+            }
+            else {
+                return *this;
+            }
+        };
+        // returns the part of this string that is right of the searched content, if found. Otherwise returns everything.
+        string right_of(const string& what) const {
+            if (auto p = this->find(what); p != npos) {
+                return substr(p + what.length());
+            }
+            else {
+                return *this;
+            }
+        };
+        // returns the part of this string that is left of the searched content, if found. Otherwise returns everything.
+        string left_of_last(const string& what) const {
+            if (auto p = this->rfind(what); p != npos) {
+                return substr(0, p);
+            }
+            else {
+                return *this;
+            }
+        };
+        // returns the part of this string that is right of the searched content, if found. Otherwise returns everything.
+        string right_of_last(const string& what) const {
+            if (auto p = this->rfind(what); p != npos) {
+                return substr(p + what.length());
+            }
+            else {
+                return *this;
+            }
+        };
+        std::pair<string, string> left_and_right_of(const string& what) const {
+            if (auto p = this->find(what); p != npos) {
+                return std::pair<string, string>{ substr(0, p), substr(p + what.length()) };
+            }
+            else {
+                return std::pair<string, string>{ *this, "" };
+            }
+        };
+        std::pair<string, string> left_and_right_of_last(const string& what) const {
+            if (auto p = this->rfind(what); p != npos) {
+                return std::pair<string, string>{ substr(0, p), substr(p + what.length()) };
+            }
+            else {
+                return std::pair<string, string>{ *this, "" };
+            }
         };
     };
 
@@ -342,8 +466,6 @@ namespace utilities {
     };
 
     namespace ABA_Problem {
-
-
         template <typename T>
         class Node {
         public:
@@ -2417,12 +2539,12 @@ public:
             }
             return scope_index._index;
         };
-        std::string_view GetCurrentNamespace() const {
+        utilities::string const& GetCurrentNamespace() const {
             if (this->this_m.is_namespace()) {
-                return this->this_m.current_namespace->substr();
+                return *this->this_m.current_namespace;
             }
             else {
-                return this->namespace_m->this_m.current_namespace->substr();
+                return *this->namespace_m->this_m.current_namespace;
             }
         };
 
@@ -2832,6 +2954,48 @@ public:
             return finalResult;
         };
 
+        static Scopes::Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name, Scopes::Breadcrumb* start) {
+            if (!start) return nullptr;
+            if (Name.empty()) return start->root_m;
+
+            auto len = Name.length();
+            size_t name_hash = Name.hash();
+
+            static thread_local std::set< size_t> target_hash; {
+                target_hash.clear();
+                target_hash.insert(name_hash);
+                auto temp = Name.remove_leading(':');
+                auto* BC = start;
+                while (BC) {
+                    target_hash.insert(temp.hash(BC->GetCurrentNamespace().hash()));
+                    BC = BC->parent_m;
+                }
+            }
+
+            long long QualifiedNameLen;
+            if (target_hash.count(utilities::string::namespace_colons().hash()) > 0) {
+                return start->root_m;
+            }
+            else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
+                utilities::string currNS{ namespacePtr->GetCurrentNamespace() };
+
+                QualifiedNameLen = currNS.length();
+                if (target_hash.count(currNS.hash()) > 0) return SearchResult::Success;
+                else if (search_state & SearchingChildren) {
+                    if (len < QualifiedNameLen) return SearchResult::Failure | SearchResult::StaticFailure;
+                    // else if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
+                    else return SearchResult::Failure;
+                }
+                else return SearchResult::Failure;
+            })) {
+                return BC;
+            }
+            else {
+                return nullptr;
+            }
+        };
+
     public:
         BasicScope() = delete;
         virtual ~BasicScope() = default;
@@ -2892,6 +3056,35 @@ public:
         /// <returns>utilities::ObjectWrapper*</returns>
         utilities::ObjectWrapper* find_object_here(utilities::string const& sv) const {
             return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
+        };
+
+        Scopes::Breadcrumb* find_namespace(utilities::string const& Name) const {
+            return FindNamespace(
+                utilities::compound_shared_string("::", Name.remove_leading_and_trailing(':'), "::"), // "std" or "::std" or "::std::" -> "::std::" 
+                &const_cast<BasicScope*>(this)->breadcrumb_m // where
+            );
+        };
+
+        Scopes::Breadcrumb* find_namespace(utilities::string const& Name, Scopes::Breadcrumb*& nearest_scope) const {
+            if (auto* out = FindNamespace(
+                utilities::compound_shared_string("::", Name.remove_leading_and_trailing(':'), "::"), // "std" or "::std" or "::std::" -> "::std::" 
+                &const_cast<BasicScope*>(this)->breadcrumb_m // where
+            )) {
+                nearest_scope = out;
+                return out;
+            }
+            else {
+                const auto& [left, right] = Name.remove_leading_and_trailing(':').left_and_right_of_last("::");
+                if (right.length() == 0) return nullptr;
+
+                // find the left first, and if successful, find the right. 
+                if (auto* out = find_namespace(left, nearest_scope)) {
+                    return out->this_m.scope->find_namespace(right, nearest_scope);
+                }
+                else {
+                    return nullptr;
+                }                
+            }
         };
 
     public:
@@ -4132,6 +4325,40 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
+            auto s = utilities::string("::std::string::");
+            print(s.left_of("d::").c_str());
+            print(s.right_of("d::").c_str());
+            print(s.left_of("::std").c_str());
+            print(s.right_of("::std").c_str());
+            print(s.left_of("string::").c_str());
+            print(s.right_of("string::").c_str());
+            print(s.left_of_last("d::").c_str());
+            print(s.right_of_last("d::").c_str());
+            print(s.left_of_last("::std").c_str());
+            print(s.right_of_last("::std").c_str());
+            print(s.left_of_last("string::").c_str());
+            print(s.right_of_last("string::").c_str());
+
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::")));            
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::string::")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::string::impl::")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::string::")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::string::impl::")));
+            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("impl"))); // could not find "impl" from the root, which is (arguably) correct!             
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string::impl")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("string"))->this_m.scope->find_namespace(utilities::string("impl")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("string")));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("string::impl")));
+
+            
+            // root.find_namespace(utilities::string("impl"))
+
+
+
 #if 0
             print("//\n");
             (void)root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
@@ -4174,8 +4401,6 @@ int main() {
 
             }
 #endif
-
-
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -4273,7 +4498,7 @@ int main() {
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 utilities::string test = std::string("TEST");
-                (void*)test.c_str();
+                (void)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -4282,7 +4507,7 @@ int main() {
             std::string sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
                 utilities::string test = utilities::string(sv);
-                (void*)test.c_str();
+                (void)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -4290,7 +4515,7 @@ int main() {
             sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 utilities::string test{ "TEST" };
-                (void*)test.c_str();
+                (void)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -4299,7 +4524,7 @@ int main() {
             std::string_view sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
                 utilities::string test{ std::string_view{ sv } };
-                (void*)test.c_str();
+                (void)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -4308,7 +4533,7 @@ int main() {
             utilities::string sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
                 utilities::string test{ sv };
-                (void*)test.c_str();
+                (void)test.c_str();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -4317,7 +4542,7 @@ int main() {
             std::string_view sv{ "TEST" };
             for (int i = 0; i < 1000000; ++i) {
                 std::string_view test{ sv };
-                (void*)test.data();
+                (void)test.data();
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
