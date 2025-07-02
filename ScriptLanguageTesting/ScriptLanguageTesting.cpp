@@ -77,6 +77,8 @@ namespace utilities {
         friend bool operator>(string const& A, string const& V) { return !operator<=(A, V); };
         friend bool operator>=(string const& A, string const& V) { return !operator<(A, V); };
         friend bool operator!=(string const& A, string const& V) noexcept { return !operator==(A, V); };
+
+        friend string operator+(string const& A, string const& B) { return string(std::string(A.data) + std::string(B.data)); };
     private:
         static size_type	        FindString(std::string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
             long long l, j, k;
@@ -284,6 +286,23 @@ namespace utilities {
                 return std::pair<string, string>{ *this, "" };
             }
         };
+        bool ends_with(const string& what) const {
+            if (auto p = this->rfind(what); p != npos) {
+                return (p + what.length()) == this->length();
+            }
+            else {
+                return false;
+            }
+        };
+        bool begins_with(const string& what) const {
+            if (auto p = this->find(what); p != npos) {
+                return p == 0;
+            }
+            else {
+                return false;
+            }
+        };
+
     };
 
     // all const-functions are thread-safe
@@ -350,9 +369,10 @@ namespace utilities {
             return !operator==(lhs, rhs);
         };
         operator string() const {
-            std::string out(a.c_str());
-            out.append(b.c_str(), b.length());
-            out.append(c.c_str(), c.length());
+            std::string out;
+            out.append(a.c_str().data(), a.c_str().length());
+            out.append(b.c_str().data(), b.c_str().length());
+            out.append(c.c_str().data(), c.c_str().length());
             return out;
         };
 
@@ -2465,7 +2485,7 @@ private:
         Scopes::BasicScope*
             scope;
     private:
-        std::unique_ptr<utilities::string>
+        utilities::string
             current_namespace; // e.g. "::" or "::UI::Color::"
         int
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
@@ -2474,7 +2494,7 @@ private:
         ScopeID(utilities::string && scope_name_p = {}, int scope_type_p = ScopeType::Basic)
             : scope_name{ std::move(scope_name_p) }
             , scope{ nullptr }            
-            , current_namespace{ nullptr }
+            , current_namespace{ utilities::string::empty_string() }
             , scope_type{ std::move(scope_type_p) }
         {}
         ScopeID(ScopeID&& rhs) 
@@ -2541,10 +2561,10 @@ public:
         };
         utilities::string const& GetCurrentNamespace() const {
             if (this->this_m.is_namespace()) {
-                return *this->this_m.current_namespace;
+                return this->this_m.current_namespace;
             }
             else {
-                return *this->namespace_m->this_m.current_namespace;
+                return this->namespace_m->this_m.current_namespace;
             }
         };
 
@@ -2565,20 +2585,15 @@ public:
             else namespace_m = this->root_m;
 
             // current_namespace
-            if (this_m.scope_name.length() > 0) {
-                if (parent_m) {
-                    std::string temp_string = parent_m->this_m.current_namespace->to_string() + this_m.scope_name.to_string();
+            if (parent_m) {
+                if (this_m.scope_name.length() > 0) {
+                    std::string temp_string = parent_m->this_m.current_namespace.to_string() + this_m.scope_name.to_string();
                     auto cleaned_temp_string = CleanUpScopeName(std::string_view(temp_string));
-                    this_m.current_namespace = std::make_unique<utilities::string>(cleaned_temp_string);
-                }
-                else {
-                    // this shouldn't happen...
-                    this_m.current_namespace = std::make_unique<utilities::string>(CleanUpScopeName(this_m.scope_name));
+                    this_m.current_namespace = cleaned_temp_string;
                 }
             }
             else {
-                if (parent_m) { /*this_m.current_namespace = parent_m->this_m.current_namespace;*/ }
-                else this_m.current_namespace = std::make_unique<utilities::string>(utilities::string::namespace_colons());
+                this_m.current_namespace = utilities::string::namespace_colons();
             }
         };
         Breadcrumb(Breadcrumb const&) = delete;
@@ -2954,16 +2969,15 @@ public:
             return finalResult;
         };
 
-        static Scopes::Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name, Scopes::Breadcrumb* start) {
+        static __declspec(noinline) Scopes::Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name, Scopes::Breadcrumb* start) {
             if (!start) return nullptr;
             if (Name.empty()) return start->root_m;
 
-            auto len = Name.length();
-            size_t name_hash = Name.hash();
-
+            static thread_local size_t len;
+            len = Name.length();
             static thread_local std::set< size_t> target_hash; {
                 target_hash.clear();
-                target_hash.insert(name_hash);
+                target_hash.insert(Name.hash());
                 auto temp = Name.remove_leading(':');
                 auto* BC = start;
                 while (BC) {
@@ -2972,19 +2986,16 @@ public:
                 }
             }
 
-            long long QualifiedNameLen;
             if (target_hash.count(utilities::string::namespace_colons().hash()) > 0) {
                 return start->root_m;
             }
-            else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+            else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([stringified = utilities::string(Name)](Breadcrumb* namespacePtr, int search_state)-> int {
                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
-                utilities::string currNS{ namespacePtr->GetCurrentNamespace() };
-
-                QualifiedNameLen = currNS.length();
+                utilities::string const& currNS{ namespacePtr->GetCurrentNamespace() };
                 if (target_hash.count(currNS.hash()) > 0) return SearchResult::Success;
                 else if (search_state & SearchingChildren) {
-                    if (len < QualifiedNameLen) return SearchResult::Failure | SearchResult::StaticFailure;
-                    // else if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
+                    if (len < currNS.length()) return SearchResult::Failure | SearchResult::StaticFailure;
+                    else if (stringified.find(currNS/*, true, stringified.length() - currNS.length()*/) == utilities::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
                     else return SearchResult::Failure;
                 }
                 else return SearchResult::Failure;
@@ -3050,96 +3061,71 @@ public:
         };
         
         /// <summary>
-        /// Try to find an object in this scope. Does not search neighbors or review the object name.
-        /// Since objects cannot be removed, it safely returns a pointer. 
+        /// Try to find an object in this scope. Does not search neighbors or review the object name. Since objects cannot be removed, it safely returns a pointer. 
         /// </summary>
-        /// <returns>utilities::ObjectWrapper*</returns>
+        /// <returns>ObjectWrapper</returns>
         utilities::ObjectWrapper* find_object_here(utilities::string const& sv) const {
             return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
         };
 
+        // Searches for a namespace that best fits the provided information, starting from this scope's namespace or position.
         Scopes::Breadcrumb* find_namespace(utilities::string const& Name) const {
-            return FindNamespace(
-                utilities::compound_shared_string("::", Name.remove_leading_and_trailing(':'), "::"), // "std" or "::std" or "::std::" -> "::std::" 
-                &const_cast<BasicScope*>(this)->breadcrumb_m // where
-            );
-        };
-
-        Scopes::Breadcrumb* find_namespace(utilities::string const& Name, Scopes::Breadcrumb*& nearest_scope) const {
+            auto* NS = this->GetNamespace();
+            if (auto* cache = NS->search_cache.TryGetCache<0>(NS->cache_version, Name.hash())) {
+                return cache;
+            }
+            
             if (auto* out = FindNamespace(
                 utilities::compound_shared_string("::", Name.remove_leading_and_trailing(':'), "::"), // "std" or "::std" or "::std::" -> "::std::" 
                 &const_cast<BasicScope*>(this)->breadcrumb_m // where
             )) {
+                NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), out);
+                return out;                
+            }
+            else {
+                return nullptr;
+            }
+        };
+    private:
+        Scopes::Breadcrumb* FindNamespaceImpl(utilities::string const& Name, Scopes::Breadcrumb*& nearest_scope) const {
+            if (auto* out = find_namespace(Name)) {
                 nearest_scope = out;
                 return out;
             }
             else {
+                if (!nearest_scope) nearest_scope = this->breadcrumb_m.root_m;
                 const auto& [left, right] = Name.remove_leading_and_trailing(':').left_and_right_of_last("::");
-                if (right.length() == 0) return nullptr;
-
-                // find the left first, and if successful, find the right. 
-                if (auto* out = find_namespace(left, nearest_scope)) {
-                    return out->this_m.scope->find_namespace(right, nearest_scope);
+                if (right.length() > 0) {                    
+                    if (auto* out = FindNamespaceImpl(left, nearest_scope)) {
+                        nearest_scope = out;
+                        return out->this_m.scope->FindNamespaceImpl(right, nearest_scope);
+                    }
+                    else {
+                        return nullptr;
+                    }                    
                 }
                 else {
+                    // no colons inside
                     return nullptr;
-                }                
+                }
             }
+        };
+    public:
+        // Searches for a namespace while also specifying the "closest" it was able to get to the requested namespace. Useful for debugging where the search last ended. 
+        Scopes::Breadcrumb* find_namespace(utilities::string const& Name, Scopes::Breadcrumb*& nearest_scope) const {
+            Scopes::Breadcrumb* out = FindNamespaceImpl(Name, nearest_scope);
+            if (out) {
+                return out->this_m.scope->find_namespace(Name);
+            }
+            return nullptr;
         };
 
     public:
 
 
+
+
 #if 0
-        static Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name, Breadcrumb* start) {
-            static size_t default_namespace_hash{ GoodLang::GetHash(std::string("::")) };
-            auto len = Name.length();
-            size_t name_hash = Name.hash();
-
-            (void)root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
-                if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
-                else { print(scope->this_m.scope_name.c_str()); }
-                return Scopes::BasicScope::SearchResult::Failure;
-            }, nullptr, 0);
-
-            static thread_local std::set< size_t> target_hash; {
-                target_hash.clear();
-                target_hash.insert(name_hash);
-                utilities::compound_shared_string temp = Name.remove_leading(':');
-                auto* BC = start;
-                while (BC) {
-                    target_hash.insert(temp.hash(BC->current_namespace_hash));
-                    BC = BC->parent_m;
-                }
-            }
-            auto* Ptr = start->this_m->scope_ptr;
-            long long QualifiedNameLen;
-            if (target_hash.count(default_namespace_hash) > 0) {
-                if (cache) cache->insert(name_hash, (Breadcrumb*)(start->root_m));
-                return start->root_m;
-            }
-            else if (Breadcrumb* BC = !Ptr ? (Breadcrumb*)nullptr : Ptr->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
-                if (!namespacePtr->this_m->is_namespace()) return SearchResult::Failure;
-                QualifiedNameLen = namespacePtr->current_namespace.length();
-                if (target_hash.count(namespacePtr->current_namespace_hash) > 0) return SearchResult::Success;
-                else if (search_state & SearchingChildren) {
-                    if (len < QualifiedNameLen) return SearchResult::Failure | SearchResult::StaticFailure;
-                    else if (Breadcrumb::Find(Name, namespacePtr->current_namespace, true, 0, QualifiedNameLen) == std::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
-                    else return SearchResult::Failure;
-                }
-                else return SearchResult::Failure;
-                })) {
-                if (cache) cache->insert(name_hash, (Breadcrumb*)BC);
-                return BC;
-            }
-            else {
-                if (cache) cache->insert(name_hash, nullptr);
-                return nullptr;
-            }
-        };
-        static Breadcrumb* FindNamespace(std::string_view const& name, Breadcrumb* start) {
-            return FindNamespace(Breadcrumb::CleanUpScopeName(name), start);
-        };
         static Breadcrumb* FindClass(std::shared_ptr<GoodLang::Type_Info> const& type, Breadcrumb* start) {
             auto type_hash{ type->uniqueHash };
             std::shared_ptr<Breadcrumb::cache_map> cache{ nullptr };
@@ -3205,19 +3191,6 @@ public:
                 if (cache) cache->insert(type_hash, nullptr);
                 return nullptr;
             }
-        };
-
-        Breadcrumb* FindNamespace(std::string_view name) const {
-            return FindNamespace(name, this->breadcrumb_m.namespace_m);
-        };
-        Breadcrumb* FindNamespace(utilities::compound_shared_string const& Name) const {
-            return FindNamespace(Name, this->breadcrumb_m.namespace_m);
-        };
-        Breadcrumb* FindClass(std::string_view name) const {
-            return FindNamespace(name);
-        };
-        Breadcrumb* FindClass(std::shared_ptr<GoodLang::Type_Info> const& type) const {
-            return FindClass(type, this->breadcrumb_m.namespace_m);
         };
 #endif
 
@@ -4332,12 +4305,16 @@ int main() {
             print(s.right_of("::std").c_str());
             print(s.left_of("string::").c_str());
             print(s.right_of("string::").c_str());
+
             print(s.left_of_last("d::").c_str());
             print(s.right_of_last("d::").c_str());
             print(s.left_of_last("::std").c_str());
             print(s.right_of_last("::std").c_str());
             print(s.left_of_last("string::").c_str());
             print(s.right_of_last("string::").c_str());
+
+            EXPECT_EQ(true, s.ends_with("::"));
+            EXPECT_EQ(true, s.begins_with("::"));
 
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::")));            
@@ -4346,6 +4323,7 @@ int main() {
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::string::impl::")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::string::")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::string::impl::")));
+
             EXPECT_EQ(nullptr, root.find_namespace(utilities::string("impl"))); // could not find "impl" from the root, which is (arguably) correct!             
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("std")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string")));
@@ -4354,8 +4332,36 @@ int main() {
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("string")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("string::impl")));
 
+
+
+
+            Scopes::Breadcrumb* nearest;
+
+            nearest = nullptr;
+            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("impl"), nearest));
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string::impl"), nearest));
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
             
-            // root.find_namespace(utilities::string("impl"))
+            nearest = nullptr;
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::impl"), nearest)); // successfully found it
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("string::impl"), nearest)); // successfully found it
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("string::impl::impl"), nearest)); // successfully found it
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
 
 
 
