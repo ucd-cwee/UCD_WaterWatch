@@ -958,7 +958,7 @@ namespace utilities {
                     // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
                     InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
                 }
-                Wrap& wrap = _listeners[index - 1];
+                Wrap& wrap = _listeners[index/* - 1*/];
                 InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
                 InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
                 InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
@@ -967,7 +967,7 @@ namespace utilities {
         // remove a listener from the list
         __declspec(noinline) void remove_listener(size_t index) {
             if (alive.load() && _listeners.size() >= index) {
-                Wrap& wrap = _listeners[index - 1];
+                Wrap& wrap = _listeners[index/* - 1*/];
                 InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
                 if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
                 else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
@@ -1944,7 +1944,7 @@ namespace utilities {
 
     };
 
-    // fast, thread-safe sorted map. Allows simultaneous reading / writing / erasure. 
+    // fast, thread-safe sorted map. Allows simultaneous reading / writing / erasure. Slower than concurrent_unordered_map when erasure is not necessary. 
     template<class KeyType, class ValueType> class atomic_map {
         friend class it_state;
     protected:
@@ -2209,7 +2209,7 @@ namespace utilities {
 
     };
 
-    // fast, thread-safe unsorted map. Allows simultaneous reading / writing / erasure. 
+    // fast, thread-safe unsorted map. Allows simultaneous reading / writing / erasure. Slower than concurrent_unordered_map when erasure is not necessary. 
     template<class KeyType, class ValueType, typename HashType = std::hash<KeyType>> class atomic_unordered_map {
         friend class it_state;
     protected:
@@ -2420,7 +2420,278 @@ namespace utilities {
 
     };
 
-};
+    class FunctionWrapper {
+    public:
+        enum FunctionState {
+            Normal = 0,
+            Static = 1,
+            Constant = 2,
+            Async = 4, // e.g. constructors should be (by definition?) async-friendly
+            Template = 8,
+            Explicit = 16,
+            Cached = 32
+        };
+
+        FunctionWrapper(GoodLang::Proxy_Function obj = nullptr, int s = 0)
+            : function{ std::move(obj) }
+            , state{ std::move(s) }
+        {};
+
+        GoodLang::Proxy_Function 
+            function{ nullptr };
+        int 
+            state{ 0 };
+        mutable GoodLang::Units::value
+            cost{ GoodLang::details::TypeConversionWorstCaseCost };
+
+        bool is_const() const {
+            return state & Constant;
+        };
+        bool is_static() const {
+            return state & Static;
+        };
+        bool is_async() const {
+            return state & Async;
+        };
+        bool is_template() const {
+            return state & Template;
+        };
+        bool is_explicit() const {
+            return state & Explicit;
+        };      
+        bool is_cached() const {
+            return state & Cached;
+        };
+    };
+
+    class Functions {
+    public:
+        Functions() = default;
+        Functions(Functions const& rhs) = delete;
+        Functions(Functions&& rhs) = delete;
+        Functions& operator=(Functions const& rhs) = delete;
+        Functions& operator=(Functions&& rhs) = delete;
+        ~Functions() = default;
+
+    public:
+        typedef FunctionWrapper
+            FunctionPtr;
+        typedef atomic_unordered_map<GoodLang::ParamTypes, FunctionPtr>
+            FunctionSort; // key may NOT be the function's underlying params, but just params that were previously searched... 
+        typedef atomic_unordered_map<utilities::string, FunctionSort>
+            FunctionMap; // name
+
+    public:
+        static constexpr size_t numV = ((int)('Z') - (int)('A') + 1) + ((int)('z') - (int)('a') + 1) + 1;
+        static constexpr size_t CharToIndex(char firstChar) {
+            if (firstChar >= 'a' && firstChar <= 'z') {
+                return ((int)firstChar - (int)('a')) + 27;
+            }
+            else if (firstChar >= 'A' && firstChar <= 'Z') {
+                return ((int)firstChar - (int)('A')) + 1;
+            }
+            else {
+                return 0;
+            }
+        };
+        FunctionMap
+            m_functions;
+
+    private:
+        FunctionPtr const& at(utilities::string const& key, GoodLang::ParamTypes const& params) const {
+            static Functions::FunctionPtr out;
+            if (auto functionMapPtr = m_functions.find(key), e = m_functions.end(); functionMapPtr != e) {
+                if (auto FunctionSortPtr = functionMapPtr->second.find(params), e2 = functionMapPtr->second.end(); FunctionSortPtr != e2) {
+                    return FunctionSortPtr->second;
+                }
+            }            
+            return out;
+        };
+
+    public:
+        FunctionPtr const& operator()(utilities::string const& key, GoodLang::ParamTypes const& params) const {
+            return at(key, params);
+        };
+
+        FunctionPtr const& emplace(utilities::string const& key, GoodLang::ParamTypes const& params, FunctionWrapper func) {
+            auto ptr{ m_functions[key].insert(params, std::move(func)) };
+            return ptr.second;
+        };
+        FunctionPtr const& emplace(utilities::string const& key, FunctionWrapper const& func) {
+            return emplace(key, func.function->Arguments().Types(), func);
+        };
+
+        /* Given a function name and call parameters, will attempt to find an exact-match function, variadic instantiation, or convertable function call, or return nullptr. */
+        FunctionWrapper const& BuildMatch(utilities::string const& functionName, GoodLang::ParamTypes const& params, GoodLang::TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr) {
+            static FunctionWrapper null_func;
+
+            if (functionName.length() == 0) return null_func;
+            if (auto& func = at(functionName, params); func.function) {
+                bool isTemplateFunc = func.function->GetSignature().IsTemplate();
+                bool isExplicitFunc = func.is_explicit();
+
+                if (isTemplateFunc) {
+                    if (AllowTemplateInstantiation) {
+                        if (finalCost) {
+                            if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
+                                func.cost = func.function->conversion_cost(params, func.function->Arguments().Types(), m_typeConverters);
+                            }
+                            *finalCost = func.cost(); //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+                        }
+                        return func.function;
+                    }
+                }
+                else {
+                    if (finalCost) {
+                        if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
+                            func.cost = func.function->conversion_cost(params, func.function->Arguments().Types(), m_typeConverters);
+                        }
+                        *finalCost = func.cost(); //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+                    }
+                    return func;
+                }                
+            }
+            if (1) {
+                // Three sorted groups of candidates. 
+                // Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
+                thread_local static std::map< size_t, std::array<std::pair<double, FunctionPtr*>, 3>, std::greater<size_t>>
+                    candidates;
+                defer(candidates.clear());
+
+                // Create candidates.
+                {
+                    std::vector<std::shared_ptr<GoodLang::Type_Info>> paramTypes;
+                    paramTypes.reserve(params.size());
+                    for (auto& x : params) paramTypes.push_back(x.lock());
+
+                    if (functionName.size() > 0) {
+                        for (auto& function : m_functions[functionName]) {
+                            if (!function.second.function) continue; // not valid
+                            if (function.second.is_cached()) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+
+                            bool isTemplateFunc = function.second.function->GetSignature().IsTemplate();
+                            bool isExplicitFunc = function.second.is_explicit();
+
+                            auto conversionCost = function.second.function->conversion_cost_fast(paramTypes, m_typeConverters);
+                            if (conversionCost >= GoodLang::details::TypeConversionWorstCaseCost) continue;
+
+                            // try to early exit...
+                            if (params.size() == function.second.function->Arguments().size()) {
+                                if (!isTemplateFunc) {
+                                    if (conversionCost == 0) {
+                                        FunctionWrapper FunctionToCache(function.second.function, function.second.state | FunctionWrapper::FunctionState::Cached);
+                                        FunctionToCache.cost = 0;
+                                        if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                            if (finalCost) *finalCost = 0;
+                                            return func;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (isTemplateFunc) {
+                                if (AllowTemplateInstantiation) {
+                                    auto& pair = candidates[function.second.function->NumArguments()][2];
+                                    if (pair.second) {
+                                        if (pair.first > conversionCost) {
+                                            pair.first = conversionCost;
+                                            pair.second = &function.second;
+                                        }
+                                    }
+                                    else {
+                                        pair.first = conversionCost;
+                                        pair.second = &function.second;
+                                    }
+                                }
+                            }
+                            else {
+                                if (conversionCost == 0) {
+                                    auto& pair = candidates[function.second.function->NumArguments()][0];
+                                    if (pair.second) {
+                                        if (pair.first > conversionCost) {
+                                            pair.first = conversionCost;
+                                            pair.second = &function.second;
+                                        }
+                                    }
+                                    else {
+                                        pair.first = conversionCost;
+                                        pair.second = &function.second;
+                                    }
+                                }
+                                else if (AllowTypeConversion && !isExplicitFunc) {
+                                    auto& pair = candidates[function.second.function->NumArguments()][1];
+                                    if (pair.second) {
+                                        if (pair.first > conversionCost) {
+                                            pair.first = conversionCost;
+                                            pair.second = &function.second;
+                                        }
+                                    }
+                                    else {
+                                        pair.first = conversionCost;
+                                        pair.second = &function.second;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).
+                for (auto& numParams : candidates) {
+                    for (auto& candidate : numParams.second) {
+                        if (candidate.first >= GoodLang::details::TypeConversionWorstCaseCost) continue;
+                        if (!candidate.second) continue;
+
+                        FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached);
+                        FunctionToCache.cost = candidate.first;
+                        if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                            if (finalCost) *finalCost = candidate.first;
+                            return func;
+                        }
+                    }
+                }
+            }
+            return null_func;        
+        };
+        GoodLang::Any Call(utilities::string const& functionName, std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) {
+            if (auto const& f = BuildMatch(functionName, GoodLang::ParamTypes(params), m_typeConverters); f.function) {
+                return f.function->operator()(const_cast<std::vector<GoodLang::Any>&>(params), m_typeConverters);
+            }
+            else {
+                std::string params_str;
+                for (auto& p : params) {
+                    std::string className = p.TypeName(); {
+                        //if (auto classPtr = std::dynamic_pointer_cast<Scope2>(this->FindClass(p.Type()))) {
+                        //	className = classPtr->GetName();
+                        //}
+                    }
+
+                    if (params_str.empty()) {
+                        params_str += className;
+                    }
+                    else {
+                        params_str += ", ";
+                        params_str += className;
+                    }
+                }
+                throw GoodLang::exception::not_found_error(GoodLang::printf("`%s`(%s)", functionName.c_str(), params_str.c_str()));
+            }
+
+
+        };
+
+    };
+
+
+
+
+
+
+
+
+
+
+ };
 namespace std {
     template <> struct hash<utilities::string> {
         std::size_t operator()(const utilities::string& k) const {
@@ -2654,7 +2925,13 @@ public:
             Breadcrumb* out{ nullptr };
             _current_cache.do_at_end([&](size_t curr_version, std::array<utilities::DelayedInstantiation<ResultForInputType>, numCategories>& cache) {
                 if (curr_version >= cache_version) {
-                    out = cache[category]->operator[](input_hash);
+                    if (cache[category].valid()) {
+                        if (auto f = cache[category]->find(input_hash); f != cache[category]->end()) {
+                            out = f->second;
+                        }
+                    }
+
+                    // out = cache[category]->operator[](input_hash);
                 }
             });
             return out;
@@ -2703,9 +2980,12 @@ public:
         };
         virtual void AddUsing_Impl(Breadcrumb* scope) {
             if (scope) {
-                if (auto f = using_m->find(scope); f != using_m->end()) {
-                    using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
-                    invalidate_cache();
+                if (scope->this_m.is_namespace()) {
+                    using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{
+                        scope,
+                        utilities::Callback<NamespaceScope>::ScopedListener()
+                    });
+                    invalidate_cache(); // does nothing for normal scopes
                 }
             }
         };
@@ -3121,78 +3401,69 @@ public:
         };
 
     public:
-
-
-
-
-#if 0
-        static Breadcrumb* FindClass(std::shared_ptr<GoodLang::Type_Info> const& type, Breadcrumb* start) {
-            auto type_hash{ type->uniqueHash };
-            std::shared_ptr<Breadcrumb::cache_map> cache{ nullptr };
-            if (1) {
-                auto currVersion = start->child_versions->load();
-                bool doDelete = false;
-                start->cached_namespace_lookups.EnsureDataExists();
-                auto& lock = start->cached_namespace_lookups.GetLock();
-                auto& ptr = start->cached_namespace_lookups.data;
-                if (1) {
-                    lock.lock_shared();
-                    if (1) {
-                        if (ptr->size() == 0) {
-                            doDelete = true;
-                        }
-                        else if (ptr->back().first >= currVersion) {
-                            cache = ptr->back().second;
-                        }
-                        else {
-                            doDelete = true;
-                        }
+        // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
+        utilities::ObjectWrapper* find_object(utilities::string const& PossiblyScopedName, Scopes::Breadcrumb* search_from = nullptr) const {
+            utilities::ObjectWrapper* p{ nullptr }; 
+            if (search_from) {
+                // we have a scope with a specific object name
+                // PossiblyScopedName should NOT have colons in this case. 
+                if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+                    // we should not be able to find objects in children scopes
+                    // search_state & Scopes::BasicScope::
+                    if (SearchState::SearchingChildren & search_state) {
+                        return SearchResult::Failure | SearchResult::StaticFailure;
                     }
-                    lock.unlock_shared();
-                }
-                if (cache) {
-                    if (auto f = cache->find(type_hash), e = cache->end(); f != e) {
-                        return *f->second;
-                    }
-                }
-                if (doDelete) {
-                    cache = std::make_shared<Breadcrumb::cache_map>();
-                    lock.lock();
-                    if (1) {
-                        while (ptr->size() > 0) {
-                            if (ptr->front().first < currVersion) {
-                                ptr->pop_front();
-                            }
-                            else if (ptr->back().first < currVersion) {
-                                ptr->pop_back();
-                            }
-                            else {
-                                break;
-                            }
-                        }
-                        ptr->push_back({ currVersion, cache });
-                    }
-                    lock.unlock();
-                }
-            }
 
-            auto* Ptr = start->this_m->scope_ptr;
-            if (Breadcrumb* BC = !Ptr ? (Breadcrumb*)nullptr : Ptr->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
-                if (!namespacePtr->this_m->is_class()) return SearchResult::Failure;
-                if (namespacePtr->class_type_hash == type_hash) {
-                    return SearchResult::Success;
+                    if (p = namespacePtr->this_m.scope->find_object_here(PossiblyScopedName)) {
+                        return SearchResult::Success;
+                    }
+                    else {
+                        return SearchResult::Failure;
+                    }                    
+                }, nullptr, SearchState::SkipChildren)) {
+                    return p;
                 }
-                return SearchResult::Failure;
-                })) {
-                if (cache) cache->insert(type_hash, (Breadcrumb*)BC);
-                return BC;
+                else {
+                    return nullptr;
+                }
             }
             else {
-                if (cache) cache->insert(type_hash, nullptr);
-                return nullptr;
+                auto* NS = this->GetNamespace();
+                if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
+                    p = reinterpret_cast<utilities::ObjectWrapper*>(cache);
+                    return p;
+                }
+
+                // we don't have a scope (yet)
+                const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
+                if (optionalName.length() == 0) {
+                    // We only have an object name -- just do the normal search from here.
+                    p = find_object(optionalScope, &const_cast<BasicScope*>(this)->breadcrumb_m);
+                }
+                else {
+                    Scopes::Breadcrumb* closest_scope{ nullptr };
+                    if (optionalScope.length() == 0) {
+                        p = find_object(optionalName, this->breadcrumb_m.root_m);
+                    }
+                    else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {
+                        p = find_object(optionalName, nameSpace);
+                    }
+                    else if (closest_scope) { // namespace was not found                        
+                        p = nullptr; //  throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s' in namespace '%s'", optionalName.c_str().data(), closest_scope->GetCurrentNamespace().c_str().data()));
+                    }
+                    else { // namespace was not found AND no nearest was discovered     
+                        p = nullptr; // throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s'", optionalName.c_str().data()));
+                    }
+                }
+                if (p) NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Scopes::Breadcrumb*>(p));
+                return p;
             }
         };
-#endif
+
+
+
+
+
 
     };
 
@@ -3229,13 +3500,13 @@ public:
     protected:
         virtual void AddUsing_Impl(Breadcrumb* scope) override {
             if (scope) {
-                if (auto* ns_ptr = scope->namespace_m) {
-                    if (ns_ptr->this_m.is_namespace()) {
-                        if (auto* p = dynamic_cast<NamespaceScope*>(ns_ptr->this_m.scope)) {
-                            // suddenly, we require our scope index, now that we are "using" a namespace
-                            using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
-                            invalidate_cache();
-                        }
+                if (scope->this_m.is_namespace()) {
+                    if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
+                        using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{
+                            scope,
+                            p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this)
+                        });
+                        invalidate_cache();
                     }
                 }
             }
@@ -4268,6 +4539,8 @@ int main() {
                     auto& scope3{ scope2.make_namespace("impl") };
                     auto scope4{ scope3.make_scope() };
 
+                    scope2.emplace_object_here("npos", GoodLang::Any(100));
+
                     scope4.add_using_here(scope3);
                     scope4.add_using_here(scope2);
                     scope4.add_using_here(scope1);
@@ -4284,6 +4557,8 @@ int main() {
                     auto& scope1{ root.make_namespace("string") };
                     auto& scope2{ scope1.make_namespace("impl") };
                     auto scope3{ scope2.make_scope() };
+
+                    scope1.emplace_object_here("npos", GoodLang::Any(200));
 
                     scope3.add_using_here(scope2);
                     scope3.add_using_here(scope1);
@@ -4332,33 +4607,97 @@ int main() {
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("string")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("string::impl")));
 
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::string::"))->this_m.scope->find_object_here("npos"));
+            EXPECT_NE(nullptr, root.find_object("::std::string::npos"));
+            EXPECT_EQ(nullptr, root.find_object("npos")); // should not be successfully found.
+            EXPECT_NE(nullptr, root.find_object("std::string::npos"));
+            EXPECT_EQ("100", GoodLang::ToString(root.find_object("std::string::npos")->object));
+            EXPECT_NE(nullptr, root.find_object("::string::npos"));
+            EXPECT_EQ("200", GoodLang::ToString(root.find_object("::string::npos")->object)); 
+            EXPECT_EQ(nullptr, root.find_object("::npos")); // should not be successfully found.
+
+            EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("npos"));
+            EXPECT_NE(nullptr, root.find_namespace("std")->this_m.scope->find_object("string::npos"));
+            EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("string"));
+            EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("string2::npos")); // this namespace does not exist and will not be found. 
+            EXPECT_EQ(nullptr, root.find_object("std::npos")); // should not be successfully found.
+            EXPECT_EQ(nullptr, root.find_object("std::string")); // should not be successfully found.
+            EXPECT_EQ(nullptr, root.find_object("std::string2::npos")); // should not be successfully found.
+
+            EXPECT_NE(nullptr, root.find_namespace("::string::impl::")->this_m.scope->find_object("npos"));
+            EXPECT_NE(nullptr, root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos"));
+
+            EXPECT_EQ("100", GoodLang::ToString(root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos")->object));
+            EXPECT_EQ("200", GoodLang::ToString(root.find_namespace("::string::impl::")->this_m.scope->find_object("npos")->object));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                EXPECT_NE(nullptr, root.find_namespace("std")->this_m.scope->find_object("string::npos"));
+                EXPECT_NE(nullptr, root.find_object("std::string::npos"));
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                EXPECT_EQ(nullptr, root.find_object("std::string2::npos")); // should not be successfully found.
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+
+            if (1) {
+                auto scope1{ root.make_scope() };
+                scope1.add_using_here(*scope1.find_namespace("::std::string::")->this_m.scope->GetNamespace());
+                EXPECT_NE(nullptr, scope1.find_object("npos")); // should be successfully found now, due to the using statement.
+            }
+
+            if (1) {
+                root.add_using_here(*root.find_namespace("::std::string::")->this_m.scope->GetNamespace());
+                EXPECT_NE(nullptr, root.find_object("npos")); // should be successfully found now, due to the using statement.
+            }
+            EXPECT_NE(nullptr, root.find_object("::std::string::npos"));
+            EXPECT_NE(nullptr, root.find_object("::npos"));
+            EXPECT_NE(nullptr, root.find_namespace("UI")->this_m.scope->find_object("npos"));
+
+
+
+            Functions funcs;
+            funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 100; }), utilities::FunctionWrapper::FunctionState::Normal));
+            funcs.emplace("b", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 200; }), utilities::FunctionWrapper::FunctionState::Normal));
+            funcs.emplace("c", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 300; }), utilities::FunctionWrapper::FunctionState::Normal));
+            funcs.emplace("d", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 400; }), utilities::FunctionWrapper::FunctionState::Normal));
+
+            
+
+
+
+
+
 
 
 
             Scopes::Breadcrumb* nearest;
 
             nearest = nullptr;
-            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("impl"), nearest));
+            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("impl"), nearest)); // does not find it, but returns the root as the nearest location
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
 
             nearest = nullptr;
-            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string::impl"), nearest));
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string::impl"), nearest)); // successfully finds it
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
             
             nearest = nullptr;
-            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::impl"), nearest)); // successfully found it
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::impl"), nearest)); // successfully finds it
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
 
             nearest = nullptr;
-            EXPECT_NE(nullptr, root.find_namespace(utilities::string("string::impl"), nearest)); // successfully found it
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("string::impl"), nearest)); // successfully finds it
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
 
             nearest = nullptr;
-            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("string::impl::impl"), nearest)); // successfully found it
+            EXPECT_EQ(nullptr, root.find_namespace(utilities::string("string::impl::impl"), nearest)); // does not find it, but does locate the nearest location
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
 
