@@ -1,4 +1,5 @@
 #pragma region "Includes"
+#pragma once
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -27,20 +28,20 @@
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #pragma endregion
 
-namespace utilities {       
+namespace utilities {
     class string {
     public:
         using size_type = std::string_view::size_type;
         static constexpr const auto npos = std::string_view::npos;
 
     protected:
-        std::shared_ptr<std::string> 
+        std::shared_ptr<std::string>
             _data; // maintains ownership of the data if necessary
-        std::string_view 
+        std::string_view
             data;
-        size_type 
+        size_type
             _hash{ npos };
-        
+
         string(std::shared_ptr<std::string> _d, std::string_view d) : _data(std::move(_d)), data(std::move(d)) {};
 
     public:
@@ -52,7 +53,7 @@ namespace utilities {
         virtual ~string() = default;
 
         template <size_t N> __forceinline string(const char(&r)[N]) : data(r) {};
-        string(std::string && _Copy) : _data(std::make_shared<std::string>(std::move(_Copy))) {
+        string(std::string&& _Copy) : _data(std::make_shared<std::string>(std::move(_Copy))) {
             data = *_data;
         };
         string(std::string_view&& _Copy) : data(_Copy) {};
@@ -304,7 +305,32 @@ namespace utilities {
         };
 
     };
+};
 
+namespace std {
+    template <> struct hash<utilities::string> {
+        std::size_t operator()(const utilities::string& k) const {
+            return k.hash();
+        };
+    };
+    template <> struct less<utilities::string> {
+        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
+            return lhs < rhs;
+        };
+    };
+    template <> struct greater<utilities::string> {
+        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
+            return lhs > rhs;
+        };
+    };
+    template <> struct equal_to<utilities::string> {
+        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
+            return lhs == rhs;
+        };
+    };
+};
+
+namespace utilities {
     // all const-functions are thread-safe
     class compound_shared_string {
     public:
@@ -814,7 +840,7 @@ namespace utilities {
                 };
             };
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
-            Allocator<_type_> // , 32
+            Allocator<_type_, 32> // , 32
                 _alloc;
             moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
@@ -861,7 +887,16 @@ namespace utilities {
         public:
             using GuardType = typename TLS::EpochGuard;
 
-            EpochAllocator() = default;
+            EpochAllocator() 
+                : _alloc{}
+                , _delete_list{}
+                , _TLS{}
+                , _lastGC{}
+            {};
+            EpochAllocator(EpochAllocator const&) = delete;
+            EpochAllocator(EpochAllocator&&) = delete;
+            EpochAllocator& operator=(EpochAllocator const&) = delete;
+            EpochAllocator& operator=(EpochAllocator &&) = delete;
             ~EpochAllocator() = default;
 
             void unsafe_unload() {
@@ -1368,6 +1403,10 @@ namespace utilities {
             static_assert(maxChildrenPerNode >= 4);
             root = AllocNode();
         };
+        BTree(BTree const&) = delete;
+        BTree(BTree&& rhs) = delete;
+        BTree& operator=(BTree const&) = delete;
+        BTree& operator=(BTree&&) = delete;
         ~BTree() = default;
 
         void unsafe_unload() {
@@ -2213,7 +2252,7 @@ namespace utilities {
     template<class KeyType, class ValueType, typename HashType = std::hash<KeyType>> class atomic_unordered_map {
         friend class it_state;
     protected:
-        BTree<std::pair<KeyType, ValueType>, size_t>
+        std::unique_ptr<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>
             tree;
         HashType 
             hasher;
@@ -2225,7 +2264,7 @@ namespace utilities {
     public:
         class WrappedReference {
         private:
-            typename  BTree<std::pair<KeyType, ValueType>, size_t>::GuardType
+            typename  BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::GuardType
                 guard;
 
         public:
@@ -2234,8 +2273,7 @@ namespace utilities {
             ValueType&
                 second;
 
-            // WrappedReference() = delete;
-            WrappedReference(const KeyType& _first, ValueType& _second, BTree<std::pair<KeyType, ValueType>, size_t>* _parent)
+            WrappedReference(const KeyType& _first, ValueType& _second, BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>* _parent)
                 : first{ _first }
                 , second{ _second }
                 , guard{ _parent->ProtectCurrentEpoch() }
@@ -2249,56 +2287,47 @@ namespace utilities {
 
     public:
         atomic_unordered_map()
-            : tree{}, hasher{ HashType{} }
+            : tree{ std::make_unique<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>() }, hasher{ HashType{} }
         {};
         atomic_unordered_map(atomic_unordered_map const& rhs) = delete;
-        atomic_unordered_map(atomic_unordered_map&& rhs) = delete;
+        atomic_unordered_map(atomic_unordered_map&& rhs) : tree{ std::move(rhs.tree) }, hasher{ HashType{} } 
+        {};
         atomic_unordered_map& operator=(atomic_unordered_map const& rhs) = delete;
         atomic_unordered_map& operator=(atomic_unordered_map&& rhs) = delete;
         ~atomic_unordered_map() = default;
 
         void unsafe_unload() {
-            tree.unsafe_unload();
+            tree->unsafe_unload();
         };
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
-            return tree.ProtectCurrentEpoch();
+            return tree->ProtectCurrentEpoch();
         };
         size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
             size() const {
-            return tree.GetNodeCount();
+            return tree->GetNodeCount();
         };
         WrappedReference // if already exists, returns the existing value pair. 
             insert(const KeyType& time, ValueType&& value) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto* iter = tree.Add<false>({ time, std::move(value) }, hash(time));
-            return WrappedReference(iter->object->first, iter->object->second, &tree);
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto* iter = tree->Add<false>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+            return WrappedReference(iter->object->first, *iter->object->second, &*tree);
         };
         WrappedReference // if already exists, overwrites the value and returns the value pair. 
             emplace(const KeyType& time, ValueType&& value) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto* iter = tree.Add<true>({ time, std::move(value) }, hash(time));
-            return WrappedReference(iter->object->first, iter->object->second, &tree);
-        };
-        template <typename iter_type> void // bulk insertion. if already exists, does nothing.
-            insert_bulk(iter_type begin, iter_type const& end) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            tree.Add_Bulk<iter_type, false>(std::move(begin), end);
-        };
-        template <typename iter_type> void // bulk insertion. if already exists, overwrites the value. 
-            emplace_bulk(iter_type begin, iter_type const& end) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            tree.Add_Bulk<iter_type, true>(std::move(begin), end);
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto* iter = tree->Add<true>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+            return WrappedReference(iter->object->first, *iter->object->second, &*tree);
         };
         size_t // returns 1 if the key is found, otherwise 0.
             count(const KeyType& time) const {
-            return (bool)tree.NodeFind(hash(time)) ? 1 : 0;
+            return (bool)tree->NodeFind(hash(time)) ? 1 : 0;
         };
         ValueType& // throws if the key is not found. 
             at(const KeyType& time) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* iter = tree.NodeFind(hash(time))) {
-                return iter->object->second;
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* iter = tree->NodeFind(hash(time))) {
+                return *iter->object->second;
             }
             else {
                 throw std::range_error("Could not find key");
@@ -2306,9 +2335,9 @@ namespace utilities {
         };
         ValueType* // returns nullptr if the key is not found. 
             try_at(const KeyType& time) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* iter = tree.NodeFind(hash(time))) {
-                return &iter->object->second;
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* iter = tree->NodeFind(hash(time))) {
+                return &*iter->object->second;
             }
             else {
                 return nullptr;
@@ -2316,24 +2345,24 @@ namespace utilities {
         };
         template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
             for_all(Func const& func) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto p = tree.GetFirst();
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto p = tree->GetFirst();
             while (p) {
-                func(p->object->first, p->object->second);
-                p = tree.GetNextLeaf(p);
+                func(p->object->first, *p->object->second);
+                p = tree->GetNextLeaf(p);
             }
         };
         template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
             get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (ValueType* p = tree.Find(hash(time))) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (std::pair<KeyType, std::shared_ptr<ValueType>>* p = tree->Find(hash(time))) {
                 if (ExistedAlready) *ExistedAlready = true;
-                return *p;
+                return *p->second;
             }
             else {
                 if (ExistedAlready) *ExistedAlready = false;
-                if (auto* p = tree.Add(func(), time)) {
-                    return *p->object;
+                if (auto* p = tree->Add<false>(std::pair<KeyType, std::shared_ptr<ValueType>>(time, std::make_shared<ValueType>(func())), hash(time))) {
+                    return *p->object->second;
                 }
                 else {
                     throw std::range_error("Could not find key");
@@ -2347,18 +2376,18 @@ namespace utilities {
 
         bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
             erase(const KeyType& time, ValueType* out = nullptr) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            std::pair<KeyType, ValueType> temp;
-            bool result = tree.RemoveAt(hash(time), &temp);
-            if (out) *out = temp.second;
+            auto g{ tree->ProtectCurrentEpoch() };
+            std::pair<KeyType, std::shared_ptr<ValueType>> temp;
+            bool result = tree->RemoveAt(hash(time), &temp);
+            if (out) *out = *temp.second;
             return result;
         };
         void // clear the map
             clear() {
             while (true) {
-                auto g{ tree.ProtectCurrentEpoch() };
-                if (auto* p = tree.GetFirst()) {
-                    tree.Remove(p);
+                auto g{ tree->ProtectCurrentEpoch() };
+                if (auto* p = tree->GetFirst()) {
+                    tree->Remove(p);
                 }
                 else {
                     break;
@@ -2375,7 +2404,7 @@ namespace utilities {
             using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
 
             // data
-            mutable typename  BTree<std::pair<KeyType, ValueType>, size_t>::_iterType*
+            mutable typename  BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::_iterType*
                 _ptr{};
             mutable std::unique_ptr<value_type>
                 _out;
@@ -2383,19 +2412,19 @@ namespace utilities {
             // functions
             void Initialize(thisType* ref) {};
             void ToBeginning(thisType* ref) {
-                _ptr = ref->tree.GetFirst();
+                _ptr = ref->tree->GetFirst();
             };
             void ToEnd(thisType* ref) {
                 _ptr = nullptr;
             };
             void Next(thisType* ref) {
-                this->_ptr = ref->tree.GetNextLeaf(this->_ptr);
+                this->_ptr = ref->tree->GetNextLeaf(this->_ptr);
             };
             void Prev(thisType* ref) {
-                this->_ptr = ref->tree.GetPrevLeaf(this->_ptr);
+                this->_ptr = ref->tree->GetPrevLeaf(this->_ptr);
             };
             value_type& Get(thisType* ref) const {
-                _out = std::make_unique<value_type>(_ptr->object->first, _ptr->object->second, &ref->tree);
+                _out = std::make_unique<value_type>(_ptr->object->first, *_ptr->object->second, &*ref->tree);
                 return *_out;
             };
             bool operator==(it_state const& rhs) const {
@@ -2410,9 +2439,9 @@ namespace utilities {
         SETUP_ITERATOR(atomic_unordered_map, it_state);
         iterator // returns an iterator 
             find(const KeyType& _Keyval) const {
-            auto g{ tree.ProtectCurrentEpoch() };
+            auto g{ tree->ProtectCurrentEpoch() };
             auto iter = this->end();
-            if (auto* p = this->tree.NodeFind(hash(_Keyval))) {
+            if (auto* p = this->tree->NodeFind(hash(_Keyval))) {
                 iter.state._ptr = p;
             }
             return iter;
@@ -2423,26 +2452,29 @@ namespace utilities {
     class FunctionWrapper {
     public:
         enum FunctionState {
-            Normal = 0,
-            Static = 1,
-            Constant = 2,
-            Async = 4, // e.g. constructors should be (by definition?) async-friendly
-            Template = 8,
-            Explicit = 16,
-            Cached = 32
+            Normal = 0, // default -- meaningless. 
+            Static = 1, // whether the function is a static function or not. 
+            Constant = 2, // whether this function commits to making no changes to the underlying object. Often, const should also be async, but not always. 
+            Async = 4, // whether this function can be safely called asynchronously or not
+            Template = 8, // whether the function is a template 
+            Explicit = 16, // whether the function is explicit and the input params must exactly match (does not allow conversion)
+            Cached = 32 // whether the function is a cache from another function, for performance reasons. 
         };
 
-        FunctionWrapper(GoodLang::Proxy_Function obj = nullptr, int s = 0)
+        FunctionWrapper(GoodLang::Proxy_Function obj = nullptr, int s = 0, std::vector<GoodLang::Any> defaults = {})
             : function{ std::move(obj) }
             , state{ std::move(s) }
+            , default_values(std::move(defaults))
         {};
 
         GoodLang::Proxy_Function 
             function{ nullptr };
         int 
-            state{ 0 };
+            state{ 0 }; // combination(s) of FunctionState(s)
         mutable GoodLang::Units::value
-            cost{ GoodLang::details::TypeConversionWorstCaseCost };
+            cost{ std::numeric_limits<double>::max() }; // often associated to a cache
+        std::vector<GoodLang::Any>
+            default_values; // default "empty" values are considered as not having been provided at all. 
 
         bool is_const() const {
             return state & Constant;
@@ -2462,6 +2494,79 @@ namespace utilities {
         bool is_cached() const {
             return state & Cached;
         };
+
+        // Given index (lef tto right), will return the default value for it, if available. Otherwise nullptr.
+        const GoodLang::Any* get_default(size_t index) const {
+            if ((index < default_values.size()) && default_values[index])
+                return &default_values[index];            
+            return nullptr;
+        };
+
+        double determine_cost(std::vector<std::shared_ptr<GoodLang::Type_Info>> const& from_types, GoodLang::TypeConverter& m_typeConverters) const {
+            if (function) {
+                if (function->GetSignature().Arguments().size() <= from_types.size()) {
+                    // perfection
+                    return function->conversion_cost_fast(from_types, m_typeConverters);
+                }
+                else if (default_values.size() >= function->GetSignature().Arguments().size()) {
+                    // we can use the defaults
+                    std::vector<std::shared_ptr<GoodLang::Type_Info>> temp(function->GetSignature().Arguments().size(), nullptr);
+                    int i = 0;
+                    double penalty_count = 0;
+                    for (; i < temp.size() && i < from_types.size(); i++) temp[i] = from_types[i];
+                    for (; i < temp.size() && i < default_values.size(); i++) {
+                        if (auto* p = get_default(i)) {
+                            ++penalty_count;
+                            temp[i] = p->TypePtr();
+                        }
+                        else {
+                            // something went wrong
+                            return function->conversion_cost_fast(from_types, m_typeConverters);
+                        }
+                    }
+                    return function->conversion_cost_fast(temp, m_typeConverters) + penalty_count; // * GoodLang::details::TypeConversionWorstCaseCost / 2.0;
+                }
+                else {
+                    // we simply do not have enough parameters. Learn the hard way.
+                    return function->conversion_cost_fast(from_types, m_typeConverters);
+                }
+            }
+            else {
+                return std::numeric_limits<double>::max();
+            }
+        };
+        GoodLang::Any call(std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) const  {
+            if (function) {
+                if (function->GetSignature().Arguments().size() <= params.size()) {
+                    // perfection
+                    return function->operator()(const_cast<std::vector<GoodLang::Any>&>(params), m_typeConverters);
+                }
+                else if (default_values.size() >= function->GetSignature().Arguments().size()) {
+                    // we can use the defaults
+                    std::vector<GoodLang::Any> temp(function->GetSignature().Arguments().size(), GoodLang::Any());
+                    int i = 0;
+                    for (; i < temp.size() && i < params.size(); i++) temp[i] = params[i];
+                    for (; i < temp.size() && i < default_values.size(); i++) {
+                        if (auto* p = get_default(i)) {
+                            temp[i] = *p;
+                        }
+                        else {
+                            // something went wrong
+                            return function->operator()(const_cast<std::vector<GoodLang::Any>&>(params), m_typeConverters);
+                        }
+                    }
+                    return function->operator()(temp, m_typeConverters);
+                }
+                else {
+                    // we simply do not have enough parameters. Learn the hard way.
+                    return function->operator()(const_cast<std::vector<GoodLang::Any>&>(params), m_typeConverters);
+                }
+            }
+            else {
+                throw std::runtime_error("Attempted to call a null-defined FunctionWrapper");
+            }
+        };
+
     };
 
     class Functions {
@@ -2525,7 +2630,12 @@ namespace utilities {
         FunctionWrapper const& BuildMatch(utilities::string const& functionName, GoodLang::ParamTypes const& params, GoodLang::TypeConverter& m_typeConverters, bool AllowTemplateInstantiation = true, bool AllowTypeConversion = true, double* finalCost = nullptr) {
             static FunctionWrapper null_func;
 
+            std::vector<std::shared_ptr<GoodLang::Type_Info>> paramTypes;
+            paramTypes.reserve(params.size());
+            for (auto& x : params) paramTypes.push_back(x.lock());
+
             if (functionName.length() == 0) return null_func;
+#if 0
             if (auto& func = at(functionName, params); func.function) {
                 bool isTemplateFunc = func.function->GetSignature().IsTemplate();
                 bool isExplicitFunc = func.is_explicit();
@@ -2534,9 +2644,9 @@ namespace utilities {
                     if (AllowTemplateInstantiation) {
                         if (finalCost) {
                             if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
-                                func.cost = func.function->conversion_cost(params, func.function->Arguments().Types(), m_typeConverters);
+                                func.cost = func.determine_cost(paramTypes, m_typeConverters);
                             }
-                            *finalCost = func.cost(); //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+                            *finalCost = func.cost(); 
                         }
                         return func.function;
                     }
@@ -2544,13 +2654,14 @@ namespace utilities {
                 else {
                     if (finalCost) {
                         if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
-                            func.cost = func.function->conversion_cost(params, func.function->Arguments().Types(), m_typeConverters);
+                            func.cost = func.determine_cost(paramTypes, m_typeConverters);
                         }
-                        *finalCost = func.cost(); //  m_function->conversion_cost(Params, func->m_function->Arguments().Types(), m_typeConverters);
+                        *finalCost = func.cost(); 
                     }
                     return func;
                 }                
             }
+#endif
             if (1) {
                 // Three sorted groups of candidates. 
                 // Group 1 = exact matches, Group 2 = type conversions, Group 3 = template functions
@@ -2559,11 +2670,7 @@ namespace utilities {
                 defer(candidates.clear());
 
                 // Create candidates.
-                {
-                    std::vector<std::shared_ptr<GoodLang::Type_Info>> paramTypes;
-                    paramTypes.reserve(params.size());
-                    for (auto& x : params) paramTypes.push_back(x.lock());
-
+                {               
                     if (functionName.size() > 0) {
                         for (auto& function : m_functions[functionName]) {
                             if (!function.second.function) continue; // not valid
@@ -2572,14 +2679,13 @@ namespace utilities {
                             bool isTemplateFunc = function.second.function->GetSignature().IsTemplate();
                             bool isExplicitFunc = function.second.is_explicit();
 
-                            auto conversionCost = function.second.function->conversion_cost_fast(paramTypes, m_typeConverters);
-                            if (conversionCost >= GoodLang::details::TypeConversionWorstCaseCost) continue;
+                            auto conversionCost = function.second.determine_cost(paramTypes, m_typeConverters);
 
                             // try to early exit...
                             if (params.size() == function.second.function->Arguments().size()) {
                                 if (!isTemplateFunc) {
                                     if (conversionCost == 0) {
-                                        FunctionWrapper FunctionToCache(function.second.function, function.second.state | FunctionWrapper::FunctionState::Cached);
+                                        FunctionWrapper FunctionToCache(function.second.function, function.second.state | FunctionWrapper::FunctionState::Cached, function.second.default_values);
                                         FunctionToCache.cost = 0;
                                         if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
                                             if (finalCost) *finalCost = 0;
@@ -2597,6 +2703,12 @@ namespace utilities {
                                             pair.first = conversionCost;
                                             pair.second = &function.second;
                                         }
+                                        else if (pair.first == conversionCost) {
+                                            // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
+                                            // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
+                                            // To-Do, improve the error code to be more explicit.
+                                            throw std::runtime_error("Could not distinguish between two functions with equal conversion complexity within the same namespace.");
+                                        }
                                     }
                                     else {
                                         pair.first = conversionCost;
@@ -2612,6 +2724,12 @@ namespace utilities {
                                             pair.first = conversionCost;
                                             pair.second = &function.second;
                                         }
+                                        else if (pair.first == conversionCost) {
+                                            // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
+                                            // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
+                                            // To-Do, improve the error code to be more explicit.
+                                            throw std::runtime_error("Could not distinguish between two functions with equal conversion complexity within the same namespace.");
+                                        }
                                     }
                                     else {
                                         pair.first = conversionCost;
@@ -2625,6 +2743,12 @@ namespace utilities {
                                             pair.first = conversionCost;
                                             pair.second = &function.second;
                                         }
+                                        else if (pair.first == conversionCost) {
+                                            // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
+                                            // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
+                                            // To-Do, improve the error code to be more explicit.
+                                            throw std::runtime_error("Could not distinguish between two functions with equal conversion complexity within the same namespace.");
+                                        }
                                     }
                                     else {
                                         pair.first = conversionCost;
@@ -2637,16 +2761,35 @@ namespace utilities {
                 }
 
                 // Get the "cheapest" or fastest conversion option available at this scope, with the largest number of arguments, in order of group (e.g. preference).
-                for (auto& numParams : candidates) {
-                    for (auto& candidate : numParams.second) {
-                        if (candidate.first >= GoodLang::details::TypeConversionWorstCaseCost) continue;
-                        if (!candidate.second) continue;
+                for (size_t num_param = params.size(); num_param < 16; ++num_param) {
+                    if (auto f = candidates.find(num_param); f != candidates.end()) {
+                        for (auto& candidate : f->second) {
+                            if (candidate.first >= std::numeric_limits<double>::max()) continue;
+                            // if (candidate.first >= GoodLang::details::TypeConversionWorstCaseCost) continue;
+                            if (!candidate.second) continue;
 
-                        FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached);
-                        FunctionToCache.cost = candidate.first;
-                        if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
-                            if (finalCost) *finalCost = candidate.first;
-                            return func;
+                            FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
+                            FunctionToCache.cost = candidate.first;
+                            if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                if (finalCost) *finalCost = candidate.first;
+                                return func;
+                            }
+                        }
+                    }                    
+                }
+                for (long long num_param = (long long)(params.size()) - 1; num_param >= 0; --num_param) {
+                    if (auto f = candidates.find(num_param); f != candidates.end()) {
+                        for (auto& candidate : f->second) {
+                            if (candidate.first >= std::numeric_limits<double>::max()) continue;
+                            // if (candidate.first >= GoodLang::details::TypeConversionWorstCaseCost) continue;
+                            if (!candidate.second) continue;
+
+                            FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
+                            FunctionToCache.cost = candidate.first;
+                            if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                if (finalCost) *finalCost = candidate.first;
+                                return func;
+                            }
                         }
                     }
                 }
@@ -2655,7 +2798,7 @@ namespace utilities {
         };
         GoodLang::Any Call(utilities::string const& functionName, std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) {
             if (auto const& f = BuildMatch(functionName, GoodLang::ParamTypes(params), m_typeConverters); f.function) {
-                return f.function->operator()(const_cast<std::vector<GoodLang::Any>&>(params), m_typeConverters);
+                return f.call(params, m_typeConverters);
             }
             else {
                 std::string params_str;
@@ -2679,41 +2822,14 @@ namespace utilities {
 
 
         };
-
-    };
-
-
-
-
-
-
-
-
-
-
- };
-namespace std {
-    template <> struct hash<utilities::string> {
-        std::size_t operator()(const utilities::string& k) const {
-            return k.hash();
+        GoodLang::Any Call(FunctionWrapper const& f, std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) {
+            return f.call(params, m_typeConverters);
         };
+
     };
-    template <> struct less<utilities::string> {
-        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
-            return lhs < rhs;
-        };
-    };
-    template <> struct greater<utilities::string> {
-        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
-            return lhs > rhs;
-        };
-    };
-    template <> struct equal_to<utilities::string> {
-        std::size_t operator()(const utilities::string& lhs, const utilities::string& rhs) const {
-            return lhs == rhs;
-        };
-    };
+
 };
+
 
 class Scopes {
 private:
@@ -4657,19 +4773,104 @@ int main() {
             EXPECT_NE(nullptr, root.find_object("::npos"));
             EXPECT_NE(nullptr, root.find_namespace("UI")->this_m.scope->find_object("npos"));
 
-
-
             Functions funcs;
-            funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 100; }), utilities::FunctionWrapper::FunctionState::Normal));
-            funcs.emplace("b", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 200; }), utilities::FunctionWrapper::FunctionState::Normal));
-            funcs.emplace("c", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 300; }), utilities::FunctionWrapper::FunctionState::Normal));
-            funcs.emplace("d", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 400; }), utilities::FunctionWrapper::FunctionState::Normal));
+            funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 0; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("b", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("c", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j) -> int { return i+j; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("d", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j, int k) -> int { return i+j+k; }), utilities::FunctionWrapper::FunctionState::Normal, { 10, 10, 10 })); // has defaults!
+            
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j, int const& k) -> std::string { return "3 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal, 
+                { 10, 10, 10 }));
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j) -> std::string { return "2 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal, 
+                { 10, 10 }));
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i) -> std::string { return "1 param"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10 }));
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                []() -> std::string { return "no params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                {}));
+
+            funcs.emplace("example2", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j, int const& k) -> std::string { return "3 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10.0, 10, 10.0 }));
+
+            funcs.emplace("example2", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j) -> std::string { return "2 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10.0, 10 }));
+
+            funcs.emplace("example2", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](double const& i, double const& j) -> std::string { return "2 param doubles!"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal));
+
+            GoodLang::TypeConverter converter;
+            converter.AddConverter<bool, int>();
+            converter.AddConverter<int, bool>();
+            converter.AddConverter<double, int>();
+            converter.AddConverter<int, double>();
+            converter.AddConverter<float, int>();
+            converter.AddConverter<int, float>();
+            converter.AddConverter<bool, float>();
+            converter.AddConverter<float, bool>();
+            converter.AddConverter<double, float>();
+            converter.AddConverter<float, double>();
+            converter.AddConverter<bool, double>();
+            converter.AddConverter<double, bool>();
+
+            EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes(), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function); // test providing more params than needed
+            EXPECT_NE(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+
+            print(GoodLang::ToString(funcs.Call("a", {}, converter)));
+            print(GoodLang::ToString(funcs.Call("b", { 100.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("c", { 200.0, 200.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("d", { 500.0, 50, true }, converter)));
+            print(GoodLang::ToString(funcs.Call("a", { 100, 200.0 }, converter)));
+            EXPECT_EQ(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes(), converter).function);
+            EXPECT_EQ(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes(), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes(), converter).function);
+            print(GoodLang::ToString(funcs.Call("d", {}, converter)));
+
+            print(GoodLang::ToString(funcs.Call("example", {}, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10, 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10, 10, 10, 10 }, converter)));
+
+            print(GoodLang::ToString(funcs.Call("example", { 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0, 10.0, 10.0 }, converter)));
 
             
-
-
-
-
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0, 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", {}, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10.0 }, converter)));
 
 
 
