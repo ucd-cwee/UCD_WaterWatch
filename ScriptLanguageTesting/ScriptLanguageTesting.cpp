@@ -179,6 +179,14 @@ namespace utilities {
             data.remove_suffix(_Count);
             return *this;
         };
+        string& remove_prefix(const string& prefix) noexcept {
+            if (left(prefix.size()) == prefix) data.remove_prefix(prefix.size());
+            return *this;
+        };
+        string& remove_suffix(const string& suffix) noexcept {
+            if (right(suffix.size()) == suffix) data.remove_suffix(suffix.size());
+            return *this;
+        };
         size_type rfind(const string& _Right) const {
             return data.rfind(_Right.data);
         };
@@ -1432,6 +1440,13 @@ namespace utilities {
                     return node;
                 }
             }
+            else {
+                auto locked{ std::shared_lock(mutex) };
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    return node;
+                }
+            }
 
             auto locked{ std::scoped_lock(mutex) };
 
@@ -1440,6 +1455,12 @@ namespace utilities {
                 node = NodeFind(key, root);
                 if (node && node->object) {
                     *node->object = object;
+                    return node;
+                }
+            }
+            else {
+                node = NodeFind(key, root);
+                if (node && node->object) {
                     return node;
                 }
             }
@@ -2449,6 +2470,253 @@ namespace utilities {
 
     };
 
+    /// <summary>
+    /// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    template< typename T> 
+    struct atomic_ptr {
+    private:
+        // pop pNode from head of list.
+        static T* Pop(ABA_Problem::THead<T>& Head) {
+            ABA_Problem::THead<T> Old, New;
+            while (1) { // race loop
+                // Get an atomic copy of head and call it old.
+                Old.m_n64 = Head.m_n64;
+                if (Old.is_null()) return nullptr;
+                // 
+                New.m_n64 = Old.m_n64;
+                New.Node(Old.Node());
+                // compare and swap New with Head if it still matches Old.
+                if (ABA_Problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) return ABA_Problem::THead<T>::Finalize(Old.Node()); // success                
+                // race, try again
+            }
+        }
+
+        // push pNode onto head of list.
+        static T* Push(ABA_Problem::THead<T>& Head, T* pNode) {
+            ABA_Problem::THead<T> Old, New;
+            while (1) { // race loop
+                // Get an atomic copy of head and call it old.
+                // Copy old and call it new.
+                New.m_n64 = Old.m_n64 = Head.m_n64;
+                // change New's head ptr, which bumps internal aba
+                New.Node(pNode);
+                // compare and swap New with Head if it still matches Old.
+                if (ABA_Problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
+                // race, try again
+            }
+            return Old.Node();
+        }
+
+    public:
+        atomic_ptr() noexcept {
+            ptr.m_n64 = 0;
+        };
+        atomic_ptr(T* newSource) noexcept {
+            ptr.Node(newSource);
+        };
+        atomic_ptr(const atomic_ptr& other) noexcept {
+            ptr.Node(other.ptr.Node());
+        };
+        atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
+        atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
+        ~atomic_ptr() = default;
+
+        explicit operator bool() { return !ptr.is_null(); };
+        explicit operator bool() const { return !ptr.is_null(); };
+
+        operator T* () noexcept { return Pop(ptr); };
+        operator const T* () const noexcept { return Pop(ptr); };
+
+        /* atomically sets the pointer and returns the previous pointer value */
+        T* Set(T* newPtr) noexcept {
+            return Push(ptr, newPtr);
+        };
+        T* Get() noexcept { return Pop(ptr); };
+        T* Get() const noexcept { return Pop(ptr); };
+        T* load() noexcept { return Get(); };
+        T* load() const noexcept { return Get(); };
+        T* operator->() noexcept { return Get(); };
+        const T* operator->() const noexcept { return Get(); };
+
+    protected:
+        mutable ABA_Problem::THead<T> ptr;
+    };
+
+
+    // class any;
+
+    // type records the type of either built-in or scripted, runtime types    
+    class type {
+    public:
+        enum Modifiers {
+            Const = 1,
+            Reference = 2,
+            Temporary = 4,
+            Any = 8,
+            Void = 16
+        };
+
+    protected:        
+        size_t 
+            underlying_hash; 
+        size_t
+            hash;
+        unsigned short 
+            modifiers = 0;        
+        utilities::string 
+            name; // for scripted classes, this shall be the full namespace path, e.g. ::std::string::
+        std::function<GoodLang::Any(GoodLang::Any const&)>* 
+            copy_constructor; 
+        std::function<GoodLang::Any(GoodLang::Any const&)>* 
+            constructor_from_value;
+
+    public:
+        size_t const& get_hash() const { return hash; };
+        type(size_t underlying_hash_p = 0, size_t modifiers_p = Modifiers::Void, utilities::string const& name_p = "", std::function<GoodLang::Any(GoodLang::Any const&)>* copy_constructor_p = nullptr, std::function<GoodLang::Any(GoodLang::Any const&)>* constructor_from_value_p = nullptr) noexcept
+            : underlying_hash(underlying_hash_p)
+            , hash(underlying_hash_p ^ (modifiers_p + 0x9e3779b9 + (underlying_hash_p << 6) + (underlying_hash_p >> 2)))
+            , modifiers((unsigned short)modifiers_p)
+            , name(std::move(name_p))
+            , copy_constructor(copy_constructor_p)
+            , constructor_from_value(constructor_from_value_p)
+        {};
+        type(type const&) = default;
+        type(type&&) = default;
+        type& operator=(type const&) = default;
+        type& operator=(type&&) = default;
+        ~type() = default;
+
+        // Returns true if the types are similar enough to be casted for free (0 cost)
+        static bool can_free_cast(type const& from, type const& to) {
+            if (from.underlying_hash == to.underlying_hash) {
+                // anything can convert into const T&
+                if (to.is_const_ref()) return true;
+
+                // cannot cast-away the const-ness
+                if (from.is_const() && !to.is_const()) return false;
+
+                // temporary (T&&) can be used for a base
+                if (from.is_temp() && to.is_base()) return true;
+
+                // temporary (T&&) cannot be used as const-less references (T&)
+                if (from.is_temp() && to.is_ref()) return false;
+
+                // T& cannot cast to T or T&& without a conversion function
+                if (from.is_ref() && (to.is_temp() || to.is_base())) return false;
+
+                // Otherwise OK
+                return true;
+            }
+            return false;            
+        };
+        // Returns true if the types are similar enough to be casted for free (0 cost)
+        bool can_free_cast(type const& to) const { return can_free_cast(*this, to); };
+
+        //// Operators
+        friend bool operator==(const type& a, const type& b) noexcept { return a.get_hash() == b.get_hash(); };
+        friend bool operator!=(const type& a, const type& b) noexcept { return a.get_hash() != b.get_hash(); };
+        friend bool operator<(const type& a, const type& b) noexcept { return a.get_hash() < b.get_hash(); };
+        friend bool operator<=(const type& a, const type& b) noexcept { return a.get_hash() <= b.get_hash(); };
+        friend bool operator>(const type& a, const type& b) noexcept { return a.get_hash() > b.get_hash(); };
+        friend bool operator>=(const type& a, const type& b) noexcept { return a.get_hash() >= b.get_hash(); };
+        bool is_temp() const noexcept { return modifiers & Modifiers::Temporary; };
+        bool is_const() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Const); };        
+        bool is_ref() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Reference); };
+        bool is_const_ref() const noexcept { return is_temp() ? false : (modifiers & (Modifiers::Const | Modifiers::Reference)); };
+        bool is_base() const noexcept { return modifiers == 0; };
+        bool is_any() const noexcept { return modifiers & Modifiers::Any; };
+        bool is_void() const noexcept { return modifiers & Modifiers::Void; };
+
+        utilities::string get_name() const {
+            auto out{ name.remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)") };
+            if (is_temp()) return out + "&&";
+            else if (is_const() && is_ref()) return "const " + out + "&";
+            else if (is_const() && !is_ref()) return "const " + out;
+            else if (!is_const() && is_ref()) return out + "&";
+            else return out;
+        };
+
+        type operator+(Modifiers modifier) const {
+            return type(this->underlying_hash, this->modifiers | modifier, this->name, this->copy_constructor, this->constructor_from_value);
+        };
+        type operator-(Modifiers modifier) const {
+            return type(this->underlying_hash, this->modifiers & ~modifier, this->name, this->copy_constructor, this->constructor_from_value);
+        };
+
+        // const This& to This&&
+        std::function<GoodLang::Any(GoodLang::Any const&)> const& GetCopyConstructor() const {
+            if (copy_constructor) {
+                return *copy_constructor;
+            }
+            else {
+                static std::function<GoodLang::Any(GoodLang::Any const&)> passthrough = [](GoodLang::Any const& p) -> GoodLang::Any { return p; };
+                return passthrough;
+            }
+        }; 
+        // const value_t& to This&&
+        std::function<GoodLang::Any(GoodLang::Any const&)> const& GetConstructorFromValue() const {
+            if (constructor_from_value) {
+                return *constructor_from_value;
+            }
+            else {
+                static std::function<GoodLang::Any(GoodLang::Any const&)> passthrough = [](GoodLang::Any const& p) -> GoodLang::Any { return p; };
+                return passthrough;
+            }
+        };
+
+    };
+    template<typename T> type const& type_of() noexcept {
+        using base_type = typename std::decay<T>::type; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
+        static auto const& underlying_type = GoodLang::impl::TypeId<base_type>();
+        static auto const& void_type = GoodLang::impl::TypeId<void>();
+        static auto const& any_type = GoodLang::impl::TypeId<GoodLang::Any>();
+
+        static auto const const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Modifiers::Const : 0;
+        static auto const ref_modifier = std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Modifiers::Reference : 0;
+        static auto const void_modifier = (void_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Void : 0;
+        static auto const any_modifier = (any_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Any : 0;
+
+        static std::function<GoodLang::Any(GoodLang::Any const&)> copy_constructor = [](GoodLang::Any const& from) -> GoodLang::Any {  
+            if constexpr (std::is_copy_constructible_v<base_type>) 
+                if (void_modifier == 0) 
+                    return base_type{ from.cast<base_type>() };
+
+            // To-Do, the return type should be set to "temporary" to improve type engine
+
+            /* scripted objects -->
+            auto& dynObj = from.cast<DynamicObject>();
+            return DynamicObject(dynObj);
+            <-- scripted objects */
+
+            return from;
+        };
+        static std::function<GoodLang::Any(GoodLang::Any const&)> constructor_from_value = [](GoodLang::Any const& from) -> GoodLang::Any {
+            if constexpr (std::is_constructible_v<base_type, GoodLang::Units::value&>)
+                if (from.IsTypeOf<GoodLang::Units::value>()) 
+                    return base_type{ from.cast<GoodLang::Units::value&>() };
+            
+            // To-Do, the return type should be set to "temporary" to improve type engine
+
+            return from;
+        };
+        static utilities::type out(underlying_type.hash_code(), const_modifier | ref_modifier | void_modifier | any_modifier, utilities::string(std::string_view(underlying_type.name())), &copy_constructor, &constructor_from_value);
+        return out;
+    };
+
+
+
+
+
+
+
+
+
+
+
+
+
     class FunctionWrapper {
     public:
         enum FunctionState {
@@ -2581,9 +2849,9 @@ namespace utilities {
     public:
         typedef FunctionWrapper
             FunctionPtr;
-        typedef atomic_unordered_map<GoodLang::ParamTypes, FunctionPtr>
+        typedef atomic_map<GoodLang::ParamTypes, FunctionPtr>
             FunctionSort; // key may NOT be the function's underlying params, but just params that were previously searched... 
-        typedef atomic_unordered_map<utilities::string, FunctionSort>
+        typedef atomic_map<utilities::string, FunctionSort>
             FunctionMap; // name
 
     public:
@@ -2635,7 +2903,7 @@ namespace utilities {
             for (auto& x : params) paramTypes.push_back(x.lock());
 
             if (functionName.length() == 0) return null_func;
-#if 0
+#if 1
             if (auto& func = at(functionName, params); func.function) {
                 bool isTemplateFunc = func.function->GetSignature().IsTemplate();
                 bool isExplicitFunc = func.is_explicit();
@@ -2643,20 +2911,20 @@ namespace utilities {
                 if (isTemplateFunc) {
                     if (AllowTemplateInstantiation) {
                         if (finalCost) {
-                            if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
-                                func.cost = func.determine_cost(paramTypes, m_typeConverters);
-                            }
-                            *finalCost = func.cost(); 
+                            //if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
+                            //    func.cost = func.determine_cost(paramTypes, m_typeConverters);
+                            //}
+                            *finalCost = func.determine_cost(paramTypes, m_typeConverters);// func.cost();
                         }
                         return func.function;
                     }
                 }
                 else {
                     if (finalCost) {
-                        if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
-                            func.cost = func.determine_cost(paramTypes, m_typeConverters);
-                        }
-                        *finalCost = func.cost(); 
+                        //if (func.cost >= GoodLang::details::TypeConversionWorstCaseCost) {
+                        //    func.cost = func.determine_cost(paramTypes, m_typeConverters);
+                        //}
+                        *finalCost = func.determine_cost(paramTypes, m_typeConverters);// func.cost();
                     }
                     return func;
                 }                
@@ -2674,7 +2942,7 @@ namespace utilities {
                     if (functionName.size() > 0) {
                         for (auto& function : m_functions[functionName]) {
                             if (!function.second.function) continue; // not valid
-                            if (function.second.is_cached()) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+                            // if (function.second.is_cached()) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
 
                             bool isTemplateFunc = function.second.function->GetSignature().IsTemplate();
                             bool isExplicitFunc = function.second.is_explicit();
@@ -2716,29 +2984,27 @@ namespace utilities {
                                                 continue;
                                             }
 
-                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
-                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
-                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
-                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
-                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
-                                                                pair.first = conversionCost;
-                                                                pair.second = &function.second;
-                                                                continue;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
                                             if (existingFunctionArgs.IsTemplate() && !incomingFunctionArgs.IsTemplate()) {
                                                 pair.first = conversionCost;
                                                 pair.second = &function.second;
                                                 continue;
                                             }
 
-                                            //throw std::runtime_error(
-                                            //    "Could not distinguish between two functions with equal conversion complexity within the same namespace."
-                                            //);
+                                            for (int i = 0; (i < paramTypes.size()) && (i < 1); i++) {
+                                                if ((incomingFunctionArgs.size() > i) && (paramTypes.size() > i) && (existingFunctionArgs.size() > i)) {
+                                                    if (auto p = incomingFunctionArgs.Type(i).lock()) {
+                                                        if (auto p2 = existingFunctionArgs.Type(i).lock()) {
+                                                            if (p->underlyingHash == paramTypes[i]->underlyingHash) {
+                                                                if (p2->underlyingHash != paramTypes[i]->underlyingHash) {
+                                                                    pair.first = conversionCost;
+                                                                    pair.second = &function.second;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                     else {
@@ -2767,20 +3033,6 @@ namespace utilities {
                                                 pair.second = &function.second;
                                                 continue;
                                             }
-                                            
-                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
-                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
-                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
-                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
-                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
-                                                                pair.first = conversionCost;
-                                                                pair.second = &function.second;
-                                                                continue;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
 
                                             if (existingFunctionArgs.IsTemplate() && !incomingFunctionArgs.IsTemplate()) {
                                                 pair.first = conversionCost;
@@ -2788,9 +3040,21 @@ namespace utilities {
                                                 continue;
                                             }
 
-                                            //throw std::runtime_error(
-                                            //    "Could not distinguish between two functions with equal conversion complexity within the same namespace."
-                                            //);
+                                            for (int i = 0; (i < paramTypes.size()) && (i < 1); i++) {
+                                                if ((incomingFunctionArgs.size() > i) && (paramTypes.size() > i) && (existingFunctionArgs.size() > i)) {
+                                                    if (auto p = incomingFunctionArgs.Type(i).lock()) {
+                                                        if (auto p2 = existingFunctionArgs.Type(i).lock()) {
+                                                            if (p->underlyingHash == paramTypes[i]->underlyingHash) {
+                                                                if (p2->underlyingHash != paramTypes[i]->underlyingHash) {
+                                                                    pair.first = conversionCost;
+                                                                    pair.second = &function.second;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                     else {
@@ -2818,31 +3082,27 @@ namespace utilities {
                                                 continue;
                                             }
 
-                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
-                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
-                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
-                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
-                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
-                                                                pair.first = conversionCost;
-                                                                pair.second = &function.second;
-                                                                continue;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
                                             if (existingFunctionArgs.IsTemplate() && !incomingFunctionArgs.IsTemplate()) {
                                                 pair.first = conversionCost;
                                                 pair.second = &function.second;
                                                 continue;
                                             }
 
-                                            // incomingFunctionArgs.Type(0).lock()->GetConstructorFromValue
-
-                                            //throw std::runtime_error(
-                                            //    "Could not distinguish between two functions with equal conversion complexity within the same namespace."
-                                            //);
+                                            for (int i = 0; (i < paramTypes.size()) && (i < 1); i++) {
+                                                if ((incomingFunctionArgs.size() > i) && (paramTypes.size() > i) && (existingFunctionArgs.size() > i)) {
+                                                    if (auto p = incomingFunctionArgs.Type(i).lock()) {
+                                                        if (auto p2 = existingFunctionArgs.Type(i).lock()) {
+                                                            if (p->underlyingHash == paramTypes[i]->underlyingHash) {
+                                                                if (p2->underlyingHash != paramTypes[i]->underlyingHash) {
+                                                                    pair.first = conversionCost;
+                                                                    pair.second = &function.second;
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                     else {
@@ -4037,6 +4297,126 @@ int main() {
 
     while (true) {
         print("STARTING LOOP: \n");
+
+
+        EXPECT_EQ(true, utilities::type_of<int>().is_base());
+        EXPECT_EQ(false, utilities::type_of<int>().is_ref());
+        EXPECT_EQ(false, utilities::type_of<int>().is_const());
+        EXPECT_EQ(false, utilities::type_of<int>().is_void());
+        EXPECT_EQ(false, utilities::type_of<int>().is_temp());
+        EXPECT_EQ(utilities::type_of<int>().get_name(), "int");
+
+        EXPECT_EQ(false, utilities::type_of<void>().is_base());
+        EXPECT_EQ(false, utilities::type_of<void>().is_ref());
+        EXPECT_EQ(false, utilities::type_of<void>().is_const());
+        EXPECT_EQ(true, utilities::type_of<void>().is_void());
+        EXPECT_EQ(false, utilities::type_of<void>().is_temp());
+        EXPECT_EQ(utilities::type_of<void>().get_name(), "void");
+
+        EXPECT_EQ(false, utilities::type_of<GoodLang::Any>().is_base());
+        EXPECT_EQ(false, utilities::type_of<GoodLang::Any>().is_ref());
+        EXPECT_EQ(false, utilities::type_of<GoodLang::Any>().is_const());
+        EXPECT_EQ(false, utilities::type_of<GoodLang::Any>().is_void());
+        EXPECT_EQ(false, utilities::type_of<GoodLang::Any>().is_temp());
+        EXPECT_EQ(true, utilities::type_of<GoodLang::Any>().is_any());
+        EXPECT_EQ(utilities::type_of<GoodLang::Any>().get_name(), "class GoodLang::Any");
+
+        EXPECT_EQ(false, utilities::type_of<int&>().is_base());
+        EXPECT_EQ(true, utilities::type_of<int&>().is_ref());
+        EXPECT_EQ(false, utilities::type_of<int&>().is_const());
+        EXPECT_EQ(false, utilities::type_of<int&>().is_void());
+        EXPECT_EQ(false, utilities::type_of<int&>().is_temp());
+        EXPECT_EQ(utilities::type_of<int&>().get_name(), "int&");
+
+        EXPECT_EQ(false, utilities::type_of<int const&>().is_base());
+        EXPECT_EQ(true, utilities::type_of<int const&>().is_ref());
+        EXPECT_EQ(true, utilities::type_of<int const&>().is_const());
+        EXPECT_EQ(true, utilities::type_of<int const&>().is_const_ref());
+        EXPECT_EQ(false, utilities::type_of<int const&>().is_void());
+        EXPECT_EQ(false, utilities::type_of<int const&>().is_temp());
+        EXPECT_EQ(utilities::type_of<int const&>().get_name(), "const int&");
+        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Modifiers::Temporary).get_name(), "int&&");
+
+        EXPECT_EQ(utilities::type_of<int const&>().get_hash(), utilities::type_of<int const&>().get_hash());
+        EXPECT_NE(utilities::type_of<int const&>().get_hash(), utilities::type_of<int&>().get_hash());
+        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Modifiers::Const).get_hash(), utilities::type_of<int const>().get_hash());
+        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Modifiers::Const + utilities::type::Modifiers::Reference).get_hash(), utilities::type_of<int const&>().get_hash());
+        EXPECT_EQ((utilities::type_of<int const&>() - utilities::type::Modifiers::Const - utilities::type::Modifiers::Reference).get_hash(), utilities::type_of<int>().get_hash());
+
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int const&>(), utilities::type_of<int const&>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int&>(), utilities::type_of<int const&>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>(), utilities::type_of<int const&>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int const>(), utilities::type_of<int const&>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>(), utilities::type_of<int&>()));
+        EXPECT_EQ(false, utilities::type::can_free_cast(utilities::type_of<int&>(), utilities::type_of<int>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary, utilities::type_of<int const&>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary, utilities::type_of<int>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary - utilities::type::Modifiers::Temporary, utilities::type_of<int>()));
+
+        EXPECT_EQ("100", GoodLang::ToString(utilities::type_of<int>().GetCopyConstructor()(100)));
+
+        if (0) {
+            int* old_ptr;
+            atomic_ptr<int> ptr{ nullptr };
+            old_ptr = ptr.Set(new int(1));
+            EXPECT_EQ(old_ptr, nullptr);
+
+            old_ptr = ptr.Set(new int(1));
+            EXPECT_NE(old_ptr, nullptr);
+            delete old_ptr;
+
+            old_ptr = ptr.Set(nullptr);
+            EXPECT_NE(old_ptr, nullptr);
+            delete old_ptr;
+        }
+        sw.Start();
+        if (1) {
+            int* old_ptr;
+            atomic_ptr<int> ptr{ nullptr };
+            old_ptr = ptr.Set(reinterpret_cast<int*>((size_t)std::rand() + 1));
+            EXPECT_EQ(old_ptr, nullptr);
+
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                old_ptr = ptr.Set(reinterpret_cast<int*>((size_t)std::rand() + 1));
+                EXPECT_NE(old_ptr, nullptr);
+            });
+
+            old_ptr = ptr.Set(nullptr);
+            EXPECT_NE(old_ptr, nullptr);            
+        }
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        if (1) {
+            int* old_ptr;
+            GoodLang::atomic_ptr<int> ptr{ nullptr };
+            old_ptr = ptr.Set(reinterpret_cast<int*>((size_t)std::rand() + 1));
+            EXPECT_EQ(old_ptr, nullptr);
+
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                old_ptr = ptr.Set(reinterpret_cast<int*>((size_t)std::rand() + 1));
+                EXPECT_NE(old_ptr, nullptr);
+                });
+
+            old_ptr = ptr.Set(nullptr);
+            EXPECT_NE(old_ptr, nullptr);
+        }
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        sw.Start();
+        if (1) {
+            int* old_ptr;
+            std::atomic<int*> ptr{ nullptr };
+            old_ptr = ptr.exchange(reinterpret_cast<int*>((size_t)std::rand() + 1));
+            EXPECT_EQ(old_ptr, nullptr);
+
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                old_ptr = ptr.exchange(reinterpret_cast<int*>((size_t)std::rand() + 1));
+                EXPECT_NE(old_ptr, nullptr);
+                });
+
+            old_ptr = ptr.exchange(nullptr);
+            EXPECT_NE(old_ptr, nullptr);
+        }
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
 #if 0
         if (1) {
