@@ -2706,8 +2706,39 @@ namespace utilities {
                                         else if (pair.first == conversionCost) {
                                             // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
                                             // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
-                                            // To-Do, improve the error code to be more explicit.
-                                            throw std::runtime_error("Could not distinguish between two functions with equal conversion complexity within the same namespace.");
+
+                                            // To-Do, improve the error code to be more explicit, or try to find another way to distinguish functions? 
+                                            auto& incomingFunctionArgs = function.second.function->GetSignature().Arguments();
+                                            auto& existingFunctionArgs = pair.second->function->GetSignature().Arguments();
+                                            if (existingFunctionArgs.size() > incomingFunctionArgs.size()) {
+                                                pair.first = conversionCost;
+                                                pair.second = &function.second;
+                                                continue;
+                                            }
+
+                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
+                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
+                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
+                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
+                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
+                                                                pair.first = conversionCost;
+                                                                pair.second = &function.second;
+                                                                continue;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (existingFunctionArgs.IsTemplate() && !incomingFunctionArgs.IsTemplate()) {
+                                                pair.first = conversionCost;
+                                                pair.second = &function.second;
+                                                continue;
+                                            }
+
+                                            //throw std::runtime_error(
+                                            //    "Could not distinguish between two functions with equal conversion complexity within the same namespace."
+                                            //);
                                         }
                                     }
                                     else {
@@ -2727,8 +2758,39 @@ namespace utilities {
                                         else if (pair.first == conversionCost) {
                                             // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
                                             // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
-                                            // To-Do, improve the error code to be more explicit.
-                                            throw std::runtime_error("Could not distinguish between two functions with equal conversion complexity within the same namespace.");
+                                            
+                                            // To-Do, improve the error code to be more explicit, or try to find another way to distinguish functions? 
+                                            auto& incomingFunctionArgs = function.second.function->GetSignature().Arguments();
+                                            auto& existingFunctionArgs = pair.second->function->GetSignature().Arguments();
+                                            if (existingFunctionArgs.size() > incomingFunctionArgs.size()) {
+                                                pair.first = conversionCost;
+                                                pair.second = &function.second;
+                                                continue;
+                                            }
+                                            
+                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
+                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
+                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
+                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
+                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
+                                                                pair.first = conversionCost;
+                                                                pair.second = &function.second;
+                                                                continue;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (existingFunctionArgs.IsTemplate() && !incomingFunctionArgs.IsTemplate()) {
+                                                pair.first = conversionCost;
+                                                pair.second = &function.second;
+                                                continue;
+                                            }
+
+                                            //throw std::runtime_error(
+                                            //    "Could not distinguish between two functions with equal conversion complexity within the same namespace."
+                                            //);
                                         }
                                     }
                                     else {
@@ -2746,8 +2808,41 @@ namespace utilities {
                                         else if (pair.first == conversionCost) {
                                             // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
                                             // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
-                                            // To-Do, improve the error code to be more explicit.
-                                            throw std::runtime_error("Could not distinguish between two functions with equal conversion complexity within the same namespace.");
+
+                                            // To-Do, improve the error code to be more explicit, or try to find another way to distinguish functions? 
+                                            auto& incomingFunctionArgs = function.second.function->GetSignature().Arguments();
+                                            auto& existingFunctionArgs = pair.second->function->GetSignature().Arguments();
+                                            if (existingFunctionArgs.size() > incomingFunctionArgs.size()) {
+                                                pair.first = conversionCost;
+                                                pair.second = &function.second;
+                                                continue;
+                                            }
+
+                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
+                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
+                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
+                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
+                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
+                                                                pair.first = conversionCost;
+                                                                pair.second = &function.second;
+                                                                continue;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (existingFunctionArgs.IsTemplate() && !incomingFunctionArgs.IsTemplate()) {
+                                                pair.first = conversionCost;
+                                                pair.second = &function.second;
+                                                continue;
+                                            }
+
+                                            // incomingFunctionArgs.Type(0).lock()->GetConstructorFromValue
+
+                                            //throw std::runtime_error(
+                                            //    "Could not distinguish between two functions with equal conversion complexity within the same namespace."
+                                            //);
                                         }
                                     }
                                     else {
@@ -4862,15 +4957,14 @@ int main() {
             print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0, 10.0 }, converter)));
             print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0, 10.0, 10.0 }, converter)));
 
-            
             print(GoodLang::ToString(funcs.Call("example2", { 10, 10 }, converter)));
             print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0 }, converter)));
             print(GoodLang::ToString(funcs.Call("example2", { 10, 10, 10 }, converter)));
             print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0, 10.0 }, converter)));
             print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0, 10.0, 10.0 }, converter)));
             print(GoodLang::ToString(funcs.Call("example2", {}, converter)));
-            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10 }, converter)));
-            print(GoodLang::ToString(funcs.Call("example2", { 10, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10 }, converter))); // prefers the double-type since it keeps the first type
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10.0 }, converter))); // prefers the int-type since it keeps the first type
 
 
 
