@@ -99,7 +99,9 @@ namespace GoodLang {
 			long long numCores = 0;
 			long long numThreads = 0;
 
-			std::unique_ptr<Queue<Task>[]> jobQueuePerThread;
+			std::unique_ptr<moodycamel::ProducerToken[]> jobQueueProducerTokenPerThread;
+			std::unique_ptr< std::unique_ptr<moodycamel::ConsumerToken>[]> jobQueueConsumerTokenPerThread;
+			moodycamel::ConcurrentQueue<Task> jobQueue;
 
 			InterlockedLong alive{ 1 };
 			std::condition_variable wakeCondition; 
@@ -118,7 +120,8 @@ namespace GoodLang {
 				}
 				wake_loop = false;
 				waker.join();
-				jobQueuePerThread.reset();
+				jobQueueProducerTokenPerThread.reset();
+				jobQueueConsumerTokenPerThread.reset();
 				threads.clear();
 				numCores = 0;
 				numThreads = 0;

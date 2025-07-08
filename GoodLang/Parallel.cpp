@@ -309,7 +309,6 @@ namespace GoodLang {
 		// potentially (not always) called by the main thread
 		inline void work(long long startingQueue, const context* parentCtx) noexcept {
 			long long i, j, threadID;
-			Queue<Task>* job_queue;
 			Task job;
 			JobArgs args{
 				0 // jobIndex
@@ -324,15 +323,21 @@ namespace GoodLang {
 			defer(if (data) { Mem_Free16(data); });
 			
 			bool didWork = true;
+			auto try_get_job = [](moodycamel::ConcurrentQueue<Task>& queue, moodycamel::ConsumerToken* token, Task& job) -> bool {
+				if (token) return queue.try_pop(*token, job);
+				else return queue.try_pop(job);
+			};
+			auto submit_job = [](moodycamel::ConcurrentQueue<Task>& queue, moodycamel::ProducerToken& token, Task& job) {
+				queue.push(token, job);
+			};
 			while (didWork && (!parentCtx || (parentCtx && IsBusy(*parentCtx)))) {
 				didWork = false;
 				for (i = 0; (i < internal_state.numThreads) && (!parentCtx || (parentCtx && IsBusy(*parentCtx))); i++) {
-					threadID = (i + startingQueue) % internal_state.numThreads;
-					job_queue = &internal_state.jobQueuePerThread[threadID];
-					while (job_queue->try_pop(job)) {
+					threadID = (i + startingQueue) % internal_state.numThreads;					
+					while (try_get_job(internal_state.jobQueue, internal_state.jobQueueConsumerTokenPerThread[threadID].get(), job)) {
 						if ((job.ctx->waiters.load() > 1) && (job.SubmittingThread == this_thread_id_hash)) {
 							// we shouldn't be the one doing this job.
-							internal_state.jobQueuePerThread[(i + startingQueue + 1) % internal_state.numThreads].push(job);
+							submit_job(internal_state.jobQueue, internal_state.jobQueueProducerTokenPerThread[(i + startingQueue + 1) % internal_state.numThreads], job);
 							internal_state.wakeCondition.notify_all();
 							continue;
 						} 
@@ -406,7 +411,6 @@ namespace GoodLang {
 		// called by the worker threads
 		inline void work(long long startingQueue) noexcept {
 			long long i, j, threadID;
-			Queue<Task>* job_queue;
 			Task job;
 			JobArgs args{
 				0 // jobIndex
@@ -419,16 +423,22 @@ namespace GoodLang {
 			void* data{ nullptr };
 			defer(if (data) { Mem_Free16(data); });
 
+			auto try_get_job = [](moodycamel::ConcurrentQueue<Task>& queue, moodycamel::ConsumerToken* token, Task& job) -> bool {
+				if (token) return queue.try_pop(*token, job);
+				else return queue.try_pop(job);
+			};
+			auto submit_job = [](moodycamel::ConcurrentQueue<Task>& queue, moodycamel::ProducerToken& token, Task& job) {
+				queue.push(token, job);
+			};
 			bool didWork = true;
 			while (didWork) {
 				didWork = false;
 				for (i = 0; i < internal_state.numThreads; i++) {
 					threadID = (i + startingQueue) % internal_state.numThreads;
-					job_queue = &internal_state.jobQueuePerThread[threadID];
-					while (job_queue->try_pop(job)) {
+					while (try_get_job(internal_state.jobQueue, internal_state.jobQueueConsumerTokenPerThread[threadID].get(), job)) {
 						if ((job.ctx->waiters.load() > 1) && (job.SubmittingThread == this_thread_id_hash)) {
 							// we shouldn't be the one doing this job.
-							internal_state.jobQueuePerThread[(i + startingQueue + 1) % internal_state.numThreads].push(job);
+							submit_job(internal_state.jobQueue, internal_state.jobQueueProducerTokenPerThread[(i + startingQueue + 1) % internal_state.numThreads], job);
 							internal_state.wakeCondition.notify_all();
 							continue;
 						}
@@ -502,8 +512,9 @@ namespace GoodLang {
 
 			// Calculate the actual number of worker threads we want (-1 main thread):
 			internal_state.numThreads = std::min<long long>(maxThreadCount, std::max<long long>(1, internal_state.numCores - 1));
-			internal_state.jobQueuePerThread.reset(new Queue<Task>[internal_state.numThreads]());
-			// internal_state.currentTaskPerThread.reset(new Task[internal_state.numThreads]);
+
+			internal_state.jobQueueProducerTokenPerThread.reset(new moodycamel::ProducerToken[internal_state.numThreads]{});
+			internal_state.jobQueueConsumerTokenPerThread.reset(new std::unique_ptr<moodycamel::ConsumerToken>[internal_state.numThreads]{});
 			internal_state.threads.reserve(internal_state.numThreads);
 
 			for (long long threadID = 0; threadID < internal_state.numThreads; ++threadID) {
@@ -513,6 +524,9 @@ namespace GoodLang {
 
 					internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 					internal_state.threads[threadID].thread_index = threadID;								
+
+					internal_state.jobQueueProducerTokenPerThread[threadID] = moodycamel::ProducerToken(internal_state.jobQueue);
+					internal_state.jobQueueConsumerTokenPerThread[threadID] = std::make_unique<moodycamel::ConsumerToken>(internal_state.jobQueue);
 
 					while (internal_state.alive.GetValue()) {
 						// Work until no more jobs are found
@@ -573,9 +587,9 @@ namespace GoodLang {
 			if (SubmittingThread == 0) SubmittingThread = std::hash<std::thread::id>{}(std::this_thread::get_id());
 
 			++ctx.counter; // Context state is updated:
-			internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push({ 
+			internal_state.jobQueue.push({
 				std::make_shared<std::function<void(JobArgs const&)>>(std::move(task)), &ctx, 0, 0, 1, 0, nullptr, nullptr, SubmittingThread
-		    });
+			});
 			internal_state.wakeCondition.notify_all(); // 
 		};
 		void DoDispatch(Task job, long long groupSize, long long jobCount) {
@@ -585,8 +599,8 @@ namespace GoodLang {
 				job.groupID = groupID;
 				job.groupJobOffset = groupID * groupSize;
 				job.groupJobEnd = std::min(job.groupJobOffset + groupSize, jobCount);
-				if (job.groupJobOffset >= job.groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
-				internal_state.jobQueuePerThread[internal_state.nextQueue.Increment() % internal_state.numThreads].push(job);
+				if (job.groupJobOffset >= job.groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.				
+				internal_state.jobQueue.push(job);
 			}
 			// wake any threads that might be sleeping:
 			internal_state.wakeCondition.notify_all();
