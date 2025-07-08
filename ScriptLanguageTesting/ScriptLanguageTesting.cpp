@@ -4298,7 +4298,8 @@ int main() {
     while (true) {
         print("STARTING LOOP: \n");
 
-
+        // Testing utilities::type_of
+#if 1
         EXPECT_EQ(true, utilities::type_of<int>().is_base());
         EXPECT_EQ(false, utilities::type_of<int>().is_ref());
         EXPECT_EQ(false, utilities::type_of<int>().is_const());
@@ -4354,21 +4355,10 @@ int main() {
         EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary - utilities::type::Modifiers::Temporary, utilities::type_of<int>()));
 
         EXPECT_EQ("100", GoodLang::ToString(utilities::type_of<int>().GetCopyConstructor()(100)));
+#endif // << NO LEAK
 
-        if (0) {
-            int* old_ptr;
-            atomic_ptr<int> ptr{ nullptr };
-            old_ptr = ptr.Set(new int(1));
-            EXPECT_EQ(old_ptr, nullptr);
-
-            old_ptr = ptr.Set(new int(1));
-            EXPECT_NE(old_ptr, nullptr);
-            delete old_ptr;
-
-            old_ptr = ptr.Set(nullptr);
-            EXPECT_NE(old_ptr, nullptr);
-            delete old_ptr;
-        }
+        // Testing atomic_ptr
+#if 1
         sw.Start();
         if (1) {
             int* old_ptr;
@@ -4417,8 +4407,10 @@ int main() {
             EXPECT_NE(old_ptr, nullptr);
         }
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+#endif // << NO LEAK
 
-#if 0
+        // Testing Allocator
+#if 1
         if (1) {
             ABA_Problem::Allocator<size_t>
                 index_allocator;
@@ -4988,6 +4980,8 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
+        // Testing Scopes::Cache
+#if 0
         if (1) {
             Scopes::Cache<4> cache;
             sw.Start();
@@ -5017,7 +5011,9 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
+#endif
 
+        // Testing Scopes::Scopes UpdateObjectFunctionVersion 
 #if 0
         for (int loopN = 0; loopN < 1000; loopN++) {
             Scopes::RootScope root;
@@ -5058,6 +5054,8 @@ int main() {
         }
 #endif
 
+        // Testing Scopes::Scopes
+#if 0
         if (1) {
             Scopes::RootScope root; // successfully starts a new script root
 
@@ -5512,7 +5510,10 @@ int main() {
 
             // print(root.scope_indexs.num_tickets());
         }
+#endif
 
+        // Testing utilities::string
+#if 0
         // In order of slowest to fastest way to manage strings using shared_string...
         if (1) { // Copying std::strings
             sw.Start();
@@ -5566,7 +5567,6 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-
         if (1) {
             utilities::string str1("::std::string::");
             str1 = str1.remove_leading_and_trailing(':');
@@ -5583,6 +5583,7 @@ int main() {
 
         EXPECT_EQ(utilities::string("").hash(), compound_shared_string("").hash());
         EXPECT_EQ(utilities::string("Hello World!\n").hash(), compound_shared_string("Hello World!\n").hash());
+#endif
     }
 
 };

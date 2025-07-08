@@ -891,6 +891,7 @@ namespace GoodLang {
 					threadIndex = i;
 				}
 			}
+			is_inside_thread = true;
 
 			if (!is_inside_thread) { // Best-case scenario. Most performant solution, using the GoodLang promise system. 
 				using ptrType = std::pair<long, GoodLang::parallel::promise>;
