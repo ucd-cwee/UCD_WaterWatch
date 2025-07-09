@@ -896,6 +896,7 @@ namespace GoodLang {
 			// Doing so will likely result in performance penalties. 
 
 			bool is_inside_thread = false;
+#if 0
 			long long threadIndex{ 0 };
 			size_t this_thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 			for (int i = 0; i < impl::internal_state.numThreads; ++i) {
@@ -905,8 +906,9 @@ namespace GoodLang {
 					threadIndex = i;
 				}
 			}
+#endif
 			is_inside_thread = true;
-
+#if 0
 			if (!is_inside_thread) { // Best-case scenario. Most performant solution, using the GoodLang promise system. 
 				using ptrType = std::pair<long, GoodLang::parallel::promise>;
 				auto p = new ptrType{ 0, GoodLang::parallel::promise{} };
@@ -929,7 +931,9 @@ namespace GoodLang {
 				});
 				return std::static_pointer_cast<void>(lifetime);
 			} 
-			else { // worst-case scenario. Uses a unique, shared thread to loop through jobs specific to this codepath every 1/60th a second. 
+			else 
+#endif
+			{ // worst-case scenario. Uses a unique, shared thread to loop through jobs specific to this codepath every 1/60th a second. 
 				// To-Do, make this thread go to sleep when not in use using the same system as for the thread_pool. 
 				class TempThread {
 				private:
@@ -960,32 +964,66 @@ namespace GoodLang {
 					};
 				};
 				using ptrType = GoodLang::Union<					
-					std::function<void(void)>,
-					std::function<void(void)>
+					std::function<void(void)>, // each iteration
+					std::function<void(void)>, // on completion
+					long, // is_working
+					long // is_ending
 				>;
-				static std::unique_ptr<std::pair<concurrency::concurrent_unordered_map<size_t, ptrType>, std::shared_mutex>> cache_map{ std::make_unique<std::pair<concurrency::concurrent_unordered_map<size_t, ptrType>, std::shared_mutex>>() };
+				static std::unique_ptr<std::pair<concurrency::concurrent_unordered_map<size_t, std::shared_ptr<ptrType>>, std::shared_mutex>> cache_map{ std::make_unique<std::pair<concurrency::concurrent_unordered_map<size_t, std::shared_ptr<ptrType>>, std::shared_mutex>>() };
 				static std::atomic<size_t> position{ 0 };
 				static std::unique_ptr<TempThread> cache_iterator{ std::make_unique<TempThread>([](void) -> void {
 					if (1) {
-						auto locked { std::shared_lock(cache_map->second) };
-						for (auto& x : cache_map->first) {
-							if (x.second.get<0>()) x.second.get<0>()();
+						std::vector< size_t > keys;
+						if (1) { // get the keys quickly to prevent holding the lock too long
+							auto locked{ std::shared_lock(cache_map->second) };
+							for (auto& x : cache_map->first) {
+								keys.push_back(x.first);
+							}
 						}
-					}		
-					::Sleep(1000 / 60);
+
+						if (1) { // using the keys, 
+							for (auto& x : keys) {
+								std::shared_ptr<ptrType> _promise;
+								if (1) {
+									auto locked{ std::shared_lock(cache_map->second) };
+									if (auto f = cache_map->first.find(x); f != cache_map->first.end()) {
+										_promise = f->second;
+									}
+								}
+								if (_promise) {
+									InterlockedIncrement(reinterpret_cast<volatile long*>(&_promise->get<2>()));
+									if (_promise->get<3>() == 0) {
+										if (_promise->get<0>()) _promise->get<0>()();
+									}
+									InterlockedDecrement(reinterpret_cast<volatile long*>(&_promise->get<2>()));
+								}
+							}
+						}
+
+						if (keys.size() == 0) ::Sleep(1000 / 60); // this thread should try to avoid eating resources unecessarily
+					}
 				}) };
 
 				size_t pos = ++position;
 				if (1) {
 					auto locked{ std::shared_lock(cache_map->second) };
-					cache_map->first.insert(std::pair<size_t, ptrType>{ pos, ptrType(Loop, OnThreadEnd) });
+					cache_map->first.insert(std::pair<size_t, std::shared_ptr<ptrType>>{ pos, std::make_shared<ptrType>(Loop, OnThreadEnd, 0, 0) });
 				}
 				auto lifetime = std::shared_ptr<size_t>(reinterpret_cast<size_t*>(pos), [](size_t* pos) {
 					size_t POS = reinterpret_cast<size_t&>(pos);
 					if (1) {
-						auto locked{ std::shared_lock(cache_map->second) };
-						auto& _promise = cache_map->first.at(POS);
-						if (_promise.get<1>()) _promise.get<1>()();
+						std::shared_ptr<ptrType> _promise;
+						if (1) {
+							auto locked{ std::shared_lock(cache_map->second) };
+							if (auto f = cache_map->first.find(POS); f != cache_map->first.end()) {
+								_promise = f->second;
+							}
+						}
+						if (_promise) {
+							InterlockedIncrement(reinterpret_cast<volatile long*>(&_promise->get<3>()));
+							while (_promise->get<2>() > 0) {}
+							if (_promise->get<1>()) _promise->get<1>()();
+						}						
 					}
 					if (1) {
 						auto locked{ std::unique_lock(cache_map->second) };

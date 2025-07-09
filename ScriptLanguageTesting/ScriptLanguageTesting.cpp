@@ -488,37 +488,6 @@ namespace utilities {
         };
     };
 
-    template <typename T>
-    class DelayedInstantiation {
-    private:
-        mutable std::unique_ptr<T> ptr{ nullptr };
-        mutable GoodLang::fast_shared_mutex mut{};
-        mutable long initialized{ 0 };
-
-    public:
-        DelayedInstantiation() = default;
-        ~DelayedInstantiation() = default;
-
-        bool valid() const {
-            return initialized > 0;
-        };
-        T* operator->() const {
-            if (initialized == 0) {
-                mut.lock();
-                if (initialized == 0) {
-                    ptr = std::make_unique<T>();
-                    InterlockedIncrement(static_cast<volatile long*>(&initialized));
-                }
-                mut.unlock();
-            }
-            return ptr.get();
-        };
-        T& operator*() const {
-            return *operator->();
-        };
-        operator bool() const { return valid(); };
-    };
-
     namespace ABA_Problem {
         template <typename T>
         class Node {
@@ -629,12 +598,12 @@ namespace utilities {
 
             // Allocate one new block of contiguous elements
             __declspec(noinline) void AllocBlock() {
-                std::unique_ptr<block_t>& block = *blocks.push_back(std::make_unique<block_t>());
+                block_t& block = *blocks.grow_by(1);
 
                 // add the new elements to the list
                 // std::memset(&block->elements[0], 0, sizeof(block_t));
-                for (int i = 0; i < BlockSize - 1; ++i) block->elements[i].m_pNext = &block->elements[i + 1];
-                block->elements[BlockSize - 1].m_pNext = nullptr;
+                for (int i = 0; i < BlockSize - 1; ++i) block.elements[i].m_pNext = &block.elements[i + 1];
+                block.elements[BlockSize - 1].m_pNext = nullptr;
 
                 // push pNode onto head of list.
                 uint64_t old;
@@ -645,10 +614,10 @@ namespace utilities {
                     old = New.m_n64 = free.m_n64;
 
                     // Wire the tail of this block to connect to the old head ptr
-                    block->elements[BlockSize - 1].m_pNext = New.Node();
+                    block.elements[BlockSize - 1].m_pNext = New.Node();
 
                     // change New's head ptr, which bumps internal aba
-                    New.Node(&block->elements[0]); // head shall be the start of this block
+                    New.Node(&block.elements[0]); // head shall be the start of this block
 
                     // compare and swap New with Head if it still matches Old.
                     if (CAS(&free.m_n64, old, New.m_n64))
@@ -661,7 +630,7 @@ namespace utilities {
             __declspec(noinline) void ReleaseBlocks() {
                 if constexpr (!std::is_pod<T>::value) {
                     for (auto& block : blocks) {
-                        for (auto& element : block->elements) {
+                        for (auto& element : block.elements) {
                             if (element.initialized) {
                                 reinterpret_cast<T*>(&element.data[0])->~T();
                                 element.initialized = false;
@@ -721,7 +690,7 @@ namespace utilities {
             };
 
 
-            concurrency::concurrent_vector<std::unique_ptr<block_t>>
+            concurrency::concurrent_vector<block_t>
                 blocks;
             THead<element_t>
                 free;
@@ -848,9 +817,10 @@ namespace utilities {
                 };
             };
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
-            Allocator<_type_, 32> // , 32
+            Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
                 _alloc;
-            moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
+            concurrency::concurrent_queue<std::pair<long long, _type_*>>
+            // moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
             GoodLang::ThreadLocalInstance<TLS>
                 _TLS;
@@ -932,6 +902,118 @@ namespace utilities {
 
         };
 
+    };
+
+    /// <summary>
+    /// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    template< typename T>
+    struct atomic_ptr {
+    private:
+        // pop pNode from head of list.
+        static T* Pop(ABA_Problem::THead<T>& Head) {
+            ABA_Problem::THead<T> Old, New;
+            while (1) { // race loop
+                // Get an atomic copy of head and call it old.
+                Old.m_n64 = Head.m_n64;
+                if (Old.is_null()) return nullptr;
+                // 
+                New.m_n64 = Old.m_n64;
+                New.Node(Old.Node());
+                // compare and swap New with Head if it still matches Old.
+                if (ABA_Problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) return ABA_Problem::THead<T>::Finalize(Old.Node()); // success                
+                // race, try again
+            }
+        }
+
+        // push pNode onto head of list.
+        static T* Push(ABA_Problem::THead<T>& Head, T* pNode) {
+            ABA_Problem::THead<T> Old, New;
+            while (1) { // race loop
+                // Get an atomic copy of head and call it old.
+                // Copy old and call it new.
+                New.m_n64 = Old.m_n64 = Head.m_n64;
+                // change New's head ptr, which bumps internal aba
+                New.Node(pNode);
+                // compare and swap New with Head if it still matches Old.
+                if (ABA_Problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
+                // race, try again
+            }
+            return Old.Node();
+        }
+
+    public:
+        atomic_ptr() noexcept {
+            ptr.m_n64 = 0;
+        };
+        atomic_ptr(T* newSource) noexcept {
+            ptr.Node(newSource);
+        };
+        atomic_ptr(const atomic_ptr& other) noexcept {
+            ptr.Node(other.ptr.Node());
+        };
+        atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
+        atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
+        ~atomic_ptr() = default;
+
+        explicit operator bool() { return !ptr.is_null(); };
+        explicit operator bool() const { return !ptr.is_null(); };
+
+        operator T* () noexcept { return Pop(ptr); };
+        operator const T* () const noexcept { return Pop(ptr); };
+
+        /* atomically sets the pointer and returns the previous pointer value */
+        T* Set(T* newPtr) noexcept {
+            return Push(ptr, newPtr);
+        };
+        T* Get() noexcept { return Pop(ptr); };
+        T* Get() const noexcept { return Pop(ptr); };
+        T* load() noexcept { return Get(); };
+        T* load() const noexcept { return Get(); };
+        T* operator->() noexcept { return Get(); };
+        const T* operator->() const noexcept { return Get(); };
+
+    protected:
+        mutable ABA_Problem::THead<T> ptr;
+    };
+
+    template <typename T>
+    class DelayedInstantiation {
+    private:
+        static ABA_Problem::BlockAlloc<T, 8>& shared_alloc() {
+            static ABA_Problem::BlockAlloc<T, 8> alloc;
+            return alloc;
+        };
+        T* ptr{ nullptr };
+
+    public:
+        DelayedInstantiation() = default;
+        DelayedInstantiation(DelayedInstantiation const&) = delete;
+        DelayedInstantiation(DelayedInstantiation&&) = delete;
+        DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
+        DelayedInstantiation& operator=(DelayedInstantiation&&) = delete;
+        ~DelayedInstantiation() {
+            if (ptr) shared_alloc().Free(ptr);
+        };
+
+        bool valid() const {
+            return ptr;
+        };
+        T* operator->() const {
+            if (!ptr) {
+                if (auto* newPtr = shared_alloc().Alloc()) {
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
+                        shared_alloc().Free(newPtr);
+                    }
+                }
+            }
+            return ptr;
+        };
+        T& operator*() const {
+            return *operator->();
+        };
+        operator bool() const { return valid(); };
     };
 
     // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
@@ -1063,26 +1145,53 @@ namespace utilities {
             Constant = 2
         };
 
-        ObjectWrapper(GoodLang::Any const& obj = {}, int s = 0)
-            : object{ std::make_shared<GoodLang::Any>(obj) }
-            , state{ s }
+        ObjectWrapper()
+            : object_state{ nullptr }
+        {};
+        ObjectWrapper(GoodLang::Any obj, int s = 0)
+            : object_state{ GoodLang::make_shared<std::pair<GoodLang::Any, int>>(std::move(obj), s) }
         {
-            if (object->GetFlag(GoodLang::AnyData::Flag::constant)) {
-                state = state | Constant;
-            }
-            if (is_const()) {
-                object->SetFlag(GoodLang::AnyData::Flag::constant, true);
+            if (auto copy = object_state) {
+                if (copy->first.GetFlag(GoodLang::AnyData::Flag::constant)) {
+                    copy->second |= Constant;
+                }
+                if (copy->second & Constant) {
+                    copy->first.SetFlag(GoodLang::AnyData::Flag::constant, true);
+                }
             }
         };
+        ObjectWrapper(ObjectWrapper const&) = default;
+        ObjectWrapper(ObjectWrapper &&) = default;
+        ObjectWrapper& operator=(ObjectWrapper const&) = default;
+        ObjectWrapper& operator=(ObjectWrapper&&) = default;
+        ~ObjectWrapper() = default;
+    private:
+        GoodLang::shared_ptr< std::pair<GoodLang::Any, int> > object_state;
 
-        std::shared_ptr<GoodLang::Any> object;
-        int state = 0;
+    public:
+        GoodLang::Any* operator->() const { 
+            if (auto* p =object_state.get()) {
+                return &p->first;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        GoodLang::Any& operator*() const {
+            return *operator->();
+        };
 
         bool is_const() const {
-            return state & Constant;
+            if (auto copy = object_state) {
+                return copy->second & Constant;
+            }
+            return false;
         };
         bool is_static() const {
-            return state & Static;
+            if (auto copy = object_state) {
+                return copy->second & Static;
+            }
+            return false;
         };
     };
 
@@ -1201,7 +1310,7 @@ namespace utilities {
             * root, // must be locked when handled
             * first, // will be exchanged using atomics
             * last; // will be exchanged using atomics
-        utilities::ABA_Problem::EpochAllocator<objType>
+        DelayedInstantiation< utilities::ABA_Problem::EpochAllocator<objType> >
             objAllocator;
         utilities::ABA_Problem::EpochAllocator<_iterType>
             nodeAllocator;
@@ -1210,11 +1319,11 @@ namespace utilities {
 
         class EpochGuard {
         private:
-            typename decltype(BTree::objAllocator)::GuardType guard_1;
-            typename decltype(BTree::nodeAllocator)::GuardType guard_2;
+            typename utilities::ABA_Problem::EpochAllocator<objType>::GuardType guard_1;
+            typename utilities::ABA_Problem::EpochAllocator<_iterType>::GuardType guard_2;
 
         public:
-            EpochGuard(BTree const* parent) : guard_1{ parent->objAllocator.ProtectCurrentEpoch() }, guard_2{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
+            EpochGuard(BTree const* parent) : guard_1{ parent->objAllocator->ProtectCurrentEpoch() }, guard_2{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
             EpochGuard(EpochGuard const&) = delete;
             EpochGuard(EpochGuard&& rhs) = delete;
             EpochGuard& operator=(EpochGuard const&) = delete;
@@ -1418,14 +1527,14 @@ namespace utilities {
         ~BTree() = default;
 
         void unsafe_unload() {
-            objAllocator.unsafe_unload();
+            if (objAllocator) objAllocator->unsafe_unload();
             nodeAllocator.unsafe_unload();
             root = first = last = nullptr;
             Num = 0;
         };
 
         template <bool EmplaceIfExists = true> _iterType* 
-            Add(objType const& object, keyType const& key) {
+            Add(objType object, keyType const& key) {
             _iterType
                 *node, 
                 *child, 
@@ -1436,7 +1545,7 @@ namespace utilities {
                 auto locked{ std::shared_lock(mutex) };
                 node = NodeFind(key, root);
                 if (node && node->object) {
-                    *node->object = object;
+                    *node->object = std::move(object);
                     return node;
                 }
             }
@@ -1454,7 +1563,7 @@ namespace utilities {
             if constexpr (EmplaceIfExists) {
                 node = NodeFind(key, root);
                 if (node && node->object) {
-                    *node->object = object;
+                    *node->object = std::move(object);
                     return node;
                 }
             }
@@ -1467,7 +1576,7 @@ namespace utilities {
 
             newNode = AllocNode();
             newNode->key = key;
-            newNode->object = objAllocator.Alloc(object);
+            newNode->object = objAllocator->Alloc(std::move(object));
             Num++;
 
             if (root->numChildren >= maxChildrenPerNode) {
@@ -1567,7 +1676,7 @@ namespace utilities {
 
             newNode = AllocNode();
             newNode->key = key;
-            newNode->object = objAllocator.Alloc();
+            newNode->object = objAllocator->Alloc();
             Num++;
 
             if (root->numChildren >= maxChildrenPerNode) {
@@ -1659,7 +1768,7 @@ namespace utilities {
 
                 newNode = AllocNode();
                 newNode->key = begin->first;
-                newNode->object = objAllocator.Alloc(begin->second);
+                newNode->object = objAllocator->Alloc(begin->second);
                 Num++;
 
                 if (root->numChildren >= maxChildrenPerNode) {
@@ -1930,7 +2039,7 @@ namespace utilities {
             FreeNode(_iterType* node) {
             if (node) {
                 if (node->object) {
-                    objAllocator.Free(node->object);
+                    objAllocator->Free(node->object);
                     Num--;
                 }
                 nodeAllocator.Free(node);   
@@ -2008,7 +2117,7 @@ namespace utilities {
     template<class KeyType, class ValueType> class atomic_map {
         friend class it_state;
     protected:
-        BTree<ValueType, KeyType>
+        DelayedInstantiation<BTree<ValueType, KeyType>>
             tree;
 
     public:
@@ -2047,46 +2156,54 @@ namespace utilities {
         ~atomic_map() = default;
 
         void unsafe_unload() {
-            tree.unsafe_unload();
+            tree->unsafe_unload();
         };
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
-            return tree.ProtectCurrentEpoch();
+            return tree->ProtectCurrentEpoch();
         };
         size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
             size() const {
-            return tree.GetNodeCount();
+            return tree->GetNodeCount();
         };
         WrappedReference // if already exists, returns the existing value pair. 
             insert(const KeyType& time, ValueType&& value) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto* iter = tree.Add<false>(std::move(value), time);
-            return WrappedReference(iter->key, *iter->object, &tree);
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto* iter = tree->Add<false>(std::move(value), time);
+            return WrappedReference(iter->key, *iter->object, &*tree);
         };
         WrappedReference // if already exists, overwrites the value and returns the value pair. 
             emplace(const KeyType& time, ValueType&& value) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto* iter = tree.Add<true>(std::move(value), time);
-            return WrappedReference(iter->key, *iter->object, &tree);
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto* iter = tree->Add<true>(std::move(value), time);
+            return WrappedReference(iter->key, *iter->object, &*tree);
+        };
+        void // if already exists, does nothing
+            insert_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->Add<false>(std::move(value), time);
+        };
+        void // if already exists, overwrites the value. 
+            emplace_fast(const KeyType& time, ValueType&& value) {            
+            (void)tree->Add<true>(std::move(value), time);
         };
         template <typename iter_type> void // bulk insertion. if already exists, does nothing.
             insert_bulk(iter_type begin, iter_type const& end) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            tree.Add_Bulk<iter_type, false>(std::move(begin), end);
+            auto g{ tree->ProtectCurrentEpoch() };
+            tree->Add_Bulk<iter_type, false>(std::move(begin), end);
         };
         template <typename iter_type> void // bulk insertion. if already exists, overwrites the value. 
             emplace_bulk(iter_type begin, iter_type const& end) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            tree.Add_Bulk<iter_type, true>(std::move(begin), end);
+            auto g{ tree->ProtectCurrentEpoch() };
+            tree->Add_Bulk<iter_type, true>(std::move(begin), end);
         };
         size_t // returns 1 if the key is found, otherwise 0.
             count(const KeyType& time) const {
-            return (bool)tree.NodeFind(time) ? 1 : 0;
+            return (bool)tree->NodeFind(time) ? 1 : 0;
         };
         ValueType& // throws if the key is not found. 
             at(const KeyType& time) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* iter = tree.NodeFind(time)) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* iter = tree->NodeFind(time)) {
                 return *iter->object;
             }
             else {
@@ -2095,8 +2212,8 @@ namespace utilities {
         };
         ValueType* // returns nullptr if the key is not found. 
             try_at(const KeyType& time) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* iter = tree.NodeFind(time)) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* iter = tree->NodeFind(time)) {
                 return iter->object;
             }
             else {
@@ -2105,8 +2222,8 @@ namespace utilities {
         };
         template <typename Func> __declspec(noinline) bool // calls func(key, object) on the first (smallest key) node in the map
             do_at_beginning(Func const& func) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* p = tree.GetFirst()) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetFirst()) {
                 func(p->key, *p->object);
                 return true;
             }
@@ -2114,17 +2231,17 @@ namespace utilities {
         };
         template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
             for_all(Func const& func) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto p = tree.GetFirst();
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto p = tree->GetFirst();
             while (p) {
                 func(p->key, *p->object);
-                p = tree.GetNextLeaf(p);
+                p = tree->GetNextLeaf(p);
             }
         };
         template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
             do_at_end(Func const& func) const {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* p = tree.GetLast()) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetLast()) {
                 func(p->key, *p->object);
                 return true;
             }
@@ -2132,18 +2249,18 @@ namespace utilities {
         };
         bool // removes the first (smallest key) node in the map
             pop_front() {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* p = tree.GetFirst()) {
-                tree.Remove(p);
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetFirst()) {
+                tree->Remove(p);
                 return true;
             }
             return false;
         };
         bool // removes the last (largest key) node in the map
             pop_back() {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (auto* p = tree.GetLast()) {
-                tree.Remove(p);
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetLast()) {
+                tree->Remove(p);
                 return true;
             }
             return false;
@@ -2151,11 +2268,11 @@ namespace utilities {
         template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
             pop_front_if(Func const& func) {
             bool out = false;
-            auto g{ tree.ProtectCurrentEpoch() };     
-            auto g2{ tree.Lock() };
-            if (auto* p = tree.GetFirst_Unsafe()) {                
+            auto g{ tree->ProtectCurrentEpoch() };     
+            auto g2{ tree->Lock() };
+            if (auto* p = tree->GetFirst_Unsafe()) {                
                 if (func(p->key, *p->object)) {
-                    tree.Remove_Unsafe(p, nullptr);
+                    tree->Remove_Unsafe(p, nullptr);
                     out = true;
                 }  
             }            
@@ -2164,11 +2281,11 @@ namespace utilities {
         template <typename Func> __declspec(noinline) bool // removes the last (largest key) node in the map if func(key, object) returns true
             pop_back_if(Func const& func) {
             bool out = false;
-            auto g{ tree.ProtectCurrentEpoch() };
-            auto g2{ tree.Lock() };
-            if (auto* p = tree.GetLast_Unsafe()) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto g2{ tree->Lock() };
+            if (auto* p = tree->GetLast_Unsafe()) {
                 if (func(p->key, *p->object)) {
-                    tree.Remove_Unsafe(p, nullptr);
+                    tree->Remove_Unsafe(p, nullptr);
                     out = true;
                 }
             }
@@ -2176,12 +2293,12 @@ namespace utilities {
         };
         __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
             operator[](const KeyType& time) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (ValueType* p = tree.Find(time)) {                
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (ValueType* p = tree->Find(time)) {                
                 return *p;
             }
             else {
-                if (auto* p = tree.GetOrInstance(time)) {
+                if (auto* p = tree->GetOrInstance(time)) {
                     return *p->object;
                 }
                 else {
@@ -2191,14 +2308,14 @@ namespace utilities {
         };
         template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
             get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            if (ValueType* p = tree.Find(time)) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (ValueType* p = tree->Find(time)) {
                 if (ExistedAlready) *ExistedAlready = true;
                 return *p;
             }
             else {
                 if (ExistedAlready) *ExistedAlready = false;
-                if (auto* p = tree.Add(func(), time)) {
+                if (auto* p = tree->Add(func(), time)) {
                     return *p->object;
                 }
                 else {
@@ -2208,8 +2325,8 @@ namespace utilities {
         };
         bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
             erase(const KeyType& time, ValueType* out = nullptr) {
-            auto g{ tree.ProtectCurrentEpoch() };
-            return tree.RemoveAt(time, out);
+            auto g{ tree->ProtectCurrentEpoch() };
+            return tree->RemoveAt(time, out);
         };
         void // clear the map
             clear() {
@@ -2232,19 +2349,19 @@ namespace utilities {
             // functions
             void Initialize(thisType* ref) {};
             void ToBeginning(thisType* ref) {
-                _ptr = ref->tree.GetFirst();
+                _ptr = ref->tree->GetFirst();
             };
             void ToEnd(thisType* ref) {
                 _ptr = nullptr;
             };
             void Next(thisType* ref) {
-                this->_ptr = ref->tree.GetNextLeaf(this->_ptr);
+                this->_ptr = ref->tree->GetNextLeaf(this->_ptr);
             };
             void Prev(thisType* ref) {
-                this->_ptr = ref->tree.GetPrevLeaf(this->_ptr);
+                this->_ptr = ref->tree->GetPrevLeaf(this->_ptr);
             };
             value_type& Get(thisType* ref) const {
-                _out = std::make_unique<value_type>(_ptr->key, *_ptr->object, &ref->tree);
+                _out = std::make_unique<value_type>(_ptr->key, *_ptr->object, &*ref->tree);
                 return *_out;
             };
             bool operator==(it_state const& rhs) const {
@@ -2259,9 +2376,9 @@ namespace utilities {
         SETUP_ITERATOR(atomic_map, it_state);
         iterator // returns an iterator 
             find(const KeyType& _Keyval) const {
-            auto g{ tree.ProtectCurrentEpoch() };
+            auto g{ tree->ProtectCurrentEpoch() };
             auto iter = this->end();
-            if (auto* p = this->tree.NodeFind(_Keyval)) {
+            if (auto* p = this->tree->NodeFind(_Keyval)) {
                 iter.state._ptr = p;
             }
             return iter;
@@ -2273,7 +2390,7 @@ namespace utilities {
     template<class KeyType, class ValueType, typename HashType = std::hash<KeyType>> class atomic_unordered_map {
         friend class it_state;
     protected:
-        std::unique_ptr<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>
+        std::unique_ptr< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>> >
             tree;
         HashType 
             hasher;
@@ -2308,7 +2425,7 @@ namespace utilities {
 
     public:
         atomic_unordered_map()
-            : tree{ std::make_unique<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>() }, hasher{ HashType{} }
+            : tree{ std::make_unique< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>>() }, hasher{ HashType{} }
         {};
         atomic_unordered_map(atomic_unordered_map const& rhs) = delete;
         atomic_unordered_map(atomic_unordered_map&& rhs) : tree{ std::move(rhs.tree) }, hasher{ HashType{} } 
@@ -2318,36 +2435,44 @@ namespace utilities {
         ~atomic_unordered_map() = default;
 
         void unsafe_unload() {
-            tree->unsafe_unload();
+            if (*tree) tree->operator*().unsafe_unload();
         };
         auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
             ProtectCurrentEpoch() const {
-            return tree->ProtectCurrentEpoch();
+            return tree->operator*().ProtectCurrentEpoch();
         };
         size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
             size() const {
-            return tree->GetNodeCount();
+            return tree->operator*().GetNodeCount();
         };
         WrappedReference // if already exists, returns the existing value pair. 
             insert(const KeyType& time, ValueType&& value) {
-            auto g{ tree->ProtectCurrentEpoch() };
-            auto* iter = tree->Add<false>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
-            return WrappedReference(iter->object->first, *iter->object->second, &*tree);
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto* iter = tree->operator*().Add<false>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+            return WrappedReference(iter->object->first, *iter->object->second, &**tree);
         };
         WrappedReference // if already exists, overwrites the value and returns the value pair. 
             emplace(const KeyType& time, ValueType&& value) {
-            auto g{ tree->ProtectCurrentEpoch() };
-            auto* iter = tree->Add<true>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
-            return WrappedReference(iter->object->first, *iter->object->second, &*tree);
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto* iter = tree->operator*().Add<true>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+            return WrappedReference(iter->object->first, *iter->object->second, &**tree);
+        };
+        void // if already exists, returns the existing value pair. 
+            insert_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->operator*().Add<false>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+        };
+        void // if already exists, overwrites the value and returns the value pair. 
+            emplace_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->operator*().Add<true>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
         };
         size_t // returns 1 if the key is found, otherwise 0.
             count(const KeyType& time) const {
-            return (bool)tree->NodeFind(hash(time)) ? 1 : 0;
+            return (bool)tree->operator*().NodeFind(hash(time)) ? 1 : 0;
         };
         ValueType& // throws if the key is not found. 
             at(const KeyType& time) const {
-            auto g{ tree->ProtectCurrentEpoch() };
-            if (auto* iter = tree->NodeFind(hash(time))) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            if (auto* iter = tree->operator*().NodeFind(hash(time))) {
                 return *iter->object->second;
             }
             else {
@@ -2356,8 +2481,8 @@ namespace utilities {
         };
         ValueType* // returns nullptr if the key is not found. 
             try_at(const KeyType& time) const {
-            auto g{ tree->ProtectCurrentEpoch() };
-            if (auto* iter = tree->NodeFind(hash(time))) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            if (auto* iter = tree->operator*().NodeFind(hash(time))) {
                 return &*iter->object->second;
             }
             else {
@@ -2366,23 +2491,23 @@ namespace utilities {
         };
         template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
             for_all(Func const& func) const {
-            auto g{ tree->ProtectCurrentEpoch() };
-            auto p = tree->GetFirst();
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto p = tree->operator*().GetFirst();
             while (p) {
                 func(p->object->first, *p->object->second);
-                p = tree->GetNextLeaf(p);
+                p = tree->operator*().GetNextLeaf(p);
             }
         };
         template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
             get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
-            auto g{ tree->ProtectCurrentEpoch() };
-            if (std::pair<KeyType, std::shared_ptr<ValueType>>* p = tree->Find(hash(time))) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            if (std::pair<KeyType, std::shared_ptr<ValueType>>* p = tree->operator*().Find(hash(time))) {
                 if (ExistedAlready) *ExistedAlready = true;
                 return *p->second;
             }
             else {
                 if (ExistedAlready) *ExistedAlready = false;
-                if (auto* p = tree->Add<false>(std::pair<KeyType, std::shared_ptr<ValueType>>(time, std::make_shared<ValueType>(func())), hash(time))) {
+                if (auto* p = tree->operator*().Add<false>(std::pair<KeyType, std::shared_ptr<ValueType>>(time, std::make_shared<ValueType>(func())), hash(time))) {
                     return *p->object->second;
                 }
                 else {
@@ -2397,18 +2522,18 @@ namespace utilities {
 
         bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
             erase(const KeyType& time, ValueType* out = nullptr) {
-            auto g{ tree->ProtectCurrentEpoch() };
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
             std::pair<KeyType, std::shared_ptr<ValueType>> temp;
-            bool result = tree->RemoveAt(hash(time), &temp);
+            bool result = tree->operator*().RemoveAt(hash(time), &temp);
             if (out) *out = *temp.second;
             return result;
         };
         void // clear the map
             clear() {
             while (true) {
-                auto g{ tree->ProtectCurrentEpoch() };
-                if (auto* p = tree->GetFirst()) {
-                    tree->Remove(p);
+                auto g{ tree->operator*().ProtectCurrentEpoch() };
+                if (auto* p = tree->operator*().GetFirst()) {
+                    tree->operator*().Remove(p);
                 }
                 else {
                     break;
@@ -2433,19 +2558,19 @@ namespace utilities {
             // functions
             void Initialize(thisType* ref) {};
             void ToBeginning(thisType* ref) {
-                _ptr = ref->tree->GetFirst();
+                _ptr = ref->tree->operator*().GetFirst();
             };
             void ToEnd(thisType* ref) {
                 _ptr = nullptr;
             };
             void Next(thisType* ref) {
-                this->_ptr = ref->tree->GetNextLeaf(this->_ptr);
+                this->_ptr = ref->tree->operator*().GetNextLeaf(this->_ptr);
             };
             void Prev(thisType* ref) {
-                this->_ptr = ref->tree->GetPrevLeaf(this->_ptr);
+                this->_ptr = ref->tree->operator*().GetPrevLeaf(this->_ptr);
             };
             value_type& Get(thisType* ref) const {
-                _out = std::make_unique<value_type>(_ptr->object->first, *_ptr->object->second, &*ref->tree);
+                _out = std::make_unique<value_type>(_ptr->object->first, *_ptr->object->second, &**ref->tree);
                 return *_out;
             };
             bool operator==(it_state const& rhs) const {
@@ -2460,9 +2585,9 @@ namespace utilities {
         SETUP_ITERATOR(atomic_unordered_map, it_state);
         iterator // returns an iterator 
             find(const KeyType& _Keyval) const {
-            auto g{ tree->ProtectCurrentEpoch() };
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
             auto iter = this->end();
-            if (auto* p = this->tree->NodeFind(hash(_Keyval))) {
+            if (auto* p = this->tree->operator*().NodeFind(hash(_Keyval))) {
                 iter.state._ptr = p;
             }
             return iter;
@@ -2470,80 +2595,8 @@ namespace utilities {
 
     };
 
-    /// <summary>
-    /// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    template< typename T> 
-    struct atomic_ptr {
-    private:
-        // pop pNode from head of list.
-        static T* Pop(ABA_Problem::THead<T>& Head) {
-            ABA_Problem::THead<T> Old, New;
-            while (1) { // race loop
-                // Get an atomic copy of head and call it old.
-                Old.m_n64 = Head.m_n64;
-                if (Old.is_null()) return nullptr;
-                // 
-                New.m_n64 = Old.m_n64;
-                New.Node(Old.Node());
-                // compare and swap New with Head if it still matches Old.
-                if (ABA_Problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) return ABA_Problem::THead<T>::Finalize(Old.Node()); // success                
-                // race, try again
-            }
-        }
 
-        // push pNode onto head of list.
-        static T* Push(ABA_Problem::THead<T>& Head, T* pNode) {
-            ABA_Problem::THead<T> Old, New;
-            while (1) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.
-                New.m_n64 = Old.m_n64 = Head.m_n64;
-                // change New's head ptr, which bumps internal aba
-                New.Node(pNode);
-                // compare and swap New with Head if it still matches Old.
-                if (ABA_Problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
-                // race, try again
-            }
-            return Old.Node();
-        }
-
-    public:
-        atomic_ptr() noexcept {
-            ptr.m_n64 = 0;
-        };
-        atomic_ptr(T* newSource) noexcept {
-            ptr.Node(newSource);
-        };
-        atomic_ptr(const atomic_ptr& other) noexcept {
-            ptr.Node(other.ptr.Node());
-        };
-        atomic_ptr& operator=(const atomic_ptr& other) noexcept { Set(other.Get()); return *this; };
-        atomic_ptr& operator=(T* newSource) noexcept { Set(newSource); return *this; };
-        ~atomic_ptr() = default;
-
-        explicit operator bool() { return !ptr.is_null(); };
-        explicit operator bool() const { return !ptr.is_null(); };
-
-        operator T* () noexcept { return Pop(ptr); };
-        operator const T* () const noexcept { return Pop(ptr); };
-
-        /* atomically sets the pointer and returns the previous pointer value */
-        T* Set(T* newPtr) noexcept {
-            return Push(ptr, newPtr);
-        };
-        T* Get() noexcept { return Pop(ptr); };
-        T* Get() const noexcept { return Pop(ptr); };
-        T* load() noexcept { return Get(); };
-        T* load() const noexcept { return Get(); };
-        T* operator->() noexcept { return Get(); };
-        const T* operator->() const noexcept { return Get(); };
-
-    protected:
-        mutable ABA_Problem::THead<T> ptr;
-    };
-
+    // To-Do, need to roll my own Any, Params, etc.
 
     // class any;
 
@@ -2717,6 +2770,10 @@ namespace utilities {
 
 
 
+
+
+
+
     class FunctionWrapper {
     public:
         enum FunctionState {
@@ -2837,6 +2894,10 @@ namespace utilities {
 
     };
 
+
+
+
+
     class Functions {
     public:
         Functions() = default;
@@ -2886,8 +2947,8 @@ namespace utilities {
             return at(key, params);
         };
 
-        FunctionPtr const& emplace(utilities::string const& key, GoodLang::ParamTypes const& params, FunctionWrapper func) {
-            auto ptr{ m_functions[key].insert(params, std::move(func)) };
+        FunctionPtr const& emplace(utilities::string const& key, GoodLang::ParamTypes const& params, FunctionWrapper const& func) {
+            auto ptr{ m_functions[key].insert(params, (FunctionWrapper)func) };
             return ptr.second;
         };
         FunctionPtr const& emplace(utilities::string const& key, FunctionWrapper const& func) {
@@ -2942,7 +3003,7 @@ namespace utilities {
                     if (functionName.size() > 0) {
                         for (auto& function : m_functions[functionName]) {
                             if (!function.second.function) continue; // not valid
-                            // if (function.second.is_cached()) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
+                            if (function.second.is_cached()) continue; // ignoring pre-cached functions. Only interested in "true" functions. 
 
                             bool isTemplateFunc = function.second.function->GetSignature().IsTemplate();
                             bool isExplicitFunc = function.second.is_explicit();
@@ -2953,11 +3014,17 @@ namespace utilities {
                             if (params.size() == function.second.function->Arguments().size()) {
                                 if (!isTemplateFunc) {
                                     if (conversionCost == 0) {
-                                        FunctionWrapper FunctionToCache(function.second.function, function.second.state | FunctionWrapper::FunctionState::Cached, function.second.default_values);
-                                        FunctionToCache.cost = 0;
-                                        if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                        if (function.second.function->Arguments().Types().hash() == params.hash()) {
                                             if (finalCost) *finalCost = 0;
-                                            return func;
+                                            return function.second;
+                                        }
+                                        else {
+                                            FunctionWrapper FunctionToCache(function.second.function, function.second.state | FunctionWrapper::FunctionState::Cached, function.second.default_values);
+                                            FunctionToCache.cost = 0;
+                                            if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                                if (finalCost) *finalCost = 0;
+                                                return func;
+                                            }
                                         }
                                     }
                                 }
@@ -2990,16 +3057,14 @@ namespace utilities {
                                                 continue;
                                             }
 
-                                            for (int i = 0; (i < paramTypes.size()) && (i < 1); i++) {
-                                                if ((incomingFunctionArgs.size() > i) && (paramTypes.size() > i) && (existingFunctionArgs.size() > i)) {
-                                                    if (auto p = incomingFunctionArgs.Type(i).lock()) {
-                                                        if (auto p2 = existingFunctionArgs.Type(i).lock()) {
-                                                            if (p->underlyingHash == paramTypes[i]->underlyingHash) {
-                                                                if (p2->underlyingHash != paramTypes[i]->underlyingHash) {
-                                                                    pair.first = conversionCost;
-                                                                    pair.second = &function.second;
-                                                                    break;
-                                                                }
+                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
+                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
+                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
+                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
+                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
+                                                                pair.first = conversionCost;
+                                                                pair.second = &function.second;
+                                                                continue;
                                                             }
                                                         }
                                                     }
@@ -3040,16 +3105,14 @@ namespace utilities {
                                                 continue;
                                             }
 
-                                            for (int i = 0; (i < paramTypes.size()) && (i < 1); i++) {
-                                                if ((incomingFunctionArgs.size() > i) && (paramTypes.size() > i) && (existingFunctionArgs.size() > i)) {
-                                                    if (auto p = incomingFunctionArgs.Type(i).lock()) {
-                                                        if (auto p2 = existingFunctionArgs.Type(i).lock()) {
-                                                            if (p->underlyingHash == paramTypes[i]->underlyingHash) {
-                                                                if (p2->underlyingHash != paramTypes[i]->underlyingHash) {
-                                                                    pair.first = conversionCost;
-                                                                    pair.second = &function.second;
-                                                                    break;
-                                                                }
+                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
+                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
+                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
+                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
+                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
+                                                                pair.first = conversionCost;
+                                                                pair.second = &function.second;
+                                                                continue;
                                                             }
                                                         }
                                                     }
@@ -3088,21 +3151,19 @@ namespace utilities {
                                                 continue;
                                             }
 
-                                            for (int i = 0; (i < paramTypes.size()) && (i < 1); i++) {
-                                                if ((incomingFunctionArgs.size() > i) && (paramTypes.size() > i) && (existingFunctionArgs.size() > i)) {
-                                                    if (auto p = incomingFunctionArgs.Type(i).lock()) {
-                                                        if (auto p2 = existingFunctionArgs.Type(i).lock()) {
-                                                            if (p->underlyingHash == paramTypes[i]->underlyingHash) {
-                                                                if (p2->underlyingHash != paramTypes[i]->underlyingHash) {
-                                                                    pair.first = conversionCost;
-                                                                    pair.second = &function.second;
-                                                                    break;
-                                                                }
+                                            if ((incomingFunctionArgs.size() > 0) && (paramTypes.size() > 0) && (existingFunctionArgs.size() > 0)) {
+                                                if (auto p = incomingFunctionArgs.Type(0).lock()) {
+                                                    if (auto p2 = existingFunctionArgs.Type(0).lock()) {
+                                                        if (p->underlyingHash == paramTypes[0]->underlyingHash) {
+                                                            if (p2->underlyingHash != paramTypes[0]->underlyingHash) {
+                                                                pair.first = conversionCost;
+                                                                pair.second = &function.second;
+                                                                continue;
                                                             }
                                                         }
                                                     }
                                                 }
-                                            }
+                                            }  
                                         }
                                     }
                                     else {
@@ -3123,12 +3184,20 @@ namespace utilities {
                             // if (candidate.first >= GoodLang::details::TypeConversionWorstCaseCost) continue;
                             if (!candidate.second) continue;
 
-                            FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
-                            FunctionToCache.cost = candidate.first;
-                            if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                            if (candidate.second->function->Arguments().Types().hash() == params.hash()) {
                                 if (finalCost) *finalCost = candidate.first;
-                                return func;
+                                return *candidate.second;
                             }
+                            else {
+                                FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
+                                FunctionToCache.cost = candidate.first;
+                                if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                    if (finalCost) *finalCost = candidate.first;
+                                    return func;
+                                }
+                            }
+
+
                         }
                     }                    
                 }
@@ -3139,11 +3208,17 @@ namespace utilities {
                             // if (candidate.first >= GoodLang::details::TypeConversionWorstCaseCost) continue;
                             if (!candidate.second) continue;
 
-                            FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
-                            FunctionToCache.cost = candidate.first;
-                            if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                            if (candidate.second->function->Arguments().Types().hash() == params.hash()) {
                                 if (finalCost) *finalCost = candidate.first;
-                                return func;
+                                return *candidate.second;
+                            }
+                            else {
+                                FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
+                                FunctionToCache.cost = candidate.first;
+                                if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
+                                    if (finalCost) *finalCost = candidate.first;
+                                    return func;
+                                }
                             }
                         }
                     }
@@ -3420,43 +3495,31 @@ public:
     protected:
         Breadcrumb 
             breadcrumb_m;
-        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>>
+        concurrency::concurrent_unordered_map<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>
             using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-        utilities::DelayedInstantiation<concurrency::concurrent_unordered_map< utilities::string, utilities::ObjectWrapper >>
+        utilities::atomic_map<utilities::string, utilities::ObjectWrapper>
             objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
         virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
-        bool EmplaceObject_Impl(utilities::string const& sv, utilities::ObjectWrapper Obj, bool overwriteIfExists = true) {
-            auto iter = objects_m->insert({ sv, Obj });
-            if (iter.second) {
-                this->invalidate_cache();
-                return true;
-            }
-            else if (overwriteIfExists) {
-                iter.first->second = Obj;
-                this->invalidate_cache();
-                return true;
-            }
-            else {
-                return false;
-            }
+        template <bool overwriteIfExists> bool EmplaceObject_Impl(utilities::string const& sv, utilities::ObjectWrapper && Obj) {            
+            if constexpr (overwriteIfExists)
+                objects_m.emplace_fast(sv, std::move(Obj));
+            else
+                objects_m.insert_fast(sv, std::move(Obj));
+            return true;
         };
         utilities::ObjectWrapper* GetObject_Impl(utilities::string const& sv) {
-            if (objects_m) {
-                if (auto f = objects_m->find(sv), e = objects_m->end(); f != e) {
-                    return &f->second;
-                }
-            }
+            if (auto f = objects_m.find(sv), e = objects_m.end(); f != e) 
+                return &f->second;            
             return nullptr;
         };
         virtual void AddUsing_Impl(Breadcrumb* scope) {
             if (scope) {
                 if (scope->this_m.is_namespace()) {
-                    using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{
-                        scope,
-                        utilities::Callback<NamespaceScope>::ScopedListener()
-                    });
-                    invalidate_cache(); // does nothing for normal scopes
+                    //if (auto f = using_m->find(scope); f == using_m->end()) {
+                    using_m.insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
+                        invalidate_cache(); // does nothing for normal scopes
+                    //}
                 }
             }
         };
@@ -3575,8 +3638,8 @@ public:
             }
 
             // test my personal "using" namespaces completely
-            if (using_m && (using_m->size() > 0ull)){
-                for (auto& childNamespace : *using_m) {
+            if (using_m.size() > 0ull){
+                for (auto& childNamespace : using_m) {
                     if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                         return finalResult;
@@ -3614,8 +3677,8 @@ public:
                         }
                     }
                     // check the using statements of the parent.
-                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
-                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                             auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
                             if (flag2 & CheckFlagState::all) continue;
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
@@ -3649,8 +3712,8 @@ public:
                     }
 
                     // test my personal "using" namespaces completely
-                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
-                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                             auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
                             if (flag & CheckFlagState::all) { continue; }
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
@@ -3686,8 +3749,8 @@ public:
                         }
                     }
                     // check the using statements of the parent.
-                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
-                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                             auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
                             if (flag2 & CheckFlagState::all) continue;
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
@@ -3787,6 +3850,7 @@ public:
         /// <returns></returns>
         void add_using_here(NamespaceScope const& ptr) {
             if (auto p = static_cast<const BasicScope*>(&ptr)) {
+                if (this == p) return; // may not "use" yourself.
                 this->AddUsing_Impl(const_cast<Breadcrumb*>(&p->breadcrumb_m));
             }
         }
@@ -3797,8 +3861,8 @@ public:
         /// <param name="sv"></param>
         /// <param name="Obj"></param>
         /// <returns>bool</returns>
-        bool insert_object_here(utilities::string const& sv, utilities::ObjectWrapper Obj) {
-            return this->EmplaceObject_Impl(sv, std::move(Obj), false);
+        bool insert_object_here(utilities::string const& sv, utilities::ObjectWrapper && Obj) {
+            return this->EmplaceObject_Impl<false>(sv, std::move(Obj));
         };
         
         /// <summary>
@@ -3807,8 +3871,8 @@ public:
         /// <param name="sv"></param>
         /// <param name="Obj"></param>
         /// <returns>bool</returns>
-        bool emplace_object_here(utilities::string const& sv, utilities::ObjectWrapper Obj) {
-            return this->EmplaceObject_Impl(sv, std::move(Obj), true);
+        bool emplace_object_here(utilities::string const& sv, utilities::ObjectWrapper && Obj) {
+            return this->EmplaceObject_Impl<true>(sv, std::move(Obj));
         };
         
         /// <summary>
@@ -3973,12 +4037,9 @@ public:
             if (scope) {
                 if (scope->this_m.is_namespace()) {
                     if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
-                        using_m->insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{
-                            scope,
-                            p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this)
-                        });
+                        using_m.insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
                         invalidate_cache();
-                    }
+                    }                    
                 }
             }
         };
@@ -4002,9 +4063,7 @@ public:
         // unloads the connections to other namespaces before deletion, which can prevent a memory-access crash. 
         void unload() {
             this->connection_for_cache_version = {};
-            for (auto& x : *this->using_m) x.second = {};
-            // this->search_cache.unsafe_unload();
-            this->using_m->clear();
+            for (auto& x : this->using_m) x.second = {};
             for (auto& child : this->children) child.second->unload();            
             this->children.clear(); 
         };
@@ -4056,8 +4115,8 @@ public:
             }
 
             // test my personal "using" namespaces completely
-            if (using_m && (using_m->size() > 0ull)) {
-                for (auto& childNamespace : *using_m) {
+            if (using_m.size() > 0ull) {
+                for (auto& childNamespace : using_m) {
                     if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                         return finalResult;
@@ -4095,8 +4154,8 @@ public:
                         }
                     }
                     // check the using statements of the parent.
-                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
-                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                             auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
                             if (flag2 & CheckFlagState::all) continue;
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
@@ -4130,8 +4189,8 @@ public:
                     }
 
                     // test my personal "using" namespaces completely
-                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
-                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                             auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
                             if (flag & CheckFlagState::all) { continue; }
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
@@ -4167,8 +4226,8 @@ public:
                         }
                     }
                     // check the using statements of the parent.
-                    if ((thisParent->this_m.scope->using_m.valid()) && (thisParent->this_m.scope->using_m->size() > 0)) {
-                        for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                             auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
                             if (flag2 & CheckFlagState::all) continue;
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
@@ -4299,7 +4358,7 @@ int main() {
         print("STARTING LOOP: \n");
 
         // Testing utilities::type_of
-#if 1
+#if 0
         EXPECT_EQ(true, utilities::type_of<int>().is_base());
         EXPECT_EQ(false, utilities::type_of<int>().is_ref());
         EXPECT_EQ(false, utilities::type_of<int>().is_const());
@@ -4358,7 +4417,7 @@ int main() {
 #endif // << NO LEAK
 
         // Testing atomic_ptr
-#if 1
+#if 0
         sw.Start();
         if (1) {
             int* old_ptr;
@@ -4410,7 +4469,7 @@ int main() {
 #endif // << NO LEAK
 
         // Testing Allocator
-#if 1
+#if 0
         if (1) {
             ABA_Problem::Allocator<size_t>
                 index_allocator;
@@ -4914,7 +4973,8 @@ int main() {
                 //print(iter->key);
             }
         }
-#endif
+#endif // << NO LEAK
+
         // Test atomic_map and atomic_unordered_map
         if (0) {
             utilities::atomic_map<size_t, std::string> tree{};
@@ -5011,54 +5071,15 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-#endif
-
-        // Testing Scopes::Scopes UpdateObjectFunctionVersion 
-#if 0
-        for (int loopN = 0; loopN < 1000; loopN++) {
-            Scopes::RootScope root;
-            if (1) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, 0);
-                EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
-                EXPECT_EQ(scope.object_or_function_versions, 0);
-
-                scope.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions, 1);
-            }
-            if (1) {
-                Scopes::BasicScope scope("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                // EXPECT_EQ(*scope.breadcrumb_m.this_m.scope_index, 1);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, 0);
-                EXPECT_EQ(scope.breadcrumb_m.root_m, &root.breadcrumb_m);
-                EXPECT_EQ(scope.object_or_function_versions, 0);
-
-                Scopes::BasicScope scope2("", Scopes::ScopeType::Basic, &root.breadcrumb_m);
-                // EXPECT_EQ(*scope2.breadcrumb_m.this_m.scope_index, 2);
-                EXPECT_EQ(root.breadcrumb_m.this_m.scope_index._index, 0);
-                EXPECT_EQ(scope2.breadcrumb_m.root_m, &root.breadcrumb_m);
-                EXPECT_EQ(scope2.object_or_function_versions, 0);
-
-                scope.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions, 1);
-
-                scope2.UpdateObjectFunctionVersion();
-                EXPECT_EQ(scope.object_or_function_versions, 1);
-
-                root.UpdateObjectFunctionVersion();
-                EXPECT_EQ(root.object_or_function_versions, 1);
-                EXPECT_EQ(scope.object_or_function_versions, 2);
-                EXPECT_EQ(scope2.object_or_function_versions, 2);
-            }
-        }
-#endif
+#endif // << NO LEAK
 
         // Testing Scopes::Scopes
-#if 0
+#if 1
         if (1) {
             Scopes::RootScope root; // successfully starts a new script root
 
+       // >> TEST SCOPES
+#if 1
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto scope{ root.make_scope() };
@@ -5066,13 +5087,13 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
-            GoodLang::parallel::For(0, 10000, [&](int i) {
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto& scope{ root.make_namespace("std") };
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
-            GoodLang::parallel::For(0, 10000, [&](int i) {
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto& scope{ root.make_namespace("std") };
                 scope.invalidate_cache();
             });
@@ -5082,7 +5103,7 @@ int main() {
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.invalidate_cache();
             })) {
-                GoodLang::parallel::For(0, 10000, [&](int i) {
+                GoodLang::parallel::For(0, 1000000, [&](int i) {
                     auto& scope{ root.make_namespace("std") };
                     scope.invalidate_cache();
                 });
@@ -5105,10 +5126,12 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
+#if 1
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 switch (i % 3) {
                 case 0: {
+#if 1
                     auto& scope1{ root.make_namespace("std") };
                     auto& scope2{ scope1.make_namespace("impl") };
                     auto scope3{ scope2.make_scope() };
@@ -5119,16 +5142,17 @@ int main() {
 
                     auto scope5{ scope3.make_scope() };
                     scope5.get_unique_index();
-
+#endif 
                     break;
                 }
                 case 1: {
+#if 1
                     auto& scope1{ root.make_namespace("std") };
                     auto& scope2{ scope1.make_namespace("string") };
                     auto& scope3{ scope2.make_namespace("impl") };
                     auto scope4{ scope3.make_scope() };
 
-                    scope2.emplace_object_here("npos", GoodLang::Any(100));
+                    scope2.emplace_object_here("npos", GoodLang::Any(100)); // slow due to conflict with GoodLang::shared_ptr... 
 
                     scope4.add_using_here(scope3);
                     scope4.add_using_here(scope2);
@@ -5140,9 +5164,11 @@ int main() {
                     scope5.get_unique_index();
                     scope6.get_unique_index();
 
+#endif 
                     break;
                 }
                 case 2: {
+#if 1
                     auto& scope1{ root.make_namespace("string") };
                     auto& scope2{ scope1.make_namespace("impl") };
                     auto scope3{ scope2.make_scope() };
@@ -5155,13 +5181,15 @@ int main() {
 
                     auto scope5{ scope3.make_scope() };
                     scope5.get_unique_index();
-
+#endif
                     break;
                 }
                 }
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+#endif // << NO LEAK
 
+#if 1
             auto s = utilities::string("::std::string::");
             print(s.left_of("d::").c_str());
             print(s.right_of("d::").c_str());
@@ -5200,9 +5228,9 @@ int main() {
             EXPECT_NE(nullptr, root.find_object("::std::string::npos"));
             EXPECT_EQ(nullptr, root.find_object("npos")); // should not be successfully found.
             EXPECT_NE(nullptr, root.find_object("std::string::npos"));
-            EXPECT_EQ("100", GoodLang::ToString(root.find_object("std::string::npos")->object));
+            EXPECT_EQ("100", GoodLang::ToString(**root.find_object("std::string::npos")));
             EXPECT_NE(nullptr, root.find_object("::string::npos"));
-            EXPECT_EQ("200", GoodLang::ToString(root.find_object("::string::npos")->object)); 
+            EXPECT_EQ("200", GoodLang::ToString(**root.find_object("::string::npos"))); 
             EXPECT_EQ(nullptr, root.find_object("::npos")); // should not be successfully found.
 
             EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("npos"));
@@ -5216,8 +5244,8 @@ int main() {
             EXPECT_NE(nullptr, root.find_namespace("::string::impl::")->this_m.scope->find_object("npos"));
             EXPECT_NE(nullptr, root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos"));
 
-            EXPECT_EQ("100", GoodLang::ToString(root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos")->object));
-            EXPECT_EQ("200", GoodLang::ToString(root.find_namespace("::string::impl::")->this_m.scope->find_object("npos")->object));
+            EXPECT_EQ("100", GoodLang::ToString(**root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos")));
+            EXPECT_EQ("200", GoodLang::ToString(**root.find_namespace("::string::impl::")->this_m.scope->find_object("npos")));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -5246,6 +5274,11 @@ int main() {
             EXPECT_NE(nullptr, root.find_object("::npos"));
             EXPECT_NE(nullptr, root.find_namespace("UI")->this_m.scope->find_object("npos"));
 
+#endif // << NO LEAK
+#endif // << NO LEAK
+
+       // >> TEST FUNCTION CALLS
+#if 1
             Functions funcs;
             funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 0; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
             funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
@@ -5301,6 +5334,16 @@ int main() {
             converter.AddConverter<bool, double>();
             converter.AddConverter<double, bool>();
 
+            // including these conversion checks "fixes" it. IDK why. 
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<int>(), GoodLang::user_type_shared_ptr<double>()));
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<int>(), GoodLang::user_type_shared_ptr<double>()->MakeConstRef().lock()));
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<double>(), GoodLang::user_type_shared_ptr<int>()));
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<double>(), GoodLang::user_type_shared_ptr<int>()->MakeConstRef().lock()));
+
+
+
+
+
             EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes(), converter).function);
             EXPECT_NE(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>() }), converter).function);
             EXPECT_NE(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>() }), converter).function);
@@ -5345,8 +5388,10 @@ int main() {
             print(GoodLang::ToString(funcs.Call("example2", { 10, 10.0 }, converter))); // prefers the int-type since it keeps the first type
 
 
+#endif // << NO LEAK
 
-
+       // TEST SEARCHING FOR SCOPES
+#if 1
             Scopes::Breadcrumb* nearest;
 
             nearest = nullptr;
@@ -5374,52 +5419,6 @@ int main() {
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
 
-
-
-
-#if 0
-            print("//\n");
-            (void)root.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
-                if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
-                else { print(scope->this_m.scope_name.c_str()); }
-                return Scopes::BasicScope::SearchResult::Failure;
-            }, nullptr, 0);
-
-            if (1) {
-                auto& scope1{ root.make_namespace("std") };
-                auto& scope2{ scope1.make_namespace("string") };
-                auto& scope3{ scope2.make_namespace("impl") };
-
-                print("//\n");
-                (void)scope3.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
-                    if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
-                    else { print(scope->this_m.scope_name.c_str()); }
-                    return Scopes::BasicScope::SearchResult::Failure;
-                }, nullptr, 0);
-
-                if (1) {
-                    print("//\n");
-                    auto scope4{ scope3.make_scope() };
-                    (void)scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
-                        if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
-                        else { print(scope->this_m.scope_name.c_str()); }
-                        return Scopes::BasicScope::SearchResult::Failure;
-                    }, nullptr, 0);
-                }
-
-                if (1) {
-                    print("//\n");
-                    auto scope4{ scope3.make_scope() };
-                    (void)scope4.FindNearestScopeWhere([](Scopes::Breadcrumb* scope, int search_state) -> int {
-                        if (scope->this_m.scope_name.empty()) { print("<<basic scope>>"); }
-                        else { print(scope->this_m.scope_name.c_str()); }                        
-                        return Scopes::BasicScope::SearchResult::StaticFailure; // should not search as much as before
-                    }, nullptr, 0);
-                }
-
-            }
-#endif
-
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto scope{ root.make_scope() };
@@ -5444,29 +5443,6 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
-
-
-
-
-
-
-
-
-
-            sw.Start();
-            for(int i = 0; i < 1000000; ++i) {
-                auto scope{ root.make_scope() };
-            };
-            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-            sw.Start();
-            for (int i = 0; i < 1000000; ++i) {
-                auto scope{ root.make_scope() };
-                //scope.UpdateObjectFunctionVersion();
-                //EXPECT_EQ(scope.object_or_function_versions, 1);
-            };
-            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
             sw.Start();
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.invalidate_cache();
@@ -5480,22 +5456,7 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
-            sw.Start();
-            GoodLang::parallel::For(0, 1000000, [&](int i) {
-                auto scope{ root.make_scope() };
-            });
-            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-            sw.Start();
-            GoodLang::parallel::For(0, 1000000, [&](int i) {
-                auto scope{ root.make_scope() };
-                //scope.UpdateObjectFunctionVersion();
-                //EXPECT_EQ(scope.object_or_function_versions, 1);
-            });
-            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-            sw.Start();
-            
+            sw.Start();            
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.invalidate_cache();
             })) {
@@ -5507,10 +5468,9 @@ int main() {
                 main_loop = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-
-            // print(root.scope_indexs.num_tickets());
+#endif // << NO LEAK
         }
-#endif
+#endif // << NO LEAK
 
         // Testing utilities::string
 #if 0
