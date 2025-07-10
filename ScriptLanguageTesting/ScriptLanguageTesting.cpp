@@ -78,7 +78,10 @@ namespace utilities {
         friend bool operator>(string const& A, string const& V) { return !operator<=(A, V); };
         friend bool operator>=(string const& A, string const& V) { return !operator<(A, V); };
         friend bool operator!=(string const& A, string const& V) noexcept { return !operator==(A, V); };
-
+        friend std::ostream& operator<<(std::ostream& os, string const& obj) {
+            os << obj.data;
+            return os;
+        };
         friend string operator+(string const& A, string const& B) { return string(std::string(A.data) + std::string(B.data)); };
     private:
         static size_type	        FindString(std::string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {
@@ -530,49 +533,38 @@ namespace utilities {
             // this constructor will make an atomic copy on intel 
             // THead() : m_n64{ 0 } {}
             // THead(THead& r) { m_n64 = r.m_n64; }
-            T* Node() { return (T*)m_bits.m_pNode; }
+            T* Node() { return reinterpret_cast<T*>(m_bits.m_pNode); }
             // changeing Node bumps aba
             THead* Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
         };
         
         static bool CAS(uint64_t* Destination, uint64_t& Comperand, uint64_t& Exchange) {
-            return InterlockedCompareExchange(static_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
+            return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
         };
         
         // pop pNode from head of list.
-        template<class T>
-        __declspec(noinline) T* Pop(THead<T>& Head) {
-            THead<T> Old, New; 
-            while (1) { // race loop
-                // Get an atomic copy of head and call it old.
-                Old.m_n64 = Head.m_n64;
-                if (Old.is_null()) return nullptr;
-                // 
-                New.m_n64 = Old.m_n64;
-                // change New's Node, which bumps internal aba
-                New.Node(Old.Node()->m_pNext);
-                // compare and swap New with Head if it still matches Old.
-                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) return THead<T>::Finalize(Old.Node()); // success                
-                // race, try again
-            }
-        }
+        template<class T> __declspec(noinline) T* Pop(THead<T>& Head) {
+            THead<T> Old, New; // Get an atomic copy of head and call it old.
+            while (1) { // race loop                
+                New.m_n64 = (Old.m_n64 = Head.m_n64); 
+                if (Old.is_null()) { break; }
+                New.Node(Old.Node()->m_pNext); // change New's Node, which bumps internal aba                
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) // compare and swap New with Head if it still matches Old.       
+                    return THead<T>::Finalize(Old.Node()); // success                        
+            } // race, try again
+            return nullptr; // Head.m_n64.m_pNode was nullptr ... e.g. nothing to pop
+        };
        
         // push pNode onto head of list.
-        template<class T>
-        __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
+        template<class T> __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
             THead<T> Old, New;
-            while (1) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.
-                New.m_n64 = Old.m_n64 = Head.m_n64;
-                // Wire node t Head
-                pNode->m_pNext = New.Node();
-                // change New's head ptr, which bumps internal aba
-                New.Node(pNode);
-                // compare and swap New with Head if it still matches Old.
-                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
-                // race, try again
-            }
+            while (1) { // race loop                
+                New.m_n64 = Old.m_n64 = Head.m_n64; // Get an atomic copy of head and call it old. Copy old and call it new.                
+                pNode->m_pNext = New.Node(); // Wire node t Head                
+                New.Node(pNode); // change New's head ptr, which bumps internal aba                
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) // compare and swap New with Head if it still matches Old.
+                    break; // success                
+            } // race, try again
         }
 
         /// <summary>
@@ -746,14 +738,14 @@ namespace utilities {
             };
         };
 
-        template <typename _type_>
+        template <typename _type_, typename DeleteListType = concurrency::concurrent_queue<std::pair<long long, _type_*>>>
         class EpochAllocator {
         private:
             class TLS {
             public:
                 long long
                     _scope_count;
-                std::atomic<long long>
+                long long
                     EpochLimit{ -1 };
                 long long
                     Epoch_3{ -1 }; // oldest Epoch
@@ -767,7 +759,7 @@ namespace utilities {
                     Epoch_3 = Epoch_2;
                     Epoch_2 = Epoch_1;
                     Epoch_1 = CurrentEpoch;
-                    return EpochLimit.load();
+                    return EpochLimit;
                 };
                 bool EpochCheck(long long CurrentEpoch) {
                     if (_scope_count == 0) {
@@ -819,27 +811,25 @@ namespace utilities {
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
             Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
                 _alloc;
-            concurrency::concurrent_queue<std::pair<long long, _type_*>>
-            // moodycamel::ConcurrentQueue<std::pair<long long, _type_*>>
+            DeleteListType
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
             GoodLang::ThreadLocalInstance<TLS>
                 _TLS;
-            std::atomic<long long> 
+            long long 
                 _lastGC;
 
+        public:
             // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
             void RunGC()  {
-                static constexpr auto duration{ std::chrono::milliseconds(1) };
+                static constexpr long long duration_ms{ 5 };
                 static thread_local std::pair<long long, _type_*> out{};
-                auto currentGC{ std::chrono::milliseconds(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch()) };
-
-                if ((currentGC - std::chrono::milliseconds(_lastGC.load())) > duration) {
-                    _lastGC.store(currentGC.count());
+                if ((GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() - _lastGC) > duration_ms) {
+                    InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
 
                     long long _EpochLimit{ std::numeric_limits<long long>::max() };
 
                     _TLS.for_each([&_EpochLimit](TLS& _tls) {
-                        long long L = _tls.EpochLimit.load();
+                        long long L = _tls.EpochLimit;
                         if (L >= 0) {
                             _EpochLimit = std::min<long long>(_EpochLimit, L);
                         }
@@ -847,12 +837,10 @@ namespace utilities {
 
                     if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
                         while (_delete_list.try_pop(out)) {
-                            if (out.first < _EpochLimit) {
-                                // deemed safe to delete
+                            if (out.first < _EpochLimit) { // deemed safe to delete                                
                                 _alloc.Free(out.second);
                             }
-                            else {
-                                // deemed unsafe to delete just yet
+                            else { // deemed unsafe to delete just yet                                
                                 _delete_list.push(out); // pushing to the end of the queue is lazy deferred sorting -- literally wasting time and hoping it'll be sorted later-on.
                                 break;
                             }
@@ -869,7 +857,7 @@ namespace utilities {
                 : _alloc{}
                 , _delete_list{}
                 , _TLS{}
-                , _lastGC{}
+                , _lastGC{ 0 }
             {};
             EpochAllocator(EpochAllocator const&) = delete;
             EpochAllocator(EpochAllocator&&) = delete;
@@ -883,7 +871,14 @@ namespace utilities {
 
         public:
             GuardType ProtectCurrentEpoch() const {
-                return TLS::EpochGuard(const_cast<EpochAllocator*>(this), const_cast<TLS*>(&*_TLS), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
+                return TLS::EpochGuard(
+                    const_cast<EpochAllocator*>(this), 
+                    const_cast<TLS*>(&*_TLS), 
+                    GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch()
+                );
+            };
+            void ProtectCurrentEpoch_Fast() const {
+                const_cast<TLS*>(&*_TLS)->ForwardEpoch(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
             };
 
             // Request a new memory pointer
@@ -989,10 +984,17 @@ namespace utilities {
 
     public:
         DelayedInstantiation() = default;
+        DelayedInstantiation(T const& data) : ptr(shared_alloc().Alloc(data)) {};
+        DelayedInstantiation(T && data) : ptr(shared_alloc().Alloc(std::move(data))) {};
         DelayedInstantiation(DelayedInstantiation const&) = delete;
-        DelayedInstantiation(DelayedInstantiation&&) = delete;
+        DelayedInstantiation(DelayedInstantiation&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
         DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
-        DelayedInstantiation& operator=(DelayedInstantiation&&) = delete;
+        DelayedInstantiation& operator=(DelayedInstantiation&& rhs) {
+            if (ptr) shared_alloc().Free(ptr);
+            ptr = std::move(rhs.ptr);
+            rhs.ptr = nullptr;
+            return *this;
+        };
         ~DelayedInstantiation() {
             if (ptr) shared_alloc().Free(ptr);
         };
@@ -2596,10 +2598,14 @@ namespace utilities {
     };
 
 
+
+
+
     // To-Do, need to roll my own Any, Params, etc.
 
     // class any;
 
+    // To-Do, update the onversion functions for scripted types once everything is figured out. 
     // type records the type of either built-in or scripted, runtime types    
     class type {
     public:
@@ -2720,7 +2726,7 @@ namespace utilities {
         };
 
     };
-    template<typename T> type const& type_of() noexcept {
+    template<typename T> static type const& type_of() noexcept {
         using base_type = typename std::decay<T>::type; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
         static auto const& underlying_type = GoodLang::impl::TypeId<base_type>();
         static auto const& void_type = GoodLang::impl::TypeId<void>();
@@ -2757,23 +2763,477 @@ namespace utilities {
         static utilities::type out(underlying_type.hash_code(), const_modifier | ref_modifier | void_modifier | any_modifier, utilities::string(std::string_view(underlying_type.name())), &copy_constructor, &constructor_from_value);
         return out;
     };
+    static type type_of(utilities::string const& full_namespace_path) {
+        if (full_namespace_path.empty()) {
+            return type_of<void>();
+        }
+        else {
+            size_t underlying_hash = full_namespace_path.hash();
+            static std::function<GoodLang::Any(GoodLang::Any const&)> copy_constructor = [](GoodLang::Any const& from) -> GoodLang::Any {
+                
+                /* scripted objects -->
+                auto& dynObj = from.cast<DynamicObject>();
+                return DynamicObject(dynObj);
+                <-- scripted objects */
+
+                return from;
+            };
+            static std::function<GoodLang::Any(GoodLang::Any const&)> constructor_from_value = [](GoodLang::Any const& from) -> GoodLang::Any {
+                // To-Do, the return type should be set to "temporary" to improve type engine
+                return from;
+            };
+            return type(underlying_hash, 0, full_namespace_path, &copy_constructor, &constructor_from_value);
+        }
+    };
+
+    // Collection of one or more types, which can be appended or added together to create a types collection. operator= is not thread-safe. 
+    class types {
+    private:
+        utilities::DelayedInstantiation<concurrency::concurrent_vector<type>>
+            types_m;
+        mutable size_t hash = 0;
+
+        types(concurrency::concurrent_vector<type> const& d) : types_m(d) {};
+        types(std::vector<type> const& d) : types_m(concurrency::concurrent_vector<type>{ d.begin(), d.end() }) {};
+    public:
+        types() = default;
+        types(type const& d) : types_m(concurrency::concurrent_vector<type>(1, d)) {};
+        types(types const& rhs) : types_m() {
+            if (rhs.types_m) {
+                *types_m = *rhs.types_m;
+            }
+        };
+        types(types&&) = default;
+        // not thread-safe
+        types& operator=(types const& rhs) {
+            if (rhs.types_m) {
+                *types_m = *rhs.types_m;
+            }
+            else if (types_m) {
+                types_m->clear();
+            }
+            return *this;
+        };
+        // not thread-safe
+        types& operator=(types&&) = default;
+        ~types() = default;
+
+        friend bool operator==(const types& a, const types& b) noexcept { return a.get_hash() == b.get_hash(); };
+        friend bool operator!=(const types& a, const types& b) noexcept { return a.get_hash() != b.get_hash(); };
+        friend bool operator<(const types& a, const types& b) noexcept { return a.get_hash() < b.get_hash(); };
+        friend bool operator<=(const types& a, const types& b) noexcept { return a.get_hash() <= b.get_hash(); };
+        friend bool operator>(const types& a, const types& b) noexcept { return a.get_hash() > b.get_hash(); };
+        friend bool operator>=(const types& a, const types& b) noexcept { return a.get_hash() >= b.get_hash(); };
+
+        // thread-safe
+        friend types operator+(types const& lhs, types const& rhs) {
+            if (lhs.types_m) {
+                if (rhs.types_m) {
+                    std::vector<type> out;
+                    out.reserve(lhs.types_m->size() + rhs.types_m->size());
+                    out.insert(out.end(), lhs.types_m->begin(), lhs.types_m->end());
+                    out.insert(out.end(), rhs.types_m->begin(), rhs.types_m->end());
+                    return out;
+                }
+                else {
+                    return *lhs.types_m;
+                }
+            }
+            else if (rhs.types_m) {
+                return *rhs.types_m;
+            }
+            else {
+                return {};
+            }
+        };
+        // thread-safe
+        types& operator+=(types const& rhs) {
+            if (rhs.types_m) {
+                for (auto& x : *rhs.types_m) types_m->push_back(x);
+            }
+            return *this;
+        };
+        // thread-safe
+        const type& operator[](size_t index) const {
+            if (types_m && types_m->size() > index) {
+                return types_m->operator[](index);
+            }
+            else {
+                return type_of<void>();
+            }
+        };
+        // thread-safe
+        size_t size() const {
+            if (types_m) {
+                return types_m->size();
+            }
+            else {
+                return 0;
+            }
+        };
+        // thread-safe
+        size_t get_hash() const {
+            if ((hash == 0) && types_m) {
+                size_t out = 0;
+                for (auto& x : *types_m) {
+                    out ^= x.get_hash() + 0x9e3779b9 + (out << 6) + (out >> 2);
+                }
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), out);
+            }
+            return hash;
+        };
+
+    };
 
 
+    class shared_ptr_base {
+    public:
+        struct aux {
+            long long // strong (first short), weak (second short), destroy flag (third short), delete flag (fourth short)
+                Strong_Weak_Destroy_Delete{ 1 }; // strong = 1, weak = 0, destroy = 0, delete = 0
+            void*
+                p;
+
+            aux()
+                : Strong_Weak_Destroy_Delete{ 1 }
+                , p{ nullptr }
+            {};
+            aux(void* pu)
+                : Strong_Weak_Destroy_Delete{ 1 }
+                , p{ pu }
+            {}
+            aux(aux const&) = default;
+            aux(aux &&) = default;
+            aux& operator=(aux const&) = default;
+            aux& operator=(aux&&) = default;
+            virtual ~aux() = default;
+
+            void* ptr() const { return p; };
+            virtual utilities::type const& type() const = 0;
+            virtual void /*std::shared_ptr<void>*/ protect_aux() = 0;
+            virtual void destroy_aux() = 0;
+            virtual void destroy_obj() = 0;
+        };
+
+        static __declspec(noinline) aux* inc_strong(GoodLang::atomic_ptr<aux> const& pa) {
+            aux
+                * pa_ptr{ nullptr };
+            long long
+                read;
+
+            if (pa_ptr = pa.load()) {
+                (void)pa_ptr->protect_aux();
+            }
+            while (pa_ptr = pa.load()) {
+                read = InterlockedAdd64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), 1); // increments the strong count, regardless of the others
+                if (
+                    (reinterpret_cast<short*>(&read)[0] >= 1)
+                    && (reinterpret_cast<long*>(&read)[1] == 0)
+                ) { // if NOT being destroyed or deleted...
+                    return pa_ptr; // remember - I am still locked from deletion.
+                }
+                else {
+                    InterlockedAdd64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), -1); // failure
+                }
+            }
+            return nullptr;
+        };
+        static __declspec(noinline) void dec_strong(aux* pa_ptr) {
+            long long
+                read,
+                planned;
+
+            while (pa_ptr) {
+                read = pa_ptr->Strong_Weak_Destroy_Delete;
+                if (!reinterpret_cast<long*>(&read)[1]) { // if NOT being destroyed or deleted...
+                    planned = read;
+                    --reinterpret_cast<short*>(&planned)[0];
+                    if (reinterpret_cast<short*>(&planned)[0] <= 0) {
+                        // flag that we plan on deleting the data!
+                        reinterpret_cast<short*>(&planned)[2] = 1;
+                    }
+                    if (reinterpret_cast<short*>(&planned)[1] <= 0) {
+                        // flag that we plan on deleting the mem_block!
+                        reinterpret_cast<short*>(&planned)[3] = 1;
+                    }
+                    if (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
+                        if (reinterpret_cast<short*>(&planned)[2] == 1) {
+                            pa_ptr->destroy_obj();
+                        }
+                        if (reinterpret_cast<short*>(&planned)[3] == 1) {
+                            pa_ptr->destroy_aux();
+                        }
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+        };
+        static __declspec(noinline) aux* inc_weak(GoodLang::atomic_ptr<aux> const& pa) {
+            aux
+                * pa_ptr{ nullptr };
+            long long
+                read,
+                planned;
+
+            if (pa_ptr = pa.load()) {
+                (void)pa_ptr->protect_aux();
+            }
+            while (pa_ptr = pa.load()) {
+                read = pa_ptr->Strong_Weak_Destroy_Delete;
+                planned = read;
+                if (!reinterpret_cast<long*>(&read)[1]) { // if NOT being destroyed or deleted...
+                    // add to the weak count
+                    ++reinterpret_cast<short*>(&planned)[1];
+                    if (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
+                        return pa_ptr;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+            return nullptr;
+        };
+        static __declspec(noinline) void dec_weak(aux* pa_ptr) {
+            long long
+                read,
+                planned;
+
+            while (pa_ptr) {
+                read = pa_ptr->Strong_Weak_Destroy_Delete;                
+                if (!reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed...
+                    planned = read;
+                    --reinterpret_cast<short*>(&planned)[1];
+                    if (reinterpret_cast<long*>(&planned)[0] <= 0) {
+                        // flag that we plan on deleting the mem_block!
+                        reinterpret_cast<short*>(&planned)[3] = 1;
+                    }
+                    if (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
+                        if (reinterpret_cast<short*>(&planned)[3] == 1) {
+                           pa_ptr->destroy_aux();
+                        }
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+        };
+    };
+
+    template<class T> class weak_ptr; // forward-decl
+    /// <summary>
+    /// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
+    /// </summary>
+    /// <returns></returns>
+    template<class T> class shared_ptr : public shared_ptr_base {
+        friend class weak_ptr<T>;
+    protected:
+        template<class U>
+        struct aux_default final : public aux {
+            aux_default(U* pu = nullptr) : aux(static_cast<void*>(pu)) {}
+            aux_default(aux_default &&) = default;
+            aux_default& operator=(aux_default&&) = default;
+            aux_default(aux_default const&) = default;
+            aux_default& operator=(aux_default const&) = default;
+            ~aux_default() = default;
+
+            virtual utilities::type const& type() const override { return utilities::type_of<U>(); };
+            virtual void protect_aux() override { (void)shared_ptr<U>::aux_allocator().ProtectCurrentEpoch_Fast(); };
+            virtual void destroy_aux() override { 
+                (void)shared_ptr<U>::aux_allocator().Free(this);  
+                shared_ptr<U>::aux_allocator().RunGC();
+                --shared_ptr<U>::aux_allocations();
+            };
+            virtual void destroy_obj() override { delete static_cast<T*>(this->p); };
+        };
+        static auto& aux_allocator() {
+            static utilities::ABA_Problem::EpochAllocator<aux_default<T>, moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>> alloc{};            
+            return alloc;
+        };
+        static auto& aux_allocations() {
+            static std::atomic<size_t> alloc{ 0 };
+            return alloc;
+        };
 
 
+        T* 
+            ptr;
+        GoodLang::atomic_ptr<shared_ptr_base::aux>
+            paux;
 
+        static T* get(shared_ptr const& p) {
+            if (p.ptr) return p.ptr;
 
+            T*
+                out{ nullptr };
+            aux
+                * pa_ptr{ nullptr };
+            long long
+                read;
 
+            if (pa_ptr = p.paux.load()) {
+                (void)pa_ptr->protect_aux();
+            }
+            while (pa_ptr) {
+                read = pa_ptr->Strong_Weak_Destroy_Delete;
+                if (!reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
+                    out = static_cast<T*>(pa_ptr->ptr());
+                    return out;
+                }                              
+            }
+            return out;
+        };
 
+    public:
+        auto const& GetPaux() const { return paux; };
 
+        static size_t num_allocations() {
+            return aux_allocations().load();
+        };
 
+        template<class U> explicit shared_ptr(U* pu) : paux(static_cast<aux*>(shared_ptr<U>::aux_allocator().Alloc(pu))), ptr(reinterpret_cast<T*>(pu)) {
+            ++aux_allocations();
+        };
 
+        shared_ptr() : paux(nullptr), ptr(nullptr) {}
+        shared_ptr(std::nullptr_t) : paux(nullptr), ptr(nullptr) {}
+        explicit shared_ptr(aux* pa_p, T* pt_p, bool) : paux(pa_p), ptr(pt_p) {}
+        template<class U> shared_ptr(shared_ptr<U> const& s) : paux(shared_ptr_base::inc_strong(s.GetPaux())), ptr(nullptr) { // create from a different shared_ptr                        
+            if (this->paux) ptr = static_cast<T*>(paux->ptr());
+        };
+        shared_ptr(shared_ptr<T> const& s) : paux(shared_ptr_base::inc_strong(s.paux)), ptr(nullptr) {
+            if (this->paux) ptr = static_cast<T*>(paux->ptr());
+        };
+        ~shared_ptr() {
+            shared_ptr_base::dec_strong(paux.load());
+        }
 
+        shared_ptr& operator=(const shared_ptr& s) {
+            if (this != &s) {
+                InterlockedExchangePointer(reinterpret_cast<void**>(&ptr), nullptr);
+                shared_ptr_base::dec_strong(paux.Set(shared_ptr_base::inc_strong(s.paux)));
+            }
+            return *this;
+        };
+        shared_ptr& single_threaded_assignment(const shared_ptr& s) {
+            if (this != &s) {
+                shared_ptr_base::dec_strong(paux.Set(shared_ptr_base::inc_strong(s.paux)));
+                InterlockedExchangePointer(reinterpret_cast<void**>(&ptr), paux->ptr());
+            }
+            return *this;
+        };
+        shared_ptr& operator=(std::nullptr_t) {
+            InterlockedExchangePointer(reinterpret_cast<void**>(&ptr), nullptr);
+            shared_ptr_base::dec_strong(paux.Set(nullptr));            
+            return *this;
+        };
 
+        T* get() const {
+            return get(*this);
+        };
+        operator bool() const {
+            return get();
+        };
+        T* operator->() const {
+            return get();
+        };
+        T& operator*() const {
+            return *get();
+        };
 
+        friend bool operator==(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() == b.get(); };
+        friend bool operator!=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() != b.get(); };
+        friend bool operator<(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() < b.get(); };
+        friend bool operator<=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() <= b.get(); };
+        friend bool operator>(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() > b.get(); };
+        friend bool operator>=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.get() >= b.get(); };
+        friend bool operator==(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() == nullptr; };
+        friend bool operator!=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() != nullptr; };
+        friend bool operator<(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() < nullptr; };
+        friend bool operator<=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() <= nullptr; };
+        friend bool operator>(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() > nullptr; };
+        friend bool operator>=(const shared_ptr& a, std::nullptr_t) noexcept { return a.get() >= nullptr; };
+        friend bool operator==(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr == a.get(); };
+        friend bool operator!=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr != a.get(); };
+        friend bool operator<(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr < a.get(); };
+        friend bool operator<=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr <= a.get(); };
+        friend bool operator>(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr > a.get(); };
+        friend bool operator>=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr >= a.get(); };
+    };
 
+    /// <summary>
+    /// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
+    /// </summary>
+    /// <returns></returns>
+    template<class T> class weak_ptr {
+        GoodLang::atomic_ptr<shared_ptr_base::aux> pa; // pointer to shared memory block
 
+    public:
+        weak_ptr() : pa(nullptr) {}
+        weak_ptr(std::nullptr_t) : pa(nullptr) {}
+        weak_ptr(shared_ptr<T> const& r) : pa(shared_ptr_base::inc_weak(r.paux)) {};
+        weak_ptr(const weak_ptr& r) : pa(shared_ptr_base::inc_weak(r.pa)) {};
+        ~weak_ptr() {
+            shared_ptr_base::dec_weak(pa.load());
+        }
 
+        operator bool() const {
+            return !expired();
+        };
+
+        weak_ptr& operator=(const weak_ptr& s) {
+            if (this != &s) shared_ptr_base::dec_weak(pa.Set(shared_ptr_base::inc_weak(s.pa)));            
+            return *this;
+        };
+        weak_ptr& operator=(std::nullptr_t) {
+            shared_ptr_base::dec_weak(pa.Set(nullptr));
+            return *this;
+        };
+
+        shared_ptr<T> lock() const {
+            auto* Pa = shared_ptr_base::inc_strong(pa);
+            if (Pa) {
+                if (auto* ptr = Pa->ptr()) {
+                    return shared_ptr<T>(Pa, static_cast<T*>(ptr), true);
+                }
+            }
+            return shared_ptr<T>();
+        };
+        bool expired() {
+            if (auto* pa_ptr = pa.load()) {
+                auto read = pa_ptr->Strong_Weak_Destroy_Delete.load();
+                if ((reinterpret_cast<short*>(&read)[0] < std::numeric_limits<short>::max()) && !reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
+                    return false;
+                }
+                else {
+                    return true;
+                }
+            }
+            return true;
+        };
+    };
+
+};
+
+namespace std {
+    template <> struct hash<utilities::type> {
+        std::size_t operator()(const utilities::type& k) const {
+            return k.get_hash();
+        };
+    };    
+    template <> struct hash<utilities::types> {
+        std::size_t operator()(const utilities::types& k) const {
+            return k.get_hash();
+        };
+    };
+};
+
+namespace utilities{
     class FunctionWrapper {
     public:
         enum FunctionState {
@@ -2893,10 +3353,6 @@ namespace utilities {
         };
 
     };
-
-
-
-
 
     class Functions {
     public:
@@ -4349,16 +4805,186 @@ public:
 
 };
 
+class stackThing {
+public:
+    std::string varName;
+    bool perform_cout;
+
+public:
+    stackThing() : varName(), perform_cout{ true }{};
+    stackThing(std::string const& name) : varName(name), perform_cout{ true } {};
+    stackThing(std::string const& name, bool DoCout) : varName(name), perform_cout{ DoCout } {};
+    stackThing(stackThing const& r) = default;
+    stackThing(stackThing&& r) = default;
+    stackThing& operator=(stackThing const& r) = default;
+    stackThing& operator=(stackThing&& r) = default;
+    ~stackThing() {
+        if (perform_cout && (!varName.empty())) {
+            std::cout << GoodLang::printf("DELETING %s\n", varName.c_str()) << std::endl;
+        }
+    };
+
+    int length() const { return varName.length(); };
+    std::string& get_var_name() { return varName; };
+    bool operator==(stackThing const& a) const { return varName == a.varName; };
+    bool operator!=(stackThing const& a) const { return varName != a.varName; };
+};
+
+
 int main() {
     using namespace utilities;
     using namespace ABA_Problem;
     Stopwatch sw;
 
-    while (true) {
+    if (true) {
         print("STARTING LOOP: \n");
 
+        // Testing utilities::shared_ptr
+#if 1
+        // utilities::shared_pointer is slower than the GoodLang::shared_pointer, BUT has a much lower memory footprint. 
+        print("");
+        if (1) {
+            using shared_ptr = utilities::shared_ptr<utilities::string>;
+            using weak_ptr = utilities::weak_ptr<utilities::string>;
+
+            sw.Start();
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                EXPECT_EQ(ptr, true);
+            }
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2{ ptr };
+                EXPECT_EQ(ptr2.get(), ptr.get());
+                EXPECT_EQ(*ptr2.get(), *ptr.get());
+            }
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2;
+                ptr2 = ptr;
+                EXPECT_EQ(ptr2, true);
+                EXPECT_EQ(ptr2.get(), ptr.get());
+            }
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                weak_ptr ptr2{ ptr };
+                ptr = ptr2.lock();
+                EXPECT_EQ(ptr, true);
+            }
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                ptr = nullptr;
+            });
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2{ ptr };
+                ptr = nullptr;
+            });
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2;
+                ptr2 = ptr;
+                ptr = nullptr;
+            });
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                weak_ptr ptr2{ ptr };
+                ptr = ptr2.lock();
+                ptr = nullptr;
+                ptr2 = shared_ptr();
+            });
+            EXPECT_EQ(0, shared_ptr::num_allocations());
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            if (1) {
+                shared_ptr temp_ptr{ new utilities::string(GoodLang::ToString(0)) };
+                EXPECT_EQ(1, shared_ptr::num_allocations());
+                GoodLang::parallel::For(1, 1000000, [&](int i) {
+                    temp_ptr = shared_ptr{ new utilities::string(GoodLang::ToString(i)) };
+                    // print(temp_ptr->get_var_name());
+                });
+            }
+            EXPECT_EQ(0, utilities::shared_ptr<utilities::string>::num_allocations());
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        print("");
+        if (0) {
+            using shared_ptr = GoodLang::shared_ptr<utilities::string>;
+            using weak_ptr = GoodLang::weak_ptr<utilities::string>;
+
+            sw.Start();
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                EXPECT_EQ(ptr, true);
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2{ ptr };
+                EXPECT_EQ(ptr2.get(), ptr.get());
+                EXPECT_EQ(*ptr2.get(), *ptr.get());
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2;
+                ptr2 = ptr;
+                EXPECT_EQ(ptr2, true);
+                EXPECT_EQ(ptr2.get(), ptr.get());
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                weak_ptr ptr2{ ptr };
+                ptr = ptr2.lock();
+                EXPECT_EQ(ptr, true);
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                ptr = nullptr;
+                });
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2{ ptr };
+                ptr = nullptr;
+                });
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                shared_ptr ptr2;
+                ptr2 = ptr;
+                ptr = nullptr;
+                });
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                weak_ptr ptr2{ ptr };
+                ptr = ptr2.lock();
+                //ptr = nullptr;
+                //ptr2 = shared_ptr();
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
+            if (1) {
+                shared_ptr temp_ptr{ new utilities::string(GoodLang::ToString(0)) };
+                GoodLang::parallel::For(0, 1000000, [&](int i) {
+                    temp_ptr = shared_ptr{ new utilities::string(GoodLang::ToString(i)) };
+                    });
+            }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
+#endif
+
         // Testing utilities::type_of
-#if 0
+#if 1
         EXPECT_EQ(true, utilities::type_of<int>().is_base());
         EXPECT_EQ(false, utilities::type_of<int>().is_ref());
         EXPECT_EQ(false, utilities::type_of<int>().is_const());
@@ -4395,13 +5021,13 @@ int main() {
         EXPECT_EQ(false, utilities::type_of<int const&>().is_void());
         EXPECT_EQ(false, utilities::type_of<int const&>().is_temp());
         EXPECT_EQ(utilities::type_of<int const&>().get_name(), "const int&");
-        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Modifiers::Temporary).get_name(), "int&&");
+        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Temporary).get_name(), "int&&");
 
         EXPECT_EQ(utilities::type_of<int const&>().get_hash(), utilities::type_of<int const&>().get_hash());
         EXPECT_NE(utilities::type_of<int const&>().get_hash(), utilities::type_of<int&>().get_hash());
-        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Modifiers::Const).get_hash(), utilities::type_of<int const>().get_hash());
-        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Modifiers::Const + utilities::type::Modifiers::Reference).get_hash(), utilities::type_of<int const&>().get_hash());
-        EXPECT_EQ((utilities::type_of<int const&>() - utilities::type::Modifiers::Const - utilities::type::Modifiers::Reference).get_hash(), utilities::type_of<int>().get_hash());
+        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Const).get_hash(), utilities::type_of<int const>().get_hash());
+        EXPECT_EQ((utilities::type_of<int>() + utilities::type::Const + utilities::type::Reference).get_hash(), utilities::type_of<int const&>().get_hash());
+        EXPECT_EQ((utilities::type_of<int const&>() - utilities::type::Const - utilities::type::Reference).get_hash(), utilities::type_of<int>().get_hash());
 
         EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int const&>(), utilities::type_of<int const&>()));
         EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int&>(), utilities::type_of<int const&>()));
@@ -4409,11 +5035,39 @@ int main() {
         EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int const>(), utilities::type_of<int const&>()));
         EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>(), utilities::type_of<int&>()));
         EXPECT_EQ(false, utilities::type::can_free_cast(utilities::type_of<int&>(), utilities::type_of<int>()));
-        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary, utilities::type_of<int const&>()));
-        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary, utilities::type_of<int>()));
-        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Modifiers::Temporary - utilities::type::Modifiers::Temporary, utilities::type_of<int>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Temporary, utilities::type_of<int const&>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Temporary, utilities::type_of<int>()));
+        EXPECT_EQ(true, utilities::type::can_free_cast(utilities::type_of<int>() + utilities::type::Temporary - utilities::type::Temporary, utilities::type_of<int>()));
 
         EXPECT_EQ("100", GoodLang::ToString(utilities::type_of<int>().GetCopyConstructor()(100)));
+
+        utilities::types Types; 
+        EXPECT_EQ(0, Types.size());
+        Types += utilities::type_of<int>() + utilities::type::Const + utilities::type::Reference;
+        Types += utilities::type_of<int>() + utilities::type::Temporary;
+        EXPECT_EQ(2, Types.size());
+        EXPECT_EQ(true, Types[0].is_const_ref());
+        EXPECT_EQ(true, Types[1].is_temp());
+        EXPECT_EQ(true, Types[2].is_void());
+
+        if (1) {
+            utilities::atomic_map<utilities::type, std::string> tree;
+            tree[utilities::type_of<int>()] = "int";
+            tree[utilities::type_of<int const&>()] = "const int&";
+            tree[utilities::type_of<int>() + utilities::type::Temporary] = "int&&";
+        }
+        if (1) {
+            utilities::atomic_unordered_map<utilities::type, std::string> tree;
+            tree[utilities::type_of<int>()] = "int";
+            tree[utilities::type_of<int const&>()] = "const int&";
+            tree[utilities::type_of<int>() + utilities::type::Temporary] = "int&&";
+        }
+
+
+
+
+
+
 #endif // << NO LEAK
 
         // Testing atomic_ptr
@@ -5386,7 +6040,6 @@ int main() {
             print(GoodLang::ToString(funcs.Call("example2", {}, converter)));
             print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10 }, converter))); // prefers the double-type since it keeps the first type
             print(GoodLang::ToString(funcs.Call("example2", { 10, 10.0 }, converter))); // prefers the int-type since it keeps the first type
-
 
 #endif // << NO LEAK
 
