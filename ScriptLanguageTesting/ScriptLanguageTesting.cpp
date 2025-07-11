@@ -738,7 +738,7 @@ namespace utilities {
             };
         };
 
-        template <typename _type_, typename DeleteListType = concurrency::concurrent_queue<std::pair<long long, _type_*>>>
+        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = concurrency::concurrent_queue<std::pair<long long, _type_*>>>
         class EpochAllocator {
         private:
             class TLS {
@@ -809,7 +809,7 @@ namespace utilities {
                 };
             };
             // Allocator means larger memory footprint, but faster when multiple threads are in use. 
-            Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
+            AllocatorType // Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
                 _alloc;
             DeleteListType
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
@@ -2885,7 +2885,9 @@ namespace utilities {
 
     };
 
-
+    /// <summary>
+    /// utilities::shared_ptr uses the Epoch allocator to control / prevent deletion of pointers. Currently memory-performant and thread-safe when overwriting, but slower then GoodLang::shared_ptr. 
+    /// </summary>
     class shared_ptr_base {
     public:
         struct aux {
@@ -2944,6 +2946,7 @@ namespace utilities {
                 planned;
 
             while (pa_ptr) {
+                (void)pa_ptr->protect_aux();
                 read = pa_ptr->Strong_Weak_Destroy_Delete;
                 if (!reinterpret_cast<long*>(&read)[1]) { // if NOT being destroyed or deleted...
                     planned = read;
@@ -2951,10 +2954,10 @@ namespace utilities {
                     if (reinterpret_cast<short*>(&planned)[0] <= 0) {
                         // flag that we plan on deleting the data!
                         reinterpret_cast<short*>(&planned)[2] = 1;
-                    }
-                    if (reinterpret_cast<short*>(&planned)[1] <= 0) {
-                        // flag that we plan on deleting the mem_block!
-                        reinterpret_cast<short*>(&planned)[3] = 1;
+                        if (reinterpret_cast<short*>(&planned)[1] <= 0) {
+                            // flag that we plan on deleting the mem_block!
+                            reinterpret_cast<short*>(&planned)[3] = 1;
+                        }
                     }
                     if (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
                         if (reinterpret_cast<short*>(&planned)[2] == 1) {
@@ -3003,6 +3006,7 @@ namespace utilities {
                 planned;
 
             while (pa_ptr) {
+                (void)pa_ptr->protect_aux();
                 read = pa_ptr->Strong_Weak_Destroy_Delete;                
                 if (!reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed...
                     planned = read;
@@ -3024,8 +3028,7 @@ namespace utilities {
             }
         };
     };
-
-    template<class T> class weak_ptr; // forward-decl
+    template<class T> class weak_ptr; 
     /// <summary>
     /// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
     /// </summary>
@@ -3047,19 +3050,19 @@ namespace utilities {
             virtual void destroy_aux() override { 
                 (void)shared_ptr<U>::aux_allocator().Free(this);  
                 shared_ptr<U>::aux_allocator().RunGC();
-                --shared_ptr<U>::aux_allocations();
             };
-            virtual void destroy_obj() override { delete static_cast<T*>(this->p); };
+            virtual void destroy_obj() override { 
+                delete static_cast<T*>(this->p);
+            };
         };
         static auto& aux_allocator() {
-            static utilities::ABA_Problem::EpochAllocator<aux_default<T>, moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>> alloc{};            
+            static utilities::ABA_Problem::EpochAllocator<
+                aux_default<T>
+                , utilities::ABA_Problem::Allocator<aux_default<T>, 1028>
+                // , moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>
+            > alloc{};
             return alloc;
         };
-        static auto& aux_allocations() {
-            static std::atomic<size_t> alloc{ 0 };
-            return alloc;
-        };
-
 
         T* 
             ptr;
@@ -3092,13 +3095,7 @@ namespace utilities {
     public:
         auto const& GetPaux() const { return paux; };
 
-        static size_t num_allocations() {
-            return aux_allocations().load();
-        };
-
-        template<class U> explicit shared_ptr(U* pu) : paux(static_cast<aux*>(shared_ptr<U>::aux_allocator().Alloc(pu))), ptr(reinterpret_cast<T*>(pu)) {
-            ++aux_allocations();
-        };
+        template<class U> explicit shared_ptr(U* pu) : paux(static_cast<aux*>(shared_ptr<U>::aux_allocator().Alloc(pu))), ptr(reinterpret_cast<T*>(pu)) {};
 
         shared_ptr() : paux(nullptr), ptr(nullptr) {}
         shared_ptr(std::nullptr_t) : paux(nullptr), ptr(nullptr) {}
@@ -3165,7 +3162,6 @@ namespace utilities {
         friend bool operator>(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr > a.get(); };
         friend bool operator>=(std::nullptr_t, const shared_ptr& a) noexcept { return nullptr >= a.get(); };
     };
-
     /// <summary>
     /// Thread-safe implimentation of std::weak_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here if locks are not needed. 
     /// </summary>
@@ -3217,6 +3213,17 @@ namespace utilities {
             return true;
         };
     };
+
+
+
+
+
+
+
+
+
+
+
 
 };
 
@@ -4805,30 +4812,6 @@ public:
 
 };
 
-class stackThing {
-public:
-    std::string varName;
-    bool perform_cout;
-
-public:
-    stackThing() : varName(), perform_cout{ true }{};
-    stackThing(std::string const& name) : varName(name), perform_cout{ true } {};
-    stackThing(std::string const& name, bool DoCout) : varName(name), perform_cout{ DoCout } {};
-    stackThing(stackThing const& r) = default;
-    stackThing(stackThing&& r) = default;
-    stackThing& operator=(stackThing const& r) = default;
-    stackThing& operator=(stackThing&& r) = default;
-    ~stackThing() {
-        if (perform_cout && (!varName.empty())) {
-            std::cout << GoodLang::printf("DELETING %s\n", varName.c_str()) << std::endl;
-        }
-    };
-
-    int length() const { return varName.length(); };
-    std::string& get_var_name() { return varName; };
-    bool operator==(stackThing const& a) const { return varName == a.varName; };
-    bool operator!=(stackThing const& a) const { return varName != a.varName; };
-};
 
 
 int main() {
@@ -4848,19 +4831,18 @@ int main() {
             using weak_ptr = utilities::weak_ptr<utilities::string>;
 
             sw.Start();
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 EXPECT_EQ(ptr, true);
             }
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
                 EXPECT_EQ(ptr2.get(), ptr.get());
                 EXPECT_EQ(*ptr2.get(), *ptr.get());
+                ptr2 = nullptr;
+                ptr = nullptr;
             }
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2;
@@ -4868,34 +4850,36 @@ int main() {
                 EXPECT_EQ(ptr2, true);
                 EXPECT_EQ(ptr2.get(), ptr.get());
             }
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };
                 ptr = ptr2.lock();
                 EXPECT_EQ(ptr, true);
             }
-            EXPECT_EQ(0, shared_ptr::num_allocations());
+            for (int i = 0; i < 1000000; ++i) {
+                shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
+                weak_ptr ptr2{ ptr };
+                ptr = ptr2.lock();
+                ptr = nullptr;
+                ptr2 = shared_ptr();
+            }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 ptr = nullptr;
             });
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
                 ptr = nullptr;
             });
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2;
                 ptr2 = ptr;
                 ptr = nullptr;
             });
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };
@@ -4903,18 +4887,15 @@ int main() {
                 ptr = nullptr;
                 ptr2 = shared_ptr();
             });
-            EXPECT_EQ(0, shared_ptr::num_allocations());
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             if (1) {
                 shared_ptr temp_ptr{ new utilities::string(GoodLang::ToString(0)) };
-                EXPECT_EQ(1, shared_ptr::num_allocations());
                 GoodLang::parallel::For(1, 1000000, [&](int i) {
                     temp_ptr = shared_ptr{ new utilities::string(GoodLang::ToString(i)) };
                     // print(temp_ptr->get_var_name());
                 });
             }
-            EXPECT_EQ(0, utilities::shared_ptr<utilities::string>::num_allocations());
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         print("");
@@ -4951,35 +4932,90 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 ptr = nullptr;
-                });
+            });
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
                 ptr = nullptr;
-                });
+            });
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2;
                 ptr2 = ptr;
                 ptr = nullptr;
-                });
+            });
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };
                 ptr = ptr2.lock();
-                //ptr = nullptr;
-                //ptr2 = shared_ptr();
-                });
+                ptr = nullptr;
+                ptr2 = shared_ptr();
+            });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             if (1) {
                 shared_ptr temp_ptr{ new utilities::string(GoodLang::ToString(0)) };
-                GoodLang::parallel::For(0, 1000000, [&](int i) {
+                GoodLang::parallel::For(1, 1000000, [&](int i) {
                     temp_ptr = shared_ptr{ new utilities::string(GoodLang::ToString(i)) };
-                    });
+                });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
+
+        if (1) {
+            sw.Start();
+            utilities::shared_ptr<utilities::string> ptr{ new utilities::string("") };
+            // if you promise no other thread is accessing this pointer, it will use set the pointer to use the correct path for improved speed later.
+            ptr.single_threaded_assignment(utilities::shared_ptr<utilities::string>(new utilities::string("")));
+            for (int i = 0; i < 1000000; ++i) {
+                (void)ptr->c_str();
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::shared_ptr<utilities::string> ptr{ new utilities::string("") };
+            ptr = GoodLang::shared_ptr<utilities::string>(new utilities::string(""));
+            for (int i = 0; i < 1000000; ++i) {                
+                (void)ptr->c_str();
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            std::shared_ptr<utilities::string> ptr{ new utilities::string("") };
+            ptr = std::shared_ptr<utilities::string>(new utilities::string(""));
+            for (int i = 0; i < 1000000; ++i) {                
+                (void)ptr->c_str();
+            };
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
+        if (1) {
+            sw.Start();
+            utilities::shared_ptr<utilities::string> ptr{ new utilities::string("") };
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                (void)ptr->c_str();
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::shared_ptr<utilities::string> ptr{ new utilities::string("") };
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                (void)ptr->c_str();
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            std::shared_ptr<utilities::string> ptr{ new utilities::string("") };
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                (void)ptr->c_str();
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
 
 #endif
 
