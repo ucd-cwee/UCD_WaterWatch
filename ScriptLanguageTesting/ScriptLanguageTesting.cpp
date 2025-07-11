@@ -28,6 +28,8 @@
 #define EXPECT_NE(a, b) if (a == b){ print(GoodLang::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #pragma endregion
 
+
+// utilities::string & utilities::compound_shared_string
 namespace utilities {
     class string {
     public:
@@ -317,8 +319,7 @@ namespace utilities {
 
     };
 };
-
-namespace std {
+namespace /* hash, less, greater, equal_to */ std {
     template <> struct hash<utilities::string> {
         std::size_t operator()(const utilities::string& k) const {
             return k.hash();
@@ -340,7 +341,6 @@ namespace std {
         };
     };
 };
-
 namespace utilities {
     // all const-functions are thread-safe
     class compound_shared_string {
@@ -490,7 +490,10 @@ namespace utilities {
             return out.remove_trailing(_Right).remove_leading(_Right);
         };
     };
+};
 
+// utilities::atomic_ptr, utilities::DelayedInstantiation, utilities::BTree, utilities::atomic_map, utilities::atomic_unordered_map
+namespace utilities {
     namespace ABA_Problem {
         template <typename T>
         class Node {
@@ -537,16 +540,16 @@ namespace utilities {
             // changeing Node bumps aba
             THead* Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
         };
-        
+
         static bool CAS(uint64_t* Destination, uint64_t& Comperand, uint64_t& Exchange) {
             return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(Destination), Exchange, Comperand) == Comperand;
         };
-        
+
         // pop pNode from head of list.
         template<class T> __declspec(noinline) T* Pop(THead<T>& Head) {
             THead<T> Old, New; // Get an atomic copy of head and call it old.
             while (1) { // race loop                
-                New.m_n64 = (Old.m_n64 = Head.m_n64); 
+                New.m_n64 = (Old.m_n64 = Head.m_n64);
                 if (Old.is_null()) { break; }
                 New.Node(Old.Node()->m_pNext); // change New's Node, which bumps internal aba                
                 if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) // compare and swap New with Head if it still matches Old.       
@@ -554,7 +557,7 @@ namespace utilities {
             } // race, try again
             return nullptr; // Head.m_n64.m_pNode was nullptr ... e.g. nothing to pop
         };
-       
+
         // push pNode onto head of list.
         template<class T> __declspec(noinline) void Push(THead<T>& Head, T* pNode) {
             THead<T> Old, New;
@@ -576,16 +579,16 @@ namespace utilities {
         template <typename T, size_t BlockSize, bool skipInitialization = false> class BlockAlloc {
         private:
             struct element_t {
-                unsigned char 
+                unsigned char
                     data[sizeof(T)];
-                bool 
+                bool
                     initialized;
-                element_t* 
+                element_t*
                     m_pNext;
             };
-            struct block_t { 
-                element_t 
-                    elements[BlockSize]; 
+            struct block_t {
+                element_t
+                    elements[BlockSize];
             };
 
             // Allocate one new block of contiguous elements
@@ -615,7 +618,7 @@ namespace utilities {
                     if (CAS(&free.m_n64, old, New.m_n64))
                         break; // success
                     // race, try again
-                }                
+                }
             };
 
             // Release all memory held by all blocks
@@ -635,7 +638,7 @@ namespace utilities {
         public:
             BlockAlloc() : blocks{}, free{} { free.m_n64 = 0; };
             ~BlockAlloc() { ReleaseBlocks(); };
-            
+
             // calling this unloads all the data and prevents use of the allocator. Should be used when the allocator is about to be deleted but (for whatever reason) needs to be unloaded at a specific schedule.
             void unsafe_unload() {
                 ReleaseBlocks();
@@ -660,7 +663,7 @@ namespace utilities {
                         }
                         else {
                             new (data) T(std::forward<TArgs>(a)...);
-                        }                  
+                        }
                         return data;
                     }
                     else {
@@ -703,9 +706,9 @@ namespace utilities {
                     threadID;
             };
 
-            std::atomic<size_t> 
+            std::atomic<size_t>
                 parallel_allocator_index{ 0 };
-            std::array<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>, num_parallel_allocators> 
+            std::array<ABA_Problem::BlockAlloc<innerType, num_items, skipInitialization>, num_parallel_allocators>
                 TLS_arr{};
 
         public:
@@ -815,12 +818,12 @@ namespace utilities {
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
             GoodLang::ThreadLocalInstance<TLS>
                 _TLS;
-            long long 
+            long long
                 _lastGC;
 
         public:
             // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
-            void RunGC()  {
+            void RunGC() {
                 static constexpr long long duration_ms{ 5 };
                 static thread_local std::pair<long long, _type_*> out{};
                 if ((GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() - _lastGC) > duration_ms) {
@@ -833,7 +836,7 @@ namespace utilities {
                         if (L >= 0) {
                             _EpochLimit = std::min<long long>(_EpochLimit, L);
                         }
-                    });
+                        });
 
                     if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
                         while (_delete_list.try_pop(out)) {
@@ -853,7 +856,7 @@ namespace utilities {
         public:
             using GuardType = typename TLS::EpochGuard;
 
-            EpochAllocator() 
+            EpochAllocator()
                 : _alloc{}
                 , _delete_list{}
                 , _TLS{}
@@ -862,7 +865,7 @@ namespace utilities {
             EpochAllocator(EpochAllocator const&) = delete;
             EpochAllocator(EpochAllocator&&) = delete;
             EpochAllocator& operator=(EpochAllocator const&) = delete;
-            EpochAllocator& operator=(EpochAllocator &&) = delete;
+            EpochAllocator& operator=(EpochAllocator&&) = delete;
             ~EpochAllocator() = default;
 
             void unsafe_unload() {
@@ -872,8 +875,8 @@ namespace utilities {
         public:
             GuardType ProtectCurrentEpoch() const {
                 return TLS::EpochGuard(
-                    const_cast<EpochAllocator*>(this), 
-                    const_cast<TLS*>(&*_TLS), 
+                    const_cast<EpochAllocator*>(this),
+                    const_cast<TLS*>(&*_TLS),
                     GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch()
                 );
             };
@@ -888,7 +891,7 @@ namespace utilities {
 
             // Frees the memory pointer
             void Free(const _type_* element) {
-                _delete_list.push({ GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch(), const_cast<_type_*>(element) });                
+                _delete_list.push({ GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch(), const_cast<_type_*>(element) });
                 if (_TLS->EpochCheck(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch())) {
                     // will only succeed if we are in scope-level 0, which only happens if this thread has not made any protecting guards.
                     RunGC();
@@ -896,7 +899,6 @@ namespace utilities {
             };
 
         };
-
     };
 
     /// <summary>
@@ -985,7 +987,7 @@ namespace utilities {
     public:
         DelayedInstantiation() = default;
         DelayedInstantiation(T const& data) : ptr(shared_alloc().Alloc(data)) {};
-        DelayedInstantiation(T && data) : ptr(shared_alloc().Alloc(std::move(data))) {};
+        DelayedInstantiation(T&& data) : ptr(shared_alloc().Alloc(std::move(data))) {};
         DelayedInstantiation(DelayedInstantiation const&) = delete;
         DelayedInstantiation(DelayedInstantiation&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
         DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
@@ -1018,281 +1020,33 @@ namespace utilities {
         operator bool() const { return valid(); };
     };
 
-    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
-    // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.
-    template <typename T> class Callback {
-    public:
-        class ScopedListener {
-        public:
-            ScopedListener()
-                : _index(0), _parent(nullptr) {};
-            ScopedListener(size_t index, Callback& parent) 
-                : _index(index), _parent(&parent) {};
-            ScopedListener(ScopedListener const& rhs) = delete;
-            ScopedListener(ScopedListener&& rhs) 
-                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent)) 
-            {
-                rhs._index = 0;
-            };
-            ScopedListener& operator=(ScopedListener const& rhs) = delete;
-            ScopedListener& operator=(ScopedListener&& rhs) 
-            {
-                if (_index > 0)
-                    _parent->remove_listener(_index);
-
-                _index = std::move(rhs._index);
-                _parent = std::move(rhs._parent);
-                rhs._index = 0;
-
-                return *this;
-            };            
-            ~ScopedListener() {
-                if (_index > 0)
-                    _parent->remove_listener(_index);
-            };
-
-        private:
-            size_t _index;
-            Callback* _parent;
-        };
-
-    private:
-        struct Wrap { 
-            long alive;
-            long count;
-            T* ptr;
-            size_t call_version;
-        };
-
-        static size_t&
-            _call_version() {
-            static size_t call_version{ 0 };
-            return call_version;
-        };
-        size_t
-            _size{ 0 };
-        concurrency::concurrent_vector<Wrap>
-            _listeners;
-        void (T::*_callback)(long*, size_t);
-        std::atomic<bool>
-            alive{ false };
-
-        // add a listener to the list
-        __declspec(noinline) void add_listener(size_t index, T* p) {
-            if (alive.load()) {
-                if (_size <= index) {
-                    if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
-                    // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
-                    InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
-                }
-                Wrap& wrap = _listeners[index/* - 1*/];
-                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
-                InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
-                InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
-            }
-        };
-        // remove a listener from the list
-        __declspec(noinline) void remove_listener(size_t index) {
-            if (alive.load() && _listeners.size() >= index) {
-                Wrap& wrap = _listeners[index/* - 1*/];
-                InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
-                if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
-                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
-                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
-            }
-        };
-
-    public:
-        Callback(void (T::*listener)(long*, size_t))
-            : _callback{ listener }, alive{ true }
-        {};
-        ~Callback() {
-            alive = false;
-            _listeners.clear();            
-        };
-
-        ScopedListener listener(size_t index, T* p) {
-            add_listener(index, p);
-            return ScopedListener(index, *this);
-        };
-        // callback performed on all listeners
-        __declspec(noinline) void speak(long* parent_alive, size_t call_number = 0) {
-            if (call_number == 0) 
-                call_number = InterlockedIncrement(static_cast<volatile size_t*>(&_call_version()));
-
-            for (size_t i = 0; i < _size; ++i) {
-                Wrap& wrap = _listeners[i];
-                if (wrap.alive) {
-                    if (!parent_alive || *parent_alive) {
-                        if (wrap.call_version >= call_number) { continue; }
-                        else {
-                            InterlockedExchange(static_cast<volatile size_t*>(&wrap.call_version), call_number);
-                        }
-
-                        if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
-                            (wrap.ptr->*_callback)(&wrap.alive, call_number); // _callback(wrap.ptr, &wrap.alive);
-                        InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
-                    }
-                    else break;
-                }                
-            }            
-        };
-    };
-
-    class ObjectWrapper {
-    public:
-        enum ObjectState {
-            Normal = 0,
-            Static = 1,
-            Constant = 2
-        };
-
-        ObjectWrapper()
-            : object_state{ nullptr }
-        {};
-        ObjectWrapper(GoodLang::Any obj, int s = 0)
-            : object_state{ GoodLang::make_shared<std::pair<GoodLang::Any, int>>(std::move(obj), s) }
-        {
-            if (auto copy = object_state) {
-                if (copy->first.GetFlag(GoodLang::AnyData::Flag::constant)) {
-                    copy->second |= Constant;
-                }
-                if (copy->second & Constant) {
-                    copy->first.SetFlag(GoodLang::AnyData::Flag::constant, true);
-                }
-            }
-        };
-        ObjectWrapper(ObjectWrapper const&) = default;
-        ObjectWrapper(ObjectWrapper &&) = default;
-        ObjectWrapper& operator=(ObjectWrapper const&) = default;
-        ObjectWrapper& operator=(ObjectWrapper&&) = default;
-        ~ObjectWrapper() = default;
-    private:
-        GoodLang::shared_ptr< std::pair<GoodLang::Any, int> > object_state;
-
-    public:
-        GoodLang::Any* operator->() const { 
-            if (auto* p =object_state.get()) {
-                return &p->first;
-            }
-            else {
-                return nullptr;
-            }
-        };
-        GoodLang::Any& operator*() const {
-            return *operator->();
-        };
-
-        bool is_const() const {
-            if (auto copy = object_state) {
-                return copy->second & Constant;
-            }
-            return false;
-        };
-        bool is_static() const {
-            if (auto copy = object_state) {
-                return copy->second & Static;
-            }
-            return false;
-        };
-    };
-
-    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of TicketDispensor
-    // Prints new tickets as needed, but recycles old tickets as much as possible. 
-    class TicketDispensor {
-    public:
-        class ScopedTicket {
-        public:
-            ScopedTicket()
-                : _index(0), _parent(nullptr) {};
-            ScopedTicket(size_t index, TicketDispensor& parent)
-                : _index(index), _parent(&parent) {};
-            ScopedTicket(ScopedTicket const& rhs) = delete;
-            ScopedTicket(ScopedTicket&& rhs)
-                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
-            {
-                rhs._index = 0;
-            };
-            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
-            ScopedTicket& operator=(ScopedTicket&& rhs)
-            {
-                _index = std::move(rhs._index);
-                _parent = std::move(rhs._parent);
-                rhs._index = 0;
-                return *this;
-            };
-            ~ScopedTicket() {
-                if (_index)
-                    _parent->return_ticket(_index);
-            };
-
-            size_t _index;
-            TicketDispensor* _parent;            
-        };
-            
-    public:
-        moodycamel::ConcurrentQueue<size_t>
-            queue{};
-        std::atomic<size_t>
-            indexes{ 0 };
-
-    public:
-        size_t num_tickets() const {
-            return indexes.load() + 1;
-        };
-        __declspec(noinline) ScopedTicket get_scoped_ticket() {
-            return ScopedTicket(get_ticket(), *this);
-        };
-        __declspec(noinline) size_t get_ticket() {
-            size_t out;
-            if (!queue.try_pop(out)) {
-                out = ++indexes;
-            }
-            return out;
-        };
-        __declspec(noinline) void return_ticket(size_t ticket) {
-            queue.push(ticket);
-        };
-        void reserve(int n) {
-            std::vector<size_t> tickets;
-            tickets.reserve(n);
-
-            for (int i = 0; i < n; i++) {
-                tickets.push_back(this->get_ticket());
-            }
-            for (auto& x : tickets) {
-                this->return_ticket(x);
-            }
-        };
-    };
-
-    /* Thread-safe ordered B-Tree, which guarrantees valid and safe access to 
-    pointers during erasure or modification of the tree when using the Epoch-guard 
+    /* Thread-safe ordered B-Tree, which guarrantees valid and safe access to
+    pointers during erasure or modification of the tree when using the Epoch-guard
     protection, which will delay actual deletion until the guard is satisfactorily old. */
     template< class objType, class keyType, int maxChildrenPerNode = 10> class BTree {
     public:
         struct TreeNode {
             keyType // key used for sorting
-                key;							
+                key;
             objType* // if != NULL pointer to object stored in leaf node 
-                object;						            
+                object;
             TreeNode* // parent node 
-                parent;						
+                parent;
             TreeNode* // next sibling
-                next;							
+                next;
             TreeNode* // prev sibling
-                prev;							
+                prev;
             long long // number of children	  
-                numChildren;					
+                numChildren;
             TreeNode* // first child 
-                firstChild;					
+                firstChild;
             TreeNode* // last child
-                lastChild;					
+                lastChild;
         };
         typedef TreeNode _iterType;
-    
+
     private:
-        static _iterType* 
+        static _iterType*
             InitNode(_iterType* p) {
             p->key = {};
             p->object = nullptr;
@@ -1510,7 +1264,7 @@ namespace utilities {
         using GuardType = typename EpochGuard;
         EpochGuard ProtectCurrentEpoch() const { return EpochGuard(this); };
 
-        BTree() 
+        BTree()
             : Num(0)
             , root(nullptr)
             , first(nullptr)
@@ -1535,12 +1289,12 @@ namespace utilities {
             Num = 0;
         };
 
-        template <bool EmplaceIfExists = true> _iterType* 
+        template <bool EmplaceIfExists = true> _iterType*
             Add(objType object, keyType const& key) {
             _iterType
-                *node, 
-                *child, 
-                *newNode; 
+                * node,
+                * child,
+                * newNode;
 
             // check that the key does not already exist		
             if constexpr (EmplaceIfExists) {
@@ -1596,12 +1350,12 @@ namespace utilities {
             };
 
             for (node = root; node->firstChild; node = child) {
-                if (key > node->key) node->key = key;                
+                if (key > node->key) node->key = key;
 
                 // find the first child with a key larger equal to the key of the new node
-                for (child = node->firstChild; child->next; child = child->next) 
-                    if (key <= child->key) 
-                        break; 
+                for (child = node->firstChild; child->next; child = child->next)
+                    if (key <= child->key)
+                        break;
 
                 if (child->object) {
                     // DOING MODIFICATIONS
@@ -1922,7 +1676,7 @@ namespace utilities {
             Remove(_iterType* node) {
             auto locked{ std::scoped_lock(this->mutex) };
             return Remove_Unsafe(node, nullptr);
-        };	
+        };
         bool // remove an object node from the tree								
             RemoveAt(keyType const& key, objType* object_copy = nullptr) {
             auto locked{ std::scoped_lock(this->mutex) };
@@ -1931,7 +1685,7 @@ namespace utilities {
             }
             return false;
         };
-        _iterType* 
+        _iterType*
             NodeFindByIndex(int index) const {
             if (index <= 0) return GetFirst();
             else if (index >= (Num - 1)) return GetLast();
@@ -1940,7 +1694,7 @@ namespace utilities {
                 return NodeFindByIndex(index, root);
             }
         };
-        _iterType* 
+        _iterType*
             NodeFind(keyType  const& key) const {
             auto locked{ std::shared_lock(mutex) };
             return NodeFind(key, root);
@@ -1949,7 +1703,7 @@ namespace utilities {
             NodeFindSmallestLargerEqual(keyType const& key) const {
             auto locked{ std::shared_lock(mutex) };
             return NodeFindSmallestLargerEqual(key, root);
-        };			
+        };
         _iterType* // find an object with the largest key smaller equal the given key;
             NodeFindLargestSmallerEqual(keyType const& key) const {
             auto locked{ std::shared_lock(mutex) };
@@ -1959,9 +1713,9 @@ namespace utilities {
             Find(keyType  const& key) const {
             auto locked{ std::shared_lock(mutex) };
             _iterType* node = NodeFind(key, root);
-            if (node) return node->object; 
-            else return nullptr;            
-        };									
+            if (node) return node->object;
+            else return nullptr;
+        };
         objType* // find an object with the smallest key larger equal the given key;
             FindSmallestLargerEqual(keyType const& key) const {
             auto locked{ std::shared_lock(mutex) };
@@ -1972,7 +1726,7 @@ namespace utilities {
             else {
                 return node->object;
             }
-        };				
+        };
         objType* // find an object with the largest key smaller equal the given key;
             FindLargestSmallerEqual(keyType const& key) const {
             auto locked{ std::shared_lock(mutex) };
@@ -1983,7 +1737,7 @@ namespace utilities {
             else {
                 return node->object;
             }
-        };		
+        };
         _iterType*
             GetFirst_Unsafe() const {
             return first;
@@ -1992,28 +1746,28 @@ namespace utilities {
             GetLast_Unsafe() const {
             return last;
         };
-        _iterType* 
+        _iterType*
             GetFirst() const {
             auto locked{ std::shared_lock(mutex) };
-            return first; 
+            return first;
         };
-        _iterType* 
+        _iterType*
             GetLast() const {
             auto locked{ std::shared_lock(mutex) };
-            return last; 
+            return last;
         };
-        _iterType* 
+        _iterType*
             GetRoot() const {
             auto locked{ std::shared_lock(mutex) };
-            return root; 
+            return root;
         };
         long long // returns the total number of nodes in the tree;							
             GetNodeCount() const {
             return Num.load();
-        };	
+        };
 
     private:
-        _iterType* 
+        _iterType*
             CheckFirstNode(_iterType* newNode) {
             if (newNode) {
                 if (!first || (first->key > newNode->key)) {
@@ -2022,7 +1776,7 @@ namespace utilities {
             }
             return newNode;
         };
-        _iterType* 
+        _iterType*
             CheckLastNode(_iterType* newNode) {
             if (newNode) {
                 if (!last || (last->key < newNode->key)) {
@@ -2031,29 +1785,29 @@ namespace utilities {
             }
             return newNode;
         };
-        _iterType* 
+        _iterType*
             AllocNode() {
             _iterType* node;
             node = nodeAllocator.Alloc();
             return InitNode(node);
         };
-        void									
+        void
             FreeNode(_iterType* node) {
             if (node) {
                 if (node->object) {
                     objAllocator->Free(node->object);
                     Num--;
                 }
-                nodeAllocator.Free(node);   
-            }            
+                nodeAllocator.Free(node);
+            }
         };
-        void									
+        void
             SplitNode(_iterType* node) {
-            long long 
+            long long
                 i;
             _iterType
-                *child, 
-                *newNode;
+                * child,
+                * newNode;
 
             // allocate a new node
             newNode = AllocNode();
@@ -2081,20 +1835,20 @@ namespace utilities {
             // add the new child to the parent before the split node
             assert(node->parent->numChildren < maxChildrenPerNode);
 
-            if (node->prev) node->prev->next = newNode;            
+            if (node->prev) node->prev->next = newNode;
             else node->parent->firstChild = newNode;
-            
+
             newNode->prev = node->prev;
             newNode->next = node;
             node->prev = newNode;
 
             node->parent->numChildren++;
         };
-        _iterType* 
+        _iterType*
             MergeNodes(_iterType* node1, _iterType* node2) {
             _iterType* child;
 
-            for (child = node1->firstChild; child->next; child = child->next) child->parent = node2;            
+            for (child = node1->firstChild; child->next; child = child->next) child->parent = node2;
             child->parent = node2;
             child->next = node2->firstChild;
             node2->firstChild->prev = child;
@@ -2102,9 +1856,9 @@ namespace utilities {
             node2->numChildren += node1->numChildren;
 
             // unlink the first node from the parent
-            if (node1->prev) node1->prev->next = node2;            
+            if (node1->prev) node1->prev->next = node2;
             else node1->parent->firstChild = node2;
-            
+
             node2->prev = node1->prev;
             node2->parent->numChildren--;
 
@@ -2141,7 +1895,7 @@ namespace utilities {
                 , guard{ _parent->ProtectCurrentEpoch() }
             {};
             WrappedReference(WrappedReference const&) = delete;
-            WrappedReference(WrappedReference &&) = delete;
+            WrappedReference(WrappedReference&&) = delete;
             WrappedReference& operator=(WrappedReference const&) = delete;
             WrappedReference& operator=(WrappedReference&&) = delete;
             ~WrappedReference() = default;
@@ -2185,7 +1939,7 @@ namespace utilities {
             (void)tree->Add<false>(std::move(value), time);
         };
         void // if already exists, overwrites the value. 
-            emplace_fast(const KeyType& time, ValueType&& value) {            
+            emplace_fast(const KeyType& time, ValueType&& value) {
             (void)tree->Add<true>(std::move(value), time);
         };
         template <typename iter_type> void // bulk insertion. if already exists, does nothing.
@@ -2270,14 +2024,14 @@ namespace utilities {
         template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
             pop_front_if(Func const& func) {
             bool out = false;
-            auto g{ tree->ProtectCurrentEpoch() };     
+            auto g{ tree->ProtectCurrentEpoch() };
             auto g2{ tree->Lock() };
-            if (auto* p = tree->GetFirst_Unsafe()) {                
+            if (auto* p = tree->GetFirst_Unsafe()) {
                 if (func(p->key, *p->object)) {
                     tree->Remove_Unsafe(p, nullptr);
                     out = true;
-                }  
-            }            
+                }
+            }
             return out;
         };
         template <typename Func> __declspec(noinline) bool // removes the last (largest key) node in the map if func(key, object) returns true
@@ -2296,7 +2050,7 @@ namespace utilities {
         __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
             operator[](const KeyType& time) {
             auto g{ tree->ProtectCurrentEpoch() };
-            if (ValueType* p = tree->Find(time)) {                
+            if (ValueType* p = tree->Find(time)) {
                 return *p;
             }
             else {
@@ -2394,11 +2148,11 @@ namespace utilities {
     protected:
         std::unique_ptr< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>> >
             tree;
-        HashType 
+        HashType
             hasher;
-        size_t 
-            hash(KeyType const& k) const {  
-            return hasher(k); 
+        size_t
+            hash(KeyType const& k) const {
+            return hasher(k);
         };
 
     public:
@@ -2430,7 +2184,7 @@ namespace utilities {
             : tree{ std::make_unique< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>>() }, hasher{ HashType{} }
         {};
         atomic_unordered_map(atomic_unordered_map const& rhs) = delete;
-        atomic_unordered_map(atomic_unordered_map&& rhs) : tree{ std::move(rhs.tree) }, hasher{ HashType{} } 
+        atomic_unordered_map(atomic_unordered_map&& rhs) : tree{ std::move(rhs.tree) }, hasher{ HashType{} }
         {};
         atomic_unordered_map& operator=(atomic_unordered_map const& rhs) = delete;
         atomic_unordered_map& operator=(atomic_unordered_map&& rhs) = delete;
@@ -2597,16 +2351,12 @@ namespace utilities {
 
     };
 
+};
 
-
-
-
-    // To-Do, need to roll my own Any, Params, etc.
-
-    // class any;
-
+// utilities::type, utilities::types
+namespace utilities {
     // To-Do, update the onversion functions for scripted types once everything is figured out. 
-    // type records the type of either built-in or scripted, runtime types    
+// type records the type of either built-in or scripted, runtime types    
     class type {
     public:
         enum Modifiers {
@@ -2617,21 +2367,22 @@ namespace utilities {
             Void = 16
         };
 
-    protected:        
-        size_t 
-            underlying_hash; 
+    protected:
+        size_t
+            underlying_hash;
         size_t
             hash;
-        unsigned short 
-            modifiers = 0;        
-        utilities::string 
+        unsigned short
+            modifiers = 0;
+        utilities::string
             name; // for scripted classes, this shall be the full namespace path, e.g. ::std::string::
-        std::function<GoodLang::Any(GoodLang::Any const&)>* 
-            copy_constructor; 
-        std::function<GoodLang::Any(GoodLang::Any const&)>* 
+        std::function<GoodLang::Any(GoodLang::Any const&)>*
+            copy_constructor;
+        std::function<GoodLang::Any(GoodLang::Any const&)>*
             constructor_from_value;
 
     public:
+        int const& get_modifiers() const { return modifiers; };
         size_t const& get_hash() const { return hash; };
         type(size_t underlying_hash_p = 0, size_t modifiers_p = Modifiers::Void, utilities::string const& name_p = "", std::function<GoodLang::Any(GoodLang::Any const&)>* copy_constructor_p = nullptr, std::function<GoodLang::Any(GoodLang::Any const&)>* constructor_from_value_p = nullptr) noexcept
             : underlying_hash(underlying_hash_p)
@@ -2668,10 +2419,12 @@ namespace utilities {
                 // Otherwise OK
                 return true;
             }
-            return false;            
+            return false;
         };
         // Returns true if the types are similar enough to be casted for free (0 cost)
         bool can_free_cast(type const& to) const { return can_free_cast(*this, to); };
+        // Returns true if the types are the same foundational type (may not be zero cost to convert)
+        bool can_cast(type const& to) const { return this->underlying_hash == to.underlying_hash; };
 
         //// Operators
         friend bool operator==(const type& a, const type& b) noexcept { return a.get_hash() == b.get_hash(); };
@@ -2681,7 +2434,7 @@ namespace utilities {
         friend bool operator>(const type& a, const type& b) noexcept { return a.get_hash() > b.get_hash(); };
         friend bool operator>=(const type& a, const type& b) noexcept { return a.get_hash() >= b.get_hash(); };
         bool is_temp() const noexcept { return modifiers & Modifiers::Temporary; };
-        bool is_const() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Const); };        
+        bool is_const() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Const); };
         bool is_ref() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Reference); };
         bool is_const_ref() const noexcept { return is_temp() ? false : (modifiers & (Modifiers::Const | Modifiers::Reference)); };
         bool is_base() const noexcept { return modifiers == 0; };
@@ -2697,10 +2450,10 @@ namespace utilities {
             else return out;
         };
 
-        type operator+(Modifiers modifier) const {
+        type operator+(int modifier) const {
             return type(this->underlying_hash, this->modifiers | modifier, this->name, this->copy_constructor, this->constructor_from_value);
         };
-        type operator-(Modifiers modifier) const {
+        type operator-(int modifier) const {
             return type(this->underlying_hash, this->modifiers & ~modifier, this->name, this->copy_constructor, this->constructor_from_value);
         };
 
@@ -2713,7 +2466,7 @@ namespace utilities {
                 static std::function<GoodLang::Any(GoodLang::Any const&)> passthrough = [](GoodLang::Any const& p) -> GoodLang::Any { return p; };
                 return passthrough;
             }
-        }; 
+        };
         // const value_t& to This&&
         std::function<GoodLang::Any(GoodLang::Any const&)> const& GetConstructorFromValue() const {
             if (constructor_from_value) {
@@ -2737,9 +2490,9 @@ namespace utilities {
         static auto const void_modifier = (void_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Void : 0;
         static auto const any_modifier = (any_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Any : 0;
 
-        static std::function<GoodLang::Any(GoodLang::Any const&)> copy_constructor = [](GoodLang::Any const& from) -> GoodLang::Any {  
-            if constexpr (std::is_copy_constructible_v<base_type>) 
-                if (void_modifier == 0) 
+        static std::function<GoodLang::Any(GoodLang::Any const&)> copy_constructor = [](GoodLang::Any const& from) -> GoodLang::Any {
+            if constexpr (std::is_copy_constructible_v<base_type>)
+                if (void_modifier == 0)
                     return base_type{ from.cast<base_type>() };
 
             // To-Do, the return type should be set to "temporary" to improve type engine
@@ -2753,9 +2506,9 @@ namespace utilities {
         };
         static std::function<GoodLang::Any(GoodLang::Any const&)> constructor_from_value = [](GoodLang::Any const& from) -> GoodLang::Any {
             if constexpr (std::is_constructible_v<base_type, GoodLang::Units::value&>)
-                if (from.IsTypeOf<GoodLang::Units::value>()) 
+                if (from.IsTypeOf<GoodLang::Units::value>())
                     return base_type{ from.cast<GoodLang::Units::value&>() };
-            
+
             // To-Do, the return type should be set to "temporary" to improve type engine
 
             return from;
@@ -2770,7 +2523,7 @@ namespace utilities {
         else {
             size_t underlying_hash = full_namespace_path.hash();
             static std::function<GoodLang::Any(GoodLang::Any const&)> copy_constructor = [](GoodLang::Any const& from) -> GoodLang::Any {
-                
+
                 /* scripted objects -->
                 auto& dynObj = from.cast<DynamicObject>();
                 return DynamicObject(dynObj);
@@ -2884,10 +2637,25 @@ namespace utilities {
         };
 
     };
+};
+namespace /* hash */ std {
+    template <> struct hash<utilities::type> {
+        std::size_t operator()(const utilities::type& k) const {
+            return k.get_hash();
+        };
+    };
+    template <> struct hash<utilities::types> {
+        std::size_t operator()(const utilities::types& k) const {
+            return k.get_hash();
+        };
+    };
+};
 
+// utilities::shared_ptr, utilities::weak_ptr
+namespace utilities {
     /// <summary>
-    /// utilities::shared_ptr uses the Epoch allocator to control / prevent deletion of pointers. Currently memory-performant and thread-safe when overwriting, but slower then GoodLang::shared_ptr. 
-    /// </summary>
+/// utilities::shared_ptr uses the Epoch allocator to control / prevent deletion of pointers. Currently memory-performant and thread-safe when overwriting, but slower then GoodLang::shared_ptr. 
+/// </summary>
     class shared_ptr_base {
     public:
         struct aux {
@@ -2905,7 +2673,7 @@ namespace utilities {
                 , p{ pu }
             {}
             aux(aux const&) = default;
-            aux(aux &&) = default;
+            aux(aux&&) = default;
             aux& operator=(aux const&) = default;
             aux& operator=(aux&&) = default;
             virtual ~aux() = default;
@@ -2931,7 +2699,7 @@ namespace utilities {
                 if (
                     (reinterpret_cast<short*>(&read)[0] >= 1)
                     && (reinterpret_cast<long*>(&read)[1] == 0)
-                ) { // if NOT being destroyed or deleted...
+                    ) { // if NOT being destroyed or deleted...
                     return pa_ptr; // remember - I am still locked from deletion.
                 }
                 else {
@@ -3007,7 +2775,7 @@ namespace utilities {
 
             while (pa_ptr) {
                 (void)pa_ptr->protect_aux();
-                read = pa_ptr->Strong_Weak_Destroy_Delete;                
+                read = pa_ptr->Strong_Weak_Destroy_Delete;
                 if (!reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed...
                     planned = read;
                     --reinterpret_cast<short*>(&planned)[1];
@@ -3017,7 +2785,7 @@ namespace utilities {
                     }
                     if (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&pa_ptr->Strong_Weak_Destroy_Delete), planned, read) == read) { // success!
                         if (reinterpret_cast<short*>(&planned)[3] == 1) {
-                           pa_ptr->destroy_aux();
+                            pa_ptr->destroy_aux();
                         }
                         break;
                     }
@@ -3028,7 +2796,7 @@ namespace utilities {
             }
         };
     };
-    template<class T> class weak_ptr; 
+    template<class T> class weak_ptr;
     /// <summary>
     /// Thread-safe implimentation of std::shared_ptr. Slower in single-thread cases, faster (and race-free) in multi-threaded cases. weak_ptr dereferencing is particularly slow here. 
     /// </summary>
@@ -3038,24 +2806,47 @@ namespace utilities {
     protected:
         template<class U>
         struct aux_default final : public aux {
-            aux_default(U* pu = nullptr) : aux(static_cast<void*>(pu)) {}
-            aux_default(aux_default &&) = default;
+            aux_default(U* pu = nullptr) : aux(const_cast<void*>(static_cast<const void*>(pu))) {}
+            aux_default(aux_default&&) = default;
             aux_default& operator=(aux_default&&) = default;
             aux_default(aux_default const&) = default;
             aux_default& operator=(aux_default const&) = default;
             ~aux_default() = default;
 
             virtual utilities::type const& type() const override { return utilities::type_of<U>(); };
-            virtual void protect_aux() override { (void)shared_ptr<U>::aux_allocator().ProtectCurrentEpoch_Fast(); };
-            virtual void destroy_aux() override { 
-                (void)shared_ptr<U>::aux_allocator().Free(this);  
-                shared_ptr<U>::aux_allocator().RunGC();
+            virtual void protect_aux() override { (void)shared_ptr<U>::aux_default_allocator().ProtectCurrentEpoch_Fast(); };
+            virtual void destroy_aux() override {
+                (void)shared_ptr<U>::aux_default_allocator().Free(this);
+                shared_ptr<U>::aux_default_allocator().RunGC();
             };
-            virtual void destroy_obj() override { 
-                delete static_cast<T*>(this->p);
+            virtual void destroy_obj() override {
+                delete static_cast<U*>(this->p);
             };
         };
-        static auto& aux_allocator() {
+
+        template<class U>
+        struct aux_deleter final : public aux {
+            aux_deleter(U* pu = nullptr, std::function<void(U*)>&& deleter = {}) : aux(const_cast<void*>(static_cast<const void*>(pu))), deletionFunc{ std::move(deleter) } {}
+            aux_deleter(aux_deleter&&) = default;
+            aux_deleter& operator=(aux_deleter&&) = default;
+            aux_deleter(aux_deleter const&) = default;
+            aux_deleter& operator=(aux_deleter const&) = default;
+            ~aux_deleter() = default;
+
+            virtual utilities::type const& type() const override { return utilities::type_of<U>(); };
+            virtual void protect_aux() override { (void)shared_ptr<U>::aux_deleter_allocator().ProtectCurrentEpoch_Fast(); };
+            virtual void destroy_aux() override {
+                (void)shared_ptr<U>::aux_deleter_allocator().Free(this);
+                shared_ptr<U>::aux_deleter_allocator().RunGC();
+            };
+            virtual void destroy_obj() override {
+                deletionFunc(static_cast<U*>(this->p));
+            };
+
+            std::function<void(U*)> deletionFunc;
+        };
+
+        static auto& aux_default_allocator() {
             static utilities::ABA_Problem::EpochAllocator<
                 aux_default<T>
                 , utilities::ABA_Problem::Allocator<aux_default<T>, 1028>
@@ -3063,8 +2854,16 @@ namespace utilities {
             > alloc{};
             return alloc;
         };
+        static auto& aux_deleter_allocator() {
+            static utilities::ABA_Problem::EpochAllocator<
+                aux_deleter<T>
+                , utilities::ABA_Problem::Allocator<aux_deleter<T>, 1028>
+                // , moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>
+            > alloc{};
+            return alloc;
+        };
 
-        T* 
+        T*
             ptr;
         GoodLang::atomic_ptr<shared_ptr_base::aux>
             paux;
@@ -3087,7 +2886,7 @@ namespace utilities {
                 if (!reinterpret_cast<short*>(&read)[2] && !reinterpret_cast<short*>(&read)[3]) { // if NOT being destroyed or deleted...
                     out = static_cast<T*>(pa_ptr->ptr());
                     return out;
-                }                              
+                }
             }
             return out;
         };
@@ -3095,7 +2894,10 @@ namespace utilities {
     public:
         auto const& GetPaux() const { return paux; };
 
-        template<class U> explicit shared_ptr(U* pu) : paux(static_cast<aux*>(shared_ptr<U>::aux_allocator().Alloc(pu))), ptr(reinterpret_cast<T*>(pu)) {};
+        template<class U> explicit shared_ptr(U* pu) : paux(static_cast<aux*>(shared_ptr<U>::aux_default_allocator().Alloc(pu))), ptr(reinterpret_cast<T*>(pu)) {};
+        template<class U, class F> explicit shared_ptr(U* pu, F&& deletionFunction) : paux(
+            static_cast<aux*>(shared_ptr<U>::aux_deleter_allocator().Alloc(pu, std::move(deletionFunction)))
+        ), ptr(reinterpret_cast<T*>(pu)) {};
 
         shared_ptr() : paux(nullptr), ptr(nullptr) {}
         shared_ptr(std::nullptr_t) : paux(nullptr), ptr(nullptr) {}
@@ -3126,7 +2928,7 @@ namespace utilities {
         };
         shared_ptr& operator=(std::nullptr_t) {
             InterlockedExchangePointer(reinterpret_cast<void**>(&ptr), nullptr);
-            shared_ptr_base::dec_strong(paux.Set(nullptr));            
+            shared_ptr_base::dec_strong(paux.Set(nullptr));
             return *this;
         };
 
@@ -3139,7 +2941,8 @@ namespace utilities {
         T* operator->() const {
             return get();
         };
-        T& operator*() const {
+        template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
+        decltype(auto) operator*() const {
             return *get();
         };
 
@@ -3183,7 +2986,7 @@ namespace utilities {
         };
 
         weak_ptr& operator=(const weak_ptr& s) {
-            if (this != &s) shared_ptr_base::dec_weak(pa.Set(shared_ptr_base::inc_weak(s.pa)));            
+            if (this != &s) shared_ptr_base::dec_weak(pa.Set(shared_ptr_base::inc_weak(s.pa)));
             return *this;
         };
         weak_ptr& operator=(std::nullptr_t) {
@@ -3214,33 +3017,962 @@ namespace utilities {
         };
     };
 
-
-
-
-
-
-
-
-
-
-
-
+    template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...)); };
+    template <class _Tto, class _Tfrom> _NODISCARD shared_ptr<_Tto> static_pointer_cast(shared_ptr<_Tfrom> const& F) { return shared_ptr<_Tto>{ F }; };
+    template <class _Tto, class _Tfrom> _NODISCARD shared_ptr<_Tto> static_pointer_cast(shared_ptr<_Tfrom> && F) { return shared_ptr<_Tto>{ std::move(F) }; };
 };
-
-namespace std {
-    template <> struct hash<utilities::type> {
-        std::size_t operator()(const utilities::type& k) const {
-            return k.get_hash();
+namespace /* hash */ std {
+    template <typename T> struct hash<utilities::shared_ptr<T>> {
+        std::size_t operator()(const utilities::shared_ptr<T>& k) const {
+            static std::hash<T> hasher{};
+            if (auto* p = k.get()) {
+                return hasher(*p);
+            }
+            return 0;
         };
-    };    
-    template <> struct hash<utilities::types> {
-        std::size_t operator()(const utilities::types& k) const {
-            return k.get_hash();
+    };
+    template <typename T> struct hash<utilities::weak_ptr<T>> {
+        std::size_t operator()(const utilities::weak_ptr<T>& k) const {
+            static std::hash<utilities::shared_ptr<T>> hasher{};
+            if (utilities::shared_ptr<T> p = k.lock()) {
+                return hasher(p);
+            }
+            return 0;
         };
     };
 };
 
+// utilities::dynamic_object, utilities::any, utilities::var
+namespace utilities {
+    class any;
+    class any_cast;
+
+    class var {
+    public:
+        utilities::shared_ptr<any> p_data;
+    };
+    class dynamic_object {};
+#if 0
+    
+
+    // serves as an instance of a customizable class
+    class dynamic_object {
+    public:
+        dynamic_object()
+            : m_actualType()
+            , m_castedType()
+            , m_objects(std::make_shared<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<utilities::any>>>())
+        {};
+        dynamic_object(type const& type)
+            : m_actualType(type)
+            , m_castedType(type)
+            , m_objects(std::make_shared<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<utilities::any>>>())
+        {};
+        // Upcast from a child_class to a parent_class (e.g. from class C : public A {} to class A {})
+        dynamic_object(type const& castedType, dynamic_object const& parent)
+            : m_actualType(parent.m_actualType)
+            , m_castedType(castedType)
+            , m_objects(parent.m_objects)
+        {};
+        dynamic_object(dynamic_object const&) = default;
+        dynamic_object(dynamic_object&&) = default;
+        dynamic_object& operator=(dynamic_object const&) = default;
+        dynamic_object& operator=(dynamic_object&&) = default;
+        ~dynamic_object() = default;
+
+        type
+            m_actualType;
+        type
+            m_castedType;
+        std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<utilities::any>>>
+            m_objects;
+
+        std::shared_ptr<utilities::any> const& operator[](std::string_view sv) {
+            if (m_objects) {
+                if (auto const& ptr = m_objects->operator[](std::string(sv))) {
+                    return ptr;
+                }
+            }
+            throw std::out_of_range("Out of range of dynamic_object object list");
+        };
+    };
+
+    /* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
+    It defers from "Any" because Any objects are for use in C++ to contain statically typed objects.
+    "Var" objects are wrappers for Anys that allow the scripting language to process them as
+    empty & assignable, or filled and implimented */
+    class var {
+    public:
+        var() : p_data(utilities::make_shared<any>()) {}
+        explicit var(any const& data_f) : p_data(utilities::make_shared<any>(data_f)) {};
+        var(var const&) = default;
+        var(var&&) = default;
+        var& operator=(var const&) = default;
+        var& operator=(var&&) = default;
+        ~var() = default;
+
+    public:
+        utilities::shared_ptr<any> p_data; // may be "updated" at any time and therefore should be thread-safe. 
+
+    public:
+        friend bool operator==(var const& _Left, var const& _Right) {
+            return _Left.p_data == _Right.p_data;
+        };
+        friend bool operator!=(var const& _Left, var const& _Right) {
+            return !operator==(_Left, _Right);
+        };
+    };
+
+#endif
+
+    namespace type_erasure {
+        template<class T> struct get_type { typedef T type; };
+        template<class T> struct get_type<std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<utilities::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<utilities::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<utilities::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const utilities::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const utilities::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const utilities::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+
+        class any_data {
+        public:
+            template<typename T> static shared_ptr<void> encode(const shared_ptr<T>& ptr_in, int& modifiers_out) {
+                if constexpr (std::is_void< T >::value) {
+                    modifiers_out |= type::Modifiers::Void;
+                }
+                if constexpr (std::is_const< T >::value) {
+                    modifiers_out |= type::Modifiers::Const;
+                }
+                if constexpr (std::is_reference< T >::value) {
+                    modifiers_out |= type::Modifiers::Reference;
+                }
+                if constexpr (std::is_same< T, any >::value || std::is_same< T, const any >::value) {
+                    modifiers_out |= type::Modifiers::Any;
+                }
+                return static_pointer_cast<void>(ptr_in);
+            };
+            template<typename T> static shared_ptr<void> encode(shared_ptr<T>&& ptr_in, int& modifiers_out) {
+                if constexpr (std::is_void< T >::value) {
+                    modifiers_out |= type::Modifiers::Void;
+                }
+                if constexpr (std::is_const< T >::value) {
+                    modifiers_out |= type::Modifiers::Const;
+                }
+                if constexpr (std::is_reference< T >::value) {
+                    modifiers_out |= type::Modifiers::Reference;
+                }
+                if constexpr (std::is_same< T, any >::value || std::is_same< T, const any >::value) {
+                    modifiers_out |= type::Modifiers::Any;
+                }
+                return static_pointer_cast<void>(std::move(ptr_in));
+            };
+
+        public:
+            any_data() noexcept = default;
+            any_data(any_data const&) = delete;
+            any_data(any_data&&) = delete;
+            any_data& operator=(any_data const&) = delete;
+            any_data& operator=(any_data&&) = delete;
+            virtual ~any_data() = default;
+            virtual utilities::type const& actual_type() const = 0;
+            virtual utilities::type const& current_type() const = 0;
+            virtual void* ptr() const = 0;
+            virtual utilities::shared_ptr<void> const& shared_ptr() const = 0;
+
+            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+            bool can_free_cast(type const& to) const {
+                return current_type().can_free_cast(to) || actual_type().can_free_cast(to);
+            };
+            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+            bool can_cast(type const& to) const {
+                return current_type().can_cast(to) || actual_type().can_cast(to);
+            };
+
+            template <typename T> T* cast(bool nothrow = false) const {
+                if (nothrow || can_cast(utilities::type_of<T>()))
+                    return static_cast<T*>(this->ptr());
+                throw std::runtime_error(GoodLang::printf("Could not cast from %s to %s", this->current_type().get_name().c_str().data(), utilities::type_of<T>().get_name().c_str().data()));
+            };
+            template <typename T> utilities::shared_ptr<T> cast_shared(bool nothrow = false) const {
+                if (nothrow || can_cast(utilities::type_of<T>()))
+                    return utilities::static_pointer_cast<T>(this->shared_ptr());
+                throw std::runtime_error(GoodLang::printf("Could not cast from %s to %s", this->current_type().get_name().c_str().data(), utilities::type_of<T>().get_name().c_str().data()));
+            };
+
+            virtual utilities::shared_ptr<any_data> operator+(int modifier) const = 0;
+        };
+
+        template <typename T> // type-erasure which hosts utilities::shared_ptr<T>
+        class any_data_shared final : public any_data {
+        public:
+            any_data_shared() noexcept
+                : any_data()
+                , m_obj()
+                , m_current_type(utilities::type_of<void>())
+            {};
+            any_data_shared(utilities::shared_ptr<T> const& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(t_obj, t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+            any_data_shared(utilities::shared_ptr<T>&& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(std::move(t_obj), t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+            any_data_shared(any_data_shared const&) = delete;
+            any_data_shared(any_data_shared&&) = delete;
+            any_data_shared& operator=(any_data_shared const&) = delete;
+            any_data_shared& operator=(any_data_shared&&) = delete;
+            ~any_data_shared() = default;
+            utilities::type const& actual_type() const override {
+                return utilities::type_of<T>();
+            };
+            utilities::type const& current_type() const override {
+                return m_current_type;
+            };
+            void* ptr() const override { return m_obj.get(); };
+            utilities::shared_ptr<void> const& shared_ptr() const override {
+                return m_obj;
+            };
+            utilities::shared_ptr<any_data> operator+(int modifier) const override {
+                return utilities::make_shared<any_data_shared<T>>(utilities::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+            };
+
+        private:
+            utilities::shared_ptr<void> m_obj; // underlying data
+            type m_current_type;
+
+        };
+
+        template <typename T> // type-erasure which hosts std::shared_ptr<T>
+        class any_data_std_shared final : public any_data {
+        public:
+            any_data_std_shared() noexcept
+                : any_data()
+                , m_obj()
+                , m_current_type(utilities::type_of<void>())
+            {};
+            any_data_std_shared(std::shared_ptr<T> const& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(utilities::shared_ptr<T>(const_cast<T*>(t_obj.get()), [ptr = t_obj](T* p) {
+                (void)ptr.get();
+                    }), t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+            any_data_std_shared(any_data_std_shared const&) = delete;
+            any_data_std_shared(any_data_std_shared&&) = delete;
+            any_data_std_shared& operator=(any_data_std_shared const&) = delete;
+            any_data_std_shared& operator=(any_data_std_shared&&) = delete;
+            ~any_data_std_shared() = default;
+
+            utilities::type const& actual_type() const override {
+                return utilities::type_of<T>();
+            };
+            utilities::type const& current_type() const override {
+                return m_current_type;
+            };
+            void* ptr() const override { return m_obj.get(); };
+            utilities::shared_ptr<void> const& shared_ptr() const override {
+                return m_obj;
+            };
+            utilities::shared_ptr<any_data> operator+(int modifier) const override {
+                return utilities::make_shared<any_data_shared<T>>(utilities::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+            };
+
+        private:
+            utilities::shared_ptr<void> m_obj; // underlying data
+            type m_current_type;
+
+        };
+
+        template <typename T> // type-erasure which hosts T
+        class any_data_instanced final : public any_data {
+        public:
+            any_data_instanced() noexcept
+                : any_data()
+                , m_obj()
+                , m_current_type(utilities::type_of<void>())
+            {};
+            any_data_instanced(T const& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(utilities::make_shared<T>(t_obj), t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+            any_data_instanced(T&& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(utilities::make_shared<T>(std::move(t_obj)), t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+            any_data_instanced(any_data_instanced const&) = delete;
+            any_data_instanced(any_data_instanced&&) = delete;
+            any_data_instanced& operator=(any_data_instanced const&) = delete;
+            any_data_instanced& operator=(any_data_instanced&&) = delete;
+            ~any_data_instanced() = default;
+            utilities::type const& actual_type() const override {
+                return utilities::type_of<T>();
+            };
+            utilities::type const& current_type() const override {
+                return m_current_type;
+            };
+            void* ptr() const override { return m_obj.get(); };
+            utilities::shared_ptr<void> const& shared_ptr() const override {
+                return m_obj;
+            };
+            utilities::shared_ptr<any_data> operator+(int modifier) const override {
+                return utilities::make_shared<any_data_shared<T>>(utilities::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+            };
+
+        private:
+            utilities::shared_ptr<void> m_obj; // underlying data
+            type m_current_type;
+
+        };
+
+        struct wrapper {
+            template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, utilities::shared_ptr<S>>>>
+            static utilities::shared_ptr<any_data> get(H<S> obj, int modifier) {
+                if (obj) {
+                    if constexpr (std::is_same<utilities::any, S>::value) {
+                        // return self
+                        if (modifier == 0 || !obj->container) {
+                            return obj->container;
+                        }
+                        else {
+                            return *obj->container + modifier; 
+                        }
+                    }
+                    else {
+                        if constexpr (std::is_same<utilities::shared_ptr<S>, H<S>>::value) {
+                            return utilities::make_shared<any_data_shared<S>>(obj, modifier);
+                        }
+                        else if constexpr (std::is_same<std::shared_ptr<S>, H<S>>::value) {
+                            return utilities::make_shared<any_data_std_shared<S>>(obj, modifier);
+                        }
+                        else {
+                            return nullptr;
+                        }
+                    }
+                }
+                else {
+                    return nullptr; // return null if incoming is null
+                }
+            };
+                                    
+            template<typename T, typename = std::enable_if_t<!std::is_same_v<any_cast, T>>> 
+            static utilities::shared_ptr<any_data> get(const T& obj, int modifier) {                
+                if constexpr (std::is_same<utilities::any, T>::value) {
+                    // return self
+                    if (modifier == 0 || !obj.container) {
+                        return obj.container;
+                    }
+                    else {
+                        return *obj.container + modifier;
+                    }
+                }
+                else {
+                    return utilities::make_shared<any_data_instanced<T>>(obj, modifier);
+                }
+            };
+
+            template<typename T, typename = std::enable_if_t<!std::is_same_v<any_cast, T>>>
+            static utilities::shared_ptr<any_data> get(T&& obj, int modifier) {
+                if constexpr (std::is_same<utilities::any, T>::value) {                    
+                    // return self
+                    if (modifier == 0 || !obj.container) {
+                        return obj.container;
+                    }
+                    else {
+                        return *obj.container + modifier;
+                    }
+                }
+                else {
+                    return utilities::make_shared<any_data_instanced<T>>(std::move(obj), modifier);
+                }
+            };
+
+            static utilities::shared_ptr<any_data> get(const any_cast& obj);
+            static utilities::shared_ptr<any_data> get(const any_cast* t);
+        };
+
+        template<typename T> static utilities::shared_ptr<any_data> wrap(const T& r, int modifier = 0) { return wrapper::get(r, modifier); };
+        template<typename T> static utilities::shared_ptr<any_data> wrap(T&& r, int modifier = 0) { return wrapper::get(std::move(r), modifier); };
+    };
+
+
+
+
+
+
+
+
+
+    /* type erasure wrapper for sharing literal or shared_ptr objects while managing the intended type (e.g. const, const ref, temp) seperately from the actual object (e.g. a literal) */
+    class any {
+    public:
+        any() noexcept
+            : container(nullptr)
+        {};
+        any(std::nullptr_t) noexcept
+            : container(nullptr)
+        {};
+        any(const any& rhs) noexcept
+            : container()
+        {
+            container = rhs.container;
+        };
+        any(any&& rhs) noexcept
+            : container(std::move(rhs.container))
+        {};
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any(const ValueType& value, int modifier = 0) noexcept
+            : container(type_erasure::wrap(value, modifier))
+        {};
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any(ValueType&& value, int modifier = 0) noexcept
+            : container(type_erasure::wrap(std::move(value), modifier))
+        {};
+        ~any() = default;
+        any& operator=(const any& rhs) noexcept = default;
+        any& operator=(any&& rhs) noexcept = default;
+        any& operator=(std::nullptr_t) noexcept {
+            container = nullptr;
+            return *this;
+        };
+        template <class ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any& operator=(const ValueType & rhs) noexcept {
+            container = type_erasure::wrap(rhs);
+            return *this;
+        };
+        template <class ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any& operator=(ValueType && rhs) noexcept {
+            container = type_erasure::wrap(std::move(rhs));
+            return *this;
+        };
+
+    public:
+        /*! Checks if the Any has been assigned something */
+        bool empty() const noexcept {
+            return !container.operator bool();
+        };
+        /*! Empties the Any and frees the memory. */
+        void clear() noexcept {
+            container = nullptr;
+        };
+        //
+        utilities::type const& actual_type() const noexcept {
+            if (auto* p = container.get()) {
+                return p->actual_type();
+            }
+            else {
+                return utilities::type_of<void>();
+            }
+        };
+        utilities::type const& current_type() const noexcept {
+            if (auto* p = container.get()) {
+                return p->current_type();
+            }
+            else {
+                return utilities::type_of<void>();
+            }
+        };
+        // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+        bool can_free_cast(type const& to) const {
+            return current_type().can_free_cast(to) || actual_type().can_free_cast(to);
+        };
+        // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+        bool can_cast(type const& to) const {
+            return current_type().can_cast(to) || actual_type().can_cast(to);
+        };
+
+#pragma region Boolean Operators
+    public:
+        explicit operator bool() const { return (bool)container; };
+        friend bool operator==(const any & a, const any& b) noexcept { return a.container == b.container; };
+        friend bool operator!=(const any& a, const any& b) noexcept { return a.container != b.container; };
+        friend bool operator<(const any& a, const any& b) noexcept { return a.container < b.container; };
+        friend bool operator<=(const any& a, const any& b) noexcept { return a.container <= b.container; };
+        friend bool operator>(const any& a, const any& b) noexcept { return a.container > b.container; };
+        friend bool operator>=(const any& a, const any& b) noexcept { return a.container >= b.container; };
+        friend bool operator==(const any& a, std::nullptr_t) noexcept { return a.container == nullptr; };
+        friend bool operator!=(const any& a, std::nullptr_t) noexcept { return a.container != nullptr; };
+        friend bool operator<(const any& a, std::nullptr_t) noexcept { return a.container < nullptr; };
+        friend bool operator<=(const any& a, std::nullptr_t) noexcept { return a.container <= nullptr; };
+        friend bool operator>(const any& a, std::nullptr_t) noexcept { return a.container > nullptr; };
+        friend bool operator>=(const any& a, std::nullptr_t) noexcept { return a.container >= nullptr; };
+        friend bool operator==(std::nullptr_t, const any& a) noexcept { return nullptr == a.container; };
+        friend bool operator!=(std::nullptr_t, const any& a) noexcept { return nullptr != a.container; };
+        friend bool operator<(std::nullptr_t, const any& a) noexcept { return nullptr < a.container; };
+        friend bool operator<=(std::nullptr_t, const any& a) noexcept { return nullptr <= a.container; };
+        friend bool operator>(std::nullptr_t, const any& a) noexcept { return nullptr > a.container; };
+        friend bool operator>=(std::nullptr_t, const any& a) noexcept { return nullptr >= a.container; };
+#pragma endregion
+
+    public:
+        class DataCaster {
+        public:
+            template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
+
+            template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
+            template<typename T> struct is_SharedPtr_class<utilities::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<utilities::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<utilities::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const utilities::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const utilities::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const utilities::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<utilities::shared_ptr<T>&&> { typedef std::true_type type; };
+
+        private:
+            template <class VType> static decltype(auto) DoCast_StdShared(any* p) noexcept {
+                if (p && p->container) {
+                    utilities::shared_ptr<VType> data = p->container->cast_shared<VType>();
+                    return std::shared_ptr<VType>(data.get(), [P = data](VType*) -> void {});
+                }
+                else {
+                    return std::shared_ptr<VType>{ nullptr };
+                }
+            };
+            template <class VType> static decltype(auto) DoCast_Shared(any* p) noexcept {
+                if (p && p->container) {
+                    return p->container->cast_shared<VType>();
+                }
+                else {
+                    return utilities::shared_ptr<VType>{ nullptr };
+                }
+            };
+            template <class VType> static decltype(auto) DoCast_Shared_Sentinel(any* p) noexcept {
+                throw("Casting Any to  std::shared_ptr<T>* or  std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+            };
+            template<typename VType> static decltype(auto) DoCast_Unshared(any* p) noexcept {
+                constexpr bool is_ptr = std::is_pointer_v<VType>;
+                if (p && p->container) {
+                    if constexpr (is_ptr) {
+                        if (p->container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                            return p->container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                        }
+                        else {
+                            return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
+                        }                            
+                    }
+                    else {
+                        return *p->container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                    }
+                }
+                else {
+                    if constexpr (is_ptr) {
+                        return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
+                    }
+                    else {
+                        throw std::runtime_error("Cannot cast from void to anything");
+                    }
+                }
+            };
+
+        public:
+            template<typename T> static decltype(auto) DoCast(any* p) noexcept {
+                while (p && p->container) {
+                    typedef typename is_SharedPtr_class<T>::type isShared;
+                    typedef typename is_stdSharedPtr_class<T>::type isStdShared;
+
+                    constexpr bool is_shared_ptr = isShared::value;
+                    constexpr bool is_std_shared_ptr = isStdShared::value;
+                    constexpr bool is_ptr = std::is_pointer_v<T>;
+                    constexpr bool is_ref = std::is_reference_v<T>;
+
+                    if constexpr (is_shared_ptr) {
+                        // casting to utilities::shared_ptr
+                        typedef typename type_erasure::get_type<T>::type innertype;
+                        if constexpr (is_ptr) {
+                            throw("Casting Any to utilities::shared_ptr<T>* or utilities::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to stutilitiesd::shared_ptr<T>.");
+                        }
+                        else if constexpr (is_ref) {
+                            throw("Casting Any to utilities::shared_ptr<T>* or utilities::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to utilities::shared_ptr<T>.");
+                        }
+
+                        if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
+                            return DoCast_Shared<innertype>(p);
+                        }
+                        else {
+                            if (p->container->can_cast(type_of<var>())) {
+                                var* ptr = p->container->cast<var>();
+                                if (ptr->p_data) {
+                                    p = &*ptr->p_data;
+                                    continue;
+                                }
+                            }
+                            return DoCast_Shared<innertype>(p);
+                        }
+                    }
+                    else if constexpr (is_std_shared_ptr) {
+                        // casting to std::shared_ptr
+                        typedef typename type_erasure::get_type<T>::type innertype;
+                        if constexpr (is_ptr) {
+                            throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+                        }
+                        else if constexpr (is_ref) {
+                            throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+                        }
+
+                        if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
+                            return DoCast_StdShared<innertype>(p);
+                        }
+                        else {
+                            if (p->container->can_cast(type_of<var>())) {
+                                var* ptr = p->container->cast<var>();
+                                if (ptr->p_data) {
+                                    p = &*ptr->p_data;
+                                    continue;
+                                }
+                            }
+                            return DoCast_StdShared<innertype>(p);
+                        }
+                    }
+                    else {
+                        // casting to a reference or a pointer
+                        if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
+                            return DoCast_Unshared<T>(p);
+                        }
+                        else {
+                            if (p->container->can_cast(type_of<var>())) {
+                                var* ptr = p->container->cast<var>();
+                                if (ptr->p_data) {
+                                    p = &*ptr->p_data;
+                                    continue;
+                                }
+                            }
+                            return DoCast_Unshared<T>(p);
+                        }
+                    }
+                }
+                throw std::runtime_error("Cannot cast from void to anything");
+            };
+
+        };
+
+        template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
+
+        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        any& cast() const noexcept { return *const_cast<any*>(this); };
+
+        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        any* cast() const noexcept { return const_cast<any*>(this); };
+
+        any_cast cast() const noexcept;
+        
+    public:
+        utilities::shared_ptr<type_erasure::any_data> container;
+
+    };
+    class any_cast {
+
+    };
+
+    __forceinline any_cast any::cast() const noexcept {
+        return {};
+    };
+    namespace type_erasure {
+        __forceinline utilities::shared_ptr<any_data> get(const any_cast& obj) { return nullptr; };
+        __forceinline utilities::shared_ptr<any_data> get(const any_cast* t) { return nullptr; };
+    };
+
+};
+
+
+
+
+namespace utilities {
+    class ObjectWrapper {
+    public:
+        enum ObjectState {
+            Normal = 0,
+            Static = 1,
+            Constant = 2
+        };
+
+        ObjectWrapper()
+            : object_state{ nullptr }
+        {};
+        ObjectWrapper(GoodLang::Any obj, int s = 0)
+            : object_state{ GoodLang::make_shared<std::pair<GoodLang::Any, int>>(std::move(obj), s) }
+        {
+            if (auto copy = object_state) {
+                if (copy->first.GetFlag(GoodLang::AnyData::Flag::constant)) {
+                    copy->second |= Constant;
+                }
+                if (copy->second & Constant) {
+                    copy->first.SetFlag(GoodLang::AnyData::Flag::constant, true);
+                }
+            }
+        };
+        ObjectWrapper(ObjectWrapper const&) = default;
+        ObjectWrapper(ObjectWrapper&&) = default;
+        ObjectWrapper& operator=(ObjectWrapper const&) = default;
+        ObjectWrapper& operator=(ObjectWrapper&&) = default;
+        ~ObjectWrapper() = default;
+    private:
+        GoodLang::shared_ptr< std::pair<GoodLang::Any, int> > object_state;
+
+    public:
+        GoodLang::Any* operator->() const {
+            if (auto* p = object_state.get()) {
+                return &p->first;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        GoodLang::Any& operator*() const {
+            return *operator->();
+        };
+
+        bool is_const() const {
+            if (auto copy = object_state) {
+                return copy->second & Constant;
+            }
+            return false;
+        };
+        bool is_static() const {
+            if (auto copy = object_state) {
+                return copy->second & Static;
+            }
+            return false;
+        };
+    };
+
+    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
+    // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.
+    template <typename T> class Callback {
+    public:
+        class ScopedListener {
+        public:
+            ScopedListener()
+                : _index(0), _parent(nullptr) {};
+            ScopedListener(size_t index, Callback& parent) 
+                : _index(index), _parent(&parent) {};
+            ScopedListener(ScopedListener const& rhs) = delete;
+            ScopedListener(ScopedListener&& rhs) 
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent)) 
+            {
+                rhs._index = 0;
+            };
+            ScopedListener& operator=(ScopedListener const& rhs) = delete;
+            ScopedListener& operator=(ScopedListener&& rhs) 
+            {
+                if (_index > 0)
+                    _parent->remove_listener(_index);
+
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+
+                return *this;
+            };            
+            ~ScopedListener() {
+                if (_index > 0)
+                    _parent->remove_listener(_index);
+            };
+
+        private:
+            size_t _index;
+            Callback* _parent;
+        };
+
+    private:
+        struct Wrap { 
+            long alive;
+            long count;
+            T* ptr;
+            size_t call_version;
+        };
+
+        static size_t&
+            _call_version() {
+            static size_t call_version{ 0 };
+            return call_version;
+        };
+        size_t
+            _size{ 0 };
+        concurrency::concurrent_vector<Wrap>
+            _listeners;
+        void (T::*_callback)(long*, size_t);
+        std::atomic<bool>
+            alive{ false };
+
+        // add a listener to the list
+        __declspec(noinline) void add_listener(size_t index, T* p) {
+            if (alive.load()) {
+                if (_size <= index) {
+                    if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
+                    // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
+                    InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
+                }
+                Wrap& wrap = _listeners[index/* - 1*/];
+                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
+                InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
+                InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
+            }
+        };
+        // remove a listener from the list
+        __declspec(noinline) void remove_listener(size_t index) {
+            if (alive.load() && _listeners.size() >= index) {
+                Wrap& wrap = _listeners[index/* - 1*/];
+                InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
+                if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
+                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
+                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
+            }
+        };
+
+    public:
+        Callback(void (T::*listener)(long*, size_t))
+            : _callback{ listener }, alive{ true }
+        {};
+        ~Callback() {
+            alive = false;
+            _listeners.clear();            
+        };
+
+        ScopedListener listener(size_t index, T* p) {
+            add_listener(index, p);
+            return ScopedListener(index, *this);
+        };
+        // callback performed on all listeners
+        __declspec(noinline) void speak(long* parent_alive, size_t call_number = 0) {
+            if (call_number == 0) 
+                call_number = InterlockedIncrement(static_cast<volatile size_t*>(&_call_version()));
+
+            for (size_t i = 0; i < _size; ++i) {
+                Wrap& wrap = _listeners[i];
+                if (wrap.alive) {
+                    if (!parent_alive || *parent_alive) {
+                        if (wrap.call_version >= call_number) { continue; }
+                        else {
+                            InterlockedExchange(static_cast<volatile size_t*>(&wrap.call_version), call_number);
+                        }
+
+                        if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
+                            (wrap.ptr->*_callback)(&wrap.alive, call_number); // _callback(wrap.ptr, &wrap.alive);
+                        InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
+                    }
+                    else break;
+                }                
+            }            
+        };
+    };
+
+    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of TicketDispensor
+    // Prints new tickets as needed, but recycles old tickets as much as possible. 
+    class TicketDispensor {
+    public:
+        class ScopedTicket {
+        public:
+            ScopedTicket()
+                : _index(0), _parent(nullptr) {};
+            ScopedTicket(size_t index, TicketDispensor& parent)
+                : _index(index), _parent(&parent) {};
+            ScopedTicket(ScopedTicket const& rhs) = delete;
+            ScopedTicket(ScopedTicket&& rhs)
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
+            {
+                rhs._index = 0;
+            };
+            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
+            ScopedTicket& operator=(ScopedTicket&& rhs)
+            {
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+                return *this;
+            };
+            ~ScopedTicket() {
+                if (_index)
+                    _parent->return_ticket(_index);
+            };
+
+            size_t _index;
+            TicketDispensor* _parent;            
+        };
+            
+    public:
+        moodycamel::ConcurrentQueue<size_t>
+            queue{};
+        std::atomic<size_t>
+            indexes{ 0 };
+
+    public:
+        size_t num_tickets() const {
+            return indexes.load() + 1;
+        };
+        __declspec(noinline) ScopedTicket get_scoped_ticket() {
+            return ScopedTicket(get_ticket(), *this);
+        };
+        __declspec(noinline) size_t get_ticket() {
+            size_t out;
+            if (!queue.try_pop(out)) {
+                out = ++indexes;
+            }
+            return out;
+        };
+        __declspec(noinline) void return_ticket(size_t ticket) {
+            queue.push(ticket);
+        };
+        void reserve(int n) {
+            std::vector<size_t> tickets;
+            tickets.reserve(n);
+
+            for (int i = 0; i < n; i++) {
+                tickets.push_back(this->get_ticket());
+            }
+            for (auto& x : tickets) {
+                this->return_ticket(x);
+            }
+        };
+    };
+
+
+    // To-Do, need to roll my own Any, Params, etc.
+
+    // class any;
+
+
+
+
+
+};
+
+
+
 namespace utilities{
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
     class FunctionWrapper {
     public:
         enum FunctionState {
@@ -4824,6 +5556,88 @@ int main() {
 
         // Testing utilities::shared_ptr
 #if 1
+        if (1) {
+            utilities::any temp{ 100.0f };
+            auto& x = temp.cast<float>();
+            print(x);
+        }
+        if (1) {
+            utilities::any temp{ utilities::string("TEST")};
+            EXPECT_EQ(temp.cast<float*>(), nullptr);
+            print(temp.cast<utilities::string&>());
+            print(*temp.cast<utilities::string*>());
+            EXPECT_NE(nullptr, temp.cast<utilities::shared_ptr<utilities::string>>());
+            EXPECT_NE(nullptr, temp.cast<std::shared_ptr<utilities::string>>());
+            print(*temp.cast<utilities::shared_ptr<utilities::string>>());
+            print(*temp.cast<std::shared_ptr<utilities::string>>());
+        }
+
+
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(utilities::shared_ptr<utilities::string>(new utilities::string("TEST1a"), [](utilities::string* p) {
+                print("DELETING p");
+                delete p;
+            }), 0) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+
+            auto const_data_shared{ *data_shared + type::Const }; // new type, same data. 
+            print(const_data_shared->current_type().get_name());
+            print(*const_data_shared->cast<utilities::string>());
+            print(*const_data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(utilities::make_shared<const utilities::string>("TEST1b"), 0) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(utilities::make_shared<utilities::string>("TEST1c"), utilities::type::Temporary) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(std::make_shared<utilities::string>("TEST2a"), 0) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(std::make_shared<const utilities::string>("TEST2b"), 0) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(std::make_shared<utilities::string>("TEST2c"), utilities::type::Temporary) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(utilities::string("TEST3a"), 0) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(utilities::string("TEST3b"), utilities::type::Const) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+        if (1) {
+            auto data_shared{ utilities::type_erasure::wrap(utilities::string("TEST3c"), utilities::type::Temporary) };
+            print(data_shared->current_type().get_name());
+            print(*data_shared->cast<utilities::string>());
+            print(*data_shared->cast_shared<utilities::string>());
+        }
+
+
+
         // utilities::shared_pointer is slower than the GoodLang::shared_pointer, BUT has a much lower memory footprint. 
         print("");
         if (1) {
