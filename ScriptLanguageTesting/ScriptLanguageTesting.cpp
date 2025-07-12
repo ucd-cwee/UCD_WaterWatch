@@ -2364,7 +2364,8 @@ namespace utilities {
             Reference = 2,
             Temporary = 4,
             Any = 8,
-            Void = 16
+            Void = 16,
+            Static = 32
         };
 
     protected:
@@ -2440,6 +2441,7 @@ namespace utilities {
         bool is_base() const noexcept { return modifiers == 0; };
         bool is_any() const noexcept { return modifiers & Modifiers::Any; };
         bool is_void() const noexcept { return modifiers & Modifiers::Void; };
+        bool is_static() const noexcept { return modifiers & Modifiers::Static; };
 
         utilities::string get_name() const {
             auto out{ name.remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)") };
@@ -3410,14 +3412,6 @@ namespace utilities {
         template<typename T> static utilities::shared_ptr<any_data> wrap(T&& r, int modifier = 0) { return wrapper::get(std::move(r), modifier); };
     };
 
-
-
-
-
-
-
-
-
     /* type erasure wrapper for sharing literal or shared_ptr objects while managing the intended type (e.g. const, const ref, temp) seperately from the actual object (e.g. a literal) */
     class any {
     public:
@@ -3442,19 +3436,22 @@ namespace utilities {
             : container(type_erasure::wrap(std::move(value), modifier))
         {};
         ~any() = default;
-        any& operator=(const any& rhs) noexcept = default;
-        any& operator=(any&& rhs) noexcept = default;
         any& operator=(std::nullptr_t) noexcept {
             container = nullptr;
             return *this;
         };
-        template <class ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any& operator=(const ValueType & rhs) noexcept {
+        template <class ValueType> any& operator=(const ValueType & rhs) noexcept {
             container = type_erasure::wrap(rhs);
             return *this;
         };
-        template <class ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any& operator=(ValueType && rhs) noexcept {
+        template <class ValueType> any& operator=(ValueType && rhs) noexcept {
             container = type_erasure::wrap(std::move(rhs));
             return *this;
+        };
+        any operator+(int modifier) const {
+            any out;
+            out.container = type_erasure::wrap(*this, current_type().get_modifiers() | modifier);
+            return out;            
         };
 
     public:
@@ -3679,15 +3676,39 @@ namespace utilities {
 
     };
     class any_cast {
+    public:
+        any_cast(const any* _parent) : parent(const_cast<any*>(_parent)) {};
+        any_cast(any_cast&& other) : parent(std::move(other.parent)) {};
+        any_cast() = delete;
+        any_cast(const any_cast&) = delete;
+        any_cast& operator=(const any_cast&) = delete;
+        any_cast& operator=(any_cast&&) = delete;
+        ~any_cast() {};
 
+        explicit operator any& () const noexcept { return *parent; };
+        explicit operator any* () const noexcept { return parent; };
+        template <typename T> operator std::shared_ptr<T>() const noexcept { return parent->cast<std::shared_ptr<T>>(); };
+        template <typename T> operator utilities::shared_ptr<T>() const noexcept { return parent->cast<std::shared_ptr<T>>(); };
+        template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
+        operator ValueTypeT& () const noexcept { return parent->cast<ValueTypeT&>(); };
+        template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
+        operator ValueTypeT* () const noexcept { return parent->cast<ValueTypeT*>(); };
+    
+        any* parent;
     };
 
     __forceinline any_cast any::cast() const noexcept {
-        return {};
+        return any_cast(this);
     };
     namespace type_erasure {
-        __forceinline utilities::shared_ptr<any_data> get(const any_cast& obj) { return nullptr; };
-        __forceinline utilities::shared_ptr<any_data> get(const any_cast* t) { return nullptr; };
+        __forceinline utilities::shared_ptr<any_data> get(const any_cast& obj) { 
+            any* t = const_cast<any*>(obj.parent);
+            if (t) {
+                return t->container;
+            }
+            return nullptr;
+        };
+        __forceinline utilities::shared_ptr<any_data> get(const any_cast* t) { return get(*t); };
     };
 
 };
@@ -3943,14 +3964,6 @@ namespace utilities {
             }
         };
     };
-
-
-    // To-Do, need to roll my own Any, Params, etc.
-
-    // class any;
-
-
-
 
 
 };
@@ -5562,7 +5575,7 @@ int main() {
             print(x);
         }
         if (1) {
-            utilities::any temp{ utilities::string("TEST")};
+            utilities::any temp{ utilities::string("TEST1")};
             EXPECT_EQ(temp.cast<float*>(), nullptr);
             print(temp.cast<utilities::string&>());
             print(*temp.cast<utilities::string*>());
@@ -5570,6 +5583,33 @@ int main() {
             EXPECT_NE(nullptr, temp.cast<std::shared_ptr<utilities::string>>());
             print(*temp.cast<utilities::shared_ptr<utilities::string>>());
             print(*temp.cast<std::shared_ptr<utilities::string>>());
+        }
+
+        if (1) {
+            utilities::any temp{ utilities::make_shared<utilities::string>("TEST2") };
+            EXPECT_EQ(temp.cast<float*>(), nullptr);
+            print(temp.cast<utilities::string&>());
+            print(*temp.cast<utilities::string*>());
+            EXPECT_NE(nullptr, temp.cast<utilities::shared_ptr<utilities::string>>());
+            EXPECT_NE(nullptr, temp.cast<std::shared_ptr<utilities::string>>());
+            print(*temp.cast<utilities::shared_ptr<utilities::string>>());
+            print(*temp.cast<std::shared_ptr<utilities::string>>());
+        }
+
+        if (1) {
+            utilities::any temp{ utilities::make_shared<utilities::string>("TEST3"), utilities::type::Const };
+            print(temp.current_type().get_name()); // const class utilities::string
+            utilities::string& str = temp.cast();
+            print(str);
+        }
+
+        if (1) {
+            utilities::any temp{ utilities::make_shared<utilities::string>("TEST3"), 0 };
+            print(temp.current_type().get_name()); // const class utilities::string
+
+            temp = temp + utilities::type::Const;
+
+            print(temp.current_type().get_name()); // const class utilities::string
         }
 
 
