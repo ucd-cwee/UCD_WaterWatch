@@ -2440,6 +2440,14 @@ namespace utilities {
         friend bool operator<=(const type& a, const type& b) noexcept { return a.get_hash() <= b.get_hash(); };
         friend bool operator>(const type& a, const type& b) noexcept { return a.get_hash() > b.get_hash(); };
         friend bool operator>=(const type& a, const type& b) noexcept { return a.get_hash() >= b.get_hash(); };
+
+        bool operator&(int p_modifiers) const {
+            return modifiers & p_modifiers;
+        };
+        type operator|(int p_modifiers) const {
+            return type(this->underlying_hash, this->modifiers | p_modifiers, this->name, this->copy_constructor, this->constructor_from_value, this->is_value_type);
+        };
+
         bool is_temp() const noexcept { return modifiers & Modifiers::Temporary; };
         bool is_const() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Const); };
         bool is_ref() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Reference); };
@@ -2781,9 +2789,16 @@ namespace utilities {
         };
 
         static auto& aux_default_allocator() {
+            //static constexpr size_t num_allocators = 20;
+            //static std::array<utilities::DelayedInstantiation<utilities::ABA_Problem::EpochAllocator<
+            //    aux_default<T>
+            //    , utilities::ABA_Problem::BlockAlloc<aux_default<T>, 512> // Allocator
+            //>>, num_allocators> alloc{};
+            //return *alloc[(size_t)p % num_allocators];
+
             static utilities::ABA_Problem::EpochAllocator<
                 aux_default<T>
-                , utilities::ABA_Problem::Allocator<aux_default<T>, 1028>
+                , utilities::ABA_Problem::Allocator<aux_default<T>, 512> // Allocator
                 // , moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>
             > alloc{};
             return alloc;
@@ -3752,7 +3767,6 @@ namespace utilities {
             return type(underlying_hash, 0, full_namespace_path, &copy_constructor, &constructor_from_value, false);
         }
     };
-
 };
 
 
@@ -3954,6 +3968,10 @@ namespace utilities {
 
 
 namespace utilities{
+
+
+
+
 
 
 
@@ -5706,17 +5724,23 @@ int main() {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 ptr = nullptr;
             });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
                 ptr = nullptr;
             });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2;
                 ptr2 = ptr;
                 ptr = nullptr;
             });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };
@@ -5914,43 +5938,55 @@ int main() {
 
         if (1) {
             utilities::any obj(GoodLang::Units::inch(12));
-
-            constexpr auto x = std::is_constructible_v<double, GoodLang::Units::inch&>;
-            constexpr auto xx = std::is_base_of_v<GoodLang::Units::value, GoodLang::Units::value>;
-
-            auto& func = utilities::type_of<double>().GetConstructorFromValue();
-            auto container = func.operator()(obj);
-            auto& wrapped = container.cast<double>();
-            (void)(GoodLang::ToString(wrapped));
+            double x; 
+            auto& func = utilities::type_of<decltype(x)>().GetConstructorFromValue();
+            x = func(obj).cast();
+            EXPECT_EQ(GoodLang::Units::math::round(x, 1), GoodLang::Units::math::round(12, 1)); // expected to equal 12 
         }
         if (1) {
-            utilities::any obj(utilities::string("TEST"));
-            print(obj.cast<utilities::string>());
+            utilities::any obj(GoodLang::Units::meter(12));
+            GoodLang::Units::foot x;
+            x = utilities::type_of<decltype(x)>().GetConstructorFromValue()(obj).cast();
+            EXPECT_EQ(x, GoodLang::Units::meter(12));
         }
+        if (1) {
+            utilities::any obj(GoodLang::Units::meter(12));
+            int x;
+            auto result = utilities::type_of<decltype(x)>().GetConstructorFromValue()(obj); // this conversion will fail. We cannot cast from meter to int. meter to double would have worked.
+            EXPECT_EQ(false, result.can_cast(utilities::type_of<int>()));
+        }
+        try {
+            utilities::any obj(GoodLang::Units::meter(12));
+            GoodLang::Units::gallon x;
+            x = utilities::type_of<decltype(x)>().GetConstructorFromValue()(obj).cast();
+            EXPECT_EQ(true, false);
+        }
+        catch (...) { /* fails on purpose -- cannot cast from meter to gallon due to bad unit management. */ }
 
 
         EXPECT_EQ(100, utilities::type_of<int>().GetCopyConstructor()(100).cast<int>());
 
         utilities::types Types; 
         EXPECT_EQ(0, Types.size());
-        Types += utilities::type_of<int>() + utilities::type::Const + utilities::type::Reference;
-        Types += utilities::type_of<int>() + utilities::type::Temporary;
+        Types += utilities::type_of<int>() | utilities::type::Const | utilities::type::Reference;
+        Types += utilities::type_of<int>() | utilities::type::Temporary;
         EXPECT_EQ(2, Types.size());
-        EXPECT_EQ(true, Types[0].is_const_ref());
-        EXPECT_EQ(true, Types[1].is_temp());
-        EXPECT_EQ(true, Types[2].is_void());
+        EXPECT_EQ(true, (bool)(Types[0] & (utilities::type::Const | utilities::type::Reference)));
+        EXPECT_EQ(true, (bool)(Types[1] & utilities::type::Temporary));
+        EXPECT_EQ(true, (bool)(Types[2] & utilities::type::Void));
 
         if (1) {
             utilities::atomic_map<utilities::type, std::string> tree;
             tree[utilities::type_of<int>()] = "int";
             tree[utilities::type_of<int const&>()] = "const int&";
-            tree[utilities::type_of<int>() + utilities::type::Temporary] = "int&&";
+            tree[utilities::type_of<int>() | utilities::type::Temporary] = "int&&";
         }
         if (1) {
             utilities::atomic_unordered_map<utilities::type, std::string> tree;
             tree[utilities::type_of<int>()] = "int";
             tree[utilities::type_of<int const&>()] = "const int&";
             tree[utilities::type_of<int>() + utilities::type::Temporary] = "int&&";
+            EXPECT_EQ(tree[utilities::type_of<int const&>() - (utilities::type::Const | utilities::type::Reference)], "int");
         }
 
 #endif // << NO LEAK
