@@ -684,7 +684,6 @@ namespace utilities {
                 Push(free, t);
             };
 
-
             concurrency::concurrent_vector<block_t>
                 blocks;
             THead<element_t>
@@ -740,8 +739,76 @@ namespace utilities {
                 return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
             };
         };
+    };
 
-        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = concurrency::concurrent_queue<std::pair<long long, _type_*>>>
+    /// <summary>
+    /// Thread-safe lock-free queue. More performant than concurrency's queue, but less performant than moodycamel's queue. 
+    /// However, it requires more memory than concurrency's queue.
+    /// But, it is more predictable and consistant than moodycamel, with guarranteed memory recovery and resists "missing" inserts/withdrawls. 
+    /// Meant to be extremely balanced for most use-cases. 
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    template <typename T> class atomic_queue {
+        struct element_t {
+            T
+                data;
+            element_t*
+                m_pNext;
+        };
+        ABA_Problem::Allocator<element_t, 128, 4, true>
+            allocator;
+        ABA_Problem::THead<element_t>
+            head; // 
+
+    public:
+        void push(T const& obj) {
+            // get a new element
+            element_t* new_ptr;
+            //if constexpr (!std::is_pod<T>::value) {
+            //    // if pod, try to insert it!
+            //    new_ptr = allocator.Alloc(element_t{ obj, nullptr });
+            //}
+            //else {
+                new_ptr = allocator.Alloc();
+                new_ptr->data = obj;
+                new_ptr->m_pNext = nullptr;
+            //}
+
+            ABA_Problem::Push(head, new_ptr);
+        };
+        void push(T&& obj) {
+            // get a new element
+            element_t* new_ptr;
+            //if constexpr (!std::is_pod<T>::value) {
+            //    // if pod, try to insert it!
+            //    new_ptr = allocator.Alloc(element_t{ std::move(obj), nullptr });
+            //}
+            //else {
+                new_ptr = allocator.Alloc();
+                new_ptr->data = std::move(obj);
+                new_ptr->m_pNext = nullptr;
+            //}
+
+            ABA_Problem::Push(head, new_ptr);
+        };
+        bool try_pop(T& out) {
+            if (element_t* ptr = ABA_Problem::Pop(head)) {
+                if constexpr (std::is_move_assignable<T>::value) {
+                    out = std::move(ptr->data);
+                }
+                else {
+                    out = ptr->data;
+                }
+                allocator.Free(ptr);
+                return true;
+            }
+            return false;
+        };
+
+    };
+
+    namespace ABA_Problem {
+        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = atomic_queue<std::pair<long long, _type_*>>>
         class EpochAllocator {
         private:
             class TLS {
@@ -825,18 +892,19 @@ namespace utilities {
             // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
             void RunGC() {
                 static constexpr long long duration_ms{ 5 };
-                static thread_local std::pair<long long, _type_*> out{};
+                
                 if ((GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() - _lastGC) > duration_ms) {
                     InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
 
                     long long _EpochLimit{ std::numeric_limits<long long>::max() };
+                    std::pair<long long, _type_*> out;
 
                     _TLS.for_each([&_EpochLimit](TLS& _tls) {
                         long long L = _tls.EpochLimit;
                         if (L >= 0) {
                             _EpochLimit = std::min<long long>(_EpochLimit, L);
                         }
-                        });
+                    });
 
                     if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
                         while (_delete_list.try_pop(out)) {
@@ -900,6 +968,7 @@ namespace utilities {
 
         };
     };
+
 
     /// <summary>
     /// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
@@ -978,27 +1047,27 @@ namespace utilities {
     template <typename T>
     class DelayedInstantiation {
     private:
-        static ABA_Problem::BlockAlloc<T, 8>& shared_alloc() {
-            static ABA_Problem::BlockAlloc<T, 8> alloc;
-            return alloc;
-        };
+        //static ABA_Problem::BlockAlloc<T, 8>& shared_alloc() {
+        //    static ABA_Problem::BlockAlloc<T, 8> alloc;
+        //    return alloc;
+        //};
         T* ptr{ nullptr };
 
     public:
         DelayedInstantiation() = default;
-        DelayedInstantiation(T const& data) : ptr(shared_alloc().Alloc(data)) {};
-        DelayedInstantiation(T&& data) : ptr(shared_alloc().Alloc(std::move(data))) {};
+        DelayedInstantiation(T const& data) : ptr(new T(data)/*shared_alloc().Alloc(data)*/) {};
+        DelayedInstantiation(T&& data) : ptr(new T(std::move(data))/*shared_alloc().Alloc(std::move(data))*/) {};
         DelayedInstantiation(DelayedInstantiation const&) = delete;
         DelayedInstantiation(DelayedInstantiation&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
         DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
         DelayedInstantiation& operator=(DelayedInstantiation&& rhs) {
-            if (ptr) shared_alloc().Free(ptr);
+            if (ptr) delete ptr; // shared_alloc().Free(ptr);
             ptr = std::move(rhs.ptr);
             rhs.ptr = nullptr;
             return *this;
         };
         ~DelayedInstantiation() {
-            if (ptr) shared_alloc().Free(ptr);
+            if (ptr) delete ptr; // shared_alloc().Free(ptr);
         };
 
         bool valid() const {
@@ -1006,9 +1075,9 @@ namespace utilities {
         };
         T* operator->() const {
             if (!ptr) {
-                if (auto* newPtr = shared_alloc().Alloc()) {
+                if (auto* newPtr = new T()/*shared_alloc().Alloc()*/) {
                     if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
-                        shared_alloc().Free(newPtr);
+                        delete newPtr; // shared_alloc().Free(newPtr);
                     }
                 }
             }
@@ -2798,7 +2867,7 @@ namespace utilities {
 
             static utilities::ABA_Problem::EpochAllocator<
                 aux_default<T>
-                , utilities::ABA_Problem::Allocator<aux_default<T>, 512> // Allocator
+                , utilities::ABA_Problem::BlockAlloc<aux_default<T>, 512> // Allocator
                 // , moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>
             > alloc{};
             return alloc;
@@ -5566,8 +5635,69 @@ int main() {
     using namespace ABA_Problem;
     Stopwatch sw;
 
-    if (true) {
+    while (true) {
         print("STARTING LOOP: \n");
+
+        if (1) {
+            sw.Start();
+            utilities::atomic_queue<int> queue;
+            GoodLang::parallel::For(0, 1000000, [&](int j) {
+                queue.push(j);
+                EXPECT_EQ(queue.try_pop(j), true);
+            });            
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            utilities::atomic_queue<utilities::string> queue;
+            GoodLang::parallel::For(0, 1000000, [&](int const& j) {
+                utilities::string temp = GoodLang::ToString(j);
+                queue.push(temp);
+                EXPECT_EQ(queue.try_pop(temp), true);
+            });            
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
+        if (0) {
+            sw.Start();
+            concurrency::concurrent_queue<int> queue;
+            GoodLang::parallel::For(0, 1000000, [&](int j) {
+                queue.push(j);
+                EXPECT_EQ(queue.try_pop(j), true);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (0) {
+            sw.Start();
+            concurrency::concurrent_queue<utilities::string> queue;
+            GoodLang::parallel::For(0, 1000000, [&](int const& j) {
+                utilities::string temp = GoodLang::ToString(j);
+                queue.push(temp);
+                EXPECT_EQ(queue.try_pop(temp), true);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
+        if (0) {
+            sw.Start();
+            moodycamel::ConcurrentQueue<int> queue;
+            GoodLang::parallel::For(0, 1000000, [&](int j) {
+                queue.push(j);
+                EXPECT_EQ(queue.try_pop(j), true);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (0) {
+            sw.Start();
+            moodycamel::ConcurrentQueue<utilities::string> queue;
+            GoodLang::parallel::For(0, 1000000, [&](int const& j) {
+                utilities::string temp = GoodLang::ToString(j);
+                queue.push(temp);
+                EXPECT_EQ(queue.try_pop(temp), true);
+            });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
 
         // Testing utilities::shared_ptr
 #if 1
@@ -5682,7 +5812,7 @@ int main() {
 
         // utilities::shared_pointer is slower than the GoodLang::shared_pointer, BUT has a much lower memory footprint. 
         print("");
-        if (1) {
+        if (0) {
             using shared_ptr = utilities::shared_ptr<utilities::string>;
             using weak_ptr = utilities::weak_ptr<utilities::string>;
 
@@ -5824,7 +5954,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
-        if (1) {
+        if (0) {
             sw.Start();
             utilities::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             // if you promise no other thread is accessing this pointer, it will use set the pointer to use the correct path for improved speed later.
@@ -5834,7 +5964,7 @@ int main() {
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             GoodLang::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             ptr = GoodLang::shared_ptr<utilities::string>(new utilities::string(""));
@@ -5843,7 +5973,7 @@ int main() {
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             std::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             ptr = std::shared_ptr<utilities::string>(new utilities::string(""));
@@ -5853,7 +5983,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
-        if (1) {
+        if (0) {
             sw.Start();
             utilities::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -5861,7 +5991,7 @@ int main() {
                 });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             GoodLang::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -5869,7 +5999,7 @@ int main() {
                 });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             std::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             GoodLang::parallel::For(0, 1000000, [&](int i) {
@@ -6045,7 +6175,7 @@ int main() {
 #endif // << NO LEAK
 
         // Testing Allocator
-#if 0
+#if 1
         if (1) {
             ABA_Problem::Allocator<size_t>
                 index_allocator;
@@ -6146,7 +6276,7 @@ int main() {
         }
         print("");
         if (1) {
-            ABA_Problem::EpochAllocator<size_t>
+            ABA_Problem::EpochAllocator<size_t, ABA_Problem::Allocator<size_t, 32>>
                 index_allocator;
 
             if (1) {
@@ -6188,7 +6318,7 @@ int main() {
         }
         print("");
         if (1) {
-            ABA_Problem::EpochAllocator<size_t>
+            ABA_Problem::EpochAllocator<size_t, ABA_Problem::Allocator<size_t, 32>>
                 index_allocator;
 
             sw.Start();
@@ -6237,7 +6367,7 @@ int main() {
         print("");
 
         if (1) {
-            ABA_Problem::EpochAllocator<size_t>
+            ABA_Problem::EpochAllocator<size_t, ABA_Problem::Allocator<size_t, 32>>
                 index_allocator;
             auto g{ index_allocator.ProtectCurrentEpoch() };
             for (int i = 0; i < 1000000; ++i) {
@@ -6650,12 +6780,12 @@ int main() {
 #endif // << NO LEAK
 
         // Testing Scopes::Scopes
-#if 1
+#if 0
         if (1) {
             Scopes::RootScope root; // successfully starts a new script root
 
        // >> TEST SCOPES
-#if 1
+#if 0
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto scope{ root.make_scope() };
@@ -6702,7 +6832,7 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
-#if 1
+#if 0
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 switch (i % 3) {
@@ -6765,7 +6895,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 #endif // << NO LEAK
 
-#if 1
+#if 0
             auto s = utilities::string("::std::string::");
             print(s.left_of("d::").c_str());
             print(s.right_of("d::").c_str());
@@ -6854,7 +6984,7 @@ int main() {
 #endif // << NO LEAK
 
        // >> TEST FUNCTION CALLS
-#if 1
+#if 0
             Functions funcs;
             funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 0; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
             funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
@@ -6966,7 +7096,7 @@ int main() {
 #endif // << NO LEAK
 
        // TEST SEARCHING FOR SCOPES
-#if 1
+#if 0
             Scopes::Breadcrumb* nearest;
 
             nearest = nullptr;
