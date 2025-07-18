@@ -3708,7 +3708,10 @@ namespace utilities {
             }
             else if constexpr (std::is_copy_constructible_v<base_type>) {
                 if (from.current_type().get_underlying_hash() == GoodLang::impl::TypeId<base_type>().hash_code()) {
-                    return base_type{ *static_cast<base_type*>(from.ptr()) };
+                    return utilities::any(base_type{ *static_cast<base_type*>(from.ptr()) }, utilities::type::Temporary);
+                }
+                else {
+                    return from;
                 }
             }
             else {
@@ -3721,8 +3724,6 @@ namespace utilities {
             auto& dynObj = from.cast<DynamicObject>();
             return DynamicObject(dynObj);
             <-- scripted objects */
-
-            return from;
         };
         static std::function<utilities::any(utilities::any const&)> constructor_from_value = [](utilities::any const& from) -> utilities::any {
             if constexpr (std::is_same_v<base_type, utilities::any>) {
@@ -3731,7 +3732,7 @@ namespace utilities {
             else if constexpr (std::is_copy_constructible_v<base_type> 
                 && (std::is_constructible_v<base_type, GoodLang::Units::value&> || std::is_assignable_v<base_type, GoodLang::Units::value&>)) {
                 if (from.current_type().is_value()) {
-                    return base_type{ *static_cast<GoodLang::Units::value*>(from.ptr()) };
+                    return utilities::any(base_type{ *static_cast<GoodLang::Units::value*>(from.ptr()) }, utilities::type::Temporary);
                 }
                 return from;
                 //if (from.current_type().get_underlying_hash() == GoodLang::impl::TypeId<GoodLang::Units::value>().hash_code()) {
