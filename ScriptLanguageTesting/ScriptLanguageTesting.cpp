@@ -29,6 +29,267 @@
 #pragma endregion
 
 
+// Callback and TicketDispensor
+namespace utilities {
+    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
+    // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.
+    template <typename T> class Callback {
+    public:
+        class ScopedListener {
+        public:
+            ScopedListener()
+                : _index(0), _parent(nullptr) {};
+            ScopedListener(size_t index, Callback& parent)
+                : _index(index), _parent(&parent) {};
+            ScopedListener(ScopedListener const& rhs) = delete;
+            ScopedListener(ScopedListener&& rhs)
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
+            {
+                rhs._index = 0;
+            };
+            ScopedListener& operator=(ScopedListener const& rhs) = delete;
+            ScopedListener& operator=(ScopedListener&& rhs)
+            {
+                if (_index > 0)
+                    _parent->remove_listener(_index);
+
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+
+                return *this;
+            };
+            ~ScopedListener() {
+                if (_index > 0)
+                    _parent->remove_listener(_index);
+            };
+
+        private:
+            size_t _index;
+            Callback* _parent;
+        };
+
+    private:
+        struct Wrap {
+            long alive;
+            long count;
+            T* ptr;
+            size_t call_version;
+        };
+
+        static size_t&
+            _call_version() {
+            static size_t call_version{ 0 };
+            return call_version;
+        };
+        size_t
+            _size{ 0 };
+        concurrency::concurrent_vector<Wrap>
+            _listeners;
+        void (T::* _callback)(long*, size_t);
+        std::atomic<bool>
+            alive{ false };
+
+        // add a listener to the list
+        __declspec(noinline) void add_listener(size_t index, T* p) {
+            if (alive.load()) {
+                if (_size <= index) {
+                    if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
+                    // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
+                    InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
+                }
+                Wrap& wrap = _listeners[index/* - 1*/];
+                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
+                InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
+                InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
+            }
+        };
+        // remove a listener from the list
+        __declspec(noinline) void remove_listener(size_t index) {
+            if (alive.load() && _listeners.size() >= index) {
+                Wrap& wrap = _listeners[index/* - 1*/];
+                InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
+                if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
+                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
+                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
+            }
+        };
+
+    public:
+        Callback(void (T::* listener)(long*, size_t))
+            : _callback{ listener }, alive{ true }
+        {};
+        ~Callback() {
+            alive = false;
+            _listeners.clear();
+        };
+
+        ScopedListener listener(size_t index, T* p) {
+            add_listener(index, p);
+            return ScopedListener(index, *this);
+        };
+        // callback performed on all listeners
+        __declspec(noinline) void speak(long* parent_alive, size_t call_number = 0) {
+            if (call_number == 0)
+                call_number = InterlockedIncrement(static_cast<volatile size_t*>(&_call_version()));
+
+            for (size_t i = 0; i < _size; ++i) {
+                Wrap& wrap = _listeners[i];
+                if (wrap.alive) {
+                    if (!parent_alive || *parent_alive) {
+                        if (wrap.call_version >= call_number) { continue; }
+                        else {
+                            InterlockedExchange(static_cast<volatile size_t*>(&wrap.call_version), call_number);
+                        }
+
+                        if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
+                            (wrap.ptr->*_callback)(&wrap.alive, call_number); // _callback(wrap.ptr, &wrap.alive);
+                        InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
+                    }
+                    else break;
+                }
+            }
+        };
+    };
+
+    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of TicketDispensor
+    // Prints new tickets as needed, but recycles old tickets as much as possible. 
+    class TicketDispensor {
+    public:
+        class ScopedTicket {
+        public:
+            ScopedTicket()
+                : _index(0), _parent(nullptr) {};
+            ScopedTicket(size_t index, TicketDispensor& parent)
+                : _index(index), _parent(&parent) {};
+            ScopedTicket(ScopedTicket const& rhs) = delete;
+            ScopedTicket(ScopedTicket&& rhs)
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
+            {
+                rhs._index = 0;
+            };
+            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
+            ScopedTicket& operator=(ScopedTicket&& rhs)
+            {
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+                return *this;
+            };
+            ~ScopedTicket() {
+                if (_index)
+                    _parent->return_ticket(_index);
+            };
+
+            size_t _index;
+            TicketDispensor* _parent;
+        };
+
+    public:
+        // utilities::atomic_queue
+        moodycamel::ConcurrentQueue<size_t>
+            queue{};
+        std::atomic<size_t>
+            indexes{ 0 };
+
+    public:
+        size_t num_tickets() const {
+            return indexes.load() + 1;
+        };
+        __declspec(noinline) ScopedTicket get_scoped_ticket() {
+            return ScopedTicket(get_ticket(), *this);
+        };
+        __declspec(noinline) size_t get_ticket() {
+            size_t out;
+            if (!queue.try_pop(out)) {
+                out = ++indexes;
+            }
+            return out;
+        };
+        __declspec(noinline) void return_ticket(size_t ticket) {
+            queue.push(ticket);
+        };
+        void reserve(int n) {
+            std::vector<size_t> tickets;
+            tickets.reserve(n);
+
+            for (int i = 0; i < n; i++) {
+                tickets.push_back(this->get_ticket());
+            }
+            for (auto& x : tickets) {
+                this->return_ticket(x);
+            }
+        };
+    };
+
+    static auto& __thread_alive() {
+        static concurrency::concurrent_unordered_map<size_t, char> map;
+        return map;
+    };
+    static void __set_thread_alive(size_t const& thread, bool setting) {
+        ::InterlockedExchange8(reinterpret_cast<volatile char*>(&__thread_alive()[thread]), setting);
+    };
+    static bool get_thread_alive(size_t const& thread) {
+        return __thread_alive()[thread];
+    };
+    static const size_t& get_thread_id() {
+        static TicketDispensor tickets;
+        thread_local auto scoped_ticket{ tickets.get_scoped_ticket() };
+        __set_thread_alive(scoped_ticket._index, true);
+        thread_local auto scoped_alive{
+            std::shared_ptr<size_t>(new size_t(scoped_ticket._index), [](size_t* p) -> void {
+                __set_thread_alive(*p, false);
+                delete p;
+            })
+        };
+        return scoped_ticket._index;
+    };
+
+    template <typename T> class thread_object final {
+    private:
+        mutable concurrency::concurrent_vector<T> TLS_arr;
+        mutable std::atomic<size_t> size{ 0 };
+
+        static const size_t& GetThreadID() { return get_thread_id(); };
+        auto& GetTLS() { 
+            auto const& index = GetThreadID();
+            if (size_t prevSize = size.load(); prevSize < index) {
+                TLS_arr.grow_to_at_least(index);
+                size.compare_exchange_strong(prevSize, index);
+            }
+            return TLS_arr[index - 1];
+        };
+        auto const& GetTLS() const { 
+            auto const& index = GetThreadID();
+            if (size_t prevSize = size.load(); prevSize < index) {
+                TLS_arr.grow_to_at_least(index);
+                size.compare_exchange_strong(prevSize, index);
+            }
+            return TLS_arr[index - 1];
+        };
+
+    public:
+        bool alive() const {
+            return get_thread_alive(GetThreadID());
+        };
+        T* operator->() { return &GetTLS(); };
+        const T* operator->() const { return &GetTLS(); };
+        T& operator*() { return GetTLS(); };
+        const T& operator*() const { return GetTLS(); };
+        template <typename T> void for_each(T const& func) {
+            for (auto& x : TLS_arr) func(x);
+        };
+        template <typename T> void for_each_alive(T const& func) {
+            size_t index{ 1 };
+            for (auto& x : TLS_arr) {
+                if (__thread_alive()[index++]) {
+                    func(x);
+                }
+            }
+        };
+    };
+};
+
 // utilities::string & utilities::compound_shared_string
 namespace utilities {
     class string {
@@ -589,11 +850,15 @@ namespace utilities {
             struct block_t {
                 element_t
                     elements[BlockSize];
+                block_t*
+                    m_pNext;
             };
 
             // Allocate one new block of contiguous elements
             __declspec(noinline) void AllocBlock() {
-                block_t& block = *blocks.grow_by(1);
+                auto* new_block_ptr = new block_t();
+                ABA_Problem::Push(blocks, new_block_ptr);
+                block_t& block = *new_block_ptr;
 
                 // add the new elements to the list
                 // std::memset(&block->elements[0], 0, sizeof(block_t));
@@ -623,15 +888,16 @@ namespace utilities {
 
             // Release all memory held by all blocks
             __declspec(noinline) void ReleaseBlocks() {
-                if constexpr (!std::is_pod<T>::value) {
-                    for (auto& block : blocks) {
-                        for (auto& element : block.elements) {
+                while (block_t* ptr = ABA_Problem::Pop(blocks)) {
+                    if constexpr (!std::is_pod<T>::value) {
+                        for (auto& element : ptr->elements) {
                             if (element.initialized) {
                                 reinterpret_cast<T*>(&element.data[0])->~T();
                                 element.initialized = false;
                             }
                         }
                     }
+                    delete ptr;                    
                 }
             };
 
@@ -648,7 +914,7 @@ namespace utilities {
             template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
                 element_t* element{ nullptr };
                 while (1) {
-                    if (element = Pop(free)) {
+                    if (element = ABA_Problem::Pop(free)) {
                         element->initialized = true;
                         T* data{ (T*)&element->data[0] };
                         if constexpr (std::is_pod<T>::value) {
@@ -681,10 +947,10 @@ namespace utilities {
                     }
                 }
                 t->initialized = false;
-                Push(free, t);
+                ABA_Problem::Push(free, t);
             };
 
-            concurrency::concurrent_vector<block_t>
+            THead<block_t>
                 blocks;
             THead<element_t>
                 free;
@@ -808,7 +1074,7 @@ namespace utilities {
     };
 
     namespace ABA_Problem {
-        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = atomic_queue<std::pair<long long, _type_*>>>
+        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = moodycamel::ConcurrentQueue/*atomic_queue*/<std::pair<long long, _type_*>>>
         class EpochAllocator {
         private:
             class TLS {
@@ -825,10 +1091,12 @@ namespace utilities {
                     Epoch_1{ -1 }; // youngest Epoch
 
                 long long ForwardEpoch(long long CurrentEpoch) {
-                    EpochLimit = Epoch_3;
-                    Epoch_3 = Epoch_2;
-                    Epoch_2 = Epoch_1;
-                    Epoch_1 = CurrentEpoch;
+                    //if (Epoch_1 != CurrentEpoch) {
+                        EpochLimit = Epoch_3;
+                        Epoch_3 = Epoch_2;
+                        Epoch_2 = Epoch_1;
+                        Epoch_1 = CurrentEpoch;
+                    //}
                     return EpochLimit;
                 };
                 bool EpochCheck(long long CurrentEpoch) {
@@ -883,7 +1151,7 @@ namespace utilities {
                 _alloc;
             DeleteListType
                 _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
-            GoodLang::ThreadLocalInstance<TLS>
+            utilities::thread_object<TLS>
                 _TLS;
             long long
                 _lastGC;
@@ -891,32 +1159,43 @@ namespace utilities {
         public:
             // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
             void RunGC() {
-                static constexpr long long duration_ms{ 5 };
+                static constexpr long long duration_ms{ 1 };
                 
                 if ((GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() - _lastGC) > duration_ms) {
-                    InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
-
                     long long _EpochLimit{ std::numeric_limits<long long>::max() };
                     std::pair<long long, _type_*> out;
 
-                    _TLS.for_each([&_EpochLimit](TLS& _tls) {
-                        long long L = _tls.EpochLimit;
-                        if (L >= 0) {
+                    _TLS.for_each_alive([&_EpochLimit](TLS& _tls) {
+                        if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.Epoch_1) {
                             _EpochLimit = std::min<long long>(_EpochLimit, L);
                         }
                     });
 
+                    // int max_add_back = 99;
                     if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
+                        //std::map< long long, std::set<_type_*>> add_back;
+
                         while (_delete_list.try_pop(out)) {
-                            if (out.first < _EpochLimit) { // deemed safe to delete                                
+                            if (out.first < _EpochLimit) { // deemed safe to delete
                                 _alloc.Free(out.second);
                             }
-                            else { // deemed unsafe to delete just yet                                
-                                _delete_list.push(out); // pushing to the end of the queue is lazy deferred sorting -- literally wasting time and hoping it'll be sorted later-on.
+                            else { // deemed unsafe to delete just yet
+                                _delete_list.push(out);
+                                //add_back[out.first].insert(out.second);
                                 break;
                             }
                         }
-                    }
+
+                        //for (auto& x : add_back) {
+                        //    for (auto& y : x.second) {
+                        //        out.first = x.first;
+                        //        out.second = y;
+                        //        _delete_list.push(out);
+                        //    }
+                        //}  
+                    }   
+
+                    InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
                 }
 
             };
@@ -949,7 +1228,9 @@ namespace utilities {
                 );
             };
             void ProtectCurrentEpoch_Fast() const {
-                const_cast<TLS*>(&*_TLS)->ForwardEpoch(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
+                if (const_cast<TLS*>(&*_TLS)->_scope_count == 0) {
+                    const_cast<TLS*>(&*_TLS)->ForwardEpoch(GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
+                }
             };
 
             // Request a new memory pointer
@@ -968,7 +1249,6 @@ namespace utilities {
 
         };
     };
-
 
     /// <summary>
     /// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
@@ -1044,24 +1324,24 @@ namespace utilities {
         mutable ABA_Problem::THead<T> ptr;
     };
 
+    /// <summary>
+    /// Thread-safe wrapper that only initializes an object when actually used. May simply never initialize an object if never used. 
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
     template <typename T>
     class DelayedInstantiation {
     private:
-        //static ABA_Problem::BlockAlloc<T, 8>& shared_alloc() {
-        //    static ABA_Problem::BlockAlloc<T, 8> alloc;
-        //    return alloc;
-        //};
         T* ptr{ nullptr };
 
     public:
         DelayedInstantiation() = default;
-        DelayedInstantiation(T const& data) : ptr(new T(data)/*shared_alloc().Alloc(data)*/) {};
-        DelayedInstantiation(T&& data) : ptr(new T(std::move(data))/*shared_alloc().Alloc(std::move(data))*/) {};
+        DelayedInstantiation(T const& data) : ptr(new T(data)) {};
+        DelayedInstantiation(T&& data) : ptr(new T(std::move(data))) {};
         DelayedInstantiation(DelayedInstantiation const&) = delete;
         DelayedInstantiation(DelayedInstantiation&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
         DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
         DelayedInstantiation& operator=(DelayedInstantiation&& rhs) {
-            if (ptr) delete ptr; // shared_alloc().Free(ptr);
+            if (ptr) delete ptr;
             ptr = std::move(rhs.ptr);
             rhs.ptr = nullptr;
             return *this;
@@ -1075,9 +1355,9 @@ namespace utilities {
         };
         T* operator->() const {
             if (!ptr) {
-                if (auto* newPtr = new T()/*shared_alloc().Alloc()*/) {
+                if (auto* newPtr = new T()) {
                     if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
-                        delete newPtr; // shared_alloc().Free(newPtr);
+                        delete newPtr;
                     }
                 }
             }
@@ -2867,16 +3147,14 @@ namespace utilities {
 
             static utilities::ABA_Problem::EpochAllocator<
                 aux_default<T>
-                , utilities::ABA_Problem::BlockAlloc<aux_default<T>, 512> // Allocator
-                // , moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>
+                , utilities::ABA_Problem::Allocator<aux_default<T>, 256> // Allocator
             > alloc{};
             return alloc;
         };
         static auto& aux_deleter_allocator() {
             static utilities::ABA_Problem::EpochAllocator<
                 aux_deleter<T>
-                , utilities::ABA_Problem::Allocator<aux_deleter<T>, 1028>
-                // , moodycamel::ConcurrentQueue<std::pair<long long, aux_default<T>*>>
+                , utilities::ABA_Problem::Allocator<aux_deleter<T>, 256>
             > alloc{};
             return alloc;
         };
@@ -3841,220 +4119,9 @@ namespace utilities {
 
 
 
-namespace utilities {
-    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
-    // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.
-    template <typename T> class Callback {
-    public:
-        class ScopedListener {
-        public:
-            ScopedListener()
-                : _index(0), _parent(nullptr) {};
-            ScopedListener(size_t index, Callback& parent) 
-                : _index(index), _parent(&parent) {};
-            ScopedListener(ScopedListener const& rhs) = delete;
-            ScopedListener(ScopedListener&& rhs) 
-                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent)) 
-            {
-                rhs._index = 0;
-            };
-            ScopedListener& operator=(ScopedListener const& rhs) = delete;
-            ScopedListener& operator=(ScopedListener&& rhs) 
-            {
-                if (_index > 0)
-                    _parent->remove_listener(_index);
-
-                _index = std::move(rhs._index);
-                _parent = std::move(rhs._parent);
-                rhs._index = 0;
-
-                return *this;
-            };            
-            ~ScopedListener() {
-                if (_index > 0)
-                    _parent->remove_listener(_index);
-            };
-
-        private:
-            size_t _index;
-            Callback* _parent;
-        };
-
-    private:
-        struct Wrap { 
-            long alive;
-            long count;
-            T* ptr;
-            size_t call_version;
-        };
-
-        static size_t&
-            _call_version() {
-            static size_t call_version{ 0 };
-            return call_version;
-        };
-        size_t
-            _size{ 0 };
-        concurrency::concurrent_vector<Wrap>
-            _listeners;
-        void (T::*_callback)(long*, size_t);
-        std::atomic<bool>
-            alive{ false };
-
-        // add a listener to the list
-        __declspec(noinline) void add_listener(size_t index, T* p) {
-            if (alive.load()) {
-                if (_size <= index) {
-                    if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
-                    // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
-                    InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
-                }
-                Wrap& wrap = _listeners[index/* - 1*/];
-                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
-                InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
-                InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
-            }
-        };
-        // remove a listener from the list
-        __declspec(noinline) void remove_listener(size_t index) {
-            if (alive.load() && _listeners.size() >= index) {
-                Wrap& wrap = _listeners[index/* - 1*/];
-                InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
-                if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
-                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
-                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
-            }
-        };
-
-    public:
-        Callback(void (T::*listener)(long*, size_t))
-            : _callback{ listener }, alive{ true }
-        {};
-        ~Callback() {
-            alive = false;
-            _listeners.clear();            
-        };
-
-        ScopedListener listener(size_t index, T* p) {
-            add_listener(index, p);
-            return ScopedListener(index, *this);
-        };
-        // callback performed on all listeners
-        __declspec(noinline) void speak(long* parent_alive, size_t call_number = 0) {
-            if (call_number == 0) 
-                call_number = InterlockedIncrement(static_cast<volatile size_t*>(&_call_version()));
-
-            for (size_t i = 0; i < _size; ++i) {
-                Wrap& wrap = _listeners[i];
-                if (wrap.alive) {
-                    if (!parent_alive || *parent_alive) {
-                        if (wrap.call_version >= call_number) { continue; }
-                        else {
-                            InterlockedExchange(static_cast<volatile size_t*>(&wrap.call_version), call_number);
-                        }
-
-                        if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
-                            (wrap.ptr->*_callback)(&wrap.alive, call_number); // _callback(wrap.ptr, &wrap.alive);
-                        InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
-                    }
-                    else break;
-                }                
-            }            
-        };
-    };
-
-    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of TicketDispensor
-    // Prints new tickets as needed, but recycles old tickets as much as possible. 
-    class TicketDispensor {
-    public:
-        class ScopedTicket {
-        public:
-            ScopedTicket()
-                : _index(0), _parent(nullptr) {};
-            ScopedTicket(size_t index, TicketDispensor& parent)
-                : _index(index), _parent(&parent) {};
-            ScopedTicket(ScopedTicket const& rhs) = delete;
-            ScopedTicket(ScopedTicket&& rhs)
-                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
-            {
-                rhs._index = 0;
-            };
-            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
-            ScopedTicket& operator=(ScopedTicket&& rhs)
-            {
-                _index = std::move(rhs._index);
-                _parent = std::move(rhs._parent);
-                rhs._index = 0;
-                return *this;
-            };
-            ~ScopedTicket() {
-                if (_index)
-                    _parent->return_ticket(_index);
-            };
-
-            size_t _index;
-            TicketDispensor* _parent;            
-        };
-            
-    public:
-        moodycamel::ConcurrentQueue<size_t>
-            queue{};
-        std::atomic<size_t>
-            indexes{ 0 };
-
-    public:
-        size_t num_tickets() const {
-            return indexes.load() + 1;
-        };
-        __declspec(noinline) ScopedTicket get_scoped_ticket() {
-            return ScopedTicket(get_ticket(), *this);
-        };
-        __declspec(noinline) size_t get_ticket() {
-            size_t out;
-            if (!queue.try_pop(out)) {
-                out = ++indexes;
-            }
-            return out;
-        };
-        __declspec(noinline) void return_ticket(size_t ticket) {
-            queue.push(ticket);
-        };
-        void reserve(int n) {
-            std::vector<size_t> tickets;
-            tickets.reserve(n);
-
-            for (int i = 0; i < n; i++) {
-                tickets.push_back(this->get_ticket());
-            }
-            for (auto& x : tickets) {
-                this->return_ticket(x);
-            }
-        };
-    };
-
-
-};
-
 
 
 namespace utilities{
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
 
 
     class FunctionWrapper {
@@ -5635,6 +5702,33 @@ int main() {
     using namespace ABA_Problem;
     Stopwatch sw;
 
+    if (1) {
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [](int i) {
+            (void)0;
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    }
+    if (1) {
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [](int i) {
+            (void)utilities::get_thread_id();
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    }
+    if (1) {
+        sw.Start();
+        GoodLang::parallel::For(0, 1000000, [](int i) {
+            (void)GoodLang::EpochGarbageCollectorImpl::IDManager::GetThreadID();
+        });
+        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    }
+
+
+
+
+
+
     while (true) {
         print("STARTING LOOP: \n");
 
@@ -5658,7 +5752,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
-        if (0) {
+        if (1) {
             sw.Start();
             concurrency::concurrent_queue<int> queue;
             GoodLang::parallel::For(0, 1000000, [&](int j) {
@@ -5667,7 +5761,7 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (0) {
+        if (1) {
             sw.Start();
             concurrency::concurrent_queue<utilities::string> queue;
             GoodLang::parallel::For(0, 1000000, [&](int const& j) {
@@ -5678,7 +5772,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
-        if (0) {
+        if (1) {
             sw.Start();
             moodycamel::ConcurrentQueue<int> queue;
             GoodLang::parallel::For(0, 1000000, [&](int j) {
@@ -5687,7 +5781,7 @@ int main() {
             });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (0) {
+        if (1) {
             sw.Start();
             moodycamel::ConcurrentQueue<utilities::string> queue;
             GoodLang::parallel::For(0, 1000000, [&](int const& j) {
@@ -5812,7 +5906,7 @@ int main() {
 
         // utilities::shared_pointer is slower than the GoodLang::shared_pointer, BUT has a much lower memory footprint. 
         print("");
-        if (0) {
+        if (1) {
             using shared_ptr = utilities::shared_ptr<utilities::string>;
             using weak_ptr = utilities::weak_ptr<utilities::string>;
 
@@ -5821,6 +5915,8 @@ int main() {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 EXPECT_EQ(ptr, true);
             }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
@@ -5829,6 +5925,8 @@ int main() {
                 ptr2 = nullptr;
                 ptr = nullptr;
             }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2;
@@ -5836,12 +5934,16 @@ int main() {
                 EXPECT_EQ(ptr2, true);
                 EXPECT_EQ(ptr2.get(), ptr.get());
             }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };
                 ptr = ptr2.lock();
                 EXPECT_EQ(ptr, true);
             }
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+            sw.Start();
             for (int i = 0; i < 1000000; ++i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };

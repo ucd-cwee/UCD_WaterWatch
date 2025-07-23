@@ -892,6 +892,9 @@ namespace GoodLang {
 	namespace parallel {
 		/* auto lifetime_object = AsThread([](){ Loop Me While Lifetime Exists! }, [](){ Optionally Do Me When Lifetime Dies, As Clean-Up! }); */
 		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd) {
+#if 1
+			return nullptr;
+#else
 			// Generally speaking, AsThread should not be called from another thread. 
 			// Doing so will likely result in performance penalties. 
 
@@ -1032,6 +1035,7 @@ namespace GoodLang {
 				});
 				return std::static_pointer_cast<void>(lifetime);
 			}
+#endif
 		};
 	};
 

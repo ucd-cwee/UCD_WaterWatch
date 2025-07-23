@@ -23,6 +23,8 @@ namespace GoodLang {
 		return out;
 	};
 	long long EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() {
+		// return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+
 		static long long current_epoch{ std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() };
 		static std::thread update_thread{ []() {
 			while (true) {
