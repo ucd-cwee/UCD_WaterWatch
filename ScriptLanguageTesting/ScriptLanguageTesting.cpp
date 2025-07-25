@@ -251,7 +251,7 @@ namespace utilities {
         mutable std::atomic<size_t> size{ 0 };
 
         static const size_t& GetThreadID() { return get_thread_id(); };
-        auto& GetTLS() { 
+        auto& GetTLS() {
             auto const& index = GetThreadID();
             if (size_t prevSize = size.load(); prevSize < index) {
                 TLS_arr.grow_to_at_least(index);
@@ -259,7 +259,7 @@ namespace utilities {
             }
             return TLS_arr[index - 1];
         };
-        auto const& GetTLS() const { 
+        auto const& GetTLS() const {
             auto const& index = GetThreadID();
             if (size_t prevSize = size.load(); prevSize < index) {
                 TLS_arr.grow_to_at_least(index);
@@ -897,7 +897,7 @@ namespace utilities {
                             }
                         }
                     }
-                    delete ptr;                    
+                    delete ptr;
                 }
             };
 
@@ -1035,9 +1035,9 @@ namespace utilities {
             //    new_ptr = allocator.Alloc(element_t{ obj, nullptr });
             //}
             //else {
-                new_ptr = allocator.Alloc();
-                new_ptr->data = obj;
-                new_ptr->m_pNext = nullptr;
+            new_ptr = allocator.Alloc();
+            new_ptr->data = obj;
+            new_ptr->m_pNext = nullptr;
             //}
 
             ABA_Problem::Push(head, new_ptr);
@@ -1050,9 +1050,9 @@ namespace utilities {
             //    new_ptr = allocator.Alloc(element_t{ std::move(obj), nullptr });
             //}
             //else {
-                new_ptr = allocator.Alloc();
-                new_ptr->data = std::move(obj);
-                new_ptr->m_pNext = nullptr;
+            new_ptr = allocator.Alloc();
+            new_ptr->data = std::move(obj);
+            new_ptr->m_pNext = nullptr;
             //}
 
             ABA_Problem::Push(head, new_ptr);
@@ -1092,10 +1092,10 @@ namespace utilities {
 
                 long long ForwardEpoch(long long CurrentEpoch) {
                     //if (Epoch_1 != CurrentEpoch) {
-                        EpochLimit = Epoch_3;
-                        Epoch_3 = Epoch_2;
-                        Epoch_2 = Epoch_1;
-                        Epoch_1 = CurrentEpoch;
+                    EpochLimit = Epoch_3;
+                    Epoch_3 = Epoch_2;
+                    Epoch_2 = Epoch_1;
+                    Epoch_1 = CurrentEpoch;
                     //}
                     return EpochLimit;
                 };
@@ -1159,8 +1159,8 @@ namespace utilities {
         public:
             // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
             void RunGC() {
-                static constexpr long long duration_ms{ 1 };
-                
+                static constexpr long long duration_ms{ 5 };
+
                 if ((GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() - _lastGC) > duration_ms) {
                     long long _EpochLimit{ std::numeric_limits<long long>::max() };
                     std::pair<long long, _type_*> out;
@@ -1173,27 +1173,27 @@ namespace utilities {
 
                     // int max_add_back = 99;
                     if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
-                        //std::map< long long, std::set<_type_*>> add_back;
+                        std::map< long long, std::set<_type_*>> add_back;
 
                         while (_delete_list.try_pop(out)) {
                             if (out.first < _EpochLimit) { // deemed safe to delete
                                 _alloc.Free(out.second);
                             }
                             else { // deemed unsafe to delete just yet
-                                _delete_list.push(out);
-                                //add_back[out.first].insert(out.second);
-                                break;
+                                //_delete_list.push(out);
+                                 add_back[out.first].insert(out.second);
+                                //break;
                             }
                         }
 
-                        //for (auto& x : add_back) {
-                        //    for (auto& y : x.second) {
-                        //        out.first = x.first;
-                        //        out.second = y;
-                        //        _delete_list.push(out);
-                        //    }
-                        //}  
-                    }   
+                        for (auto& x : add_back) {
+                            for (auto& y : x.second) {
+                                out.first = x.first;
+                                out.second = y;
+                                _delete_list.push(out);
+                            }
+                        }  
+                    }
 
                     InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
                 }
@@ -3315,7 +3315,7 @@ namespace utilities {
 
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...)); };
     template <class _Tto, class _Tfrom> _NODISCARD shared_ptr<_Tto> static_pointer_cast(shared_ptr<_Tfrom> const& F) { return shared_ptr<_Tto>{ F }; };
-    template <class _Tto, class _Tfrom> _NODISCARD shared_ptr<_Tto> static_pointer_cast(shared_ptr<_Tfrom> && F) { return shared_ptr<_Tto>{ std::move(F) }; };
+    template <class _Tto, class _Tfrom> _NODISCARD shared_ptr<_Tto> static_pointer_cast(shared_ptr<_Tfrom>&& F) { return shared_ptr<_Tto>{ std::move(F) }; };
 };
 namespace /* hash */ std {
     template <typename T> struct hash<utilities::shared_ptr<T>> {
@@ -3349,7 +3349,7 @@ namespace utilities {
     };
     class dynamic_object {};
 #if 0
-    
+
 
     // serves as an instance of a customizable class
     class dynamic_object {
@@ -3438,7 +3438,7 @@ namespace utilities {
 
         class any_data {
         public:
-            template<typename T> static shared_ptr<void> encode(const shared_ptr<T>& ptr_in, int& modifiers_out) {
+            template<typename T> static std::shared_ptr<void> encode(const std::shared_ptr<T>& ptr_in, int& modifiers_out) {
                 if constexpr (std::is_void< T >::value) {
                     modifiers_out |= type::Modifiers::Void;
                 }
@@ -3451,9 +3451,9 @@ namespace utilities {
                 if constexpr (std::is_same< T, any >::value || std::is_same< T, const any >::value) {
                     modifiers_out |= type::Modifiers::Any;
                 }
-                return static_pointer_cast<void>(ptr_in);
+                return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(ptr_in));
             };
-            template<typename T> static shared_ptr<void> encode(shared_ptr<T>&& ptr_in, int& modifiers_out) {
+            template<typename T> static std::shared_ptr<void> encode(std::shared_ptr<T>&& ptr_in, int& modifiers_out) {
                 if constexpr (std::is_void< T >::value) {
                     modifiers_out |= type::Modifiers::Void;
                 }
@@ -3466,7 +3466,7 @@ namespace utilities {
                 if constexpr (std::is_same< T, any >::value || std::is_same< T, const any >::value) {
                     modifiers_out |= type::Modifiers::Any;
                 }
-                return static_pointer_cast<void>(std::move(ptr_in));
+                return std::const_pointer_cast<void>(std::static_pointer_cast<const void>(std::move(ptr_in)));
             };
 
         public:
@@ -3479,7 +3479,7 @@ namespace utilities {
             virtual utilities::type const& actual_type() const = 0;
             virtual utilities::type const& current_type() const = 0;
             virtual void* ptr() const = 0;
-            virtual utilities::shared_ptr<void> const& shared_ptr() const = 0;
+            virtual std::shared_ptr<void> const& shared_ptr() const = 0;
 
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const {
@@ -3495,58 +3495,13 @@ namespace utilities {
                     return static_cast<T*>(this->ptr());
                 throw std::runtime_error(GoodLang::printf("Could not cast from %s to %s", this->current_type().get_name().c_str().data(), utilities::type_of<T>().get_name().c_str().data()));
             };
-            template <typename T> utilities::shared_ptr<T> cast_shared(bool nothrow = false) const {
+            template <typename T> std::shared_ptr<T> cast_shared(bool nothrow = false) const {
                 if (nothrow || can_cast(utilities::type_of<T>()))
-                    return utilities::static_pointer_cast<T>(this->shared_ptr());
+                    return std::static_pointer_cast<T>(this->shared_ptr());
                 throw std::runtime_error(GoodLang::printf("Could not cast from %s to %s", this->current_type().get_name().c_str().data(), utilities::type_of<T>().get_name().c_str().data()));
             };
 
             virtual utilities::shared_ptr<any_data> operator+(int modifier) const = 0;
-        };
-
-        template <typename T> // type-erasure which hosts utilities::shared_ptr<T>
-        class any_data_shared final : public any_data {
-        public:
-            any_data_shared() noexcept
-                : any_data()
-                , m_obj()
-                , m_current_type(utilities::type_of<void>())
-            {};
-            any_data_shared(utilities::shared_ptr<T> const& t_obj, int t_modifiers = 0) noexcept
-                : any_data()
-                , m_obj(any_data::encode<T>(t_obj, t_modifiers))
-            {
-                m_current_type = utilities::type_of<T>() + t_modifiers;
-            };
-            any_data_shared(utilities::shared_ptr<T>&& t_obj, int t_modifiers = 0) noexcept
-                : any_data()
-                , m_obj(any_data::encode<T>(std::move(t_obj), t_modifiers))
-            {
-                m_current_type = utilities::type_of<T>() + t_modifiers;
-            };
-            any_data_shared(any_data_shared const&) = delete;
-            any_data_shared(any_data_shared&&) = delete;
-            any_data_shared& operator=(any_data_shared const&) = delete;
-            any_data_shared& operator=(any_data_shared&&) = delete;
-            ~any_data_shared() = default;
-            utilities::type const& actual_type() const override {
-                return utilities::type_of<T>();
-            };
-            utilities::type const& current_type() const override {
-                return m_current_type;
-            };
-            void* ptr() const override { return m_obj.get(); };
-            utilities::shared_ptr<void> const& shared_ptr() const override {
-                return m_obj;
-            };
-            utilities::shared_ptr<any_data> operator+(int modifier) const override {
-                return utilities::make_shared<any_data_shared<T>>(utilities::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
-            };
-
-        private:
-            utilities::shared_ptr<void> m_obj; // underlying data
-            type m_current_type;
-
         };
 
         template <typename T> // type-erasure which hosts std::shared_ptr<T>
@@ -3559,9 +3514,13 @@ namespace utilities {
             {};
             any_data_std_shared(std::shared_ptr<T> const& t_obj, int t_modifiers = 0) noexcept
                 : any_data()
-                , m_obj(any_data::encode<T>(utilities::shared_ptr<T>(const_cast<T*>(t_obj.get()), [ptr = t_obj](T* p) {
-                (void)ptr.get();
-                    }), t_modifiers))
+                , m_obj(any_data::encode<T>(t_obj, t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+            any_data_std_shared(std::shared_ptr<T>&& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(std::move(t_obj), t_modifiers))
             {
                 m_current_type = utilities::type_of<T>() + t_modifiers;
             };
@@ -3570,7 +3529,6 @@ namespace utilities {
             any_data_std_shared& operator=(any_data_std_shared const&) = delete;
             any_data_std_shared& operator=(any_data_std_shared&&) = delete;
             ~any_data_std_shared() = default;
-
             utilities::type const& actual_type() const override {
                 return utilities::type_of<T>();
             };
@@ -3578,15 +3536,57 @@ namespace utilities {
                 return m_current_type;
             };
             void* ptr() const override { return m_obj.get(); };
-            utilities::shared_ptr<void> const& shared_ptr() const override {
+            std::shared_ptr<void> const& shared_ptr() const override {
                 return m_obj;
             };
             utilities::shared_ptr<any_data> operator+(int modifier) const override {
-                return utilities::make_shared<any_data_shared<T>>(utilities::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+                return utilities::make_shared<any_data_std_shared<T>>(std::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
             };
 
         private:
-            utilities::shared_ptr<void> m_obj; // underlying data
+            std::shared_ptr<void> m_obj; // underlying data
+            type m_current_type;
+
+        };
+
+        template <typename T> // type-erasure which hosts utilities::shared_ptr<T>
+        class any_data_shared final : public any_data {
+        public:
+            any_data_shared() noexcept
+                : any_data()
+                , m_obj()
+                , m_current_type(utilities::type_of<void>())
+            {};
+            any_data_shared(utilities::shared_ptr<T> const& t_obj, int t_modifiers = 0) noexcept
+                : any_data()
+                , m_obj(any_data::encode<T>(std::shared_ptr<T>(const_cast<T*>(t_obj.get()), [ptr = t_obj](T* p) {
+                (void)ptr.get();
+                    }), t_modifiers))
+            {
+                m_current_type = utilities::type_of<T>() + t_modifiers;
+            };
+                    any_data_shared(any_data_shared const&) = delete;
+                    any_data_shared(any_data_shared&&) = delete;
+                    any_data_shared& operator=(any_data_shared const&) = delete;
+                    any_data_shared& operator=(any_data_shared&&) = delete;
+                    ~any_data_shared() = default;
+
+                    utilities::type const& actual_type() const override {
+                        return utilities::type_of<T>();
+                    };
+                    utilities::type const& current_type() const override {
+                        return m_current_type;
+                    };
+                    void* ptr() const override { return m_obj.get(); };
+                    std::shared_ptr<void> const& shared_ptr() const override {
+                        return m_obj;
+                    };
+                    utilities::shared_ptr<any_data> operator+(int modifier) const override {
+                        return utilities::make_shared<any_data_std_shared<T>>(std::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+                    };
+
+        private:
+            std::shared_ptr<void> m_obj; // underlying data
             type m_current_type;
 
         };
@@ -3601,13 +3601,13 @@ namespace utilities {
             {};
             any_data_instanced(T const& t_obj, int t_modifiers = 0) noexcept
                 : any_data()
-                , m_obj(any_data::encode<T>(utilities::make_shared<T>(t_obj), t_modifiers))
+                , m_obj(any_data::encode<T>(std::make_shared<T>(t_obj), t_modifiers))
             {
                 m_current_type = utilities::type_of<T>() + t_modifiers;
             };
             any_data_instanced(T&& t_obj, int t_modifiers = 0) noexcept
                 : any_data()
-                , m_obj(any_data::encode<T>(utilities::make_shared<T>(std::move(t_obj)), t_modifiers))
+                , m_obj(any_data::encode<T>(std::make_shared<T>(std::move(t_obj)), t_modifiers))
             {
                 m_current_type = utilities::type_of<T>() + t_modifiers;
             };
@@ -3623,15 +3623,15 @@ namespace utilities {
                 return m_current_type;
             };
             void* ptr() const override { return m_obj.get(); };
-            utilities::shared_ptr<void> const& shared_ptr() const override {
+            std::shared_ptr<void> const& shared_ptr() const override {
                 return m_obj;
             };
             utilities::shared_ptr<any_data> operator+(int modifier) const override {
-                return utilities::make_shared<any_data_shared<T>>(utilities::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+                return utilities::make_shared<any_data_std_shared<T>>(std::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
             };
 
         private:
-            utilities::shared_ptr<void> m_obj; // underlying data
+            std::shared_ptr<void> m_obj; // underlying data
             type m_current_type;
 
         };
@@ -3646,7 +3646,7 @@ namespace utilities {
                             return obj->container;
                         }
                         else {
-                            return *obj->container + modifier; 
+                            return *obj->container + modifier;
                         }
                     }
                     else {
@@ -3665,9 +3665,9 @@ namespace utilities {
                     return nullptr; // return null if incoming is null
                 }
             };
-                                    
-            template<typename T, typename = std::enable_if_t<!std::is_same_v<any_cast, T>>> 
-            static utilities::shared_ptr<any_data> get(const T& obj, int modifier) {                
+
+            template<typename T, typename = std::enable_if_t<!std::is_same_v<any_cast, T>>>
+            static utilities::shared_ptr<any_data> get(const T& obj, int modifier) {
                 if constexpr (std::is_same<utilities::any, T>::value) {
                     // return self
                     if (modifier == 0 || !obj.container) {
@@ -3684,7 +3684,7 @@ namespace utilities {
 
             template<typename T, typename = std::enable_if_t<!std::is_same_v<any_cast, T>>>
             static utilities::shared_ptr<any_data> get(T&& obj, int modifier) {
-                if constexpr (std::is_same<utilities::any, T>::value) {                    
+                if constexpr (std::is_same<utilities::any, T>::value) {
                     // return self
                     if (modifier == 0 || !obj.container) {
                         return obj.container;
@@ -3706,7 +3706,9 @@ namespace utilities {
         template<typename T> static utilities::shared_ptr<any_data> wrap(T&& r, int modifier = 0) { return wrapper::get(std::move(r), modifier); };
     };
 
-    /* type erasure wrapper for sharing literal or shared_ptr objects while managing the intended type (e.g. const, const ref, temp) seperately from the actual object (e.g. a literal) */
+    /* Type-erasure wrapper for sharing literal or shared_ptr objects while managing the intended type (e.g. const, const ref, temp) seperately from the actual object (e.g. a literal). 
+    Thread-safe for overwritting overwriting, clearing, casting, etc.
+    This thread-safety comes at a cost, however, and is about 10x less memory- and CPU-performant than the single-threaded version. */
     class any {
     public:
         any() noexcept
@@ -3734,18 +3736,18 @@ namespace utilities {
             container = nullptr;
             return *this;
         };
-        template <class ValueType> any& operator=(const ValueType & rhs) noexcept {
+        template <class ValueType> any& operator=(const ValueType& rhs) noexcept {
             container = type_erasure::wrap(rhs);
             return *this;
         };
-        template <class ValueType> any& operator=(ValueType && rhs) noexcept {
+        template <class ValueType> any& operator=(ValueType&& rhs) noexcept {
             container = type_erasure::wrap(std::move(rhs));
             return *this;
         };
         any operator+(int modifier) const {
             any out;
             out.container = type_erasure::wrap(*this, current_type().get_modifiers() | modifier);
-            return out;            
+            return out;
         };
 
     public:
@@ -3786,7 +3788,7 @@ namespace utilities {
 #pragma region Boolean Operators
     public:
         explicit operator bool() const { return (bool)container; };
-        friend bool operator==(const any & a, const any& b) noexcept { return a.container == b.container; };
+        friend bool operator==(const any& a, const any& b) noexcept { return a.container == b.container; };
         friend bool operator!=(const any& a, const any& b) noexcept { return a.container != b.container; };
         friend bool operator<(const any& a, const any& b) noexcept { return a.container < b.container; };
         friend bool operator<=(const any& a, const any& b) noexcept { return a.container <= b.container; };
@@ -3828,21 +3830,21 @@ namespace utilities {
             template<typename T> struct is_SharedPtr_class<utilities::shared_ptr<T>&&> { typedef std::true_type type; };
 
         private:
-            template <class VType> static decltype(auto) DoCast_StdShared(any* p) noexcept {
+            template <class VType> static decltype(auto) DoCast_Shared(any* p) noexcept {
                 if (p && p->container) {
-                    utilities::shared_ptr<VType> data = p->container->cast_shared<VType>();
-                    return std::shared_ptr<VType>(data.get(), [P = data](VType*) -> void {});
+                    std::shared_ptr<VType> data = p->container->cast_shared<VType>();
+                    return utilities::shared_ptr<VType>(data.get(), [P = data](VType*) -> void {});
                 }
                 else {
-                    return std::shared_ptr<VType>{ nullptr };
+                    return utilities::shared_ptr<VType>{ nullptr };
                 }
             };
-            template <class VType> static decltype(auto) DoCast_Shared(any* p) noexcept {
+            template <class VType> static decltype(auto) DoCast_StdShared(any* p) noexcept {
                 if (p && p->container) {
                     return p->container->cast_shared<VType>();
                 }
                 else {
-                    return utilities::shared_ptr<VType>{ nullptr };
+                    return std::shared_ptr<VType>{ nullptr };
                 }
             };
             template <class VType> static decltype(auto) DoCast_Shared_Sentinel(any* p) noexcept {
@@ -3857,7 +3859,7 @@ namespace utilities {
                         }
                         else {
                             return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
-                        }                            
+                        }
                     }
                     else {
                         return *p->container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
@@ -3973,7 +3975,7 @@ namespace utilities {
         any* cast() const noexcept { return const_cast<any*>(this); };
 
         any_cast cast() const noexcept;
-        
+
     public:
         utilities::shared_ptr<type_erasure::any_data> container;
 
@@ -3996,7 +3998,7 @@ namespace utilities {
         operator ValueTypeT& () const noexcept { return parent->cast<ValueTypeT&>(); };
         template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
         operator ValueTypeT* () const noexcept { return parent->cast<ValueTypeT*>(); };
-    
+
         any* parent;
     };
 
@@ -4004,7 +4006,7 @@ namespace utilities {
         return any_cast(this);
     };
     namespace type_erasure {
-        __forceinline utilities::shared_ptr<any_data> get(const any_cast& obj) { 
+        __forceinline utilities::shared_ptr<any_data> get(const any_cast& obj) {
             any* t = const_cast<any*>(obj.parent);
             if (t) {
                 return t->container;
@@ -4076,7 +4078,7 @@ namespace utilities {
             if constexpr (std::is_same_v<base_type, utilities::any>) {
                 return from;
             }
-            else if constexpr (std::is_copy_constructible_v<base_type> 
+            else if constexpr (std::is_copy_constructible_v<base_type>
                 && (std::is_constructible_v<base_type, GoodLang::Units::value&> || std::is_assignable_v<base_type, GoodLang::Units::value&>)) {
                 if (from.current_type().is_value()) {
                     return utilities::any(base_type{ *static_cast<GoodLang::Units::value*>(from.ptr()) }, utilities::type::Temporary);
@@ -4121,9 +4123,7 @@ namespace utilities {
 
 
 
-namespace utilities{
-
-
+namespace utilities {
     class FunctionWrapper {
     public:
         enum FunctionState {
@@ -4142,9 +4142,9 @@ namespace utilities{
             , default_values(std::move(defaults))
         {};
 
-        GoodLang::Proxy_Function 
+        GoodLang::Proxy_Function
             function{ nullptr };
-        int 
+        int
             state{ 0 }; // combination(s) of FunctionState(s)
         mutable GoodLang::Units::value
             cost{ std::numeric_limits<double>::max() }; // often associated to a cache
@@ -4165,7 +4165,7 @@ namespace utilities{
         };
         bool is_explicit() const {
             return state & Explicit;
-        };      
+        };
         bool is_cached() const {
             return state & Cached;
         };
@@ -4173,7 +4173,7 @@ namespace utilities{
         // Given index (lef tto right), will return the default value for it, if available. Otherwise nullptr.
         const GoodLang::Any* get_default(size_t index) const {
             if ((index < default_values.size()) && default_values[index])
-                return &default_values[index];            
+                return &default_values[index];
             return nullptr;
         };
 
@@ -4210,7 +4210,7 @@ namespace utilities{
                 return std::numeric_limits<double>::max();
             }
         };
-        GoodLang::Any call(std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) const  {
+        GoodLang::Any call(std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) const {
             if (function) {
                 if (function->GetSignature().Arguments().size() <= params.size()) {
                     // perfection
@@ -4284,7 +4284,7 @@ namespace utilities{
                 if (auto FunctionSortPtr = functionMapPtr->second.find(params), e2 = functionMapPtr->second.end(); FunctionSortPtr != e2) {
                     return FunctionSortPtr->second;
                 }
-            }            
+            }
             return out;
         };
 
@@ -4334,7 +4334,7 @@ namespace utilities{
                         *finalCost = func.determine_cost(paramTypes, m_typeConverters);// func.cost();
                     }
                     return func;
-                }                
+                }
             }
 #endif
             if (1) {
@@ -4345,7 +4345,7 @@ namespace utilities{
                 defer(candidates.clear());
 
                 // Create candidates.
-                {               
+                {
                     if (functionName.size() > 0) {
                         for (auto& function : m_functions[functionName]) {
                             if (!function.second.function) continue; // not valid
@@ -4435,7 +4435,7 @@ namespace utilities{
                                         else if (pair.first == conversionCost) {
                                             // This indicates that one of these functions is "unclear" to be better or worse for this set of parameters...
                                             // C++ would have thrown an error due to the ambiguity, to encourage the user to write more clear code.
-                                            
+
                                             // To-Do, improve the error code to be more explicit, or try to find another way to distinguish functions? 
                                             auto& incomingFunctionArgs = function.second.function->GetSignature().Arguments();
                                             auto& existingFunctionArgs = pair.second->function->GetSignature().Arguments();
@@ -4509,7 +4509,7 @@ namespace utilities{
                                                         }
                                                     }
                                                 }
-                                            }  
+                                            }
                                         }
                                     }
                                     else {
@@ -4545,7 +4545,7 @@ namespace utilities{
 
 
                         }
-                    }                    
+                    }
                 }
                 for (long long num_param = (long long)(params.size()) - 1; num_param >= 0; --num_param) {
                     if (auto f = candidates.find(num_param); f != candidates.end()) {
@@ -4570,7 +4570,7 @@ namespace utilities{
                     }
                 }
             }
-            return null_func;        
+            return null_func;
         };
         GoodLang::Any Call(utilities::string const& functionName, std::vector<GoodLang::Any> const& params, GoodLang::TypeConverter& m_typeConverters) {
             if (auto const& f = BuildMatch(functionName, GoodLang::ParamTypes(params), m_typeConverters); f.function) {
@@ -4641,7 +4641,7 @@ public:
 private:
     // Identity of an individual scope
     class ScopeID {
-    friend class Breadcrumb;
+        friend class Breadcrumb;
     public:
         utilities::string
             scope_name; // e.g. "Color"
@@ -4654,13 +4654,13 @@ private:
             scope_type; // may be a compound of multiple types, e.g. a root is also a namespace
 
     public:
-        ScopeID(utilities::string && scope_name_p = {}, int scope_type_p = ScopeType::Basic)
+        ScopeID(utilities::string&& scope_name_p = {}, int scope_type_p = ScopeType::Basic)
             : scope_name{ std::move(scope_name_p) }
-            , scope{ nullptr }            
+            , scope{ nullptr }
             , current_namespace{ utilities::string::empty_string() }
             , scope_type{ std::move(scope_type_p) }
         {}
-        ScopeID(ScopeID&& rhs) 
+        ScopeID(ScopeID&& rhs)
             : scope_name{ std::move(rhs.scope_name) }
             , scope{ std::move(rhs.scope) }
             , scope_type{ std::move(rhs.scope_type) }
@@ -4760,7 +4760,7 @@ public:
             }
         };
         Breadcrumb(Breadcrumb const&) = delete;
-        Breadcrumb(Breadcrumb &&) = delete;
+        Breadcrumb(Breadcrumb&&) = delete;
         Breadcrumb& operator=(Breadcrumb const&) = delete;
         Breadcrumb& operator=(Breadcrumb&&) = delete;
         ~Breadcrumb() {
@@ -4782,7 +4782,7 @@ public:
     public:
         Cache() = default;
         Cache(Cache const&) = delete;
-        Cache(Cache &&) = delete;
+        Cache(Cache&&) = delete;
         Cache& operator=(Cache const&) = delete;
         Cache& operator=(Cache&&) = delete;
         ~Cache() = default;
@@ -4801,12 +4801,13 @@ public:
                         InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
                         success = true;
                     }
-                })) {};
+                    })) {
+                };
                 if (!success) {
                     (void)_current_cache.operator[](cache_version); // default-initializes the item at the specified index if it does not already exist. 
                     _current_cache.pop_front_if([&](size_t curr_version, std::array<utilities::DelayedInstantiation<ResultForInputType>, numCategories>& cache) -> bool {
-                         return curr_version < cache_version;
-                    });
+                        return curr_version < cache_version;
+                        });
                 }
             }
         };
@@ -4825,7 +4826,7 @@ public:
 
                     // out = cache[category]->operator[](input_hash);
                 }
-            });
+                });
             return out;
         };
 
@@ -4835,11 +4836,11 @@ public:
     /// Foundational element of a scope. Should not be created on its own, and instead should be issued by a parent.
     /// </summary>
     class BasicScope {
-    friend class NamespaceScope;
-    friend class RootScope;
-    friend class Breadcrumb;
+        friend class NamespaceScope;
+        friend class RootScope;
+        friend class Breadcrumb;
     protected:
-        Breadcrumb 
+        Breadcrumb
             breadcrumb_m;
         concurrency::concurrent_unordered_map<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>
             using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
@@ -4855,8 +4856,8 @@ public:
             return true;
         };
         utilities::any* GetObject_Impl(utilities::string const& sv) {
-            if (auto f = objects_m.find(sv), e = objects_m.end(); f != e) 
-                return &f->second;            
+            if (auto f = objects_m.find(sv), e = objects_m.end(); f != e)
+                return &f->second;
             return nullptr;
         };
         virtual void AddUsing_Impl(Breadcrumb* scope) {
@@ -4864,8 +4865,8 @@ public:
                 if (scope->this_m.is_namespace()) {
                     //if (auto f = using_m->find(scope); f == using_m->end()) {
                     using_m.insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, utilities::Callback<NamespaceScope>::ScopedListener() });
-                        invalidate_cache(); // does nothing for normal scopes
-                    //}
+                    invalidate_cache(); // does nothing for normal scopes
+                //}
                 }
             }
         };
@@ -4917,7 +4918,7 @@ public:
                 return nullptr;
             }
         };
-       
+
     protected:
         enum CheckFlagState {
             none = 0,
@@ -4974,7 +4975,7 @@ public:
 
                 auto res = func(&selfPtr, searchState);
                 if (res & SearchResult::Success) {
-                    finalResult = &selfPtr;               
+                    finalResult = &selfPtr;
                     return finalResult;
                 }
                 else if (res & SearchResult::StaticFailure) {
@@ -4984,12 +4985,12 @@ public:
             }
 
             // test my personal "using" namespaces completely
-            if (using_m.size() > 0ull){
+            if (using_m.size() > 0ull) {
                 for (auto& childNamespace : using_m) {
                     if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                         return finalResult;
-                    }  
+                    }
                 }
             }
 
@@ -5064,7 +5065,7 @@ public:
                             if (flag & CheckFlagState::all) { continue; }
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                 return finalResult;
-                            }     
+                            }
                         }
                     }
                 }
@@ -5101,7 +5102,7 @@ public:
                             if (flag2 & CheckFlagState::all) continue;
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                 return finalResult;
-                            }   
+                            }
                         }
                     }
                 }
@@ -5122,7 +5123,7 @@ public:
                                 return finalResult;
                             }
                         }
-                        
+
                     }
                 }
             }
@@ -5187,7 +5188,7 @@ public:
         BasicScope make_scope() const {
             return BasicScope("", Scopes::ScopeType::Basic, const_cast<Breadcrumb*>(&this->breadcrumb_m));
         };
-        
+
         /// <summary>
         /// Instruct this scope to "use" the provided namespace when searching for objects, functions, or other scopes by name. 
         /// If this scope is a namespace, this will reset the search cache.
@@ -5200,7 +5201,7 @@ public:
                 this->AddUsing_Impl(const_cast<Breadcrumb*>(&p->breadcrumb_m));
             }
         }
-        
+
         /// <summary>
         /// Insert an object into this scope only if it does not yet exist. Does not search neighbors or review the object name.
         /// </summary>
@@ -5210,7 +5211,7 @@ public:
         bool insert_object_here(utilities::string const& sv, utilities::any&& Obj) {
             return this->EmplaceObject_Impl<false>(sv, std::move(Obj));
         };
-        
+
         /// <summary>
         /// Emplace an object into this scope whether or not it exists. Does not search neighbors or review the object name.
         /// </summary>
@@ -5220,7 +5221,7 @@ public:
         bool emplace_object_here(utilities::string const& sv, utilities::any&& Obj) {
             return this->EmplaceObject_Impl<true>(sv, std::move(Obj));
         };
-        
+
         /// <summary>
         /// Try to find an object in this scope. Does not search neighbors or review the object name. Since objects cannot be removed, it safely returns a pointer. 
         /// </summary>
@@ -5235,13 +5236,13 @@ public:
             if (auto* cache = NS->search_cache.TryGetCache<0>(NS->cache_version, Name.hash())) {
                 return cache;
             }
-            
+
             if (auto* out = FindNamespace(
                 utilities::compound_shared_string("::", Name.remove_leading_and_trailing(':'), "::"), // "std" or "::std" or "::std::" -> "::std::" 
                 &const_cast<BasicScope*>(this)->breadcrumb_m // where
             )) {
                 NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), out);
-                return out;                
+                return out;
             }
             else {
                 return nullptr;
@@ -5256,14 +5257,14 @@ public:
             else {
                 if (!nearest_scope) nearest_scope = this->breadcrumb_m.root_m;
                 const auto& [left, right] = Name.remove_leading_and_trailing(':').left_and_right_of_last("::");
-                if (right.length() > 0) {                    
+                if (right.length() > 0) {
                     if (auto* out = FindNamespaceImpl(left, nearest_scope)) {
                         nearest_scope = out;
                         return out->this_m.scope->FindNamespaceImpl(right, nearest_scope);
                     }
                     else {
                         return nullptr;
-                    }                    
+                    }
                 }
                 else {
                     // no colons inside
@@ -5300,8 +5301,8 @@ public:
                     }
                     else {
                         return SearchResult::Failure;
-                    }                    
-                }, nullptr, SearchState::SkipChildren)) {
+                    }
+                    }, nullptr, SearchState::SkipChildren)) {
                     return p;
                 }
                 else {
@@ -5353,16 +5354,16 @@ public:
     /// Should not be created on its own, and instead should be issued by a parent.
     /// </summary>
     class NamespaceScope : public BasicScope {
-    friend class BasicScope;
-    friend class RootScope;
-    friend class Breadcrumb;
+        friend class BasicScope;
+        friend class RootScope;
+        friend class Breadcrumb;
     protected:
         // explicit children namespaces, with strongly-held protections to their memory.
         concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
             children; // children cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
 
     protected:
-        Scopes::Cache<4> 
+        Scopes::Cache<4>
             search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
 
     protected:
@@ -5385,7 +5386,7 @@ public:
                     if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
                         using_m.insert(std::pair<Breadcrumb*, utilities::Callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
                         invalidate_cache();
-                    }                    
+                    }
                 }
             }
         };
@@ -5410,8 +5411,8 @@ public:
         void unload() {
             this->connection_for_cache_version = {};
             for (auto& x : this->using_m) x.second = {};
-            for (auto& child : this->children) child.second->unload();            
-            this->children.clear(); 
+            for (auto& child : this->children) child.second->unload();
+            this->children.clear();
         };
 
     protected:
@@ -5591,7 +5592,7 @@ public:
                     auto& flag = check_flags[child_bc->GetScopeIndex()];
 
                     if (flag & CheckFlagState::self) continue;
-                    
+
                     flag |= CheckFlagState::self;
 
                     auto res = func(child_bc, searchState | SearchingChildren | SkipChildren | SkipParent);
@@ -5672,9 +5673,9 @@ public:
     /// The only scope that should be instanced on its own. 
     /// </summary>
     class RootScope : public NamespaceScope {
-    friend class BasicScope; 
-    friend class NamespaceScope;     
-    friend class Breadcrumb;
+        friend class BasicScope;
+        friend class NamespaceScope;
+        friend class Breadcrumb;
     protected:
         // When a scope is born it will get the smallest-possible unique index for itself. 
         // This "ticket" or unique index will be unique to the scope for its life, after which it returns the ticket to here.
@@ -5684,8 +5685,8 @@ public:
             scopes; // namespaces and classes may add themselves to this list (order not guarranteed) to help with debugging or other activities. 
 
     public:
-        RootScope() 
-            : NamespaceScope("::", ScopeType::Basic & ScopeType::Namespace & ScopeType::Root, nullptr)
+        RootScope()
+            : NamespaceScope("::", ScopeType::Basic& ScopeType::Namespace& ScopeType::Root, nullptr)
         {};
         virtual ~RootScope() {
             this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
@@ -5702,28 +5703,87 @@ int main() {
     using namespace ABA_Problem;
     Stopwatch sw;
 
-    if (1) {
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [](int i) {
-            (void)0;
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    if (1) {
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [](int i) {
-            GoodLang::Any Any{ 100.0f };
-            (void)Any.cast<float&>();
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
-    }
-    if (1) {
-        sw.Start();
-        GoodLang::parallel::For(0, 1000000, [](int i) {
-            utilities::any Any{ 100.0f };
-            (void)Any.cast<float&>();
-        });
-        print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+    for (int j = 0; j < 0; ++j) {
+        if (1) {
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                (void)0;
+            });
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                GoodLang::Any Any{ 100.0f };
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                GoodLang::Any Any{ 100.0f };
+                Any.cast<float&>() += 1;
+                *Any.cast<float*>() += 1;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                GoodLang::Any Any{ 100.0f };
+                Any.cast<float&>() += 1;
+                *Any.cast<float*>() += 1;
+                Any = 100;
+                Any.cast<int&>() += 1;
+                *Any.cast<int*>() += 1;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::Any Any{ GoodLang::Units::value(0) };
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Any.cast<GoodLang::Units::value&>() += 1;
+                *Any.cast<GoodLang::Units::value*>() += 1;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+
+        if (1) {
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                utilities::any Any{ 100.0f };
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                utilities::any Any{ 100.0f };
+                Any.cast<float&>() += 1;
+                *Any.cast<float*>() += 1;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            GoodLang::parallel::For(0, 1000000, [](int i) {
+                utilities::any Any{ 100.0f };
+                Any.cast<float&>() += 1;
+                *Any.cast<float*>() += 1;
+                Any = 100;
+                Any.cast<int&>() += 1;
+                *Any.cast<int*>() += 1;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
+        if (1) {
+            sw.Start();
+            utilities::any Any{ GoodLang::Units::value(0) };
+            GoodLang::parallel::For(0, 1000000, [&](int i) {
+                Any.cast<GoodLang::Units::value&>() += 1;
+                *Any.cast<GoodLang::Units::value*>() += 1;
+                });
+            print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
+        }
     }
 
 
@@ -5740,7 +5800,7 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int j) {
                 queue.push(j);
                 EXPECT_EQ(queue.try_pop(j), true);
-            });            
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (1) {
@@ -5750,7 +5810,7 @@ int main() {
                 utilities::string temp = GoodLang::ToString(j);
                 queue.push(temp);
                 EXPECT_EQ(queue.try_pop(temp), true);
-            });            
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
@@ -5760,7 +5820,7 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int j) {
                 queue.push(j);
                 EXPECT_EQ(queue.try_pop(j), true);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (1) {
@@ -5770,7 +5830,7 @@ int main() {
                 utilities::string temp = GoodLang::ToString(j);
                 queue.push(temp);
                 EXPECT_EQ(queue.try_pop(temp), true);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
@@ -5780,7 +5840,7 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int j) {
                 queue.push(j);
                 EXPECT_EQ(queue.try_pop(j), true);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (1) {
@@ -5790,7 +5850,7 @@ int main() {
                 utilities::string temp = GoodLang::ToString(j);
                 queue.push(temp);
                 EXPECT_EQ(queue.try_pop(temp), true);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
@@ -5803,7 +5863,7 @@ int main() {
             print(x);
         }
         if (1) {
-            utilities::any temp{ utilities::string("TEST1")};
+            utilities::any temp{ utilities::string("TEST1") };
             EXPECT_EQ(temp.cast<float*>(), nullptr);
             print(temp.cast<utilities::string&>());
             print(*temp.cast<utilities::string*>());
@@ -5958,14 +6018,14 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 ptr = nullptr;
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
                 ptr = nullptr;
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
@@ -5973,7 +6033,7 @@ int main() {
                 shared_ptr ptr2;
                 ptr2 = ptr;
                 ptr = nullptr;
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [](int i) {
@@ -5982,7 +6042,7 @@ int main() {
                 ptr = ptr2.lock();
                 ptr = nullptr;
                 ptr2 = shared_ptr();
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             if (1) {
@@ -5990,7 +6050,7 @@ int main() {
                 GoodLang::parallel::For(1, 1000000, [&](int i) {
                     temp_ptr = shared_ptr{ new utilities::string(GoodLang::ToString(i)) };
                     // print(temp_ptr->get_var_name());
-                });
+                    });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -6028,32 +6088,32 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 ptr = nullptr;
-            });
+                });
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2{ ptr };
                 ptr = nullptr;
-            });
+                });
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 shared_ptr ptr2;
                 ptr2 = ptr;
                 ptr = nullptr;
-            });
+                });
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 shared_ptr ptr{ new utilities::string(GoodLang::ToString(i)) };
                 weak_ptr ptr2{ ptr };
                 ptr = ptr2.lock();
                 ptr = nullptr;
                 ptr2 = shared_ptr();
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
             sw.Start();
             if (1) {
                 shared_ptr temp_ptr{ new utilities::string(GoodLang::ToString(0)) };
                 GoodLang::parallel::For(1, 1000000, [&](int i) {
                     temp_ptr = shared_ptr{ new utilities::string(GoodLang::ToString(i)) };
-                });
+                    });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -6072,7 +6132,7 @@ int main() {
             sw.Start();
             GoodLang::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             ptr = GoodLang::shared_ptr<utilities::string>(new utilities::string(""));
-            for (int i = 0; i < 1000000; ++i) {                
+            for (int i = 0; i < 1000000; ++i) {
                 (void)ptr->c_str();
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -6081,7 +6141,7 @@ int main() {
             sw.Start();
             std::shared_ptr<utilities::string> ptr{ new utilities::string("") };
             ptr = std::shared_ptr<utilities::string>(new utilities::string(""));
-            for (int i = 0; i < 1000000; ++i) {                
+            for (int i = 0; i < 1000000; ++i) {
                 (void)ptr->c_str();
             };
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -6173,7 +6233,7 @@ int main() {
 
         if (1) {
             utilities::any obj(GoodLang::Units::inch(12));
-            double x; 
+            double x;
             auto& func = utilities::type_of<decltype(x)>().GetConstructorFromValue();
             x = func(obj).cast();
             EXPECT_EQ(GoodLang::Units::math::round(x, 1), GoodLang::Units::math::round(12, 1)); // expected to equal 12 
@@ -6201,7 +6261,7 @@ int main() {
 
         EXPECT_EQ(100, utilities::type_of<int>().GetCopyConstructor()(100).cast<int>());
 
-        utilities::types Types; 
+        utilities::types Types;
         EXPECT_EQ(0, Types.size());
         Types += utilities::type_of<int>() | utilities::type::Const | utilities::type::Reference;
         Types += utilities::type_of<int>() | utilities::type::Temporary;
@@ -6238,10 +6298,10 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 old_ptr = ptr.Set(reinterpret_cast<int*>((size_t)std::rand() + 1));
                 EXPECT_NE(old_ptr, nullptr);
-            });
+                });
 
             old_ptr = ptr.Set(nullptr);
-            EXPECT_NE(old_ptr, nullptr);            
+            EXPECT_NE(old_ptr, nullptr);
         }
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         sw.Start();
@@ -6386,7 +6446,7 @@ int main() {
             if (1) {
                 auto iterator = GoodLang::CustomizedSequence(std::function([](size_t pos) -> std::pair<size_t, size_t> {
                     return { pos, pos };
-                }), 1000000ull);
+                    }), 1000000ull);
                 utilities::atomic_map<size_t, size_t> map;
                 map.insert_bulk(iterator.begin(), iterator.end());
                 EXPECT_EQ(map.size(), 1000000ull);
@@ -6495,7 +6555,7 @@ int main() {
             }
             for (char c = 'A'; c <= 'Z'; ++c) {
                 tree.Add(std::string(1, c), (int)c);
-               // print(*tree.Find((int)c));
+                // print(*tree.Find((int)c));
             }
             for (char c = '0'; c <= '9'; ++c) {
                 EXPECT_EQ(nullptr, tree.Find((int)c));
@@ -6533,7 +6593,7 @@ int main() {
                 else {
                     EXPECT_EQ(true, false);
                 }
-            });
+                });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
                 //print(iter->key);
@@ -6545,7 +6605,7 @@ int main() {
                 tree.Add(GoodLang::ToString(i), i);
                 tree.Remove(tree.NodeFind(i));
                 EXPECT_EQ(nullptr, tree.Find(i));
-            });
+                });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto* iter = tree.GetFirst(); iter; iter = tree.GetNextLeaf(iter)) {
                 //print(iter->key);
@@ -6560,7 +6620,7 @@ int main() {
                     if (auto* p = tree.NodeFind(i)) {
                         // print(p->key);
                     }
-                });
+                    });
             }
 
             auto g{ tree.ProtectCurrentEpoch() };
@@ -6577,19 +6637,19 @@ int main() {
             GoodLang::parallel::While(
                 [&](void)-> bool {
                     return tree.size() < 100;
-                }, 
-                [&](void) -> void {                    
+                },
+                [&](void) -> void {
                     long s = ++S;
                     tree.insert(s, GoodLang::printf("%i", (int)s));
                 }
-            );
+                );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (1) {
             utilities::atomic_map<size_t, std::string> tree{};
             std::atomic<long> S{ 0 };
             sw.Start();
-            while (tree.size() < 1000000){
+            while (tree.size() < 1000000) {
                 long s = ++S;
                 tree.insert(s, GoodLang::printf("%i", (int)s));
             }
@@ -6607,7 +6667,7 @@ int main() {
                     long s = ++S;
                     tree.insert(s, GoodLang::printf("%i", (int)s));
                 }
-            );
+                );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (1) {
@@ -6622,12 +6682,12 @@ int main() {
                 [&](void)-> bool {
                     return tree.size() >= 1000000;
                 }
-            );
+                );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
         // Testing an extreme example of multithreading bullshit causing softlocks, that has hopefully been fixed. 
-        if (1) {            
+        if (1) {
             utilities::atomic_map<size_t, std::string> tree{};
             sw.Start();
             {
@@ -6636,10 +6696,10 @@ int main() {
                         {
                             GoodLang::parallel::For(0, 1000, [i, j, &tree](int k) {
                                 tree.insert((i * 100 * 100) + (k * 100) + j, GoodLang::printf("%i", (i * 100 * 100) + (k * 100) + j));
-                            });
+                                });
                         }
+                        });
                     });
-                });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -6648,21 +6708,21 @@ int main() {
         // Needs this version of the parallel atomic_map to better support it. 
         if (0) {
             sw.Start();
-           {
+            {
                 // Meanwhile...
                 GoodLang::parallel::For(0, 10, [](int i) {
-                   {
+                    {
                         // Meanwhile...
                         GoodLang::parallel::For(0, 10, [&i](int j) {
-                           {
+                            {
                                 // Meanwhile...
                                 GoodLang::parallel::For(0, 10, [&i, &j](int k) {
 
-                                });
+                                    });
                             }
-                        });
+                            });
                     }
-                });
+                    });
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -6699,7 +6759,7 @@ int main() {
             utilities::atomic_map<size_t, std::string> tree{};
             GoodLang::parallel::For(0, 255, [&](int i) {
                 tree.insert(i, GoodLang::ToString(i));
-            });
+                });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto& x : tree) {
                 //print(iter->key);
@@ -6709,7 +6769,7 @@ int main() {
             utilities::atomic_map<size_t, std::string> tree{};
             GoodLang::parallel::For(0, 255, [&](int i) {
                 tree.insert(i, GoodLang::ToString(i));
-            });
+                });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto& x : tree) {
                 //print(iter->key);
@@ -6729,8 +6789,8 @@ int main() {
                     EXPECT_NE(tree.find(i), tree.end());
                     tree.erase(i);
                 }
-                
-            });
+
+                });
             auto g{ tree.ProtectCurrentEpoch() };
             for (auto& x : tree) {
                 //print(iter->key);
@@ -6745,7 +6805,7 @@ int main() {
                     for (auto& x : tree) {
                         // print(p->key);
                     }
-                });
+                    });
             }
 
             auto g{ tree.ProtectCurrentEpoch() };
@@ -6774,7 +6834,7 @@ int main() {
                 [&](void)-> bool {
                     return tree.size() >= 100000;
                 }
-            );
+                );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (0) {
@@ -6795,7 +6855,7 @@ int main() {
                 [&](void)-> bool {
                     return tree.size() >= 100000;
                 }
-            );
+                );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
         if (0) {
@@ -6816,7 +6876,7 @@ int main() {
                 [&](void)-> bool {
                     return tree.size() >= 100000;
                 }
-            );
+                );
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
@@ -6828,27 +6888,27 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 cache.EmplaceCache<0>(1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
                 (void)cache.TryGetCache<0>(1, 0);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 cache.EmplaceCache<0>(1, i, reinterpret_cast<Scopes::Breadcrumb*>(i));
                 (void)cache.TryGetCache<0>(1, i);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 cache.EmplaceCache<0>(i + 1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 cache.EmplaceCache<0>(i + 1, 0, reinterpret_cast<Scopes::Breadcrumb*>(1));
                 cache.TryGetCache<0>(i + 1, 0);
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 #endif // << NO LEAK
@@ -6863,30 +6923,30 @@ int main() {
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto scope{ root.make_scope() };
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto& scope{ root.make_namespace("std") };
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto& scope{ root.make_namespace("std") };
                 scope.invalidate_cache();
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.invalidate_cache();
-            })) {
+                })) {
                 GoodLang::parallel::For(0, 1000000, [&](int i) {
                     auto& scope{ root.make_namespace("std") };
                     scope.invalidate_cache();
-                });
+                    });
                 main_loop = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
@@ -6965,7 +7025,7 @@ int main() {
                     break;
                 }
                 }
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 #endif // << NO LEAK
 
@@ -6989,7 +7049,7 @@ int main() {
             EXPECT_EQ(true, s.begins_with("::"));
 
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("")));
-            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::")));            
+            EXPECT_NE(nullptr, root.find_namespace(utilities::string("::")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::string::")));
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("::std::string::impl::")));
@@ -7031,13 +7091,13 @@ int main() {
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 EXPECT_NE(nullptr, root.find_namespace("std")->this_m.scope->find_object("string::npos"));
                 EXPECT_NE(nullptr, root.find_object("std::string::npos"));
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 EXPECT_EQ(nullptr, root.find_object("std::string2::npos")); // should not be successfully found.
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             if (1) {
@@ -7057,23 +7117,23 @@ int main() {
 #endif // << NO LEAK
 #endif // << NO LEAK
 
-       // >> TEST FUNCTION CALLS
+            // >> TEST FUNCTION CALLS
 #if 0
             Functions funcs;
             funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 0; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
             funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
             funcs.emplace("b", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
-            funcs.emplace("c", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j) -> int { return i+j; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
-            funcs.emplace("d", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j, int k) -> int { return i+j+k; }), utilities::FunctionWrapper::FunctionState::Normal, { 10, 10, 10 })); // has defaults!
-            
+            funcs.emplace("c", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j) -> int { return i + j; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("d", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j, int k) -> int { return i + j + k; }), utilities::FunctionWrapper::FunctionState::Normal, { 10, 10, 10 })); // has defaults!
+
             funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
                 [](int const& i, int const& j, int const& k) -> std::string { return "3 params"; }
-            ), utilities::FunctionWrapper::FunctionState::Normal, 
+            ), utilities::FunctionWrapper::FunctionState::Normal,
                 { 10, 10, 10 }));
 
             funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
                 [](int const& i, int const& j) -> std::string { return "2 params"; }
-            ), utilities::FunctionWrapper::FunctionState::Normal, 
+            ), utilities::FunctionWrapper::FunctionState::Normal,
                 { 10, 10 }));
 
             funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
@@ -7182,7 +7242,7 @@ int main() {
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::string::impl"), nearest)); // successfully finds it
             EXPECT_NE(nullptr, nearest);
             if (nearest) print(nearest->GetCurrentNamespace().c_str());
-            
+
             nearest = nullptr;
             EXPECT_NE(nullptr, root.find_namespace(utilities::string("std::impl"), nearest)); // successfully finds it
             EXPECT_NE(nullptr, nearest);
@@ -7201,14 +7261,14 @@ int main() {
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto scope{ root.make_scope() };
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             GoodLang::parallel::For(0, 1000000, [&](int i) {
                 auto scope{ root.make_scope() };
                 scope.emplace_object_here(utilities::string(GoodLang::printf("%i", i)), utilities::any(i)); // x = 100.0;
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
@@ -7219,13 +7279,13 @@ int main() {
                 else {
                     EXPECT_EQ(true, false);
                 }
-            });
+                });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
             sw.Start();
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.invalidate_cache();
-            })) {
+                })) {
                 for (int i = 0; i < 1000000; ++i) {
                     auto scope{ root.make_scope() };
                     //scope.UpdateObjectFunctionVersion();
@@ -7235,15 +7295,15 @@ int main() {
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
 
-            sw.Start();            
+            sw.Start();
             if (auto main_loop = GoodLang::parallel::AsThread([&]() {
                 root.invalidate_cache();
-            })) {
+                })) {
                 GoodLang::parallel::For(0, 1000000, [&](int i) {
                     auto scope{ root.make_scope() };
                     //scope.UpdateObjectFunctionVersion();                    
                     //EXPECT_EQ(true, scope.object_or_function_versions >= 1);
-                });
+                    });
                 main_loop = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
