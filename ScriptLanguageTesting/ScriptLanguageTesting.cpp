@@ -2945,8 +2945,8 @@ namespace /* hash */ std {
 // utilities::shared_ptr, utilities::weak_ptr
 namespace utilities {
     /// <summary>
-/// utilities::shared_ptr uses the Epoch allocator to control / prevent deletion of pointers. Currently memory-performant and thread-safe when overwriting, but slower then GoodLang::shared_ptr. 
-/// </summary>
+    /// utilities::shared_ptr uses the Epoch allocator to control / prevent deletion of pointers. Currently memory-performant and thread-safe when overwriting, but slower then GoodLang::shared_ptr. 
+    /// </summary>
     class shared_ptr_base {
     public:
         struct aux {
@@ -5712,14 +5712,16 @@ int main() {
     if (1) {
         sw.Start();
         GoodLang::parallel::For(0, 1000000, [](int i) {
-            (void)utilities::get_thread_id();
+            GoodLang::Any Any{ 100.0f };
+            (void)Any.cast<float&>();
         });
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
     if (1) {
         sw.Start();
         GoodLang::parallel::For(0, 1000000, [](int i) {
-            (void)GoodLang::EpochGarbageCollectorImpl::IDManager::GetThreadID();
+            utilities::any Any{ 100.0f };
+            (void)Any.cast<float&>();
         });
         print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
     }
@@ -6551,12 +6553,7 @@ int main() {
         }
         if (1) {
             BTree<std::string, size_t, 10> tree{};
-            if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
-                for (int i = 0; i < 254; ++i) {
-                    auto g{ tree.ProtectCurrentEpoch() };
-                    tree.Remove(tree.NodeFind(i));
-                };
-            })) {
+            {
                 GoodLang::parallel::For(0, 255, [&](int i) {
                     auto g{ tree.ProtectCurrentEpoch() };
                     tree.Add(GoodLang::ToString(i), i);
@@ -6564,7 +6561,6 @@ int main() {
                         // print(p->key);
                     }
                 });
-                thread_ptr = nullptr;
             }
 
             auto g{ tree.ProtectCurrentEpoch() };
@@ -6634,20 +6630,10 @@ int main() {
         if (1) {            
             utilities::atomic_map<size_t, std::string> tree{};
             sw.Start();
-            if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
-                // this thread is using one of the GoodLang threads, and will be highly performant
-                for (int i = 0; i < 1000; ++i) {
-                    (void)tree.insert(i, GoodLang::printf("%i", i));
-                }
-            })) {
+            {
                 GoodLang::parallel::For(0, 10, [&tree](int i) {
                     GoodLang::parallel::For(0, 100, [i, &tree](int j) {
-                        if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
-                            // this thread is using the shared C++ thread for iterative AsThread calls, and is significantly less performant. 
-                            for (int i = 0; i < 1000; ++i) {
-                                (void)tree.erase(i);
-                            }
-                        })) {
+                        {
                             GoodLang::parallel::For(0, 1000, [i, j, &tree](int k) {
                                 tree.insert((i * 100 * 100) + (k * 100) + j, GoodLang::printf("%i", (i * 100 * 100) + (k * 100) + j));
                             });
@@ -6662,29 +6648,21 @@ int main() {
         // Needs this version of the parallel atomic_map to better support it. 
         if (0) {
             sw.Start();
-            if (auto thread_ptr = GoodLang::parallel::AsThread([]() {
-                // Do Something...
-            })) {
+           {
                 // Meanwhile...
-                GoodLang::parallel::For(0, 100, [](int i) {
-                    if (auto thread_ptr2 = GoodLang::parallel::AsThread([]() {
-                        // Do Something...
-                    })) {
-                    //    // Meanwhile...
-                        GoodLang::parallel::For(0, 100, [&i](int j) {
-                            if (auto thread_ptr3 = GoodLang::parallel::AsThread([]() {
-                                // Do Something...
-                            })) {
-                    //            // Meanwhile...
-                    //            GoodLang::parallel::For(0, 100, [&i, &j](int k) {
-                    //            });
-                                thread_ptr3 = nullptr;
+                GoodLang::parallel::For(0, 10, [](int i) {
+                   {
+                        // Meanwhile...
+                        GoodLang::parallel::For(0, 10, [&i](int j) {
+                           {
+                                // Meanwhile...
+                                GoodLang::parallel::For(0, 10, [&i, &j](int k) {
+
+                                });
                             }
                         });
-                        thread_ptr2 = nullptr;
                     }
                 });
-                thread_ptr = nullptr;
             }
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
@@ -6760,12 +6738,7 @@ int main() {
         }
         if (1) {
             utilities::atomic_map<size_t, std::string> tree{};
-            if (auto thread_ptr = GoodLang::parallel::AsThread([&tree]() {
-                for (int i = 0; i < 254; ++i) {
-                    auto g{ tree.ProtectCurrentEpoch() };
-                    tree.erase(i);
-                };
-            })) {
+            {
                 GoodLang::parallel::For(0, 255, [&](int i) {
                     auto g{ tree.ProtectCurrentEpoch() };
                     tree.insert(i, GoodLang::ToString(i));
@@ -6773,7 +6746,6 @@ int main() {
                         // print(p->key);
                     }
                 });
-                thread_ptr = nullptr;
             }
 
             auto g{ tree.ProtectCurrentEpoch() };

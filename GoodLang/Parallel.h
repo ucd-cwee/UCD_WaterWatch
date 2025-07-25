@@ -520,7 +520,10 @@ namespace GoodLang {
 		JobGroup(JobGroup const&) = delete;
 		JobGroup(JobGroup&& a) : impl(std::move(a.impl)) {};
 		JobGroup& operator=(JobGroup const&) = delete;
-		JobGroup& operator=(JobGroup&&) = delete;
+		JobGroup& operator=(JobGroup&& a) {
+			impl = std::move(a.impl);
+			return *this;
+		};
 		~JobGroup() = default;
 
 		/* Queue job, and return tool to await the result */
@@ -1012,9 +1015,6 @@ namespace GoodLang {
 				num_thread_jobs *= 10; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
 			}
 		};
-
-		/* auto lifetime_object = AsThread([](){ Loop Me While Lifetime Exists! }, [](){ Optionally Do Me When Lifetime Dies, As Clean-Up! }); */
-		std::shared_ptr<void> AsThread(std::function<void(void)> Loop, std::function<void(void)> OnThreadEnd = {});
 
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
