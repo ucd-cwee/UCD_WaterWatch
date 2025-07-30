@@ -2726,6 +2726,8 @@ namespace utilities {
             hash;
         unsigned short
             modifiers = 0;
+        std::map<size_t, std::shared_ptr<type>>        
+            parents; // underlying_hash to type
         utilities::string
             name; // for scripted classes, this shall be the full namespace path, e.g. ::std::string::
         std::function<utilities::any(utilities::any const&)>*
@@ -2753,6 +2755,33 @@ namespace utilities {
         type& operator=(type const&) = default;
         type& operator=(type&&) = default;
         ~type() = default;
+
+        bool is_child_of(type const& parent) const {
+            if (this->underlying_hash == parent.underlying_hash) {
+                return true;
+            }
+            else {
+                for (auto& x : this->parents) {
+                    if (x.first == parent.underlying_hash) {
+                        return true;
+                    }
+                }
+                for (auto& x : this->parents) {
+                    if (x.second->is_child_of(parent)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        };
+        bool is_parent_of(type const& child) const {
+            return child.is_child_of(*this);
+        };
+        void add_parent(type const& parent) {
+            if (is_child_of(parent)) return;
+            else parents[parent.underlying_hash] = std::make_shared<type>(parent);
+        };
+       
 
         // Returns true if the types are similar enough to be casted for free (0 cost)
         static bool can_free_cast(type const& from, type const& to) {
@@ -2830,25 +2859,23 @@ namespace utilities {
     };
     template<typename T> static type const& type_of() noexcept;
 
-    // Collection of one or more types, which can be appended or added together to create a types collection. operator= is not thread-safe. 
+    // Collection of one or more types, which can be appended or added together to create a types collection. 
     class types {
     private:
-        utilities::DelayedInstantiation<concurrency::concurrent_vector<type>>
+        utilities::DelayedInstantiation<std::vector<type>>
             types_m;
         mutable size_t hash = 0;
 
-        types(concurrency::concurrent_vector<type> const& d) : types_m(d) {};
-        types(std::vector<type> const& d) : types_m(concurrency::concurrent_vector<type>{ d.begin(), d.end() }) {};
+        types(std::vector<type> const& d) : types_m(d) {};
     public:
         types() = default;
-        types(type const& d) : types_m(concurrency::concurrent_vector<type>(1, d)) {};
+        types(type const& d) : types_m(std::vector<type>(1, d)) {};
         types(types const& rhs) : types_m() {
             if (rhs.types_m) {
                 *types_m = *rhs.types_m;
             }
         };
         types(types&&) = default;
-        // not thread-safe
         types& operator=(types const& rhs) {
             if (rhs.types_m) {
                 *types_m = *rhs.types_m;
@@ -2858,7 +2885,6 @@ namespace utilities {
             }
             return *this;
         };
-        // not thread-safe
         types& operator=(types&&) = default;
         ~types() = default;
 
@@ -2869,7 +2895,6 @@ namespace utilities {
         friend bool operator>(const types& a, const types& b) noexcept { return a.get_hash() > b.get_hash(); };
         friend bool operator>=(const types& a, const types& b) noexcept { return a.get_hash() >= b.get_hash(); };
 
-        // thread-safe
         friend types operator+(types const& lhs, types const& rhs) {
             if (lhs.types_m) {
                 if (rhs.types_m) {
@@ -2890,14 +2915,12 @@ namespace utilities {
                 return {};
             }
         };
-        // thread-safe
         types& operator+=(types const& rhs) {
             if (rhs.types_m) {
                 for (auto& x : *rhs.types_m) types_m->push_back(x);
             }
             return *this;
         };
-        // thread-safe
         const type& operator[](size_t index) const {
             if (types_m && types_m->size() > index) {
                 return types_m->operator[](index);
@@ -2906,7 +2929,6 @@ namespace utilities {
                 return type_of<void>();
             }
         };
-        // thread-safe
         size_t size() const {
             if (types_m) {
                 return types_m->size();
@@ -2915,7 +2937,6 @@ namespace utilities {
                 return 0;
             }
         };
-        // thread-safe
         size_t get_hash() const {
             if ((hash == 0) && types_m) {
                 size_t out = 0;
@@ -2928,6 +2949,7 @@ namespace utilities {
         };
 
     };
+
 };
 namespace /* hash */ std {
     template <> struct hash<utilities::type> {
@@ -3343,54 +3365,69 @@ namespace utilities {
     class any;
     class any_cast;
 
-    class var {
-    public:
-        utilities::shared_ptr<any> p_data;
-    };
-    class dynamic_object {};
-#if 0
-
-
     // serves as an instance of a customizable class
     class dynamic_object {
     public:
-        dynamic_object()
-            : m_actualType()
-            , m_castedType()
-            , m_objects(std::make_shared<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<utilities::any>>>())
+        dynamic_object() = default;
+        dynamic_object(utilities::type const& type)
+            : m_type(type)
+            , m_objects()
         {};
-        dynamic_object(type const& type)
-            : m_actualType(type)
-            , m_castedType(type)
-            , m_objects(std::make_shared<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<utilities::any>>>())
-        {};
-        // Upcast from a child_class to a parent_class (e.g. from class C : public A {} to class A {})
-        dynamic_object(type const& castedType, dynamic_object const& parent)
-            : m_actualType(parent.m_actualType)
-            , m_castedType(castedType)
+        // Cast from one class to another (e.g. from class C : public A {} to class A {})
+        dynamic_object(utilities::type const& castedType, dynamic_object const& parent)
+            : m_type(castedType)
             , m_objects(parent.m_objects)
-        {};
+        {
+            if (castedType == parent.m_type) {
+                // we are casting to the existing type, which is OK
+            }
+            else if (castedType.is_child_of(parent.m_type)) {
+                // we are casting from a parent (inherited) type to a derived (child) type, which is OK.                
+            }
+            else if (parent.m_type.is_child_of(castedType)) {
+                // we are casting from a derived (child) type to a parent (inherited) type, which is OK.
+            }
+            else {
+                // cast was not viable!
+                m_type = utilities::type_of<void>();
+                m_objects.clear();
+            }
+        };
         dynamic_object(dynamic_object const&) = default;
         dynamic_object(dynamic_object&&) = default;
         dynamic_object& operator=(dynamic_object const&) = default;
         dynamic_object& operator=(dynamic_object&&) = default;
         ~dynamic_object() = default;
 
-        type
-            m_actualType;
-        type
-            m_castedType;
-        std::shared_ptr<concurrency::concurrent_unordered_map<std::string, std::shared_ptr<utilities::any>>>
+        utilities::type
+            m_type;
+        concurrency::concurrent_unordered_map<utilities::string, utilities::any>
             m_objects;
 
-        std::shared_ptr<utilities::any> const& operator[](std::string_view sv) {
-            if (m_objects) {
-                if (auto const& ptr = m_objects->operator[](std::string(sv))) {
-                    return ptr;
-                }
-            }
-            throw std::out_of_range("Out of range of dynamic_object object list");
+        any& operator[](utilities::string const& sv) {
+            return m_objects[sv];
         };
+        any const& operator[](utilities::string const& sv) const {
+            return m_objects.at(sv);
+        };
+        any* try_at(utilities::string const& sv) {
+            if (m_objects.count(sv) > 0) {
+                return &m_objects.at(sv);
+            }
+            else {
+                return nullptr;
+            }
+        };
+        const any* try_at(utilities::string const& sv) const {
+            if (m_objects.count(sv) > 0) {
+                return &m_objects.at(sv);
+            }
+            else {
+                return nullptr;
+            }
+        };
+
+
     };
 
     /* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
@@ -3418,8 +3455,6 @@ namespace utilities {
             return !operator==(_Left, _Right);
         };
     };
-
-#endif
 
     namespace type_erasure {
         template<class T> struct get_type { typedef T type; };
@@ -3565,25 +3600,25 @@ namespace utilities {
             {
                 m_current_type = utilities::type_of<T>() + t_modifiers;
             };
-                    any_data_shared(any_data_shared const&) = delete;
-                    any_data_shared(any_data_shared&&) = delete;
-                    any_data_shared& operator=(any_data_shared const&) = delete;
-                    any_data_shared& operator=(any_data_shared&&) = delete;
-                    ~any_data_shared() = default;
+            any_data_shared(any_data_shared const&) = delete;
+            any_data_shared(any_data_shared&&) = delete;
+            any_data_shared& operator=(any_data_shared const&) = delete;
+            any_data_shared& operator=(any_data_shared&&) = delete;
+            ~any_data_shared() = default;
 
-                    utilities::type const& actual_type() const override {
-                        return utilities::type_of<T>();
-                    };
-                    utilities::type const& current_type() const override {
-                        return m_current_type;
-                    };
-                    void* ptr() const override { return m_obj.get(); };
-                    std::shared_ptr<void> const& shared_ptr() const override {
-                        return m_obj;
-                    };
-                    utilities::shared_ptr<any_data> operator+(int modifier) const override {
-                        return utilities::make_shared<any_data_std_shared<T>>(std::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
-                    };
+            utilities::type const& actual_type() const override {
+                return utilities::type_of<T>();
+            };
+            utilities::type const& current_type() const override {
+                return m_current_type;
+            };
+            void* ptr() const override { return m_obj.get(); };
+            std::shared_ptr<void> const& shared_ptr() const override {
+                return m_obj;
+            };
+            utilities::shared_ptr<any_data> operator+(int modifier) const override {
+                return utilities::make_shared<any_data_std_shared<T>>(std::static_pointer_cast<T>(m_obj), m_current_type.get_modifiers() | modifier);
+            };
 
         private:
             std::shared_ptr<void> m_obj; // underlying data
@@ -4016,6 +4051,11 @@ namespace utilities {
         __forceinline utilities::shared_ptr<any_data> get(const any_cast* t) { return get(*t); };
     };
 
+    // returns a shareable, type-erased object that will never delete the underlying object. Intended for using static objects or references to C++ objects in the scripting language. 
+    template <typename T> static any ref(T& static_object) {
+        return any(std::shared_ptr<T>(&static_object, [](T*) { /* do nothing */ }));
+    };
+
 };
 
 // utilities::type::... references to utilities::any
@@ -4119,7 +4159,226 @@ namespace utilities {
     };
 };
 
+// utilities::function
+namespace utilities {
+    // Collection of one or more types, which can be appended or added together to create a types collection. 
+    class function_args {
+    private:
+        utilities::DelayedInstantiation<std::vector<utilities::string>>
+            names_m;
+        types
+            types_m;
+        mutable size_t 
+            hash = 0;
 
+        void ensure_names() {
+            for (size_t n = 0; n < types_m.size(); ++n) {
+                if (names_m->size() <= n) {
+                    names_m->push_back(std::string("Param")+GoodLang::ToString(n));
+                }                
+            }
+        };
+        function_args(types const& d, std::vector<utilities::string> const& names) : types_m(d), names_m(names) {
+            ensure_names();
+        };
+    public:
+        function_args() = default;
+        function_args(types const& d) : types_m(d) {
+            ensure_names();
+        };
+        function_args(type const& d, utilities::string const& name) : types_m(d), names_m(std::vector<utilities::string>(1, name)){};
+        function_args(function_args const& rhs) : types_m(rhs.types_m) {
+            if (rhs.names_m) {
+                *names_m = *rhs.names_m;
+            }
+        };
+        function_args(function_args&&) = default;
+        function_args& operator=(function_args const& rhs) {
+            if (rhs.names_m) {
+                *names_m = *rhs.names_m;
+            }
+            else if (names_m) {
+                names_m->clear();
+            }
+            return *this;
+        };
+        function_args& operator=(function_args&&) = default;
+        ~function_args() = default;
+
+        friend bool operator==(const function_args& a, const function_args& b) noexcept { return a.get_hash() == b.get_hash(); };
+        friend bool operator!=(const function_args& a, const function_args& b) noexcept { return a.get_hash() != b.get_hash(); };
+        friend bool operator<(const function_args& a, const function_args& b) noexcept { return a.get_hash() < b.get_hash(); };
+        friend bool operator<=(const function_args& a, const function_args& b) noexcept { return a.get_hash() <= b.get_hash(); };
+        friend bool operator>(const function_args& a, const function_args& b) noexcept { return a.get_hash() > b.get_hash(); };
+        friend bool operator>=(const function_args& a, const function_args& b) noexcept { return a.get_hash() >= b.get_hash(); };
+
+        friend function_args operator+(function_args const& lhs, function_args const& rhs) {
+            if (lhs.names_m) {
+                if (rhs.names_m) {
+                    std::vector<utilities::string> out;
+                    out.reserve(lhs.names_m->size() + rhs.names_m->size());
+                    out.insert(out.end(), lhs.names_m->begin(), lhs.names_m->end());
+                    out.insert(out.end(), rhs.names_m->begin(), rhs.names_m->end());
+                    return function_args(lhs.types_m + rhs.types_m, out);
+                }
+                else {
+                    return lhs;
+                }
+            }
+            else if (rhs.names_m) {
+                return rhs;
+            }
+            else {
+                return {};
+            }
+        };
+        function_args& operator+=(function_args const& rhs) {
+            if (names_m) {
+                if (rhs.names_m) {
+                    names_m->insert(names_m->end(), rhs.names_m->begin(), rhs.names_m->end());
+                    types_m += rhs.types_m;
+                    return *this;
+                }
+                else {
+                    return *this;
+                }
+            }
+            else if (rhs.names_m) {
+                *names_m = *rhs.names_m;
+                types_m = rhs.types_m;
+                return *this;
+            }
+            else {
+                return *this;
+            }
+        };
+        const type& type(size_t index) const {
+            return types_m[index];
+        };
+        const utilities::string& name(size_t index) const {
+            if (names_m && names_m->size() > index) {
+                return names_m->operator[](index);
+            }
+            else {
+                return "";
+            }
+        };
+
+        size_t size() const {
+            if (names_m) {
+                return names_m->size();
+            }
+            else {
+                return 0;
+            }
+        };
+        size_t get_hash() const {
+            if ((hash == 0) && names_m) {
+                size_t out = types_m.get_hash();
+                for (auto& x : *names_m) {
+                    out ^= x.hash() + 0x9e3779b9 + (out << 6) + (out >> 2);
+                }
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), out);
+            }
+            return hash;
+        };
+
+    };
+
+    enum FunctionState {
+        Normal = 0, // default -- meaningless. 
+        Static = 1, // whether the function is a static function or not. Non-static implies it is a member-function. 
+        Constant = 2, // whether this function commits to making no changes to the underlying object. Often, const should also be async, but not always. 
+        Async = 4, // whether this function can be safely called asynchronously or not
+        Template = 8, // whether the function is a template 
+        Explicit = 16, // whether the function is explicit and the input params must exactly match (does not allow conversion)
+        Cached = 32 // whether the function is a cache from another function, for performance reasons. 
+    };
+
+    // includes identification of function state (static, async, etc.), function name, return type, and default parameters. 
+    class function_signature {
+
+
+
+
+    };
+
+
+
+
+
+
+    // A combination of FunctionArgs (argument types and names), return type, and function name. 
+    // Function names DO impact the "uniqueness" of a function signature.
+    // Return types do NOT impact the "uniqueness" of a function signature.
+    class FunctionSignature {
+    public:
+        static size_t CalculateHash(FunctionArgs const& arguments, std::string const& qualified_name);
+        static size_t CalculateHash(ParamTypes const& arguments, std::string const& qualified_name);
+
+    public:
+        FunctionSignature()
+            : m_qualified_name("::")
+        {
+            uniqueHash = CalculateHash(m_arguments, m_qualified_name);
+        };
+        FunctionSignature(
+            std::weak_ptr<Type_Info> returnType
+            , FunctionArgs const& args
+            , std::string const& Namespace = ""
+            , std::string const& name = "")
+            : m_arguments(args)
+            , m_namespace(Namespace)
+            , m_name(name)
+            , m_qualified_name(Namespace + "::" + name)
+            , m_returnType(returnType)
+            , uniqueHash(CalculateHash(args, Namespace + "::" + name))
+        {};
+        FunctionSignature(FunctionSignature const&) = default;
+        FunctionSignature(FunctionSignature&&) = default;
+        FunctionSignature& operator=(FunctionSignature const&) = default;
+        FunctionSignature& operator=(FunctionSignature&&) = default;
+        ~FunctionSignature() = default;
+
+        const std::weak_ptr<Type_Info>& Returns() const { return m_returnType; };
+        const FunctionArgs& Arguments() const { return m_arguments; };
+        const std::string& Name() const { return m_name; };
+        const std::string& QualifiedName() const { return m_qualified_name; };
+        void Name(const std::string& input) { m_name = input; };
+        void QualifiedName(const std::string& input) { m_qualified_name = input; };
+        size_t hash() const noexcept { return uniqueHash; };
+        bool IsTemplate() const { return m_arguments.IsTemplate(); };
+
+        friend bool operator==(FunctionSignature const& a, FunctionSignature const& b) {
+            return a.uniqueHash == b.uniqueHash;
+        };
+        friend bool operator!=(FunctionSignature const& a, FunctionSignature const& b) {
+            return a.uniqueHash != b.uniqueHash;
+        };
+        friend bool operator>(FunctionSignature const& a, FunctionSignature const& b) {
+            return a.uniqueHash > b.uniqueHash;
+        };
+        friend bool operator<(FunctionSignature const& a, FunctionSignature const& b) {
+            return a.uniqueHash < b.uniqueHash;
+        };
+        friend bool operator>=(FunctionSignature const& a, FunctionSignature const& b) {
+            return a.uniqueHash >= b.uniqueHash;
+        };
+        friend bool operator<=(FunctionSignature const& a, FunctionSignature const& b) {
+            return a.uniqueHash <= b.uniqueHash;
+        };
+
+    private:
+        FunctionArgs m_arguments; // Use this for the hash.
+        std::string m_namespace;
+        std::string m_name;
+        std::string m_qualified_name; // m_namespace::m_name. Use this for the hash.
+        std::weak_ptr<Type_Info> m_returnType; // not used for the hash.
+        size_t uniqueHash;
+    };
+
+
+};
 
 
 
@@ -4170,7 +4429,7 @@ namespace utilities {
             return state & Cached;
         };
 
-        // Given index (lef tto right), will return the default value for it, if available. Otherwise nullptr.
+        // Given index (left to right), will return the default value for it, if available. Otherwise nullptr.
         const GoodLang::Any* get_default(size_t index) const {
             if ((index < default_values.size()) && default_values[index])
                 return &default_values[index];
@@ -5703,7 +5962,71 @@ int main() {
     using namespace ABA_Problem;
     Stopwatch sw;
 
-    for (int j = 0; j < 0; ++j) {
+    for (int j = 0; j < 1; ++j) {
+        var x{ any(100) };
+        any y(x);
+        EXPECT_EQ(100, *y.cast<int*>());
+        EXPECT_EQ(100, *y.cast<var*>()->p_data->cast<int*>());
+
+        type type_A = type_of("::A::");
+
+        type type_BA = type_of("::B::");
+        type_BA.add_parent(type_A);
+
+        type type_CA = type_of("::C::");
+        type_CA.add_parent(type_A);
+
+        type type_DBA = type_of("::D::");
+        type_DBA.add_parent(type_BA);
+
+        EXPECT_EQ(true, type_BA.is_child_of(type_A));
+        EXPECT_EQ(true, type_CA.is_child_of(type_A));
+        EXPECT_EQ(true, type_DBA.is_child_of(type_A));
+
+        EXPECT_EQ(true, type_BA.is_child_of(type_A));
+        EXPECT_EQ(false, type_CA.is_child_of(type_BA));
+        EXPECT_EQ(false, type_DBA.is_child_of(type_CA));
+
+        dynamic_object objA(type_A);
+        objA["int"] = 100;
+
+        dynamic_object objBA(type_BA, objA); 
+        objBA["float"] = 100.0f;
+
+        dynamic_object objCA(type_CA, objA);
+        objCA["double"] = 100.0;
+
+        dynamic_object objDBA(type_DBA, objBA);
+        objDBA["long"] = 100l;
+
+        dynamic_object objDBA_as_A(type_A, objDBA);
+
+        EXPECT_NE(nullptr, objA.try_at("int"));
+        EXPECT_EQ(nullptr, objA.try_at("float"));
+        EXPECT_EQ(nullptr, objA.try_at("double"));
+        EXPECT_EQ(nullptr, objA.try_at("long"));
+
+        EXPECT_NE(nullptr, objBA.try_at("int"));
+        EXPECT_NE(nullptr, objBA.try_at("float"));
+        EXPECT_EQ(nullptr, objBA.try_at("double"));
+        EXPECT_EQ(nullptr, objBA.try_at("long"));
+
+        EXPECT_NE(nullptr, objCA.try_at("int"));
+        EXPECT_EQ(nullptr, objCA.try_at("float"));
+        EXPECT_NE(nullptr, objCA.try_at("double"));
+        EXPECT_EQ(nullptr, objCA.try_at("long"));
+
+        EXPECT_NE(nullptr, objDBA.try_at("int"));
+        EXPECT_NE(nullptr, objDBA.try_at("float"));
+        EXPECT_EQ(nullptr, objDBA.try_at("double"));
+        EXPECT_NE(nullptr, objDBA.try_at("long"));
+
+        EXPECT_NE(nullptr, objDBA_as_A.try_at("int"));
+        EXPECT_NE(nullptr, objDBA_as_A.try_at("float"));
+        EXPECT_EQ(nullptr, objDBA_as_A.try_at("double"));
+        EXPECT_NE(nullptr, objDBA_as_A.try_at("long"));
+    };
+    for (int j = 0; j < 1; ++j) {
         if (1) {
             GoodLang::parallel::For(0, 1000000, [](int i) {
                 (void)0;
