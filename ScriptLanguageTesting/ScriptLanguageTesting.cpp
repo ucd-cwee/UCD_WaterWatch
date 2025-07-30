@@ -2866,10 +2866,11 @@ namespace utilities {
             types_m;
         mutable size_t hash = 0;
 
-        types(std::vector<type> const& d) : types_m(d) {};
+        
     public:
         types() = default;
         types(type const& d) : types_m(std::vector<type>(1, d)) {};
+        types(std::vector<type> const& d) : types_m(d) {};
         types(types const& rhs) : types_m() {
             if (rhs.types_m) {
                 *types_m = *rhs.types_m;
@@ -2947,7 +2948,18 @@ namespace utilities {
             }
             return hash;
         };
-
+        size_t get_hash(long long firstN) const {            
+            if (types_m) {
+                size_t out = 0;
+                for (long long n = 0; n < firstN && n < types_m->size(); ++n) {
+                    out ^= types_m->operator[](n).get_hash() + 0x9e3779b9 + (out << 6) + (out >> 2);
+                }
+                return out;
+            }
+            else {
+                return get_hash();
+            }
+        };
     };
 
 };
@@ -4162,14 +4174,13 @@ namespace utilities {
 // utilities::function
 namespace utilities {
     // Collection of one or more types, which can be appended or added together to create a types collection. 
+    // Only unique by the types, not by arg names.
     class function_args {
     private:
         utilities::DelayedInstantiation<std::vector<utilities::string>>
             names_m;
         types
             types_m;
-        mutable size_t 
-            hash = 0;
 
         void ensure_names() {
             for (size_t n = 0; n < types_m.size(); ++n) {
@@ -4273,16 +4284,11 @@ namespace utilities {
             }
         };
         size_t get_hash() const {
-            if ((hash == 0) && names_m) {
-                size_t out = types_m.get_hash();
-                for (auto& x : *names_m) {
-                    out ^= x.hash() + 0x9e3779b9 + (out << 6) + (out >> 2);
-                }
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), out);
-            }
-            return hash;
+            return types_m.get_hash();
         };
-
+        size_t get_hash(size_t firstN) const {
+            return types_m.get_hash(firstN);
+        };
     };
 
     enum FunctionState {
@@ -4297,84 +4303,87 @@ namespace utilities {
 
     // includes identification of function state (static, async, etc.), function name, return type, and default parameters. 
     class function_signature {
-
-
-
-
-    };
-
-
-
-
-
-
-    // A combination of FunctionArgs (argument types and names), return type, and function name. 
-    // Function names DO impact the "uniqueness" of a function signature.
-    // Return types do NOT impact the "uniqueness" of a function signature.
-    class FunctionSignature {
-    public:
-        static size_t CalculateHash(FunctionArgs const& arguments, std::string const& qualified_name);
-        static size_t CalculateHash(ParamTypes const& arguments, std::string const& qualified_name);
-
-    public:
-        FunctionSignature()
-            : m_qualified_name("::")
-        {
-            uniqueHash = CalculateHash(m_arguments, m_qualified_name);
-        };
-        FunctionSignature(
-            std::weak_ptr<Type_Info> returnType
-            , FunctionArgs const& args
-            , std::string const& Namespace = ""
-            , std::string const& name = "")
-            : m_arguments(args)
-            , m_namespace(Namespace)
-            , m_name(name)
-            , m_qualified_name(Namespace + "::" + name)
-            , m_returnType(returnType)
-            , uniqueHash(CalculateHash(args, Namespace + "::" + name))
-        {};
-        FunctionSignature(FunctionSignature const&) = default;
-        FunctionSignature(FunctionSignature&&) = default;
-        FunctionSignature& operator=(FunctionSignature const&) = default;
-        FunctionSignature& operator=(FunctionSignature&&) = default;
-        ~FunctionSignature() = default;
-
-        const std::weak_ptr<Type_Info>& Returns() const { return m_returnType; };
-        const FunctionArgs& Arguments() const { return m_arguments; };
-        const std::string& Name() const { return m_name; };
-        const std::string& QualifiedName() const { return m_qualified_name; };
-        void Name(const std::string& input) { m_name = input; };
-        void QualifiedName(const std::string& input) { m_qualified_name = input; };
-        size_t hash() const noexcept { return uniqueHash; };
-        bool IsTemplate() const { return m_arguments.IsTemplate(); };
-
-        friend bool operator==(FunctionSignature const& a, FunctionSignature const& b) {
-            return a.uniqueHash == b.uniqueHash;
-        };
-        friend bool operator!=(FunctionSignature const& a, FunctionSignature const& b) {
-            return a.uniqueHash != b.uniqueHash;
-        };
-        friend bool operator>(FunctionSignature const& a, FunctionSignature const& b) {
-            return a.uniqueHash > b.uniqueHash;
-        };
-        friend bool operator<(FunctionSignature const& a, FunctionSignature const& b) {
-            return a.uniqueHash < b.uniqueHash;
-        };
-        friend bool operator>=(FunctionSignature const& a, FunctionSignature const& b) {
-            return a.uniqueHash >= b.uniqueHash;
-        };
-        friend bool operator<=(FunctionSignature const& a, FunctionSignature const& b) {
-            return a.uniqueHash <= b.uniqueHash;
-        };
-
     private:
-        FunctionArgs m_arguments; // Use this for the hash.
-        std::string m_namespace;
-        std::string m_name;
-        std::string m_qualified_name; // m_namespace::m_name. Use this for the hash.
-        std::weak_ptr<Type_Info> m_returnType; // not used for the hash.
-        size_t uniqueHash;
+        std::vector<utilities::any>
+            defaults_m;
+        function_args
+            arguments_m;
+        utilities::string
+            name_m;
+        utilities::type
+            returns_m;
+        std::set<size_t>
+            hashes; 
+
+        // the provided defaults are scooted to the end of the argument list, such as:
+        // argA, argB, argC = default1, argD = default2;        
+        function_signature(utilities::string const& name, utilities::type const& returns, function_args const& arguments, std::vector<utilities::any> const& defaults, bool)
+            : defaults_m{}
+            , arguments_m{ arguments }
+            , name_m{ name }
+            , returns_m{ returns }        
+        {
+            defaults_m = defaults;
+
+            bool found_non_void = false;
+            for (size_t index = 0; index < defaults_m.size(); index++) {
+                if (!defaults_m[index].current_type().is_void()) {
+                    found_non_void = true;
+                }
+                else if (found_non_void) {
+                    defaults_m.resize(index);
+                }
+            }
+            while (defaults_m.size() < arguments_m.size()) defaults_m.insert(defaults_m.begin(), utilities::any{});
+            // all non-void defaults are guarranteed to be at the end. 
+
+            size_t hash{ name_m.hash(returns_m.get_hash()) };
+            bool foundFirstDefault = false;
+            size_t this_hash = hash;
+            for (size_t i = 0; i < defaults_m.size(); ++i) {
+                this_hash = hash;
+                if (!foundFirstDefault && !defaults_m[i].current_type().is_void()) {
+                    foundFirstDefault = true;
+                }
+                if (foundFirstDefault) {
+                    // all of them from here on should be added
+                    arguments_m.get_hash(i);
+                    GoodLang::details::hash_combine(this_hash, arguments_m.get_hash(i));
+                    hashes.insert(this_hash);
+                }
+            }
+            this_hash = hash;
+            GoodLang::details::hash_combine(this_hash, arguments_m.get_hash());
+            hashes.insert(this_hash);
+        };
+    public:
+
+        function_signature() = default;
+        function_signature(utilities::string const& name, utilities::type const& returns, function_args arguments = {}, std::vector<utilities::any> defaults = {}) 
+            : function_signature(name, returns, arguments, defaults, true) 
+        {};        
+        function_signature(function_signature const&) = default;
+        function_signature(function_signature&&) = default;
+        function_signature& operator=(function_signature const&) = default;
+        function_signature& operator=(function_signature&&) = default;
+        ~function_signature() = default;
+
+        // may use the default parameters, though! 
+        bool can_call_without_cast(types const& from) const {
+            size_t this_hash = name_m.hash(returns_m.get_hash());
+            if (from.size() > arguments_m.size()) {                
+                GoodLang::details::hash_combine(this_hash, from.get_hash(arguments_m.size()));
+                return hashes.find(this_hash) != hashes.end();
+            }
+            else {
+                GoodLang::details::hash_combine(this_hash, from.get_hash());
+                return hashes.find(this_hash) != hashes.end();
+            }
+
+            
+        };
+
+
     };
 
 
@@ -4385,16 +4394,6 @@ namespace utilities {
 namespace utilities {
     class FunctionWrapper {
     public:
-        enum FunctionState {
-            Normal = 0, // default -- meaningless. 
-            Static = 1, // whether the function is a static function or not. 
-            Constant = 2, // whether this function commits to making no changes to the underlying object. Often, const should also be async, but not always. 
-            Async = 4, // whether this function can be safely called asynchronously or not
-            Template = 8, // whether the function is a template 
-            Explicit = 16, // whether the function is explicit and the input params must exactly match (does not allow conversion)
-            Cached = 32 // whether the function is a cache from another function, for performance reasons. 
-        };
-
         FunctionWrapper(GoodLang::Proxy_Function obj = nullptr, int s = 0, std::vector<GoodLang::Any> defaults = {})
             : function{ std::move(obj) }
             , state{ std::move(s) }
@@ -4624,7 +4623,7 @@ namespace utilities {
                                             return function.second;
                                         }
                                         else {
-                                            FunctionWrapper FunctionToCache(function.second.function, function.second.state | FunctionWrapper::FunctionState::Cached, function.second.default_values);
+                                            FunctionWrapper FunctionToCache(function.second.function, function.second.state | utilities::FunctionState::Cached, function.second.default_values);
                                             FunctionToCache.cost = 0;
                                             if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
                                                 if (finalCost) *finalCost = 0;
@@ -4794,7 +4793,7 @@ namespace utilities {
                                 return *candidate.second;
                             }
                             else {
-                                FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
+                                FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | utilities::FunctionState::Cached, candidate.second->default_values);
                                 FunctionToCache.cost = candidate.first;
                                 if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
                                     if (finalCost) *finalCost = candidate.first;
@@ -4818,7 +4817,7 @@ namespace utilities {
                                 return *candidate.second;
                             }
                             else {
-                                FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | FunctionWrapper::FunctionState::Cached, candidate.second->default_values);
+                                FunctionWrapper FunctionToCache(candidate.second->function, candidate.second->state | utilities::FunctionState::Cached, candidate.second->default_values);
                                 FunctionToCache.cost = candidate.first;
                                 if (auto& func = this->emplace(functionName, params, FunctionToCache); func.function) {
                                     if (finalCost) *finalCost = candidate.first;
@@ -5961,6 +5960,49 @@ int main() {
     using namespace utilities;
     using namespace ABA_Problem;
     Stopwatch sw;
+
+    if (1) {
+        utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{}, {}); // no args
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
+    }
+    if (1) {
+        utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{ utilities::type_of<int>() }, {}); // no args
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
+    }
+    if (1) {
+        utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{ utilities::type_of<int>() }, { 100 }); // no args
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
+    }
+    if (1) {
+        utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{ utilities::type_of<int>() }, { 100, 200 }); 
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
+    }
+    if (1) {
+        utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{ std::vector<type>{ utilities::type_of<int>(), utilities::type_of<float>() } }, { 100, 200.0f });
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ std::vector<type>{ utilities::type_of<int>(), utilities::type_of<float>() } }));
+    }
+    if (1) {
+        utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{ std::vector<type>{ utilities::type_of<int>(), utilities::type_of<float>() } }, { 200.0f });
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
+        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ std::vector<type>{ utilities::type_of<int>(), utilities::type_of<float>() } }));
+    }
+
+
+
+
 
     for (int j = 0; j < 1; ++j) {
         var x{ any(100) };
