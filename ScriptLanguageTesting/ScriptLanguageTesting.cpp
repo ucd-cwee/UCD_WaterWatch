@@ -4301,7 +4301,7 @@ namespace utilities {
         Cached = 32 // whether the function is a cache from another function, for performance reasons. 
     };
 
-    // includes identification of function state (static, async, etc.), function name, return type, and default parameters. 
+    // includes function name, return type, and default parameters. Stores several hashes depending on the return type and the parameters
     class function_signature {
     private:
         std::vector<utilities::any>
@@ -4337,7 +4337,7 @@ namespace utilities {
             while (defaults_m.size() < arguments_m.size()) defaults_m.insert(defaults_m.begin(), utilities::any{});
             // all non-void defaults are guarranteed to be at the end. 
 
-            size_t hash{ name_m.hash(returns_m.get_hash()) };
+            size_t hash{ returns_m.get_hash() };
             bool foundFirstDefault = false;
             size_t this_hash = hash;
             for (size_t i = 0; i < defaults_m.size(); ++i) {
@@ -4370,7 +4370,7 @@ namespace utilities {
 
         // may use the default parameters, though! 
         bool can_call_without_cast(types const& from) const {
-            size_t this_hash = name_m.hash(returns_m.get_hash());
+            size_t this_hash = returns_m.get_hash();
             if (from.size() > arguments_m.size()) {                
                 GoodLang::details::hash_combine(this_hash, from.get_hash(arguments_m.size()));
                 return hashes.find(this_hash) != hashes.end();
@@ -4386,8 +4386,2113 @@ namespace utilities {
 
     };
 
-
 };
+
+// utilities::proxy_function
+namespace utilities {
+    namespace details {
+        /**
+         * Pure virtual base class for all Proxy_Function implementations
+         * Proxy_Functions are a type erasure of type-safe C++ function calls.
+         * At runtime parameter types are expected to be tested against passed in types.
+         * Dispatch_Engine only knows how to work with Proxy_Function, no other
+         * function classes.
+        */
+        class Proxy_Function_Base {
+        public:
+            virtual ~Proxy_Function_Base() = default;
+
+            function_signature m_signature;
+            any operator()(const std::vector<any>& params) const { return do_call(params); };
+
+        protected:
+            virtual any do_call(std::vector<any> const&) const = 0;
+            Proxy_Function_Base(function_signature const& p_signature) : m_signature(p_signature) {}
+        };
+    };
+    typedef std::shared_ptr<details::Proxy_Function_Base> Proxy_Function;
+
+    namespace details {
+        /**
+         * Use to call function objects
+        */
+        template <class Callable>
+        class Explicit_Function_Impl : public Proxy_Function_Base {
+        protected:
+            static function_signature CreateSignature() {
+                using argType = typename GoodLang::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::arguments;
+                using returnType = typename GoodLang::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
+                static constexpr auto numArgs{ std::tuple_size_v< argType > };
+
+                types Types;
+#define argT(NN) if constexpr (numArgs > NN) { Types += type_of<typename std::tuple_element_t<NN, argType>>(); }
+                argT(0);
+                argT(1);
+                argT(2);
+                argT(3);
+                argT(4);
+                argT(5);
+                argT(6);
+                argT(7);
+                argT(8);
+                argT(9);
+                argT(10);
+                argT(11);
+                argT(12);
+                argT(13);
+                argT(14);
+                argT(15);
+#undef argT                
+                return function_signature("", type_of<returnType>(), std::move(Types)); // no defaults provided
+            };
+
+        public:
+            Explicit_Function_Impl(Callable F_p)
+                : Proxy_Function_Base(CreateSignature())
+                , F_m(std::move(F_p))
+            {};
+            virtual ~Explicit_Function_Impl() = default;
+
+        protected:
+            virtual any do_call(std::vector<any> const& r) const override {
+                using argType = typename GoodLang::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::arguments;
+                using returnType = typename GoodLang::utilities::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
+                static constexpr auto numArgs{ std::tuple_size_v< argType > };
+
+                if constexpr (std::is_reference< returnType>::value) {
+                    // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                    using refAsBaseType = typename std::remove_reference_t< returnType>;
+                    using ptrType = std::shared_ptr<refAsBaseType>;
+                    ptrType out;
+                    std::vector<any> parents = r;
+                    if constexpr (numArgs == 16) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 15) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast(), r[13].cast(), r[14].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 14) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast(), r[13].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 13) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 12) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 11) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 10) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 9) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 8) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 7) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 6) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 5) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 4) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 3) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 2) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs == 1) {
+                        out = ptrType(&F_m(
+                            r[0].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    else if constexpr (numArgs <= 0) {
+                        out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) {
+                            throw GoodLang::exception::arity_error(parents.size(), numArgs, __LINE__);
+                        } });
+                    }
+                    return out;
+                }
+                else {
+                    // best-case, normal operation
+                    if constexpr (std::is_same_v<returnType, void>) {
+                        if constexpr (numArgs == 16) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 15) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 14) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 13) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 12) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 11) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 10) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 9) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 8) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 7) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 6) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 5) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 4) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 3) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 2) {
+                            F_m(
+                                r[0].cast(), r[1].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 1) {
+                            F_m(
+                                r[0].cast()
+                            );
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            F_m();
+                        }
+                        return {};
+                    }
+                    else {
+                        if constexpr (numArgs == 16) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 15) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 14) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 13) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 12) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 11) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 10) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 9) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 8) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 7) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 6) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 5) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 4) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 3) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 2) {
+                            return F_m(
+                                r[0].cast(), r[1].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 1) {
+                            return F_m(
+                                r[0].cast()
+                            );
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            return F_m();
+                        }
+                    }
+                }
+            };
+
+            Callable F_m;
+        };
+
+
+        /**
+         * Use to call member objects:
+         * struct Test{ public: std::string attr; }
+         * var& func = details::Attribute_Access_Impl(&Test::attr);
+         * assert(func(Test{ "STR" }).cast<std::string>() == "STR");
+        */
+        template <typename T, class Class>
+        class Attribute_Access_Impl : public Proxy_Function_Base {
+        protected:
+            using ReturnType = typename std::decay_t<typename GoodLang::details::get_type<T>::type>;
+            static function_signature CreateSignature() {
+                types Types;
+                Types += type_of<Class&>();
+                return function_signature("", type_of<ReturnType&>(), std::move(Types)); // no defaults provided
+            };
+
+        public:
+            using actualT = typename std::decay_t<typename GoodLang::details::get_type<T>::type>;
+            Attribute_Access_Impl(T Class::* t_attr)
+                : Proxy_Function_Base(CreateSignature())
+                , m_attr(t_attr)
+            {};
+            virtual ~Attribute_Access_Impl() = default;
+
+        protected:
+            // assumes conversion already happened
+            virtual any do_call(std::vector<any> const& r) const override {
+                if (r.size() < 1) throw(GoodLang::exception::arity_error(0, 1, __LINE__));
+                return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
+            };
+
+            auto& do_call_impl_impl(Class* o) const {
+                return o->*m_attr;
+            };
+
+            any do_call_impl(std::shared_ptr<Class> const& o) const {
+                if constexpr (std::is_same_v<void, T>) {
+                    // void? Return void.
+                    return {};
+                }
+                else if constexpr (std::is_same<any, actualT>::value) { // typename std::remove_reference_t<T>
+                    // Any? Return reference to the underlying value, NOT a reference to the Any.
+                    return do_call_impl_impl(o.get());
+                }
+                else if constexpr (std::is_pointer<T>::value) {
+                    // Pointer? Wrap it as a shared pointer.
+                    using Type = typename std::remove_pointer<T>::type;
+                    decltype(auto) ptr = do_call_impl_impl(o.get());
+                    if (ptr) {
+                        return std::shared_ptr<Type>(ptr, [=](Type*) { (void)o.get(); /* do nothing */ });
+                    }
+                    else {
+                        return {};
+                    }
+                }
+                else {
+                    // Reference? Wrap it as a shared pointer.
+                    using Type = typename std::remove_reference<T>::type;
+                    return std::shared_ptr<Type>(&(do_call_impl_impl(o.get())), [=](Type*) { (void)o.get(); /* do nothing */ });
+                }
+            };
+
+            T Class::* m_attr;
+        };
+
+        template <typename T, class Class>
+        class Const_Attribute_Access_Impl : public Proxy_Function_Base {
+        protected:
+            using ReturnType = typename std::decay_t<typename GoodLang::details::get_type<T>::type>;
+
+            static function_signature CreateSignature() {
+                types Types;
+                Types += type_of<const Class&>();
+                return function_signature("", type_of<const ReturnType&>(), std::move(Types)); // no defaults provided
+            };
+
+        public:
+            using actualT = typename std::decay_t<typename GoodLang::details::get_type<T>::type>;
+            Const_Attribute_Access_Impl(T Class::* t_attr)
+                : Proxy_Function_Base(CreateSignature())
+                , m_attr(t_attr)
+            {};
+            virtual ~Const_Attribute_Access_Impl() = default;
+
+        protected:
+            // assumes conversion already happened
+            virtual any do_call(std::vector<any> const& r) const override {
+                if (r.size() < 1) throw(GoodLang::exception::arity_error(0, 1, __LINE__));
+                return do_call_impl(r[0].cast<std::shared_ptr<Class>>());
+            };
+
+            auto& do_call_impl_impl(Class* o) const {
+                return o->*m_attr;
+            };
+
+            any do_call_impl(std::shared_ptr<Class> o) const {
+                if constexpr (std::is_same_v<void, T>) {
+                    // void? Return void.
+                    return {};
+                }
+                else if constexpr (std::is_same<any, actualT>::value) { // typename std::remove_reference_t<T>
+                    // Any? Return reference to the underlying value, NOT a reference to the Any.
+                    return do_call_impl_impl(o.get());
+                }
+                else if constexpr (std::is_pointer<T>::value) {
+                    // Pointer? Wrap it as a shared pointer.
+                    using Type = typename std::remove_pointer<T>::type;
+                    decltype(auto) ptr = do_call_impl_impl(o.get());
+                    if (ptr) {
+                        return std::shared_ptr<Type>(ptr, [=](Type*) { (void)o.get(); /* do nothing */ });
+                    }
+                    else {
+                        return {};
+                    }
+                }
+                else {
+                    // Reference? Wrap it as a shared pointer.
+                    using Type = typename std::remove_reference<T>::type;
+                    return std::shared_ptr<Type>(&(do_call_impl_impl(o.get())), [=](Type*) { (void)o.get(); /* do nothing */ });
+                }
+            };
+
+            T Class::* m_attr;
+        };
+
+#if 0
+        namespace detail {
+            /**
+             * Use to call member functions:
+             * struct Test{ public: std::string attr(){ return "TEST"; }; }
+             * var& func = details::Attribute_Access_Impl(&Test::attr);
+             * assert(func(Test{}).cast<std::string>() == "TEST");
+            */
+            template <typename R, typename Class, typename... T>
+            class Const_Member_Function_Impl : public Proxy_Function_Base {
+            public:
+                typedef std::tuple<Class, T...> argType;
+                static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+                typedef typename std::decay_t<typename details::get_type<R>::type> actualT;
+                static GoodLang::FunctionSignature CreateSignature() {
+                    std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
+                    types[0] = user_type_shared<const Class&>();
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
+                    argT(0);
+                    argT(1);
+                    argT(2);
+                    argT(3);
+                    argT(4);
+                    argT(5);
+                    argT(6);
+                    argT(7);
+                    argT(8);
+                    argT(9);
+                    argT(10);
+                    argT(11);
+                    argT(12);
+                    argT(13);
+                    argT(14);
+                    argT(15);
+#undef argT
+                    GoodLang::ParamTypes params(types);
+                    GoodLang::FunctionArgs args(params);
+                    return GoodLang::FunctionSignature(user_type_shared<typename details::get_type<R>::type>(), args, "", "");
+                };
+
+            public:
+                Const_Member_Function_Impl(R(Class::* f)(T...) const)
+                    : Proxy_Function_Base(CreateSignature())
+                    , m_attr(std::move(f)) {};
+                virtual ~Const_Member_Function_Impl() = default;
+                GoodLang::FunctionSignature& GetSignature() {
+                    return this->m_signature;
+                };
+            protected:
+                virtual Any do_call(std::vector<Any> const& r) const override {
+                    typedef R returnType;
+                    if constexpr (std::is_reference< returnType>::value) {
+                        // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                        typedef typename std::remove_reference_t< returnType> refAsBaseType;
+                        typedef std::shared_ptr<refAsBaseType> ptrType;
+                        ptrType out;
+                        std::vector<Any> parents = r;
+                        if constexpr (numArgs == 16) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 15) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast(), r[14].cast(), r[15].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 14) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast(), r[14].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 13) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 12) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 11) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 10) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 9) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 8) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 7) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 6) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 5) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 4) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 3) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 2) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 1) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        return out;
+                    }
+                    else {
+                        // best-case, normal operation
+                        if constexpr (std::is_same_v<returnType, void>) {
+                            static Any temp;
+                            if constexpr (numArgs == 16) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 15) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 14) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 13) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 12) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 11) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 10) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 9) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 8) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 7) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 6) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 5) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 4) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 3) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 2) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 1) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                (r[0].cast<Class*>()->*m_attr)();
+                            }
+                            return temp;
+                        }
+                        else {
+                            if constexpr (numArgs == 16) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 15) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 14) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 13) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 12) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 11) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 10) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 9) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 8) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 7) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 6) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 5) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 4) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 3) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 2) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 1) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                return (r[0].cast<Class*>()->*m_attr)();
+                            }
+                        }
+                    }
+                };
+                virtual Any do_call(Any& r) const override {
+                    typedef R returnType;
+                    if constexpr (std::is_reference< returnType>::value) {
+                        // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                        typedef typename std::remove_reference_t< returnType> refAsBaseType;
+                        typedef std::shared_ptr<refAsBaseType> ptrType;
+                        ptrType out;
+                        Any parents = r;
+                        if constexpr (numArgs >= 1) {
+                            throw exception::arity_error(1, numArgs, __LINE__);
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) {
+                                throw exception::arity_error(1, numArgs, __LINE__);
+                            } });
+                        }
+                        return out;
+                    }
+                    else {
+                        // best-case, normal operation
+                        if constexpr (std::is_same_v<returnType, void>) {
+                            static Any temp;
+                            if constexpr (numArgs >= 1) {
+                                throw exception::arity_error(1, numArgs, __LINE__);
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                (r.cast<Class*>()->*m_attr)();
+                            }
+                            return temp;
+                        }
+                        else {
+                            if constexpr (numArgs >= 1) {
+                                throw exception::arity_error(1, numArgs, __LINE__);
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                return (r.cast<Class*>()->*m_attr)();
+                            }
+                        }
+                    }
+                };
+
+                R(Class::* m_attr)(T...) const;
+            };
+            template <typename R, typename Class, typename... T>
+            class Default_Member_Function_Impl : public Proxy_Function_Base {
+            public:
+                using argType = std::tuple<Class, T...>;
+                static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+                using actualT = typename std::decay_t<typename details::get_type<R>::type>;
+                static GoodLang::FunctionSignature CreateSignature() {
+                    std::vector<std::weak_ptr<Type_Info>> types(numArgs + 1, std::weak_ptr<Type_Info>());
+                    types[0] = user_type_shared<Class&>();
+#define argT(NN) if constexpr (numArgs > NN) { types[NN+1] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
+                    argT(0);
+                    argT(1);
+                    argT(2);
+                    argT(3);
+                    argT(4);
+                    argT(5);
+                    argT(6);
+                    argT(7);
+                    argT(8);
+                    argT(9);
+                    argT(10);
+                    argT(11);
+                    argT(12);
+                    argT(13);
+                    argT(14);
+                    argT(15);
+#undef argT
+                    GoodLang::ParamTypes params(types);
+                    GoodLang::FunctionArgs args(params);
+                    return GoodLang::FunctionSignature(user_type_shared<typename details::get_type<R>::type>(), args, "", "");
+                };
+
+            public:
+                Default_Member_Function_Impl(R(Class::* f)(T...))
+                    : Proxy_Function_Base(CreateSignature())
+                    , m_attr(std::move(f)) {};
+                virtual ~Default_Member_Function_Impl() = default;
+                GoodLang::FunctionSignature& GetSignature() {
+                    return this->m_signature;
+                };
+            private:
+                // assumes conversion already happened
+                virtual Any do_call(std::vector<Any> const& r) const override {
+                    using returnType = R;
+                    if constexpr (std::is_reference< returnType>::value) {
+                        // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                        using refAsBaseType = typename std::remove_reference_t< returnType>;
+                        using ptrType = std::shared_ptr<refAsBaseType>;
+                        ptrType out;
+                        std::vector<Any> parents = r;
+                        if constexpr (numArgs == 16) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 15) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast(), r[14].cast(), r[15].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 14) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast(), r[14].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 13) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                r[13].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 12) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 11) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast(), r[11].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 10) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast(), r[10].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 9) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                r[9].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 8) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 7) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast(), r[7].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 6) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast(), r[6].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 5) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                r[5].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 4) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 3) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast(), r[3].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 2) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast(), r[2].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs == 1) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(
+                                r[1].cast()
+                                ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            out = ptrType(&(r[0].cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                        }
+                        return out;
+                    }
+                    else {
+                        // best-case, normal operation
+                        if constexpr (std::is_same_v<returnType, void>) {
+                            static Any temp;
+                            if constexpr (numArgs == 16) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 15) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 14) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 13) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 12) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 11) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 10) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 9) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 8) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 7) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 6) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 5) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 4) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 3) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 2) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 1) {
+                                (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                (r[0].cast<Class*>()->*m_attr)();
+                            }
+                            return temp;
+                        }
+                        else {
+                            if constexpr (numArgs == 16) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast(), r[16].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 15) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast(), r[15].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 14) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast(), r[14].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 13) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast(),
+                                    r[13].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 12) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast(), r[12].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 11) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast(), r[11].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 10) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast(), r[10].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 9) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast(),
+                                    r[9].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 8) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast(), r[8].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 7) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast(), r[7].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 6) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast(), r[6].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 5) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast(),
+                                    r[5].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 4) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast(), r[4].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 3) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast(), r[3].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 2) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast(), r[2].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs == 1) {
+                                return (r[0].cast<Class*>()->*m_attr)(
+                                    r[1].cast()
+                                    );
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                return (r[0].cast<Class*>()->*m_attr)();
+                            }
+                        }
+                    }
+                };
+                virtual Any do_call(Any& r) const override {
+                    using returnType = R;
+                    if constexpr (std::is_reference< returnType>::value) {
+                        // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                        using refAsBaseType = typename std::remove_reference_t< returnType>;
+                        using ptrType = std::shared_ptr<refAsBaseType>;
+                        ptrType out;
+                        Any parents = r;
+                        if constexpr (numArgs >= 1) {
+                            throw exception::arity_error(0, numArgs, __LINE__);
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            out = ptrType(&(r.cast<Class*>()->*m_attr)(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs, __LINE__); } });
+                        }
+                        return out;
+                    }
+                    else {
+                        // best-case, normal operation
+                        if constexpr (std::is_same_v<returnType, void>) {
+                            static Any temp;
+                            if constexpr (numArgs >= 1) {
+                                throw exception::arity_error(1, numArgs, __LINE__);
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                (r.cast<Class*>()->*m_attr)();
+                            }
+                            return temp;
+                        }
+                        else {
+                            if constexpr (numArgs >= 1) {
+                                throw exception::arity_error(1, numArgs, __LINE__);
+                            }
+                            else if constexpr (numArgs <= 0) {
+                                return (r.cast<Class*>()->*m_attr)();
+                            }
+                        }
+                    }
+                };
+
+                R(Class::* m_attr)(T...);
+            };
+
+        };
+
+        template<typename Ret, typename Class, typename... Param>
+        Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) const) {
+            auto* function_impl = new detail::Const_Member_Function_Impl(f);
+            auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+            return ptr;
+        };
+        template<typename Ret, typename Class, typename... Param>
+        Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...)) {
+            auto* function_impl = new detail::Default_Member_Function_Impl(f);
+            auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+            return ptr;
+        };
+        template<typename Ret, typename Class, typename... Param>
+        Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) const, ParamTypes const& paramTypes) {
+            auto* function_impl = new detail::Const_Member_Function_Impl(f);
+            FunctionSignature& signature = function_impl->GetSignature();
+            function_impl->GetSignature() = FunctionSignature(signature.Returns(), FunctionArgs(paramTypes));
+            auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+            return ptr;
+        };
+        template<typename Ret, typename Class, typename... Param>
+        Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...), ParamTypes const& paramTypes) {
+            auto* function_impl = new detail::Default_Member_Function_Impl(f);
+            FunctionSignature& signature = function_impl->GetSignature();
+            function_impl->GetSignature() = FunctionSignature(signature.Returns(), FunctionArgs(paramTypes));
+            auto ptr{ std::static_pointer_cast<Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
+            return ptr;
+        };
+
+        /**
+         * Use to call member functions:
+         * struct Test{ public: std::string attr(){ return "TEST"; }; }
+         * var& func = details::Attribute_Access_Impl(&Test::attr);
+         * assert(func(Test{}).cast<std::string>() == "TEST");
+        */
+        template <typename R, typename... T>
+        class Static_Function_Impl : public Proxy_Function_Base {
+        public:
+            using argType = std::tuple<R, T...>;
+            static constexpr auto numArgs = std::tuple_size_v<argType> -1;
+            static GoodLang::FunctionSignature CreateSignature() {
+                std::vector<std::weak_ptr<Type_Info>> types(numArgs, std::weak_ptr<Type_Info>());
+#define argT(NN) if constexpr (numArgs > NN) { types[NN] = user_type_shared<typename std::tuple_element_t<NN+1, argType>>(); }
+                argT(0);
+                argT(1);
+                argT(2);
+                argT(3);
+                argT(4);
+                argT(5);
+                argT(6);
+                argT(7);
+                argT(8);
+                argT(9);
+                argT(10);
+                argT(11);
+                argT(12);
+                argT(13);
+                argT(14);
+                argT(15);
+#undef argT
+                GoodLang::ParamTypes params(types);
+                GoodLang::FunctionArgs args(params);
+                return GoodLang::FunctionSignature(user_type_shared<R>(), args, "", "");
+            };
+
+        public:
+            Static_Function_Impl(R(*f)(T...))
+                : Proxy_Function_Base(CreateSignature())
+                , F_m(std::move(f)) {};
+            virtual ~Static_Function_Impl() = default;
+            GoodLang::FunctionSignature& GetSignature() {
+                return this->m_signature;
+            };
+        protected:
+            // assumes conversion already happened
+            virtual Any do_call(std::vector<Any> const& r) const override {
+                if (r.size() < numArgs) throw(exception::arity_error(r.size(), numArgs, __LINE__));
+                return do_call_impl(r);
+            };
+            virtual Any do_call(Any& r) const override {
+                if (1 < numArgs) throw(exception::arity_error(1, numArgs, __LINE__));
+                return do_call_impl(r);
+            };
+
+            Any do_call_impl(std::vector<Any> const& r) const {
+                if constexpr (std::is_reference< R>::value) {
+                    // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                    using refAsBaseType = typename std::remove_reference_t< R>;
+                    using ptrType = std::shared_ptr<refAsBaseType>;
+                    ptrType out;
+                    std::vector<Any> parents = r;
+                    if constexpr (numArgs == 16) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 15) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast(), r[13].cast(), r[14].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 14) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast(), r[13].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 13) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                            r[12].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 12) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 11) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast(), r[10].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 10) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast(), r[9].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 9) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                            r[8].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 8) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 7) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast(), r[6].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 6) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast(), r[5].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 5) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                            r[4].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 4) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 3) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast(), r[2].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 2) {
+                        out = ptrType(&F_m(
+                            r[0].cast(), r[1].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs == 1) {
+                        out = ptrType(&F_m(
+                            r[0].cast()
+                        ), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs <= 0) {
+                        out = ptrType(&F_m(), [parents](refAsBaseType*) { if (parents.size() < numArgs) { throw exception::arity_error(parents.size(), numArgs, __LINE__); } });
+                    }
+                    return out;
+                }
+                else {
+                    // best-case, normal operation
+                    if constexpr (std::is_same_v<R, void>) {
+                        static Any temp;
+                        if constexpr (numArgs == 16) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 15) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 14) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 13) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 12) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 11) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 10) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 9) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 8) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 7) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 6) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 5) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 4) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 3) {
+                            F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 2) {
+                            F_m(
+                                r[0].cast(), r[1].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 1) {
+                            F_m(
+                                r[0].cast()
+                            );
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            F_m();
+                        }
+                        return temp;
+                    }
+                    else {
+
+                        if constexpr (numArgs == 16) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast(), r[15].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 15) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast(), r[14].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 14) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast(), r[13].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 13) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast(),
+                                r[12].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 12) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast(), r[11].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 11) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast(), r[10].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 10) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast(), r[9].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 9) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast(),
+                                r[8].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 8) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast(), r[7].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 7) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast(), r[6].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 6) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast(), r[5].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 5) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast(),
+                                r[4].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 4) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast(), r[3].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 3) {
+                            return F_m(
+                                r[0].cast(), r[1].cast(), r[2].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 2) {
+                            return F_m(
+                                r[0].cast(), r[1].cast()
+                            );
+                        }
+                        else if constexpr (numArgs == 1) {
+                            return F_m(
+                                r[0].cast()
+                            );
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            return F_m();
+                        }
+                    }
+                }
+            };
+            Any do_call_impl(Any& r) const {
+                if constexpr (std::is_reference< R>::value) {
+                    // if the return type is a reference, the parent(s) should be protected by carrying them along. 
+                    using refAsBaseType = typename std::remove_reference_t< R>;
+                    using ptrType = std::shared_ptr<refAsBaseType>;
+                    ptrType out;
+                    Any parents = r;
+                    if constexpr (numArgs > 1) {
+                        throw exception::arity_error(1, numArgs, __LINE__);
+                    }
+                    else if constexpr (numArgs == 1) {
+                        out = ptrType(&F_m(
+                            r.cast()
+                        ), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs, __LINE__); } });
+                    }
+                    else if constexpr (numArgs <= 0) {
+                        out = ptrType(&F_m(), [parents](refAsBaseType*) { if (1 < numArgs) { throw exception::arity_error(1, numArgs, __LINE__); } });
+                    }
+                    return out;
+                }
+                else {
+                    // best-case, normal operation
+                    if constexpr (std::is_same_v<R, void>) {
+                        static Any temp;
+                        if constexpr (numArgs > 1) {
+                            throw exception::arity_error(1, numArgs, __LINE__);
+                        }
+                        else if constexpr (numArgs == 1) {
+                            F_m(
+                                r.cast()
+                            );
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            F_m();
+                        }
+                        return temp;
+                    }
+                    else {
+                        if constexpr (numArgs > 1) {
+                            throw exception::arity_error(1, numArgs, __LINE__);
+                        }
+                        else if constexpr (numArgs == 1) {
+                            return F_m(
+                                r.cast()
+                            );
+                        }
+                        else if constexpr (numArgs <= 0) {
+                            return F_m();
+                        }
+                    }
+                }
+            };
+
+            R(*F_m)(T...);
+        };
+
+        namespace detail {
+            template <typename T>
+            struct is_static_member_function : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) const> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...)> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) const volatile> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) volatile> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...)&> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) const&> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...)&&> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) const&&> : std::false_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) noexcept> : std::true_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) const noexcept> : std::true_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) volatile noexcept> : std::true_type {};
+
+            template <typename R, typename C, typename... Args>
+            struct is_static_member_function<R(C::*)(Args...) const volatile noexcept> : std::true_type {};
+
+
+            template<typename... Param> struct Function_Params {
+                typedef std::tuple<Param...> argType;
+                static constexpr auto numArgs = std::tuple_size_v<argType>;
+            };
+
+            template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false>
+            struct Function_Signature {
+                typedef Params Param_Types;
+                typedef Class Class_Type;
+                typedef Ret Return_Type;
+
+                constexpr static const bool is_object = IsObject; // e.g. lambda object
+                constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+                constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+                constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+                constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+                template<typename T> constexpr Function_Signature(T&&) noexcept { };
+                constexpr Function_Signature() noexcept = default;
+            };
+
+            // Free functions
+            template<typename Ret, typename... Param>
+            Function_Signature(Ret(*f)(Param...))
+                ->Function_Signature<Ret, void, Function_Params<Param...>>; // static function
+
+            // no reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile)
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile const)
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...))
+                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) const)
+                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true>; // member function
+
+            // & reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile&)
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile const&)
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...)&)
+                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) const&)
+                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true>; // member function
+
+            // && reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile&&)
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile const&&)
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...)&&)
+                ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) const&&)
+                ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true>; // member function
+
+            template<typename Ret, typename Class>
+            Function_Signature(Ret Class::* f)
+                ->Function_Signature<Ret, Class, Function_Params<Class&>, true, true>; // member object
+
+            // primary template handles types that have no nested ::type member:
+            template<class, class = std::void_t<>>
+            struct has_call_operator : std::false_type {};
+
+            // specialization recognizes types that do have a nested ::type member:
+            template<class T>
+            struct has_call_operator<T, std::void_t<decltype(&T::operator())>> : std::true_type {};
+
+            template<typename Func>
+            auto function_signature(Func const& f) {
+                if constexpr (has_call_operator<Func>::value) {
+                    return Function_Signature<
+                        typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
+                        typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Class_Type,
+                        typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Param_Types,
+                        false,
+                        false,
+                        true
+                    > {};
+                }
+                else {
+                    return Function_Signature{ f };
+                }
+            };
+
+            template<typename Obj, typename Param1, typename... Rest>
+            Param1 get_first_param(Function_Params<Param1, Rest...>, Obj&& obj) {
+                return static_cast<Param1>(std::forward<Obj>(obj));
+            };
+
+        } // namespace chaiscript::dispatch::detail
+
+#endif
+    };
+
+    // Convert nearly any function or function pointer to a callable, generic proxy function. 
+    template<typename Func> Proxy_Function make_callable(Func&& func) {
+        typedef decltype(GoodLang::details::detail::function_signature(func)) function_header;
+
+        if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};            
+            auto* function_impl = new details::Explicit_Function_Impl(std::forward<Func>(func));
+            return std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+        }
+        else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;            
+            auto* function_impl = new details::Attribute_Access_Impl(std::forward<Func>(func));
+            return std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+        }
+        else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();            
+            // return details::Member_Function_Impl(std::forward<Func>(func));
+        }
+        else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};            
+            //auto* function_impl = new details::Static_Function_Impl(std::forward<Func>(func));
+            //return std::static_pointer_cast<details::Proxy_Function_Base>(std::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+        }
+        else {            
+            throw std::runtime_error("Did not handle conversion of provided function to a PROXY_FUNCTION.");
+        }
+        return nullptr;
+    };
+
+
+
+
+
+
+
+
+
+}
 
 
 
@@ -5994,13 +8099,43 @@ int main() {
     }
     if (1) {
         utilities::function_signature example_signature("to_string", utilities::type_of<utilities::string>(), utilities::function_args{ std::vector<type>{ utilities::type_of<int>(), utilities::type_of<float>() } }, { 200.0f });
-        EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{}));
+        EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{}));
         EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<int>() }));
         EXPECT_EQ(false, example_signature.can_call_without_cast(utilities::types{ utilities::type_of<float>() }));
         EXPECT_EQ(true, example_signature.can_call_without_cast(utilities::types{ std::vector<type>{ utilities::type_of<int>(), utilities::type_of<float>() } }));
     }
+    if (1) {
+        auto callable = utilities::make_callable([]() -> int { return 100; });
+        EXPECT_EQ(true, callable->m_signature.can_call_without_cast(types{ std::vector<type>{  } }));
+        EXPECT_EQ(true, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ type_of<int>() } }));
+        EXPECT_EQ(100, callable->operator()({}).cast<int>());
+    }
+    if (1) {
+        auto callable = utilities::make_callable([](int i) -> int { return 100; });
+        EXPECT_EQ(true, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ type_of<int>() } }));
+        EXPECT_EQ(false, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ type_of<double>() } }));
+        EXPECT_EQ(false, callable->m_signature.can_call_without_cast(types{ std::vector<type>{} }));
+        EXPECT_EQ(100, callable->operator()({ 100 }).cast<int>());
+    }
+    if (1) {
+        auto callable = utilities::make_callable([](int const& i) -> int { return 100; });
+        EXPECT_EQ(true, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ type_of<int const&>() } }));
+        EXPECT_EQ(false, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ type_of<double>() } }));
+        EXPECT_EQ(false, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ } }));
+        EXPECT_EQ(100, callable->operator()({ 100 }).cast<int>());
+    }
+    if (1) {
+        struct obj {
+            int x;
+            int y;
+        };
+        obj temp{ 100, 200 };
 
-
+        auto callable = utilities::make_callable(&obj::x);
+        EXPECT_EQ(true, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ type_of<obj&>() } }));
+        EXPECT_EQ(false, callable->m_signature.can_call_without_cast(types{ std::vector<type>{ } }));
+        // EXPECT_EQ(100, callable->operator()({ temp }).cast<int>());
+    }
 
 
 
