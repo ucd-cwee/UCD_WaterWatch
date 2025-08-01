@@ -13,6 +13,7 @@
 #include "../GoodLang/Scopes.h"
 #include "../FiberTasks/Concurrent_Queue.h"
 #include <regex>
+#include <list>
 #pragma endregion
 
 #pragma region "Definitions"
@@ -1025,7 +1026,7 @@ namespace utilities {
             allocator;
         ABA_Problem::THead<element_t>
             head; // 
-
+        std::atomic<size_t> count;
     public:
         void push(T const& obj) {
             // get a new element
@@ -1041,6 +1042,7 @@ namespace utilities {
             //}
 
             ABA_Problem::Push(head, new_ptr);
+            ++count;
         };
         void push(T&& obj) {
             // get a new element
@@ -1056,6 +1058,7 @@ namespace utilities {
             //}
 
             ABA_Problem::Push(head, new_ptr);
+            ++count;
         };
         bool try_pop(T& out) {
             if (element_t* ptr = ABA_Problem::Pop(head)) {
@@ -1066,15 +1069,18 @@ namespace utilities {
                     out = ptr->data;
                 }
                 allocator.Free(ptr);
+                --count;
                 return true;
             }
             return false;
         };
-
+        size_t size() const {
+            return count.load();
+        };
     };
 
     namespace ABA_Problem {
-        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = moodycamel::ConcurrentQueue/*atomic_queue*/<std::pair<long long, _type_*>>>
+        template <typename _type_, typename AllocatorType = Allocator<_type_, 32>, typename DeleteListType = /*moodycamel::ConcurrentQueue*/atomic_queue<std::pair<long long, _type_*>>>
         class EpochAllocator {
         private:
             class TLS {
@@ -1162,6 +1168,8 @@ namespace utilities {
                 static constexpr long long duration_ms{ 5 };
 
                 if ((GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() - _lastGC) > duration_ms) {
+                    InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
+
                     long long _EpochLimit{ std::numeric_limits<long long>::max() };
                     std::pair<long long, _type_*> out;
 
@@ -1171,31 +1179,61 @@ namespace utilities {
                         }
                     });
 
-                    // int max_add_back = 99;
+                    // 
                     if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
-                        std::map< long long, std::set<_type_*>> add_back;
-
-                        while (_delete_list.try_pop(out)) {
-                            if (out.first < _EpochLimit) { // deemed safe to delete
-                                _alloc.Free(out.second);
+                        if (_delete_list.size() > 10000) {
+                            thread_local std::map< long long, std::set<_type_*>> add_back;
+                            while (_delete_list.try_pop(out)) {
+                                if (out.first < _EpochLimit) { // deemed safe to delete
+                                    _alloc.Free(out.second);
+                                }
+                                else { // deemed unsafe to delete just yet
+                                    add_back[out.first].insert(out.second);
+                                    if (_delete_list.size() <= 500) { break; }
+                                }                                
                             }
-                            else { // deemed unsafe to delete just yet
-                                //_delete_list.push(out);
-                                 add_back[out.first].insert(out.second);
-                                //break;
+                            for (auto& x : add_back) {
+                                if (x.first < _EpochLimit) {
+                                    for (auto& y : x.second) {
+                                        _alloc.Free(y);
+                                    }
+                                }
+                                else {
+                                    for (auto& y : x.second) {
+                                        out.first = x.first;
+                                        out.second = y;
+                                        _delete_list.push(out);
+                                    }
+                                }
+                            }
+                            add_back.clear();
+                        }
+                        else if (_delete_list.size() > 1000) {
+                            int max_add_back = 500;
+                            // basic and slightly faster
+                            while (_delete_list.try_pop(out)) {
+                                if (out.first < _EpochLimit) { // deemed safe to delete
+                                    _alloc.Free(out.second);
+                                }
+                                else { // deemed unsafe to delete just yet
+                                    _delete_list.push(out);
+                                    if (--max_add_back <= 0) break;
+                                }                                
                             }
                         }
-
-                        for (auto& x : add_back) {
-                            for (auto& y : x.second) {
-                                out.first = x.first;
-                                out.second = y;
-                                _delete_list.push(out);
+                        else {
+                            // basic and much faster
+                            while (_delete_list.try_pop(out)) {
+                                if (out.first < _EpochLimit) { // deemed safe to delete
+                                    _alloc.Free(out.second);
+                                }
+                                else { // deemed unsafe to delete just yet
+                                    _delete_list.push(out);                                
+                                    break;
+                                }
                             }
-                        }  
+                        }
                     }
-
-                    InterlockedExchange64(reinterpret_cast<volatile long long*>(&_lastGC), GoodLang::EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch());
                 }
 
             };
@@ -2945,6 +2983,8 @@ namespace utilities {
                 return types_m->operator[](index);
             }
             else {
+                //print("PROBLEM!");
+                //return const_cast<type&>(type_of<void>());
                 throw std::out_of_range("type was not available");
             }
         };
@@ -3160,7 +3200,7 @@ namespace utilities {
             virtual void protect_aux() override { (void)shared_ptr<U>::aux_default_allocator().ProtectCurrentEpoch_Fast(); };
             virtual void destroy_aux() override {
                 (void)shared_ptr<U>::aux_default_allocator().Free(this);
-                shared_ptr<U>::aux_default_allocator().RunGC();
+                // shared_ptr<U>::aux_default_allocator().RunGC();
             };
             virtual void destroy_obj() override {
                 delete static_cast<U*>(this->p);
@@ -3180,7 +3220,7 @@ namespace utilities {
             virtual void protect_aux() override { (void)shared_ptr<U>::aux_deleter_allocator().ProtectCurrentEpoch_Fast(); };
             virtual void destroy_aux() override {
                 (void)shared_ptr<U>::aux_deleter_allocator().Free(this);
-                shared_ptr<U>::aux_deleter_allocator().RunGC();
+                // shared_ptr<U>::aux_deleter_allocator().RunGC();
             };
             virtual void destroy_obj() override {
                 deletionFunc(static_cast<U*>(this->p));
@@ -3190,13 +3230,6 @@ namespace utilities {
         };
 
         static auto& aux_default_allocator() {
-            //static constexpr size_t num_allocators = 20;
-            //static std::array<utilities::DelayedInstantiation<utilities::ABA_Problem::EpochAllocator<
-            //    aux_default<T>
-            //    , utilities::ABA_Problem::BlockAlloc<aux_default<T>, 512> // Allocator
-            //>>, num_allocators> alloc{};
-            //return *alloc[(size_t)p % num_allocators];
-
             static utilities::ABA_Problem::EpochAllocator<
                 aux_default<T>
                 , utilities::ABA_Problem::Allocator<aux_default<T>, 256> // Allocator
@@ -3906,7 +3939,12 @@ namespace utilities {
         };
         template<typename FromType> any polymorphic_cast(type const& new_type) const {
             any out;
-            out.container = type_erasure::wrap(*this, new_type);
+            if (this->actual_type().is_parent_of(new_type) || this->actual_type().is_child_of(new_type)) {
+                out.container = type_erasure::wrap(*this, new_type);
+            }
+            else {
+                // throw std::runtime_error("Could not perform the requested polymorphic cast -- the types were not connected by family tree.");
+            }            
             return out;
         };
 
@@ -8285,21 +8323,16 @@ int main() {
         utilities::Dynamic_Type_Conversion_Impl<GoodLang::Units::value, GoodLang::Units::meter> up_converter_2;
 
         down_converter.convert(from, out); // out should be a value
-        //print(out.actual_type().get_name()); print(out.current_type().get_name());
+        EXPECT_EQ(false, out.empty());
         EXPECT_EQ(100, (int)out.cast<GoodLang::Units::value>()());
-
         up_converter_1.convert(out, out); // out should be a foot
-        //print(out.actual_type().get_name()); print(out.current_type().get_name());
+        EXPECT_EQ(false, out.empty());
         EXPECT_EQ(100, (int)out.cast<GoodLang::Units::foot>()());
-
-
-        // NOTE, this is a bug we want to remove. It should NOT be able to cast from foot -> value -> meter... unless we want that? TBD
-
         down_converter.convert(out, out); // out should be a value
-        //print(out.actual_type().get_name()); print(out.current_type().get_name());
-        up_converter_2.convert(out, out); // out should be a meter
-        //print(out.actual_type().get_name()); print(out.current_type().get_name());
-        print(out.cast<GoodLang::Units::meter>());   // note -- this cast is purely "for looks" and the underlying data is still technically an Units::foot object (always has been)
+        EXPECT_EQ(false, out.empty());
+        EXPECT_EQ(100, (int)out.cast<GoodLang::Units::value>()());
+        up_converter_2.convert(out, out); // out will be void (empty) because the cast failed. 
+        EXPECT_EQ(true, out.empty());
     }
 
 
@@ -8462,7 +8495,7 @@ int main() {
     while (true) {
         print("STARTING LOOP: \n");
 
-        if (1) {
+        if (0) {
             sw.Start();
             utilities::atomic_queue<int> queue;
             GoodLang::parallel::For(0, 1000000, [&](int j) {
@@ -8471,7 +8504,7 @@ int main() {
                 });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             utilities::atomic_queue<utilities::string> queue;
             GoodLang::parallel::For(0, 1000000, [&](int const& j) {
@@ -8482,7 +8515,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
-        if (1) {
+        if (0) {
             sw.Start();
             concurrency::concurrent_queue<int> queue;
             GoodLang::parallel::For(0, 1000000, [&](int j) {
@@ -8491,7 +8524,7 @@ int main() {
                 });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             concurrency::concurrent_queue<utilities::string> queue;
             GoodLang::parallel::For(0, 1000000, [&](int const& j) {
@@ -8502,7 +8535,7 @@ int main() {
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
 
-        if (1) {
+        if (0) {
             sw.Start();
             moodycamel::ConcurrentQueue<int> queue;
             GoodLang::parallel::For(0, 1000000, [&](int j) {
@@ -8511,7 +8544,7 @@ int main() {
                 });
             print(GoodLang::ToString(GoodLang::Units::second(sw.Stop_s())) + " @ " + GoodLang::ToString(__LINE__));
         }
-        if (1) {
+        if (0) {
             sw.Start();
             moodycamel::ConcurrentQueue<utilities::string> queue;
             GoodLang::parallel::For(0, 1000000, [&](int const& j) {
@@ -8936,7 +8969,7 @@ int main() {
         EXPECT_EQ(2, Types.size());
         EXPECT_EQ(true, (bool)(Types[0] & (utilities::type::Const | utilities::type::Reference)));
         EXPECT_EQ(true, (bool)(Types[1] & utilities::type::Temporary));
-        EXPECT_EQ(true, (bool)(Types[2] & utilities::type::Void));
+        EXPECT_EQ(true, (bool)(const_cast<utilities::types const&>(Types)[2] & utilities::type::Void));
 
         if (1) {
             utilities::atomic_map<utilities::type, std::string> tree;
