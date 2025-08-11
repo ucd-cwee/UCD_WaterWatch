@@ -18,6 +18,7 @@
 #include <set>
 #include "Strings.h"
 #include "TicketDispensor.h"
+#include <queue>
 #pragma endregion
 
 namespace GL {
@@ -100,6 +101,8 @@ namespace GL {
                     break; // success                
             } // race, try again
         }
+
+
     };
 
     /// <summary>
@@ -636,9 +639,214 @@ namespace GL {
 		auto end() const { return iterator(max, min, step); };
 	};
 
+    /* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast.
+    Generally speaking, out-performs std::mutex under most conditions. */
+    class mutex {
+    private:
+        using mutexHandle_t = RTL_CRITICAL_SECTION;;
+        static void				Sys_MutexCreate(mutexHandle_t& handle) noexcept { InitializeCriticalSection(&handle); };
+        static void				Sys_MutexDestroy(mutexHandle_t& handle) noexcept { DeleteCriticalSection(&handle); };
+        static void				Sys_MutexLock(mutexHandle_t& handle) noexcept { EnterCriticalSection(&handle); };
+        static bool				Sys_MutexTryLock(mutexHandle_t& handle) noexcept { return TryEnterCriticalSection(&handle) != 0; };
+        static void				Sys_MutexUnlock(mutexHandle_t& handle) noexcept { LeaveCriticalSection(&handle); };
+
+    public:
+        mutex() noexcept { Sys_MutexCreate(Handle); };
+        mutex(mutex const&) noexcept { Sys_MutexCreate(Handle); };
+        mutex(mutex &&) noexcept { Sys_MutexCreate(Handle); };
+        mutex& operator=(mutex const&) noexcept { return *this; };
+        mutex& operator=(mutex &&) noexcept { return *this; };
+        ~mutex() noexcept { Sys_MutexDestroy(Handle); };
+
+        void lock() {
+            Sys_MutexLock(Handle);
+        };
+        bool try_lock() {
+            return Sys_MutexTryLock(Handle);
+        };
+        void unlock() {
+            Sys_MutexUnlock(Handle);
+        };
+
+    protected:
+        mutexHandle_t Handle;
+
+    };
+
+    // a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
+    class fast_shared_mutex {
+    private:
+        mutable std::atomic<long long> mut{ 0 }; // Read, Write
+
+    public:
+        bool try_lock() const {
+            thread_local long long read, planned;
+            read = planned = mut.load(std::memory_order::memory_order_relaxed);
+            if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
+                if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
+                    if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                        return true; // success!
+                    }
+                }
+            }
+            return false;
+        };
+        void unlock() const {
+            thread_local long long read, planned;
+            int i = 0;
+            while (true) {
+                if (++i > 40) std::this_thread::yield();
+                read = planned = mut.load(std::memory_order::memory_order_relaxed);
+                --reinterpret_cast<short*>(&planned)[1];
+                if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                    break; // success!
+                }
+            }
+        };
+        void lock() const {
+            int i = 0;
+            while (!try_lock()) {
+                if (++i > 40) std::this_thread::yield();
+            }
+        };
+
+        bool try_lock_shared() const {
+            thread_local long long read;
+            read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+            if (
+                (reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
+                && (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
+                ) {
+                return true;
+            }
+            else {
+                mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+                return false;
+            }
+        };
+        void unlock_shared() const {
+            mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
+        };
+        void lock_shared() const {
+            thread_local long long read;
+            read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+            while (reinterpret_cast<long*>(&read)[1] != 0) {
+                read = mut.load();
+            }
+
+
+            //int i = 0;
+            //while (!try_lock_shared()) {
+            //	if (++i > 40) std::this_thread::yield();
+            //}
+        };
+
+        // if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
+        // Returns true if this ideal scenario was successful. Returns false otherwise.
+        bool upgrade_lock() const {
+            thread_local long long read, planned;
+            // increment the write count and decrement our read count...
+            //for (int i = 0; i < 40; ++i) {
+            planned = read = mut.load(std::memory_order::memory_order_relaxed);
+            if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
+                if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
+                    if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                        return true;
+                    }
+                }
+            }
+            //else {
+            //	break;
+            //}
+        //}
+
+            unlock_shared();
+            lock();
+
+            return false;
+        };
+
+    };
+
+    template<typename T = size_t>
+    class queue {
+        thread_object<std::pair<mutex, std::queue<T*>>>
+            _que{};
+        atomic_allocator<T>
+            _alloc{};
+        std::atomic<size_t>
+            count{ 0 };
+
+    public:
+        void push(T const& obj) {
+            auto ptr = _alloc.Alloc(obj);
+            auto& Q = *_que;
+            Q.first.lock();
+            Q.second.emplace(ptr);
+            Q.first.unlock();
+            ++count;
+        };
+        void push(T&& obj) {
+            auto ptr = _alloc.Alloc(std::move(obj));
+            auto& Q = *_que;
+            Q.first.lock();
+            Q.second.emplace(ptr);
+            Q.first.unlock();
+            ++count;
+        };
+        bool try_pop(T& out) {
+            T* ptr{ nullptr };
+
+            auto& Q = *_que;
+            Q.first.lock();
+            if (Q.second.size() > 0) {
+                ptr = Q.second.front();
+                Q.second.pop();
+                Q.first.unlock();
+                --count;
+            }
+            else {
+                Q.first.unlock();
+
+                // try all the other ones...
+                if (_que.for_each_cancellable([&ptr](auto& Q) -> bool {
+                    Q.first.lock();
+                    if (Q.second.size() > 0) {
+                        ptr = Q.second.front();
+                        Q.second.pop();
+                        Q.first.unlock();
+                        return true;
+                    }
+                    else {
+                        Q.first.unlock();
+                        return false;
+                    }
+                })) {
+                    --count;
+                }
+            }
+
+            if (ptr) {
+                if constexpr (std::is_move_assignable<T>::value) {
+                    out = std::move(*ptr);
+                }
+                else {
+                    out = *ptr;
+                }
+                _alloc.Free(ptr);
+                return true;
+            }
+            else {
+                return false;
+            }
+        };
+        size_t size() const {
+            return count.load();
+        };
+
+    };
 
 };
-
 
 
 #ifndef _LOCAL_WRITE_EM_H
