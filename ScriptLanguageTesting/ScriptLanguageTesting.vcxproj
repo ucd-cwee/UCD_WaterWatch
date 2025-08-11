@@ -143,6 +143,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ScriptLanguageTesting.cpp" />
+    <ClCompile Include="Source.cpp" />
+    <ClCompile Include="Utilities.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\GoodLang\GoodLang.vcxproj">
@@ -151,6 +153,13 @@
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Parallel.h" />
+    <ClInclude Include="Strings.h" />
+    <ClInclude Include="TicketDispensor.h" />
+    <ClInclude Include="Stopwatch.h" />
+    <ClInclude Include="Utilities.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -23,8 +23,9 @@ namespace GoodLang {
 		return out;
 	};
 	long long EpochGarbageCollectorImpl::ThreadManager::GetCurrentEpoch() {
-		// return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-
+#if 0
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#else
 		static long long current_epoch{ std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count() };
 		static std::thread update_thread{ []() {
 			while (true) {
@@ -42,6 +43,7 @@ namespace GoodLang {
 			}
 		}() };
 		return current_epoch;
+#endif
 	};
 	static size_t GetNewId() {
 		static auto* ptr{ id_vec() };
