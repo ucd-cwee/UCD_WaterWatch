@@ -19,6 +19,7 @@
 #include "Strings.h"
 #include "TicketDispensor.h"
 #include <queue>
+#include "../FiberTasks/Concurrent_Queue.h"
 #pragma endregion
 
 namespace GL {
@@ -679,6 +680,13 @@ namespace GL {
         mutable std::atomic<long long> mut{ 0 }; // Read, Write
 
     public:
+        fast_shared_mutex() : mut{ 0 } {};
+        fast_shared_mutex(fast_shared_mutex const&) noexcept : mut{ 0 } {};
+        fast_shared_mutex(fast_shared_mutex&&) noexcept : mut{ 0 } {};
+        fast_shared_mutex& operator=(fast_shared_mutex const&) noexcept { return *this; };
+        fast_shared_mutex& operator=(fast_shared_mutex&&) noexcept { return *this; };
+        ~fast_shared_mutex() = default;
+
         bool try_lock() const {
             thread_local long long read, planned;
             read = planned = mut.load(std::memory_order::memory_order_relaxed);
@@ -768,65 +776,97 @@ namespace GL {
 
     };
 
-    template<typename T = size_t>
-    class queue {
-        thread_object<std::pair<mutex, std::queue<T*>>>
+
+    template<typename T = size_t> 
+    class atomic_queue {
+        constexpr static bool is_pod = std::is_pod_v<T>;
+        using copy_type = std::conditional_t<is_pod, T, T*>;
+
+        moodycamel::ConcurrentQueue<copy_type>
             _que{};
-        atomic_allocator<T>
+        atomic_parallel_allocator<T>
+            _alloc{};
+        std::atomic<size_t>
+            count{ 0 };
+    public:
+        void push(T const& obj) {
+            if constexpr (is_pod) {
+                _que.push(obj);
+            }
+            else {
+                _que.push(_alloc.Alloc(obj));
+            }
+            ++count;
+        };
+        void push(T&& obj) {
+            if constexpr (is_pod) {
+                _que.push(std::move(obj));
+            }
+            else {
+                _que.push(_alloc.Alloc(std::move(obj)));
+            }
+            ++count;
+        };
+        bool try_pop(T& out) {
+            if constexpr (is_pod) {
+                return _que.try_pop(out);
+            }
+            else {
+                T* ptr{ nullptr };
+                if (!_que.try_pop(ptr)) {
+                    return false;
+                }
+
+                if (ptr) {
+                    --count;
+                    if constexpr (std::is_move_assignable<T>::value) {
+                        out = std::move(*ptr);
+                    }
+                    else {
+                        out = *ptr;
+                    }
+                    _alloc.Free(ptr);
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            }
+        };
+        size_t size() const {
+            return count.load();
+        };
+    };
+
+    template<typename T = size_t>
+    class atomic_parallel_queue {
+        thread_object<concurrency::concurrent_queue<T*>>
+            _que{};
+        atomic_parallel_allocator<T>
             _alloc{};
         std::atomic<size_t>
             count{ 0 };
 
     public:
         void push(T const& obj) {
-            auto ptr = _alloc.Alloc(obj);
-            auto& Q = *_que;
-            Q.first.lock();
-            Q.second.emplace(ptr);
-            Q.first.unlock();
+            _que->push(_alloc.Alloc(obj));
             ++count;
         };
         void push(T&& obj) {
-            auto ptr = _alloc.Alloc(std::move(obj));
-            auto& Q = *_que;
-            Q.first.lock();
-            Q.second.emplace(ptr);
-            Q.first.unlock();
+            _que->push(_alloc.Alloc(std::move(obj)));
             ++count;
         };
         bool try_pop(T& out) {
             T* ptr{ nullptr };
-
-            auto& Q = *_que;
-            Q.first.lock();
-            if (Q.second.size() > 0) {
-                ptr = Q.second.front();
-                Q.second.pop();
-                Q.first.unlock();
-                --count;
-            }
-            else {
-                Q.first.unlock();
-
+            if (!_que->try_pop(ptr)) {
                 // try all the other ones...
-                if (_que.for_each_cancellable([&ptr](auto& Q) -> bool {
-                    Q.first.lock();
-                    if (Q.second.size() > 0) {
-                        ptr = Q.second.front();
-                        Q.second.pop();
-                        Q.first.unlock();
-                        return true;
-                    }
-                    else {
-                        Q.first.unlock();
-                        return false;
-                    }
-                })) {
-                    --count;
-                }
+                _que.for_each_cancellable([&ptr](auto& Q) -> bool {
+                    return Q.try_pop(ptr);
+                });
             }
 
             if (ptr) {
+                --count;
                 if constexpr (std::is_move_assignable<T>::value) {
                     out = std::move(*ptr);
                 }

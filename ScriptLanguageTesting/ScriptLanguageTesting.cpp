@@ -32,7 +32,7 @@ int main() {
 #if 1
         // queue
         if (1) {
-            GL::queue<size_t> queue;
+            GL::atomic_queue<size_t> queue;
             size_t L;
             queue.push(0);
             queue.push(1);
@@ -233,9 +233,9 @@ int main() {
             });
         }
 
-        // queue
+        // atomic_queue
         if (auto timer = sw.debug_timer(__LINE__)) {
-            GL::queue<size_t> queue;
+            GL::atomic_queue<size_t> queue;
 
             GL::parallel::For(0, 1000000, [&](size_t i) {
                 queue.push(i);
@@ -247,6 +247,22 @@ int main() {
             GL::parallel::For(0, 1000000, [&](size_t i) {
                 EXPECT_EQ(true, queue.try_pop(i));
             });
+        }
+
+        // atomic_parallel_queue
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_parallel_queue<size_t> queue;
+
+            GL::parallel::For(0, 1000000, [&](size_t i) {
+                queue.push(i);
+                EXPECT_EQ(true, queue.try_pop(i));
+                });
+            GL::parallel::For(0, 1000000, [&](size_t i) {
+                queue.push(i);
+                });
+            GL::parallel::For(0, 1000000, [&](size_t i) {
+                EXPECT_EQ(true, queue.try_pop(i));
+                });
         }
 
         // moodycamel::ConcurrentQueue
