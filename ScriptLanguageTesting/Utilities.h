@@ -19,13 +19,16 @@
 #include "Strings.h"
 #include "TicketDispensor.h"
 #include <queue>
-#include "../FiberTasks/Concurrent_Queue.h"
+// #include "../FiberTasks/Concurrent_Queue.h"
 #pragma endregion
 
-namespace GL {
-    bool get_thread_alive(size_t thread_id);
-    size_t get_thread_id();
-    long long get_current_epoch();
+namespace GL {    
+    // returns true if a thread at this ID is alive and running.    
+    bool get_thread_alive(size_t thread_id); 
+    // returns the thread ID of the current, requesting thread from [1, inf). Thread IDs will be re-used once a thread terminates, resulting in low-digit IDs e.g. in practice the id's are between [1,20)
+    size_t get_thread_id(); 
+    // get the approximate count of milliseconds since the application launched. 
+    long long get_current_epoch(); 
 
     namespace impl {
         template <typename T>
@@ -91,7 +94,7 @@ namespace GL {
             return nullptr; // Head.m_n64.m_pNode was nullptr ... e.g. nothing to pop
         };
 
-        // push pNode onto head of list.
+        // push pNode onto head of list. 
         template<class T> __declspec(noinline) void Stack_Push(THead<T>& Head, T* pNode) {
             THead<T> Old, New;
             while (1) { // race loop                
@@ -106,13 +109,210 @@ namespace GL {
 
     };
 
-    /// <summary>
-    /// Block allocator atomicly allocates *BlockSize* number of T-types at a time. 
-    /// Optionally, may skip initialization, allowing the user to initialize data on their own. 
-    /// Note that for non-POD types, data must be initalized before being freed.
-    /// </summary>
-    /// <typeparam name="T">Type to be allocated. POD-types are more efficiently managed than non-POD.</typeparam>
-    template <typename T, size_t BlockSize = 128, bool skipInitialization = false> 
+    // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. 
+    template <typename T> 
+    class thread_object final {
+    private:
+        mutable size_t _tls_size{ 0 };        
+        mutable concurrency::concurrent_vector<std::pair<std::thread::id, T*>> _tls;
+        T const _default; // for initializing new thread objects
+
+        auto& GetTLS() const {
+            static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
+            auto index = get_thread_id();
+            if (_tls_size <= index) {
+                (void)_tls.grow_to_at_least(index + 1);
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
+            }
+            std::pair<std::thread::id, T*>& to_return = _tls[index];
+            if (!to_return.second) {
+                T* newPtr{ new T(_default) };
+                if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
+                    to_return.first = thread_id;
+                }
+                else {
+                    delete newPtr;
+                }
+            }
+            if (to_return.first != thread_id) {
+                T* newPtr{ new T(_default) };
+                if (auto* p = InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr)) {
+                    delete p; 
+                }
+                to_return.first = thread_id;
+            };
+            return *to_return.second;
+        };
+        auto& GetTLS(size_t thread_index) const {
+            auto index = get_thread_id();
+            if (_tls_size <= thread_index) {
+                (void)_tls.grow_to_at_least(thread_index + 1);
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
+            }
+            std::pair<std::thread::id, T*>& to_return = _tls[thread_index];
+            if (!to_return.second) {
+                throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access by [] operator.");
+            }
+            return *to_return.second;
+        };
+
+    public:
+        thread_object() : _default{}, _tls{}, _tls_size{ 0 } {};
+        thread_object(T const& original) : _default{ original }, _tls{}, _tls_size{ 0 }  {};
+        thread_object(T&& original) : _default{ std::move(original) }, _tls{}, _tls_size{ 0 }  {};
+        thread_object(thread_object const& rhs) : _default{ rhs._default }, _tls{}, _tls_size{ 0 } {
+            size_t index = 0;
+            for (auto& x : rhs._tls) {
+                _tls.grow_to_at_least(index + 1);
+                _tls[index].first = x.first;
+                if (x.second) {
+                    _tls[index].second = new T(*x.second); 
+                }
+                ++index;
+            }
+        };
+        thread_object(thread_object&& rhs) : _default{ std::move(rhs._default) }, _tls{ std::move(rhs._tls) }, _tls_size{ rhs._tls_size } { rhs._tls.clear(); };
+        thread_object& operator=(thread_object const&) = delete;
+        thread_object& operator=(thread_object&&) = delete;
+        ~thread_object() {
+            for (auto& x : _tls) if (x.second) delete x.second;   
+        };
+
+        T* operator->() { return &GetTLS(); };
+        const T* operator->() const { return &const_cast<thread_object*>(this)->GetTLS(); };
+        T& operator*() { return GetTLS(); };
+        const T& operator*() const { return const_cast<thread_object*>(this)->GetTLS(); };
+
+        T& operator[](size_t thread_index) { return GetTLS(thread_index); };
+
+        template <typename T> bool for_each_cancellable(T const& func) {
+            const auto index = get_thread_id();
+            size_t i;
+            for (i = index; i < _tls_size; ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            for (i = 0; (i < index) && (i < _tls_size); ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            return false;
+        };
+        template <typename T> void for_each(T const& func) {
+            (void)for_each_cancellable([](auto& x) -> bool {
+                func(x);
+                return false;
+            });
+        };
+
+    };
+
+    // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. Initializes from nothing, and does not accept a default parameter. 
+    template <typename T>
+    class thread_object_no_default final {
+    private:
+        mutable size_t _tls_size{ 0 };
+        mutable concurrency::concurrent_vector<std::pair<std::thread::id, T*>> _tls;
+
+        auto& GetTLS() const {
+            static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
+            auto index = get_thread_id();
+            if (_tls_size <= index) {
+                (void)_tls.grow_to_at_least(index + 1);
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
+            }
+            std::pair<std::thread::id, T*>& to_return = _tls[index];
+            if (!to_return.second) {
+                T* newPtr{ new T() };
+                if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
+                    to_return.first = thread_id;
+                }
+                else {
+                    delete newPtr;
+                }
+            }
+            if (to_return.first != thread_id) {
+                T* newPtr{ new T() };
+                if (auto* p = InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr)) {
+                    delete p;
+                }
+                to_return.first = thread_id;
+            };
+            return *to_return.second;
+        };
+        auto& GetTLS(size_t thread_index) const {
+            if (_tls_size <= thread_index) {
+                (void)_tls.grow_to_at_least(thread_index + 1);
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
+            }
+            std::pair<std::thread::id, T*>& to_return = _tls[thread_index];
+            if (!to_return.second) {
+                GL::string str = GL::printf("The TLS should be previously initialized by the appropriate thread before access by [%i].", (int)thread_index);
+                std::cout << str << std::endl;
+                throw std::runtime_error(str.to_string());
+            }
+            return *to_return.second;
+        };
+
+    public:
+        thread_object_no_default() : _tls{}, _tls_size{ 0 } {};
+        thread_object_no_default(thread_object_no_default const& rhs) : _tls{}, _tls_size{ 0 } {
+            size_t index = 0;
+            for (auto& x : rhs._tls) {
+                _tls.grow_to_at_least(index + 1);
+                _tls[index].first = x.first;
+                if (x.second) {
+                    _tls[index].second = new T(*x.second);
+                }
+                ++index;
+            }
+        };
+        thread_object_no_default(thread_object_no_default&& rhs) : _tls{ std::move(rhs._tls) }, _tls_size{ rhs._tls_size } { rhs._tls.clear(); };
+        thread_object_no_default& operator=(thread_object_no_default const&) = delete;
+        thread_object_no_default& operator=(thread_object_no_default&&) = delete;
+        ~thread_object_no_default() {
+            for (auto& x : _tls) if (x.second) delete x.second;
+        };
+
+        T* operator->() { return &GetTLS(); };
+        const T* operator->() const { return &const_cast<thread_object_no_default*>(this)->GetTLS(); };
+        T& operator*() { return GetTLS(); };
+        const T& operator*() const { return const_cast<thread_object_no_default*>(this)->GetTLS(); };
+
+        T& operator[](size_t thread_index) { return GetTLS(thread_index); };
+        const T& operator[](size_t thread_index) const { return GetTLS(thread_index); };
+
+        template <typename T> bool for_each_cancellable(T const& func) {
+            const auto index = get_thread_id();
+            size_t i;
+            for (i = index; i < _tls_size; ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            for (i = 0; (i < index) && (i < _tls_size); ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            return false;
+        };
+        template <typename T> void for_each(T const& func) {
+            (void)for_each_cancellable([](auto& x) -> bool {
+                func(x);
+                return false;
+                });
+        };
+    };
+
+    // Thread-safe, lock-free, good-performance page-based allocator with LIFO functionality for memory re-use. Lower memory footprint than atomic_parallel_allocator.
+    template <typename T, size_t BlockSize = 128, bool skipInitialization = false>
     class atomic_allocator {
     private:
         struct element_t {
@@ -235,199 +435,7 @@ namespace GL {
             free;
     };
 
-    /// <summary>
-    /// Thread-safe lock-free queue. More performant than concurrency's queue, but less performant than moodycamel's queue. 
-    /// However, it requires more memory than concurrency's queue.
-    /// But, it is more predictable and consistant than moodycamel, with guarranteed memory recovery and resists "missing" inserts/withdrawls. 
-    /// Meant to be extremely balanced for most use-cases. 
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
-    template <typename T> 
-    class atomic_stack {
-        struct element_t {
-            T
-                data;
-            element_t*
-                m_pNext;
-        };
-        atomic_allocator<element_t, 128, true>
-            allocator;
-        impl::THead<element_t>
-            head; // 
-        std::atomic<size_t> 
-            count;
-    public:
-        void push(T const& obj) {
-            // get a new element
-            element_t* new_ptr;
-            //if constexpr (!std::is_pod<T>::value) {
-            //    // if pod, try to insert it!
-            //    new_ptr = allocator.Alloc(element_t{ obj, nullptr });
-            //}
-            //else {
-            new_ptr = allocator.Alloc();
-            new_ptr->data = obj;
-            new_ptr->m_pNext = nullptr;
-            //}
-
-            impl::Stack_Push(head, new_ptr);
-            ++count;
-        };
-        void push(T&& obj) {
-            // get a new element
-            element_t* new_ptr;
-            //if constexpr (!std::is_pod<T>::value) {
-            //    // if pod, try to insert it!
-            //    new_ptr = allocator.Alloc(element_t{ std::move(obj), nullptr });
-            //}
-            //else {
-            new_ptr = allocator.Alloc();
-            new_ptr->data = std::move(obj);
-            new_ptr->m_pNext = nullptr;
-            //}
-
-            impl::Stack_Push(head, new_ptr);
-            ++count;
-        };
-        bool try_pop(T& out) {
-            if (element_t* ptr = impl::Pop(head)) {
-                if constexpr (std::is_move_assignable<T>::value) {
-                    out = std::move(ptr->data);
-                }
-                else {
-                    out = ptr->data;
-                }
-                allocator.Free(ptr);
-                --count;
-                return true;
-            }
-            return false;
-        };
-        size_t size() const {
-            return count.load();
-        };
-    };
-
-    // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is reinitialized accordingly. 
-    template <typename T> 
-    class thread_object final {
-    private:
-        mutable size_t _tls_size{ 0 };        
-        mutable concurrency::concurrent_vector<std::pair<std::thread::id, T*>> _tls;
-        T const _default; // for initializing new thread objects
-
-        auto& GetTLS() const {
-            static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
-            auto index = get_thread_id();
-            if (_tls_size <= index) {
-                (void)_tls.grow_to_at_least(index + 1);
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
-            }
-            std::pair<std::thread::id, T*>& to_return = _tls[index];
-            if (!to_return.second) {
-                T* newPtr{ new T(_default) };
-                if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
-                    to_return.first = thread_id;
-                }
-                else {
-                    delete newPtr;
-                }
-            }
-            if (to_return.first != thread_id) {
-                T* newPtr{ new T(_default) };
-                if (auto* p = InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr)) {
-                    delete p;
-                }
-                to_return.first = thread_id;
-            };
-            return *to_return.second;
-        };
-        auto& GetTLS(size_t thread_index) const {
-            auto index = get_thread_id();
-            if (_tls_size <= thread_index) {
-                (void)_tls.grow_to_at_least(thread_index + 1);
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
-            }
-            std::pair<std::thread::id, T*>& to_return = _tls[thread_index];
-            if (!to_return.second) {
-                throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access by [] operator.");
-            }
-            return *to_return.second;
-        };
-
-    public:
-        thread_object() : _default{}, _tls{}, _tls_size{ 0 } {};
-        thread_object(T const& original) : _default{ original }, _tls{}, _tls_size{ 0 }  {};
-        thread_object(T&& original) : _default{ std::move(original) }, _tls{}, _tls_size{ 0 }  {};
-        thread_object(thread_object const& rhs) : _default{ rhs._default }, _tls{}, _tls_size{ 0 } {
-            size_t index = 0;
-            for (auto& x : rhs._tls) {
-                _tls.grow_to_at_least(index + 1);
-                _tls[index].first = x.first;
-                if (x.second) {
-                    _tls[index].second = new T(*x.second);
-                }
-                ++index;
-            }
-        };
-        thread_object(thread_object&& rhs) : _default{ std::move(rhs._default) }, _tls{ std::move(rhs._tls) }, _tls_size{ rhs._tls_size } { rhs._tls.clear(); };
-        thread_object& operator=(thread_object const&) = delete;
-        thread_object& operator=(thread_object&&) = delete;
-        ~thread_object() {
-            for (auto& x : _tls) {
-                if (x.second) delete x.second;
-            }
-        };
-
-        T* operator->() { return &GetTLS(); };
-        const T* operator->() const { return &const_cast<thread_object*>(this)->GetTLS(); };
-        T& operator*() { return GetTLS(); };
-        const T& operator*() const { return const_cast<thread_object*>(this)->GetTLS(); };
-
-        T& operator[](size_t thread_index) { return GetTLS(thread_index); };
-
-
-        template <typename T> void for_each(T const& func) {
-            for (auto& x : _tls) {
-                if (x.second) {
-                    func(*x.second);
-                }
-            }
-        };
-        template <typename T> bool for_each_cancellable(T const& func) {
-            for (auto& x : _tls) {
-                if (x.second) {
-                    if (func(*x.second)) { return true; }
-                }
-            }
-            return false;
-        };
-        //template <typename T> void for_each_alive(T const& func) {
-        //    for (auto& x : _tls) {
-        //        if (get_thread_alive(x.first)) {
-        //            if (x.second) {
-        //                func(*x.second);
-        //            }
-        //        }
-        //    }
-        //};
-        //template <typename T> bool for_each_alive_cancellable(T const& func) {
-        //    for (auto& x : _tls) {
-        //        if (get_thread_alive(x.first)) {
-        //            if (x.second) {
-        //                if (func(*x.second)) { return true; }
-        //            }
-        //        }
-        //    }
-        //    return false;
-        //};
-    };
-
-    /// <summary>
-    /// Fastest allocator to-date, leveraging a block-allocator per-thread, significantly reducing contention, to the degree that this is now the fastest way to allocate memory!
-    /// Plus, it is thread-safe and garbage-collected on end-of-scope. These features are effectively free now. 
-    /// </summary>
-    /// <typeparam name="_type_"></typeparam>
+    // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use.
     template <typename _type_, size_t num_items = 128, bool skipInitialization = false>
     class atomic_parallel_allocator {
     private:
@@ -437,7 +445,7 @@ namespace GL {
             size_t // ... and attached data comes after the actual object.
                 threadID;
         };
-        thread_object<atomic_allocator<innerType, num_items, skipInitialization>>
+        thread_object_no_default<atomic_allocator<innerType, num_items, skipInitialization>>
             TLS;
 
     public:
@@ -452,12 +460,13 @@ namespace GL {
 
         template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
             innerType* out;
+            const auto threadID = get_thread_id();
             if constexpr (sizeof...(a) > 0) {
-                out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, get_thread_id() });
+                out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, threadID });               
             }
             else {
                 out = TLS->Alloc();
-                out->threadID = get_thread_id();
+                out->threadID = threadID;
             }
             return (_type_*)(out);
         };
@@ -470,13 +479,7 @@ namespace GL {
         };
     };
 
-    /// <summary>
-    /// Thread-safe lock-free queue. More performant than concurrency's queue, and equal performance to moodycamel's queue. 
-    /// However, it requires more memory than concurrency's queue.
-    /// But, it is more predictable and consistant than moodycamel, with guarranteed memory recovery and resists "missing" inserts/withdrawls. 
-    /// Meant to be extremely balanced for most use-cases. 
-    /// </summary>
-    /// <typeparam name="T"></typeparam>
+    // Thread-safe, lock-free, high-performance queue with LIFO functionality. 
     template <typename T> 
     class atomic_parallel_stack {
         struct element_t {
@@ -487,7 +490,7 @@ namespace GL {
         };
         atomic_parallel_allocator<element_t, 128, true>
             allocator;
-        thread_object<impl::THead<element_t>>
+        thread_object_no_default<impl::THead<element_t>>
             head; // 
         std::atomic<size_t>
             count;
@@ -545,101 +548,321 @@ namespace GL {
         };
     };
 
-	/// <summary>
-	/// Iterator that steps through a list, without needing to instance the whole list. 
-	/// </summary>
-	/// <typeparam name="Type"></typeparam>
-	template<typename Type = size_t> 
+#if 0
+    // Thread-safe, lock-free, good-performance queue with LIFO functionality. Lower memory footprint than atomic_parallel_stack.
+    template <typename T>
+    class atomic_stack {
+        struct element_t {
+            T
+                data;
+            element_t*
+                m_pNext;
+        };
+        atomic_allocator<element_t, 128, true>
+            allocator;
+        impl::THead<element_t>
+            head; // 
+        std::atomic<size_t>
+            count;
+    public:
+        void push(T const& obj) {
+            // get a new element
+            element_t* new_ptr;
+            //if constexpr (!std::is_pod<T>::value) {
+            //    // if pod, try to insert it!
+            //    new_ptr = allocator.Alloc(element_t{ obj, nullptr });
+            //}
+            //else {
+            new_ptr = allocator.Alloc();
+            new_ptr->data = obj;
+            new_ptr->m_pNext = nullptr;
+            //}
+
+            impl::Stack_Push(head, new_ptr);
+            ++count;
+        };
+        void push(T&& obj) {
+            // get a new element
+            element_t* new_ptr;
+            //if constexpr (!std::is_pod<T>::value) {
+            //    // if pod, try to insert it!
+            //    new_ptr = allocator.Alloc(element_t{ std::move(obj), nullptr });
+            //}
+            //else {
+            new_ptr = allocator.Alloc();
+            new_ptr->data = std::move(obj);
+            new_ptr->m_pNext = nullptr;
+            //}
+
+            impl::Stack_Push(head, new_ptr);
+            ++count;
+        };
+        bool try_pop(T& out) {
+            if (element_t* ptr = impl::Pop(head)) {
+                if constexpr (std::is_move_assignable<T>::value) {
+                    out = std::move(ptr->data);
+                }
+                else {
+                    out = ptr->data;
+                }
+                allocator.Free(ptr);
+                --count;
+                return true;
+            }
+            return false;
+        };
+        size_t size() const {
+            return count.load();
+        };
+    };
+#else
+    template<typename T>
+    using atomic_stack = atomic_parallel_stack<T>;
+#endif
+
+    // Thread-safe, lock-free, high-performance queue with FIFO functionality. 
+    template<typename T>
+    class atomic_parallel_queue {
+        constexpr static bool is_pod = std::is_pod_v<T> && (sizeof(T) <= 8);
+        using copy_type = std::conditional_t<is_pod, T, T*>;
+
+        thread_object_no_default<concurrency::concurrent_queue<copy_type>>
+            _que{};
+        atomic_parallel_allocator<T>
+            _alloc{};
+        std::atomic<size_t>
+            count{ 0 };
+
+    public:
+        void push(T const& obj) {
+            if constexpr (is_pod) {
+                _que->push(obj);
+            }
+            else {
+                _que->push(_alloc.Alloc(obj));
+            }
+            ++count;
+        };
+        void push(T&& obj) {
+            if constexpr (is_pod) {
+                _que->push(std::move(obj));
+            }
+            else {
+                _que->push(_alloc.Alloc(std::move(obj)));
+            }
+            ++count;
+        };
+        bool try_pop(T& out) {
+            if constexpr (is_pod) {
+                if (_que.for_each_cancellable([&out](auto& Q) -> bool {
+                    return Q.try_pop(out);
+                })) {
+                    --count;
+                    return true;
+                }
+                else {
+                    return false;
+                };
+            }
+            else {
+                T* ptr{ nullptr };
+                if (_que.for_each_cancellable([&ptr](auto& Q) -> bool {
+                    return Q.try_pop(ptr);
+                })) {
+                    if (ptr) {
+                        --count;
+                        if constexpr (std::is_move_assignable<T>::value) {
+                            out = std::move(*ptr);
+                        }
+                        else {
+                            out = *ptr;
+                        }
+                        _alloc.Free(ptr);
+                        return true;
+                    }
+                };
+                return false;
+            }
+        };
+        size_t size() const {
+            return count.load();
+        };
+
+    };
+
+#if 0
+    // Thread-safe, lock-free, poor-performance queue with FIFO functionality. Lower memory footprint than atomic_parallel_queue. Just use the atomic_parallel_queue. 
+    template<typename T> 
+    class atomic_queue {
+        constexpr static bool is_pod = std::is_pod_v<T> && (sizeof(T) <= 8);
+        using copy_type = std::conditional_t<is_pod, T, T*>;
+
+        concurrency::concurrent_queue<copy_type>
+            _que{};
+        atomic_allocator<T>
+            _alloc{};
+        std::atomic<size_t>
+            count{ 0 };
+    public:
+        void push(T const& obj) {
+            if constexpr (is_pod) {
+                _que.push(obj);
+            }
+            else {
+                _que.push(_alloc.Alloc(obj));
+            }
+            ++count;
+        };
+        void push(T&& obj) {
+            if constexpr (is_pod) {
+                _que.push(std::move(obj));
+            }
+            else {
+                _que.push(_alloc.Alloc(std::move(obj)));
+            }
+            ++count;
+        };
+        bool try_pop(T& out) {
+            if constexpr (is_pod) {
+                if (_que.try_pop(out)) {
+                    --count;
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            }
+            else {
+                T* ptr{ nullptr };
+                if (!_que.try_pop(ptr)) {
+                    return false;
+                }
+
+                if (ptr) {
+                    --count;
+                    if constexpr (std::is_move_assignable<T>::value) {
+                        out = std::move(*ptr);
+                    }
+                    else {
+                        out = *ptr;
+                    }
+                    _alloc.Free(ptr);
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            }
+        };
+        size_t size() const {
+            return count.load();
+        };
+    };
+#else
+    template<typename T>
+    using atomic_queue = atomic_parallel_queue<T>;
+#endif
+
+};
+
+namespace GL {
+    /// <summary>
+    /// Iterator that steps through a list, without needing to instance the whole list. 
+    /// </summary>
+    /// <typeparam name="Type"></typeparam>
+    template<typename Type = size_t>
     class Sequence {
-	private:
-		Type min;
-		Type max;
-		Type step;
+    private:
+        Type min;
+        Type max;
+        Type step;
 
-		static std::tuple<Type, Type, Type> DetermineSteps(Type N0, Type N1, Type Step) {
-			if (Step >= 0) {
-				// want to go from small to large
-				if (N1 >= N0) {
-					return { N0, N1, Step };
-				}
-				else {
-					return { N1, N0, Step };
-				}
-			}
-			else {
-				// want to go from large to small
-				if (N1 >= N0) {
-					return { N1, N0, Step };
-				}
-				else {
-					return { N0, N1, Step };
-				}
-			}
-		};
+        static std::tuple<Type, Type, Type> DetermineSteps(Type N0, Type N1, Type Step) {
+            if (Step >= 0) {
+                // want to go from small to large
+                if (N1 >= N0) {
+                    return { N0, N1, Step };
+                }
+                else {
+                    return { N1, N0, Step };
+                }
+            }
+            else {
+                // want to go from large to small
+                if (N1 >= N0) {
+                    return { N1, N0, Step };
+                }
+                else {
+                    return { N0, N1, Step };
+                }
+            }
+        };
 
-	public:
-		Sequence(Type N0, Type N1, Type Step) {
-			std::tie(min, max, step) = DetermineSteps(std::move(N0), std::move(N1), std::move(Step));
-		};
-		Sequence() : Sequence(0, 0, 1) {};
-		Sequence(Type N) : Sequence(0, N, 1) {};
-		Sequence(Type N0, Type N1) : Sequence(N0, N1, 1) {};
+    public:
+        Sequence(Type N0, Type N1, Type Step) {
+            std::tie(min, max, step) = DetermineSteps(std::move(N0), std::move(N1), std::move(Step));
+        };
+        Sequence() : Sequence(0, 0, 1) {};
+        Sequence(Type N) : Sequence(0, N, 1) {};
+        Sequence(Type N0, Type N1) : Sequence(N0, N1, 1) {};
 
-		class Iterator { // : public std::iterator<std::random_access_iterator_tag, Type>
-		public:
+        class Iterator { // : public std::iterator<std::random_access_iterator_tag, Type>
+        public:
             using iterator_category = std::random_access_iterator_tag;
             using value_type = Type;
             using difference_type = ptrdiff_t;
             using pointer = Type*;
             using reference = Type&;
 
-			Iterator() : _ptr(0), _min(0), _step(1) {}
-			Iterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
-			Iterator(const Iterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
+            Iterator() : _ptr(0), _min(0), _step(1) {}
+            Iterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
+            Iterator(const Iterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
 
-			inline Iterator& operator+=(difference_type rhs) { _ptr += static_cast<Type>(rhs) * _step; return *this; }
-			inline Iterator& operator-=(difference_type rhs) { _ptr -= static_cast<Type>(rhs) * _step; return *this; }
-			inline Type& operator*() { return _ptr; }
-			inline Type* operator->() { return &_ptr; }
-			inline Type operator[](difference_type rhs) { return static_cast<Type>(_min + static_cast<Type>(rhs) * _step); }
-			inline const Type& operator*() const { return _ptr; }
-			inline const Type* operator->() const { return &_ptr; }
-			inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + static_cast<Type>(rhs) * _step); }
+            inline Iterator& operator+=(difference_type rhs) { _ptr += static_cast<Type>(rhs) * _step; return *this; }
+            inline Iterator& operator-=(difference_type rhs) { _ptr -= static_cast<Type>(rhs) * _step; return *this; }
+            inline Type& operator*() { return _ptr; }
+            inline Type* operator->() { return &_ptr; }
+            inline Type operator[](difference_type rhs) { return static_cast<Type>(_min + static_cast<Type>(rhs) * _step); }
+            inline const Type& operator*() const { return _ptr; }
+            inline const Type* operator->() const { return &_ptr; }
+            inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + static_cast<Type>(rhs) * _step); }
 
-			inline Iterator& operator++() { _ptr += _step; return *this; }
-			inline Iterator& operator--() { _ptr -= _step; return *this; }
-			inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
-			inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
-			inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
-			inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + static_cast<Type>(rhs) * _step, _min, _step); }
-			inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - static_cast<Type>(rhs) * _step, _min, _step); }
-			friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator((static_cast<Type>(lhs) * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
-			friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator((static_cast<Type>(lhs) * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
+            inline Iterator& operator++() { _ptr += _step; return *this; }
+            inline Iterator& operator--() { _ptr -= _step; return *this; }
+            inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
+            inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
+            inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+            inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + static_cast<Type>(rhs) * _step, _min, _step); }
+            inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - static_cast<Type>(rhs) * _step, _min, _step); }
+            friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator((static_cast<Type>(lhs) * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+            friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator((static_cast<Type>(lhs) * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
 
-			inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
-			inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
-			inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
-			inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
-			inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
-			inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+            inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+            inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+            inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+            inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+            inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+            inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
 
-		protected:
-			Type _min;
-			Type _ptr;
-			Type _step;
-		};
+        protected:
+            Type _min;
+            Type _ptr;
+            Type _step;
+        };
 
-		using iterator = Iterator;
-		using const_iterator = iterator;
+        using iterator = Iterator;
+        using const_iterator = iterator;
 
-		auto begin() { return Iterator(min, min, step); };
-		auto end() { return Iterator(max, min, step); };
-		auto cbegin() const { return iterator(min, min, step); };
-		auto cend() const { return iterator(max, min, step); };
-		auto begin() const { return iterator(min, min, step); };
-		auto end() const { return iterator(max, min, step); };
-	};
+        auto begin() { return Iterator(min, min, step); };
+        auto end() { return Iterator(max, min, step); };
+        auto cbegin() const { return iterator(min, min, step); };
+        auto cend() const { return iterator(max, min, step); };
+        auto begin() const { return iterator(min, min, step); };
+        auto end() const { return iterator(max, min, step); };
+    };
+};
 
+namespace GL {
     /* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast.
     Generally speaking, out-performs std::mutex under most conditions. */
     class mutex {
@@ -654,9 +877,9 @@ namespace GL {
     public:
         mutex() noexcept { Sys_MutexCreate(Handle); };
         mutex(mutex const&) noexcept { Sys_MutexCreate(Handle); };
-        mutex(mutex &&) noexcept { Sys_MutexCreate(Handle); };
+        mutex(mutex&&) noexcept { Sys_MutexCreate(Handle); };
         mutex& operator=(mutex const&) noexcept { return *this; };
-        mutex& operator=(mutex &&) noexcept { return *this; };
+        mutex& operator=(mutex&&) noexcept { return *this; };
         ~mutex() noexcept { Sys_MutexDestroy(Handle); };
 
         void lock() {
@@ -772,116 +995,6 @@ namespace GL {
             lock();
 
             return false;
-        };
-
-    };
-
-
-    template<typename T = size_t> 
-    class atomic_queue {
-        constexpr static bool is_pod = std::is_pod_v<T>;
-        using copy_type = std::conditional_t<is_pod, T, T*>;
-
-        moodycamel::ConcurrentQueue<copy_type>
-            _que{};
-        atomic_parallel_allocator<T>
-            _alloc{};
-        std::atomic<size_t>
-            count{ 0 };
-    public:
-        void push(T const& obj) {
-            if constexpr (is_pod) {
-                _que.push(obj);
-            }
-            else {
-                _que.push(_alloc.Alloc(obj));
-            }
-            ++count;
-        };
-        void push(T&& obj) {
-            if constexpr (is_pod) {
-                _que.push(std::move(obj));
-            }
-            else {
-                _que.push(_alloc.Alloc(std::move(obj)));
-            }
-            ++count;
-        };
-        bool try_pop(T& out) {
-            if constexpr (is_pod) {
-                return _que.try_pop(out);
-            }
-            else {
-                T* ptr{ nullptr };
-                if (!_que.try_pop(ptr)) {
-                    return false;
-                }
-
-                if (ptr) {
-                    --count;
-                    if constexpr (std::is_move_assignable<T>::value) {
-                        out = std::move(*ptr);
-                    }
-                    else {
-                        out = *ptr;
-                    }
-                    _alloc.Free(ptr);
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            }
-        };
-        size_t size() const {
-            return count.load();
-        };
-    };
-
-    template<typename T = size_t>
-    class atomic_parallel_queue {
-        thread_object<concurrency::concurrent_queue<T*>>
-            _que{};
-        atomic_parallel_allocator<T>
-            _alloc{};
-        std::atomic<size_t>
-            count{ 0 };
-
-    public:
-        void push(T const& obj) {
-            _que->push(_alloc.Alloc(obj));
-            ++count;
-        };
-        void push(T&& obj) {
-            _que->push(_alloc.Alloc(std::move(obj)));
-            ++count;
-        };
-        bool try_pop(T& out) {
-            T* ptr{ nullptr };
-            if (!_que->try_pop(ptr)) {
-                // try all the other ones...
-                _que.for_each_cancellable([&ptr](auto& Q) -> bool {
-                    return Q.try_pop(ptr);
-                });
-            }
-
-            if (ptr) {
-                --count;
-                if constexpr (std::is_move_assignable<T>::value) {
-                    out = std::move(*ptr);
-                }
-                else {
-                    out = *ptr;
-                }
-                _alloc.Free(ptr);
-                return true;
-            }
-            else {
-                return false;
-            }
-        };
-        size_t size() const {
-            return count.load();
         };
 
     };
