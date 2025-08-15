@@ -113,7 +113,7 @@ int main() {
             }
         };
 
-        // atomic_allocator
+        // atomic_allocator (much slower than the atomic_parallel_allocator)
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_allocator<std::string, 1024> alloc;      
             if (1) {
@@ -171,50 +171,50 @@ int main() {
             }
         }
 
-        // atomic_stack
+        // atomic_stack<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_stack<size_t> queue;
 
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
                 EXPECT_EQ(true, queue.try_pop(i));
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 EXPECT_EQ(true, queue.try_pop(i));
             });
         }
 
-        // atomic_parallel_stack
+        // atomic_parallel_stack<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_parallel_stack<size_t> queue;
 
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
                 EXPECT_EQ(true, queue.try_pop(i));
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 EXPECT_EQ(true, queue.try_pop(i));
             });
         }
 
-        // atomic_queue
+        // atomic_queue<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_queue<size_t> queue;
 
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
                 EXPECT_EQ(true, queue.try_pop(i));
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 EXPECT_EQ(true, queue.try_pop(i));
             });
         }
@@ -223,14 +223,14 @@ int main() {
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_parallel_queue<size_t> queue;
 
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
                 EXPECT_EQ(true, queue.try_pop(i));
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 queue.push(i);
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 EXPECT_EQ(true, queue.try_pop(i));
             });
         }
@@ -239,14 +239,14 @@ int main() {
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_parallel_queue<short> queue;
 
-            GL::parallel::For(0, SHRT_MAX, [&](short i) {
+            GL::parallel::For(0, 1000000, [&](short i) {
                 queue.push(i);
                 EXPECT_EQ(true, queue.try_pop(i));
             });
-            GL::parallel::For(0, SHRT_MAX, [&](short i) {
+            GL::parallel::For(0, 1000000, [&](short i) {
                 queue.push(i);
             });
-            GL::parallel::For(0, SHRT_MAX, [&](short i) {
+            GL::parallel::For(0, 1000000, [&](short i) {
                 EXPECT_EQ(true, queue.try_pop(i));
             });
         }
@@ -255,16 +255,16 @@ int main() {
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_parallel_queue<GL::string> queue;
 
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 GL::string str = std::to_string(i);
                 queue.push(str);
                 EXPECT_EQ(true, queue.try_pop(str));
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 GL::string str = std::to_string(i);
                 queue.push(str);
             });
-            GL::parallel::For(0, 1000000, [&](size_t i) {
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                 GL::string str;
                 EXPECT_EQ(true, queue.try_pop(str));
             });

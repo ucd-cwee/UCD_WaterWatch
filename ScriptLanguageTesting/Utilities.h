@@ -114,7 +114,7 @@ namespace GL {
     class thread_object final {
     private:
         mutable size_t _tls_size{ 0 };        
-        mutable concurrency::concurrent_vector<std::pair<std::thread::id, T*>> _tls;
+        mutable concurrency::concurrent_vector<std::pair<std::atomic<std::thread::id>, T*>> _tls;
         T const _default; // for initializing new thread objects
 
         auto& GetTLS() const {
@@ -124,7 +124,7 @@ namespace GL {
                 (void)_tls.grow_to_at_least(index + 1);
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
             }
-            std::pair<std::thread::id, T*>& to_return = _tls[index];
+            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls[index];
             if (!to_return.second) {
                 T* newPtr{ new T(_default) };
                 if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
@@ -149,7 +149,7 @@ namespace GL {
                 (void)_tls.grow_to_at_least(thread_index + 1);
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
             }
-            std::pair<std::thread::id, T*>& to_return = _tls[thread_index];
+            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls[thread_index];
             if (!to_return.second) {
                 throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access by [] operator.");
             }
@@ -216,7 +216,7 @@ namespace GL {
     class thread_object_no_default final {
     private:
         mutable size_t _tls_size{ 0 };
-        mutable concurrency::concurrent_vector<std::pair<std::thread::id, T*>> _tls;
+        mutable concurrency::concurrent_vector<std::pair<std::atomic<std::thread::id>, T*>> _tls;
 
         auto& GetTLS() const {
             static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
@@ -225,22 +225,22 @@ namespace GL {
                 (void)_tls.grow_to_at_least(index + 1);
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
             }
-            std::pair<std::thread::id, T*>& to_return = _tls[index];
+            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls.at(index);
             if (!to_return.second) {
                 T* newPtr{ new T() };
                 if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
-                    to_return.first = thread_id;
+                    to_return.first.store(thread_id);
                 }
                 else {
                     delete newPtr;
                 }
             }
-            if (to_return.first != thread_id) {
+            if (to_return.first.load() != thread_id) {
                 T* newPtr{ new T() };
                 if (auto* p = InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr)) {
                     delete p;
                 }
-                to_return.first = thread_id;
+                to_return.first.store(thread_id);
             };
             return *to_return.second;
         };
@@ -249,7 +249,7 @@ namespace GL {
                 (void)_tls.grow_to_at_least(thread_index + 1);
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
             }
-            std::pair<std::thread::id, T*>& to_return = _tls[thread_index];
+            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls[thread_index];
             if (!to_return.second) {
                 GL::string str = GL::printf("The TLS should be previously initialized by the appropriate thread before access by [%i].", (int)thread_index);
                 std::cout << str << std::endl;
