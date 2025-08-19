@@ -19,10 +19,31 @@
 #include "Strings.h"
 #include "TicketDispensor.h"
 #include <queue>
+
+
 // #include "../FiberTasks/Concurrent_Queue.h"
 #pragma endregion
 
-namespace GL {    
+namespace GL {   
+    namespace util {
+        inline static void hash(std::size_t& seed) { };
+        template <typename T, typename... Rest> inline static void hash(std::size_t& seed, T const& v, Rest const&... rest) {
+            if constexpr (std::is_same_v<double, typename std::remove_reference_t<typename std::decay<T>>>) {
+                seed ^= *(uint64_t*)(void*)(&v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
+            else {
+                std::hash<T> hasher{};
+                seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
+            hash(seed, rest...);
+        };
+        template <typename T, typename... Rest> inline static std::size_t inline_hash(T const& v, Rest const&... rest) {
+            size_t seed{ 0 };
+            hash(seed, v, rest...);
+            return seed;
+        };
+    };
+
     // returns true if a thread at this ID is alive and running.    
     bool get_thread_alive(size_t thread_id); 
     // returns the thread ID of the current, requesting thread from [1, inf). Thread IDs will be re-used once a thread terminates, resulting in low-digit IDs e.g. in practice the id's are between [1,20)
@@ -106,54 +127,245 @@ namespace GL {
             } // race, try again
         }
 
+    };
+
+    // equivalent to concurrency::concurrent_vector. Equal performance or slightly faster for small number of items, and slightly worse performance for many items.
+    // buckets increase the number of allocations by *2 each time. Maximum number of buckets must be known at compile-time. 
+    // Therefore, there is a maximum size this vector may have. Note that increasing the maximum number of buckets 
+    // should only result in a minor increase to the memory use, and little to no impact on performance. Suggest 24 for ~ 33M items, while 64 would handle nearly all use cases possible. 
+    template <typename T, size_t max_num_buckets = 32>
+    class atomic_vector {
+        inline static const short tab64[64] = {
+            63,  0, 58,  1, 59, 47, 53,  2,
+            60, 39, 48, 27, 54, 33, 42,  3,
+            61, 51, 37, 40, 49, 18, 28, 20,
+            55, 30, 34, 11, 43, 14, 22,  4,
+            62, 57, 46, 52, 38, 26, 32, 41,
+            50, 36, 17, 19, 29, 10, 13, 21,
+            56, 45, 25, 31, 35, 16,  9, 12,
+            44, 24, 15,  8, 23,  7,  6,  5 
+        };
+        static short log2_64(uint64_t value) noexcept {
+            value |= value >> 1;
+            value |= value >> 2;
+            value |= value >> 4;
+            value |= value >> 8;
+            value |= value >> 16;
+            value |= value >> 32;
+            return tab64[((uint64_t)((value - (value >> 1)) * 0x07EDD5E59A4E28C2)) >> 58];
+        }
+        // 0 -> 0, 4 -> 1, 8 -> 2, 16 -> 3, etc.
+        static short global_index_to_block(size_t index) noexcept {
+            if (index <= 3ull) return 0;            
+            else return log2_64(index) - 1;
+        };
+        // 0 -> 0, 3 -> 3, 4 -> 0, 7 -> 3, 8 -> 0, 15 -> 7, 16 -> 0, 31 -> 15, etc.
+        static size_t global_index_to_local_index(size_t index) noexcept {
+            if (index <= 3ull) return index;            
+            else return index - (2ull << (log2_64(index) - 1));
+        };
+        static size_t global_index_to_local_index(size_t index, short blockN) noexcept {
+            if (index <= 3ull) return index;
+            else return index - (2ull << blockN);
+        };
+        // 0 -> 4, 1 -> 4, 2 -> 8, 3 -> 16, 4 -> 32, etc.
+        static size_t block_to_allocsize(short block_n) noexcept {
+            if (block_n <= 1) return 4ull;
+            else return 2ull << block_n;
+        };
+
+        using element_t = T;
+        std::array< std::vector< element_t >*, max_num_buckets >
+            blocks;
+        std::atomic<size_t>
+            current_pos;
+        size_t
+            valid_pos;
+        short
+            current_blockN;
+
+        void EnsureBlockExists(short block_n) noexcept {
+            for (short blockN = 0; blockN <= block_n; ++blockN) {
+                if (!blocks[blockN]) {
+                    auto* new_ptr = new std::vector< element_t >();
+                    new_ptr->resize(block_to_allocsize(blockN));
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) { }
+                    else {
+                        delete new_ptr;
+                    }
+                }
+            }
+        };
+        void grow_to_at_least_blocksN(short blockN) noexcept { EnsureBlockExists(blockN); };
+    public:
+        atomic_vector() noexcept : blocks{}, current_pos{ 0 }, valid_pos{ 0 }, current_blockN{ -1 } {};
+        ~atomic_vector() noexcept {
+            for (auto& block : blocks) {
+                if (block) {
+                    delete block;
+                }
+                else {
+                    break;
+                }
+            }
+        };
+
+        element_t& operator[](size_t index) noexcept {
+            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
+        };
+        element_t& at(size_t index) noexcept {
+            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
+        };
+        const element_t& operator[](size_t index) const noexcept {
+            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
+        };
+        const element_t& at(size_t index) const noexcept {
+            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
+        };
+        void grow_to_at_least(size_t index) noexcept {
+            EnsureBlockExists(global_index_to_block(index)); 
+            while (true) {
+                size_t prevValid = valid_pos;
+                if (prevValid < index) {
+                    if (InterlockedCompareExchange( reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+        };
+        void push_back(element_t const& srce) noexcept {
+            size_t position; 
+            short blockN;
+
+            position = current_pos++;
+            blockN = global_index_to_block(position);
+            if (current_blockN < blockN) {
+                grow_to_at_least_blocksN(blockN);
+                InterlockedExchange16( reinterpret_cast<volatile short*>(&current_blockN), blockN);
+            }
+            blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = srce;
+            InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
+        };
+        void push_back(element_t && srce) noexcept {
+            size_t position;
+            short blockN;
+
+            position = current_pos++;
+            blockN = global_index_to_block(position);
+            if (current_blockN < blockN) {
+                grow_to_at_least_blocksN(blockN);
+                InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
+            }
+            blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = std::move(srce);
+            InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
+        };
+
+        class Iterator {
+        public:
+            using iterator_category = std::random_access_iterator_tag;
+            using value_type = element_t;
+            using difference_type = ptrdiff_t;
+            using pointer = element_t*;
+            using reference = element_t&;
+
+            Iterator(const atomic_vector* p = nullptr, difference_type pos = 0) : _ptr(pos), parent(const_cast<atomic_vector*>(p)) {}
+            Iterator(const Iterator& rhs) : _ptr(rhs._ptr), parent(rhs.parent) {}
+
+            inline Iterator& operator+=(difference_type rhs) { _ptr += rhs; return *this; }
+            inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs; return *this; }
+            inline reference operator*() { return parent->at(_ptr); }
+            inline pointer operator->() { return &parent->at(_ptr); }
+            inline reference operator[](difference_type rhs) { return parent->at(rhs); }
+            inline const reference operator*() const { return parent->at(_ptr); }
+            inline const pointer operator->() const { return &parent->at(_ptr); }
+            inline const reference operator[](difference_type rhs) const { return parent->at(rhs); }
+
+            inline Iterator& operator++() { _ptr++; return *this; }
+            inline Iterator& operator--() { _ptr--; return *this; }
+            inline Iterator operator++(int) { Iterator tmp(*this); _ptr++; return tmp; }
+            inline Iterator operator--(int) { Iterator tmp(*this); _ptr--; return tmp; }
+            inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr); }
+            inline Iterator operator+(difference_type rhs) const { Iterator tmp(*this); tmp._ptr += rhs; return tmp; }
+            inline Iterator operator-(difference_type rhs) const { Iterator tmp(*this); tmp._ptr -= rhs; return tmp; }
+            friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { Iterator tmp(rhs); tmp._ptr = lhs; tmp._ptr += rhs._ptr; return tmp; }
+            friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { Iterator tmp(rhs); tmp._ptr = lhs; tmp._ptr -= rhs._ptr; return tmp; }
+
+            inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+            inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+            inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+            inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+            inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+            inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
+        protected:
+            difference_type _ptr;
+            atomic_vector* parent;
+
+        };
+
+        using iterator = Iterator;
+        using const_iterator = iterator;
+
+        auto begin() { return Iterator(this, 0); };
+        auto end() { return Iterator(this, valid_pos); };
+        auto cbegin() const { return iterator(this, 0); };
+        auto cend() const { return iterator(this, valid_pos); };
+        auto begin() const { return iterator(this, 0); };
+        auto end() const { return iterator(this, valid_pos); };
 
     };
 
     // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. 
     template <typename T> 
-    class thread_object final {
+    class thread_object {
     private:
         mutable size_t _tls_size{ 0 };        
-        mutable concurrency::concurrent_vector<std::pair<std::atomic<std::thread::id>, T*>> _tls;
         T const _default; // for initializing new thread objects
+        mutable atomic_vector/*concurrency::concurrent_vector*/<std::pair<size_t, T*>> _tls;
+        static size_t actual_thread_id() {
+            static thread_local size_t unique_hash{ GL::util::inline_hash(GL::get_current_epoch(), std::this_thread::get_id()) };
+            return unique_hash;
+
+            //static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
+            //return thread_id;
+        };
 
         auto& GetTLS() const {
-            static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
-            auto index = get_thread_id();
-            if (_tls_size <= index) {
-                (void)_tls.grow_to_at_least(index + 1);
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
+            auto _tl_index = get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            auto _tl_unique_id = actual_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+
+            // step 1, grow the _tls if necessary
+            if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
+                (void)_tls.grow_to_at_least(_tl_index + 1);
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), _tl_index + 1);
             }
-            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls[index];
-            if (!to_return.second) {
+
+            // step 2, get the address of the unique _tls slot
+            auto& _tls_slot = _tls.at(_tl_index);
+
+            // step 2, detect if the thread id changed (including if it was never initialized at all)
+            if (_tls_slot.first != _tl_unique_id) {
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
                 T* newPtr{ new T(_default) };
-                if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
-                    to_return.first = thread_id;
-                }
-                else {
-                    delete newPtr;
+                if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
+                    delete old_ptr;
                 }
             }
-            if (to_return.first != thread_id) {
-                T* newPtr{ new T(_default) };
-                if (auto* p = InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr)) {
-                    delete p; 
-                }
-                to_return.first = thread_id;
-            };
-            return *to_return.second;
+
+            // step 3, return the resultign pointer, which should be properly initialized.
+            return *_tls_slot.second;
         };
         auto& GetTLS(size_t thread_index) const {
-            auto index = get_thread_id();
-            if (_tls_size <= thread_index) {
-                (void)_tls.grow_to_at_least(thread_index + 1);
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
+            auto& _tls_slot = _tls[thread_index];
+            if (!_tls_slot.second) {
+                GL::string str = GL::printf("The TLS should be previously initialized by the appropriate thread before access by [%i].", (int)thread_index);
+                std::cout << str << std::endl;
+                throw std::runtime_error(str.to_string());
             }
-            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls[thread_index];
-            if (!to_return.second) {
-                throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access by [] operator.");
-            }
-            return *to_return.second;
+            return *_tls_slot.second;
         };
 
     public:
@@ -213,49 +425,53 @@ namespace GL {
 
     // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. Initializes from nothing, and does not accept a default parameter. 
     template <typename T>
-    class thread_object_no_default final {
+    class thread_object_no_default {
     private:
         mutable size_t _tls_size{ 0 };
-        mutable concurrency::concurrent_vector<std::pair<std::atomic<std::thread::id>, T*>> _tls;
+        mutable atomic_vector/*concurrency::concurrent_vector*/<std::pair<size_t, T*>> _tls;
+        static size_t actual_thread_id() {
+            static thread_local size_t unique_hash{ GL::util::inline_hash(GL::get_current_epoch(), std::this_thread::get_id()) };
+            return unique_hash;
 
-        auto& GetTLS() const {
-            static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
-            auto index = get_thread_id();
-            if (_tls_size <= index) {
-                (void)_tls.grow_to_at_least(index + 1);
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), index + 1);
-            }
-            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls.at(index);
-            if (!to_return.second) {
-                T* newPtr{ new T() };
-                if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr, nullptr) == nullptr) {
-                    to_return.first.store(thread_id);
-                }
-                else {
-                    delete newPtr;
-                }
-            }
-            if (to_return.first.load() != thread_id) {
-                T* newPtr{ new T() };
-                if (auto* p = InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&to_return.second), newPtr)) {
-                    delete p;
-                }
-                to_return.first.store(thread_id);
-            };
-            return *to_return.second;
+            //static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
+            //return thread_id;
         };
-        auto& GetTLS(size_t thread_index) const {
-            if (_tls_size <= thread_index) {
-                (void)_tls.grow_to_at_least(thread_index + 1);
-                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), thread_index + 1);
+
+        // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
+        auto& GetTLS() const {
+            auto _tl_index = get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            auto _tl_unique_id = actual_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+
+            // step 1, grow the _tls if necessary
+            if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
+                (void)_tls.grow_to_at_least(_tl_index + 1);
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_size), _tl_index + 1);
             }
-            std::pair<std::atomic<std::thread::id>, T*>& to_return = _tls[thread_index];
-            if (!to_return.second) {
+
+            // step 2, get the address of the unique _tls slot
+            auto& _tls_slot = _tls.at(_tl_index);
+
+            // step 2, detect if the thread id changed (including if it was never initialized at all)
+            if (_tls_slot.first != _tl_unique_id) {
+                InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
+                T* newPtr{ new T() };
+                if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
+                    delete old_ptr;
+                }
+            }
+
+            // step 3, return the resultign pointer, which should be properly initialized.
+            return *_tls_slot.second;
+        };
+        // valid call to get a _tls slot when it was properly initialized at some point previously. 
+        auto& GetTLS(size_t thread_index) const {
+            auto& _tls_slot = _tls[thread_index];
+            if (!_tls_slot.second) {
                 GL::string str = GL::printf("The TLS should be previously initialized by the appropriate thread before access by [%i].", (int)thread_index);
                 std::cout << str << std::endl;
                 throw std::runtime_error(str.to_string());
             }
-            return *to_return.second;
+            return *_tls_slot.second;
         };
 
     public:
@@ -479,7 +695,7 @@ namespace GL {
         };
     };
 
-    // Thread-safe, lock-free, high-performance queue with LIFO functionality. 
+    // Thread-safe, lock-free, high-performance queue with LIFO functionality.
     template <typename T> 
     class atomic_parallel_stack {
         struct element_t {
@@ -515,17 +731,6 @@ namespace GL {
             ++count;
         };
         bool try_pop(T& out) {
-            if (element_t* ptr = impl::Pop(*head)) {
-                if constexpr (std::is_move_assignable<T>::value) {
-                    out = std::move(ptr->data);
-                }
-                else {
-                    out = ptr->data;
-                }
-                allocator.Free(ptr);
-                --count;
-                return true;
-            }
             return head.for_each_cancellable([&](auto& this_head) -> bool {
                 if (element_t* ptr = impl::Pop(this_head)) {
                     if constexpr (std::is_move_assignable<T>::value) {

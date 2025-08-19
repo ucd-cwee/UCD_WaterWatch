@@ -251,6 +251,25 @@ int main() {
             });
         }
 
+        // atomic_parallel_stack<GL::string>
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_parallel_stack<GL::string> queue;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                GL::string str = std::to_string(i);
+                queue.push(str);
+                EXPECT_EQ(true, queue.try_pop(str));
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                GL::string str = std::to_string(i);
+                queue.push(str);
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                GL::string str;
+                EXPECT_EQ(true, queue.try_pop(str));
+            });
+        }
+
         // atomic_parallel_queue<GL::string>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_parallel_queue<GL::string> queue;
@@ -269,6 +288,61 @@ int main() {
                 EXPECT_EQ(true, queue.try_pop(str));
             });
         }
+
+        // concurrency::concurrent_vector<size_t> 1000000
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            concurrency::concurrent_vector<size_t> queue;
+            queue.grow_to_at_least(1000000);
+        }
+
+        // GL::atomic_vector<size_t> 1000000
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_vector<size_t> queue;
+            queue.grow_to_at_least(1000000);
+        }
+
+        // concurrency::concurrent_vector<size_t> 1000000
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            concurrency::concurrent_vector<size_t> queue;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                queue.push_back(i);
+            });
+        }
+
+        // GL::atomic_vector<size_t> 1000000
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_vector<size_t> queue;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                queue.push_back(i);
+            });
+        }
+
+        // concurrency::concurrent_vector<size_t> 1000000
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            concurrency::concurrent_vector<size_t> queue;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                queue.push_back(i);
+                });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                ++queue[i];
+                });
+        }
+
+        // GL::atomic_vector<size_t> 1000000
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_vector<size_t> queue;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                queue.push_back(i);
+                });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                ++queue[i];
+                });
+        }
+
 
 
 #endif
