@@ -60,28 +60,6 @@ int main() {
             EXPECT_EQ(L, 0);
         }
 
-#if 0
-        // LocalWriteEM
-        if (auto timer = sw.debug_timer(__LINE__)) {
-            // This is the type of the EM we declare
-            using EM = LocalWriteEM<std::string>;
-            EM em{ GetOptimalCoreNumber() };
-            // em.SetGCInterval(1);
-            em.StartGCThread();
-
-            GL::parallel::For(0, 1000000, [&](int i) {
-                em.Protect();
-                auto* p = em.Alloc(std::to_string(i));                
-                em.Free(p);
-
-                // despite the Free call, the pointer should still be valid for several milliseconds afterwards
-                EXPECT_EQ(true, p->length() > 0);
-                p->operator=("");
-                EXPECT_EQ(0, p->length());
-            });
-        }
-#endif
-
         // thread_object
         if (auto timer = sw.debug_timer(__LINE__)) {
             if (1) {
@@ -166,6 +144,44 @@ int main() {
                     std::string* p{ nullptr };
                     if (to_delete.try_pop(p)) {
                         alloc.Free(p);
+                    }
+                });
+            }
+        }
+
+        // atomic_epoch_allocator (which is also a parallel_allocator, by definition)
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_epoch_allocator<std::string> alloc;
+            if (1) {
+                GL::parallel::For(0, 1000000, [&](int) {
+                    auto Protected = alloc.ProtectCurrentEpoch();
+                    alloc.Free(alloc.Alloc());
+                });
+            }
+            if (1) {
+                std::vector< std::string* > ptrs(1000000, nullptr);
+                GL::parallel::For(0, 1000000, [&](int i) {
+                    ptrs[i] = alloc.Alloc();
+                });
+                GL::parallel::For(0, 1000000, [&](int i) {
+                    auto Protected = alloc.ProtectCurrentEpoch();
+                    alloc.Free(ptrs[i]);
+                });
+            }
+            if (1) {
+                GL::atomic_parallel_stack<std::string*> to_delete;
+                GL::parallel::For(0, 1000000, [&](int) {
+                    auto Protected = alloc.ProtectCurrentEpoch();
+                    to_delete.push(alloc.Alloc());
+                    std::string* p{ nullptr };
+                    if (to_delete.try_pop(p)) {
+                        alloc.Free(p);
+
+                        p->push_back('t');
+                        p->push_back('e');
+                        p->push_back('s');
+                        p->push_back('t');
+                        (void)p->c_str();
                     }
                 });
             }
@@ -289,19 +305,125 @@ int main() {
             });
         }
 
-        // concurrency::concurrent_vector<size_t> 1000000
+        // atomic_priority_queue<std::string>
+        if (auto timer = sw.debug_timer(__LINE__)) {         
+            GL::atomic_priority_queue < std::string > queue; 
+            std::string str;
+
+            queue.push("1");
+            queue.push("2");
+            queue.push("3");
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "1"); 
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "2"); 
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "3");
+
+            queue.push("banana");
+            queue.push("cucumber");
+            queue.push("apple");
+            queue.push("Banana");
+            queue.push("Cucumber");
+            queue.push("Apple");
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "Apple"); 
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "Banana"); 
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "Cucumber"); 
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "apple"); 
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "banana"); 
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "cucumber");
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                std::string str = std::to_string(i);
+                queue.push(str);
+                EXPECT_EQ(true, queue.try_pop(str));
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                std::string str = std::to_string(i);
+                queue.push(str);
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                std::string str;
+                EXPECT_EQ(true, queue.try_pop(str));
+            });
+        }
+
+        // atomic_parallel_priority_queue<std::string>
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_parallel_priority_queue < std::string > queue;
+            std::string str;
+
+            queue.push("1");
+            queue.push("2");
+            queue.push("3");
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "1");
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "2");
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "3");
+
+            queue.push("banana");
+            queue.push("cucumber");
+            queue.push("apple");
+            queue.push("Banana");
+            queue.push("Cucumber");
+            queue.push("Apple");
+
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "Apple");
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "Banana");
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "Cucumber");
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "apple");
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "banana");
+            EXPECT_EQ(true, queue.try_pop(str));
+            EXPECT_EQ(str, "cucumber");
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                std::string str = std::to_string(i);
+                queue.push(str);
+                EXPECT_EQ(true, queue.try_pop(str));
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                std::string str = std::to_string(i);
+                queue.push(str);
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                std::string str;
+                EXPECT_EQ(true, queue.try_pop(str));
+            });
+        }
+
+        // concurrency::concurrent_vector<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             concurrency::concurrent_vector<size_t> queue;
             queue.grow_to_at_least(1000000);
         }
 
-        // GL::atomic_vector<size_t> 1000000
+        // GL::atomic_vector<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_vector<size_t> queue;
             queue.grow_to_at_least(1000000);
         }
 
-        // concurrency::concurrent_vector<size_t> 1000000
+        // concurrency::concurrent_vector<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             concurrency::concurrent_vector<size_t> queue;
 
@@ -310,7 +432,7 @@ int main() {
             });
         }
 
-        // GL::atomic_vector<size_t> 1000000
+        // GL::atomic_vector<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_vector<size_t> queue;
 
@@ -319,7 +441,7 @@ int main() {
             });
         }
 
-        // concurrency::concurrent_vector<size_t> 1000000
+        // concurrency::concurrent_vector<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             concurrency::concurrent_vector<size_t> queue;
 
@@ -331,7 +453,7 @@ int main() {
                 });
         }
 
-        // GL::atomic_vector<size_t> 1000000
+        // GL::atomic_vector<size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_vector<size_t> queue;
 
@@ -342,6 +464,67 @@ int main() {
                 ++queue[i];
                 });
         }
+
+
+        // GL::atomic_map<size_t, size_t>
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_map<size_t, size_t> map;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                map[i] += i;
+            });
+        }
+
+        // GL::atomic_hash_map<size_t, size_t>
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_hash_map<size_t, size_t> map;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                map[i] += i;
+            });
+        }
+
+        // concurrency::concurrent_unordered_map<size_t, size_t>
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            concurrency::concurrent_unordered_map<size_t, size_t> map;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                map[i] += i;
+            });
+        }
+
+        // GL::atomic_map<size_t, size_t> w/ erasure
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_map<size_t, size_t> map;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                map[i] += i;
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                auto& loc = map[i];
+                map.erase(i);
+                ++loc;
+            });
+        }
+
+        // GL::atomic_hash_map<size_t, size_t> w/ erasure
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_hash_map<size_t, size_t> map;
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                map[i] += i;
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                auto& loc = map[i];
+                map.erase(i);
+                ++loc;
+            });
+        }
+
+
+
+
+
 
 
 

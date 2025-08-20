@@ -19,12 +19,71 @@
 #include "Strings.h"
 #include "TicketDispensor.h"
 #include <queue>
-
-
-// #include "../FiberTasks/Concurrent_Queue.h"
+#include <concurrent_priority_queue.h>
+#include <shared_mutex>
 #pragma endregion
 
-namespace GL {   
+#pragma region iterator_definition
+#define SETUP_ITERATOR(parentClassType, it_state)   \
+		class Iterator {   \
+		public:   \
+			using thisType = typename it_state::thisType;   \
+            friend class parentClassType; \
+			using value_type = typename it_state::value_type;   \
+			using difference_type = ptrdiff_t;   \
+		protected:   \
+			thisType* parent;   \
+			it_state state;   \
+		private:   \
+			void Initialize() { state.Initialize(parent); };   \
+			void ToBeginning() { state.ToBeginning(parent); };   \
+			void ToEnd() { state.ToEnd(parent); };   \
+			void Next() { state.Next(parent); };   \
+			void Prev() { state.Prev(parent); };   \
+			decltype(auto) Get() const { return state.Get(parent); };   \
+			difference_type Distance(Iterator const& other) const { return state.Distance(other.state); };   \
+		public:   \
+			Iterator() = default;   \
+            Iterator(thisType* _parent, bool toBeginning = true) : parent{ _parent }, state{} { Initialize(); if (toBeginning) ToBeginning(); else ToEnd(); };   \
+			Iterator(thisType* _parent, it_state&& _state) : parent{ _parent }, state{ std::forward<it_state>(_state) } {  };   \
+			Iterator(const Iterator& rhs) = default;   \
+			Iterator(Iterator&& rhs) = default;   \
+			Iterator& operator=(const Iterator& rhs) = default;   \
+			Iterator& operator=(Iterator&& rhs) = default;   \
+			~Iterator() = default;   \
+            /*explicit operator bool() const { return state.Valid(parent); }; */  \
+			bool operator==(const Iterator& rhs) const { return state == rhs.state; };   \
+			bool operator!=(const Iterator& rhs) const { return !operator==(rhs); };   \
+			Iterator& operator+=(difference_type n) { for (int i = 0; i < n; i++) Next(); return *this; };   \
+			Iterator& operator-=(difference_type n) { for (int i = 0; i < n; i++) Prev(); return *this; };   \
+			difference_type operator-(Iterator const& other) const { return Distance(other); };   \
+			Iterator& operator-(difference_type dist) { for (int i = 0; i < dist; i++) Prev(); return *this; };   \
+			Iterator& operator++() { Next(); return *this; };   \
+			Iterator& operator--() { Prev(); return *this; };   \
+			Iterator operator++(int) { Iterator out(*this); Next(); return out; };   \
+			Iterator operator--(int) { Iterator out(*this); Prev(); return out; };   \
+			Iterator begin() const { Iterator out(*this); out.ToBeginning(); return out; };   \
+			Iterator end() const { Iterator out(*this); out.ToEnd(); return out; };   \
+			decltype(auto) operator*() { return Get(); };   \
+			decltype(auto) operator*() const { return Get(); };   \
+			decltype(auto) operator->() { return &Get(); };   \
+			decltype(auto) operator->() const { return &Get(); };   \
+		};   \
+		using iterator = Iterator;   \
+		using const_iterator = Iterator;   \
+		Iterator begin() const {   \
+			typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;   \
+			return Iterator(const_cast<thisType*>(this), true);   \
+		};   \
+		Iterator end() const {   \
+			typedef typename std::remove_const_t< typename std::remove_pointer_t< decltype(&*this) > > thisType;   \
+			return Iterator(const_cast<thisType*>(this), false);   \
+		};   \
+		Iterator cbegin() const { return begin(); };   \
+		Iterator cend() const { return end(); };
+#pragma endregion 
+
+namespace GL {
     namespace util {
         inline static void hash(std::size_t& seed) { };
         template <typename T, typename... Rest> inline static void hash(std::size_t& seed, T const& v, Rest const&... rest) {
@@ -45,11 +104,11 @@ namespace GL {
     };
 
     // returns true if a thread at this ID is alive and running.    
-    bool get_thread_alive(size_t thread_id); 
+    bool get_thread_alive(size_t thread_id);
     // returns the thread ID of the current, requesting thread from [1, inf). Thread IDs will be re-used once a thread terminates, resulting in low-digit IDs e.g. in practice the id's are between [1,20)
-    size_t get_thread_id(); 
+    size_t get_thread_id();
     // get the approximate count of milliseconds since the application launched. 
-    long long get_current_epoch(); 
+    long long get_current_epoch();
 
     namespace impl {
         template <typename T>
@@ -129,7 +188,11 @@ namespace GL {
 
     };
 
-    // equivalent to concurrency::concurrent_vector. Equal performance or slightly faster for small number of items, and slightly worse performance for many items.
+};
+
+// Atomic Vector
+namespace GL {
+    // equivalent to concurrency::concurrent_vector. Equal performance or slightly faster (~15%) for small number of items, and slightly worse (~20%) performance for many items.
     // buckets increase the number of allocations by *2 each time. Maximum number of buckets must be known at compile-time. 
     // Therefore, there is a maximum size this vector may have. Note that increasing the maximum number of buckets 
     // should only result in a minor increase to the memory use, and little to no impact on performance. Suggest 24 for ~ 33M items, while 64 would handle nearly all use cases possible. 
@@ -143,7 +206,7 @@ namespace GL {
             62, 57, 46, 52, 38, 26, 32, 41,
             50, 36, 17, 19, 29, 10, 13, 21,
             56, 45, 25, 31, 35, 16,  9, 12,
-            44, 24, 15,  8, 23,  7,  6,  5 
+            44, 24, 15,  8, 23,  7,  6,  5
         };
         static short log2_64(uint64_t value) noexcept {
             value |= value >> 1;
@@ -156,12 +219,12 @@ namespace GL {
         }
         // 0 -> 0, 4 -> 1, 8 -> 2, 16 -> 3, etc.
         static short global_index_to_block(size_t index) noexcept {
-            if (index <= 3ull) return 0;            
+            if (index <= 3ull) return 0;
             else return log2_64(index) - 1;
         };
         // 0 -> 0, 3 -> 3, 4 -> 0, 7 -> 3, 8 -> 0, 15 -> 7, 16 -> 0, 31 -> 15, etc.
         static size_t global_index_to_local_index(size_t index) noexcept {
-            if (index <= 3ull) return index;            
+            if (index <= 3ull) return index;
             else return index - (2ull << (log2_64(index) - 1));
         };
         static size_t global_index_to_local_index(size_t index, short blockN) noexcept {
@@ -189,7 +252,7 @@ namespace GL {
                 if (!blocks[blockN]) {
                     auto* new_ptr = new std::vector< element_t >();
                     new_ptr->resize(block_to_allocsize(blockN));
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) { }
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {}
                     else {
                         delete new_ptr;
                     }
@@ -223,11 +286,11 @@ namespace GL {
             return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
         };
         void grow_to_at_least(size_t index) noexcept {
-            EnsureBlockExists(global_index_to_block(index)); 
+            EnsureBlockExists(global_index_to_block(index));
             while (true) {
                 size_t prevValid = valid_pos;
                 if (prevValid < index) {
-                    if (InterlockedCompareExchange( reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
+                    if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
                         break;
                     }
                 }
@@ -237,19 +300,19 @@ namespace GL {
             }
         };
         void push_back(element_t const& srce) noexcept {
-            size_t position; 
+            size_t position;
             short blockN;
 
             position = current_pos++;
             blockN = global_index_to_block(position);
             if (current_blockN < blockN) {
                 grow_to_at_least_blocksN(blockN);
-                InterlockedExchange16( reinterpret_cast<volatile short*>(&current_blockN), blockN);
+                InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = srce;
             InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
         };
-        void push_back(element_t && srce) noexcept {
+        void push_back(element_t&& srce) noexcept {
             size_t position;
             short blockN;
 
@@ -317,14 +380,17 @@ namespace GL {
         auto end() const { return iterator(this, valid_pos); };
 
     };
+};
 
+// Atomic Thread-Local Objects
+namespace GL {
     // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. 
-    template <typename T> 
+    template <typename T>
     class thread_object {
     private:
-        mutable size_t _tls_size{ 0 };        
+        mutable size_t _tls_size{ 0 };
         T const _default; // for initializing new thread objects
-        mutable atomic_vector/*concurrency::concurrent_vector*/<std::pair<size_t, T*>> _tls;
+        mutable atomic_vector<std::pair<size_t, T*>> _tls;
         static size_t actual_thread_id() {
             static thread_local size_t unique_hash{ GL::util::inline_hash(GL::get_current_epoch(), std::this_thread::get_id()) };
             return unique_hash;
@@ -378,7 +444,7 @@ namespace GL {
                 _tls.grow_to_at_least(index + 1);
                 _tls[index].first = x.first;
                 if (x.second) {
-                    _tls[index].second = new T(*x.second); 
+                    _tls[index].second = new T(*x.second);
                 }
                 ++index;
             }
@@ -387,7 +453,7 @@ namespace GL {
         thread_object& operator=(thread_object const&) = delete;
         thread_object& operator=(thread_object&&) = delete;
         ~thread_object() {
-            for (auto& x : _tls) if (x.second) delete x.second;   
+            for (auto& x : _tls) if (x.second) delete x.second;
         };
 
         T* operator->() { return &GetTLS(); };
@@ -418,7 +484,7 @@ namespace GL {
             (void)for_each_cancellable([](auto& x) -> bool {
                 func(x);
                 return false;
-            });
+                });
         };
 
     };
@@ -428,7 +494,7 @@ namespace GL {
     class thread_object_no_default {
     private:
         mutable size_t _tls_size{ 0 };
-        mutable atomic_vector/*concurrency::concurrent_vector*/<std::pair<size_t, T*>> _tls;
+        mutable atomic_vector<std::pair<size_t, T*>> _tls;
         static size_t actual_thread_id() {
             static thread_local size_t unique_hash{ GL::util::inline_hash(GL::get_current_epoch(), std::this_thread::get_id()) };
             return unique_hash;
@@ -502,6 +568,27 @@ namespace GL {
         T& operator[](size_t thread_index) { return GetTLS(thread_index); };
         const T& operator[](size_t thread_index) const { return GetTLS(thread_index); };
 
+        template <typename T> bool for_each_cancellable_alive(T const& func) {
+            const auto index = get_thread_id();
+            size_t i;
+            for (i = index; i < _tls_size; ++i) {
+                if (GL::get_thread_alive(i)) {
+                    auto& x = _tls[i];
+                    if (x.second) {
+                        if (func(*x.second)) { return true; }
+                    }
+                }
+            }
+            for (i = 0; (i < index) && (i < _tls_size); ++i) {
+                if (GL::get_thread_alive(i)) {
+                    auto& x = _tls[i];
+                    if (x.second) {
+                        if (func(*x.second)) { return true; }
+                    }
+                }
+            }
+            return false;
+        };
         template <typename T> bool for_each_cancellable(T const& func) {
             const auto index = get_thread_id();
             size_t i;
@@ -520,13 +607,22 @@ namespace GL {
             return false;
         };
         template <typename T> void for_each(T const& func) {
-            (void)for_each_cancellable([](auto& x) -> bool {
+            (void)for_each_cancellable([&func](auto& x) -> bool {
                 func(x);
                 return false;
-                });
+            });
+        };
+        template <typename T> void for_each_alive(T const& func) {
+            (void)for_each_cancellable_alive([&func](auto& x) -> bool {
+                func(x);
+                return false;
+            });
         };
     };
+};
 
+// Atomic Allocators
+namespace GL {
     // Thread-safe, lock-free, good-performance page-based allocator with LIFO functionality for memory re-use. Lower memory footprint than atomic_parallel_allocator.
     template <typename T, size_t BlockSize = 128, bool skipInitialization = false>
     class atomic_allocator {
@@ -678,7 +774,7 @@ namespace GL {
             innerType* out;
             const auto threadID = get_thread_id();
             if constexpr (sizeof...(a) > 0) {
-                out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, threadID });               
+                out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, threadID });
             }
             else {
                 out = TLS->Alloc();
@@ -695,8 +791,12 @@ namespace GL {
         };
     };
 
+};
+
+// Atomic Stacks
+namespace GL {
     // Thread-safe, lock-free, high-performance queue with LIFO functionality.
-    template <typename T> 
+    template <typename T>
     class atomic_parallel_stack {
         struct element_t {
             T
@@ -746,7 +846,7 @@ namespace GL {
                 else {
                     return false;
                 }
-            });
+                });
         };
         size_t size() const {
             return count.load();
@@ -824,8 +924,12 @@ namespace GL {
     template<typename T>
     using atomic_stack = atomic_parallel_stack<T>;
 #endif
+};
 
-    // Thread-safe, lock-free, high-performance queue with FIFO functionality. 
+// Atomic Queues
+namespace GL {
+    // Thread-safe, lock-free, okay-performance queue with FIFO functionality. 
+    // FIFO is a slower guarrantee than LIFO, so if FIFO is not needed, prefer use of a stack. 
     template<typename T>
     class atomic_parallel_queue {
         constexpr static bool is_pod = std::is_pod_v<T> && (sizeof(T) <= 8);
@@ -968,8 +1072,309 @@ namespace GL {
     using atomic_queue = atomic_parallel_queue<T>;
 #endif
 
+    // Thread-safe, lock-free, poor-performance queue with sorting.     
+    // std::greater results in smaller objects getting pop'd first. 
+    // std::less results in larger objects getting pop'd first.
+    // Order is guarranteed in this variety. 
+    template<typename T, typename Compare = std::greater<T>>
+    using atomic_priority_queue = concurrency::concurrent_priority_queue<T, Compare>;
+
+    // Thread-safe, lock-free, okay-performance queue with sorting.     
+    // std::greater results in smaller objects getting pop'd first. 
+    // std::less results in larger objects getting pop'd first.
+    // Order is not 100% guarranteed in this variety, due to the parallelization, but is "likely" to be ordered. 
+    template<typename T, typename Compare = std::greater<T>>
+    class atomic_parallel_priority_queue {
+        struct cmp_ptrs {
+            _CXX17_DEPRECATE_ADAPTOR_TYPEDEFS typedef T* _FIRST_ARGUMENT_TYPE_NAME;
+            _CXX17_DEPRECATE_ADAPTOR_TYPEDEFS typedef T* _SECOND_ARGUMENT_TYPE_NAME;
+            _CXX17_DEPRECATE_ADAPTOR_TYPEDEFS typedef bool _RESULT_TYPE_NAME;
+
+            _NODISCARD constexpr bool operator()(T* _Left, T* _Right) const {
+                return Compare{}(*_Left, *_Right);
+            }
+        };
+
+        constexpr static bool is_pod = std::is_pod_v<T> && (sizeof(T) <= 8);
+        thread_object_no_default<atomic_priority_queue<T*, cmp_ptrs>>
+            _que{};
+        atomic_parallel_allocator<T>
+            _alloc{};
+        std::atomic<size_t>
+            count{ 0 };
+
+    public:
+        void push(T const& obj) {
+            _que->push(_alloc.Alloc(obj));            
+            ++count;
+        };
+        void push(T&& obj) {
+            _que->push(_alloc.Alloc(std::move(obj)));            
+            ++count;
+        };
+        bool try_pop(T& out) {            
+            T* ptr{ nullptr };
+            if (_que.for_each_cancellable([&ptr](auto& Q) -> bool {
+                return Q.try_pop(ptr);
+            })) {
+                if (ptr) {
+                    --count;
+                    if constexpr (std::is_move_assignable<T>::value) {
+                        out = std::move(*ptr);
+                    }
+                    else {
+                        out = *ptr;
+                    }
+                    _alloc.Free(ptr);
+                    return true;
+                }
+            };
+            return false;            
+        };
+        size_t size() const {
+            return count.load();
+        };
+
+    };
+
 };
 
+// Epoch Allocator
+namespace GL {
+    // Thread-safe, lock-free, okay-performance allocator that delays destruction until likely safe to do so. 
+    // uses the real clock of the OS to time when enough periods have passed that a free'd pointer is likely forgotten. 
+    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_>>
+    class atomic_epoch_allocator {
+    private:
+        struct DeleteType {
+            long long epoch;
+            _type_* ptr;
+
+            friend bool operator<(DeleteType const& lhs, DeleteType const& rhs) {
+                return lhs.epoch < rhs.epoch;
+            };
+            friend bool operator>(DeleteType const& lhs, DeleteType const& rhs) {
+                return lhs.epoch > rhs.epoch;
+            };
+            friend bool operator<=(DeleteType const& lhs, DeleteType const& rhs) {
+                return lhs.epoch <= rhs.epoch;
+            };
+            friend bool operator>=(DeleteType const& lhs, DeleteType const& rhs) {
+                return lhs.epoch >= rhs.epoch;
+            };
+            friend bool operator==(DeleteType const& lhs, DeleteType const& rhs) {
+                return lhs.epoch == rhs.epoch;
+            };
+            friend bool operator!=(DeleteType const& lhs, DeleteType const& rhs) {
+                return lhs.epoch != rhs.epoch;
+            };
+        };
+
+        class TLS {
+        public:
+            long long
+                _scope_count;
+            long long
+                EpochLimit{ -1 };
+            long long
+                Epoch_3{ -1 }; // oldest Epoch
+            long long
+                Epoch_2{ -1 }; // middle Epoch
+            long long
+                Epoch_1{ -1 }; // youngest Epoch
+
+            long long ForwardEpoch(long long CurrentEpoch) {
+                EpochLimit = Epoch_3;
+                Epoch_3 = Epoch_2;
+                Epoch_2 = Epoch_1;
+                Epoch_1 = CurrentEpoch;
+                return EpochLimit;
+            };
+            bool EpochCheck(long long CurrentEpoch) {
+                if (_scope_count == 0) {
+                    return ForwardEpoch(CurrentEpoch) >= 0;
+                }
+                else {
+                    return false;
+                }
+            };
+            class EpochGuard {
+            private:
+                atomic_epoch_allocator* _parent_parent;
+                TLS* _parent;
+                long long _CurrentEpoch;
+
+                void RunGC() {
+                    if (_parent_parent && _parent) {
+                        if (--_parent->_scope_count == 0) {
+                            if (_parent->ForwardEpoch(_CurrentEpoch) >= 0) {
+                                _parent_parent->RunGC();
+                            }
+                        }
+                    }
+                }
+
+            public:
+                EpochGuard() : _parent_parent{ nullptr }, _parent{ nullptr }, _CurrentEpoch{} {};
+                EpochGuard(atomic_epoch_allocator* parent_parent, TLS* parent, long long CurrentEpoch) : _parent_parent{ parent_parent }, _parent{ parent }, _CurrentEpoch{ CurrentEpoch } {
+                    ++parent->_scope_count;
+                };
+                EpochGuard(EpochGuard const&) = delete;
+                EpochGuard(EpochGuard&& rhs) : _parent_parent{ std::move(rhs._parent_parent) }, _parent{ std::move(rhs._parent) }, _CurrentEpoch{ std::move(rhs._CurrentEpoch) } {
+                    rhs._parent = nullptr;
+                };
+                EpochGuard& operator=(EpochGuard const&) = delete;
+                EpochGuard& operator=(EpochGuard&& rhs) {
+                    RunGC();
+                    _parent_parent = std::move(rhs.__parent_parentparent);
+                    _parent = std::move(rhs._parent);
+                    _CurrentEpoch = std::move(rhs._CurrentEpoch);
+                    rhs._parent_parent = nullptr;
+                    rhs._parent = nullptr;
+                }
+                ~EpochGuard() {
+                    RunGC();
+                };
+            };
+        };
+        // Allocator means larger memory footprint, but faster when multiple threads are in use. 
+        AllocatorType // Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
+            _alloc;
+        atomic_parallel_priority_queue<DeleteType>
+            _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
+        GL::thread_object_no_default<TLS>
+            _TLS;
+        long long
+            _lastGC;
+
+    public:
+        // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
+        void RunGC() {
+            static constexpr long long duration_ms{ 2 };
+
+            long long curr_epoch{ GL::get_current_epoch() };
+            long long previous_epoch{ _lastGC };
+            long long _EpochLimit{ std::numeric_limits<long long>::max() };
+            DeleteType out;
+
+            if (((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch)) {
+                _TLS.for_each_alive([&_EpochLimit](TLS& _tls) {
+                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.Epoch_1) {
+                        _EpochLimit = std::min<long long>(_EpochLimit, L);
+                    }
+                    });
+
+                if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
+                    while (_delete_list.try_pop(out)) {
+                        if (out.epoch < _EpochLimit) { // deemed safe to delete
+                            _alloc.Free(out.ptr);
+                        }
+                        else { // deemed unsafe to delete just yet
+                            _delete_list.push(out);
+                            break;
+                        }
+                    }
+                }
+            }
+        };
+
+    public:
+        using GuardType = typename TLS::EpochGuard;
+
+        atomic_epoch_allocator()
+            : _alloc{}
+            , _delete_list{}
+            , _TLS{}
+            , _lastGC{ GL::get_current_epoch() }
+        {};
+        atomic_epoch_allocator(atomic_epoch_allocator const&) = delete;
+        atomic_epoch_allocator(atomic_epoch_allocator&&) = delete;
+        atomic_epoch_allocator& operator=(atomic_epoch_allocator const&) = delete;
+        atomic_epoch_allocator& operator=(atomic_epoch_allocator&&) = delete;
+        ~atomic_epoch_allocator() = default;
+
+        void unsafe_unload() {
+            _alloc.unsafe_unload();
+        };
+
+    public:
+        GuardType ProtectCurrentEpoch() const {
+            return TLS::EpochGuard(
+                const_cast<atomic_epoch_allocator*>(this),
+                const_cast<TLS*>(&*_TLS),
+                GL::get_current_epoch()
+            );
+        };
+        void ProtectCurrentEpoch_Fast() const {
+            if (const_cast<TLS*>(&*_TLS)->_scope_count == 0) {
+                const_cast<TLS*>(&*_TLS)->ForwardEpoch(GL::get_current_epoch());
+            }
+        };
+
+        // Request a new memory pointer
+        template <typename... TArgs> _type_* Alloc(TArgs &&... a) {
+            return _alloc.Alloc(std::forward<TArgs>(a)...);
+        };
+
+        // Frees the memory pointer
+        void Free(const _type_* element) {
+            _delete_list.push({ GL::get_current_epoch(), const_cast<_type_*>(element) });
+            if (_TLS->EpochCheck(GL::get_current_epoch())) {
+                // will only succeed if we are in scope-level 0, which only happens if this thread has not made any protecting guards.
+                RunGC();
+            }
+        };
+
+    };
+
+};
+
+// Delayed Instantiation
+namespace GL {
+    // Thread-safe wrapper that only initializes an object when actually used. May simply never initialize an object if never used. 
+    template <typename T>
+    class DelayedInstantiation {
+    private:
+        T* ptr{ nullptr };
+
+    public:
+        DelayedInstantiation() = default;
+        DelayedInstantiation(T const& data) : ptr(new T(data)) {};
+        DelayedInstantiation(T&& data) : ptr(new T(std::move(data))) {};
+        DelayedInstantiation(DelayedInstantiation const&) = delete;
+        DelayedInstantiation(DelayedInstantiation&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
+        DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
+        DelayedInstantiation& operator=(DelayedInstantiation&& rhs) {
+            if (ptr) delete ptr;
+            ptr = std::move(rhs.ptr);
+            rhs.ptr = nullptr;
+            return *this;
+        };
+        ~DelayedInstantiation() {
+            if (ptr) delete ptr;
+        };
+
+        bool valid() const {
+            return ptr;
+        };
+        T* operator->() const {
+            if (!ptr) {
+                if (auto* newPtr = new T()) {
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
+                        delete newPtr;
+                    }
+                }
+            }
+            return ptr;
+        };
+        T& operator*() const {
+            return *operator->();
+        };
+        operator bool() const { return valid(); };
+    };
+};
+
+// Sequences
 namespace GL {
     /// <summary>
     /// Iterator that steps through a list, without needing to instance the whole list. 
@@ -1067,6 +1472,7 @@ namespace GL {
     };
 };
 
+// Atomic Mutexes
 namespace GL {
     /* *THREAD SAFE* Windows-specific high-performance lock that only locks the OS (slow) when contention actually happens. When there is no contention, this is very fast.
     Generally speaking, out-performs std::mutex under most conditions. */
@@ -1206,700 +1612,1336 @@ namespace GL {
 
 };
 
-
-#ifndef _LOCAL_WRITE_EM_H
-#define _LOCAL_WRITE_EM_H
-
-#ifndef _COMMON_H
-#define _COMMON_H
-
-#include <cassert>
-#include <thread>
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
-#include <unordered_map>
-#include <atomic>
-#include <thread>
-#include <cstdint> 
-
-#define DEBUG_PRINT
-
-#ifdef DEBUG_PRINT
-
-#define dbg_printf(fmt, ...)                              \
-  do {                                                    \
-    fprintf(stderr, "%-24s: " fmt, __FUNCTION__, ##__VA_ARGS__); \
-    fflush(stdout);                                       \
-  } while (0);
-
-#else
-
-static void dummy(const char*, ...) {}
-
-#define dbg_printf(fmt, ...)   \
-  do {                         \
-    dummy(fmt, ##__VA_ARGS__); \
-  } while (0);
-
-#endif
-
-// I copied this from Linux kernel code to favor branch prediction unit on CPU
-// if there is one
-#define likely(x)   __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
-
-#endif
-
-static const size_t CACHE_LINE_SIZE = 64;
-
-template<typename GarbageType>
-class LocalWriteEMFactory;
-
-/*
- * class PaddedData() - Pad a data type to a certain fixed length by appending
- *                      extra bytes after useful data field
- *
- * The basic constraint is that the length of the padded structure must be
- * greater than or equal to the streucture being padded
- */
-template <typename T, uint64_t length>
-class PaddedData {
-public:
-    // Define few compile time constants
-    static constexpr uint64_t data_size = sizeof(T);
-    static constexpr uint64_t padding_size = length - sizeof(T);
-    static constexpr uint64_t total_size = length;
-
-    // Make sure no data could be crossing cache lines
-    static_assert(data_size <= CACHE_LINE_SIZE,
-        "Data must be within the size of a cache line!");
-
-    T data;
-
-    /*
-     * operator T() - Type conversion overloading
-     */
-    operator T() { return data; }
-
-    /*
-     * operator-> - We use this to access elements inside the data member of
-     *              the wrapped class
-     *
-     * So the class being wrapped is accessed like we are using a pointer
-     */
-    T* operator->() { return &data; }
-
-    /*
-     * Get() - Explicitly call to return a reference of the data being wrapped
-     */
-    T& Get() const { return data; }
-
-private:
-    // This is the padding part
-    char padding[padding_size];
-};
-
-/*
- * class LocalWriteEM - Epoch manager for garbage collection that only uses
- *                      local writes
- *
- * This function is used to reduce scalability problem brought about by a
- * traditional global-counter based epoch manager, where each thread has to
- * call EnterEpoch() and LeaveEpoch() on each operation to maintain global
- * counters that counts the number of active threads entering the system
- * at a certain epoch time period. The innovativity of local write epoch
- * manager is that for each operation, the worker thread only needs to
- * conduct a local write to a variable which is only maintained for each CPU
- * core (i.e. explicitly local for L1 cache dedicated to each core), and there
- * is no global synchronization except for the epoch thread. Epoch thread
- * checks each local counter and finds the minimum one. After that it uses
- * the minimum live worker thread's epoch to reclaim garbage nodes whose
- * epoch of deletion < the epoch of oldest living worker thread
- *
- * The template argument is the type of garbage node. We keep a
- * pointer type to GarbageType in the garbage node.
- */
-template<typename GarbageType>
-class LocalWriteEM {
-public:
-    // It is the type of the cuonter we use to represent an epoch
-    using CounterType = uint64_t;
-
-    // This is a padded version of epoch counter
-    using ElementType = PaddedData<std::atomic<CounterType>, CACHE_LINE_SIZE>;
-
-private:
-
-    /*
-     * class GarbageNode - The node we use to hold garbage
-     *
-     * All garbage nodes in the systems forms a garbage chain in which all
-     * delayed allocation together with a counter recording the time it was
-     * removed are stored.
-     *
-     * Upon garbage collection, the GC thread scans the garbage chain linked
-     * list, and compares the deleted epoch with the current minimum epoch
-     * announced by all threads using the per-core counter. Garbage nodes
-     * with its deleted epoch being smaller than the global epoch will be
-     * removed
-     */
-    class GarbageNode {
+// Atomic Maps
+namespace GL {
+    // Thread-safe ordered B-Tree, which guarrantees valid and safe access to
+    // pointers during erasure or modification of the tree when using the Epoch-guard
+    // protection, which will delay actual deletion until the guard is satisfactorily old.
+    template< class objType, class keyType, int maxChildrenPerNode = 10> class BTree {
     public:
-        CounterType deleted_epoch;
-        GarbageType* garbage_p;
-
-        // This will be updated in an unsuccessful CAS, so make it public
-        GarbageNode* next_p;
-
-        /*
-         * Constructor
-         *
-         * Note that we do not initialize next_p here since it will be part of
-         * the CAS process
-         */
-        GarbageNode(GarbageType* p_garbage_p, CounterType p_deleted_epoch) :
-            deleted_epoch{ p_deleted_epoch },
-            garbage_p{ p_garbage_p }
-        {}
-
-        /*
-         * LinkTo() - Given the linked list head, try to link itself onto that
-         *            linked list
-         *
-         * Note that although this function uses CAS instead of lock, it is
-         * not wait-free - the CAS loop is effectively like a spin lock
-         */
-        inline void LinkTo(std::atomic<GarbageNode*>* head_p) {
-            next_p = head_p->load();
-
-            // Empty loop
-            // Note that the next_p will be loaded with the most up-to-date
-            // value of head_p, so we do not need to load it explicitly
-            while (head_p->compare_exchange_strong(next_p, this) == false) {}
-
-            return;
-        }
-    };
-
-    // Number of cores this structure mainatains
-    uint64_t core_num;
-
-    // This is the address we should call free() on
-    void* alloc_p;
-
-    // Cache line aligned array for atomic operation
-    // TODO: Using a pointer inncreases the overhead since everytime we
-    // need to dereference this pointer
-    // If we use a static array then the overhead could be eliminated
-    // at the cost of having to statically encode the number of cores
-    // which is also undesirable
-    ElementType* per_core_counter_list_p;
-
-    // This is the epoch counter that each thread needs to read when entering
-    // an epoch
-    // Note that according to the design, the epoch timer is set to a relatively
-    // large value (50 ms, etc.) so most of the read operation for every thread
-    // should be a local read unless the counter happens to be increamented by
-    // the epoch thread, which does not consitute a major overhead
-    ElementType epoch_counter;
-
-    // The following does not have to be cache aligned since they 
-    // are not usually operated frequently OR could not benefit from
-    // cache alignment
-
-    // This is the head of the linked list where garbage nodes are linked
-    // into
-    // In the future we might want to use a per core garbage list to reduce
-    // contention and further accelerate the Insert() procedure
-    std::atomic<GarbageNode*> garbage_head_p;
-
-    // This is set if the destructor is called and we need to terminate the
-    // GC thread, if there is one
-    // Or if there is an external it should also check this flag
-    // Note that on Intel platform this need not be an atomic variable since
-    // Intel CPU read/write are of acquire/release semantics
-    // But to accomondate other platforms that have weaker memory ordering
-    // we should make it an atiomic to avoid potential bugs
-    std::atomic<bool> exited_flag;
-
-    // This is a pointer to the control structure of the GC thread if there
-    // is one.
-    // The GC thread is invoked explicitly by calling the member function
-    // and it does not start automatically during construction since other
-    // necessary structure might have not been prepared properly
-    // If thread is not created by this object then the pointer is set to nullptr
-    std::thread* gc_thread_p;
-
-    // This defaults to 50ms
-    uint64_t gc_interval;
-
-    GL::atomic_parallel_allocator< GarbageNode >
-        gn_alloc;
-
-    GL::atomic_parallel_allocator< GarbageType >
-        gt_alloc;
-
-#ifndef NDEBUG
-    // Under debug mode we keep a counter to record how many times 
-    // FreeGarbageNode() is called by the GC thread
-    uint64_t node_freed_count;
-
-    // Number of nodes left unfreed in the EM when it is destroyed
-    uint64_t node_left_count;
-#endif
-
-private:
-
-    /*
-     * AlignToCacheLine() - Aligns a given memory address to the nearest cache
-     *                      line boundary by advancing it
-     */
-    ElementType* AlignToCacheLine(void* p) {
-        // 0xFFFF FFFF FFFF FFC0 (64-bit)
-        static constexpr uint64_t cache_line_mask = ~(CACHE_LINE_SIZE - 1);
-
-        // This is the pointer after alignment
-        ElementType* q = reinterpret_cast<ElementType*>(
-            (reinterpret_cast<uint64_t>(p) +
-                (CACHE_LINE_SIZE - 1)) & cache_line_mask);
-
-        assert((reinterpret_cast<uint64_t>(q) % CACHE_LINE_SIZE) == 0);
-        dbg_printf("Memory alignment: %p -> %p\n", p, q);
-
-        return q;
-    }
-
-public:
-
-    /*
-     * Constructor
-     *
-     * The constructor has been deliberately declared as private member to
-     * prevent construction on unaligned address. Please use WriteLocalEMFactory
-     * class to allocate it in a cache aligned manner
-     */
-    LocalWriteEM(uint64_t p_core_num) :
-        core_num{ p_core_num } {
-        dbg_printf("C'tor for %lu cores called\n", core_num);
-
-        // Store this for memory free
-        // Allocate one more slot for alignment
-        alloc_p = malloc((core_num + 1) * CACHE_LINE_SIZE);
-        assert(alloc_p != nullptr);
-
-        // Must align it to cache line boundary (64 byte typically)
-        per_core_counter_list_p = AlignToCacheLine(alloc_p);
-
-        // Initialization - all counter should be set to 0 since the global
-        // epoch counter also starts at 0
-        for (size_t i = 0; i < core_num; i++) {
-            per_core_counter_list_p[i]->store(0);
-        }
-
-        // Also set the current epoch to be 0
-        epoch_counter->store(0);
-
-        // The end of the linked list
-        garbage_head_p.store(nullptr);
-
-        // This will be set true in destructor
-        exited_flag.store(false);
-
-        // If this is nullptr then we do not wait for it in destructor
-        gc_thread_p = nullptr;
-
-        gc_interval = 50;
-
-#ifndef NDEBUG
-        node_freed_count = 0;
-        node_left_count = 0;
-#endif
-
-        return;
-    }
-
-    /*
-     * Destructor - This could only be called by the factory class
-     */
-    ~LocalWriteEM() {
-        dbg_printf("D'tor for %lu cores called\n", core_num);
-
-        // If gc thread is inkoved inside this object then we wait for it
-        if (gc_thread_p != nullptr) {
-            // Signal all threads reading this variable that the epoch manager object 
-            // will soon be destroyed, so just stop
-            SignalExit();
-
-            gc_thread_p->join();
-        }
-        else {
-            // Otherwise the flag must be set true
-            assert(HasExited() == true);
-        }
-
-        // The thread has already exited
-        delete gc_thread_p;
-
-        // Free all nodes currently in the GC that has not been freed
-        FreeAllGarbage();
-
-#ifndef NDEBUG
-        dbg_printf("    # of nodes freed in d'tor = %lu\n", GetNodeLeftCount());
-        dbg_printf("    # of nodes freed in total = %lu\n", GetNodeFreedCount());
-#endif
-
-        // Must free the array explicitly using the raw pointer rathter than 
-        // aligned pointer
-        free(alloc_p);
-
-        return;
-    }
-
-private:
-    /*
-     * FreeAllGarbage() - This function frees all garbage nodes remaining in
-     *                    the epoch manager no matter what is the value of its
-     *                    epoch counter
-     *
-     * This function should be called in only single threaded environment. It
-     * traverses the linked list and frees garbage node one by one. This is
-     * usually called inside the destructor where we know all nodes deleted should
-     * be freed immediately o.w. there would be a memory leak
-     */
-    void FreeAllGarbage() {
-        GarbageNode* node_p = garbage_head_p.load();
-
-        while (node_p != nullptr) {
-            GarbageNode* next_p = node_p->next_p;
-
-            // Free garbage itself
-            // Note that this also contributes to number of nodes freed
-            // by the EM
-            FreeGarbageNode(node_p->garbage_p);
-
-            gn_alloc.Free(node_p);
-
-            node_p = next_p;
-
-#ifndef NDEBUG
-            node_left_count++;
-#endif
-        }
-
-        // Restore it to nullptr to avoid it being used by accident
-        // in future development
-        garbage_head_p.store(nullptr);
-
-        return;
-    }
-
-public:
-    // Disallow any form of copying and construction without explicitly
-    // aligning it to 64 byte boundary by the public
-    LocalWriteEM(const LocalWriteEM&) = delete;
-    LocalWriteEM(LocalWriteEM&&) = delete;
-    LocalWriteEM& operator=(const LocalWriteEM&) = delete;
-    LocalWriteEM& operator=(LocalWriteEM&&) = delete;
-
-private:
-    /*
-     * HasExited() - Whether the exit signal has been issued
-     *
-     * This function is a wrapped to allow external access of the exited_flag
-     * variable. If an external thread is used as the GC thread then the user
-     * of this EM should signal exiting first, wait for external threads on this
-     * condition, and then call destructor of the EM
-     */
-    bool HasExited() {
-        return exited_flag.load();
-    }
-
-    /*
-     * SignalExit() - Signals that the epoch manager will exit by setting an
-     *                atomic flag to true
-     *
-     * If the epoch manager uses its own thread as the GC thread then after this
-     * function we should wait for that thread to stop and continue. However,
-     * if an external thread is used for GC, then after signaling this, the
-     * external thread should react to the signal by calling query function for
-     * the status of exited_flag, and then exit. The user of the epoch manager
-     * should then wait for the external thread to exit before destroying the
-     * EM object. Otherwise the thread might still be running after the EM has
-     * been destroyed, corrupting random memory location.
-     */
-    void SignalExit() {
-        exited_flag.store(true);
-
-        return;
-    }
-
-public:
-    /*
-     * SetGCInterval() - Sets the GC interval for GC thread
-     *
-     * Afther each GC operation, the GC thread will sleep for a certain amount
-     * of time to let worker threads cache the counter in their own L1 cache
-     * and the counter shall stay there unchanged for a relatively long time
-     */
-    inline void SetGCInterval(uint64_t interval) {
-        gc_interval = interval;
-
-        return;
-    }
-
-private:
-    /*
-     * GetGCIntervale() - As name suggests
-     */
-    inline uint64_t GetGCInterval() const {
-        return gc_interval;
-    }
-
-#ifndef NDEBUG
-
-    /*
-     * GetNodeFreedCount() - Returns a debug mode counter representing how many
-     *                       times FreeGarbageNode() has been called
-     */
-    inline uint64_t GetNodeFreedCount() const {
-        return node_freed_count;
-    }
-
-    /*
-     * GetNodeLeftCount() - Return the number of nodes left uncollected when
-     *                      the EM is destroyed
-     *
-     * This should always be called after the destructor returned, o.w. 0
-     * is returned
-     */
-    inline uint64_t GetNodeLeftCount() const {
-        return node_left_count;
-    }
-
-#endif
-
-private:
-    /*
-     * Protect() - Announces that a thread enters the system
-     *
-     * This effectively let a thread running on the core it claimed to be
-     * (through function argument) read the global epoch counter (which
-     * should be a local cache read in most of the time) and then write
-     * into its local latest enter epoch
-     */
-    inline void Protect(uint64_t core_id) {
-        // Under debug mopde let's assert core id is correct to avoid
-        // serious bugs
-        assert(core_id < core_num);
-
-        // This is a strict read/write ordering - load must always happen
-        // before store
-        per_core_counter_list_p[core_id]->store(epoch_counter->load());
-
-        return;
-    }
-
-public:
-    /*
-     * Protect() - Announces that a thread enters the system
-     *
-     * This effectively let a thread running on the core it claimed to be
-     * (through function argument) read the global epoch counter (which
-     * should be a local cache read in most of the time) and then write
-     * into its local latest enter epoch
-     */
-    inline void Protect() {
-        Protect(GL::get_thread_id() % core_num);
-    }
-
-    /*
-     * Free() - Adds a node whose deallocation will be delayed
-     *
-     * This function creates a garbage node linked list node and puts both
-     * garbage node and the epoch counter into the garbage chain
-     *
-     * Note: When this function is called the caller should guarantee that the
-     * node is already not visible by other threads, otherwise the assumption
-     * made about the garbage collection mechanism will break
-     */
-    void Free(GarbageType* garbage_p) {
-        // We load epoch counter here such that the time the garbage node disappears
-        // from the system <= current epoch time
-        // As long as we only do GC for nodes whose epoch counter < earlest
-        // accessing epoch counter which further <= time of the thread touching
-        // any shared resource, then we know it is saft to reclaim the memory
-        GarbageNode* gn_p = gn_alloc.Alloc(garbage_p, epoch_counter->load());
-
-        // Use CAS to link the node onto the linked list
-        gn_p->LinkTo(&garbage_head_p);
-
-        return;
-    }
-
-    // Acquire a new element from the free list and construct it.
-    template <typename... TArgs> __declspec(noinline) GarbageType* Alloc(TArgs &&... a) {
-        return gt_alloc.Alloc(std::forward<TArgs>(a)...);
-    };
-
-private:
-    /*
-     * FreeGarbageNode() - Frees a garbage type
-     *
-     * If users want to write their own epoch manager to destroy objects in a
-     * customized way, then they should modify this function. Here we just
-     * call operator delete to free
-     *
-     * Note that this function must be called in single threaded environment
-     */
-    inline void FreeGarbageNode(GarbageType* garbage_p) {
-        gt_alloc.Free(garbage_p);
-
-#ifndef NDEBUG
-        node_freed_count++;
-#endif
-
-        return;
-    }
-
-    /*
-     * GotoNextEpoch() - Increases the epoch counter value by 1
-     */
-    inline void GotoNextEpoch() {
-        // Atomically increase the epoch counter
-        epoch_counter->fetch_add(1);
-
-        return;
-    }
-
-    /*
-     * GetEpochCounter() - Get the epoch counter for debugging
-     */
-    inline CounterType GetCurrentEpochCounter() {
-        return epoch_counter->load();
-    }
-
-    /*
-     * DoGC() - This is the main function for doing garbage collection
-     *
-     * Note that worker threads could only access the head of linked list, which
-     * should not be modified by the GC thread, otherwise ABA problem might
-     * emerge since if we free a node during GC, and in the meantime a worker
-     * thread comes in and allocates a node that is exactly the node we
-     * just freed (malloc() tends to do that, actually) then we will have a
-     * ABA problem. ABA problem might or might not be harmful depending on the
-     * context, but it is best practice for us to aovid it since if the design
-     * is changed in the future we will have less potential undocumented problems
-     *
-     * NOTE: This function does not increase epoch counter, since the pace that
-     * epoch counter increases could optionally differ from the GC pace
-     */
-    void DoGC() {
-        dbg_printf("Performing GC\n");
-
-        // We use this to remember the minimum number of cores
-        uint64_t min_epoch = per_core_counter_list_p[0]->load();
-
-        // If there are more than 1 core then we just loop through
-        // counters for each core and pick the smaller one everytime
-        for (uint64_t i = 1; i < core_num; i++) {
-            uint64_t counter = per_core_counter_list_p[i]->load();
-
-            if (counter < min_epoch) {
-                min_epoch = counter;
+        struct TreeNode {
+            keyType // key used for sorting
+                key;
+            objType* // if != NULL pointer to object stored in leaf node 
+                object;
+            TreeNode* // parent node 
+                parent;
+            TreeNode* // next sibling
+                next;
+            TreeNode* // prev sibling
+                prev;
+            long long // number of children	  
+                numChildren;
+            TreeNode* // first child 
+                firstChild;
+            TreeNode* // last child
+                lastChild;
+        };
+        typedef TreeNode _iterType;
+
+    private:
+        static _iterType*
+            InitNode(_iterType* p) {
+            p->key = {};
+            p->object = nullptr;
+            p->parent = nullptr;
+            p->next = nullptr;
+            p->prev = nullptr;
+            p->numChildren = 0;
+            p->firstChild = nullptr;
+            p->lastChild = nullptr;
+            return p;
+        };
+
+    private:
+        std::atomic<long long>
+            Num;
+        _iterType
+            * root, // must be locked when handled
+            * first, // will be exchanged using atomics
+            * last; // will be exchanged using atomics
+        DelayedInstantiation< atomic_epoch_allocator<objType> >
+            objAllocator;
+        atomic_epoch_allocator<_iterType>
+            nodeAllocator;
+        GL::fast_shared_mutex
+            mutex;
+
+        class EpochGuard {
+        private:
+            typename atomic_epoch_allocator<objType>::GuardType guard_1;
+            typename atomic_epoch_allocator<_iterType>::GuardType guard_2;
+
+        public:
+            EpochGuard(BTree const* parent) : guard_1{ parent->objAllocator->ProtectCurrentEpoch() }, guard_2{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
+            EpochGuard(EpochGuard const&) = delete;
+            EpochGuard(EpochGuard&& rhs) = delete;
+            EpochGuard& operator=(EpochGuard const&) = delete;
+            EpochGuard& operator=(EpochGuard&&) = delete;
+            ~EpochGuard() = default;
+        };
+
+    public:
+        static _iterType*
+            GetNextLeaf(_iterType* node) {
+            if (node) {
+                if (node->firstChild) {
+                    while (node->firstChild) {
+                        node = node->firstChild;
+                    }
+                }
+                else {
+                    while (node && !node->next) {
+                        node = node->parent;
+                    }
+                    if (node) {
+                        node = node->next;
+                        while (node->firstChild) {
+                            node = node->firstChild;
+                        }
+                    }
+                    else {
+                        node = nullptr;
+                    }
+                }
             }
-        }
-
-        // Now we have the miminum epoch which is the time <= the earlist thread
-        // entering the system
-        // We could collect all garbage nodes before this time
-
-        // Load the head of the linked list
-        GarbageNode* current_node_p = garbage_head_p.load();
-        if (current_node_p == nullptr) {
-            return;
-        }
-
-        GarbageNode* next_node_p = current_node_p->next_p;
-
-        while (next_node_p != nullptr) {
-            CounterType next_counter = next_node_p->deleted_epoch;
-
-            if (next_counter < min_epoch) {
-                // If next node is qualified then remove both the garbage node
-                // and the wrapper, and since current_node_p->next_p has already
-                // been set to the next node, we know these two pointers are still
-                // pointing to neighbor nodes
-                current_node_p->next_p = next_node_p->next_p;
-
-                FreeGarbageNode(next_node_p->garbage_p);
-                gn_alloc.Free(next_node_p);
-
-                next_node_p = current_node_p->next_p;
+            return node;
+        };	// goes through all leaf nodes of the tree;
+        static _iterType*
+            GetPrevLeaf(_iterType* node) {
+            if (!node) return nullptr;
+            if (node->lastChild) {
+                while (node->lastChild) {
+                    node = node->lastChild;
+                }
+                return node;
             }
             else {
-                // Otherwise, we know next_node_p will not be freed, and it is
-                // a valid pointer, so change current_node_p to it
-                // and check its next node
-                current_node_p = next_node_p;
-                next_node_p = next_node_p->next_p;
+                while (node && node->prev == nullptr) {
+                    node = node->parent;
+                }
+                if (node) {
+                    node = node->prev;
+                    while (node->lastChild) {
+                        node = node->lastChild;
+                    }
+                    return node;
+                }
+                else {
+                    return nullptr;
+                }
             }
-        }
+        };	// goes through all leaf nodes of the tree;
+        static _iterType*
+            GetNext(_iterType* node) {
+            if (node) {
+                if (node->firstChild) {
+                    node = node->firstChild;
+                }
+                else {
+                    while (node && node->next == nullptr) {
+                        node = node->parent;
+                    }
+                }
+            }
+            return node;
+        };		// goes through all nodes of the tree;
+        static _iterType*
+            NodeFind(keyType  const& key, _iterType* root) {
+            _iterType* node = NodeFindLargestSmallerEqual(key, root);
+            if (node && node->object && node->key == key) return node; // EQUALS
+            return nullptr;
+        };								// find an object using the given key;
+        static _iterType*
+            NodeFindByIndex(int index, _iterType* Root) {
+            int startIndex{ 0 };
 
-        return;
-    }
+            if (Root == nullptr) {
+                return nullptr;
+            }
 
-    /*
-     * ThreadFunc() - This is the function body for GC thread
-     *
-     * This function mainly wraps DoGC(), with a delay, the purpose of which is
-     * to control the frequency we do GC (and invalidate local caches of the
-     * global counter kept by each worker thread in their own CPU cores).
-     */
-    static void ThreadFunc(LocalWriteEM<GarbageType>* em) {
-        // Loop on the atomic flag that will be set when destructor is called
-        // (it is the first operation inside the destructor)
-        while (em->HasExited() == false) {
-            em->GotoNextEpoch();
-            em->DoGC();
+            while (Root) {
+                if (index == startIndex && Root->object) { return Root; }
 
-            // Sleep for gc_interval
-            std::this_thread::sleep_for(std::chrono::milliseconds{ em->GetGCInterval() });
-        }
+                if (startIndex <= index && (startIndex + Root->numChildren) > index) {
+                    // one of my children has this index				
+                    Root = Root->firstChild;
+                }
+                else {
+                    // one of my neighbors has this index				
+                    if (Root->object) ++startIndex;
+                    else startIndex += Root->numChildren;
 
-        dbg_printf("Built-in GC thread has exited\n");
+                    Root = Root->next;
+                }
+            }
 
-        return;
-    }
+            return Root;
+        };			// find an object with the largest key smaller equal the given key;
+        static _iterType*
+            NodeFindSmallestLargerEqual(keyType const& key, _iterType* Root) {
+            _iterType* node, * smaller;
 
-public:
-    /*
-     * StartGCThread() - Starts the GC thread inside the EM object
-     *
-     * The GC thread will be created as a std::thread object running ThreadFunc()
-     * as its thread body. It periodically wakes up and does garbage collection,
-     * and will stop & exit after SignalExit() has been called
-     *
-     * A reasonable external GC procedure should roughly follow the same way,
-     * especially before the destruction of the EM object, an external thread
-     * must be signaled to stop, and thus it has to check HasExited()
-     */
-    void StartGCThread() {
-        // Could not start new thread if the EM has been destroyed
-        assert(HasExited() == false);
-        assert(gc_thread_p == nullptr);
+            if (Root == nullptr) {
+                return nullptr;
+            }
 
-        gc_thread_p = new std::thread{ LocalWriteEM<GarbageType>::ThreadFunc, this };
+            smaller = nullptr;
+            for (node = Root->lastChild; node != nullptr; node = node->lastChild) {
+                while (node->prev) {
+                    if (node->key <= key) {
+                        if (!smaller) {
+                            smaller = GetPrevLeaf(Root);
+                        }
+                        break;
+                    }
+                    smaller = node;
+                    node = node->prev;
+                }
+                if (node->object) {
+                    if (node->key >= key) {
+                        break;
+                    }
+                    else if (smaller == nullptr) {
+                        return nullptr;
+                    }
+                    else {
+                        node = smaller;
+                        if (node->object) {
+                            break;
+                        }
+                    }
+                }
+            }
 
-        return;
-    }
+            return node;
+        };			// find an object with the smallest key larger equal the given key;
+        static _iterType*
+            NodeFindLargestSmallerEqual(keyType const& key, _iterType* Root) {
+            _iterType* node, * smaller;
+
+            if (Root == nullptr) {
+                return nullptr;
+            }
+
+            smaller = nullptr;
+            for (node = Root->firstChild; node != nullptr; node = node->firstChild) {
+                while (node->next) {
+                    if (node->key >= key) {
+                        if (!smaller) {
+                            smaller = GetNextLeaf(Root);
+                        }
+                        break;
+                    }
+                    smaller = node;
+                    node = node->next;
+                }
+                if (node->object) {
+                    if (node->key <= key) {
+                        break;
+                    }
+                    else if (smaller == nullptr) {
+                        return nullptr;
+                    }
+                    else {
+                        node = smaller;
+                        if (node->object) {
+                            break;
+                        }
+                    }
+                }
+            }
+            return node;
+        };			// find an object with the largest key smaller equal the given key;
+
+    public:
+        using GuardType = typename EpochGuard;
+        EpochGuard ProtectCurrentEpoch() const { return EpochGuard(this); };
+
+        BTree()
+            : Num(0)
+            , root(nullptr)
+            , first(nullptr)
+            , last(nullptr)
+            , objAllocator()
+            , nodeAllocator()
+            , mutex()
+        {
+            static_assert(maxChildrenPerNode >= 4);
+            root = AllocNode();
+        };
+        BTree(BTree const&) = delete;
+        BTree(BTree&& rhs) = delete;
+        BTree& operator=(BTree const&) = delete;
+        BTree& operator=(BTree&&) = delete;
+        ~BTree() = default;
+
+        void unsafe_unload() {
+            if (objAllocator) objAllocator->unsafe_unload();
+            nodeAllocator.unsafe_unload();
+            root = first = last = nullptr;
+            Num = 0;
+        };
+
+        template <bool EmplaceIfExists = true> _iterType*
+            Add(objType object, keyType const& key) {
+            _iterType
+                * node,
+                * child,
+                * newNode;
+
+            // check that the key does not already exist		
+            if constexpr (EmplaceIfExists) {
+                auto locked{ std::shared_lock(mutex) };
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    *node->object = std::move(object);
+                    return node;
+                }
+            }
+            else {
+                auto locked{ std::shared_lock(mutex) };
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    return node;
+                }
+            }
+
+            auto locked{ std::scoped_lock(mutex) };
+
+            // check that the key does not already exist		
+            if constexpr (EmplaceIfExists) {
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    *node->object = std::move(object);
+                    return node;
+                }
+            }
+            else {
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    return node;
+                }
+            }
+
+            newNode = AllocNode();
+            newNode->key = key;
+            newNode->object = objAllocator->Alloc(std::move(object));
+            Num++;
+
+            if (root->numChildren >= maxChildrenPerNode) {
+                // DOING MODIFICATIONS
+                if (1) {
+                    node = AllocNode();
+                    node->key = root->key;
+                    node->firstChild = root;
+                    node->lastChild = root;
+                    node->numChildren = 1;
+                    root->parent = node;
+                    SplitNode(root);
+                    root = node;
+                }
+            };
+
+            for (node = root; node->firstChild; node = child) {
+                if (key > node->key) node->key = key;
+
+                // find the first child with a key larger equal to the key of the new node
+                for (child = node->firstChild; child->next; child = child->next)
+                    if (key <= child->key)
+                        break;
+
+                if (child->object) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        if (key <= child->key) {
+                            // insert new node before child
+                            if (child->prev) child->prev->next = newNode;
+                            else node->firstChild = newNode;
+                            newNode->prev = child->prev;
+                            newNode->next = child;
+                            child->prev = newNode;
+                        }
+                        else {
+                            // insert new node after child
+                            if (child->next) child->next->prev = newNode;
+                            else node->lastChild = newNode;
+                            newNode->prev = child;
+                            newNode->next = child->next;
+                            child->next = newNode;
+                        }
+                        newNode->parent = node;
+                        ++node->numChildren;
+                        return CheckLastNode(CheckFirstNode(newNode));
+                    }
+                }
+
+                // make sure the child has room to store another node
+                if (child->numChildren >= maxChildrenPerNode) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        SplitNode(child);
+                        if (key <= child->prev->key)
+                            child = child->prev;
+                    }
+                }
+            }
+
+            // DOING MODIFICATIONS
+            if (1) {
+                // we only end up here if the root node is empty
+                newNode->parent = root;
+                root->key = key;
+                root->firstChild = newNode;
+                root->lastChild = newNode;
+                ++root->numChildren;
+                return CheckLastNode(CheckFirstNode(newNode));
+            }
+        };
+        __declspec(noinline) _iterType*
+            GetOrInstance(keyType const& key) {
+            _iterType
+                * node,
+                * child,
+                * newNode;
+
+            // check that the key does not already exist		
+            if (1) {
+                auto locked{ std::shared_lock(mutex) };
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    return node;
+                }
+            }
+
+            auto locked{ std::scoped_lock(mutex) };
+
+            // check that the key does not already exist		
+            if (1) {
+                node = NodeFind(key, root);
+                if (node && node->object) {
+                    return node;
+                }
+            }
+
+            newNode = AllocNode();
+            newNode->key = key;
+            newNode->object = objAllocator->Alloc();
+            Num++;
+
+            if (root->numChildren >= maxChildrenPerNode) {
+                // DOING MODIFICATIONS
+                if (1) {
+                    node = AllocNode();
+                    node->key = root->key;
+                    node->firstChild = root;
+                    node->lastChild = root;
+                    node->numChildren = 1;
+                    root->parent = node;
+                    SplitNode(root);
+                    root = node;
+                }
+            };
+
+            for (node = root; node->firstChild; node = child) {
+                if (key > node->key) node->key = key;
+
+                // find the first child with a key larger equal to the key of the new node
+                for (child = node->firstChild; child->next; child = child->next)
+                    if (key <= child->key)
+                        break;
+
+                if (child->object) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        if (key <= child->key) {
+                            // insert new node before child
+                            if (child->prev) child->prev->next = newNode;
+                            else node->firstChild = newNode;
+                            newNode->prev = child->prev;
+                            newNode->next = child;
+                            child->prev = newNode;
+                        }
+                        else {
+                            // insert new node after child
+                            if (child->next) child->next->prev = newNode;
+                            else node->lastChild = newNode;
+                            newNode->prev = child;
+                            newNode->next = child->next;
+                            child->next = newNode;
+                        }
+                        newNode->parent = node;
+                        ++node->numChildren;
+                        return CheckLastNode(CheckFirstNode(newNode));
+                    }
+                }
+
+                // make sure the child has room to store another node
+                if (child->numChildren >= maxChildrenPerNode) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        SplitNode(child);
+                        if (key <= child->prev->key)
+                            child = child->prev;
+                    }
+                }
+            }
+
+            // DOING MODIFICATIONS
+            if (1) {
+                // we only end up here if the root node is empty
+                newNode->parent = root;
+                root->key = key;
+                root->firstChild = newNode;
+                root->lastChild = newNode;
+                ++root->numChildren;
+                return CheckLastNode(CheckFirstNode(newNode));
+            }
+        };
+        template <typename iter_type, bool EmplaceIfExists = true> void
+            Add_Bulk(iter_type begin, iter_type const& end) {
+            _iterType
+                * node,
+                * child,
+                * newNode;
+
+            auto locked{ std::scoped_lock(mutex) };
+            for (; begin != end; begin++) {
+                // check that the key does not already exist		
+                if constexpr (EmplaceIfExists) {
+                    node = NodeFind(begin->first, root);
+                    if (node && node->object) {
+                        *node->object = begin->second;
+                        continue;
+                    }
+                }
+
+                newNode = AllocNode();
+                newNode->key = begin->first;
+                newNode->object = objAllocator->Alloc(begin->second);
+                Num++;
+
+                if (root->numChildren >= maxChildrenPerNode) {
+                    // DOING MODIFICATIONS
+                    if (1) {
+                        node = AllocNode();
+                        node->key = root->key;
+                        node->firstChild = root;
+                        node->lastChild = root;
+                        node->numChildren = 1;
+                        root->parent = node;
+                        SplitNode(root);
+                        root = node;
+                    }
+                };
+
+                bool should_continue = false;
+                for (node = root; node->firstChild; node = child) {
+                    if (begin->first > node->key) node->key = begin->first;
+
+                    // find the first child with a key larger equal to the key of the new node
+                    for (child = node->firstChild; child->next; child = child->next)
+                        if (begin->first <= child->key)
+                            break;
+
+                    if (child->object) {
+                        // DOING MODIFICATIONS
+                        if (1) {
+                            if (begin->first <= child->key) {
+                                // insert new node before child
+                                if (child->prev) child->prev->next = newNode;
+                                else node->firstChild = newNode;
+                                newNode->prev = child->prev;
+                                newNode->next = child;
+                                child->prev = newNode;
+                            }
+                            else {
+                                // insert new node after child
+                                if (child->next) child->next->prev = newNode;
+                                else node->lastChild = newNode;
+                                newNode->prev = child;
+                                newNode->next = child->next;
+                                child->next = newNode;
+                            }
+                            newNode->parent = node;
+                            ++node->numChildren;
+                            CheckLastNode(CheckFirstNode(newNode));
+
+                            should_continue = true;
+                            break;
+                        }
+                    }
+
+                    // make sure the child has room to store another node
+                    if (child->numChildren >= maxChildrenPerNode) {
+                        // DOING MODIFICATIONS
+                        if (1) {
+                            SplitNode(child);
+                            if (begin->first <= child->prev->key)
+                                child = child->prev;
+                        }
+                    }
+                }
+                if (should_continue) continue;
+
+                // DOING MODIFICATIONS
+                if (1) {
+                    // we only end up here if the root node is empty
+                    newNode->parent = root;
+                    root->key = begin->first;
+                    root->firstChild = newNode;
+                    root->lastChild = newNode;
+                    ++root->numChildren;
+                    CheckLastNode(CheckFirstNode(newNode));
+
+                    continue;
+                }
+            }
+        };
+        auto // guard-lock the tree							
+            Lock() {
+            return std::unique_lock(this->mutex);
+        };
+        bool // remove an object node from the tree								
+            Remove_Unsafe(_iterType* node, objType* object_copy) {
+            _iterType
+                * parent,
+                * oldRoot{ nullptr };
+
+            if (!node) return false;
+            else {
+                auto g{ this->nodeAllocator.ProtectCurrentEpoch() };
+
+                if (first == node)
+                    first = this->GetNextLeaf(node);
+                if (last == node)
+                    last = this->GetPrevLeaf(node);
+
+                // unlink the node from it's parent
+                if (node->prev)
+                    node->prev->next = node->next;
+                else
+                    node->parent->firstChild = node->next;
+                if (node->next)
+                    node->next->prev = node->prev;
+                else
+                    node->parent->lastChild = node->prev;
+                node->parent->numChildren--;
+
+                // make sure there are no parent nodes with a single child
+                for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
+                    if (parent->next)
+                        parent = MergeNodes(parent, parent->next);
+                    else if (parent->prev)
+                        parent = MergeNodes(parent->prev, parent);
+
+                    // a parent may not use a key higher than the key of it's last child
+                    if (parent->key > parent->lastChild->key)
+                        parent->key = parent->lastChild->key;
+
+                    if (parent->numChildren > maxChildrenPerNode) {
+                        SplitNode(parent);
+                        break;
+                    }
+                }
+                for (; parent && parent->lastChild; parent = parent->parent)
+                    // a parent may not use a key higher than the key of it's last child
+                    if (parent->key > parent->lastChild->key)
+                        parent->key = parent->lastChild->key;
+
+                // remove the root node if it has a single internal node as child
+                if (root->numChildren == 1 && root->firstChild->object == nullptr) {
+                    oldRoot = root;
+                    root->firstChild->parent = nullptr;
+                    root = root->firstChild;
+                }
+            }
+
+            // free the nodes
+            if constexpr (std::is_copy_assignable< objType >::value) {
+                if (object_copy) *object_copy = *node->object;
+            }
+            FreeNode(node);
+            if (oldRoot) FreeNode(oldRoot);
+
+            return true;
+        };
+        bool // remove an object node from the tree								
+            Remove(_iterType* node) {
+            auto locked{ std::scoped_lock(this->mutex) };
+            return Remove_Unsafe(node, nullptr);
+        };
+        bool // remove an object node from the tree								
+            RemoveAt(keyType const& key, objType* object_copy = nullptr) {
+            auto locked{ std::scoped_lock(this->mutex) };
+            if (auto* p = this->NodeFind(key, root)) {
+                return Remove_Unsafe(p, object_copy);
+            }
+            return false;
+        };
+        _iterType*
+            NodeFindByIndex(int index) const {
+            if (index <= 0) return GetFirst();
+            else if (index >= (Num - 1)) return GetLast();
+            else {
+                auto locked{ std::shared_lock(mutex) };
+                return NodeFindByIndex(index, root);
+            }
+        };
+        _iterType*
+            NodeFind(keyType  const& key) const {
+            auto locked{ std::shared_lock(mutex) };
+            return NodeFind(key, root);
+        };								// find an object using the given key;
+        _iterType* // find an object with the smallest key larger equal the given key;
+            NodeFindSmallestLargerEqual(keyType const& key) const {
+            auto locked{ std::shared_lock(mutex) };
+            return NodeFindSmallestLargerEqual(key, root);
+        };
+        _iterType* // find an object with the largest key smaller equal the given key;
+            NodeFindLargestSmallerEqual(keyType const& key) const {
+            auto locked{ std::shared_lock(mutex) };
+            return NodeFindLargestSmallerEqual(key, root);
+        };
+        objType* // find an object using the given key;
+            Find(keyType  const& key) const {
+            auto locked{ std::shared_lock(mutex) };
+            _iterType* node = NodeFind(key, root);
+            if (node) return node->object;
+            else return nullptr;
+        };
+        objType* // find an object with the smallest key larger equal the given key;
+            FindSmallestLargerEqual(keyType const& key) const {
+            auto locked{ std::shared_lock(mutex) };
+            _iterType* node = NodeFindSmallestLargerEqual(key, root);
+            if (node == nullptr) {
+                return nullptr;
+            }
+            else {
+                return node->object;
+            }
+        };
+        objType* // find an object with the largest key smaller equal the given key;
+            FindLargestSmallerEqual(keyType const& key) const {
+            auto locked{ std::shared_lock(mutex) };
+            _iterType* node = NodeFindLargestSmallerEqual(key, root);
+            if (node == nullptr) {
+                return nullptr;
+            }
+            else {
+                return node->object;
+            }
+        };
+        _iterType*
+            GetFirst_Unsafe() const {
+            return first;
+        };
+        _iterType*
+            GetLast_Unsafe() const {
+            return last;
+        };
+        _iterType*
+            GetFirst() const {
+            auto locked{ std::shared_lock(mutex) };
+            return first;
+        };
+        _iterType*
+            GetLast() const {
+            auto locked{ std::shared_lock(mutex) };
+            return last;
+        };
+        _iterType*
+            GetRoot() const {
+            auto locked{ std::shared_lock(mutex) };
+            return root;
+        };
+        long long // returns the total number of nodes in the tree;							
+            GetNodeCount() const {
+            return Num.load();
+        };
+
+    private:
+        _iterType*
+            CheckFirstNode(_iterType* newNode) {
+            if (newNode) {
+                if (!first || (first->key > newNode->key)) {
+                    first = newNode;
+                }
+            }
+            return newNode;
+        };
+        _iterType*
+            CheckLastNode(_iterType* newNode) {
+            if (newNode) {
+                if (!last || (last->key < newNode->key)) {
+                    last = newNode;
+                }
+            }
+            return newNode;
+        };
+        _iterType*
+            AllocNode() {
+            _iterType* node;
+            node = nodeAllocator.Alloc();
+            return InitNode(node);
+        };
+        void
+            FreeNode(_iterType* node) {
+            if (node) {
+                if (node->object) {
+                    objAllocator->Free(node->object);
+                    Num--;
+                }
+                nodeAllocator.Free(node);
+            }
+        };
+        void
+            SplitNode(_iterType* node) {
+            long long
+                i;
+            _iterType
+                * child,
+                * newNode;
+
+            // allocate a new node
+            newNode = AllocNode();
+            newNode->parent = node->parent;
+
+            // divide the children over the two nodes
+            child = node->firstChild;
+            child->parent = newNode;
+            for (i = 3; i < node->numChildren; i += 2) {
+                child = child->next;
+                child->parent = newNode;
+            }
+
+            newNode->key = child->key;
+            newNode->numChildren = node->numChildren / 2;
+            newNode->firstChild = node->firstChild;
+            newNode->lastChild = child;
+
+            node->numChildren -= newNode->numChildren;
+            node->firstChild = child->next;
+
+            child->next->prev = nullptr;
+            child->next = nullptr;
+
+            if (node->prev) node->prev->next = newNode;
+            else node->parent->firstChild = newNode;
+
+            newNode->prev = node->prev;
+            newNode->next = node;
+            node->prev = newNode;
+
+            node->parent->numChildren++;
+        };
+        _iterType*
+            MergeNodes(_iterType* node1, _iterType* node2) {
+            _iterType* child;
+
+            for (child = node1->firstChild; child->next; child = child->next) child->parent = node2;
+            child->parent = node2;
+            child->next = node2->firstChild;
+            node2->firstChild->prev = child;
+            node2->firstChild = node1->firstChild;
+            node2->numChildren += node1->numChildren;
+
+            // unlink the first node from the parent
+            if (node1->prev) node1->prev->next = node2;
+            else node1->parent->firstChild = node2;
+
+            node2->prev = node1->prev;
+            node2->parent->numChildren--;
+
+            FreeNode(node1);
+
+            return node2;
+        };
+
+    };
+
+    // fast, thread-safe sorted map. Allows simultaneous reading / writing / erasure. Slower than concurrent_unordered_map when erasure is not necessary. 
+    template<class KeyType, class ValueType> class atomic_map {
+        friend class it_state;
+    protected:
+        DelayedInstantiation<BTree<ValueType, KeyType>>
+            tree;
+
+    public:
+        class WrappedReference {
+        private:
+            typename BTree<ValueType, KeyType>::GuardType
+                guard;
+
+        public:
+            const KeyType&
+                first;
+            ValueType&
+                second;
+
+            // WrappedReference() = delete;
+            WrappedReference(const KeyType& _first, ValueType& _second, BTree<ValueType, KeyType>* _parent)
+                : first{ _first }
+                , second{ _second }
+                , guard{ _parent->ProtectCurrentEpoch() }
+            {};
+            WrappedReference(WrappedReference const&) = delete;
+            WrappedReference(WrappedReference&&) = delete;
+            WrappedReference& operator=(WrappedReference const&) = delete;
+            WrappedReference& operator=(WrappedReference&&) = delete;
+            ~WrappedReference() = default;
+        };
+
+    public:
+        atomic_map()
+            : tree{}
+        {};
+        atomic_map(atomic_map const& rhs) = delete;
+        atomic_map(atomic_map&& rhs) = delete;
+        atomic_map& operator=(atomic_map const& rhs) = delete;
+        atomic_map& operator=(atomic_map&& rhs) = delete;
+        ~atomic_map() = default;
+
+        void unsafe_unload() {
+            tree->unsafe_unload();
+        };
+        auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
+            ProtectCurrentEpoch() const {
+            return tree->ProtectCurrentEpoch();
+        };
+        size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
+            size() const {
+            return tree->GetNodeCount();
+        };
+        WrappedReference // if already exists, returns the existing value pair. 
+            insert(const KeyType& time, ValueType&& value) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto* iter = tree->Add<false>(std::move(value), time);
+            return WrappedReference(iter->key, *iter->object, &*tree);
+        };
+        WrappedReference // if already exists, overwrites the value and returns the value pair. 
+            emplace(const KeyType& time, ValueType&& value) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto* iter = tree->Add<true>(std::move(value), time);
+            return WrappedReference(iter->key, *iter->object, &*tree);
+        };
+        void // if already exists, does nothing
+            insert_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->Add<false>(std::move(value), time);
+        };
+        void // if already exists, overwrites the value. 
+            emplace_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->Add<true>(std::move(value), time);
+        };
+        template <typename iter_type> void // bulk insertion. if already exists, does nothing.
+            insert_bulk(iter_type begin, iter_type const& end) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            tree->Add_Bulk<iter_type, false>(std::move(begin), end);
+        };
+        template <typename iter_type> void // bulk insertion. if already exists, overwrites the value. 
+            emplace_bulk(iter_type begin, iter_type const& end) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            tree->Add_Bulk<iter_type, true>(std::move(begin), end);
+        };
+        size_t // returns 1 if the key is found, otherwise 0.
+            count(const KeyType& time) const {
+            return (bool)tree->NodeFind(time) ? 1 : 0;
+        };
+        ValueType& // throws if the key is not found. 
+            at(const KeyType& time) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* iter = tree->NodeFind(time)) {
+                return *iter->object;
+            }
+            else {
+                throw std::range_error("Could not find key");
+            }
+        };
+        ValueType* // returns nullptr if the key is not found. 
+            try_at(const KeyType& time) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* iter = tree->NodeFind(time)) {
+                return iter->object;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        template <typename Func> __declspec(noinline) bool // calls func(key, object) on the first (smallest key) node in the map
+            do_at_beginning(Func const& func) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetFirst()) {
+                func(p->key, *p->object);
+                return true;
+            }
+            return false;
+        };
+        template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
+            for_all(Func const& func) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto p = tree->GetFirst();
+            while (p) {
+                func(p->key, *p->object);
+                p = tree->GetNextLeaf(p);
+            }
+        };
+        template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
+            do_at_end(Func const& func) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetLast()) {
+                func(p->key, *p->object);
+                return true;
+            }
+            return false;
+        };
+        bool // removes the first (smallest key) node in the map
+            pop_front() {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetFirst()) {
+                tree->Remove(p);
+                return true;
+            }
+            return false;
+        };
+        bool // removes the last (largest key) node in the map
+            pop_back() {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (auto* p = tree->GetLast()) {
+                tree->Remove(p);
+                return true;
+            }
+            return false;
+        };
+        template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
+            pop_front_if(Func const& func) {
+            bool out = false;
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto g2{ tree->Lock() };
+            if (auto* p = tree->GetFirst_Unsafe()) {
+                if (func(p->key, *p->object)) {
+                    tree->Remove_Unsafe(p, nullptr);
+                    out = true;
+                }
+            }
+            return out;
+        };
+        template <typename Func> __declspec(noinline) bool // removes the last (largest key) node in the map if func(key, object) returns true
+            pop_back_if(Func const& func) {
+            bool out = false;
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto g2{ tree->Lock() };
+            if (auto* p = tree->GetLast_Unsafe()) {
+                if (func(p->key, *p->object)) {
+                    tree->Remove_Unsafe(p, nullptr);
+                    out = true;
+                }
+            }
+            return out;
+        };
+        __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+            operator[](const KeyType& time) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (ValueType* p = tree->Find(time)) {
+                return *p;
+            }
+            else {
+                if (auto* p = tree->GetOrInstance(time)) {
+                    return *p->object;
+                }
+                else {
+                    throw std::range_error("Could not find key");
+                }
+            }
+        };
+        template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
+            get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            if (ValueType* p = tree->Find(time)) {
+                if (ExistedAlready) *ExistedAlready = true;
+                return *p;
+            }
+            else {
+                if (ExistedAlready) *ExistedAlready = false;
+                if (auto* p = tree->Add(func(), time)) {
+                    return *p->object;
+                }
+                else {
+                    throw std::range_error("Could not find key");
+                }
+            }
+        };
+        bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
+            erase(const KeyType& time, ValueType* out = nullptr) {
+            auto g{ tree->ProtectCurrentEpoch() };
+            return tree->RemoveAt(time, out);
+        };
+        void // clear the map
+            clear() {
+            while (pop_front()) {}
+        };
+    private:
+        class it_state {
+        public:
+            using thisType = atomic_map;
+            using value_type = WrappedReference;
+            using iterator_category = std::forward_iterator_tag;
+            using difference_type = ptrdiff_t;
+
+            // data
+            mutable typename BTree<ValueType, KeyType>::_iterType*
+                _ptr{};
+            mutable std::unique_ptr<value_type>
+                _out;
+
+            // functions
+            void Initialize(thisType* ref) {};
+            void ToBeginning(thisType* ref) {
+                _ptr = ref->tree->GetFirst();
+            };
+            void ToEnd(thisType* ref) {
+                _ptr = nullptr;
+            };
+            void Next(thisType* ref) {
+                this->_ptr = ref->tree->GetNextLeaf(this->_ptr);
+            };
+            void Prev(thisType* ref) {
+                this->_ptr = ref->tree->GetPrevLeaf(this->_ptr);
+            };
+            value_type& Get(thisType* ref) const {
+                _out = std::make_unique<value_type>(_ptr->key, *_ptr->object, &*ref->tree);
+                return *_out;
+            };
+            bool operator==(it_state const& rhs) const {
+                return _ptr == rhs._ptr;
+            };
+            difference_type Distance(it_state const& other) const {
+                return _ptr - other._ptr;
+            };
+        };
+
+    public:
+        SETUP_ITERATOR(atomic_map, it_state);
+        iterator // returns an iterator 
+            find(const KeyType& _Keyval) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = this->tree->NodeFind(_Keyval)) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        };
+
+    };
+
+    // fast, thread-safe sorted map, which sorts on key hash values rather than keys themselves. Allows simultaneous reading / writing / erasure. Slower than concurrent_unordered_map when erasure is not necessary. 
+    template<class KeyType, class ValueType, typename HashType = std::hash<KeyType>> class atomic_hash_map {
+        friend class it_state;
+    protected:
+        std::unique_ptr< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>> >
+            tree;
+        HashType
+            hasher;
+        size_t
+            hash(KeyType const& k) const {
+            return hasher(k);
+        };
+
+    public:
+        class WrappedReference {
+        private:
+            typename  BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::GuardType
+                guard;
+
+        public:
+            const KeyType&
+                first;
+            ValueType&
+                second;
+
+            WrappedReference(const KeyType& _first, ValueType& _second, BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>* _parent)
+                : first{ _first }
+                , second{ _second }
+                , guard{ _parent->ProtectCurrentEpoch() }
+            {};
+            WrappedReference(WrappedReference const&) = delete;
+            WrappedReference(WrappedReference&&) = delete;
+            WrappedReference& operator=(WrappedReference const&) = delete;
+            WrappedReference& operator=(WrappedReference&&) = delete;
+            ~WrappedReference() = default;
+        };
+
+    public:
+        atomic_hash_map()
+            : tree{ std::make_unique< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>>() }, hasher{ HashType{} }
+        {};
+        atomic_hash_map(atomic_hash_map const& rhs) = delete;
+        atomic_hash_map(atomic_hash_map&& rhs) : tree{ std::move(rhs.tree) }, hasher{ HashType{} }
+        {};
+        atomic_hash_map& operator=(atomic_hash_map const& rhs) = delete;
+        atomic_hash_map& operator=(atomic_hash_map&& rhs) = delete;
+        ~atomic_hash_map() = default;
+
+        void unsafe_unload() {
+            if (*tree) tree->operator*().unsafe_unload();
+        };
+        auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
+            ProtectCurrentEpoch() const {
+            return tree->operator*().ProtectCurrentEpoch();
+        };
+        size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
+            size() const {
+            return tree->operator*().GetNodeCount();
+        };
+        WrappedReference // if already exists, returns the existing value pair. 
+            insert(const KeyType& time, ValueType&& value) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto* iter = tree->operator*().Add<false>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+            return WrappedReference(iter->object->first, *iter->object->second, &**tree);
+        };
+        WrappedReference // if already exists, overwrites the value and returns the value pair. 
+            emplace(const KeyType& time, ValueType&& value) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto* iter = tree->operator*().Add<true>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+            return WrappedReference(iter->object->first, *iter->object->second, &**tree);
+        };
+        void // if already exists, returns the existing value pair. 
+            insert_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->operator*().Add<false>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+        };
+        void // if already exists, overwrites the value and returns the value pair. 
+            emplace_fast(const KeyType& time, ValueType&& value) {
+            (void)tree->operator*().Add<true>({ time, std::make_shared<ValueType>(std::move(value)) }, hash(time));
+        };
+        size_t // returns 1 if the key is found, otherwise 0.
+            count(const KeyType& time) const {
+            return (bool)tree->operator*().NodeFind(hash(time)) ? 1 : 0;
+        };
+        ValueType& // throws if the key is not found. 
+            at(const KeyType& time) const {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            if (auto* iter = tree->operator*().NodeFind(hash(time))) {
+                return *iter->object->second;
+            }
+            else {
+                throw std::range_error("Could not find key");
+            }
+        };
+        ValueType* // returns nullptr if the key is not found. 
+            try_at(const KeyType& time) const {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            if (auto* iter = tree->operator*().NodeFind(hash(time))) {
+                return &*iter->object->second;
+            }
+            else {
+                return nullptr;
+            }
+        };
+        template <typename Func> __declspec(noinline) void // calls func(key, object) on all nodes in the map
+            for_all(Func const& func) const {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto p = tree->operator*().GetFirst();
+            while (p) {
+                func(p->object->first, *p->object->second);
+                p = tree->operator*().GetNextLeaf(p);
+            }
+        };
+        template <typename Func> ValueType& // same as operator[], except it will call the provided function to initialize the value if no value was found. 
+            get_or_make(const KeyType& time, Func const& func, bool* ExistedAlready = nullptr) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            if (std::pair<KeyType, std::shared_ptr<ValueType>>* p = tree->operator*().Find(hash(time))) {
+                if (ExistedAlready) *ExistedAlready = true;
+                return *p->second;
+            }
+            else {
+                if (ExistedAlready) *ExistedAlready = false;
+                if (auto* p = tree->operator*().Add<false>(std::pair<KeyType, std::shared_ptr<ValueType>>(time, std::make_shared<ValueType>(func())), hash(time))) {
+                    return *p->object->second;
+                }
+                else {
+                    throw std::range_error("Could not find key");
+                }
+            }
+        };
+        __declspec(noinline) ValueType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+            operator[](const KeyType& time) {
+            return get_or_make(time, []() -> ValueType { return ValueType(); }, nullptr);
+        };
+
+        bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
+            erase(const KeyType& time, ValueType* out = nullptr) {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            std::pair<KeyType, std::shared_ptr<ValueType>> temp;
+            bool result = tree->operator*().RemoveAt(hash(time), &temp);
+            if (out) *out = *temp.second;
+            return result;
+        };
+        void // clear the map
+            clear() {
+            while (true) {
+                auto g{ tree->operator*().ProtectCurrentEpoch() };
+                if (auto* p = tree->operator*().GetFirst()) {
+                    tree->operator*().Remove(p);
+                }
+                else {
+                    break;
+                }
+            }
+        };
+
+    private:
+        class it_state {
+        public:
+            using thisType = atomic_hash_map;
+            using value_type = WrappedReference;
+            using iterator_category = std::forward_iterator_tag;
+            using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
+
+            // data
+            mutable typename  BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::_iterType*
+                _ptr{};
+            mutable std::unique_ptr<value_type>
+                _out;
+
+            // functions
+            void Initialize(thisType* ref) {};
+            void ToBeginning(thisType* ref) {
+                _ptr = ref->tree->operator*().GetFirst();
+            };
+            void ToEnd(thisType* ref) {
+                _ptr = nullptr;
+            };
+            void Next(thisType* ref) {
+                this->_ptr = ref->tree->operator*().GetNextLeaf(this->_ptr);
+            };
+            void Prev(thisType* ref) {
+                this->_ptr = ref->tree->operator*().GetPrevLeaf(this->_ptr);
+            };
+            value_type& Get(thisType* ref) const {
+                _out = std::make_unique<value_type>(_ptr->object->first, *_ptr->object->second, &**ref->tree);
+                return *_out;
+            };
+            bool operator==(it_state const& rhs) const {
+                return _ptr == rhs._ptr;
+            };
+            difference_type Distance(it_state const& other) const {
+                return _ptr - other._ptr;
+            };
+        };
+
+    public:
+        SETUP_ITERATOR(atomic_hash_map, it_state);
+        iterator // returns an iterator 
+            find(const KeyType& _Keyval) const {
+            auto g{ tree->operator*().ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = this->tree->operator*().NodeFind(hash(_Keyval))) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        };
+
+    };
 
 };
 
-/////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////
-
-unsigned int GetOptimalCoreNumber();
-
-#endif
+#undef SETUP_ITERATOR
