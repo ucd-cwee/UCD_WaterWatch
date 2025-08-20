@@ -12,6 +12,7 @@
 #include <winnt.h>
 #pragma endregion
 
+// Good Language namespace
 namespace GL {
     // Shared strings with fast, robust support functions. Modifying strings requires creating a new string.
     class string {

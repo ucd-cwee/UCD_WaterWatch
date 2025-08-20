@@ -11,12 +11,13 @@
 #include "Utilities.h"
 #pragma endregion
 
+// Good Language namespace
 namespace GL {
 	namespace parallel {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F const& ToDo) {
-			GL::Sequence<iteratorType> seq(start, end); // 0..999
+			GL::sequence<iteratorType> seq(start, end); // 0..999
 			std::exception_ptr* e{ nullptr };
 
 			std::for_each(
@@ -47,7 +48,7 @@ namespace GL {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
-			GL::Sequence<iteratorType> seq(start, end, step); // 0..999
+			GL::sequence<iteratorType> seq(start, end, step); // 0..999
 			std::exception_ptr* e{ nullptr };
 
 			std::for_each(

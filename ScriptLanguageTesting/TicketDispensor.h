@@ -13,9 +13,9 @@
 #include <concurrent_queue.h>
 #include <concurrent_vector.h>
 #include "Strings.h"
-// #include "../FiberTasks/Concurrent_Queue.h"
 #pragma endregion
 
+// Good Language namespace
 namespace GL {
     // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
     // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.

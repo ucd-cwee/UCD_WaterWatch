@@ -3,34 +3,36 @@
 #include <chrono>
 
 namespace GL {
-    std::atomic<long>& __thread_alive(size_t thread_id) {
-        static concurrency::concurrent_vector<std::atomic<long>> thread_ids{};
-        static std::atomic<size_t> thread_count{ 0 };
-        if (thread_count.load(std::memory_order_relaxed) <= thread_id) {
-            thread_ids.grow_to_at_least(thread_id + 1);
-            thread_count.exchange(thread_id, std::memory_order_relaxed);
-        }
-        return thread_ids[thread_id];
-    };    
-    bool get_thread_alive(size_t thread_id) {
-        return static_cast<bool>(__thread_alive(thread_id).load());
-    };
-    size_t get_thread_id() {
-        static TicketDispensor tickets;
-        thread_local auto ticket{ tickets.get_ticket() };
-        thread_local auto scoped_alive{
-            // increments the "alive" during construction, and decrements during destruction.
-            std::shared_ptr<size_t>(reinterpret_cast<size_t*>(ticket),[incrementOnce = ++__thread_alive(ticket)](size_t* p) -> void {
-                if (p && (incrementOnce > 0)) {
-                    --__thread_alive(reinterpret_cast<size_t&>(p));
-                    tickets.return_ticket(reinterpret_cast<size_t&>(p));
-                }
-            })
+    namespace util {
+        std::atomic<long>& __thread_alive(size_t thread_id) {
+            static concurrency::concurrent_vector<std::atomic<long>> thread_ids{};
+            static std::atomic<size_t> thread_count{ 0 };
+            if (thread_count.load(std::memory_order_relaxed) <= thread_id) {
+                thread_ids.grow_to_at_least(thread_id + 1);
+                thread_count.exchange(thread_id, std::memory_order_relaxed);
+            }
+            return thread_ids[thread_id];
         };
-        return ticket;
-    };
-    long long get_current_epoch() {
-        return clock::ms();
+        bool get_thread_alive(size_t thread_id) {
+            return static_cast<bool>(__thread_alive(thread_id).load());
+        };
+        size_t get_thread_id() {
+            static TicketDispensor tickets;
+            thread_local auto ticket{ tickets.get_ticket() };
+            thread_local auto scoped_alive{
+                // increments the "alive" during construction, and decrements during destruction.
+                std::shared_ptr<size_t>(reinterpret_cast<size_t*>(ticket),[incrementOnce = ++__thread_alive(ticket)](size_t* p) -> void {
+                    if (p && (incrementOnce > 0)) {
+                        --__thread_alive(reinterpret_cast<size_t&>(p));
+                        tickets.return_ticket(reinterpret_cast<size_t&>(p));
+                    }
+                })
+            };
+            return ticket;
+        };
+        long long get_current_epoch() {
+            return clock::ms();
+        };
     };
 };
 

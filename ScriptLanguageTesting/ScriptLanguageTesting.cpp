@@ -68,7 +68,7 @@ int main() {
                     EXPECT_EQ(100, *thread_local_object);
                 });
                 GL::parallel::For(0, 1000000, [&](int i) {
-                    *thread_local_object = static_cast<int>(GL::get_thread_id()); // thread-local and therefore thread-safe to change its value
+                    *thread_local_object = static_cast<int>(GL::util::get_thread_id()); // thread-local and therefore thread-safe to change its value
                 });
             }
             if (1) {
@@ -77,7 +77,7 @@ int main() {
                     EXPECT_EQ("TEST", *thread_local_object);
                 });
                 GL::parallel::For(0, 1000000, [&](int i) {
-                    *thread_local_object = "\"" + std::to_string(GL::get_thread_id()) + "\""; // thread-local and therefore thread-safe to change its value
+                    *thread_local_object = "\"" + std::to_string(GL::util::get_thread_id()) + "\""; // thread-local and therefore thread-safe to change its value
                 });
             }
             if (1) {
@@ -86,7 +86,7 @@ int main() {
                     EXPECT_EQ("TEST", *thread_local_object);
                 });
                 GL::parallel::For(0, 1000000, [&](int i) {
-                    *thread_local_object = "\"" + std::to_string(GL::get_thread_id()) + "\""; // thread-local and therefore thread-safe to change its value
+                    *thread_local_object = "\"" + std::to_string(GL::util::get_thread_id()) + "\""; // thread-local and therefore thread-safe to change its value
                 });
             }
         };

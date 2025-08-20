@@ -18,7 +18,6 @@
 #include <set>
 #include "Strings.h"
 #include "TicketDispensor.h"
-#include <queue>
 #include <concurrent_priority_queue.h>
 #include <shared_mutex>
 #pragma endregion
@@ -83,7 +82,9 @@
 		Iterator cend() const { return end(); };
 #pragma endregion 
 
+// Good Language namespace
 namespace GL {
+    // utilities
     namespace util {
         inline static void hash(std::size_t& seed) { };
         template <typename T, typename... Rest> inline static void hash(std::size_t& seed, T const& v, Rest const&... rest) {
@@ -101,16 +102,17 @@ namespace GL {
             hash(seed, v, rest...);
             return seed;
         };
+
+        // returns true if a thread at this ID is alive and running.    
+        bool get_thread_alive(size_t thread_id);
+        // returns the thread ID of the current, requesting thread from [1, inf). Thread IDs will be re-used once a thread terminates, resulting in low-digit IDs e.g. in practice the id's are between [1,20)
+        size_t get_thread_id();
+        // get the approximate count of milliseconds since the application launched. 
+        long long get_current_epoch();
     };
-
-    // returns true if a thread at this ID is alive and running.    
-    bool get_thread_alive(size_t thread_id);
-    // returns the thread ID of the current, requesting thread from [1, inf). Thread IDs will be re-used once a thread terminates, resulting in low-digit IDs e.g. in practice the id's are between [1,20)
-    size_t get_thread_id();
-    // get the approximate count of milliseconds since the application launched. 
-    long long get_current_epoch();
-
-    namespace impl {
+    
+    // solutions to the A-B-A atomic switch problem
+    namespace aba_problem {
         template <typename T>
         class Node {
         public:
@@ -392,7 +394,7 @@ namespace GL {
         T const _default; // for initializing new thread objects
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
         static size_t actual_thread_id() {
-            static thread_local size_t unique_hash{ GL::util::inline_hash(GL::get_current_epoch(), std::this_thread::get_id()) };
+            static thread_local size_t unique_hash{ GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id()) };
             return unique_hash;
 
             //static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
@@ -400,7 +402,7 @@ namespace GL {
         };
 
         auto& GetTLS() const {
-            auto _tl_index = get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
             auto _tl_unique_id = actual_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
 
             // step 1, grow the _tls if necessary
@@ -464,7 +466,7 @@ namespace GL {
         T& operator[](size_t thread_index) { return GetTLS(thread_index); };
 
         template <typename T> bool for_each_cancellable(T const& func) {
-            const auto index = get_thread_id();
+            const auto index = GL::util::get_thread_id();
             size_t i;
             for (i = index; i < _tls_size; ++i) {
                 auto& x = _tls[i];
@@ -496,7 +498,7 @@ namespace GL {
         mutable size_t _tls_size{ 0 };
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
         static size_t actual_thread_id() {
-            static thread_local size_t unique_hash{ GL::util::inline_hash(GL::get_current_epoch(), std::this_thread::get_id()) };
+            static thread_local size_t unique_hash{ GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id()) };
             return unique_hash;
 
             //static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
@@ -505,7 +507,7 @@ namespace GL {
 
         // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
         auto& GetTLS() const {
-            auto _tl_index = get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
             auto _tl_unique_id = actual_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
 
             // step 1, grow the _tls if necessary
@@ -569,10 +571,10 @@ namespace GL {
         const T& operator[](size_t thread_index) const { return GetTLS(thread_index); };
 
         template <typename T> bool for_each_cancellable_alive(T const& func) {
-            const auto index = get_thread_id();
+            const auto index = GL::util::get_thread_id();
             size_t i;
             for (i = index; i < _tls_size; ++i) {
-                if (GL::get_thread_alive(i)) {
+                if (GL::util::get_thread_alive(i)) {
                     auto& x = _tls[i];
                     if (x.second) {
                         if (func(*x.second)) { return true; }
@@ -580,7 +582,7 @@ namespace GL {
                 }
             }
             for (i = 0; (i < index) && (i < _tls_size); ++i) {
-                if (GL::get_thread_alive(i)) {
+                if (GL::util::get_thread_alive(i)) {
                     auto& x = _tls[i];
                     if (x.second) {
                         if (func(*x.second)) { return true; }
@@ -590,7 +592,7 @@ namespace GL {
             return false;
         };
         template <typename T> bool for_each_cancellable(T const& func) {
-            const auto index = get_thread_id();
+            const auto index = GL::util::get_thread_id();
             size_t i;
             for (i = index; i < _tls_size; ++i) {
                 auto& x = _tls[i];
@@ -645,7 +647,7 @@ namespace GL {
         // Allocate one new block of contiguous elements
         __declspec(noinline) void AllocBlock() {
             auto* new_block_ptr = new block_t();
-            impl::Stack_Push(blocks, new_block_ptr);
+            aba_problem::Stack_Push(blocks, new_block_ptr);
             block_t& block = *new_block_ptr;
 
             // add the new elements to the list
@@ -655,7 +657,7 @@ namespace GL {
 
             // push pNode onto head of list.
             uint64_t old;
-            impl::THead<element_t> New;
+            aba_problem::THead<element_t> New;
             while (true) { // race loop
                 // Get an atomic copy of head and call it old.
                 // Copy old and call it new.                    
@@ -668,7 +670,7 @@ namespace GL {
                 New.Node(&block.elements[0]); // head shall be the start of this block
 
                 // compare and swap New with Head if it still matches Old.
-                if (impl::CAS(&free.m_n64, old, New.m_n64))
+                if (aba_problem::CAS(&free.m_n64, old, New.m_n64))
                     break; // success
                 // race, try again
             }
@@ -676,7 +678,7 @@ namespace GL {
 
         // Release all memory held by all blocks
         __declspec(noinline) void ReleaseBlocks() {
-            while (block_t* ptr = impl::Pop(blocks)) {
+            while (block_t* ptr = aba_problem::Pop(blocks)) {
                 if constexpr (!std::is_pod<T>::value) {
                     for (auto& element : ptr->elements) {
                         if (element.initialized) {
@@ -702,7 +704,7 @@ namespace GL {
         template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
             element_t* element{ nullptr };
             while (1) {
-                if (element = impl::Pop(free)) {
+                if (element = aba_problem::Pop(free)) {
                     element->initialized = true;
                     T* data{ (T*)&element->data[0] };
                     if constexpr (std::is_pod<T>::value) {
@@ -735,15 +737,15 @@ namespace GL {
                 }
             }
             t->initialized = false;
-            impl::Stack_Push(free, t);
+            aba_problem::Stack_Push(free, t);
         };
         template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
             return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
         };
 
-        impl::THead<block_t>
+        aba_problem::THead<block_t>
             blocks;
-        impl::THead<element_t>
+        aba_problem::THead<element_t>
             free;
     };
 
@@ -772,7 +774,7 @@ namespace GL {
 
         template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
             innerType* out;
-            const auto threadID = get_thread_id();
+            const auto threadID = GL::util::get_thread_id();
             if constexpr (sizeof...(a) > 0) {
                 out = TLS->Alloc(innerType{ _type_{std::forward<TArgs>(a)...}, threadID });
             }
@@ -806,7 +808,7 @@ namespace GL {
         };
         atomic_parallel_allocator<element_t, 128, true>
             allocator;
-        thread_object_no_default<impl::THead<element_t>>
+        thread_object_no_default<aba_problem::THead<element_t>>
             head; // 
         std::atomic<size_t>
             count;
@@ -818,7 +820,7 @@ namespace GL {
             new_ptr->data = obj;
             new_ptr->m_pNext = nullptr;
 
-            impl::Stack_Push(*head, new_ptr);
+            aba_problem::Stack_Push(*head, new_ptr);
             ++count;
         };
         void push(T&& obj) {
@@ -827,12 +829,12 @@ namespace GL {
             new_ptr = allocator.Alloc();
             new_ptr->data = std::move(obj);
             new_ptr->m_pNext = nullptr;
-            impl::Stack_Push(*head, new_ptr);
+            aba_problem::Stack_Push(*head, new_ptr);
             ++count;
         };
         bool try_pop(T& out) {
             return head.for_each_cancellable([&](auto& this_head) -> bool {
-                if (element_t* ptr = impl::Pop(this_head)) {
+                if (element_t* ptr = aba_problem::Pop(this_head)) {
                     if constexpr (std::is_move_assignable<T>::value) {
                         out = std::move(ptr->data);
                     }
@@ -865,7 +867,7 @@ namespace GL {
         };
         atomic_allocator<element_t, 128, true>
             allocator;
-        impl::THead<element_t>
+        aba_problem::THead<element_t>
             head; // 
         std::atomic<size_t>
             count;
@@ -883,7 +885,7 @@ namespace GL {
             new_ptr->m_pNext = nullptr;
             //}
 
-            impl::Stack_Push(head, new_ptr);
+            aba_problem::Stack_Push(head, new_ptr);
             ++count;
         };
         void push(T&& obj) {
@@ -899,11 +901,11 @@ namespace GL {
             new_ptr->m_pNext = nullptr;
             //}
 
-            impl::Stack_Push(head, new_ptr);
+            aba_problem::Stack_Push(head, new_ptr);
             ++count;
         };
         bool try_pop(T& out) {
-            if (element_t* ptr = impl::Pop(head)) {
+            if (element_t* ptr = aba_problem::Pop(head)) {
                 if constexpr (std::is_move_assignable<T>::value) {
                     out = std::move(ptr->data);
                 }
@@ -1252,7 +1254,7 @@ namespace GL {
         void RunGC() {
             static constexpr long long duration_ms{ 2 };
 
-            long long curr_epoch{ GL::get_current_epoch() };
+            long long curr_epoch{ GL::util::get_current_epoch() };
             long long previous_epoch{ _lastGC };
             long long _EpochLimit{ std::numeric_limits<long long>::max() };
             DeleteType out;
@@ -1285,7 +1287,7 @@ namespace GL {
             : _alloc{}
             , _delete_list{}
             , _TLS{}
-            , _lastGC{ GL::get_current_epoch() }
+            , _lastGC{ GL::util::get_current_epoch() }
         {};
         atomic_epoch_allocator(atomic_epoch_allocator const&) = delete;
         atomic_epoch_allocator(atomic_epoch_allocator&&) = delete;
@@ -1302,12 +1304,12 @@ namespace GL {
             return TLS::EpochGuard(
                 const_cast<atomic_epoch_allocator*>(this),
                 const_cast<TLS*>(&*_TLS),
-                GL::get_current_epoch()
+                GL::util::get_current_epoch()
             );
         };
         void ProtectCurrentEpoch_Fast() const {
             if (const_cast<TLS*>(&*_TLS)->_scope_count == 0) {
-                const_cast<TLS*>(&*_TLS)->ForwardEpoch(GL::get_current_epoch());
+                const_cast<TLS*>(&*_TLS)->ForwardEpoch(GL::util::get_current_epoch());
             }
         };
 
@@ -1318,8 +1320,8 @@ namespace GL {
 
         // Frees the memory pointer
         void Free(const _type_* element) {
-            _delete_list.push({ GL::get_current_epoch(), const_cast<_type_*>(element) });
-            if (_TLS->EpochCheck(GL::get_current_epoch())) {
+            _delete_list.push({ GL::util::get_current_epoch(), const_cast<_type_*>(element) });
+            if (_TLS->EpochCheck(GL::util::get_current_epoch())) {
                 // will only succeed if we are in scope-level 0, which only happens if this thread has not made any protecting guards.
                 RunGC();
             }
