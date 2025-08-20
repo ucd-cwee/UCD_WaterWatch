@@ -1329,28 +1329,28 @@ namespace GL {
 
 };
 
-// Delayed Instantiation
+// Deferred Objects (instantiate when needed or used)
 namespace GL {
     // Thread-safe wrapper that only initializes an object when actually used. May simply never initialize an object if never used. 
     template <typename T>
-    class DelayedInstantiation {
+    class deferred {
     private:
         T* ptr{ nullptr };
 
     public:
-        DelayedInstantiation() = default;
-        DelayedInstantiation(T const& data) : ptr(new T(data)) {};
-        DelayedInstantiation(T&& data) : ptr(new T(std::move(data))) {};
-        DelayedInstantiation(DelayedInstantiation const&) = delete;
-        DelayedInstantiation(DelayedInstantiation&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
-        DelayedInstantiation& operator=(DelayedInstantiation const&) = delete;
-        DelayedInstantiation& operator=(DelayedInstantiation&& rhs) {
+        deferred() = default;
+        deferred(T const& data) : ptr(new T(data)) {};
+        deferred(T&& data) : ptr(new T(std::move(data))) {};
+        deferred(deferred const&) = delete;
+        deferred(deferred&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
+        deferred& operator=(deferred const&) = delete;
+        deferred& operator=(deferred&& rhs) {
             if (ptr) delete ptr;
             ptr = std::move(rhs.ptr);
             rhs.ptr = nullptr;
             return *this;
         };
-        ~DelayedInstantiation() {
+        ~deferred() {
             if (ptr) delete ptr;
         };
 
@@ -1381,7 +1381,7 @@ namespace GL {
     /// </summary>
     /// <typeparam name="Type"></typeparam>
     template<typename Type = size_t>
-    class Sequence {
+    class sequence {
     private:
         Type min;
         Type max;
@@ -1409,12 +1409,12 @@ namespace GL {
         };
 
     public:
-        Sequence(Type N0, Type N1, Type Step) {
+        sequence(Type N0, Type N1, Type Step) {
             std::tie(min, max, step) = DetermineSteps(std::move(N0), std::move(N1), std::move(Step));
         };
-        Sequence() : Sequence(0, 0, 1) {};
-        Sequence(Type N) : Sequence(0, N, 1) {};
-        Sequence(Type N0, Type N1) : Sequence(N0, N1, 1) {};
+        sequence() : sequence(0, 0, 1) {};
+        sequence(Type N) : sequence(0, N, 1) {};
+        sequence(Type N0, Type N1) : sequence(N0, N1, 1) {};
 
         class Iterator { // : public std::iterator<std::random_access_iterator_tag, Type>
         public:
@@ -1617,7 +1617,7 @@ namespace GL {
     // Thread-safe ordered B-Tree, which guarrantees valid and safe access to
     // pointers during erasure or modification of the tree when using the Epoch-guard
     // protection, which will delay actual deletion until the guard is satisfactorily old.
-    template< class objType, class keyType, int maxChildrenPerNode = 10> class BTree {
+    template< class objType, class keyType, int maxChildrenPerNode = 10> class atomic_btree {
     public:
         struct TreeNode {
             keyType // key used for sorting
@@ -1660,7 +1660,7 @@ namespace GL {
             * root, // must be locked when handled
             * first, // will be exchanged using atomics
             * last; // will be exchanged using atomics
-        DelayedInstantiation< atomic_epoch_allocator<objType> >
+        deferred< atomic_epoch_allocator<objType> >
             objAllocator;
         atomic_epoch_allocator<_iterType>
             nodeAllocator;
@@ -1673,7 +1673,7 @@ namespace GL {
             typename atomic_epoch_allocator<_iterType>::GuardType guard_2;
 
         public:
-            EpochGuard(BTree const* parent) : guard_1{ parent->objAllocator->ProtectCurrentEpoch() }, guard_2{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
+            EpochGuard(atomic_btree const* parent) : guard_1{ parent->objAllocator->ProtectCurrentEpoch() }, guard_2{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
             EpochGuard(EpochGuard const&) = delete;
             EpochGuard(EpochGuard&& rhs) = delete;
             EpochGuard& operator=(EpochGuard const&) = delete;
@@ -1858,7 +1858,7 @@ namespace GL {
         using GuardType = typename EpochGuard;
         EpochGuard ProtectCurrentEpoch() const { return EpochGuard(this); };
 
-        BTree()
+        atomic_btree()
             : Num(0)
             , root(nullptr)
             , first(nullptr)
@@ -1870,11 +1870,11 @@ namespace GL {
             static_assert(maxChildrenPerNode >= 4);
             root = AllocNode();
         };
-        BTree(BTree const&) = delete;
-        BTree(BTree&& rhs) = delete;
-        BTree& operator=(BTree const&) = delete;
-        BTree& operator=(BTree&&) = delete;
-        ~BTree() = default;
+        atomic_btree(atomic_btree const&) = delete;
+        atomic_btree(atomic_btree&& rhs) = delete;
+        atomic_btree& operator=(atomic_btree const&) = delete;
+        atomic_btree& operator=(atomic_btree&&) = delete;
+        ~atomic_btree() = default;
 
         void unsafe_unload() {
             if (objAllocator) objAllocator->unsafe_unload();
@@ -2464,13 +2464,13 @@ namespace GL {
     template<class KeyType, class ValueType> class atomic_map {
         friend class it_state;
     protected:
-        DelayedInstantiation<BTree<ValueType, KeyType>>
+        deferred<atomic_btree<ValueType, KeyType>>
             tree;
 
     public:
         class WrappedReference {
         private:
-            typename BTree<ValueType, KeyType>::GuardType
+            typename atomic_btree<ValueType, KeyType>::GuardType
                 guard;
 
         public:
@@ -2480,7 +2480,7 @@ namespace GL {
                 second;
 
             // WrappedReference() = delete;
-            WrappedReference(const KeyType& _first, ValueType& _second, BTree<ValueType, KeyType>* _parent)
+            WrappedReference(const KeyType& _first, ValueType& _second, atomic_btree<ValueType, KeyType>* _parent)
                 : first{ _first }
                 , second{ _second }
                 , guard{ _parent->ProtectCurrentEpoch() }
@@ -2688,7 +2688,7 @@ namespace GL {
             using difference_type = ptrdiff_t;
 
             // data
-            mutable typename BTree<ValueType, KeyType>::_iterType*
+            mutable typename atomic_btree<ValueType, KeyType>::_iterType*
                 _ptr{};
             mutable std::unique_ptr<value_type>
                 _out;
@@ -2737,7 +2737,7 @@ namespace GL {
     template<class KeyType, class ValueType, typename HashType = std::hash<KeyType>> class atomic_hash_map {
         friend class it_state;
     protected:
-        std::unique_ptr< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>> >
+        std::unique_ptr< deferred<atomic_btree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>> >
             tree;
         HashType
             hasher;
@@ -2749,7 +2749,7 @@ namespace GL {
     public:
         class WrappedReference {
         private:
-            typename  BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::GuardType
+            typename  atomic_btree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::GuardType
                 guard;
 
         public:
@@ -2758,7 +2758,7 @@ namespace GL {
             ValueType&
                 second;
 
-            WrappedReference(const KeyType& _first, ValueType& _second, BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>* _parent)
+            WrappedReference(const KeyType& _first, ValueType& _second, atomic_btree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>* _parent)
                 : first{ _first }
                 , second{ _second }
                 , guard{ _parent->ProtectCurrentEpoch() }
@@ -2772,7 +2772,7 @@ namespace GL {
 
     public:
         atomic_hash_map()
-            : tree{ std::make_unique< DelayedInstantiation<BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>>() }, hasher{ HashType{} }
+            : tree{ std::make_unique< deferred<atomic_btree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>>>() }, hasher{ HashType{} }
         {};
         atomic_hash_map(atomic_hash_map const& rhs) = delete;
         atomic_hash_map(atomic_hash_map&& rhs) : tree{ std::move(rhs.tree) }, hasher{ HashType{} }
@@ -2897,7 +2897,7 @@ namespace GL {
             using difference_type = typename std::iterator<iterator_category, value_type>::difference_type;
 
             // data
-            mutable typename  BTree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::_iterType*
+            mutable typename  atomic_btree<std::pair<KeyType, std::shared_ptr<ValueType>>, size_t>::_iterType*
                 _ptr{};
             mutable std::unique_ptr<value_type>
                 _out;
