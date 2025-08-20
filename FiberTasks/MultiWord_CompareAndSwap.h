@@ -5181,7 +5181,6 @@ namespace fibers {
 				return !operator==(b);
 			};
 
-
 		public:
 			bool CompareSwap(Arg const& compare, Arg const& input) {
 				using fibers::utilities::dbgroup::atomic::mwcas::MwCASDescriptor;

@@ -465,7 +465,6 @@ int main() {
                 });
         }
 
-
         // GL::atomic_map<size_t, size_t>
         if (auto timer = sw.debug_timer(__LINE__)) {
             GL::atomic_map<size_t, size_t> map;
@@ -521,10 +520,43 @@ int main() {
             });
         }
 
+        // GL::atomic_double
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_double d;
+            EXPECT_EQ(0, d);
+            EXPECT_EQ(sizeof(GL::atomic_double), sizeof(double));
 
+            d = 0;
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                ++d;
+            });
+            EXPECT_EQ(1000000, d);
 
+            d = 0;
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                d += 2;
+            });
+            EXPECT_EQ(1000000, d / 2);
+        }
 
+        // GL::atomic_float
+        if (auto timer = sw.debug_timer(__LINE__)) {
+            GL::atomic_float d;
+            EXPECT_EQ(0, d);
+            EXPECT_EQ(sizeof(GL::atomic_float), sizeof(float));
 
+            d = 0;
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                ++d;
+            });
+            EXPECT_EQ(1000000, d);
+
+            d = 0;
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                d += 2;
+            });
+            EXPECT_EQ(1000000, d / 2);
+        }
 
 
 
