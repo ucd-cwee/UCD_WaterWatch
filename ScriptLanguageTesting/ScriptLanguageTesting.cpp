@@ -48,7 +48,7 @@
 int main() {
     GL::stopwatch sw;
     while (true) {
-#if 1
+#if 0
         if (auto timer = sw.debug_timer(GL::string("queue"))) {
             GL::atomic_queue<size_t> queue;
             size_t L;
@@ -506,6 +506,8 @@ int main() {
                 ++loc;
             });
         }
+#endif
+#if 1
         if (auto timer = sw.debug_timer("GL::atomic_double")) {
             GL::atomic_double d;
             EXPECT_EQ(0, d);
