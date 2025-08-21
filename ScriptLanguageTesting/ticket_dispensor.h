@@ -1,31 +1,20 @@
 #pragma region "Includes"
 #pragma once
-#include <iostream>
-#include <string>
-#include <string_view>
-#include <regex>
-#include <list>
-#include <cstdarg>
-#include <ShlDisp.h>
-#include <winnt.h>
-#include <concurrent_unordered_map.h>
-#include <concurrent_unordered_set.h>
-#include <concurrent_queue.h>
-#include <concurrent_vector.h>
-#include "Strings.h"
+#include "aba_problem.h"
+#include "atomic_vector.h"
 #pragma endregion
 
 // Good Language namespace
 namespace GL {
-    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the TicketDispensor.
+    // Multi-threaded socket system for adding/removing "listeners" in parallel based on tickets, provided by the ticket_dispensor.
     // Tickets should be kept as small as possible and re-used as much as possible, to reduce the size of the sockets, which significantly impacts performance.
-    template <typename T> class Callback {
+    template <typename T> class callback {
     public:
         class ScopedListener {
         public:
             ScopedListener()
                 : _index(0), _parent(nullptr) {};
-            ScopedListener(size_t index, Callback& parent)
+            ScopedListener(size_t index, callback& parent)
                 : _index(index), _parent(&parent) {};
             ScopedListener(ScopedListener const& rhs) = delete;
             ScopedListener(ScopedListener&& rhs)
@@ -52,7 +41,7 @@ namespace GL {
 
         private:
             size_t _index;
-            Callback* _parent;
+            callback* _parent;
         };
 
     private:
@@ -70,7 +59,7 @@ namespace GL {
         };
         size_t
             _size{ 0 };
-        concurrency::concurrent_vector<Wrap>
+        GL::atomic_vector<Wrap>
             _listeners;
         void (T::* _callback)(long*, size_t);
         std::atomic<bool>
@@ -102,12 +91,11 @@ namespace GL {
         };
 
     public:
-        Callback(void (T::* listener)(long*, size_t))
+        callback(void (T::* listener)(long*, size_t))
             : _callback{ listener }, alive{ true }
         {};
-        ~Callback() {
+        ~callback() {
             alive = false;
-            _listeners.clear();
         };
 
         ScopedListener listener(size_t index, T* p) {
@@ -138,15 +126,15 @@ namespace GL {
         };
     };
 
-    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of TicketDispensor
+    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
     // Prints new tickets as needed, but recycles old tickets as much as possible. 
-    class TicketDispensor {
+    class ticket_dispensor {
     public:
         class ScopedTicket {
         public:
             ScopedTicket()
                 : _index(0), _parent(nullptr) {};
-            ScopedTicket(size_t index, TicketDispensor& parent)
+            ScopedTicket(size_t index, ticket_dispensor& parent)
                 : _index(index), _parent(&parent) {};
             ScopedTicket(ScopedTicket const& rhs) = delete;
             ScopedTicket(ScopedTicket&& rhs) noexcept
@@ -168,11 +156,11 @@ namespace GL {
             };
 
             size_t _index;
-            TicketDispensor* _parent;
+            ticket_dispensor* _parent;
         };
 
     public:
-        /*moodycamel::ConcurrentQueue*/concurrency::concurrent_queue<size_t>
+        aba_problem::stack<size_t>
             queue{};
         std::atomic<size_t>
             indexes{ 0 };

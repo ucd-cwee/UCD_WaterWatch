@@ -5,6 +5,9 @@
 #include <ShlDisp.h>
 #include <winnt.h>
 #include <string>
+#include <memory>
+#include <iostream>
+#include "strings.h"
 
 namespace GL {
 	namespace clock {
@@ -53,8 +56,24 @@ namespace GL {
 			}));
 		};
 
+		template <size_t N>
+		__forceinline std::shared_ptr<void> debug_timer(const char(&additional_message_content)[N]) {
+			return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this, additional_message = additional_message_content](int* p) -> void {
+				auto stopTime = this->stop();
+				if constexpr (N == 0) {
+					std::string to_print = std::to_string(stopTime) + " s\n";
+					std::cout << to_print;
+				}
+				else {
+					std::string to_print = std::string(additional_message) + ": " + std::to_string(stopTime) + " s\n";
+					std::cout << to_print;
+				}
+				delete p;
+			}));
+		};
+
 		template<typename T>
-		std::shared_ptr<void> debug_timer(T const& additional_message_content) {
+		__forceinline std::shared_ptr<void> debug_timer(T const& additional_message_content) {
 			return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this, additional_message = std::to_string(additional_message_content)](int* p) -> void {
 				auto stopTime = this->stop();
 				if (additional_message.empty()) {

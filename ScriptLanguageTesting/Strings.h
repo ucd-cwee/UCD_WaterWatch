@@ -1,7 +1,4 @@
 #pragma once
-
-#pragma region "Includes"
-#pragma once
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -10,7 +7,6 @@
 #include <cstdarg>
 #include <ShlDisp.h>
 #include <winnt.h>
-#pragma endregion
 
 // Good Language namespace
 namespace GL {
@@ -123,6 +119,188 @@ namespace GL {
         std::string to_string() const {
             return std::string(data);
         };
+        double to_number() const {
+            const char* p = data.data();
+            double r = 0.0;
+            if (this->length() > 0 && p) {
+                bool neg = false;
+                if (*p == '-') {
+                    neg = true;
+                    ++p;
+                }
+                while (*p >= '0' && *p <= '9') {
+                    r = (r * 10.0) + (*p - '0');
+                    ++p;
+                }
+                if (*p == '.') {
+                    double f = 0.0;
+                    int n = 0;
+                    ++p;
+                    while (*p >= '0' && *p <= '9') {
+                        f = (f * 10.0) + (*p - '0');
+                        ++p;
+                        ++n;
+                    }
+                    r += f / std::pow(10.0, n);
+                }
+                if (neg) {
+                    r = -r;
+                }
+            }
+            return r;
+        };
+
+        auto begin() const {
+            return data.begin();
+        };
+        auto cbegin() const {
+            return data.cbegin();
+        };
+        auto end() const {
+            return data.end();
+        };
+        auto cend() const {
+            return data.cend();
+        };
+        auto rbegin() const {
+            return data.rbegin();
+        };
+        auto rend() const {
+            return data.rbegin();
+        };
+        auto crbegin() const {
+            return data.crbegin();
+        };
+        auto crend() const {
+            return data.crbegin();
+        };
+
+    private:
+        static bool			        CharIsLower(size_t c) {
+            return (c >= 'a' && c <= 'z') || (c >= 0xE0 && c <= 0xFF);
+        };
+        static bool			        CharIsUpper(size_t c) {
+            return (c <= 'Z' && c >= 'A') || (c >= 0xC0 && c <= 0xDF);
+        };
+        static void                 ToLower(char* s) {
+            for (size_t i = 0; s[i]; i++) {
+                if (CharIsUpper(s[i])) {
+                    s[i] += ('a' - 'A');
+                }
+            }
+        };
+        static void                 ToUpper(char* s) {
+            for (size_t i = 0; s[i]; i++) {
+                if (CharIsLower(s[i])) {
+                    s[i] -= ('a' - 'A');
+                }
+            }
+        };
+        static bool			        CharIsAlpha(size_t c) {
+            return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= 0xC0 && c <= 0xFF));
+        };
+        static bool			        CharIsNumeric(size_t c) {
+            return (c <= '9' && c >= '0');
+        };
+        static bool			        CharIsNewLine(char c) {
+            return (c == '\n' || c == '\r' || c == '\v');
+        };
+        static bool			        CharIsTab(char c) {
+            return (c == '\t');
+        };
+    public:
+        bool has_lower() const {
+            for (auto& x : *this) {
+                if (CharIsLower(x)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        bool has_upper() const {
+            for (auto& x : *this) {
+                if (CharIsUpper(x)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        string to_lower() const {
+            if (has_lower()) {
+                auto out = this->to_string();
+                ToLower(const_cast<char*>(out.c_str()));
+                return out;
+            }
+            return *this;
+        };
+        string to_upper() const {
+            if (has_upper()) {
+                auto out = this->to_string();
+                ToUpper(const_cast<char*>(out.c_str()));
+                return out;
+            }
+            return *this;
+        };
+
+    private:
+        static int                  LevenshteinDistance(const string& a, const string& b, bool caseSensitive = true) {
+            string s1;
+            string s2;
+
+            if (caseSensitive == true) {
+                s1 = a;
+                s2 = b;
+            }
+            else {
+                s1 = a.to_lower();
+                s2 = b.to_lower();
+            }
+
+            const long long m(s1.size());
+            const long long n(s2.size());
+
+            if (m == 0) return (int)n;
+            if (n == 0) return (int)m;
+
+            int* costs = new int[n + 1];
+
+            for (int k = 0; k <= n; k++) costs[k] = k;
+
+            int i = 0;
+            for (auto it1 = s1.cbegin(); it1 != s1.end(); ++it1, ++i) {
+                costs[0] = i + 1;
+                int corner = i;
+
+                int j = 0;
+                for (auto it2 = s2.cbegin(); it2 != s2.end(); ++it2, ++j) {
+                    int upper = costs[j + 1];
+                    if (*it1 == *it2)
+                    {
+                        costs[j + 1] = corner;
+                    }
+                    else
+                    {
+                        int t(upper < corner ? upper : corner);
+                        costs[j + 1] = (costs[j] < t ? costs[j] : t) + 1;
+                    }
+
+                    corner = upper;
+                }
+            }
+
+            int result = costs[n];
+            delete[] costs;
+
+            return result;
+        }
+
+    public:
+        size_t	distance(const string& other, bool caseSensitive = true) const {
+            return (size_t)LevenshteinDistance(*this, other, caseSensitive);
+        };
+
+    public:
         std::string_view const& c_str() const {
             return data;
         };
@@ -327,4 +505,10 @@ namespace GL {
         }
     };
 
+};
+
+namespace std {
+    _NODISCARD inline std::string to_string(GL::string const& _Val) { // convert string to string
+        return _Val.to_string();
+    };
 };

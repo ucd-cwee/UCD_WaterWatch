@@ -144,7 +144,7 @@
   <ItemGroup>
     <ClCompile Include="ScriptLanguageTesting.cpp" />
     <ClCompile Include="Source.cpp" />
-    <ClCompile Include="Utilities.cpp" />
+    <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\GoodLang\GoodLang.vcxproj">
@@ -155,11 +155,20 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="aba_problem.h" />
+    <ClInclude Include="atomic_allocator.h" />
+    <ClInclude Include="atomic_maps.h" />
+    <ClInclude Include="atomic_numbers.h" />
+    <ClInclude Include="atomic_queue.h" />
+    <ClInclude Include="atomic_stack.h" />
+    <ClInclude Include="atomic_vector.h" />
+    <ClInclude Include="mutex.h" />
     <ClInclude Include="Parallel.h" />
-    <ClInclude Include="Strings.h" />
-    <ClInclude Include="TicketDispensor.h" />
-    <ClInclude Include="Stopwatch.h" />
-    <ClInclude Include="Utilities.h" />
+    <ClInclude Include="strings.h" />
+    <ClInclude Include="thread_object.h" />
+    <ClInclude Include="ticket_dispensor.h" />
+    <ClInclude Include="stopwatch.h" />
+    <ClInclude Include="util.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
