@@ -16,7 +16,7 @@
 #include "atomic_maps.h"
 #include "stopwatch.h"
 #include "strings.h"
-
+#include "atomic_shared_ptr.h"
 
 
 
@@ -131,7 +131,34 @@ int main() {
                 });
             }
         }
-        if (auto timer = sw.debug_timer("atomic_parallel_allocator")) {
+        if (auto timer = sw.debug_timer("atomic_parallel_allocator ST")) {
+            GL::atomic_parallel_allocator<std::string, 1024> alloc;
+            if (1) {
+                for (int i = 0; i < 1000000; ++i){
+                    alloc.Free(alloc.Alloc());
+                };
+            }
+            if (1) {
+                std::vector< std::string* > ptrs(1000000, nullptr);
+                for (int i = 0; i < 1000000; ++i) {
+                    ptrs[i] = alloc.Alloc();
+                };
+                for (int i = 0; i < 1000000; ++i) {
+                    alloc.Free(ptrs[i]);
+                };
+            }
+            if (1) {
+                GL::atomic_parallel_stack<std::string*> to_delete;
+                for (int i = 0; i < 1000000; ++i) {
+                    to_delete.push(alloc.Alloc());
+                    std::string* p{ nullptr };
+                    if (to_delete.try_pop(p)) {
+                        alloc.Free(p);
+                    }
+                };
+            }
+        }
+        if (auto timer = sw.debug_timer("atomic_parallel_allocator MT")) {
             GL::atomic_parallel_allocator<std::string, 1024> alloc;
             if (1) {
                 GL::parallel::For(0, 1000000, [&](int) {
@@ -157,7 +184,7 @@ int main() {
                     }
                 });
             }
-        }
+        }       
         if (auto timer = sw.debug_timer("atomic_epoch_allocator")) {
             GL::atomic_epoch_allocator<std::string> alloc;
             if (1) {
@@ -506,8 +533,6 @@ int main() {
                 ++loc;
             });
         }
-#endif
-#if 1
         if (auto timer = sw.debug_timer("GL::atomic_double")) {
             GL::atomic_double d;
             EXPECT_EQ(0, d);
@@ -543,6 +568,97 @@ int main() {
             EXPECT_EQ(1000000, d / 2);
         }
 #endif
+#if 1
+#if 0
+        if (auto timer = sw.debug_timer("GL::impl::atomic_ptr")) {
+            GL::impl::atomic_ptr<long long> ptr{ reinterpret_cast<long long*>(100), 0 };
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                EXPECT_EQ(reinterpret_cast<long long*>(100), ptr.load().first);
+                EXPECT_EQ(0, ptr.load().second);
+            });
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                auto prev_val = ptr.exchange(reinterpret_cast<long long*>(i), 0);
+            });
+
+            std::atomic<char> flag{ 0 };
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                // will only succeed in the exchange if the 'flag' matches our flag value. 
+                auto prev_val = ptr.exchange_if(reinterpret_cast<long long*>(i), flag++);
+                if (std::get<0>(prev_val)) {
+                    // print(GL::printf("%i: %i\n", reinterpret_cast<int>(prev_val.first), static_cast<int>(prev_val.second)));
+                }
+            });
+        }
+        if (auto timer = sw.debug_timer("GL::impl::atomic_ptr")) {
+
+            GL::impl::atomic_ptr<long long> ptr{ reinterpret_cast<long long*>(100), 1 };
+
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                if (i == 10101) {
+                    // kills the pointer, sets flag to zero, returns previous value
+                    ptr.exchange(reinterpret_cast<long long*>(i), 0); // sets the pointer to 0
+                }
+                else {
+                    // keeps the pointer at 1 (if it was still at 1), otherwise returns empty. 
+                    auto prev_val = ptr.exchange_if(reinterpret_cast<long long*>(i), 1);
+                    if (std::get<2>(prev_val)) {
+                        print(GL::printf("%i: %i\n", reinterpret_cast<int>(std::get<0>(prev_val)), static_cast<int>(std::get<1>(prev_val))));
+                    }
+                }
+            });
+
+        }
+#endif
+        if (auto timer = sw.debug_timer("GL::impl::atomic_shared_ptr design test")) {
+
+            GL::impl::atomic_ptr<std::string> ptr{ new std::string(""), 1}; // 1 = alive
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                if (i % 100 == 0) {
+                    // overwrite the pointer, set the flag to zero, return the previous value. 
+                    auto prev_val = ptr.exchange(nullptr, 0);
+                    if (prev_val.first) {
+                        delete prev_val.first;
+                    }
+                }
+                else if (i % 37 == 0) {
+                    // overwrite the pointer, set the flag to one, return the previous value. 
+                    auto prev_val = ptr.exchange(new std::string(std::to_string(i)), 1);
+                    if (prev_val.first) {
+                        delete prev_val.first;
+                    }
+                }
+                else {
+                    auto curr_val = ptr.load_if(1);
+                    if (std::get<2>(curr_val)) {
+                        // alive
+
+                    }
+                    else {
+                        // dead
+
+                    }
+
+
+                    //if (std::get<2>(prev_val)) {
+                    //    print(GL::printf("%i: %i\n", reinterpret_cast<int>(std::get<0>(prev_val)), static_cast<int>(std::get<1>(prev_val))));
+                    //}
+
+
+                }
+            });
+
+        }
+
+
+
+
+
+
+#endif
+
+
     }
     return 0;
 };

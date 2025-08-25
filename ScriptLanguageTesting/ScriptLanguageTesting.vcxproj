@@ -160,6 +160,7 @@
     <ClInclude Include="atomic_maps.h" />
     <ClInclude Include="atomic_numbers.h" />
     <ClInclude Include="atomic_queue.h" />
+    <ClInclude Include="atomic_shared_ptr.h" />
     <ClInclude Include="atomic_stack.h" />
     <ClInclude Include="atomic_vector.h" />
     <ClInclude Include="mutex.h" />

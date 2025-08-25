@@ -68,5 +68,8 @@
     <ClInclude Include="atomic_maps.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="atomic_shared_ptr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

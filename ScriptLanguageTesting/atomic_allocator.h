@@ -3,6 +3,7 @@
 #include "aba_problem.h"
 #include <type_traits>
 #include "thread_object.h"
+#include "mutex.h"
 
 // Atomic Allocators
 namespace GL {
@@ -124,13 +125,14 @@ namespace GL {
             return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
         };
 
+    private:
         aba_problem::THead<block_t>
             blocks;
         aba_problem::THead<element_t>
             free;
     };
 
-    // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use.
+    // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use. Optimized for heavy multithreading. 
     template <typename _type_, size_t num_items = 128, bool skipInitialization = false>
     class atomic_parallel_allocator {
     private:
@@ -173,5 +175,4 @@ namespace GL {
             return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
         };
     };
-
 };
