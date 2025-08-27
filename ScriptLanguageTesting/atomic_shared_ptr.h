@@ -5,177 +5,344 @@
 #include "aba_problem.h"
 #include "atomic_maps.h"
 
-namespace GL {
-    namespace impl {
-        template<class T>
-        union TFlaggedHead {
-        public:
-            struct bitset {
-            public:
-                uint64_t // must sum to 64
-                    m_nFlags : 2,
-                    m_nABA : 10, // 8, 12, and 18 work. Larger = less likelihood of crashing due to ABA bug.
-                    m_pNode : 52; // Windows only supports 44 bits addressing anyway.
-            };
-            uint64_t
-                m_n64; // for CAS
-            bitset
-                m_bits;
 
-            static T* Finalize(T* p) {
-                TFlaggedHead<T> out;
-                out.m_bits.m_pNode = (uint64_t)p;
-                out.m_bits.m_nFlags = 0;
-                out.m_bits.m_nABA = 0;
-                return (T*)out.m_bits.m_pNode;
-            };
 
-            T* Finalize() {
-                return Finalize(Node());
-            };
-            bool is_null() const {
-                return m_bits.m_pNode == 0;
-            };
 
-            // this constructor will make an atomic copy on intel 
-            T* Node() const { return reinterpret_cast<T*>(m_bits.m_pNode); }
-            char Flag() const { return static_cast<const char>(m_bits.m_nFlags); }
 
-            // changeing Node bumps aba
-            TFlaggedHead* Node(T* p) { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
+#pragma once
+#include <atomic>
+#include <cassert>
+#include <cstdlib>
+#include <memory>
+#include <thread>
+#include <stack>
 
-            TFlaggedHead* Node(T* p, char flag_option) { m_bits.m_nABA++; m_bits.m_nFlags = (uint64_t)flag_option; m_bits.m_pNode = (uint64_t)p; return this; }
+namespace LFStructs {
+    const int MAGIC_LEN = 16;
+    const size_t MAGIC_MASK = 0x0000'0000'0000'FFFF;
+    const int CACHE_LINE_SIZE = 128;
 
-            TFlaggedHead* Node(TFlaggedHead const& p) {
-                uint64_t copied_m_n64{ p.m_bits };
-                m_bits.m_nABA++; m_bits.m_nFlags = copied_m_n64.m_nFlags; m_bits.m_pNode = copied_m_n64.m_pNode;
-                return this;
+    template<typename T>
+    struct alignas(CACHE_LINE_SIZE) ControlBlock {
+        explicit ControlBlock() = delete;
+        explicit ControlBlock(T* data)
+            : data(data)
+            , refCount(1)
+        {
+            assert(reinterpret_cast<size_t>(data) <= 0x0000'FFFF'FFFF'FFFF);
+        }
+
+        T* data;
+        std::atomic<size_t> refCount;
+    };
+
+    template<typename T>
+    class SharedPtr {
+    public:
+        SharedPtr() : controlBlock(nullptr) {}
+        explicit SharedPtr(T* data)
+            : controlBlock(new ControlBlock<T>(data))
+        {}
+        explicit SharedPtr(ControlBlock<T>* controlBlock) : controlBlock(controlBlock) {}
+        SharedPtr(const SharedPtr& other) {
+            controlBlock = other.controlBlock;
+            if (controlBlock != nullptr) {
+                int before = controlBlock->refCount.fetch_add(1);
+                assert(before);
             }
-
         };
-        
-        /// <summary>
-        /// Thread-safe and fiber-safe wrapper for atomic operations on pointers, without having to utilize std_atomic(T*)
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        template< typename T>
-        struct atomic_ptr {
-        private:
-            // pop head of the list
-            template< typename F>
-            static std::pair<TFlaggedHead<T>, bool> Pop_If(TFlaggedHead<T>& Head, F const& func) {
-                TFlaggedHead<T> Old, New;
-                while (1) { // race loop
-                    // Get an atomic copy of head and call it old.
-                    Old.m_n64 = Head.m_n64;
-                    if (!func(Old)) return { TFlaggedHead<T>{}, false };
-                    New.m_n64 = Old.m_n64;
-                    New.Node(Old.Node(), Old.Flag());
-                    // compare and swap New with Head if it still matches Old.
-                    if (aba_problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) {
-                        return { Old, true }; // success                
-                    }
-                    // race, try again
+        SharedPtr(SharedPtr&& other) noexcept {
+            controlBlock = other.controlBlock;
+            other.controlBlock = nullptr;
+        };
+        SharedPtr& operator=(const SharedPtr& other) {
+            auto old = controlBlock;
+            controlBlock = other.controlBlock;
+            if (controlBlock != nullptr) {
+                int before = controlBlock->refCount.fetch_add(1);
+                assert(before);
+            }
+            unref(old);
+            return *this;
+        };
+        SharedPtr& operator=(SharedPtr&& other) {
+            if (controlBlock != other.controlBlock) {
+                auto old = controlBlock;
+                controlBlock = other.controlBlock;
+                other.controlBlock = nullptr;
+                unref(old);
+            }
+            return *this;
+        }
+        ~SharedPtr() {
+            thread_local std::vector<ControlBlock<T>*> destructionQueue;
+            thread_local bool destructionInProgress = false;
+
+            destructionQueue.push_back(controlBlock);
+            if (!destructionInProgress) {
+                destructionInProgress = true;
+                while (destructionQueue.size()) {
+                    ControlBlock<T>* blockToUnref = destructionQueue.back();
+                    destructionQueue.pop_back();
+                    unref(blockToUnref);
+                }
+                destructionInProgress = false;
+            }
+        }
+
+        SharedPtr copy() { return SharedPtr(*this); }
+        T* get() const { return controlBlock ? controlBlock->data : nullptr; }
+        T* operator->() const { return controlBlock->data; }
+
+    private:
+        void unref(ControlBlock<T>* blockToUnref) {
+            if (blockToUnref) {
+                int before = blockToUnref->refCount.fetch_sub(1);
+                assert(before);
+                if (before == 1) {
+                    delete blockToUnref->data;
+                    delete blockToUnref;
                 }
             }
-            // pop head of the list
-            static TFlaggedHead<T> Pop(TFlaggedHead<T>& Head) {
-                TFlaggedHead<T> Old, New;
-                while (1) { // race loop
-                    // Get an atomic copy of head and call it old.
-                    Old.m_n64 = Head.m_n64;
-                    New.m_n64 = Old.m_n64;
-                    New.Node(Old.Node(), Old.Flag());
-                    // compare and swap New with Head if it still matches Old.
-                    if (aba_problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) {
-                        return Old; // success                
-                    }
-                    // race, try again
-                }
-            }
-            // push pNode onto head of list, recieve old head
-            static TFlaggedHead<T> Push(TFlaggedHead<T>& Head, T* pNode, char flag_option) {
-                TFlaggedHead<T> Old, New;
-                while (1) { // race loop
-                    // Get an atomic copy of head and call it old.
-                    // Copy old and call it new.
-                    New.m_n64 = Old.m_n64 = Head.m_n64;
-                    // change New's head ptr, which bumps internal aba
-                    New.Node(pNode, flag_option);
-                    // compare and swap New with Head if it still matches Old.
-                    if (aba_problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
-                    // race, try again
-                }
-                return Old;
-            }
-            // push pNode onto head of list, recieve old head
-            template< typename F>
-            static std::pair<TFlaggedHead<T>, bool> Push_If(TFlaggedHead<T>& Head, T* pNode, char flag_option, F const& func) {
-                TFlaggedHead<T> Old, New;
-                while (1) { // race loop
-                    // Get an atomic copy of head and call it old.
-                    // Copy old and call it new.
-                    New.m_n64 = Old.m_n64 = Head.m_n64;
+        }
 
-                    if (!func(Old)) return { TFlaggedHead<T>{}, false };
+        template<typename A> friend class AtomicSharedPtr;
+        ControlBlock<T>* controlBlock;
+    };
 
-                    // change New's head ptr, which bumps internal aba
-                    New.Node(pNode, flag_option);
-                    // compare and swap New with Head if it still matches Old.
-                    if (aba_problem::CAS(&Head.m_n64, Old.m_n64, New.m_n64)) break; // success
-                    // race, try again
-                }
-                return { Old, true };
-            }
-
-        public:
-            atomic_ptr() noexcept {
-                ptr.m_n64 = 0;
-            };
-            atomic_ptr(T* newSource, char flag_option) noexcept {
-                ptr.Node(newSource, flag_option);
-            };
-            atomic_ptr(const atomic_ptr& other) noexcept {
-                ptr.Node(other.ptr);
-            };
-            atomic_ptr& operator=(const atomic_ptr& other) noexcept { ptr.Node(other.ptr); return *this; };
-            atomic_ptr& operator=(T* newSource) noexcept { ptr.Node(newSource); return *this; };
-            ~atomic_ptr() = default;
-
-            explicit operator bool() { return !ptr.is_null(); };
-            explicit operator bool() const { return !ptr.is_null(); };
-
-            std::tuple<T*, char, bool> load_if(char f) const {
-                auto current_head = Pop_If(ptr, [f](TFlaggedHead<T> const& old) -> bool {
-                    return old.Flag() == f;
-                });
-                return { current_head.first.Finalize(), current_head.first.Flag(), current_head.second };
-            };
-            std::pair<T*, char> load() const {
-                auto current_head = Pop(ptr);
-                return { current_head.Finalize(), current_head.Flag() };
-            };
-            std::pair<T*, char> exchange(T* p, char f) const {
-                auto current_head = Push(ptr, p, f);
-                return { current_head.Finalize(), current_head.Flag() };
-            };
-            std::tuple<T*, char, bool> exchange_if(T* p, char f) const {
-                auto current_head = Push_If(ptr, p, f, [f](TFlaggedHead<T> const& old) -> bool {
-                    return old.Flag() == f;
-                });
-                return { current_head.first.Finalize(), current_head.first.Flag(), current_head.second };
-            };
-
-        protected:
-            mutable TFlaggedHead<T> ptr;
+    template<typename T>
+    class alignas(CACHE_LINE_SIZE) FastSharedPtr {
+    public:
+        FastSharedPtr(const FastSharedPtr<T>& other) = delete;
+        FastSharedPtr(FastSharedPtr<T>&& other)
+            : knownValue(other.knownValue)
+            , foreignPackedPtr(other.foreignPackedPtr)
+            , data(other.data)
+        {
+            other.foreignPackedPtr = nullptr;
+        };
+        FastSharedPtr& operator=(FastSharedPtr<T>&& other) {
+            destroy();
+            knownValue = other.knownValue;
+            foreignPackedPtr = other.foreignPackedPtr;
+            data = other.data;
+            other.foreignPackedPtr = nullptr;
+            return *this;
+        }
+        ~FastSharedPtr() {
+            destroy();
         };
 
+        ControlBlock<T>* getControlBlock() { return reinterpret_cast<ControlBlock<T>*>(knownValue >> MAGIC_LEN); }
+        T* get() { return data; }
+        T* operator->() { return data; }
+    private:
+        void destroy() {
+            if (foreignPackedPtr != nullptr) {
+                size_t expected = knownValue;
+                while (!foreignPackedPtr->compare_exchange_weak(expected, expected - 1)) {
+                    if (((expected >> MAGIC_LEN) != (knownValue >> MAGIC_LEN)) || !(expected & MAGIC_MASK)) {
+                        ControlBlock<T>* block = reinterpret_cast<ControlBlock<T>*>(knownValue >> MAGIC_LEN);
+                        size_t before = block->refCount.fetch_sub(1);
+                        if (before == 1) {
+                            delete data;
+                            delete block;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        FastSharedPtr(std::atomic<size_t>* packedPtr)
+            : knownValue(packedPtr->fetch_add(1) + 1)
+            , foreignPackedPtr(packedPtr)
+            , data(getControlBlock()->data)
+        {
+            auto block = getControlBlock();
+            int diff = knownValue & MAGIC_MASK;
+            while (diff > 1000 && block == getControlBlock()) {
+                block->refCount.fetch_add(diff);
+                if (packedPtr->compare_exchange_strong(knownValue, knownValue - diff)) {
+                    foreignPackedPtr = nullptr;
+                    break;
+                }
+                block->refCount.fetch_sub(diff);
+                diff = knownValue & MAGIC_MASK;
+            }
+        };
 
+        size_t knownValue;
+        std::atomic<size_t>* foreignPackedPtr;
+        T* data;
 
+        template<typename A> friend class AtomicSharedPtr;
+    };
 
+    template<typename T>
+    class alignas(CACHE_LINE_SIZE) AtomicSharedPtr {
+    public:
+        AtomicSharedPtr(T* data = nullptr);
+        ~AtomicSharedPtr();
 
+        AtomicSharedPtr(const AtomicSharedPtr& other) = delete;
+        AtomicSharedPtr(AtomicSharedPtr&& other) = delete;
+        AtomicSharedPtr& operator=(const AtomicSharedPtr& other) = delete;
+        AtomicSharedPtr& operator=(AtomicSharedPtr&& other) = delete;
 
+        SharedPtr<T> get();
+        FastSharedPtr<T> getFast();
+
+        bool compareExchange(T* expected, SharedPtr<T>&& newOne); // this actually is strong version
+
+        void store(T* data);
+        void store(SharedPtr<T>&& data);
+
+    private:
+        void destroyOldControlBlock(size_t oldPackedPtr);
+
+        /* first 48 bit - pointer to control block
+         * last 16 bit - local refcount if anyone is accessing control block
+         * through current AtomicSharedPtr instance right now */
+        std::atomic<size_t> packedPtr;
+        static_assert(sizeof(T*) == sizeof(size_t));
+    };
+
+    template<typename T>
+    AtomicSharedPtr<T>::AtomicSharedPtr(T* data) {
+        auto block = new ControlBlock(data);
+        packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
     }
+
+    template<typename T>
+    SharedPtr<T> AtomicSharedPtr<T>::get() {
+        // taking copy and notifying about read in progress
+        size_t packedPtrCopy = packedPtr.fetch_add(1);
+        auto block = reinterpret_cast<ControlBlock<T>*>(packedPtrCopy >> MAGIC_LEN);
+        int before = block->refCount.fetch_add(1);
+        assert(before);
+        // copy is completed
+
+        // notifying about completed copy
+        size_t expected = packedPtrCopy + 1;
+        while (true) {
+            assert((expected & MAGIC_MASK) > 0);
+            size_t expCopy = expected;
+            if (packedPtr.compare_exchange_weak(expected, expected - 1)) {
+                break;
+            }
+
+            // if control block pointer just changed, then
+            // handling object's refcount is not our responsibility
+            if (((expected >> MAGIC_LEN) != (packedPtrCopy >> MAGIC_LEN)) ||
+                ((expected & MAGIC_MASK) == 0)) // >20 hours wasted here
+            {
+                int before = block->refCount.fetch_sub(1);
+                assert(before);
+                break;
+            }
+
+            if ((expected & MAGIC_MASK) == 0) {
+                abort();
+                break;
+            }
+        }
+        // notification finished
+
+        return SharedPtr<T>(block);
+    }
+
+    template<typename T>
+    FastSharedPtr<T> AtomicSharedPtr<T>::getFast() {
+        return FastSharedPtr<T>(&packedPtr);
+    }
+
+    template<typename T>
+    AtomicSharedPtr<T>::~AtomicSharedPtr() {
+        thread_local std::vector<size_t> destructionQueue;
+        thread_local bool destructionInProgress = false;
+
+        size_t packedPtrCopy = packedPtr.load();
+        auto block = reinterpret_cast<ControlBlock<T>*>(packedPtrCopy >> MAGIC_LEN);
+        size_t diff = packedPtrCopy & MAGIC_MASK;
+        if (diff != 0) {
+            block->refCount.fetch_add(diff);
+        }
+
+        destructionQueue.push_back(packedPtrCopy);
+        if (!destructionInProgress) {
+            destructionInProgress = true;
+            while (destructionQueue.size()) {
+                size_t controlBlockToDestroy = destructionQueue.back();
+                destructionQueue.pop_back();
+                destroyOldControlBlock(controlBlockToDestroy);
+            }
+            destructionInProgress = false;
+        }
+    }
+
+    template<typename T>
+    void AtomicSharedPtr<T>::store(T* data) {
+        store(SharedPtr<T>(data));
+    }
+
+    template<typename T>
+    void AtomicSharedPtr<T>::store(SharedPtr<T>&& data) {
+        while (true) {
+            auto holder = this->getFast();
+            if (compareExchange(holder.get(), std::move(data))) {
+                break;
+            }
+        }
+    }
+
+    template<typename T>
+    bool AtomicSharedPtr<T>::compareExchange(T* expected, SharedPtr<T>&& newOne) {
+        if (expected == newOne.get()) {
+            return true;
+        }
+        auto holder = this->getFast();
+        if (holder.get() == expected) {
+            size_t holdedPtr = reinterpret_cast<size_t>(holder.getControlBlock());
+            size_t desiredPackedPtr = reinterpret_cast<size_t>(newOne.controlBlock) << MAGIC_LEN;
+            size_t expectedPackedPtr = holdedPtr << MAGIC_LEN;
+            while (holdedPtr == (expectedPackedPtr >> MAGIC_LEN)) {
+                if (expectedPackedPtr & MAGIC_MASK) {
+                    int diff = expectedPackedPtr & MAGIC_MASK;
+                    holder.getControlBlock()->refCount.fetch_add(diff);
+                    if (!packedPtr.compare_exchange_weak(expectedPackedPtr, expectedPackedPtr & ~MAGIC_MASK)) {
+                        holder.getControlBlock()->refCount.fetch_sub(diff);
+                    }
+                    continue;
+                }
+                assert((expectedPackedPtr >> MAGIC_LEN) != (desiredPackedPtr >> MAGIC_LEN));
+                if (packedPtr.compare_exchange_weak(expectedPackedPtr, desiredPackedPtr)) {
+                    newOne.controlBlock = nullptr;
+                    assert((expectedPackedPtr >> MAGIC_LEN) == holdedPtr);
+                    destroyOldControlBlock(expectedPackedPtr);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    template<typename T>
+    void AtomicSharedPtr<T>::destroyOldControlBlock(size_t oldPackedPtr) {
+        auto block = reinterpret_cast<ControlBlock<T>*>(oldPackedPtr >> MAGIC_LEN);
+        auto refCountBefore = block->refCount.fetch_sub(1);
+        assert(refCountBefore);
+        if (refCountBefore == 1) {
+            delete block->data;
+            delete block;
+        }
+    }
+
+} // namespace LFStructs
+
+
+
+namespace GL {
 
 
 

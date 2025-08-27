@@ -1,7 +1,7 @@
 #pragma once
 
 #include "atomic_allocator.h"
-#include "mutex.h"
+#include <shared_mutex>
 
 // Epoch Allocator
 namespace GL {
@@ -245,7 +245,7 @@ namespace GL {
             objAllocator;
         atomic_epoch_allocator<_iterType>
             nodeAllocator;
-        GL::fast_shared_mutex
+        std::shared_mutex
             mutex;
 
         class EpochGuard {

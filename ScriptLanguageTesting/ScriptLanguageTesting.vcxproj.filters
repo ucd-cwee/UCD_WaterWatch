@@ -59,9 +59,6 @@
     <ClInclude Include="atomic_queue.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="mutex.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="atomic_numbers.h">
       <Filter>Header Files</Filter>
     </ClInclude>

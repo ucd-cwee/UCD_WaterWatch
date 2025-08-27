@@ -163,7 +163,6 @@
     <ClInclude Include="atomic_shared_ptr.h" />
     <ClInclude Include="atomic_stack.h" />
     <ClInclude Include="atomic_vector.h" />
-    <ClInclude Include="mutex.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="strings.h" />
     <ClInclude Include="thread_object.h" />

@@ -3,7 +3,7 @@
 #include "aba_problem.h"
 #include <type_traits>
 #include "thread_object.h"
-#include "mutex.h"
+#include <shared_mutex>
 
 // Atomic Allocators
 namespace GL {
