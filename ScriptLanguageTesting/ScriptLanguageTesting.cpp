@@ -616,11 +616,12 @@ int main() {
         }
 #endif
 
-        // under low contention, the LFStructs::AtomicSharedPtr using FastSharedPtr is ~40% faster than a locked shared_ptr, even keeping pace with accessing a shared pointer without copying it. 
+        // under low contention, the GL::atomic_shared_ptr using fast_shared_ptr is ~40% faster than a locked shared_ptr, even keeping pace with accessing a shared pointer without copying it. 
         // under moderate contention, this is still true, up to about 50 reads per value change
-        // under extremely heavy contention (around 10 reads for every valeu change), the LFStructs::AtomicSharedPtr is significantly bloated and results in significant slow-downs.
+        // under extremely heavy contention (around 10 reads for every value change), the GL::atomic_shared_ptr is significantly bloated and results in significant slow-downs.
         for (double ratio = 1000000.0; ratio >= 1.0; ratio /= 10) {
             print(ratio);
+
             if (auto timer = sw.debug_timer("std::shared_ptr<std::string> with std shared lock")) {
                 std::shared_mutex mut;
                 std::shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };
@@ -636,7 +637,9 @@ int main() {
                     ptr2 = ptr;
                     mut.unlock_shared();
 
-                    EXPECT_EQ((ptr2->length() > 0), true);
+                    if (ptr2) {
+                        EXPECT_EQ((ptr2->length() > 0), true);
+                    }
                 });
             }
             if (auto timer = sw.debug_timer("std::shared_ptr<std::string> access with std shared lock")) {
@@ -654,34 +657,64 @@ int main() {
                     mut.unlock_shared();
                 });
             }
-            if (auto timer = sw.debug_timer("LFStructs::AtomicSharedPtr<std::string> slow test")) {
-                LFStructs::AtomicSharedPtr<std::string> ptr{ new std::string(std::to_string(1)) };
+            if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<std::string> slow test")) {
+                GL::atomic_shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };                
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     if (i % (int)ratio == 0) {
-                        ptr.store(LFStructs::SharedPtr<std::string>(new std::string(std::to_string(i + 1))));
+                        ptr.store(GL::shared_ptr<std::string>(new std::string(std::to_string(i + 1))));
                     }
-                    auto ptr2 = ptr.get();
-                    EXPECT_EQ((ptr2->length() > 0), true);
+                    if (auto ptr2 = ptr.load()) {
+                        EXPECT_EQ((ptr2->length() > 0), true);
+                    }
                 });
             }
-            if (auto timer = sw.debug_timer("LFStructs::AtomicSharedPtr<std::string> fast test")) {
-                LFStructs::AtomicSharedPtr<std::string> ptr{ new std::string(std::to_string(1)) };
+            if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<std::string> fast test")) {
+                GL::atomic_shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };         
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     if (i % (int)ratio == 0) {
-                        ptr.store(LFStructs::SharedPtr<std::string>(new std::string(std::to_string(i + 1))));
+                        ptr.store(GL::shared_ptr<std::string>(new std::string(std::to_string(i + 1))));
                     }
-                    auto ptr2 = ptr.getFast();
-                    EXPECT_EQ((ptr2->length() > 0), true);
+                    if (auto ptr2 = ptr.load_fast()) {
+                        EXPECT_EQ((ptr2->length() > 0), true);
+                    }
                 });
             }
+        }
 
-
+        if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<void>")) {
+            auto ptr = GL::static_pointer_cast<void>(GL::atomic_shared_ptr<std::string>(new std::string("test")));
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                if (i % 50 == 0) {
+                    ptr.store(GL::shared_ptr<std::string>(new std::string(std::to_string(i + 1))));
+                }
+                if (auto ptr2 = GL::static_pointer_cast<std::string>(ptr.load())) {
+                    EXPECT_EQ((ptr2->length() > 0), true);
+                }
+            });
+        }
+        if (auto timer = sw.debug_timer("std::shared_ptr<void>")) {
+            std::shared_mutex mut;
+            std::shared_ptr<void> ptr{ std::shared_ptr<std::string>(new std::string("test")) };
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                if (i % 50 == 0) {
+                    mut.lock();
+                    ptr = std::shared_ptr<std::string>(new std::string(std::to_string(i + 1)));
+                    mut.unlock();
+                }
+                mut.lock_shared();                
+                auto ptr2 = std::static_pointer_cast<std::string>(ptr);
+                mut.unlock_shared();
+                if (ptr2) {
+                    EXPECT_EQ((ptr2->length() > 0), true);
+                }
+            });
         }
 
 
 
+
 #endif
-#if 1
+#if 0
         if (auto timer = sw.debug_timer("atomic_wait")) {
             std::atomic<long> lock{ 0 };
             std::thread temp_thread([&]() {

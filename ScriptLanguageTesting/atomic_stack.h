@@ -23,7 +23,7 @@ namespace GL {
         std::atomic<size_t>
             count;
     public:
-        void push(T const& obj) {
+        size_t push(T const& obj) {
             // get a new element
             element_t* new_ptr;
             new_ptr = allocator.Alloc();
@@ -31,16 +31,16 @@ namespace GL {
             new_ptr->m_pNext = nullptr;
 
             aba_problem::Stack_Push(*head, new_ptr);
-            ++count;
+            return ++count;
         };
-        void push(T&& obj) {
+        size_t push(T&& obj) {
             // get a new element
             element_t* new_ptr;
             new_ptr = allocator.Alloc();
             new_ptr->data = std::move(obj);
             new_ptr->m_pNext = nullptr;
             aba_problem::Stack_Push(*head, new_ptr);
-            ++count;
+            return ++count;
         };
         bool try_pop(T& out) {
             return head.for_each_cancellable([&](auto& this_head) -> bool {

@@ -12,6 +12,33 @@ namespace GL {
     std::mutex* __atomic_mutexes();
     std::condition_variable* __atomic_conds();
 
+    template<class T> static std::size_t index_for_address(T* ptr) noexcept {
+        return reinterpret_cast<std::size_t>(ptr) / sizeof(T) % 64;
+    };
+    template<class T> static void wait_for_address(T* ptr, T const& value) {
+        if (*ptr != value) return;
+        std::size_t index = index_for_address(ptr);
+        std::unique_lock<std::mutex> lock(__atomic_mutexes()[index]);
+        while (ptr->load(std::memory_order_relaxed) == value)
+            __atomic_conds()[index].wait(lock);
+    };
+    template<class T> static void notify_address(T* ptr) {
+        const std::size_t index = index_for_atomic(ptr);
+        /*
+         * normally we don't need to hold the mutex to notify
+         * but in this case we updated the value without holding
+         * the lock. Therefore without the mutex there would be
+         * a race condition in wait() between the while-loop condition
+         * and the loop body
+         */
+        std::lock_guard<std::mutex> lock(__atomic_mutexes()[index]);
+        /*
+         * needs to notify_all because we could have multiple waiters
+         * in multiple atomics due to aliasing
+         */
+        __atomic_conds()[index].notify_all();
+    };
+
     template<class T> static std::size_t index_for_atomic(std::atomic<T>* ptr) noexcept {
         return reinterpret_cast<std::size_t>(ptr) / sizeof(T) % 64;
     };
@@ -42,7 +69,7 @@ namespace GL {
 
     template <class _Ty>
     class _Locked_pointer {
-    public:
+    private:
         static_assert(alignof(_Ty) >= (1 << 2), "2 low order bits are needed by _Locked_pointer");
         static constexpr uintptr_t _Lock_mask = 3;
         static constexpr uintptr_t _Not_locked = 0;
@@ -50,6 +77,7 @@ namespace GL {
         static constexpr uintptr_t _Locked_notify_needed = 2;
         static constexpr uintptr_t _Ptr_value_mask = ~_Lock_mask;
 
+    public:
         constexpr _Locked_pointer() noexcept : _Storage{} {}
         explicit _Locked_pointer(_Ty* const _Ptr) noexcept : _Storage{ reinterpret_cast<uintptr_t>(_Ptr) } {}
 
@@ -103,68 +131,48 @@ namespace GL {
         std::atomic<uintptr_t> _Storage;
     };
 
-
-
-
-    template <typename T>
-    class atomic_shared_ptr {
-    private:
-        struct control_block {
-            std::atomic<size_t> global_refcount;
-        };
-        struct local_block {
-            control_block* cblock;
-            size_t local_refcount;
-        };
-        std::atomic<local_block> atomic_cptr;
-        static_assert(decltype(atomic_cptr)::is_always_lock_free);
-
-    public:
-        control_block* load() {
-            // 1. increment local refcount
-            local_block value = atomic_cptr.load();
-            for (;;) {
-                local_block new_value = value;
-                ++new_value.local_refcount;
-                if (atomic_cptr.compare_exchange_weak(value, new_value))
-                    break;
-            }
-            ++value.local_refcount;
-
-            // 2. get copy
-            control_block* cblock = new_value.cblock;
-
-            // 3. increment global counter
-            cblock->global_refcount.fetch_add(1);
-
-            // 4. decrement local refcount
-            local_block value_before = value;
-            for (;;) {
-                local_block new_value = value;
-                --new_value.local_refcount;
-                if (atomic_cptr.compare_exchange_weak(value, new_value))
-                    break;
-
-                // if the value changed, we were not supposed to modify the global refcount
-                if (value_before->cblock != value->cblock) {
-                    cblock->global_refcount.fetch_sub(1);
-                    break;
-                }
-            }
-
-            return cblock;
-        };
-
-
-    };
-
-
-
-
-
-
-
-
-
+    //template <typename T>
+    //class atomic_shared_ptr {
+    //private:
+    //    struct control_block {
+    //        std::atomic<size_t> global_refcount;
+    //    };
+    //    struct local_block {
+    //        control_block* cblock;
+    //        size_t local_refcount;
+    //    };
+    //    std::atomic<local_block> atomic_cptr;
+    //    static_assert(decltype(atomic_cptr)::is_always_lock_free);
+    //public:
+    //    control_block* load() {
+    //        // 1. increment local refcount
+    //        local_block value = atomic_cptr.load();
+    //        for (;;) {
+    //            local_block new_value = value;
+    //            ++new_value.local_refcount;
+    //            if (atomic_cptr.compare_exchange_weak(value, new_value))
+    //                break;
+    //        }
+    //        ++value.local_refcount;
+    //        // 2. get copy
+    //        control_block* cblock = value.cblock;
+    //        // 3. increment global counter
+    //        cblock->global_refcount.fetch_add(1);
+    //        // 4. decrement local refcount
+    //        local_block value_before = value;
+    //        for (;;) {
+    //            local_block new_value = value;
+    //            --new_value.local_refcount;
+    //            if (atomic_cptr.compare_exchange_weak(value, new_value))
+    //                break;
+    //            // if the value changed, we were not supposed to modify the global refcount
+    //            if (value_before->cblock != value->cblock) {
+    //                cblock->global_refcount.fetch_sub(1);
+    //                break;
+    //            }
+    //        }
+    //        return cblock;
+    //    };
+    //};
 
 };

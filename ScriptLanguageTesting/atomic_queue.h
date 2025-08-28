@@ -24,23 +24,23 @@ namespace GL {
             count{ 0 };
 
     public:
-        void push(T const& obj) {
+        size_t push(T const& obj) {
             if constexpr (is_pod) {
                 _que->push(obj);
             }
             else {
                 _que->push(_alloc.Alloc(obj));
             }
-            ++count;
+            return ++count;
         };
-        void push(T&& obj) {
+        size_t push(T&& obj) {
             if constexpr (is_pod) {
                 _que->push(std::move(obj));
             }
             else {
                 _que->push(_alloc.Alloc(std::move(obj)));
             }
-            ++count;
+            return ++count;
         };
         bool try_pop(T& out) {
             if constexpr (is_pod) {
