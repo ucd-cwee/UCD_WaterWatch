@@ -143,6 +143,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ScriptLanguageTesting.cpp" />
+    <ClCompile Include="shared_ptr.cpp" />
     <ClCompile Include="Source.cpp" />
     <ClCompile Include="util.cpp" />
   </ItemGroup>
@@ -164,6 +165,7 @@
     <ClInclude Include="atomic_stack.h" />
     <ClInclude Include="atomic_vector.h" />
     <ClInclude Include="Parallel.h" />
+    <ClInclude Include="shared_ptr.h" />
     <ClInclude Include="strings.h" />
     <ClInclude Include="thread_object.h" />
     <ClInclude Include="ticket_dispensor.h" />

@@ -22,6 +22,8 @@
 
 
 #include "Parallel.h"
+#include "shared_ptr.h"
+
 
 #include "../FiberTasks/Concurrent_Queue.h"
 
@@ -533,6 +535,8 @@ int main() {
                 ++loc;
             });
         }
+#endif
+#if 0
         if (auto timer = sw.debug_timer("GL::atomic_double")) {
             GL::atomic_double d;
             EXPECT_EQ(0, d);
@@ -677,8 +681,47 @@ int main() {
 
 
 #endif
+#if 1
+        if (auto timer = sw.debug_timer("atomic_wait")) {
+            std::atomic<long> lock{ 0 };
+            std::thread temp_thread([&]() {
+                ::Sleep(1100);
+                lock.store(1);
+                GL::atomic_notify_one(&lock);
+            });
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                GL::stopwatch sw2;
+                sw2.reset();
+                GL::atomic_wait(&lock, 0l);
+                EXPECT_EQ(true, (sw.stop() > 1));
+            });
+            temp_thread.join();
+            
+
+            //std::atomic<size_t> prog{ 0 };
+            //GL::_Locked_pointer<long> ptr{ reinterpret_cast<long*>(1ull) };
+            //GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+            //    size_t p = reinterpret_cast<size_t>(ptr._Lock_and_load());
+            //    EXPECT_EQ(++prog, p++);
+            //    ptr._Store_and_unlock(reinterpret_cast<long*>(p));
+            //});
+            //EXPECT_EQ(1000000, reinterpret_cast<size_t>(ptr._Unsafe_load_relaxed()));
+        }
 
 
+
+
+
+
+        if (1) {
+            GL::atomic_shared_ptr<int> ptr;
+            auto* p = ptr.load();
+
+
+
+        }
+
+#endif
     }
     return 0;
 };

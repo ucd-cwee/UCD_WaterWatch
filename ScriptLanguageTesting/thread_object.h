@@ -1,8 +1,10 @@
 #pragma once
 
+#include <thread>
+#include <exception>
+#include <stdexcept>
 #include "atomic_vector.h"
 #include "util.h"
-#include <thread>
 
 // Atomic Thread-Local Objects
 namespace GL {
