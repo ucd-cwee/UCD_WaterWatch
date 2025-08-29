@@ -171,6 +171,7 @@
     <ClInclude Include="thread_object.h" />
     <ClInclude Include="ticket_dispensor.h" />
     <ClInclude Include="stopwatch.h" />
+    <ClInclude Include="types.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

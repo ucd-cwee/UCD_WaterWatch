@@ -48,10 +48,9 @@ namespace GL {
             wakeCondition.notify_one();
         };
     };
-
     void control_block_base::DeferredDeletion(control_block_base* to_delete) {
         static GL::atomic_parallel_stack< control_block_base* > _destruction_queue{};
-        struct t {
+        struct Wrap {
             static void DeleteFunc(void) {
                 control_block_base* out{ nullptr };
                 while (_destruction_queue.try_pop(out)) {
@@ -63,14 +62,12 @@ namespace GL {
                 }
             };
         };        
-        static Taskable<t::DeleteFunc> _destruction_thread{};
+        static Taskable<Wrap::DeleteFunc> _destruction_thread{};
         if (to_delete) {
             size_t before = to_delete->refCount.fetch_sub(1);
-            if (before == 1) {
-                if ((_destruction_queue.push(to_delete) & 255) == 0) {
+            if (before == 1)
+                if ((_destruction_queue.push(to_delete) & 255) == 0)
                     _destruction_thread.wake();
-                }
-            }
         }
     };
 };

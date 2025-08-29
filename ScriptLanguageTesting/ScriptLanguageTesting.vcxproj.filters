@@ -23,5 +23,6 @@
     <ClInclude Include="ticket_dispensor.h" />
     <ClInclude Include="stopwatch.h" />
     <ClInclude Include="util.h" />
+    <ClInclude Include="types.h" />
   </ItemGroup>
 </Project>

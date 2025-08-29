@@ -4,7 +4,7 @@
 #include <atomic>
 #include <memory>
 
-namespace GL {
+namespace /* atomic_shared_ptr */ GL {
     constexpr int MAGIC_LEN = 16;
     constexpr size_t MAGIC_MASK = 0x0000'0000'0000'FFFF;
     constexpr int CACHE_LINE_SIZE = 128;
@@ -27,8 +27,7 @@ namespace GL {
     };
 
     // specialized, derived class for control blocks with specialized types.
-    template<typename T>
-    struct alignas(CACHE_LINE_SIZE) control_block final : public control_block_base {
+    template<typename T> struct alignas(CACHE_LINE_SIZE) control_block final : public control_block_base {
         explicit control_block() = delete;
         explicit control_block(T* data) : control_block_base(static_cast<void*>(data)) {}
         virtual void Delete() override {
@@ -39,6 +38,8 @@ namespace GL {
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
     template<typename T> class shared_ptr {
         template<typename A> friend class shared_ptr;
+        template<typename A> friend class atomic_shared_ptr;
+
     public:
         shared_ptr() : controlBlock(nullptr) {}
         template<class U> explicit shared_ptr(U* data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(data))) {}
@@ -70,6 +71,11 @@ namespace GL {
                 control_block_base::DeferredDeletion(old);
             }
             return *this;
+        }        
+        shared_ptr& operator=(std::nullptr_t) {
+            control_block_base::DeferredDeletion(controlBlock);
+            controlBlock = nullptr;
+            return *this;
         }
         ~shared_ptr() {
             if (controlBlock) {
@@ -77,22 +83,25 @@ namespace GL {
             }
         };
 
-        T* get() const { return static_cast<T*>(controlBlock ? controlBlock->data : nullptr); }
-        T* operator->() const { return static_cast<T*>(controlBlock->data); }
+        T* get() const { 
+            return reinterpret_cast<T*>(controlBlock);  
+        }
+        T* operator->() const { 
+            return reinterpret_cast<T*>(controlBlock); 
+        }
         operator bool() const {
-            return (bool)(controlBlock ? controlBlock->data : nullptr);
+            return (bool)controlBlock; 
         };
 
-    protected:
-        template<typename A> friend class atomic_shared_ptr;
+    protected:        
         control_block_base* controlBlock;
     };
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. Read-only, and cannot be shared without the move operator. 
     template<typename T> class alignas(CACHE_LINE_SIZE) fast_shared_ptr {
+        template<typename A> friend class atomic_shared_ptr;
     public:
         fast_shared_ptr() : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {}
-        fast_shared_ptr(const fast_shared_ptr<T>&) = delete;
         fast_shared_ptr(fast_shared_ptr<T>&& other)
             : knownValue(other.knownValue)
             , foreignPackedPtr(other.foreignPackedPtr)
@@ -100,7 +109,6 @@ namespace GL {
         {
             other.foreignPackedPtr = nullptr;
         };
-        fast_shared_ptr& operator=(fast_shared_ptr<T> const&) = delete;
         fast_shared_ptr& operator=(fast_shared_ptr<T>&& other) {
             destroy();
             knownValue = other.knownValue;
@@ -109,6 +117,15 @@ namespace GL {
             other.foreignPackedPtr = nullptr;
             return *this;
         }
+        fast_shared_ptr(fast_shared_ptr<T> const&) = delete;
+        fast_shared_ptr& operator=(fast_shared_ptr<T> const&) = delete;
+        fast_shared_ptr& operator=(std::nullptr_t) {
+            destroy();
+            knownValue = 0;
+            foreignPackedPtr = nullptr;
+            data = nullptr;
+            return *this;
+        };
         ~fast_shared_ptr() {
             destroy();
         };
@@ -119,10 +136,8 @@ namespace GL {
             return (bool)(data);
         };
 
-    protected:
-        control_block_base* get_control_block() { return reinterpret_cast<control_block_base*>(knownValue >> MAGIC_LEN); }
-
     private:
+        control_block_base* get_control_block() { return reinterpret_cast<control_block_base*>(knownValue >> MAGIC_LEN); }
         void destroy() {
             if (foreignPackedPtr != nullptr) {
                 size_t expected = knownValue;
@@ -155,9 +170,7 @@ namespace GL {
 
         size_t knownValue;
         std::atomic<size_t>* foreignPackedPtr;
-        T* data;
-
-        template<typename A> friend class atomic_shared_ptr;
+        T* data;        
     };
 
     // lock-free, thread-safe version of std::atomic<shared_ptr>.
@@ -195,6 +208,10 @@ namespace GL {
         };
         atomic_shared_ptr& operator=(atomic_shared_ptr&& other) {
             store(other.get());
+            return *this;
+        };
+        atomic_shared_ptr& operator=(std::nullptr_t) {
+            store(nullptr);
             return *this;
         };
 
@@ -314,15 +331,43 @@ namespace GL {
         static_assert(sizeof(T*) == sizeof(size_t));
     };
 
+    template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...)); };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
     };
-
     template<typename To, typename From> static _NODISCARD shared_ptr<To> static_pointer_cast(shared_ptr<From> && from) {
         return shared_ptr<To>(from);
     };
 
 };
-
+namespace /* hash */ std {
+    template <typename T> struct hash<GL::shared_ptr<T>> {
+        std::size_t operator()(const GL::shared_ptr<T>& k) const {
+            static std::hash<T> hasher{};
+            if (auto* p = k.get()) {
+                return hasher(*p);
+            }
+            return 0;
+        };
+    };
+    template <typename T> struct hash<GL::fast_shared_ptr<T>> {
+        std::size_t operator()(const GL::fast_shared_ptr<T>& k) const {
+            static std::hash<T> hasher{};
+            if (auto* p = k.get()) {
+                return hasher(*p);
+            }
+            return 0;
+        };
+    };
+    template <typename T> struct hash<GL::atomic_shared_ptr<T>> {
+        std::size_t operator()(const GL::atomic_shared_ptr<T>& k) const {
+            static std::hash<GL::fast_shared_ptr<T>> hasher{};
+            if (auto p = k.get_fast()) {
+                return hasher(p);
+            }
+            return 0;
+        };
+    };
+};
 
 
