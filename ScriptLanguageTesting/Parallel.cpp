@@ -120,31 +120,31 @@ namespace GL {
 			void do_task(thread_task& task, impl::job_argument& args, size_t& sizeOfData, void*& data) {
 				if (task.task && !task.ctx->e) { // if another group threw an error, do not process this group at all.
 					args.group_id = task.group_id;
+					args.task_memory = task.task_memory;
 					// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
 					{
-						if (task.shared_memory_size > 0) {
-							if (sizeOfData < ((task.shared_memory_size + 15) & ~15)) {
+						if (task.group_memory_size > 0) {
+							if (sizeOfData < ((task.group_memory_size + 15) & ~15)) {
 								if (data) ::_aligned_free(data);
-								sizeOfData = (task.shared_memory_size + 15) & ~15;
+								sizeOfData = (task.group_memory_size + 15) & ~15;
 								data = ::_aligned_malloc(sizeOfData, 16);
 							}
 							::memset(data, 0, sizeOfData);
-							args.shared_memory = data;
+							args.group_memory = data;
 							if (task.group_start_job) {
-								task.group_start_job(args.shared_memory);
+								task.group_start_job(args.group_memory);
 							}
 						}
 						else {
-							args.shared_memory = nullptr;
+							args.group_memory = nullptr;
 						}
 					}
 
 					// Do Group Jobs Until Done or Error is Thrown
-					void* obj = (task.object_index > 0) ? impl::load_object(task.object_index) : nullptr;
 					for (size_t j = task.group_job_offset; !task.ctx->e && j < task.group_job_end; ++j) {
 						args.group_index = (args.job_index = j) - task.group_job_offset;
 						try {
-							task.task(args, obj);
+							task.task(args);
 						}
 						catch (...) {
 							task.ctx->catch_exception();
@@ -153,7 +153,7 @@ namespace GL {
 					}
 
 					// Deallocate Shared Group Memory
-					if (args.shared_memory && task.group_end_job) task.group_end_job(args.shared_memory);
+					if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
 				}
 				--task.ctx->counter;
 			};
@@ -168,6 +168,7 @@ namespace GL {
 					, 0 // groupID
 					, 0 // groupIndex
 					, nullptr // sharedmemory
+					, nullptr
 				};
 
 				auto*& consumer = *internal_state.consumer_tokens;
@@ -295,8 +296,8 @@ namespace GL {
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&, void*),
-				size_t object_index,
+				void (*Task)(job_argument const&),
+				void* task_memory,
 				size_t sharedmemory_size,
 				void (*group_start_job)(void* const&), // callback func with memory for type T
 			    void (*group_end_job)(void* const&) // callback func with memory for type T
@@ -329,6 +330,7 @@ namespace GL {
 						, 0 // groupID
 						, 0 // groupIndex
 						, nullptr // sharedmemory
+						, task_memory // task memory
 					};
 					auto*& consumer = *internal_state.consumer_tokens;
 					if (!consumer) consumer = new moodycamel::ConsumerToken(internal_state.jobQueue);
@@ -337,8 +339,8 @@ namespace GL {
 					task.task = Task;
 					task.group_end_job = group_end_job;
 					task.group_start_job = group_start_job;
-					task.shared_memory_size = sharedmemory_size;
-					task.object_index = object_index;
+					task.group_memory_size = sharedmemory_size;
+					task.task_memory = task_memory;
 					for (size_t groupID = 0; ; ++groupID) { // groupID < groupCount
 						// For each group, generate one real job:
 						auto groupJobOffset = groupID * groupSize;
@@ -367,7 +369,7 @@ namespace GL {
 						0, 0, 1, sharedmemory_size,
 						group_start_job,
 						group_end_job, 
-						object_index
+						task_memory
 						// std::hash<std::thread::id>{}(std::this_thread::get_id())
 				    }
 					, groupSize, jobCount);
@@ -377,10 +379,10 @@ namespace GL {
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&, void*),
-				size_t object_index
+				void (*Task)(job_argument const&),
+				void* task_memory
 			) noexcept {
-				Dispatch(ctx, jobCount, Task, object_index, 0, nullptr, nullptr);
+				Dispatch(ctx, jobCount, Task, task_memory, 0, nullptr, nullptr);
 			};
 
 			void Wait(dispatch_context& ctx) {
@@ -400,39 +402,6 @@ namespace GL {
 				ctx.try_rethrow_exception();
 #endif
 			};
-
-			// create shared vector of void* that the user gets slots into and is responsible for dealocating. 
-			static GL::ticket_dispensor object_cache_slots;
-			static GL::atomic_vector<void*> object_cache;
-
-			size_t insert_object(void* ptr) {
-				auto index = object_cache_slots.get_ticket();
-
-				//size_t next_pow_2 = index;
-				//next_pow_2--;
-				//next_pow_2 |= next_pow_2 >> 1;
-				//next_pow_2 |= next_pow_2 >> 2;
-				//next_pow_2 |= next_pow_2 >> 4;
-				//next_pow_2 |= next_pow_2 >> 8;
-				//next_pow_2 |= next_pow_2 >> 16;
-				//next_pow_2 |= next_pow_2 >> 32;
-				//next_pow_2++;
-
-				object_cache.grow_to_at_least(index + 1);
-				object_cache.at(index) = std::move(ptr);
-
-				return index;
-			};
-			void* load_object(size_t index) {
-				return object_cache.at(index);
-			};
-			void* get_and_withdraw_object(size_t index) {
-				auto* out = object_cache.at(index);
-				object_cache_slots.return_ticket(index);
-				return out;
-			};
-
-
 
 		}
 	}

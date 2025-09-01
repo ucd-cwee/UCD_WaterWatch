@@ -176,20 +176,22 @@ namespace GL {
 				long long 
 					group_index;	// job index relative to group (like SV_GroupIndex in HLSL)
 				void* 
-					shared_memory;		// stack memory shared within the current group (jobs within a group execute serially)
+					group_memory;		// stack memory shared within the current group (jobs within a group execute serially)
+				void*
+					task_memory;
 			};
 
 			// to be looped over by a single thread, and used to create individual job_arguments for execution. 
 			struct thread_task {
 				dispatch_context* ctx;
-				void (*task)(job_argument const&, void*);
+				void (*task)(job_argument const&);
 				size_t group_id;
 				size_t group_job_offset;
 				size_t group_job_end;
-				size_t shared_memory_size;
+				size_t group_memory_size;
 				void (*group_start_job)(void* const&); // callback func with memory for type T
 				void (*group_end_job)(void* const&); // callback func with memory for type T
-				size_t object_index;
+				void* task_memory;
 
 				// size_t submitting_thread;
 			};
@@ -203,8 +205,8 @@ namespace GL {
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&, void*),
-				size_t object_index,
+				void (*Task)(job_argument const&),
+				void* task_memory,
 				size_t sharedmemory_size,
 				void (*group_start_job)(void* const&), // callback func with memory for type T
 				void (*group_end_job)(void* const&) // callback func with memory for type T
@@ -212,14 +214,10 @@ namespace GL {
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&, void*),
-				size_t object_index
+				void (*Task)(job_argument const&),
+				void* task_memory
 			) noexcept;
 			void Wait(dispatch_context& ctx);
-						
-			size_t insert_object(void* ptr);
-			void* load_object(size_t);
-			void* get_and_withdraw_object(size_t);
 		}
 
 
@@ -255,22 +253,16 @@ namespace GL {
 				const F* _to_do;
 				iteratorType _start;
 
-				static void DoTask(impl::job_argument const& _args, void* object) {
-					IterData* data = reinterpret_cast<IterData*>(object);
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 					iteratorType t{ static_cast<iteratorType>(_args.job_index) + data->_start };
 					(*data->_to_do)(t);
 				};
-			};
-			IterData data{ &ToDo, start };
-			auto index = impl::insert_object(reinterpret_cast<void*>(&data));
+			} data { &ToDo, start };
 
 			impl::dispatch_context ctx{ 0, nullptr };
-			impl::Dispatch(ctx, end - start, &IterData::DoTask, index);
+			impl::Dispatch(ctx, end - start, &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
-			(void)impl::get_and_withdraw_object(index); // returns the pointer in case it needs to be deleted. 
-
-
-			// return Std_For(start, end, ToDo);
 		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
