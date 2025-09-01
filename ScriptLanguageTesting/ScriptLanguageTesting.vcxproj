@@ -143,6 +143,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="atomic_shared_ptr.cpp" />
+    <ClCompile Include="Parallel.cpp" />
     <ClCompile Include="ScriptLanguageTesting.cpp" />
     <ClCompile Include="shared_ptr.cpp" />
     <ClCompile Include="Source.cpp" />

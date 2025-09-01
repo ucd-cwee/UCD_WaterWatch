@@ -44,6 +44,18 @@ namespace /* atomic_shared_ptr */ GL {
         shared_ptr() : controlBlock(nullptr) {}
         template<class U> explicit shared_ptr(U* data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(data))) {}
         explicit shared_ptr(control_block_base* controlBlock, bool) : controlBlock(controlBlock) {}
+
+        shared_ptr(const shared_ptr<T>& other) {
+            controlBlock = other.controlBlock;
+            if (controlBlock != nullptr) {
+                controlBlock->refCount.fetch_add(1);
+            }
+        };
+        shared_ptr(shared_ptr<T>&& other) noexcept {
+            controlBlock = other.controlBlock;
+            other.controlBlock = nullptr;
+        };
+
         template<class U> shared_ptr(const shared_ptr<U>& other) {
             controlBlock = other.controlBlock;
             if (controlBlock != nullptr) {
@@ -89,6 +101,10 @@ namespace /* atomic_shared_ptr */ GL {
         T* operator->() const { 
             return reinterpret_cast<T*>(controlBlock); 
         }
+        template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
+        decltype(auto) operator*() const {
+            return *get();
+        };
         operator bool() const {
             return (bool)controlBlock; 
         };
@@ -132,6 +148,10 @@ namespace /* atomic_shared_ptr */ GL {
 
         T* get() { return data; }
         T* operator->() { return data; }
+        template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
+        decltype(auto) operator*() const {
+            return *get();
+        };
         operator bool() const {
             return (bool)(data);
         };
@@ -153,7 +173,7 @@ namespace /* atomic_shared_ptr */ GL {
         fast_shared_ptr(std::atomic<size_t>* packedPtr)
             : knownValue(packedPtr->fetch_add(1) + 1)
             , foreignPackedPtr(packedPtr)
-            , data(static_cast<T*>(get_control_block()->data))
+            , data(reinterpret_cast<T*>(get_control_block()))
         {
             auto block = get_control_block();
             int diff = knownValue & MAGIC_MASK;
@@ -203,16 +223,17 @@ namespace /* atomic_shared_ptr */ GL {
         atomic_shared_ptr(const atomic_shared_ptr& other) : atomic_shared_ptr(other.get()) {};
         atomic_shared_ptr(atomic_shared_ptr&& other) : atomic_shared_ptr(other.get()) {};
         atomic_shared_ptr& operator=(const atomic_shared_ptr& other) {
-            store(other.get());
+            auto p = other.load();
+            this->store(shared_ptr<T>(p));
             return *this;
         };
         atomic_shared_ptr& operator=(atomic_shared_ptr&& other) {
-            store(other.get());
+            auto p = other.load();
+            this->store(shared_ptr<T>(p));
             return *this;
         };
         atomic_shared_ptr& operator=(std::nullptr_t) {
-            store(nullptr);
-            return *this;
+            return operator=(atomic_shared_ptr());
         };
 
         // return a shared_ptr meant for accessing the value of the current ptr.

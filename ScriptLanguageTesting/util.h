@@ -34,6 +34,8 @@ namespace GL {
         size_t get_thread_id();
         // get the approximate count of milliseconds since the application launched. 
         long long get_current_epoch();
+        // return the number of threads on the current hardware. 
+        size_t get_hardware_thread_count();
 
         // 0..1
         double rand();

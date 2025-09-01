@@ -18,6 +18,7 @@
 #include "strings.h"
 #include "atomic_shared_ptr.h"
 
+#include "types.h"
 
 
 
@@ -48,8 +49,61 @@
 #pragma endregion
 
 int main() {
+    GL::parallel::For<size_t>(0, 1000, [](size_t) {});
     GL::stopwatch sw;
     while (true) {
+        for (size_t repeats = 10; repeats <= 1000000; repeats *= 10) {
+            print(repeats);
+            if (auto timer = sw.debug_timer("parallel::std alloc")) {
+                GL::atomic_shared_ptr<size_t> ptr; 
+                GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+                    ptr.store(GL::shared_ptr<size_t>(new size_t(i)));
+                    ptr = nullptr;
+                });
+            }
+            if (auto timer = sw.debug_timer("parallel::manual alloc")) {
+                GL::atomic_shared_ptr<size_t> ptr;
+                GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
+                    ptr.store(GL::shared_ptr<size_t>(new size_t(i)));
+                    ptr = nullptr;
+                });
+            }
+            if (auto timer = sw.debug_timer("parallel::std increment")) {
+                std::atomic<size_t> D{ 0 };
+                GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+                    ++D;
+                });
+            }
+            if (auto timer = sw.debug_timer("parallel::manual increment")) {
+                std::atomic<size_t> D{ 0 };
+                GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
+                    ++D;
+                });
+            }
+            if (auto timer = sw.debug_timer("parallel::std map")) {
+                concurrency::concurrent_unordered_map<size_t, size_t> map;
+                GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+                    map[i] = i;
+                });
+            }
+            if (auto timer = sw.debug_timer("parallel::manual map")) {
+                concurrency::concurrent_unordered_map<size_t, size_t> map;
+                GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
+                    map[i] = i;
+                });
+            }
+        }
+
+
+
+
+
+
+
+
+
+
+
 #if 0
         if (auto timer = sw.debug_timer(GL::string("queue"))) {
             GL::atomic_queue<size_t> queue;
@@ -616,6 +670,19 @@ int main() {
         }
 #endif
 
+        if (auto timer = sw.debug_timer("increment as individuals")) {
+            GL::thread_object<size_t> counter{ 0 };
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                ++*counter;
+            });
+        }
+        if (auto timer = sw.debug_timer("increment as atomic")) {
+            std::atomic<size_t> counter{ 0 };
+            GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
+                ++counter;
+            });
+        }
+
         // under low contention, the GL::atomic_shared_ptr using fast_shared_ptr is ~40% faster than a locked shared_ptr, even keeping pace with accessing a shared pointer without copying it. 
         // under moderate contention, this is still true, up to about 50 reads per value change
         // under extremely heavy contention (around 10 reads for every value change), the GL::atomic_shared_ptr is significantly bloated and results in significant slow-downs.
@@ -710,8 +777,45 @@ int main() {
             });
         }
 
+        auto& void_type = GL::type_of<void>();
+        EXPECT_EQ(void_type.base_hash, 0);
+        auto& int_type = GL::type_of<int>();
+        EXPECT_EQ(int_type.get_name(), "int");
+        auto& double_type = GL::type_of<double>();
+        EXPECT_EQ(double_type.get_name(), "double");
+        auto& float_type = GL::type_of<float>();
+        EXPECT_EQ(float_type.get_name(), "float");
+        auto& str_type = GL::type_of<GL::string>();
+        EXPECT_EQ(str_type.get_name(), "class GL::string");
 
+        (void)int_type.add_parent(GL::impl::base_type_ptr<float>());
+        EXPECT_EQ(false, float_type.add_parent(GL::impl::base_type_ptr<int>()));
+        EXPECT_EQ(true, float_type.is_parent_of(int_type));
+        EXPECT_EQ(true, int_type.can_cast(float_type));
+        EXPECT_EQ(false, float_type.can_cast(int_type));
+        EXPECT_EQ(true, float_type.is_base());
 
+        auto& const_float_type = GL::type_of<const float>();
+        EXPECT_EQ(float_type.base_hash, const_float_type.base_hash);
+        EXPECT_EQ(true, const_float_type.is_parent_of(int_type));
+        EXPECT_EQ(true, int_type.can_cast(const_float_type));
+        EXPECT_EQ(false, const_float_type.can_cast(int_type));
+        EXPECT_EQ(true, const_float_type.is_const());
+
+        auto& const_ref_float_type = GL::type_of<const float&>();
+        EXPECT_EQ(float_type.base_hash, const_ref_float_type.base_hash);
+        EXPECT_EQ(true, float_type.is_parent_of(const_ref_float_type));
+        EXPECT_EQ(true, const_ref_float_type.is_parent_of(int_type));
+        EXPECT_EQ(true, int_type.can_cast(const_ref_float_type));
+        EXPECT_EQ(false, const_ref_float_type.can_cast(int_type));
+        EXPECT_EQ(true, const_ref_float_type.is_const_ref());
+
+        auto const_float_type_2 = float_type | GL::type::Const;
+        EXPECT_EQ(float_type.base_hash, const_float_type_2.base_hash);
+        EXPECT_EQ(true, const_float_type_2.is_parent_of(int_type));
+        EXPECT_EQ(true, int_type.can_cast(const_float_type_2));
+        EXPECT_EQ(false, const_float_type_2.can_cast(int_type));
+        EXPECT_EQ(true, const_float_type_2.is_const());        
 
 #endif
 #if 0

@@ -7,7 +7,6 @@
 #include "aba_problem.h"
 #include "atomic_maps.h"
 
-
 namespace GL {    
     std::mutex* __atomic_mutexes();
     std::condition_variable* __atomic_conds();

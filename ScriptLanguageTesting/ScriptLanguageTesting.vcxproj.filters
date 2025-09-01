@@ -6,6 +6,7 @@
     <ClCompile Include="Source.cpp" />
     <ClCompile Include="util.cpp" />
     <ClCompile Include="atomic_shared_ptr.cpp" />
+    <ClCompile Include="Parallel.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aba_problem.h" />
