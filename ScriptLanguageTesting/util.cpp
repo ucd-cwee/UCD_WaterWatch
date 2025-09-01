@@ -55,8 +55,8 @@ namespace GL {
          * debugging, and should not be used to derive the template argument
          */
         size_t get_hardware_thread_count() {
-            return ::__std_parallel_algorithms_hw_threads();
-            // return std::thread::hardware_concurrency();
+            // return ::__std_parallel_algorithms_hw_threads();
+            return std::thread::hardware_concurrency();
         }
 
 

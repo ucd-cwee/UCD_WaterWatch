@@ -264,24 +264,201 @@ namespace GL {
 			impl::Dispatch(ctx, end - start, &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
-
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
-			return Std_For(start, end, step, ToDo);
+			struct IterData {
+				const F* _to_do;
+				iteratorType _start;
+				iteratorType _step;
+
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					iteratorType t{ (static_cast<iteratorType>(_args.job_index) * data->_step) + data->_start };
+					(*data->_to_do)(t);
+				};
+			} data{ &ToDo, start, step };
+
+			impl::dispatch_context ctx{ 0, nullptr };
+			impl::Dispatch(ctx, (end - start) / step, &IterData::DoTask, reinterpret_cast<void*>(&data));
+			impl::Wait(ctx);
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) ForEach(containerType& container, F const& ToDo) {
-			return Std_For(container, ToDo);
-		};
+		template<typename containerType, typename F> decltype(auto) For_Each(containerType& container, F const& ToDo) {
+			auto begin = container.begin();
+			auto end = container.end();
+			using iterType = decltype(begin);
 
+			struct IterData {
+				const F* _to_do;
+				iterType _begin;
+
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					iterType& iter = *static_cast<iterType*>(_args.group_memory);
+					if (_args.group_index == 0) {
+						// start of a group, so help it
+						new (&iter) iterType{ data->_begin };						
+						std::advance(iter, _args.job_index);
+					}
+					else {
+						// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
+						std::advance(iter, 1);
+					}
+					// user-defined task
+					(*data->_to_do)(*iter);
+				};
+				static void GroupStart(void* const&) {
+					// do nothing
+				};
+				static void GroupEnd(void* const& p) {
+					// delete
+					((iterType*)p)->~iterType();
+				};
+			} data{ &ToDo, begin };
+
+			impl::dispatch_context ctx{ 0, nullptr };
+			impl::Dispatch(
+				ctx, 
+				std::distance(begin, end),
+				&IterData::DoTask, 
+				reinterpret_cast<void*>(&data), 
+				sizeof(iterType),
+				&IterData::GroupStart,
+				&IterData::GroupEnd
+			);
+			impl::Wait(ctx);
+		};
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) ForEach(containerType const& container, F const& ToDo) {
-			return Std_For(container, ToDo);
+		template<typename containerType, typename F> decltype(auto) For_Each(containerType const& container, F const& ToDo) {
+			auto begin = container.begin();
+			auto end = container.end();
+			using iterType = decltype(begin);
+
+			struct IterData {
+				const F* _to_do;
+				iterType _begin;
+
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					iterType& iter = *static_cast<iterType*>(_args.group_memory);
+					if (_args.group_index == 0) {
+						// start of a group, so help it
+						new (&iter) iterType{ data->_begin };
+						std::advance(iter, _args.job_index);
+					}
+					else {
+						// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
+						std::advance(iter, 1);
+					}
+					// user-defined task
+					(*data->_to_do)(*iter);
+				};
+				static void GroupStart(void* const&) {
+					// do nothing
+				};
+				static void GroupEnd(void* const& p) {
+					// delete
+					((iterType*)p)->~iterType();
+				};
+			} data{ &ToDo, begin };
+
+			impl::dispatch_context ctx{ 0, nullptr };
+			impl::Dispatch(
+				ctx,
+				std::distance(begin, end),
+				&IterData::DoTask,
+				reinterpret_cast<void*>(&data),
+				sizeof(iterType),
+				&IterData::GroupStart,
+				&IterData::GroupEnd
+			);
+			impl::Wait(ctx);
 		};
+
+		/* while (WhileBoolean()) { Do(); } */
+		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
+			struct WhileException : public std::exception {};
+			int num_thread_jobs = 1024;
+			while (WhileBoolean()) {
+				try {
+					For(0, num_thread_jobs, [&](int i) {
+						if (WhileBoolean()) Do();
+						else throw WhileException{};
+				    });
+				}
+				catch (WhileException const&) {
+					break;
+				}
+				num_thread_jobs = num_thread_jobs << 2; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
+			}
+		};
+		/* while (true){ Do(); if (Until()){ return; } } */
+		template<typename F, typename G> decltype(auto) Until(F const& Do, G const& UntilBoolean) {
+			struct UntilException : public std::exception {};
+			int num_thread_jobs = 1024;
+			while (true) {
+				try {
+					For(0, num_thread_jobs, [&](int i) {
+						Do();
+						if (UntilBoolean()) throw UntilException{};
+				    });
+				}
+				catch (UntilException const&) {
+					break;
+				}
+				if (UntilBoolean()) break;
+				num_thread_jobs = num_thread_jobs << 2; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
+			}
+		};
+
+		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
+		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
+			F out{ std::forward<F>(SharedObject) };
+			struct IterData {
+				const G* _to_do;
+				F* _obj;
+
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					(*data->_to_do)(_args.job_index, *data->_obj);
+				};
+			} data{ &ToDo, &out };
+			impl::dispatch_context ctx{ 0, nullptr };
+			impl::Dispatch(
+				ctx,
+				numToDispatch,
+				&IterData::DoTask,
+				reinterpret_cast<void*>(&data)
+			);
+			impl::Wait(ctx);
+			return out;
+		};
+		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
+		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F& SharedObject, G const& ToDo) {
+			struct IterData {
+				const G* _to_do;
+				F* _obj;
+
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					(*data->_to_do)(_args.job_index, *data->_obj);
+				};
+			} data{ &ToDo, &SharedObject };
+			impl::dispatch_context ctx{ 0, nullptr };
+			impl::Dispatch(
+				ctx,
+				numToDispatch,
+				&IterData::DoTask,
+				reinterpret_cast<void*>(&data)
+			);
+			impl::Wait(ctx);
+			return SharedObject;
+		};
+
 
 
 

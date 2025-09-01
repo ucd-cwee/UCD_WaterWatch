@@ -49,18 +49,25 @@
 #pragma endregion
 
 int main() {
-    GL::parallel::For<size_t>(0, 1000, [](size_t) {});
+    // GL::parallel::For<size_t>(0, 1000, [](size_t) {});
     GL::stopwatch sw;
     while (true) {
+#if 1
         for (size_t repeats = 10; repeats <= 1000000; repeats *= 10) {
             print(repeats);
-            if (auto timer = sw.debug_timer("parallel::std alloc")) {
-                GL::atomic_shared_ptr<size_t> ptr; 
-                GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
-                    ptr.store(GL::shared_ptr<size_t>(new size_t(i)));
-                    ptr = nullptr;
-                });
-            }
+
+            GL::atomic_double result = GL::parallel::Dispatch(repeats, GL::atomic_double{ 0 }, [](size_t pos, GL::atomic_double& D) {
+                ++D;
+            });
+            EXPECT_EQ((size_t)result.load(), repeats);
+
+            //if (auto timer = sw.debug_timer("parallel::std alloc")) {
+            //    GL::atomic_shared_ptr<size_t> ptr; 
+            //    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+            //        ptr.store(GL::shared_ptr<size_t>(new size_t(i)));
+            //        ptr = nullptr;
+            //    });
+            //}
             if (auto timer = sw.debug_timer("parallel::manual alloc")) {
                 GL::atomic_shared_ptr<size_t> ptr;
                 GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
@@ -68,32 +75,51 @@ int main() {
                     ptr = nullptr;
                 });
             }
-            if (auto timer = sw.debug_timer("parallel::std increment")) {
-                std::atomic<size_t> D{ 0 };
-                GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
-                    ++D;
-                });
-            }
+            //if (auto timer = sw.debug_timer("parallel::std increment")) {
+            //    std::atomic<size_t> D{ 0 };
+            //    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+            //        ++D;
+            //    });
+            //}
             if (auto timer = sw.debug_timer("parallel::manual increment")) {
                 std::atomic<size_t> D{ 0 };
                 GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
                     ++D;
                 });
             }
-            if (auto timer = sw.debug_timer("parallel::std map")) {
-                concurrency::concurrent_unordered_map<size_t, size_t> map;
-                GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
-                    map[i] = i;
-                });
-            }
+            //if (auto timer = sw.debug_timer("parallel::std map")) {
+            //    concurrency::concurrent_unordered_map<size_t, size_t> map;
+            //    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+            //        map[i] = i;
+            //    });
+            //}
             if (auto timer = sw.debug_timer("parallel::manual map")) {
                 concurrency::concurrent_unordered_map<size_t, size_t> map;
                 GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
                     map[i] = i;
                 });
             }
-        }
 
+
+
+            //if (auto timer = sw.debug_timer("parallel::std ForEach")) {
+            //    std::vector<size_t*> vec(1000000, nullptr);
+            //    GL::parallel::Std_ForEach(vec, [](size_t*& p) {
+            //        p = reinterpret_cast<size_t*>(100);
+            //    });
+            //}
+            if (1) {
+                std::vector<size_t*> vec(repeats, nullptr);
+                if (auto timer = sw.debug_timer("parallel::manual ForEach")) {
+                    GL::parallel::For_Each(vec, [](size_t*& p) {
+                        p = reinterpret_cast<size_t*>(100);
+                    });
+                }
+            }
+
+
+        }
+#endif
 
 
 

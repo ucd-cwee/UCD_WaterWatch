@@ -59,10 +59,6 @@ typedef void* HMODULE;
 namespace GL {
 	namespace parallel {
 		namespace impl {
-
-
-
-
 			struct InternalState {
 				enum alive_state {
 					is_dead = 0,
@@ -201,15 +197,17 @@ namespace GL {
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
 				// submit groups evenly into the thread pool:
+				std::vector<thread_task> jobs;
+				jobs.reserve(1 + (jobCount / groupSize));
 				for (size_t groupID = 0; ; ++groupID) { // groupID < groupCount
 					// For each group, generate one real job:
 					job.group_id = groupID;
 					job.group_job_offset = groupID * groupSize;
 					job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
 					if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.				
-					internal_state.jobQueue.push(job);
+					jobs.push_back(job);					
 				}
-				// wake any threads that might be sleeping:
+				internal_state.jobQueue.push_bulk(jobs.begin(), jobs.size());
 				internal_state.wakeCondition.notify_all();
 			};
 
