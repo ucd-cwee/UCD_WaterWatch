@@ -51,10 +51,12 @@
 typedef void* HMODULE;
 #endif // _WIN32
 
-
+#include "util.h"
 #include "atomic_allocator.h"
 #include "ticket_dispensor.h"
 #include "atomic_vector.h"
+#include "atomic_stack.h"
+#include "atomic_queue.h"
 
 namespace GL {
 	namespace parallel {
@@ -66,16 +68,13 @@ namespace GL {
 					is_alive = 2,
 					is_debooting = 3
 				};
-
 				size_t numCores = 0;
 				size_t numThreads = 0;
 
-				GL::thread_object_no_default< moodycamel::ConsumerToken* > consumer_tokens;
-				moodycamel::ConcurrentQueue<thread_task> jobQueue;
+				// GL::aba_problem::stack< thread_task > jobQueue;
+				GL::atomic_parallel_queue< thread_task > jobQueue;
 
 				std::atomic<alive_state> alive{ is_dead };
-
-
 				std::condition_variable wakeCondition;
 				std::mutex wakeMutex;
 
@@ -95,7 +94,7 @@ namespace GL {
 						}
 						wake_loop = false;
 						waker.join();
-						consumer_tokens.for_each([](auto* p) { if (p) delete p; });
+						//consumer_tokens.for_each([](auto* p) { if (p) delete p; });
 						threads.clear();
 
 						alive = is_dead;
@@ -106,12 +105,11 @@ namespace GL {
 				};
 			} static internal_state;
 
-			bool try_get_job(moodycamel::ConcurrentQueue<thread_task>& queue, moodycamel::ConsumerToken* token, thread_task& job) {
-				if (token) return queue.try_pop(*token, job);
-				else return queue.try_pop(job);
+			bool try_get_job(decltype(InternalState::jobQueue)& queue, thread_task& job) {
+				return queue.try_pop(job);
 			};
-			void submit_job(moodycamel::ConcurrentQueue<thread_task>& queue, moodycamel::ProducerToken& token, thread_task& job) {
-				queue.push(token, job);
+			void submit_job(decltype(InternalState::jobQueue)& queue, thread_task& job) {
+				queue.push(job);
 			};
 			void do_task(thread_task& task, impl::job_argument& args, size_t& sizeOfData, void*& data) {
 				if (task.task && !task.ctx->e) { // if another group threw an error, do not process this group at all.
@@ -167,13 +165,13 @@ namespace GL {
 					, nullptr
 				};
 
-				auto*& consumer = *internal_state.consumer_tokens;
-				if (!consumer) consumer = new moodycamel::ConsumerToken(internal_state.jobQueue);
+				//auto*& consumer = *internal_state.consumer_tokens;
+				//if (!consumer) consumer = new moodycamel::ConsumerToken(internal_state.jobQueue);
 
 				if (parentCtx) {
 					// work until this job is completed
 					while (parentCtx->is_busy()) {
-						if (try_get_job(internal_state.jobQueue, consumer, task)) {
+						if (try_get_job(internal_state.jobQueue, task)) {
 							do_task(task, args, sizeOfData, data);
 						}
 					}
@@ -183,7 +181,7 @@ namespace GL {
 					// work until there are no jobs left
 					long long last_job_time{ GL::util::get_current_epoch() };
 					while (true) {
-						while (try_get_job(internal_state.jobQueue, consumer, task)) {							
+						while (try_get_job(internal_state.jobQueue, task)) {							
 							do_task(task, args, sizeOfData, data);
 							last_job_time = GL::util::get_current_epoch();
 						}
@@ -197,17 +195,14 @@ namespace GL {
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
 				// submit groups evenly into the thread pool:
-				std::vector<thread_task> jobs;
-				jobs.reserve(1 + (jobCount / groupSize));
 				for (size_t groupID = 0; ; ++groupID) { // groupID < groupCount
 					// For each group, generate one real job:
 					job.group_id = groupID;
 					job.group_job_offset = groupID * groupSize;
 					job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
 					if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.				
-					jobs.push_back(job);					
+					internal_state.jobQueue.push(job);
 				}
-				internal_state.jobQueue.push_bulk(jobs.begin(), jobs.size());
 				internal_state.wakeCondition.notify_all();
 			};
 
@@ -228,11 +223,7 @@ namespace GL {
 							internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 							internal_state.threads[threadID].thread_index = GL::util::get_thread_id();
 
-							auto*& consumer = *internal_state.consumer_tokens;
-							if (!consumer) consumer = new moodycamel::ConsumerToken(internal_state.jobQueue);
-
 							while (internal_state.alive == InternalState::alive_state::is_booting) {} // wait until we stop booting... 
-
 							while (internal_state.alive == InternalState::alive_state::is_alive) {
 								work(); // Work until no more jobs are found		
 								auto lock{ std::unique_lock(internal_state.wakeMutex) };
@@ -318,7 +309,7 @@ namespace GL {
 				// context state is updated to its maximum:
 				ctx.counter += groupCount;
 
-				if ((wait_depth > 0) && (groupCount <= 1)) {
+				if ((wait_depth > 0) || (groupCount <= 1)) {
 					// do the work directly:
 					void* data{ nullptr };
 					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
@@ -330,8 +321,6 @@ namespace GL {
 						, nullptr // sharedmemory
 						, task_memory // task memory
 					};
-					auto*& consumer = *internal_state.consumer_tokens;
-					if (!consumer) consumer = new moodycamel::ConsumerToken(internal_state.jobQueue);
 
 					task.ctx = &ctx;
 					task.task = Task;
@@ -354,7 +343,7 @@ namespace GL {
 
 					// work until this job is completed
 					while (ctx.is_busy()) {
-						if (try_get_job(internal_state.jobQueue, consumer, task)) {
+						if (try_get_job(internal_state.jobQueue, task)) {
 							do_task(task, args, sizeOfData, data);
 						}
 					}
@@ -380,8 +369,145 @@ namespace GL {
 				void (*Task)(job_argument const&),
 				void* task_memory
 			) noexcept {
-				Dispatch(ctx, jobCount, Task, task_memory, 0, nullptr, nullptr);
+				if (jobCount == 0) { return; }
+				initialize_if_necessary();
+
+				// if a job dispatch is within an existing job, groupCount needs to narrow down to prevent overflow.
+				size_t groupCount = std::min(internal_state.numThreads * 32, static_cast<size_t>(jobCount));
+				switch (wait_depth) {
+				case 0: break; // internal_state.numThreads << 3; break;
+					//case 1: groupCount = internal_state.numThreads << 0; break;
+					//default: groupCount = internal_state.numThreads >> wait_depth; break;
+				default: groupCount = 1; break;
+				}
+				// groupCount = std::max<size_t>(1, std::min<size_t>(jobCount, groupCount));
+				size_t groupSize = jobCount / groupCount;
+				while ((size_t)(groupCount * groupSize) < jobCount) groupCount++;
+
+				// context state is updated to its maximum:
+				ctx.counter += groupCount;
+
+				if ((wait_depth > 0) || (groupCount <= 1)) {
+					// do the work directly:
+					void* data{ nullptr };
+					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
+					thread_task task;
+					impl::job_argument args{
+						0 // jobIndex
+						, 0 // groupID
+						, 0 // groupIndex
+						, nullptr // sharedmemory
+						, task_memory // task memory
+					};
+
+					task.ctx = &ctx;
+					task.task = Task;
+					task.group_end_job = nullptr;
+					task.group_start_job = nullptr;
+					task.group_memory_size = 0;
+					task.task_memory = task_memory;
+					for (size_t groupID = 0; ; ++groupID) { // groupID < groupCount
+						// For each group, generate one real job:
+						auto groupJobOffset = groupID * groupSize;
+						auto groupJobEnd = std::min<size_t>(groupJobOffset + groupSize, jobCount);
+						if (groupJobOffset >= groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+
+						task.group_id = groupID;
+						task.group_job_offset = groupJobOffset;
+						task.group_job_end = groupJobEnd;
+
+						do_task(task, args, sizeOfData, data);
+					}
+
+					// work until this job is completed
+					while (ctx.is_busy()) {
+						if (try_get_job(internal_state.jobQueue, task)) {
+							do_task(task, args, sizeOfData, data);
+						}
+					}
+
+					if (sizeOfData > 0) ::_aligned_free(data);
+				}
+				else {
+					DoDispatch(thread_task{
+						&ctx, Task,
+						0, 0, 1, 0,
+						nullptr,
+						nullptr,
+						task_memory
+						// std::hash<std::thread::id>{}(std::this_thread::get_id())
+					}
+					, groupSize, jobCount);
+				}
 			};
+
+			void DispatchOnce(
+				dispatch_context& ctx,
+				void (*Task)(job_argument const&),
+				void* task_memory
+			) noexcept {
+				initialize_if_necessary();
+
+				// if a job dispatch is within an existing job, groupCount needs to narrow down to prevent overflow.
+				constexpr size_t groupCount = 1;
+				constexpr size_t groupSize = 1;
+				// context state is updated to its maximum:
+				ctx.counter += groupCount;
+
+				if (wait_depth > 0) {
+					// do the work directly:
+					void* data{ nullptr };
+					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
+					thread_task task;
+					impl::job_argument args{
+						0 // jobIndex
+						, 0 // groupID
+						, 0 // groupIndex
+						, nullptr // sharedmemory
+						, task_memory // task memory
+					};
+
+					task.ctx = &ctx;
+					task.task = Task;
+					task.group_end_job = nullptr;
+					task.group_start_job = nullptr;
+					task.group_memory_size = 0;
+					task.task_memory = task_memory;
+					for (size_t groupID = 0; ; ++groupID) { // groupID < groupCount
+						// For each group, generate one real job:
+						auto groupJobOffset = groupID * groupSize;
+						auto groupJobEnd = std::min<size_t>(groupJobOffset + groupSize, 1);
+						if (groupJobOffset >= groupJobEnd) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+
+						task.group_id = groupID;
+						task.group_job_offset = groupJobOffset;
+						task.group_job_end = groupJobEnd;
+
+						do_task(task, args, sizeOfData, data);
+					}
+
+					// work until this job is completed
+					while (ctx.is_busy()) {
+						if (try_get_job(internal_state.jobQueue, task)) {
+							do_task(task, args, sizeOfData, data);
+						}
+					}
+
+					if (sizeOfData > 0) ::_aligned_free(data);
+				}
+				else {
+					DoDispatch(thread_task{
+						&ctx, Task,
+						0, 0, 1, 0,
+						nullptr,
+						nullptr,
+						task_memory
+						// std::hash<std::thread::id>{}(std::this_thread::get_id())
+						}
+					, groupSize, 1);
+				}
+			};
+
 
 			void Wait(dispatch_context& ctx) {
 				++wait_depth; // allows detection of when job dispatch may be from within an existing job

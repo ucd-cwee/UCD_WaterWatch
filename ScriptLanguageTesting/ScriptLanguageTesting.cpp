@@ -49,9 +49,53 @@
 #pragma endregion
 
 int main() {
-    // GL::parallel::For<size_t>(0, 1000, [](size_t) {});
     GL::stopwatch sw;
     while (true) {
+
+
+        print(GL::builtin_type_info::get_builtin_type_info<void>().name);
+        print(GL::builtin_type_info::get_builtin_type_info<int>().name);
+        print(GL::builtin_type_info::get_builtin_type_info<double>().name);
+        print(GL::builtin_type_info::get_builtin_type_info<float>().name);
+
+        GL::builtin_type_info::declare_cpp_derived<long, int>();
+        EXPECT_EQ(true, GL::builtin_type_info::get_builtin_type_info<int>().is_derived_from(GL::builtin_type_info::get_builtin_type_info<long>().base_hash));
+        EXPECT_EQ(true, GL::builtin_type_info::get_builtin_type_info<long>().is_base_of(GL::builtin_type_info::get_builtin_type_info<int>().base_hash));
+        if (1) {
+            GL::type_info ti = GL::type_info_of<std::string>();
+            EXPECT_EQ(false, ti.is_const());
+            EXPECT_EQ(false, ti.is_ref());
+            EXPECT_EQ(false, ti.is_temp());
+            ti.set_qualifiers(GL::type_info::Qualifiers::Const);
+            EXPECT_EQ(true, ti.is_const());
+            EXPECT_EQ(false, ti.is_ref());
+            EXPECT_EQ(false, ti.is_temp());
+            EXPECT_EQ(ti.get_qualifiers(), GL::type_info::Qualifiers::Const);
+            print(ti.name());
+        }
+        if (1) {
+            GL::type_info ti;
+            EXPECT_EQ(ti.get_qualifiers(), 0);
+            print(ti.name());
+        }
+        if (1) {
+            GL::type_info ti = GL::type_info_of<void>();
+            EXPECT_EQ(ti.get_qualifiers(), 0);
+            print(ti.name());
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
 #if 1
         for (size_t repeats = 10; repeats <= 1000000; repeats *= 10) {
             print(repeats);
@@ -60,6 +104,27 @@ int main() {
                 ++D;
             });
             EXPECT_EQ((size_t)result.load(), repeats);
+
+            if (1) {
+                std::vector<std::string> calcs(repeats, "");
+                if (auto timer = sw.debug_timer("parallel::std single-threaded calculations")) {                    
+                    GL::parallel::Std_For(0ull, repeats, [&](size_t const& index) {
+                        calcs[index] = std::to_string(index);
+                    });
+                };
+                if (auto timer = sw.debug_timer("parallel::manual single-threaded calculations")) {
+                    GL::parallel::For(0ull, repeats, [&](size_t const& index) {
+                        calcs[index] = std::to_string(index);
+                    });
+                };
+                if (auto timer = sw.debug_timer("single-threaded single-threaded calculations")) {
+                    size_t index = 0ull;
+                    for (; index < repeats; ) {
+                        calcs[index] = std::to_string(index);
+                        ++index;
+                    };
+                };
+            }
 
             //if (auto timer = sw.debug_timer("parallel::std alloc")) {
             //    GL::atomic_shared_ptr<size_t> ptr; 
