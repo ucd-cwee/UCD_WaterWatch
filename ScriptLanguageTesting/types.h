@@ -16,18 +16,18 @@ namespace GL {
         };
     };
 
-    namespace builtin_type_info {
-        class cpp_builtin_type_info {
+    namespace impl {
+        class cached_type {
         public:
             constexpr static size_t MAGIC_MASK1 = 0xF000'0000'0000'0000;
-            constexpr static size_t MAGIC_MASK2 = 0x0FFF'FFFF'FFFF'FFFF;
+            constexpr static size_t MAGIC_MASK2 = ~MAGIC_MASK1;
 
             GL::string // underlying name for this type
-                name{ "" };
+                name{ "void" };
             std::set<size_t> // hashes to the underlying base classes to this type
                 base_classes{};
             size_t // without const, ref, etc. 
-                base_hash{ 0 }; 
+                base_hash{ 0 };
 
             // returns true if this is found to be a child of the parent type (id'd by its base hash) 
             bool is_derived_from(size_t base) const;
@@ -39,27 +39,32 @@ namespace GL {
             bool match_base_hash(size_t to_match) const;
 
             //bool is_any() const noexcept { return modifiers & Modifiers::Any; };
-            bool is_void() const noexcept { 
+            bool is_void() const noexcept {
                 static size_t void_type{ util::type_id<void>().hash_code() & MAGIC_MASK2 };
                 return void_type == this->base_hash;
             };
             // bool is_value() const noexcept { return modifiers & Modifiers::ValueType; };
 
         };
-        // get the cached, built-in cpp type info based on the boost::type_info hash
-        cpp_builtin_type_info& get_builtin_type_info(size_t hash);
+
+        // get the unique hash for this scripted type and perform set-up. This hash will always point this object until the "return" is called. 
+        size_t checkout_scripted_type(GL::string type_name);
+        // unloads the scripted type and allows the index (or hash) to be re-used. 
+        void return_scripted_type(size_t ticket);
+        // get the cached, scripted type info based on the ticketed hash. Must have been previously "checked out" otherwise may perform an out-of-bounds index call. 
+        cached_type& get_scripted_type(size_t hash);
+
+        // get the cached, built-in cpp type info based on the boost::type hash
+        cached_type& get_impl(size_t hash);
         // get the cached, built-in cpp type info
-        template <typename T> cpp_builtin_type_info& get_builtin_type_info() {
+        template <typename T> cached_type& get_impl() {
             using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
             static auto const& this_type{ util::type_id<BaseType>() };
 
-            auto hash = this_type.hash_code() & cpp_builtin_type_info::MAGIC_MASK2;
-            auto& out = get_builtin_type_info(hash);
+            auto hash = this_type.hash_code() & cached_type::MAGIC_MASK2;
+            auto& out = get_impl(hash);
             if (out.base_hash == 0) {
                 if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out.base_hash), hash, 0) == 0) {
-                    //auto n = GL::string(std::string_view(this_type.name()));
-                    //auto n2 = n.remove_leading_and_trailing(':');                    
-                    //out.name = n2.remove_suffix(" __cdecl(void)");
                     out.name = GL::string(std::string_view(this_type.name())).remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)");
                 }
             }
@@ -67,8 +72,8 @@ namespace GL {
         };
         // declare and cache the relationship between these two types. 
         template <typename Base, typename Derived> void declare_cpp_derived() {
-            static auto& base{ get_builtin_type_info<Base>() };
-            static auto& derived{ get_builtin_type_info<Derived>() };
+            static auto& base{ get_impl<Base>() };
+            static auto& derived{ get_impl<Derived>() };
 
             if constexpr (std::is_base_of_v<Base, Derived>) {
                 derived.add_base(base.base_hash);
@@ -77,236 +82,112 @@ namespace GL {
                 base.add_base(derived.base_hash);
             }
         };
-
     };
 
-    class type_info {
-    protected:
-        // combination of the base hash and the qualifiers. Limited to four qualifier types with the current magic mask set-up. 
-        size_t hash{ util::type_id<void>().hash_code() & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK2 }; // e.g. int, long, std::string
-
+    class type {
     public:
         // these qualifiers explicitly change the type from the base. 
         enum Qualifiers {
-              Const = 1
-            , Reference = 2
-            , Temporary = 4
-            // , TBD = 8 // one additional qualifier is supported but not used at this time. 
+              Const = 1 // tag as a const object, e.g: const std::string
+            , Reference = 2 // tag as a reference to an object, e.g: std::string&
+            , Temporary = 4 // tag as a temporary object, e.g: std::string&&
+            , CppType = 8 // Distinguishes whether this is a scripted type or built-in C++ type. The look-up for the cached info changes depending on this value. 
         };
 
-        type_info() = default;
-        explicit type_info(size_t _hash) : hash(_hash) {};
-        type_info(type_info const&) = default;
-        type_info(type_info &&) = default;
-        type_info& operator=(type_info const& rhs) {
+    protected:
+        // combination of the base hash and the qualifiers. Limited to four qualifier types with the current magic mask set-up. 
+        size_t hash{ 
+            (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | 0x8000000000000000
+        }; // e.g. int, long, std::string, or a (registered) scripted type
+
+    public:
+        type() = default;
+        explicit type(size_t _hash) : hash(_hash) {};
+        type(type const&) = default;
+        type(type &&) = default;
+        type& operator=(type const& rhs) {
             InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
             return *this;
         };
-        type_info& operator=(type_info && rhs) noexcept {
+        type& operator=(type && rhs) noexcept {
             InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
             return *this;
         };
-        ~type_info() = default;
+        ~type() = default;
 
         // removes the qualifiers and returns only the base hash value
         size_t get_base_hash() const {
-            return hash & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK2;
+            return hash & impl::cached_type::MAGIC_MASK2;
         };
         // returns the qualifiers attached to this hash, shifted to easily compare with the Qualifiers enum directly. 
         size_t get_qualifiers() const {
-            return (hash & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK1) >> 60;
+            return (hash & impl::cached_type::MAGIC_MASK1) >> 60;
         };
-        // atomicly swaps this type_info with a new hash and qualifier(s)
+        // atomicly swaps this type with a new hash and qualifier(s)
         void set_qualifiers(size_t qualifiers) {
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK2) | ((qualifiers << 60) & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK1));
+            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 60) & impl::cached_type::MAGIC_MASK1));
         };
 
         bool is_temp() const noexcept { return hash & 0x4000000000000000; };
         bool is_const() const noexcept { return is_temp() ? false : hash & 0x1000000000000000; };
         bool is_ref() const noexcept { return is_temp() ? false : hash & 0x2000000000000000; };
         bool is_const_ref() const noexcept { return is_temp() ? false : hash & 0x3000000000000000; };
-        bool is_base() const noexcept {  return hash & 0xF000000000000000; };
-        bool is_void() const noexcept { return get_base_hash() == (util::type_id<void>().hash_code() & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK2); };
+        bool is_base() const noexcept {  return 0 == (hash & ~0x8FFFFFFFFFFFFFFF); };
+        bool is_void() const noexcept { return get_base_hash() == (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2); };
+        bool is_cpp_type() const noexcept { return hash & 0x8000000000000000; };
+        // returns true if this is found to be a child of the parent type (id'd by its base hash) 
+        bool is_derived_from(type const& base) const;
+        // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
+        bool is_base_of(type const& derived) const;
+        // attempts to include the specified hash as a base of this class.
+        bool add_base(type const& base);
+        bool match_base_hash(type const& to_match) const;
+
         GL::string name() const; 
 
-        //// Operators
-        friend bool operator==(const type_info& a, const type_info& b) noexcept { return a.hash == b.hash; };
-        friend bool operator!=(const type_info& a, const type_info& b) noexcept { return a.hash != b.hash; };
-        friend bool operator<(const type_info& a, const type_info& b) noexcept { return a.hash < b.hash; };
-        friend bool operator<=(const type_info& a, const type_info& b) noexcept { return a.hash <= b.hash; };
-        friend bool operator>(const type_info& a, const type_info& b) noexcept { return a.hash > b.hash; };
-        friend bool operator>=(const type_info& a, const type_info& b) noexcept { return a.hash >= b.hash; };
-
+        // Operators
+        friend bool operator==(const type& a, const type& b) noexcept { return a.hash == b.hash; };
+        friend bool operator!=(const type& a, const type& b) noexcept { return a.hash != b.hash; };
+        friend bool operator<(const type& a, const type& b) noexcept { return a.hash < b.hash; };
+        friend bool operator<=(const type& a, const type& b) noexcept { return a.hash <= b.hash; };
+        friend bool operator>(const type& a, const type& b) noexcept { return a.hash > b.hash; };
+        friend bool operator>=(const type& a, const type& b) noexcept { return a.hash >= b.hash; };
         bool operator&(size_t p_modifiers) const {
             return get_qualifiers() & p_modifiers;
         };
-        type_info operator|(size_t p_modifiers) const {
-            type_info out = *this;
+        type operator|(size_t p_modifiers) const {
+            type out = *this;
             out.set_qualifiers(out.get_qualifiers() | p_modifiers);
             return out;
         };
-        type_info& operator|=(size_t p_modifiers) {
+        type& operator|=(size_t p_modifiers) {
             set_qualifiers(get_qualifiers() | p_modifiers);
             return *this;
         };
-        type_info operator+(size_t p_modifiers) const {
-            type_info out = *this;
+        type operator+(size_t p_modifiers) const {
+            type out = *this;
             out.set_qualifiers(out.get_qualifiers() | p_modifiers);
             return out;
         };
-        type_info& operator+=(size_t p_modifiers) {
+        type& operator+=(size_t p_modifiers) {
             set_qualifiers(get_qualifiers() | p_modifiers);
             return *this;
         };
-        type_info operator-(size_t p_modifiers) const {
-            type_info out = *this;
+        type operator-(size_t p_modifiers) const {
+            type out = *this;
             out.set_qualifiers(out.get_qualifiers() & ~p_modifiers);
             return out;
         };
-        type_info& operator-=(size_t p_modifiers) {
+        type& operator-=(size_t p_modifiers) {
             set_qualifiers(get_qualifiers() & ~p_modifiers);
             return *this;
         };
 
-    };
-
-    template<typename T> __forceinline static GL::type_info type_info_of() noexcept {
-        using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
-        static constexpr size_t const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type_info::Qualifiers::Const : 0;
-        static constexpr size_t ref_modifier = std::is_reference<typename std::remove_pointer<T>::type>::value ? type_info::Qualifiers::Reference : 0;
-        
-        static GL::type_info Base(
-            (GL::builtin_type_info::get_builtin_type_info<BaseType>().base_hash & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK2) | (((const_modifier | ref_modifier) << 60ull) & builtin_type_info::cpp_builtin_type_info::MAGIC_MASK1)
-        );
-        return Base;
-    };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // base class type, intended to be derived from.
-    class base_type {
-    public:
-        enum Modifiers {
-            Const = 1
-            , Reference = 2
-            , Temporary = 4
-            , Any = 8
-            , Void = 16
-            , Static = 32
-            , ValueType = 64
-        };
-
-        size_t
-            base_hash;
-        const GL::string
-            name; // not an atomic_string, since the name is meant to be read-only. 
-        std::map<size_t, std::shared_ptr<base_type>> // link to the base classes for this type.
-            base_classes; // underlying_hash to type
-
-        base_type(size_t base_hash_p = 0, GL::string const& name_p = "") noexcept
-            : base_hash(base_hash_p)
-            , name(name_p)
-        {};
-        base_type(std::vector<std::shared_ptr<base_type>> const& bases, GL::string const& name_p = "") noexcept
-            : base_hash(0)
-            , name(name_p)
-        {
-            base_hash = bases[0]->base_hash;
-            for (int i = 1; i < bases.size(); ++i)
-                if (auto x = bases[i]) {
-                    base_classes[x->base_hash] = x;
-                    base_hash ^= (x->base_hash + 0x9e3779b9 + (base_hash << 6) + (base_hash >> 2));
-                }
-        };
-
-        bool is_child_of(base_type const& parent) const {
-            if (this->base_hash == parent.base_hash) {
-                return true;
-            }
-            else {
-                for (auto& x : this->base_classes) {
-                    if (x.first == parent.base_hash) {
-                        return true;
-                    }
-                }
-                for (auto& x : this->base_classes) {
-                    if (x.second->is_child_of(parent)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-        };
-        bool is_parent_of(base_type const& child) const {
-            return child.is_child_of(*this);
-        };
-        bool add_parent(std::shared_ptr<base_type> const& parent) {
-            if (this->is_child_of(*parent) || parent->is_child_of(*this))
-                return false;
-            else {
-                this->base_classes[parent->base_hash] = parent;
-                return true;
-            }
-        };
-        bool match_base_hash(size_t to_match) const {
-            if (base_hash == to_match) return true;
-            for (auto& x : base_classes) {
-                if (x.first == to_match) return true;
-            }
-            for (auto& x : base_classes) {
-                if (x.second->match_base_hash(to_match)) return true;
-            }
-            return false;
-        };        
-    };
-
-    // derived or base class type. 
-    class type : public base_type {
     private:
-        unsigned short
-            modifiers = 0;
-        size_t
-            actual_hash = 0;
-    public:
-
-        type(size_t base_hash_p = 0, unsigned short modifiers_p = Modifiers::Void, GL::string const& name_p = "") noexcept
-            : base_type(base_hash_p, name_p)
-            , modifiers(modifiers_p)
-        {
-            if (modifiers != 0) actual_hash = (this->base_hash ^ (modifiers_p + 0x9e3779b9 + (this->base_hash << 6) + (this->base_hash >> 2)));
-            else actual_hash = this->base_hash;
-            if (is_void()) actual_hash = 0;
-        };
-        type(std::vector<std::shared_ptr<base_type>> const& bases, unsigned short modifiers_p, GL::string const& name_p) noexcept
-            : base_type(bases, name_p)
-            , modifiers(modifiers_p)
-        {
-            if (modifiers != 0) actual_hash = (this->base_hash ^ (modifiers_p + 0x9e3779b9 + (this->base_hash << 6) + (this->base_hash >> 2)));
-            else actual_hash = this->base_hash;
-            if (is_void()) actual_hash = 0;
-        };
-
-        int const& get_modifiers() const { return modifiers; };
-        size_t const& get_hash() const { return actual_hash; };
-
         // Returns true if the types are similar enough to be casted for free (0 cost)
         static bool can_free_cast(type const& from, type const& to) {
-            if (from.actual_hash == to.actual_hash) return true;
-            if (from.match_base_hash(to.base_hash)) {
-                // anything can convert into const T&
+            if (from.match_base_hash(to)) {
+                // conversion is possible. 
                 if (to.is_const_ref()) return true;
 
                 // cannot cast-away the const-ness
@@ -326,155 +207,136 @@ namespace GL {
             }
             return false;
         };
+    public:
         // Returns true if the types are similar enough to be casted for free (0 cost)
-        bool can_free_cast(type const& to) const { return can_free_cast(*this, to); };
+        bool can_free_cast(type const& to) const { 
+            return can_free_cast(*this, to); 
+        };
         // Returns true if the types are the same foundational type (may not be zero cost to convert)
         bool can_cast(type const& to) const {
-            return this->match_base_hash(to.base_hash);
-        };
-
-        bool is_temp() const noexcept { return modifiers & Modifiers::Temporary; };
-        bool is_const() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Const); };
-        bool is_ref() const noexcept { return is_temp() ? false : (modifiers & Modifiers::Reference); };
-        bool is_const_ref() const noexcept { return is_temp() ? false : (modifiers & (Modifiers::Const | Modifiers::Reference)); };
-        bool is_base() const noexcept { return modifiers == 0; };
-        bool is_any() const noexcept { return modifiers & Modifiers::Any; };
-        bool is_void() const noexcept { return modifiers & Modifiers::Void; };
-        bool is_static() const noexcept { return modifiers & Modifiers::Static; };
-        bool is_value() const noexcept { return modifiers & Modifiers::ValueType; };
-
-        GL::string get_name() const {
-            auto out{ name.remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)") };
-            if (is_temp()) return out + "&&";
-            else if (is_const() && is_ref()) return "const " + out + "&";
-            else if (is_const() && !is_ref()) return "const " + out;
-            else if (!is_const() && is_ref()) return out + "&";
-            else return out;
-        };
-
-        //// Operators
-        friend bool operator==(const type& a, const type& b) noexcept { return a.get_hash() == b.get_hash(); };
-        friend bool operator!=(const type& a, const type& b) noexcept { return a.get_hash() != b.get_hash(); };
-        friend bool operator<(const type& a, const type& b) noexcept { return a.get_hash() < b.get_hash(); };
-        friend bool operator<=(const type& a, const type& b) noexcept { return a.get_hash() <= b.get_hash(); };
-        friend bool operator>(const type& a, const type& b) noexcept { return a.get_hash() > b.get_hash(); };
-        friend bool operator>=(const type& a, const type& b) noexcept { return a.get_hash() >= b.get_hash(); };
-
-        bool operator&(int p_modifiers) const {
-            return modifiers & p_modifiers;
-        };
-        type operator|(int p_modifiers) const {
-            type out = *this;
-            out.modifiers = this->modifiers | p_modifiers;
-            out.actual_hash = base_hash ^ (out.modifiers + 0x9e3779b9 + (base_hash << 6) + (base_hash >> 2));
-            return out;
-        };
-        type operator+(int modifier) const {
-            type out = *this;
-            out.modifiers = this->modifiers | modifier;
-            out.actual_hash = base_hash ^ (out.modifiers + 0x9e3779b9 + (base_hash << 6) + (base_hash >> 2));
-            return out;
-        };
-        type operator-(int modifier) const {
-            type out = *this;
-            out.modifiers = this->modifiers & ~modifier;
-            out.actual_hash = base_hash ^ (out.modifiers + 0x9e3779b9 + (base_hash << 6) + (base_hash >> 2));
-            return out;
+            return this->match_base_hash(to);
         };
 
     };
 
-    namespace impl {        
-        static GL::atomic_map<size_t, std::shared_ptr<base_type>>& base_types() noexcept {
-            static GL::atomic_map<size_t, std::shared_ptr<base_type>> out;
-            return out;
-        };
-        template<typename BaseType> __forceinline static std::shared_ptr<base_type>& base_type_ptr() noexcept {
-            static auto const& underlying_type = util::type_id<BaseType>();
-            static auto const& void_type = util::type_id<void>();
-            //static auto const& any_type = util::type_id<utilities::any>();
-            static auto const const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<BaseType>>>::value ? type::Modifiers::Const : 0;
-            static auto const ref_modifier = std::is_reference<typename std::remove_pointer<BaseType>::type>::value ? type::Modifiers::Reference : 0;
-            static auto const void_modifier = (void_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Void : 0;
-            static auto const any_modifier = 0; //(any_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Any : 0;
-            static auto const value_type = 0; //  std::is_base_of_v<GoodLang::Units::value, BaseType> || std::is_same_v<BaseType, GoodLang::Units::value>;
-
-            static std::shared_ptr<type> base_as_type{
-                std::make_shared<type>(void_modifier ? 0 : underlying_type.hash_code(), const_modifier | ref_modifier | void_modifier | any_modifier | value_type, GL::string(std::string_view(underlying_type.name())))
-            };
-            static std::shared_ptr<base_type> base{
-                std::dynamic_pointer_cast<base_type>(base_as_type)
-            };
-            static size_t ref{ base_types().insert(base->base_hash, std::shared_ptr<base_type>(base)).first };
-
-            return base;
-        }
-    }
-
-    template<typename T> __forceinline static type& type_of() noexcept {
+    template<typename T> __forceinline static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
-        static auto const& underlying_type = util::type_id<BaseType>();
-        static auto const& void_type = util::type_id<void>();
-        //static auto const& any_type = util::type_id<utilities::any>();
-        static auto const const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Modifiers::Const : 0;
-        static auto const ref_modifier = std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Modifiers::Reference : 0;
-        static auto const void_modifier = (void_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Void : 0;
-        static auto const any_modifier = 0; // (any_type.hash_code() == underlying_type.hash_code()) ? type::Modifiers::Any : 0;
-        static auto const value_type = 0; //  std::is_base_of_v<GoodLang::Units::value, BaseType> || std::is_same_v<BaseType, GoodLang::Units::value>;
+        static constexpr size_t const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0;
+        static constexpr size_t ref_modifier = std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0;
+        
+        static GL::type Base(
+            (GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1)
+        );
+        return Base;
+    };
 
-#if 0
-        static std::function<utilities::any(utilities::any const&)> copy_constructor = [](utilities::any const& from) -> utilities::any {
-            if constexpr (std::is_same_v<base_type, utilities::any>) {
-                return from;
-            }
-            else if constexpr (std::is_copy_constructible_v<base_type>) {
-                if (from.current_type().get_underlying_hash() == util::type_id<base_type>().hash_code()) {
-                    return utilities::any(base_type{ *static_cast<base_type*>(from.ptr()) }, utilities::type::Temporary);
+    namespace type_erasure {
+        template<class T> struct get_type { typedef T type; };
+        template<class T> struct get_type<std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::fast_shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::fast_shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::fast_shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::fast_shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::fast_shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::fast_shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::atomic_shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::atomic_shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<GL::atomic_shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::atomic_shared_ptr<T>> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::atomic_shared_ptr<T>&> { typedef typename get_type<T>::type type; };
+        template<class T> struct get_type<const GL::atomic_shared_ptr<T>*> { typedef typename get_type<T>::type type; };
+
+        class any_data {
+        protected:
+            any_data(GL::type p_actual_type, void* p_data) : m_actual_type{ std::move(p_actual_type) }, m_data{ std::move(p_data) } {};
+
+        public:
+            GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
+            void* m_data; // pointer to the actual data, for quicker access. 
+
+        };
+        template <typename T>
+        class shared_data final : public any_data {
+        public:
+            shared_data(GL::shared_ptr<T>&& p_ptr = {}) 
+                : m_ptr(GL::static_pointer_cast<void>(std::move(p_ptr)))
+                , any_data(GL::type_of<T>(), m_ptr.get()) 
+            {};
+
+        public:
+            GL::shared_ptr< void > m_ptr;
+
+        };
+
+        class any {
+        public:
+            mutable GL::atomic_shared_ptr< any_data > 
+                m_ptr ; // atomic shared-ptr for the type-erased underlying data. 
+            GL::type 
+                m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
+
+        public:
+            any() = default;
+            any(any const&) = default;
+            any(any &&) = default;
+            any& operator=(any const&) = default;
+            any& operator=(any&&) = default;
+            ~any() = default;
+
+            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+            bool can_free_cast(type const& to) const {
+                if (m_casted_type.can_free_cast(to)) return true;
+                if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_free_cast(to);                
+                return false;                
+            };
+            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+            bool can_cast(type const& to) const {
+                if (m_casted_type.can_cast(to)) return true;
+                if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_cast(to);
+                return false;
+            };
+
+            void* ptr() const {
+                if (auto p = m_ptr.load_fast()) {
+                    return p->m_data;
                 }
                 else {
-                    return from;
+                    return nullptr;
                 }
-            }
-            else {
-                return from;
-            }
+            };
 
-            // To-Do, the return type should be set to "temporary" to improve type engine
 
-            /* scripted objects -->
-            auto& dynObj = from.cast<DynamicObject>();
-            return DynamicObject(dynObj);
-            <-- scripted objects */
+            template <typename T> T* cast(bool nothrow = false) const {
+                if (nothrow || can_cast(GL::type_of<T>()))
+                    return static_cast<T*>(this->ptr());
+
+                GL::string err_msg = 
+                    "Could not cast from " + this->m_casted_type.name() + " to " + GL::type_of<T>().name();
+
+                throw 
+                    std::runtime_error(err_msg.to_string());
+            };
+
+
+
         };
-        static std::function<utilities::any(utilities::any const&)> constructor_from_value = [](utilities::any const& from) -> utilities::any {
-            if constexpr (std::is_same_v<base_type, utilities::any>) {
-                return from;
-            }
-            else if constexpr (std::is_copy_constructible_v<base_type>
-                && (std::is_constructible_v<base_type, GoodLang::Units::value&> || std::is_assignable_v<base_type, GoodLang::Units::value&>)) {
-                if (from.current_type().is_value()) {
-                    return utilities::any(base_type{ *static_cast<GoodLang::Units::value*>(from.ptr()) }, utilities::type::Temporary);
-                }
-                return from;
-                //if (from.current_type().get_underlying_hash() == util::type_id<GoodLang::Units::value>().hash_code()) {
-                //    return base_type{ *static_cast<GoodLang::Units::value*>(from.ptr()) };
-                //}
-            }
-            else {
-                return from;
-            }
-        };
-#endif
-     
-        static std::shared_ptr<GL::base_type>& base_ref{ impl::base_type_ptr<BaseType>() };
-        if constexpr (const_modifier == ref_modifier) {
-            return *reinterpret_cast<type*>(base_ref.get());
-        }
-        else {
-            static type out({ base_ref }, const_modifier | ref_modifier | void_modifier | any_modifier | value_type, GL::string(std::string_view(underlying_type.name())));
-            return out;
-        }
+
+
     };
+
+    
+
 
 };
 
@@ -499,10 +361,10 @@ namespace GL {
             if (castedType == parent.m_type) {
                 // we are casting to the existing type, which is OK
             }
-            else if (castedType.is_child_of(parent.m_type)) {
+            else if (castedType.is_derived_from(parent.m_type)) {
                 // we are casting from a parent (inherited) type to a derived (child) type, which is OK.                
             }
-            else if (parent.m_type.is_child_of(castedType)) {
+            else if (parent.m_type.is_derived_from(castedType)) {
                 // we are casting from a derived (child) type to a parent (inherited) type, which is OK.
             }
             else {
@@ -554,8 +416,8 @@ namespace GL {
     empty & assignable, or filled and implimented */
     class var {
     public:
-        var() : p_data(utilities::make_shared<any>()) {}
-        explicit var(any const& data_f) : p_data(utilities::make_shared<any>(data_f)) {};
+        var() : p_data() {}
+        explicit var(any const& data_f) : p_data(GL::make_shared<any>(data_f)) {};
         var(var const&) = default;
         var(var&&) = default;
         var& operator=(var const&) = default;
@@ -563,11 +425,13 @@ namespace GL {
         ~var() = default;
 
     public:
-        utilities::shared_ptr<any> p_data; // may be "updated" at any time and therefore should be thread-safe. 
+        mutable GL::atomic_shared_ptr<any> p_data; // may be "updated" at any time and therefore should be thread-safe. 
 
     public:
         friend bool operator==(var const& _Left, var const& _Right) {
-            return _Left.p_data == _Right.p_data;
+            auto LHS = _Left.p_data.load_fast();
+            auto RHS = _Left.p_data.load_fast();
+            return LHS.get() == RHS.get();
         };
         friend bool operator!=(var const& _Left, var const& _Right) {
             return !operator==(_Left, _Right);
@@ -575,20 +439,6 @@ namespace GL {
     };
 
     namespace type_erasure {
-        template<class T> struct get_type { typedef T type; };
-        template<class T> struct get_type<std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<const std::shared_ptr<T>> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<const std::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<const std::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<utilities::shared_ptr<T>> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<utilities::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<utilities::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<const utilities::shared_ptr<T>> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<const utilities::shared_ptr<T>&> { typedef typename get_type<T>::type type; };
-        template<class T> struct get_type<const utilities::shared_ptr<T>*> { typedef typename get_type<T>::type type; };
-
         class any_data {
         public:
             template<typename T> static std::shared_ptr<void> encode(const std::shared_ptr<T>& ptr_in, int& modifiers_out) {

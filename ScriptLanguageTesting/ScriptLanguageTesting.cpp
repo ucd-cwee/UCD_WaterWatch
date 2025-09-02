@@ -51,41 +51,83 @@
 int main() {
     GL::stopwatch sw;
     while (true) {
-
-
-        print(GL::builtin_type_info::get_builtin_type_info<void>().name);
-        print(GL::builtin_type_info::get_builtin_type_info<int>().name);
-        print(GL::builtin_type_info::get_builtin_type_info<double>().name);
-        print(GL::builtin_type_info::get_builtin_type_info<float>().name);
-
-        GL::builtin_type_info::declare_cpp_derived<long, int>();
-        EXPECT_EQ(true, GL::builtin_type_info::get_builtin_type_info<int>().is_derived_from(GL::builtin_type_info::get_builtin_type_info<long>().base_hash));
-        EXPECT_EQ(true, GL::builtin_type_info::get_builtin_type_info<long>().is_base_of(GL::builtin_type_info::get_builtin_type_info<int>().base_hash));
+        //GL::builtin_type::declare_cpp_derived<long, int>();
+        //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<int>().is_derived_from(GL::builtin_type::get_builtin_type<long>().base_hash));
+        //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<long>().is_base_of(GL::builtin_type::get_builtin_type<int>().base_hash));
         if (1) {
-            GL::type_info ti = GL::type_info_of<std::string>();
+            GL::type ti = GL::type_of<std::string>();
+            EXPECT_EQ(false, ti.is_void());
+            EXPECT_EQ(true, ti.is_cpp_type());
+            EXPECT_EQ(true, ti.is_base());
             EXPECT_EQ(false, ti.is_const());
             EXPECT_EQ(false, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            ti.set_qualifiers(GL::type_info::Qualifiers::Const);
+            ti |= GL::type::Qualifiers::Const;
+            EXPECT_EQ(false, ti.is_void());
+            EXPECT_EQ(true, ti.is_cpp_type());
             EXPECT_EQ(true, ti.is_const());
+            EXPECT_EQ(false, ti.is_base());
             EXPECT_EQ(false, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            EXPECT_EQ(ti.get_qualifiers(), GL::type_info::Qualifiers::Const);
             print(ti.name());
         }
         if (1) {
-            GL::type_info ti;
-            EXPECT_EQ(ti.get_qualifiers(), 0);
+            GL::type ti = GL::type_of<const std::string&>();
+            EXPECT_EQ(false, ti.is_void());
+            EXPECT_EQ(false, ti.is_base());
+            EXPECT_EQ(true, ti.is_cpp_type());
+            EXPECT_EQ(true, ti.is_const());
+            EXPECT_EQ(true, ti.is_ref());
+            EXPECT_EQ(false, ti.is_temp());
             print(ti.name());
         }
         if (1) {
-            GL::type_info ti = GL::type_info_of<void>();
-            EXPECT_EQ(ti.get_qualifiers(), 0);
+            GL::type ti;
+            EXPECT_EQ(true, ti.is_void());
+            EXPECT_EQ(true, ti.is_base());
+            EXPECT_EQ(true, ti.is_cpp_type());
+            print(ti.name());
+        }
+        if (1) {
+            GL::type ti = GL::type_of<void>();
+            EXPECT_EQ(true, ti.is_void());
+            EXPECT_EQ(true, ti.is_base());
+            EXPECT_EQ(true, ti.is_cpp_type());
             print(ti.name());
         }
 
+        if (1) {
+            auto string_hash = GL::impl::checkout_scripted_type("string");
+            GL::type ti(string_hash);
+            EXPECT_EQ(false, ti.is_void());
+            EXPECT_EQ(true, ti.is_base());
+            EXPECT_EQ(false, ti.is_cpp_type());
+            EXPECT_EQ(false, ti.is_const());
+            EXPECT_EQ(false, ti.is_ref());
+            EXPECT_EQ(false, ti.is_temp());
+            print(ti.name());
+            ti |= GL::type::Qualifiers::Const;
+            ti |= GL::type::Qualifiers::Reference;
+            EXPECT_EQ(false, ti.is_void());
+            EXPECT_EQ(false, ti.is_base());
+            EXPECT_EQ(false, ti.is_cpp_type());
+            EXPECT_EQ(true, ti.is_const());
+            EXPECT_EQ(true, ti.is_ref());
+            EXPECT_EQ(false, ti.is_temp());
+            print(ti.name());
+            GL::impl::return_scripted_type(string_hash);
+        }
+
+        if (1) {
+            using namespace GL::type_erasure;
+
+            any wrap; {
+                wrap.m_ptr = GL::static_pointer_cast<any_data>(GL::make_shared<shared_data<std::string>>(GL::make_shared<std::string>("TEST")));
+                wrap.m_casted_type = GL::type_of<std::string>();
+            }
 
 
+        }
 
 
 
@@ -868,45 +910,15 @@ int main() {
             });
         }
 
-        auto& void_type = GL::type_of<void>();
-        EXPECT_EQ(void_type.base_hash, 0);
-        auto& int_type = GL::type_of<int>();
-        EXPECT_EQ(int_type.get_name(), "int");
-        auto& double_type = GL::type_of<double>();
-        EXPECT_EQ(double_type.get_name(), "double");
-        auto& float_type = GL::type_of<float>();
-        EXPECT_EQ(float_type.get_name(), "float");
-        auto& str_type = GL::type_of<GL::string>();
-        EXPECT_EQ(str_type.get_name(), "class GL::string");
-
-        (void)int_type.add_parent(GL::impl::base_type_ptr<float>());
-        EXPECT_EQ(false, float_type.add_parent(GL::impl::base_type_ptr<int>()));
-        EXPECT_EQ(true, float_type.is_parent_of(int_type));
-        EXPECT_EQ(true, int_type.can_cast(float_type));
-        EXPECT_EQ(false, float_type.can_cast(int_type));
-        EXPECT_EQ(true, float_type.is_base());
-
-        auto& const_float_type = GL::type_of<const float>();
-        EXPECT_EQ(float_type.base_hash, const_float_type.base_hash);
-        EXPECT_EQ(true, const_float_type.is_parent_of(int_type));
-        EXPECT_EQ(true, int_type.can_cast(const_float_type));
-        EXPECT_EQ(false, const_float_type.can_cast(int_type));
-        EXPECT_EQ(true, const_float_type.is_const());
-
-        auto& const_ref_float_type = GL::type_of<const float&>();
-        EXPECT_EQ(float_type.base_hash, const_ref_float_type.base_hash);
-        EXPECT_EQ(true, float_type.is_parent_of(const_ref_float_type));
-        EXPECT_EQ(true, const_ref_float_type.is_parent_of(int_type));
-        EXPECT_EQ(true, int_type.can_cast(const_ref_float_type));
-        EXPECT_EQ(false, const_ref_float_type.can_cast(int_type));
-        EXPECT_EQ(true, const_ref_float_type.is_const_ref());
-
-        auto const_float_type_2 = float_type | GL::type::Const;
-        EXPECT_EQ(float_type.base_hash, const_float_type_2.base_hash);
-        EXPECT_EQ(true, const_float_type_2.is_parent_of(int_type));
-        EXPECT_EQ(true, int_type.can_cast(const_float_type_2));
-        EXPECT_EQ(false, const_float_type_2.can_cast(int_type));
-        EXPECT_EQ(true, const_float_type_2.is_const());        
+        auto void_type = GL::type_of<void>();
+        auto int_type = GL::type_of<int>();
+        EXPECT_EQ(int_type.name(), "int");
+        auto double_type = GL::type_of<double>();
+        EXPECT_EQ(double_type.name(), "double");
+        auto float_type = GL::type_of<float>();
+        EXPECT_EQ(float_type.name(), "float");
+        auto str_type = GL::type_of<GL::string>();
+        EXPECT_EQ(str_type.name(), "class GL::string");
 
 #endif
 #if 0
