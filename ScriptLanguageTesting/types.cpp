@@ -109,7 +109,9 @@ namespace GL {
     };
 
     bool type::match_base_hash(type const& to_match) const {
-        return get_base(*this).match_base_hash(get_base(to_match).base_hash);
+        auto& this_base = get_base(*this);
+        auto& that_base = get_base(to_match);
+        return this_base.match_base_hash(that_base.base_hash);
     };
 
 

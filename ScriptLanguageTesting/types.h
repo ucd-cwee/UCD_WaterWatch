@@ -186,14 +186,14 @@ namespace GL {
     private:
         // Returns true if the types are similar enough to be casted for free (0 cost)
         static bool can_free_cast(type const& from, type const& to) {
-            if (from.match_base_hash(to)) {
+            if ((from.get_base_hash() == to.get_base_hash()) || from.match_base_hash(to)) {
                 // conversion is possible. 
                 if (to.is_const_ref()) return true;
 
                 // cannot cast-away the const-ness
                 if (from.is_const() && !to.is_const()) return false;
 
-                // temporary (T&&) can be used for a base
+                // temporary (T&&) can be used for a base cast.
                 if (from.is_temp() && to.is_base()) return true;
 
                 // temporary (T&&) cannot be used as const-less references (T&)
@@ -259,24 +259,59 @@ namespace GL {
 
         class any_data {
         protected:
-            any_data(GL::type p_actual_type, void* p_data) : m_actual_type{ std::move(p_actual_type) }, m_data{ std::move(p_data) } {};
+            any_data(GL::type p_actual_type) 
+                : m_actual_type{ std::move(p_actual_type) }
+                , m_data{ nullptr } 
+            {};
+        public:
+            any_data() = delete;
+            any_data(any_data const&) = delete;
+            any_data(any_data &&) = delete;
+            any_data& operator=(any_data const&) = delete;
+            any_data& operator=(any_data&&) = delete;
+            virtual ~any_data() = default;
 
         public:
             GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
             void* m_data; // pointer to the actual data, for quicker access. 
 
         };
+
         template <typename T>
         class shared_data final : public any_data {
         public:
-            shared_data(GL::shared_ptr<T>&& p_ptr = {}) 
-                : m_ptr(GL::static_pointer_cast<void>(std::move(p_ptr)))
-                , any_data(GL::type_of<T>(), m_ptr.get()) 
-            {};
+            shared_data(GL::shared_ptr<T> const& p_ptr = {}) 
+                : m_ptr(GL::static_pointer_cast<void>(p_ptr))
+                , any_data(GL::type_of<T>()) 
+            {
+                this->m_data = m_ptr.get();
+            };
+            virtual ~shared_data() = default;
 
         public:
             GL::shared_ptr< void > m_ptr;
 
+        };
+        
+        template <typename T>
+        class instanced_data final : public any_data {
+        public:
+            instanced_data()
+                : m_ptr()
+                , any_data(GL::type_of<T>())
+            {
+                this->m_data = static_cast<void*>(&m_ptr);
+            };
+            instanced_data(T&& rhs)
+                : m_ptr(std::move(rhs))
+                , any_data(GL::type_of<T>())
+            {
+                this->m_data = static_cast<void*>(&m_ptr);
+            };
+            virtual ~instanced_data() = default;
+
+        public:
+            T m_ptr;
         };
 
         class any {
@@ -286,6 +321,10 @@ namespace GL {
             GL::type 
                 m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
 
+        private:
+            any(GL::atomic_shared_ptr< any_data > const& p_ptr, GL::type&& p_type) 
+                : m_ptr{ p_ptr }, m_casted_type{ std::move(p_type) }
+            {}
         public:
             any() = default;
             any(any const&) = default;
@@ -294,10 +333,37 @@ namespace GL {
             any& operator=(any&&) = default;
             ~any() = default;
 
+            bool operator&(size_t p_modifiers) const {
+                return m_casted_type & p_modifiers;
+            };
+            any operator|(size_t p_modifiers) const {
+                return any(m_ptr, m_casted_type | p_modifiers);
+            };
+            any operator+(size_t p_modifiers) const {
+                return any(m_ptr, m_casted_type + p_modifiers);
+            };
+            any operator-(size_t p_modifiers) const {
+                return any(m_ptr, m_casted_type - p_modifiers);
+            };
+            any& operator|=(size_t p_modifiers) {
+                m_casted_type |= p_modifiers;
+                return *this;
+            };
+            any& operator+=(size_t p_modifiers) {
+                m_casted_type += p_modifiers;
+                return *this;
+            };
+            any& operator-=(size_t p_modifiers) {
+                m_casted_type -= p_modifiers;
+                return *this;
+            };
+
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const {
                 if (m_casted_type.can_free_cast(to)) return true;
-                if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_free_cast(to);                
+                //if (auto ptr = m_ptr.load_fast()) {                    
+                //    return ptr->m_actual_type.can_free_cast(to);
+                //}
                 return false;                
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
@@ -308,14 +374,11 @@ namespace GL {
             };
 
             void* ptr() const {
-                if (auto p = m_ptr.load_fast()) {
-                    return p->m_data;
-                }
-                else {
-                    return nullptr;
-                }
+                if (auto p = m_ptr.load_fast()) 
+                    if (auto p2 = p.get())
+                        return p2->m_data;                
+                return nullptr;                
             };
-
 
             template <typename T> T* cast(bool nothrow = false) const {
                 if (nothrow || can_cast(GL::type_of<T>()))
@@ -327,8 +390,6 @@ namespace GL {
                 throw 
                     std::runtime_error(err_msg.to_string());
             };
-
-
 
         };
 

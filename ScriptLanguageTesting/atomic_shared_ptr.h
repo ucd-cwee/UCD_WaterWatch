@@ -5,7 +5,7 @@
 #include <memory>
 
 namespace /* atomic_shared_ptr */ GL {
-    constexpr int MAGIC_LEN = 16;
+    constexpr size_t MAGIC_LEN = 16;
     constexpr size_t MAGIC_MASK = 0x0000'0000'0000'FFFF;
     constexpr int CACHE_LINE_SIZE = 128;
 
@@ -16,6 +16,7 @@ namespace /* atomic_shared_ptr */ GL {
             : data(data)
             , refCount(1)
         {}
+        ~control_block_base() = default;
 
         void* data;
         std::atomic<size_t> refCount;
@@ -30,10 +31,27 @@ namespace /* atomic_shared_ptr */ GL {
     template<typename T> struct alignas(CACHE_LINE_SIZE) control_block final : public control_block_base {
         explicit control_block() = delete;
         explicit control_block(T* data) : control_block_base(static_cast<void*>(data)) {}
+        ~control_block() = default;
+
         virtual void Delete() override {
-            delete static_cast<T*>(data);
+            if constexpr (!std::is_pod_v<T>) {
+                delete static_cast<T*>(this->data);
+            }
         };
     };
+
+    //// specialized, derived class for control blocks with specialized types.
+    //template<typename T> struct alignas(CACHE_LINE_SIZE) deleter_control_block final : public control_block_base{
+    //    explicit deleter_control_block() = delete;
+    //    explicit deleter_control_block(T* data, std::function<void(T*)> const& deleter) : control_block_base(static_cast<void*>(data)) {}
+    //    virtual void Delete() override {
+    //        if constexpr (!std::is_pod_v<T>) {
+    //            delete static_cast<T*>(this->data);
+    //        }
+    //    };
+    //    std::function<void(T*)> delete_func; 
+
+    //};
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
     template<typename T> class shared_ptr {
@@ -44,17 +62,6 @@ namespace /* atomic_shared_ptr */ GL {
         shared_ptr() : controlBlock(nullptr) {}
         template<class U> explicit shared_ptr(U* data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(data))) {}
         explicit shared_ptr(control_block_base* controlBlock, bool) : controlBlock(controlBlock) {}
-
-        shared_ptr(const shared_ptr<T>& other) {
-            controlBlock = other.controlBlock;
-            if (controlBlock != nullptr) {
-                controlBlock->refCount.fetch_add(1);
-            }
-        };
-        shared_ptr(shared_ptr<T>&& other) noexcept {
-            controlBlock = other.controlBlock;
-            other.controlBlock = nullptr;
-        };
 
         template<class U> shared_ptr(const shared_ptr<U>& other) {
             controlBlock = other.controlBlock;
@@ -96,17 +103,17 @@ namespace /* atomic_shared_ptr */ GL {
         };
 
         T* get() const { 
-            return reinterpret_cast<T*>(controlBlock);  
+            return reinterpret_cast<T*>(controlBlock ? controlBlock->data : nullptr);
         }
         T* operator->() const { 
-            return reinterpret_cast<T*>(controlBlock); 
+            return get();
         }
         template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
         decltype(auto) operator*() const {
             return *get();
         };
         operator bool() const {
-            return (bool)controlBlock; 
+            return (bool)controlBlock;
         };
 
     protected:        
@@ -173,7 +180,7 @@ namespace /* atomic_shared_ptr */ GL {
         fast_shared_ptr(std::atomic<size_t>* packedPtr)
             : knownValue(packedPtr->fetch_add(1) + 1)
             , foreignPackedPtr(packedPtr)
-            , data(reinterpret_cast<T*>(get_control_block()))
+            , data(reinterpret_cast<T*>(get_control_block()->data))
         {
             auto block = get_control_block();
             int diff = knownValue & MAGIC_MASK;
@@ -220,16 +227,14 @@ namespace /* atomic_shared_ptr */ GL {
             control_block_base::DeferredDeletion(block);
         };
 
-        atomic_shared_ptr(const atomic_shared_ptr& other) : atomic_shared_ptr(other.get()) {};
-        atomic_shared_ptr(atomic_shared_ptr&& other) : atomic_shared_ptr(other.get()) {};
+        atomic_shared_ptr(const atomic_shared_ptr& other) : atomic_shared_ptr(const_cast<atomic_shared_ptr&>(other).load()) {};
+        atomic_shared_ptr(atomic_shared_ptr&& other) : atomic_shared_ptr(other.load()) {};
         atomic_shared_ptr& operator=(const atomic_shared_ptr& other) {
-            auto p = other.load();
-            this->store(shared_ptr<T>(p));
+            this->store(other.load());
             return *this;
         };
         atomic_shared_ptr& operator=(atomic_shared_ptr&& other) {
-            auto p = other.load();
-            this->store(shared_ptr<T>(p));
+            this->store(other.load());
             return *this;
         };
         atomic_shared_ptr& operator=(std::nullptr_t) {
@@ -352,7 +357,9 @@ namespace /* atomic_shared_ptr */ GL {
         static_assert(sizeof(T*) == sizeof(size_t));
     };
 
-    template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) { return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...)); };
+    template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
+        return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...)); 
+    };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
     };
