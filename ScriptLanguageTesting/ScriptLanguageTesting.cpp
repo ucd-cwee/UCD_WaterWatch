@@ -51,6 +51,12 @@
 int main() {
     GL::stopwatch sw;
     while (true) {
+        // prove that GL::shared_ptr supports custom deleter functions. Note that these are always called on a different thread than the pointer was made on... 
+        GL::shared_ptr<int> temp_ptr(new int(100), [](int* p) { 
+            EXPECT_EQ(*p, 100);
+            delete p; 
+        });
+
         //GL::builtin_type::declare_cpp_derived<long, int>();
         //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<int>().is_derived_from(GL::builtin_type::get_builtin_type<long>().base_hash));
         //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<long>().is_base_of(GL::builtin_type::get_builtin_type<int>().base_hash));
@@ -166,7 +172,7 @@ int main() {
 
                 EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string const&>()));
                 EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string>()));
-                EXPECT_EQ(false, wrap.can_free_cast(GL::type_of<std::string>()));
+                EXPECT_EQ(false, wrap.can_free_cast(GL::type_of<std::string>())); // cannot free-cast from const& to && because it requires a constructor. 
                 EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string const&>()));
 
                 EXPECT_EQ(*static_cast<std::string*>(wrap.ptr()), "TEST");

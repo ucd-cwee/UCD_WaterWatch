@@ -27,8 +27,8 @@ namespace GL {
 
                     // go to sleep, to be awoken when new jobs are added
                     auto lock{ std::unique_lock(this->wakeMutex) };
-                    // this->wakeCondition.wait(lock);
-                    this->wakeCondition.wait_for(lock, std::chrono::milliseconds(1000 / 60));
+                    this->wakeCondition.wait(lock);
+                    // this->wakeCondition.wait_for(lock, std::chrono::milliseconds(1000 / 60));
                 }
             } };
         }
@@ -56,7 +56,7 @@ namespace GL {
                 while (_destruction_queue.try_pop(out)) {
                     if (out) {
                         out->Delete();
-                        delete out;
+                        out->DeleteSelf(out);
                     }
                     out = nullptr;
                 }
@@ -65,9 +65,15 @@ namespace GL {
         static Taskable<Wrap::DeleteFunc> _destruction_thread{};
         if (to_delete) {
             size_t before = to_delete->refCount.fetch_sub(1);
-            if (before == 1)
+            if (before == 1) {
+#if 1 // do you prefer more speed? (larger overhead for deferred memory destruction)                
                 if ((_destruction_queue.push(to_delete) & 255) == 0)
                     _destruction_thread.wake();
+#else // or do you prefer better memory utilization? (immediate destruction while stalling the current thread)
+                to_delete->Delete();
+                to_delete->DeleteSelf(to_delete);
+#endif
+            }
         }
     };
 };

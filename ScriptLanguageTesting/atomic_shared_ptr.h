@@ -22,6 +22,7 @@ namespace /* atomic_shared_ptr */ GL {
         std::atomic<size_t> refCount;
 
         virtual void Delete() = 0;
+        virtual void DeleteSelf(control_block_base*) = 0;
 
         // slight optimization by defering deletion of shared pointers to a specialized thread. 
         static void DeferredDeletion(control_block_base* to_delete);
@@ -30,28 +31,32 @@ namespace /* atomic_shared_ptr */ GL {
     // specialized, derived class for control blocks with specialized types.
     template<typename T> struct alignas(CACHE_LINE_SIZE) control_block final : public control_block_base {
         explicit control_block() = delete;
-        explicit control_block(T* data) : control_block_base(static_cast<void*>(data)) {}
+        explicit control_block(T* _data) : control_block_base(reinterpret_cast<void*>(_data)) {}
         ~control_block() = default;
-
-        virtual void Delete() override {
-            if constexpr (!std::is_pod_v<T>) {
-                delete static_cast<T*>(this->data);
-            }
+        void Delete() override {
+            delete static_cast<T*>(this->data);
         };
+        void DeleteSelf(control_block_base* p) override {
+            delete reinterpret_cast<control_block*>(p);
+        };
+
     };
 
-    //// specialized, derived class for control blocks with specialized types.
-    //template<typename T> struct alignas(CACHE_LINE_SIZE) deleter_control_block final : public control_block_base{
-    //    explicit deleter_control_block() = delete;
-    //    explicit deleter_control_block(T* data, std::function<void(T*)> const& deleter) : control_block_base(static_cast<void*>(data)) {}
-    //    virtual void Delete() override {
-    //        if constexpr (!std::is_pod_v<T>) {
-    //            delete static_cast<T*>(this->data);
-    //        }
-    //    };
-    //    std::function<void(T*)> delete_func; 
+    // specialized, derived class for control blocks with specialized types.
+    template<typename T> struct alignas(CACHE_LINE_SIZE) deleter_control_block final : public control_block_base{
+        explicit deleter_control_block() = delete;
+        explicit deleter_control_block(T* data, std::function<void(T*)>&& deleter) : control_block_base(static_cast<void*>(data)), delete_func(std::move(deleter)) {}
+        ~deleter_control_block() = default;
 
-    //};
+        void Delete() override {
+            delete_func(static_cast<T*>(this->data));
+        };
+        void DeleteSelf(control_block_base* p) override {
+            delete reinterpret_cast<deleter_control_block*>(p);
+        };
+
+        std::function<void(T*)> delete_func;
+    };
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
     template<typename T> class shared_ptr {
@@ -61,6 +66,8 @@ namespace /* atomic_shared_ptr */ GL {
     public:
         shared_ptr() : controlBlock(nullptr) {}
         template<class U> explicit shared_ptr(U* data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(data))) {}
+        template<class U> explicit shared_ptr(U* data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(new deleter_control_block<U>(data, std::move(deleter)))) {}
+
         explicit shared_ptr(control_block_base* controlBlock, bool) : controlBlock(controlBlock) {}
 
         template<class U> shared_ptr(const shared_ptr<U>& other) {
