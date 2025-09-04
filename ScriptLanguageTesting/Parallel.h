@@ -196,12 +196,6 @@ namespace GL {
 				// size_t submitting_thread;
 			};
 
-			struct thread_wrap {
-				std::thread thread;
-				size_t thread_hash;
-				size_t thread_index;
-			};
-
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,

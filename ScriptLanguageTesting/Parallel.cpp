@@ -61,6 +61,15 @@ typedef void* HMODULE;
 namespace GL {
 	namespace parallel {
 		namespace impl {
+			struct thread_wrap {
+				std::thread thread;
+				size_t thread_hash;
+				size_t thread_index;
+				// Ratio of "work" this CPU core is capable of. E.g. 0.25 would indicate this core is capable of 25% of the workload of this CPU. 
+				// Intended to help identify the primary cores vs. hyperthreaded cores, as their capacity for work is noticibly different. 
+				double relative_speed; 
+			};
+
 			struct InternalState {
 				enum alive_state {
 					is_dead = 0,
@@ -214,14 +223,28 @@ namespace GL {
 					// Calculate the actual number of worker threads we want (-1 main thread):
 					internal_state.numThreads = std::max<long long>(1, internal_state.numCores - 1);
 
+					std::atomic<size_t> boot_count{ internal_state.numThreads };
 					internal_state.threads.reserve(internal_state.numThreads);
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
-						internal_state.threads.emplace_back(thread_wrap{ std::thread{ [threadID] {
+						internal_state.threads.emplace_back(thread_wrap{ std::thread{ [threadID, &boot_count] {
 							// pre-warm this thread's heap
 							for (int i = 0; i < 100000; i++) delete (new int(5));
 
 							internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 							internal_state.threads[threadID].thread_index = GL::util::get_thread_id();
+
+							auto start_time = GL::util::get_current_epoch();
+							volatile std::atomic<long> count{ 0 };
+							for (volatile size_t i = 0; i < 1000000; ++i) {
+								++count;
+							}
+							internal_state.threads[threadID].relative_speed = 1.0 / (double)((GL::util::get_current_epoch() - start_time) + 1);
+
+							--boot_count;
+							if (1) {
+								thread_task temp;
+								(void)internal_state.jobQueue.try_pop(temp);
+							}
 
 							while (internal_state.alive == InternalState::alive_state::is_booting) {} // wait until we stop booting... 
 							while (internal_state.alive == InternalState::alive_state::is_alive) {
@@ -272,6 +295,18 @@ namespace GL {
 #endif // _WIN32
 					}
 
+					while (boot_count.load() > 0) {}
+
+					double total = 0;
+					double best_speed = std::numeric_limits<double>::max();
+					double worst_speed = 0;
+					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
+						double this_speed = internal_state.threads[threadID].relative_speed;
+						total += this_speed;
+					}
+					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
+						internal_state.threads[threadID].relative_speed /= total;
+					}
 					prevS = InternalState::alive_state::is_booting;
 					internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_alive);
 				}

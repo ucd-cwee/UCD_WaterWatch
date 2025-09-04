@@ -127,28 +127,28 @@ int main() {
         if (1) {
             using namespace GL::type_erasure;
             if (1) {
-                instanced_data<std::string> instanced("TEST");
-                EXPECT_EQ(instanced.m_ptr, "TEST");
+                shared_data<std::string> instanced(GL::make_shared<std::string>("TEST"));
+                // EXPECT_EQ(instanced.m_ptr, "TEST");
                 std::string* p = static_cast<std::string*>(instanced.m_data);
                 EXPECT_EQ(*p, "TEST"); 
             }
-            if (auto instanced = new instanced_data<std::string>(std::string("TEST"))) {                
-                EXPECT_EQ(instanced->m_ptr, "TEST");
+            if (auto instanced = new shared_data<std::string>(GL::make_shared<std::string>("TEST"))) {
+                // EXPECT_EQ(instanced->m_ptr, "TEST");
                 std::string* p = static_cast<std::string*>(instanced->m_data);
                 EXPECT_EQ(*p, "TEST");
                 delete instanced;
             }
-            if (auto instanced = GL::shared_ptr<instanced_data<std::string>>(new instanced_data<std::string>(std::string("TEST")))) {
-                EXPECT_EQ(instanced.get()->m_ptr, "TEST");
+            if (auto instanced = GL::shared_ptr<shared_data<std::string>>(new shared_data<std::string>(GL::make_shared<std::string>("TEST")))) {
+                // EXPECT_EQ(instanced.get()->m_ptr, "TEST");
                 std::string* p = static_cast<std::string*>(instanced.get()->m_data);
                 EXPECT_EQ(*p, "TEST");
             }
-            if (auto instanced = GL::static_pointer_cast<any_data>(GL::shared_ptr<instanced_data<std::string>>(new instanced_data<std::string>(std::string("TEST"))))) {
+            if (auto instanced = GL::static_pointer_cast<any_data>(GL::shared_ptr<shared_data<std::string>>(new shared_data<std::string>(GL::make_shared<std::string>("TEST"))))) {
                 std::string* p = static_cast<std::string*>(instanced.get()->m_data);
                 EXPECT_EQ(*p, "TEST");
             }
             if (1) {
-                GL::atomic_shared_ptr< any_data > atomic{ GL::static_pointer_cast<any_data>(GL::shared_ptr<instanced_data<std::string>>(new instanced_data<std::string>(std::string("TEST")))) };
+                GL::atomic_shared_ptr< any_data > atomic{ GL::static_pointer_cast<any_data>(GL::shared_ptr<shared_data<std::string>>(new shared_data<std::string>(GL::make_shared<std::string>("TEST")))) };
                 if (auto instanced = atomic.load()) {
                     std::string* p = static_cast<std::string*>(instanced.get()->m_data);
                     EXPECT_EQ(*p, "TEST");
@@ -160,7 +160,7 @@ int main() {
             }
 
             any wrap; {
-                wrap.m_ptr = GL::static_pointer_cast<any_data>(GL::make_shared<instanced_data<std::string>>("TEST"));
+                wrap.m_ptr = GL::static_pointer_cast<any_data>(GL::make_shared<shared_data<std::string>>(GL::make_shared<std::string>("TEST")));
                 wrap.m_casted_type = GL::type_of<std::string>();
 
                 EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string>()));
@@ -260,8 +260,6 @@ int main() {
                     map[i] = i;
                 });
             }
-
-
 
             //if (auto timer = sw.debug_timer("parallel::std ForEach")) {
             //    std::vector<size_t*> vec(1000000, nullptr);

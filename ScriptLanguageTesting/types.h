@@ -271,8 +271,7 @@ namespace GL {
             any_data& operator=(any_data&&) = delete;
             virtual ~any_data() = default;
 
-            // virtual GL::shared_ptr<void> get() = 0;
-
+            virtual GL::shared_ptr<void> get() = 0;
 
         public:
             GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
@@ -283,17 +282,17 @@ namespace GL {
         template <typename T>
         class shared_data final : public any_data {
         public:
-            shared_data(GL::shared_ptr<T> const& p_ptr = {}) 
-                : m_ptr(GL::static_pointer_cast<void>(p_ptr))
+            shared_data(GL::shared_ptr<T> p_ptr = {}) 
+                : m_ptr(GL::static_pointer_cast<void>(std::move(p_ptr)))
                 , any_data(GL::type_of<T>()) 
             {
                 this->m_data = m_ptr.get();
             };
             virtual ~shared_data() = default;
 
-            //GL::shared_ptr<void> get() override {
-            //    return m_ptr;
-            //};
+            GL::shared_ptr<void> get() override {
+                return m_ptr;
+            };
 
         public:
             GL::shared_ptr< void > m_ptr;
@@ -311,42 +310,17 @@ namespace GL {
             };
             virtual ~std_shared_data() = default;
 
-            //GL::shared_ptr<void> get() override {
-            //    return GL::shared_ptr<void>(m_ptr.get(), [m_ptr](void* p) {                     
-            //        if (p != m_ptr.get()) {
-            //            std::cout << "ISSUE!\n";
-            //        }
-            //    });
-            //};
+            GL::shared_ptr<void> get() override {
+                return GL::shared_ptr<void>(m_ptr.get(), [m_ptr](void* p) {                     
+                    if (p != m_ptr.get()) {
+                        std::cout << "ISSUE!\n";
+                    }
+                });
+            };
 
         public:
             std::shared_ptr< void > m_ptr;
 
-        };
-
-        template <typename T>
-        class instanced_data final : public any_data {
-        public:
-            instanced_data()
-                : m_ptr()
-                , any_data(GL::type_of<T>())
-            {
-                this->m_data = static_cast<void*>(&m_ptr);
-            };
-            instanced_data(T&& rhs)
-                : m_ptr(std::move(rhs))
-                , any_data(GL::type_of<T>())
-            {
-                this->m_data = static_cast<void*>(&m_ptr);
-            };
-            virtual ~instanced_data() = default;
-
-            //GL::shared_ptr<void> get() override {
-            //    return GL::shared_ptr<void>(reinterpret_cast<void*>(&m_ptr), [](void* p) { });
-            //};
-
-        public:
-            T m_ptr;
         };
 
         class any {

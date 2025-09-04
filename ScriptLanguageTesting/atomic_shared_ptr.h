@@ -70,16 +70,23 @@ namespace /* atomic_shared_ptr */ GL {
 
         explicit shared_ptr(control_block_base* controlBlock, bool) : controlBlock(controlBlock) {}
 
-        template<class U> shared_ptr(const shared_ptr<U>& other) {
+        shared_ptr(const shared_ptr& other) {
             controlBlock = other.controlBlock;
             if (controlBlock != nullptr) {
                 controlBlock->refCount.fetch_add(1);
             }
         };
-        template<class U> shared_ptr(shared_ptr<U>&& other) noexcept {
-            controlBlock = reinterpret_cast<shared_ptr<T>&>(other).controlBlock;
-            reinterpret_cast<shared_ptr<T>&>(other).controlBlock = nullptr;
+        shared_ptr(shared_ptr&& other) {
+            controlBlock = other.controlBlock;
+            other.controlBlock = nullptr;
         };
+        template<class U> shared_ptr(const shared_ptr<U>& other) {
+            controlBlock = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).controlBlock;
+            if (controlBlock != nullptr) {
+                controlBlock->refCount.fetch_add(1);
+            }
+        };
+
         shared_ptr& operator=(const shared_ptr& other) {
             auto old = controlBlock;
             controlBlock = other.controlBlock;

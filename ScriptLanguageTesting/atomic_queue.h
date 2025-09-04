@@ -42,6 +42,24 @@ namespace GL {
             }
             return ++count;
         };
+        size_t push(size_t thread_index, T const& obj) {
+            if constexpr (is_pod) {
+                _que[thread_index].push(obj);
+            }
+            else {
+                _que[thread_index].push(_alloc.Alloc(obj));
+            }
+            return ++count;
+        };
+        size_t push(size_t thread_index, T&& obj) {
+            if constexpr (is_pod) {
+                _que[thread_index].push(std::move(obj));
+            }
+            else {
+                _que[thread_index].push(_alloc.Alloc(std::move(obj)));
+            }
+            return ++count;
+        };
         bool try_pop(T& out) {
             if constexpr (is_pod) {
                 if (_que.for_each_cancellable([&out](auto& Q) -> bool {
