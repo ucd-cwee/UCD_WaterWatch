@@ -183,8 +183,7 @@ int main() {
                     }
                     EXPECT_EQ(wrap.cast<std::string const&>(), "TEST");
                 }
-            }            
-
+            }
             if (1) {
                 if (auto timer = sw.debug_timer(__LINE__)) {
                     any wrap;                

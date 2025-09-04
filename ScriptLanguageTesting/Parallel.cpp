@@ -67,7 +67,7 @@ namespace GL {
 				size_t thread_index;
 				// Ratio of "work" this CPU core is capable of. E.g. 0.25 would indicate this core is capable of 25% of the workload of this CPU. 
 				// Intended to help identify the primary cores vs. hyperthreaded cores, as their capacity for work is noticibly different. 
-				double relative_speed; 
+				double relative_speed;
 			};
 
 			struct InternalState {
@@ -90,7 +90,7 @@ namespace GL {
 				std::vector<thread_wrap> threads;
 
 				void ShutDown() {
-					if (alive == is_dead) return;
+					if (alive.load() == is_dead) return;
 					else {
 						auto prevS = alive_state::is_alive;
 						while (!alive.compare_exchange_strong(prevS, is_debooting)) {}
@@ -121,44 +121,46 @@ namespace GL {
 				queue.push(job);
 			};
 			void do_task(thread_task& task, impl::job_argument& args, size_t& sizeOfData, void*& data) {
-				if (task.task && !task.ctx->e) { // if another group threw an error, do not process this group at all.
-					args.group_id = task.group_id;
-					args.task_memory = task.task_memory;
-					// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
-					{
-						if (task.group_memory_size > 0) {
-							if (sizeOfData < ((task.group_memory_size + 15) & ~15)) {
-								if (data) ::_aligned_free(data);
-								sizeOfData = (task.group_memory_size + 15) & ~15;
-								data = ::_aligned_malloc(sizeOfData, 16);
+				if (task.ctx) {
+					if (task.task && !task.ctx->e) { // if another group threw an error, do not process this group at all.
+						args.group_id = task.group_id;
+						args.task_memory = task.task_memory;
+						// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
+						{
+							if (task.group_memory_size > 0) {
+								if (sizeOfData < ((task.group_memory_size + 15) & ~15)) {
+									if (data) ::_aligned_free(data);
+									sizeOfData = (task.group_memory_size + 15) & ~15;
+									data = ::_aligned_malloc(sizeOfData, 16);
+								}
+								::memset(data, 0, sizeOfData);
+								args.group_memory = data;
+								if (task.group_start_job) {
+									task.group_start_job(args.group_memory);
+								}
 							}
-							::memset(data, 0, sizeOfData);
-							args.group_memory = data;
-							if (task.group_start_job) {
-								task.group_start_job(args.group_memory);
+							else {
+								args.group_memory = nullptr;
 							}
 						}
-						else {
-							args.group_memory = nullptr;
-						}
-					}
 
-					// Do Group Jobs Until Done or Error is Thrown
-					for (size_t j = task.group_job_offset; !task.ctx->e && j < task.group_job_end; ++j) {
-						args.group_index = (args.job_index = j) - task.group_job_offset;
-						try {
-							task.task(args);
+						// Do Group Jobs Until Done or Error is Thrown
+						for (size_t j = task.group_job_offset; !task.ctx->e && j < task.group_job_end; ++j) {
+							args.group_index = (args.job_index = j) - task.group_job_offset;
+							try {
+								task.task(args);
+							}
+							catch (...) {
+								task.ctx->catch_exception();
+								break;
+							}
 						}
-						catch (...) {
-							task.ctx->catch_exception();
-							break;
-						}
-					}
 
-					// Deallocate Shared Group Memory
-					if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
+						// Deallocate Shared Group Memory
+						if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
+					}
+					--task.ctx->counter;
 				}
-				--task.ctx->counter;
 			};
 		
 			// potentially (not always) called by the main thread
@@ -203,15 +205,79 @@ namespace GL {
 			};
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
-				// submit groups evenly into the thread pool:
-				for (size_t groupID = 0; ; ++groupID) { // groupID < groupCount
-					// For each group, generate one real job:
-					job.group_id = groupID;
-					job.group_job_offset = groupID * groupSize;
-					job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
-					if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.				
-					internal_state.jobQueue.push(job);
+#if 0
+				if (jobCount > 32 * internal_state.numThreads) { 	
+					// if there are enough jobs, then it is worth spending a few extra moments distributing jobs based on the "effectiveness" of the hyperthreads. Not all threads are built equal, 
+					// and some have 1/2 or worse of the performance of others. This strategy attempted to measure the performance at start-up, and then uses that to divy-up jobs. 
+#if 0
+					job.group_job_offset = 0;
+					long long job_remaining = jobCount;
+					size_t groupID = 0;
+					for (size_t thread_index = 0; (thread_index < internal_state.numThreads) && (job_remaining > 0); ++thread_index) {
+						long long num_jobs = std::min<long long>(job_remaining, std::round(static_cast<double>(jobCount) * internal_state.threads[thread_index].relative_speed));
+
+						// submit groups evenly into the thread pool:
+						for (; ; ) { // groupID < groupCount
+							job.group_id = groupID++;							
+							job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
+							if (job.group_job_offset >= job.group_job_end) {								
+								break;
+							}
+							else { // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.	
+								internal_state.jobQueue.push(internal_state.threads[thread_index].thread_index, job);
+								num_jobs -= groupSize;
+								job_remaining -= groupSize;								
+								job.group_job_offset += groupSize;
+							}
+							if (num_jobs <= 0) break;
+						}
+					}
+					while (job_remaining > 0) {
+						job.group_id = groupID++;
+						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
+						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.				
+						internal_state.jobQueue.push(job);
+						job.group_job_offset += groupSize;
+					}
+#else
+					size_t 
+						max_job_num = 0, 
+						thread_id;
+					job.group_id = 0;
+
+					for (size_t thread_index = 0; thread_index < internal_state.numThreads; ++thread_index) {
+						thread_id = internal_state.threads[thread_index].thread_index; //  thread_index% internal_state.numThreads;
+						max_job_num = std::min<long long>(jobCount, max_job_num + std::round(static_cast<double>(jobCount) * internal_state.threads[thread_index].relative_speed));
+
+						// submit groups evenly into the thread pool:
+						for (; ; ++job.group_id) { // groupID < groupCount
+							// For each group, generate one real job:
+							job.group_job_offset = job.group_id * groupSize;
+							job.group_job_end = std::min(job.group_job_offset + groupSize, max_job_num);
+							if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+							internal_state.jobQueue.push(thread_id, job);
+						}
+					}
+					for (; ; ++job.group_id) { // groupID < groupCount
+	                    // For each group, generate one real job:
+						job.group_job_offset = job.group_id * groupSize;
+						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
+						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+						internal_state.jobQueue.push(job);
+					}
+#endif
 				}
+				else {
+#endif
+					for (job.group_id = 0; ; ++job.group_id) {
+						// For each group, generate one real job:
+						job.group_id = job.group_id;
+						job.group_job_offset = job.group_id * groupSize;
+						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
+						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+						internal_state.jobQueue.push(job);
+					}
+				// }
 				internal_state.wakeCondition.notify_all();
 			};
 
@@ -242,8 +308,9 @@ namespace GL {
 
 							--boot_count;
 							if (1) {
-								thread_task temp;
-								(void)internal_state.jobQueue.try_pop(temp);
+								thread_task temp{ nullptr, nullptr, 0, 0, 0, 0, nullptr, nullptr, nullptr };
+								(void)internal_state.jobQueue.push(temp);
+								while (internal_state.jobQueue.try_pop(temp)) {}
 							}
 
 							while (internal_state.alive == InternalState::alive_state::is_booting) {} // wait until we stop booting... 
@@ -296,17 +363,20 @@ namespace GL {
 					}
 
 					while (boot_count.load() > 0) {}
-
+					
 					double total = 0;
-					double best_speed = std::numeric_limits<double>::max();
+					double best_speed{ std::numeric_limits<double>::max() };
 					double worst_speed = 0;
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						double this_speed = internal_state.threads[threadID].relative_speed;
 						total += this_speed;
 					}
+
+					long gcd_result = static_cast<long>((worst_speed / total) * 100);
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						internal_state.threads[threadID].relative_speed /= total;
 					}
+
 					prevS = InternalState::alive_state::is_booting;
 					internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_alive);
 				}
