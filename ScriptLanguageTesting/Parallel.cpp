@@ -543,7 +543,6 @@ namespace GL {
 				}
 			};
 
-
 			void Wait(dispatch_context& ctx) {
 				++wait_depth; // allows detection of when job dispatch may be from within an existing job
 				internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
