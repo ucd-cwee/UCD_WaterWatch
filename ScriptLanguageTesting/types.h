@@ -9,6 +9,9 @@
 #include <concurrent_unordered_map.h>
 
 namespace GL {
+    class any;
+    class any_cast;
+
     namespace util {
         template<typename T> static const auto& type_id() {
             static auto const& typeIdOfT{ boost::typeindex::type_id<T>().type_info() };
@@ -271,7 +274,18 @@ namespace GL {
             any_data& operator=(any_data&&) = delete;
             virtual ~any_data() = default;
 
-            virtual GL::shared_ptr<void> get() = 0;
+            virtual GL::shared_ptr<void> get(GL::atomic_shared_ptr< any_data >&) = 0;
+            virtual std::shared_ptr<void> get_std(GL::atomic_shared_ptr< any_data >&) = 0;
+            
+            template <typename T>
+            T* cast() const {
+                return reinterpret_cast<T*>(m_data);
+            };
+
+            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+            virtual bool can_free_cast(type const& to) const = 0;
+            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+            virtual bool can_cast(type const& to) const = 0;
 
         public:
             GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
@@ -290,8 +304,23 @@ namespace GL {
             };
             virtual ~shared_data() = default;
 
-            GL::shared_ptr<void> get() override {
+            GL::shared_ptr<void> get(GL::atomic_shared_ptr< any_data >&) override {
                 return m_ptr;
+            };
+            std::shared_ptr<void> get_std(GL::atomic_shared_ptr< any_data >& parent) override {
+                return std::shared_ptr<void>(this->m_data, [ptr = m_ptr](void* p) -> void {
+                    if (p != ptr.get()) {
+                        std::cout << "ERROR1\n";
+                    }
+                });
+            };
+            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+            bool can_free_cast(type const& to) const override {
+                return GL::type_of<T>().can_free_cast(to);
+            };
+            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+            bool can_cast(type const& to) const override {
+                return GL::type_of<T>().can_cast(to);
             };
 
         public:
@@ -300,113 +329,564 @@ namespace GL {
         };
         
         template <typename T>
-        class std_shared_data final : public any_data {
+        class instanced_data final : public any_data {
         public:
-            std_shared_data(std::shared_ptr<T> const& p_ptr = {})
-                : m_ptr(std::static_pointer_cast<void>(p_ptr))
+            template <typename... TArgs>
+            instanced_data(TArgs &&... a) noexcept
+                : m_obj(std::forward<TArgs>(a)...)
                 , any_data(GL::type_of<T>())
-            {
-                this->m_data = m_ptr.get();
+            {                
+                this->m_data = &m_obj;
             };
-            virtual ~std_shared_data() = default;
+            virtual ~instanced_data() = default;
 
-            GL::shared_ptr<void> get() override {
-                return GL::shared_ptr<void>(m_ptr.get(), [m_ptr](void* p) {                     
-                    if (p != m_ptr.get()) {
-                        std::cout << "ISSUE!\n";
+            GL::shared_ptr<void> get(GL::atomic_shared_ptr< any_data >& parent) override {
+                if (auto parent_ptr = parent.load()) {
+                    GL::shared_ptr<T> out(parent_ptr.release_control_block(), true);
+                    out.set_pointer_without_modifying_control_block(&m_obj);
+                    return out;
+                }
+                return nullptr;
+            };
+            std::shared_ptr<void> get_std(GL::atomic_shared_ptr< any_data >& parent) override {
+                return std::shared_ptr<void>(this->m_data, [ptr = get(parent)](void* p) -> void {
+                    if (p != ptr.get()) {
+                        std::cout << "ERROR2\n";
                     }
                 });
             };
 
-        public:
-            std::shared_ptr< void > m_ptr;
+            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+            bool can_free_cast(type const& to) const override {
+                return GL::type_of<T>().can_free_cast(to);
+            };
+            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+            bool can_cast(type const& to) const override {
+                return GL::type_of<T>().can_cast(to);
+            };
 
+        public:
+            T
+                m_obj;
         };
 
-        class any {
+        template <typename T>
+        class std_shared_data final : public any_data {
         public:
-            mutable GL::atomic_shared_ptr< any_data > 
-                m_ptr ; // atomic shared-ptr for the type-erased underlying data. 
-            GL::type 
-                m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
+            std_shared_data(std::shared_ptr<T> && a) noexcept
+                : m_obj(std::move(a))
+                , any_data(GL::type_of<T>())
+            {
+                this->m_data = m_obj.get();
+            };
+            virtual ~std_shared_data() = default;
 
-        private:
-            any(GL::atomic_shared_ptr< any_data > const& p_ptr, GL::type&& p_type) 
-                : m_ptr{ p_ptr }, m_casted_type{ std::move(p_type) }
-            {}
-        public:
-            any() = default;
-            any(any const&) = default;
-            any(any &&) = default;
-            any& operator=(any const&) = default;
-            any& operator=(any&&) = default;
-            ~any() = default;
-
-            bool operator&(size_t p_modifiers) const {
-                return m_casted_type & p_modifiers;
+            GL::shared_ptr<void> get(GL::atomic_shared_ptr< any_data >& parent) override {
+                if (auto parent_ptr = parent.load()) {
+                    auto* control_block = parent_ptr.release_control_block();
+                    GL::shared_ptr<T> out(control_block, true);
+                    out.set_pointer_without_modifying_control_block(m_obj.get());
+                    return out;
+                }
+                return nullptr;
             };
-            any operator|(size_t p_modifiers) const {
-                return any(m_ptr, m_casted_type | p_modifiers);
-            };
-            any operator+(size_t p_modifiers) const {
-                return any(m_ptr, m_casted_type + p_modifiers);
-            };
-            any operator-(size_t p_modifiers) const {
-                return any(m_ptr, m_casted_type - p_modifiers);
-            };
-            any& operator|=(size_t p_modifiers) {
-                m_casted_type |= p_modifiers;
-                return *this;
-            };
-            any& operator+=(size_t p_modifiers) {
-                m_casted_type += p_modifiers;
-                return *this;
-            };
-            any& operator-=(size_t p_modifiers) {
-                m_casted_type -= p_modifiers;
-                return *this;
+            std::shared_ptr<void> get_std(GL::atomic_shared_ptr< any_data >& parent) override {
+                return std::static_pointer_cast<void>(m_obj);
             };
 
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
-            bool can_free_cast(type const& to) const {
-                if (m_casted_type.can_free_cast(to)) return true;
-                //if (auto ptr = m_ptr.load_fast()) {                    
-                //    return ptr->m_actual_type.can_free_cast(to);
-                //}
-                return false;                
+            bool can_free_cast(type const& to) const override {
+                return GL::type_of<T>().can_free_cast(to);
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
-            bool can_cast(type const& to) const {
-                if (m_casted_type.can_cast(to)) return true;
-                if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_cast(to);
-                return false;
+            bool can_cast(type const& to) const override {
+                return GL::type_of<T>().can_cast(to);
             };
 
-            void* ptr() const {
-                if (auto p = m_ptr.load_fast()) 
-                    if (auto p2 = p.get())
-                        return p2->m_data;                
-                return nullptr;                
+        public:
+            std::shared_ptr<T>
+                m_obj;
+        };
+
+        struct wrapper {
+            template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, GL::shared_ptr<S>>>>
+            static GL::shared_ptr<any_data> get(H<S> obj) {
+                if (obj) {
+                    if constexpr (std::is_same<GL::any, S>::value) {
+                        // return self
+                        return obj->m_ptr.load();
+                    }
+                    else {
+                        if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) {
+                            return GL::static_pointer_cast<any_data>(GL::make_shared<shared_data<S>>(std::move(obj)));
+                        }
+                        else if constexpr (std::is_same<std::shared_ptr<S>, H<S>>::value) {
+                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));
+                        }
+                        else {
+                            return nullptr;
+                        }
+                    }
+                }
+                else {
+                    return nullptr; // return null if incoming is null
+                }
             };
 
-            template <typename T> T* cast(bool nothrow = false) const {
-                if (nothrow || can_cast(GL::type_of<T>()))
-                    return static_cast<T*>(this->ptr());
+            template<typename T, typename = std::enable_if_t<!std::is_same_v<GL::any_cast, T>>>
+            static GL::shared_ptr<any_data> get(const T& obj) {
+                if constexpr (std::is_same<GL::any, T>::value) {
+                    // return self
+                    return obj.container;
+                }
+                else {
+                    return GL::static_pointer_cast<any_data>(GL::make_shared<instanced_data<T>>(obj));
+                }
+            };
 
-                GL::string err_msg = 
-                    "Could not cast from " + this->m_casted_type.name() + " to " + GL::type_of<T>().name();
+            template<typename T, typename = std::enable_if_t<!std::is_same_v<GL::any_cast, T>>>
+            static GL::shared_ptr<any_data> get(T&& obj, int modifier) {
+                if constexpr (std::is_same<GL::any, T>::value) {
+                    // return self
+                    return obj.container;
+                }
+                else {
+                    return GL::static_pointer_cast<any_data>(GL::make_shared<instanced_data<T>>(std::move(obj)));
+                }
+            };
 
-                throw 
-                    std::runtime_error(err_msg.to_string());
+            static GL::shared_ptr<any_data> get(const any_cast& obj);
+            static GL::shared_ptr<any_data> get(const any_cast* t);
+        };
+
+        template<typename T> static GL::shared_ptr<any_data> wrap(const T& r) { return wrapper::get(r); };
+        template<typename T> static GL::shared_ptr<any_data> wrap(T&& r) { return wrapper::get(std::move(r)); };
+
+    };
+
+    /* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
+    It defers from "Any" because Any objects are for use in C++ to contain statically typed objects.
+    "Var" objects are wrappers for Anys that allow the scripting language to process them as
+    empty & assignable, or filled and implimented */
+    class var {
+    public:
+        var() = default;
+        explicit var(any* data_f) : p_data(data_f) {};
+        var(var const&) = default;
+        var(var&&) = default;
+        var& operator=(var const&) = default;
+        var& operator=(var&&) = default;
+        ~var() = default;
+
+    public:
+        GL::atomic_shared_ptr<any> 
+            p_data; // may be "updated" at any time and therefore should be thread-safe. 
+
+    };
+
+    class any {
+    public:
+        mutable GL::atomic_shared_ptr< type_erasure::any_data >
+            m_ptr; // atomic shared-ptr for the type-erased underlying data. 
+        GL::type
+            m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
+
+    private:
+        explicit any(GL::atomic_shared_ptr< type_erasure::any_data > const& p_ptr, GL::type&& p_type)
+            : m_ptr{ p_ptr }, m_casted_type{ std::move(p_type) }
+        {}
+
+    public:
+        any() = default;
+        any(any const&) = default;
+        any(any&&) noexcept = default;
+        any(std::nullptr_t) noexcept : m_ptr{}, m_casted_type{} { };
+        any& operator=(any const&) = default;
+        any& operator=(any&&) noexcept = default;
+        any& operator=(std::nullptr_t) noexcept {
+            m_ptr = nullptr;
+            m_casted_type = {};
+            return *this;
+        };
+        ~any() = default;
+
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any(const ValueType& value) noexcept
+            : any(type_erasure::wrap(value), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>())
+        {};
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any(ValueType&& value) noexcept
+            : any(type_erasure::wrap(std::move(value)), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>())
+        {};
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any& operator=(const ValueType& rhs) noexcept {
+            m_ptr = type_erasure::wrap(rhs);
+            m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
+            return *this;
+        };
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> any& operator=(ValueType&& rhs) noexcept {
+            m_ptr = type_erasure::wrap(std::move(rhs));
+            m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
+            return *this;
+        };
+
+        bool operator&(size_t p_modifiers) const {
+            return m_casted_type & p_modifiers;
+        };
+        any operator|(size_t p_modifiers) const {
+            return any(m_ptr, m_casted_type | p_modifiers);
+        };
+        any operator+(size_t p_modifiers) const {
+            return any(m_ptr, m_casted_type + p_modifiers);
+        };
+        any operator-(size_t p_modifiers) const {
+            return any(m_ptr, m_casted_type - p_modifiers);
+        };
+        any& operator|=(size_t p_modifiers) {
+            m_casted_type |= p_modifiers;
+            return *this;
+        };
+        any& operator+=(size_t p_modifiers) {
+            m_casted_type += p_modifiers;
+            return *this;
+        };
+        any& operator-=(size_t p_modifiers) {
+            m_casted_type -= p_modifiers;
+            return *this;
+        };
+
+        operator bool() const noexcept {
+            return m_ptr.operator bool();
+        };
+        bool empty() const noexcept {
+            return !operator bool();
+        };
+        /*! Empties the Any and frees the memory. */
+        void clear() noexcept {
+            operator=(nullptr);
+        };
+        friend bool operator==(const any& a, const any& b) noexcept { return a.m_ptr == b.m_ptr; };
+        friend bool operator!=(const any& a, const any& b) noexcept { return a.m_ptr != b.m_ptr; };
+        friend bool operator<(const any& a, const any& b) noexcept { return a.m_ptr < b.m_ptr; };
+        friend bool operator<=(const any& a, const any& b) noexcept { return a.m_ptr <= b.m_ptr; };
+        friend bool operator>(const any& a, const any& b) noexcept { return a.m_ptr > b.m_ptr; };
+        friend bool operator>=(const any& a, const any& b) noexcept { return a.m_ptr >= b.m_ptr; };
+
+        // returns true if this type can easily match the requested type (e.g. int& -> const int&)
+        bool can_free_cast(type const& to) const {
+            if (m_casted_type.can_free_cast(to)) return true;
+            //if (auto ptr = m_ptr.load_fast()) {                    
+            //    return ptr->m_actual_type.can_free_cast(to);
+            //}
+            return false;
+        };
+        // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
+        bool can_cast(type const& to) const {
+            if (m_casted_type.can_cast(to)) return true;
+            if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_cast(to);
+            return false;
+        };
+
+        void* ptr() const {
+            if (auto p = m_ptr.load_fast())
+                if (auto p2 = p.get())
+                    return p2->m_data;
+            return nullptr;
+        };
+        GL::shared_ptr<void> shared_ptr() const {
+            if (auto p = m_ptr.load_fast()) {
+                return p->get(this->m_ptr);
+            }
+            return nullptr;
+        };
+        std::shared_ptr<void> std_shared_ptr() const {
+            if (auto p = m_ptr.load_fast()) {
+                return p->get_std(this->m_ptr);
+            }
+            return nullptr;
+        };
+
+        class DataCaster {
+        public:
+            template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
+
+            template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
+
+        private:
+            template <class VType> static decltype(auto) DoCast_Shared(any* p) noexcept {
+                if (p) {
+                    return GL::static_pointer_cast<VType>(p->shared_ptr());
+                }
+                return GL::shared_ptr<VType>{ nullptr };
+            };
+            template <class VType> static decltype(auto) DoCast_StdShared(any* p) noexcept {
+                if (p) {
+                    return std::static_pointer_cast<VType>(p->std_shared_ptr());
+                }
+                return std::shared_ptr<VType>{ nullptr };
+            };
+            template <class VType> static decltype(auto) DoCast_Shared_Sentinel(any* p) /*noexcept*/ {
+                throw("Casting Any to  std::shared_ptr<T>* or  std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+            };
+            template<typename VType> static decltype(auto) DoCast_Unshared(any* p) /*noexcept*/ {
+                static constexpr bool is_ptr = std::is_pointer_v<VType>;
+                if (p) {
+                    if (auto container = p->m_ptr.load_fast()) {
+                        if constexpr (is_ptr) {
+                            if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                                return container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                            }
+                            else {                                
+                                return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
+                            }
+                        }
+                        else {
+                            return *container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                        }
+                    }
+                }
+                if constexpr (is_ptr) {
+                    return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
+                }
+                else {
+                    auto err = "Cannot cast from void-type to " + GL::type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name();
+                    throw std::runtime_error(err.to_string());
+                }
+            };
+
+        public:
+            template<typename T> static decltype(auto) DoCast(any* p) /*noexcept*/ {
+                typedef typename is_SharedPtr_class<T>::type isShared;
+                typedef typename is_stdSharedPtr_class<T>::type isStdShared;
+
+                constexpr bool is_shared_ptr = isShared::value;
+                constexpr bool is_std_shared_ptr = isStdShared::value;
+                constexpr bool is_ptr = std::is_pointer_v<T>;
+                constexpr bool is_ref = std::is_reference_v<T>;
+
+                if (p) {
+                    GL::shared_ptr<type_erasure::any_data> container = p->m_ptr.load();
+                    while (container) {
+                        if constexpr (is_shared_ptr) {
+                            // casting to utilities::shared_ptr
+                            typedef typename type_erasure::get_type<T>::type innertype;
+                            if constexpr (is_ptr) {
+                                throw("Casting Any to utilities::shared_ptr<T>* or utilities::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to stutilitiesd::shared_ptr<T>.");
+                            }
+                            else if constexpr (is_ref) {
+                                throw("Casting Any to utilities::shared_ptr<T>* or utilities::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to utilities::shared_ptr<T>.");
+                            }
+
+                            if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
+                                return DoCast_Shared<innertype>(p);
+                            }
+                            else {
+                                if (container->can_cast(type_of<var>())) {
+                                    var* ptr = container->cast<var>();
+                                    if (auto f = ptr->p_data.load_fast()) {
+                                        container = f->m_ptr.load();
+                                        continue;
+                                    }
+                                }
+                                return DoCast_Shared<innertype>(p);
+                            }
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            // casting to std::shared_ptr
+                            typedef typename type_erasure::get_type<T>::type innertype;
+                            if constexpr (is_ptr) {
+                                throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+                            }
+                            else if constexpr (is_ref) {
+                                throw("Casting Any to std::shared_ptr<T>* or std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
+                            }
+
+                            if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
+                                return DoCast_StdShared<innertype>(p);
+                            }
+                            else {
+                                if (container->can_cast(type_of<var>())) {
+                                    var* ptr = container->cast<var>();
+                                    if (auto f = ptr->p_data.load_fast()) {
+                                        container = f->m_ptr.load();
+                                        continue;
+                                    }
+                                }
+                                return DoCast_StdShared<innertype>(p);
+                            }
+                        }
+                        else {
+                            // casting to a reference or a pointer
+                            if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
+                                return DoCast_Unshared<T>(p);
+                            }
+                            else {
+                                if (container->can_cast(type_of<var>())) {
+                                    var* ptr = container->cast<var>();
+                                    if (auto f = ptr->p_data.load_fast()) {
+                                        container = f->m_ptr.load();
+                                        continue;
+                                    }
+                                }
+                                return DoCast_Unshared<T>(p);
+                            }
+                        }
+                    }
+                }
+
+                if constexpr (is_shared_ptr) {
+                    typedef typename type_erasure::get_type<T>::type innertype;
+                    return GL::shared_ptr<innertype>(nullptr);
+                }
+                else if constexpr (is_std_shared_ptr) {
+                    typedef typename type_erasure::get_type<T>::type innertype;
+                    return std::shared_ptr<innertype>(nullptr);
+                }
+                else {
+                    if constexpr (is_ptr) {
+                        typedef typename type_erasure::get_type<T>::type innertype;
+                        return (innertype*)nullptr;
+                    }
+                    else {
+                        auto err = "Cannot cast from void-type to " + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name();
+                        throw std::runtime_error(err.to_string());
+                    }
+                }
             };
 
         };
 
+        template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
 
+        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        any& cast() const noexcept { return *const_cast<any*>(this); };
+
+        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        any* cast() const noexcept { return const_cast<any*>(this); };
+
+        any_cast cast() const noexcept;
     };
 
-    
+    class any_cast {
+    public:
+        any_cast(const any* _parent) : parent(const_cast<any*>(_parent)) {};
+        any_cast(any_cast&& other) noexcept : parent(std::move(other.parent)) {};
+        any_cast() = delete;
+        any_cast(const any_cast&) = delete;
+        any_cast& operator=(const any_cast&) = delete;
+        any_cast& operator=(any_cast&&) = delete;
+        ~any_cast() {};
 
+        explicit operator any& () const noexcept { return *parent; };
+        explicit operator any* () const noexcept { return parent; };
+
+        template <typename T> operator std::shared_ptr<T>() const noexcept { return parent->cast<std::shared_ptr<T>>(); };
+        template <typename T> operator GL::shared_ptr<T>() const noexcept { return parent->cast<GL::shared_ptr<T>>(); };
+        
+        template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
+        operator ValueTypeT& () const noexcept { return parent->cast<ValueTypeT&>(); };
+        
+        template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
+        operator ValueTypeT* () const noexcept { return parent->cast<ValueTypeT*>(); };
+
+        any* parent;
+    };
+
+    __forceinline any_cast any::cast() const noexcept {
+        return any_cast(this);
+    };
+
+
+    namespace type_erasure {
+        __forceinline GL::shared_ptr<any_data> get(const any_cast& obj) {
+            any* t = const_cast<any*>(obj.parent);
+            if (t) {
+                return t->m_ptr.load();
+            }
+            return nullptr;
+        };
+        __forceinline GL::shared_ptr<any_data> get(const any_cast* t) {
+            return get(*t); 
+        };
+    };
+
+#if 0
+    // serves as an instance of a customizable class
+    class dynamic_object {
+    public:
+        dynamic_object() = default;
+        dynamic_object(GL::type const& type)
+            : m_type(type)
+            , m_objects()
+        {};
+        // Cast from one class to another (e.g. from class C : public A {} to class A {})
+        dynamic_object(GL::type const& castedType, dynamic_object const& parent)
+            : m_type(castedType)
+            , m_objects(parent.m_objects)
+        {
+            if (castedType == parent.m_type) {
+                // we are casting to the existing type, which is OK
+            }
+            else if (castedType.is_derived_from(parent.m_type)) {
+                // we are casting from a parent (inherited) type to a derived (child) type, which is OK.                
+            }
+            else if (parent.m_type.is_derived_from(castedType)) {
+                // we are casting from a derived (child) type to a parent (inherited) type, which is OK.
+            }
+            else {
+                // cast was not viable!
+                m_type = GL::type_of<void>();
+                m_objects.clear();
+            }
+        };
+        dynamic_object(dynamic_object const&) = default;
+        dynamic_object(dynamic_object&&) = default;
+        dynamic_object& operator=(dynamic_object const&) = default;
+        dynamic_object& operator=(dynamic_object&&) = default;
+        ~dynamic_object() = default;
+
+        GL::type
+            m_type;
+        concurrency::concurrent_unordered_map<GL::string, GL::any>
+            m_objects;
+
+        any& operator[](GL::string const& sv) {
+            return m_objects[sv];
+        };
+        any const& operator[](GL::string const& sv) const {
+            return m_objects.at(sv);
+        };
+        any* try_at(GL::string const& sv) {
+            if (m_objects.count(sv) > 0) {
+                return &m_objects.at(sv);
+            }
+            else {
+                return nullptr;
+            }
+        };
+        const any* try_at(GL::string const& sv) const {
+            if (m_objects.count(sv) > 0) {
+                return &m_objects.at(sv);
+            }
+            else {
+                return nullptr;
+            }
+        };
+
+    };
+#endif
 
 };
 

@@ -65,23 +65,28 @@ namespace /* atomic_shared_ptr */ GL {
 
     public:
         shared_ptr() : controlBlock(nullptr) {}
-        template<class U> explicit shared_ptr(U* data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(data))) {}
-        template<class U> explicit shared_ptr(U* data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(new deleter_control_block<U>(data, std::move(deleter)))) {}
+        shared_ptr(std::nullptr_t) : controlBlock(nullptr) {}
+        template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(Data))), data{ Data } {}
+        template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(new deleter_control_block<U>(Data, std::move(deleter)))), data{ Data } {}
 
-        explicit shared_ptr(control_block_base* controlBlock, bool) : controlBlock(controlBlock) {}
+        explicit shared_ptr(control_block_base* ControlBlock, bool) : controlBlock(ControlBlock), data{ reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr) } {}
 
         shared_ptr(const shared_ptr& other) {
             controlBlock = other.controlBlock;
+            data = other.data;
             if (controlBlock != nullptr) {
                 controlBlock->refCount.fetch_add(1);
             }
         };
-        shared_ptr(shared_ptr&& other) {
+        shared_ptr(shared_ptr&& other) noexcept {
             controlBlock = other.controlBlock;
+            data = other.data;
             other.controlBlock = nullptr;
+            other.data = nullptr;
         };
         template<class U> shared_ptr(const shared_ptr<U>& other) {
             controlBlock = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).controlBlock;
+            data = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).data;
             if (controlBlock != nullptr) {
                 controlBlock->refCount.fetch_add(1);
             }
@@ -90,6 +95,7 @@ namespace /* atomic_shared_ptr */ GL {
         shared_ptr& operator=(const shared_ptr& other) {
             auto old = controlBlock;
             controlBlock = other.controlBlock;
+            data = other.data;
             if (controlBlock != nullptr) {
                 controlBlock->refCount.fetch_add(1);
             }
@@ -100,7 +106,9 @@ namespace /* atomic_shared_ptr */ GL {
             if (controlBlock != other.controlBlock) {
                 auto old = controlBlock;
                 controlBlock = other.controlBlock;
-                other.controlBlock = nullptr;                
+                data = other.data;
+                other.controlBlock = nullptr;          
+                other.data = nullptr;
                 control_block_base::DeferredDeletion(old);
             }
             return *this;
@@ -108,6 +116,7 @@ namespace /* atomic_shared_ptr */ GL {
         shared_ptr& operator=(std::nullptr_t) {
             control_block_base::DeferredDeletion(controlBlock);
             controlBlock = nullptr;
+            data = nullptr;
             return *this;
         }
         ~shared_ptr() {
@@ -117,7 +126,8 @@ namespace /* atomic_shared_ptr */ GL {
         };
 
         T* get() const { 
-            return reinterpret_cast<T*>(controlBlock ? controlBlock->data : nullptr);
+            return data;
+            // return reinterpret_cast<T*>(controlBlock ? controlBlock->data : nullptr);
         }
         T* operator->() const { 
             return get();
@@ -130,8 +140,18 @@ namespace /* atomic_shared_ptr */ GL {
             return (bool)controlBlock;
         };
 
+        control_block_base* release_control_block() {
+            control_block_base* out = controlBlock;
+            controlBlock = nullptr;
+            data = nullptr;
+            return out;
+        };
+        void set_pointer_without_modifying_control_block(T* ptr) {
+            data = ptr;
+        };
     protected:        
         control_block_base* controlBlock;
+        T* data;
     };
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. Read-only, and cannot be shared without the move operator. 
@@ -170,7 +190,7 @@ namespace /* atomic_shared_ptr */ GL {
         T* get() { return data; }
         T* operator->() { return data; }
         template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
-        decltype(auto) operator*() const {
+        decltype(auto) operator*() {
             return *get();
         };
         operator bool() const {
@@ -231,6 +251,10 @@ namespace /* atomic_shared_ptr */ GL {
             control_block_base* block = dynamic_cast<control_block_base*>(new control_block<T>(data));
             packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
         };
+        explicit atomic_shared_ptr(control_block_base* controlBlock, bool) {
+            control_block_base* block = dynamic_cast<control_block_base*>(controlBlock);
+            packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
+        };
         ~atomic_shared_ptr() {
             size_t packedPtrCopy = packedPtr.load();
             auto block = reinterpret_cast<control_block<T>*>(packedPtrCopy >> MAGIC_LEN);
@@ -242,12 +266,12 @@ namespace /* atomic_shared_ptr */ GL {
         };
 
         atomic_shared_ptr(const atomic_shared_ptr& other) : atomic_shared_ptr(const_cast<atomic_shared_ptr&>(other).load()) {};
-        atomic_shared_ptr(atomic_shared_ptr&& other) : atomic_shared_ptr(other.load()) {};
+        atomic_shared_ptr(atomic_shared_ptr&& other) noexcept : atomic_shared_ptr(other.load()) {};
         atomic_shared_ptr& operator=(const atomic_shared_ptr& other) {
             this->store(other.load());
             return *this;
         };
-        atomic_shared_ptr& operator=(atomic_shared_ptr&& other) {
+        atomic_shared_ptr& operator=(atomic_shared_ptr&& other) noexcept {
             this->store(other.load());
             return *this;
         };
@@ -292,6 +316,9 @@ namespace /* atomic_shared_ptr */ GL {
         // return a read-only, optimized shared_ptr meant for quickly accessing the value of the current ptr.
         fast_shared_ptr<T> load_fast() {
             return fast_shared_ptr<T>(&packedPtr);
+        };
+        operator bool() const noexcept {
+            return const_cast<atomic_shared_ptr&>(*this).load_fast().operator bool();
         };
 
     private:

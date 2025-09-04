@@ -66,7 +66,7 @@ namespace GL {
         if (to_delete) {
             size_t before = to_delete->refCount.fetch_sub(1);
             if (before == 1) {
-#if 1 // do you prefer more speed? (larger overhead for deferred memory destruction)                
+#if 0 // do you prefer more speed? (larger overhead for deferred memory destruction)                
                 if ((_destruction_queue.push(to_delete) & 255) == 0)
                     _destruction_thread.wake();
 #else // or do you prefer better memory utilization? (immediate destruction while stalling the current thread)

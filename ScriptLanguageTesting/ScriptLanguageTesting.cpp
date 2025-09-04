@@ -125,6 +125,7 @@ int main() {
         }
 
         if (1) {
+            using namespace GL;
             using namespace GL::type_erasure;
             if (1) {
                 shared_data<std::string> instanced(GL::make_shared<std::string>("TEST"));
@@ -159,23 +160,61 @@ int main() {
                 }
             }
 
-            any wrap; {
-                wrap.m_ptr = GL::static_pointer_cast<any_data>(GL::make_shared<shared_data<std::string>>(GL::make_shared<std::string>("TEST")));
-                wrap.m_casted_type = GL::type_of<std::string>();
+            if (1) {
+                GL::any wrap; {
+                    wrap = std::string("TEST");
 
-                EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string>()));
-                EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string const&>()));
-                EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string>()));
-                EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string const&>()));
+                    EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string>()));
+                    EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string const&>()));
+                    EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string>()));
+                    EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string const&>()));
 
-                wrap += GL::type::Const | GL::type::Reference;
+                    wrap += GL::type::Const | GL::type::Reference;
 
-                EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string const&>()));
-                EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string>()));
-                EXPECT_EQ(false, wrap.can_free_cast(GL::type_of<std::string>())); // cannot free-cast from const& to && because it requires a constructor. 
-                EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string const&>()));
+                    EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string const&>()));
+                    EXPECT_EQ(true, wrap.can_cast(GL::type_of<std::string>()));
+                    EXPECT_EQ(false, wrap.can_free_cast(GL::type_of<std::string>())); // cannot free-cast from const& to && because it requires a constructor. 
+                    EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string const&>()));
 
-                EXPECT_EQ(*static_cast<std::string*>(wrap.ptr()), "TEST");
+                    EXPECT_EQ(*static_cast<std::string*>(wrap.ptr()), "TEST");
+                    EXPECT_EQ(wrap.cast<std::string>(), "TEST");
+                    if (auto p = wrap.cast<GL::shared_ptr<std::string>>()) {
+                        EXPECT_EQ(*p, "TEST");
+                    }
+                    EXPECT_EQ(wrap.cast<std::string const&>(), "TEST");
+                }
+            }            
+
+            if (1) {
+                if (auto timer = sw.debug_timer(__LINE__)) {
+                    any wrap;                
+                    GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                        wrap = std::to_string(index);
+                    });
+                }
+                if (auto timer = sw.debug_timer(__LINE__)) {
+                    any wrap = GL::string("TEST");
+                    GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                        auto& ptr = wrap.cast<GL::string>();
+                        EXPECT_EQ(ptr, "TEST");
+                    });
+                }
+                if (auto timer = sw.debug_timer(__LINE__)) {
+                    any wrap = GL::string("TEST");
+                    GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                        auto ptr = wrap.cast<GL::shared_ptr<GL::string>>();
+                        EXPECT_EQ(*ptr, "TEST");
+                    });
+                }
+                if (auto timer = sw.debug_timer(__LINE__)) {
+                    any wrap{ GL::string("TEST") };
+                    GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                        wrap = GL::string("TEST");
+                        if (auto ptr = wrap.cast<GL::shared_ptr<GL::string>>()) {
+                            EXPECT_EQ(*ptr, "TEST");
+                        }
+                    });
+                }
             }
 
 
