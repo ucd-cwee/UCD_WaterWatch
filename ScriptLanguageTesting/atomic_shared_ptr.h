@@ -64,8 +64,8 @@ namespace /* atomic_shared_ptr */ GL {
         template<typename A> friend class atomic_shared_ptr;
 
     public:
-        shared_ptr() : controlBlock(nullptr) {}
-        shared_ptr(std::nullptr_t) : controlBlock(nullptr) {}
+        shared_ptr() : controlBlock(nullptr), data{ nullptr } {}
+        shared_ptr(std::nullptr_t) : controlBlock(nullptr), data{ nullptr } {}
         template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(Data))), data{ Data } {}
         template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(new deleter_control_block<U>(Data, std::move(deleter)))), data{ Data } {}
 
@@ -127,7 +127,6 @@ namespace /* atomic_shared_ptr */ GL {
 
         T* get() const { 
             return data;
-            // return reinterpret_cast<T*>(controlBlock ? controlBlock->data : nullptr);
         }
         T* operator->() const { 
             return get();

@@ -114,5 +114,22 @@ namespace GL {
         return this_base.match_base_hash(that_base.base_hash);
     };
 
+    // const value_t& to This&&
+    GL::any type::instance_by_value(GL::any const& rhs) const {
+        auto& this_base = get_base(*this);
+        return this_base.instance_by_value(rhs);
+    };
+    // const This& to This&&
+    GL::any type::instance_by_copy(GL::any const& rhs) const {
+        auto& this_base = get_base(*this);
+        return this_base.instance_by_copy(rhs);
+    };
+    // This&&
+    GL::any type::instance() const {
+        auto& this_base = get_base(*this);
+        return this_base.instance();
+    };
+
+
 
 };

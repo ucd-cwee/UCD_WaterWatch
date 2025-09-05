@@ -990,4 +990,10 @@ namespace std {
     _NODISCARD inline std::string to_string(GL::string const& _Val) { // convert string to string
         return _Val.to_string();
     };
+    template <> struct hash<GL::string> {
+        std::size_t operator()(const GL::string& k) const {
+            return k.hash();
+        };
+    };
+
 };

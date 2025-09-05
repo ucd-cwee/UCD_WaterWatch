@@ -176,7 +176,6 @@ int main() {
                     EXPECT_EQ(false, wrap.can_free_cast(GL::type_of<std::string>())); // cannot free-cast from const& to && because it requires a constructor. 
                     EXPECT_EQ(true, wrap.can_free_cast(GL::type_of<std::string const&>()));
 
-                    EXPECT_EQ(*static_cast<std::string*>(wrap.ptr()), "TEST");
                     EXPECT_EQ(wrap.cast<std::string>(), "TEST");
                     if (auto p = wrap.cast<GL::shared_ptr<std::string>>()) {
                         EXPECT_EQ(*p, "TEST");
@@ -214,6 +213,32 @@ int main() {
                         }
                     });
                 }
+
+                if (auto timer = sw.debug_timer(__LINE__)) {
+                    var wrap(GL::make_shared<any>(GL::string("TEST")));
+                    GL::parallel::For(0, 1000000, [&](size_t const& index) {                        
+                        wrap = var(GL::make_shared<any>(GL::string("TEST")));
+                        if (auto ptr = wrap.p_data.load_fast()) {
+                            if (auto ptr2 = ptr->cast<GL::shared_ptr<GL::string>>()) {
+                                EXPECT_EQ(*ptr2, "TEST");
+                            }
+                        }
+                    });
+                }
+
+                if (1) {
+                    any temp = 100;
+                    any temp2 = temp.m_casted_type.instance_by_copy(temp);
+                    temp2.cast<int>() += 100;
+                    EXPECT_EQ(100, temp.cast<int&>());
+                    EXPECT_EQ(200, temp2.cast<int&>());
+                    EXPECT_EQ(100, GL::type_of<int>().instance_by_value(100.0f).cast<int>());
+                }
+
+
+
+
+
             }
 
 
