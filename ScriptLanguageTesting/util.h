@@ -222,7 +222,7 @@ namespace GL {
         deferred() = default;
         deferred(T const& data) : ptr(new T(data)) {};
         deferred(T&& data) : ptr(new T(std::move(data))) {};
-        deferred(deferred const&) = delete;
+        deferred(deferred const& rhs) : ptr(rhs.ptr ? (new T(*rhs.ptr)) : (T*)nullptr) {};
         deferred(deferred&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
         deferred& operator=(deferred const&) = delete;
         deferred& operator=(deferred&& rhs) {

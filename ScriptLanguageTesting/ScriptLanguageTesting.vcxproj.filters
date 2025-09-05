@@ -8,6 +8,7 @@
     <ClCompile Include="atomic_shared_ptr.cpp" />
     <ClCompile Include="Parallel.cpp" />
     <ClCompile Include="types.cpp" />
+    <ClCompile Include="units.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aba_problem.h" />
@@ -26,5 +27,6 @@
     <ClInclude Include="stopwatch.h" />
     <ClInclude Include="util.h" />
     <ClInclude Include="types.h" />
+    <ClInclude Include="units.h" />
   </ItemGroup>
 </Project>

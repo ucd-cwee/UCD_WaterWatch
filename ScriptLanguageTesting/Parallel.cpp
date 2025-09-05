@@ -62,9 +62,13 @@ namespace GL {
 	namespace parallel {
 		namespace impl {
 			struct thread_wrap {
-				std::thread thread;
-				size_t thread_hash;
-				size_t thread_index;
+				std::thread 
+					thread;
+				size_t 
+					thread_hash;
+				size_t 
+					thread_index;
+
 				// Ratio of "work" this CPU core is capable of. E.g. 0.25 would indicate this core is capable of 25% of the workload of this CPU. 
 				// Intended to help identify the primary cores vs. hyperthreaded cores, as their capacity for work is noticibly different. 
 				double relative_speed;
@@ -77,17 +81,20 @@ namespace GL {
 					is_alive = 2,
 					is_debooting = 3
 				};
-				size_t numCores = 0;
-				size_t numThreads = 0;
-
-				// GL::aba_problem::stack< thread_task > jobQueue;
-				GL::atomic_parallel_queue< thread_task > jobQueue;
-
-				std::atomic<alive_state> alive{ is_dead };
-				std::condition_variable wakeCondition;
-				std::mutex wakeMutex;
-
-				std::vector<thread_wrap> threads;
+				size_t 
+					numCores{ 0 };
+				size_t 
+					numThreads{ 0 };
+			    GL::atomic_parallel_queue< thread_task >
+					jobQueue{};
+				std::atomic<alive_state> 
+					alive{ is_dead };
+				std::condition_variable 
+					wakeCondition{};
+				std::mutex 
+					wakeMutex{};
+				std::vector<thread_wrap> 
+					threads{};
 
 				void ShutDown() {
 					if (alive.load() == is_dead) return;
@@ -176,9 +183,6 @@ namespace GL {
 					, nullptr
 				};
 
-				//auto*& consumer = *internal_state.consumer_tokens;
-				//if (!consumer) consumer = new moodycamel::ConsumerToken(internal_state.jobQueue);
-
 				if (parentCtx) {
 					// work until this job is completed
 					while (parentCtx->is_busy()) {
@@ -205,10 +209,11 @@ namespace GL {
 			};
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
-#if 0
+#if 1
 				if (jobCount > 32 * internal_state.numThreads) { 	
 					// if there are enough jobs, then it is worth spending a few extra moments distributing jobs based on the "effectiveness" of the hyperthreads. Not all threads are built equal, 
 					// and some have 1/2 or worse of the performance of others. This strategy attempted to measure the performance at start-up, and then uses that to divy-up jobs. 
+#if 0
 #if 0
 					job.group_job_offset = 0;
 					long long job_remaining = jobCount;
@@ -266,18 +271,37 @@ namespace GL {
 						internal_state.jobQueue.push(job);
 					}
 #endif
+#else
+					size_t 
+						thread_counter{ 0 }
+						, submission_thread{ internal_state.threads[thread_counter % internal_state.numThreads].thread_index }
+					    , max_job_num{ static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter % internal_state.numThreads].relative_speed) };
+
+					for (job.group_id = 0, job.group_job_offset = 0; ; ++job.group_id) {
+						// For each group, generate one real job:					
+						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
+						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
+						internal_state.jobQueue.push(submission_thread, job);
+						job.group_job_offset += groupSize;
+
+						if (job.group_job_end > max_job_num) {
+							thread_counter = (thread_counter + 1) % internal_state.numThreads;
+							submission_thread = internal_state.threads[thread_counter].thread_index;
+							max_job_num += static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter].relative_speed);
+						}
+					}
+#endif
 				}
 				else {
 #endif
-					for (job.group_id = 0; ; ++job.group_id) {
-						// For each group, generate one real job:
-						job.group_id = job.group_id;
-						job.group_job_offset = job.group_id * groupSize;
+					for (job.group_id = 0, job.group_job_offset = 0; ; ++job.group_id) {
+						// For each group, generate one real job:						
 						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
 						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
 						internal_state.jobQueue.push(job);
+						job.group_job_offset += groupSize;
 					}
-				// }
+				}
 				internal_state.wakeCondition.notify_all();
 			};
 
@@ -305,13 +329,13 @@ namespace GL {
 								++count;
 							}
 							internal_state.threads[threadID].relative_speed = 1.0 / (double)((GL::util::get_current_epoch() - start_time) + 1);
-
-							--boot_count;
 							if (1) {
 								thread_task temp{ nullptr, nullptr, 0, 0, 0, 0, nullptr, nullptr, nullptr };
-								(void)internal_state.jobQueue.push(temp);
+								(void)internal_state.jobQueue.push(temp); // necessary to instantiate the thread_local object
 								while (internal_state.jobQueue.try_pop(temp)) {}
 							}
+
+							--boot_count;
 
 							while (internal_state.alive == InternalState::alive_state::is_booting) {} // wait until we stop booting... 
 							while (internal_state.alive == InternalState::alive_state::is_alive) {
@@ -365,14 +389,10 @@ namespace GL {
 					while (boot_count.load() > 0) {}
 					
 					double total = 0;
-					double best_speed{ std::numeric_limits<double>::max() };
-					double worst_speed = 0;
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						double this_speed = internal_state.threads[threadID].relative_speed;
 						total += this_speed;
 					}
-
-					long gcd_result = static_cast<long>((worst_speed / total) * 100);
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						internal_state.threads[threadID].relative_speed /= total;
 					}

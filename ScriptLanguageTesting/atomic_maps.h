@@ -250,7 +250,7 @@ namespace GL {
             objAllocator;
         atomic_epoch_allocator<_iterType>
             nodeAllocator;
-        std::shared_mutex
+        mutable std::shared_mutex
             mutex;
 
         class EpochGuard {
@@ -1265,6 +1265,7 @@ namespace GL {
             clear() {
             while (pop_front()) {}
         };
+
     private:
         class it_state {
         public:
@@ -1307,7 +1308,7 @@ namespace GL {
 
     public:
         SETUP_ITERATOR(atomic_map, it_state);
-        iterator // returns an iterator 
+        iterator // returns an iterator to an exact match
             find(const KeyType& _Keyval) const {
             auto g{ tree->ProtectCurrentEpoch() };
             auto iter = this->end();
@@ -1316,6 +1317,24 @@ namespace GL {
             }
             return iter;
         };
+        iterator // returns an iterator to the nearest match that is smaller or equal to the requested value
+            find_less_or_equal(const KeyType& _Keyval) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = this->tree->NodeFindLargestSmallerEqual(_Keyval)) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        }
+        iterator // returns an iterator to the nearest match that is larger or equal to the requested value
+            find_larger_or_equal(const KeyType& _Keyval) const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = this->tree->NodeFindSmallestLargerEqual(_Keyval)) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        }
 
     };
 

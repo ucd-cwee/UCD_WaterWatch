@@ -382,7 +382,7 @@ namespace /* atomic_shared_ptr */ GL {
         // set the value of the atomic_shared_pointer to this pointer. 
         void store(shared_ptr<T>&& data) {
             while (true) {
-                auto holder = this->load_fast();
+                fast_shared_ptr<T> holder = this->load_fast();
                 if (compare_exchange(holder.get(), holder.get_control_block(), std::move(data))) {
                     break;
                 }

@@ -58,7 +58,22 @@ namespace GL {
                 else {
                     return false;
                 }
-                });
+            });
+        };
+        template <typename F>
+        void for_each_pop(F const& func) {
+            head.for_each([&](auto& this_head) {
+                while (element_t* ptr = aba_problem::Pop(this_head)) {
+                    if constexpr (std::is_move_assignable<T>::value) {
+                        func(ptr->data);
+                    }
+                    else {
+                        func(ptr->data);
+                    }
+                    allocator.Free(ptr);
+                    --count;
+                }
+            });
         };
         size_t size() const {
             return count.load();

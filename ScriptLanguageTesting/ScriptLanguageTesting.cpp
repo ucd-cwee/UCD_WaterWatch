@@ -32,6 +32,8 @@
 #include <concurrent_vector.h>
 #include <concurrent_unordered_map.h>
 
+#include "units.h"
+
 // #include "../GoodLang/Parallel.h"
 #pragma endregion
 
@@ -56,6 +58,57 @@ int main() {
             EXPECT_EQ(*p, 100);
             delete p; 
         });
+
+        if (1) {
+            GL::value val;
+            auto package = val.load();
+            package.m_bits.val += 10;
+            val.store(package);
+            auto package2 = val.load();
+            EXPECT_EQ(10, (int)package.m_bits.val);
+
+            GL::value meter(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter"));
+            GL::value foot(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot"));
+            GL::value inch(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit((1.0 / 12.0) * (381.0 / 1250.0), "inch"));
+
+            
+
+
+
+
+
+            EXPECT_EQ(0, (int)meter.load().m_bits.val);    
+            print(meter.name());
+
+            meter += 10.0f;
+            EXPECT_EQ(10, (int)meter.load().m_bits.val);
+            print(meter.ratio());
+
+            foot += 1.0f;
+            EXPECT_EQ(1, (int)foot.load().m_bits.val);
+            print(foot.ratio());
+
+            inch += 12.0f;
+            EXPECT_EQ(12, (int)inch.load().m_bits.val);
+            print(inch.ratio());
+
+            print(foot.load().m_bits.val);
+            foot += inch;
+            print(foot.load().m_bits.val);
+            EXPECT_EQ(2, (int)foot.load().m_bits.val);
+
+
+        }
+
+        
+
+
+
+
+
+
+
+
 
         //GL::builtin_type::declare_cpp_derived<long, int>();
         //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<int>().is_derived_from(GL::builtin_type::get_builtin_type<long>().base_hash));

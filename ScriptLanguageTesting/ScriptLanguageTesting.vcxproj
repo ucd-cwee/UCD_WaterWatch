@@ -148,6 +148,7 @@
     <ClCompile Include="shared_ptr.cpp" />
     <ClCompile Include="Source.cpp" />
     <ClCompile Include="types.cpp" />
+    <ClCompile Include="units.cpp" />
     <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -174,6 +175,7 @@
     <ClInclude Include="ticket_dispensor.h" />
     <ClInclude Include="stopwatch.h" />
     <ClInclude Include="types.h" />
+    <ClInclude Include="units.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

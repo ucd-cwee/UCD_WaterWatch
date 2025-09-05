@@ -51,15 +51,13 @@ namespace GL {
     void control_block_base::DeferredDeletion(control_block_base* to_delete) {
         static GL::atomic_parallel_stack< control_block_base* > _destruction_queue{};
         struct Wrap {
-            static void DeleteFunc(void) {
-                control_block_base* out{ nullptr };
-                while (_destruction_queue.try_pop(out)) {
+            static void DeleteFunc(void) {                
+                _destruction_queue.for_each_pop([](control_block_base*& out) {
                     if (out) {
                         out->Delete();
                         out->DeleteSelf(out);
                     }
-                    out = nullptr;
-                }
+                });
             };
         };        
         static Taskable<Wrap::DeleteFunc> _destruction_thread{};

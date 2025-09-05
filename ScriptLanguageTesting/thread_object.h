@@ -226,11 +226,27 @@ namespace GL {
             }
             return false;
         };
+        template <typename T> bool for_each_cancellable(const size_t index, T const& func) {
+            size_t i;
+            for (i = index; i < _tls_size; ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            for (i = 0; (i < index) && (i < _tls_size); ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            return false;
+        };
         template <typename T> void for_each(T const& func) {
             (void)for_each_cancellable([&func](auto& x) -> bool {
                 func(x);
                 return false;
-                });
+            });
         };
         template <typename T> void for_each_alive(T const& func) {
             (void)for_each_cancellable_alive([&func](auto& x) -> bool {
