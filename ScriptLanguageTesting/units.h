@@ -14,18 +14,20 @@ namespace GL {
                 uint16_t si_unit; // hash for unique SI unit combination. (e.g. meter, cubic meter, meter per second)
                 uint16_t impl_unit; // hash for unique ratio or unit implimentation within SI unit. (e.g. foot, meter, inch)
                 float val; // as float
+
+
             };
             struct bitset2 {
                 uint32_t unit_hash; // hash for unique unit. 
                 float val; // as float
             };
 
-            uint64_t
-                m_n64; // for CAS
-            bitset
-                m_bits;
             bitset2
                 m_bits2;
+            bitset
+                m_bits;
+            uint64_t
+                m_n64; // for CAS
         };
         class impl_unit {
         public:
@@ -37,7 +39,7 @@ namespace GL {
                 ratio{ 1 }; // si unit ratio. 1 == si unit. negative or 0 is impossible. 
             uint32_t
                 hash{ std::numeric_limits< uint32_t>::max() };
-            uint64_t
+            package
                 default_bits;
         };
         // does not use the 'ratio' values yet. 
@@ -81,6 +83,18 @@ namespace GL {
                 }
             };
 
+            impl_unit* try_get_nearest_impl_unit(double ratio) {
+                uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
+                if (auto F = implimented_units->find_less_or_equal(impl_hash); F != implimented_units->end()) {
+                    return &F->second;
+                }
+                else if (auto F = implimented_units->find_larger_or_equal(impl_hash); F != implimented_units->end()) {
+                    return &F->second;
+                } 
+                else {
+                    return nullptr;
+                }
+            };
             impl_unit& get_impl_unit(double ratio, GL::string const& name, GL::string const& abbreviation) {
                 uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
                 auto& out = implimented_units->operator[](impl_hash);
@@ -95,7 +109,7 @@ namespace GL {
                         out.ratio = ratio;
                         out.name = name;
                         out.abbreviation = abbreviation;
-                        out.default_bits = default_bits.m_n64;
+                        out.default_bits = default_bits;
                     }
                 }
                 return out;
@@ -348,14 +362,24 @@ namespace GL {
                     , lhs_si_units.AMPERES + rhs_si_units.AMPERES
                     , lhs_si_units.DOLLARS + rhs_si_units.DOLLARS
                 );
-                GL::string abbrev
-                    // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
-                    = abbreviation(lhs) + "*" + abbreviation(rhs);
-                // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
-                auto& new_impl_unit = new_si_units.get_impl_unit(ratio(lhs) * ratio(rhs), "", abbrev);
-                package out{ new_impl_unit.default_bits };
-                out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) * (rhs.m_bits.val * ratio(rhs)) / new_impl_unit.ratio;
-                return out;
+                double desired_ratio = ratio(lhs) * ratio(rhs);
+                if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
+                    // found or found nearby
+                    package out{ _impl_unit->default_bits };
+                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) * (rhs.m_bits.val * ratio(rhs)) / _impl_unit->ratio;
+                    return out;
+                }
+                else {
+                    // create new
+                    GL::string abbrev
+                        // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
+                        = abbreviation(lhs) + "*" + abbreviation(rhs);
+                    // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
+                    auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
+                    package out{ new_impl_unit.default_bits };
+                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) * (rhs.m_bits.val * ratio(rhs)) / new_impl_unit.ratio;
+                    return out;
+                }               
             }
             else {
                 auto& new_si_units = get_si_unit(
@@ -365,14 +389,24 @@ namespace GL {
                     , lhs_si_units.AMPERES - rhs_si_units.AMPERES
                     , lhs_si_units.DOLLARS - rhs_si_units.DOLLARS
                 );
-                GL::string abbrev 
-                    // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
-                    = abbreviation(lhs) + "/" + abbreviation(rhs);
-                // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
-                auto& new_impl_unit = new_si_units.get_impl_unit(ratio(lhs) / ratio(rhs), "", abbrev);
-                package out{ new_impl_unit.default_bits };
-                out.m_bits.val = ((lhs.m_bits.val * ratio(lhs)) / (rhs.m_bits.val * ratio(rhs))) / new_impl_unit.ratio;
-                return out;
+                double desired_ratio = ratio(lhs) / ratio(rhs);
+                if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
+                    // found or found nearby
+                    package out{ _impl_unit->default_bits };
+                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) / (rhs.m_bits.val * ratio(rhs)) / _impl_unit->ratio;
+                    return out;
+                }
+                else {
+                    // create new
+                    GL::string abbrev
+                        // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
+                        = abbreviation(lhs) + "/" + abbreviation(rhs);
+                    // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
+                    auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
+                    package out{ new_impl_unit.default_bits };
+                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) / (rhs.m_bits.val * ratio(rhs)) / new_impl_unit.ratio;
+                    return out;
+                }
             }
         };
         static package multiply_units(package lhs, double rhs) {
@@ -396,21 +430,33 @@ namespace GL {
                     , lhs_si_units.AMPERES * rhs
                     , lhs_si_units.DOLLARS * rhs
                 );
-                GL::string abbrev
-                    // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
-                    = abbreviation(lhs) + "^" + std::to_string(rhs);
-                // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
-                auto& new_impl_unit = new_si_units.get_impl_unit(std::pow(ratio(lhs), rhs), "", abbrev);
-                package out{ new_impl_unit.default_bits };
-                out.m_bits.val = std::pow(lhs.m_bits.val, rhs) / new_impl_unit.ratio;
-                return out;
+                double desired_ratio = std::pow(ratio(lhs), rhs);
+                if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
+                    // found or found nearby
+                    package out{ _impl_unit->default_bits };
+                    out.m_bits.val = std::pow(lhs.m_bits.val * ratio(lhs), rhs) / _impl_unit->ratio;
+                    return out;
+                }
+                else {
+                    // create new
+                    GL::string abbrev
+                        // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
+                        = abbreviation(lhs) + "^" + std::to_string(rhs);
+                    // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
+                    auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
+                    package out{ new_impl_unit.default_bits };
+                    out.m_bits.val = std::pow(lhs.m_bits.val * ratio(lhs), rhs) / new_impl_unit.ratio;
+                    return out;
+                }
             }
         };
 
     public:
-        value() : packed(package{ 0ull }) {};
         explicit value(package const& from) : packed(from) {};
-        explicit value(impl_unit const& from) : packed(package{ from.default_bits }) {};
+        value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       
+        explicit value(impl_unit const& from) : packed(from.default_bits) {};
+
+        value(float rhs) : value(package{ package::bitset2{ 0ull, rhs } }) {};
         value(value const& rhs) : packed(rhs.load()) {};
         value(value && rhs) noexcept : packed(rhs.load()) {};
         value& operator=(value const& rhs){
