@@ -67,37 +67,118 @@ int main() {
             auto package2 = val.load();
             EXPECT_EQ(10, (int)package.m_bits.val);
 
-            GL::value meter(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter"));
-            GL::value foot(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot"));
-            GL::value inch(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit((1.0 / 12.0) * (381.0 / 1250.0), "inch"));
+            GL::value meter(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter", "m"));
+            EXPECT_EQ(false, meter.is_scaler());
+            EXPECT_EQ(0, (int)meter.load().m_bits.val);
+            EXPECT_EQ(meter.name(), "meter");
+            EXPECT_EQ(meter.abbreviation(), "m");
 
-            
+            GL::value foot(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
+            EXPECT_EQ(false, foot.is_scaler());
 
+            GL::value inch(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit((1.0 / 12.0) * (381.0 / 1250.0), "inch", "in"));
+            EXPECT_EQ(false, inch.is_scaler());
 
+            GL::value square_meter(GL::value::get_si_unit(2, 0, 0, 0, 0).get_impl_unit(1.0, "square_meter", "sq_m"));
+            EXPECT_EQ(false, square_meter.is_scaler());
 
+            GL::value square_foot(GL::value::get_si_unit(2, 0, 0, 0, 0).get_impl_unit((381.0 / 1250.0) * (381.0 / 1250.0), "square_foot", "sq_ft"));
+            EXPECT_EQ(false, square_foot.is_scaler());
 
+            GL::value cubic_meter(GL::value::get_si_unit(3, 0, 0, 0, 0).get_impl_unit(1.0, "cubic_meter", "cu_m"));
+            EXPECT_EQ(false, cubic_meter.is_scaler());
 
-            EXPECT_EQ(0, (int)meter.load().m_bits.val);    
-            print(meter.name());
+            GL::value scaler;
+            EXPECT_EQ(0, (int)scaler.load().m_bits.val);
+            EXPECT_EQ(0, scaler.load().m_bits.si_unit);
+            EXPECT_EQ(0, scaler.load().m_bits.impl_unit);
+            EXPECT_EQ(0, scaler.load().m_bits2.unit_hash);
+            EXPECT_EQ(1, (int)scaler.ratio());
+            EXPECT_EQ(true, scaler.is_scaler());
+            EXPECT_EQ(scaler.name(), "scaler");
+
+            GL::value scaler2(GL::value::get_si_unit(0, 0, 0, 0, 0).get_impl_unit(1, "scaler", ""));
+            EXPECT_EQ(0, (int)scaler2.load().m_bits.val);
+            EXPECT_EQ(0, scaler2.load().m_bits.si_unit);
+            EXPECT_EQ(0, scaler2.load().m_bits.impl_unit);
+            EXPECT_EQ(0, scaler2.load().m_bits2.unit_hash);
+            EXPECT_EQ(1, (int)scaler2.ratio());
+            EXPECT_EQ(true, scaler2.is_scaler());
+            EXPECT_EQ(scaler2.name(), "scaler");
 
             meter += 10.0f;
             EXPECT_EQ(10, (int)meter.load().m_bits.val);
-            print(meter.ratio());
-
             foot += 1.0f;
             EXPECT_EQ(1, (int)foot.load().m_bits.val);
-            print(foot.ratio());
-
             inch += 12.0f;
             EXPECT_EQ(12, (int)inch.load().m_bits.val);
-            print(inch.ratio());
-
-            print(foot.load().m_bits.val);
             foot += inch;
-            print(foot.load().m_bits.val);
             EXPECT_EQ(2, (int)foot.load().m_bits.val);
+            scaler += 100.0f;
+            EXPECT_EQ(100, (int)scaler.load().m_bits.val);
+
+            cubic_meter += 1;
+            EXPECT_EQ(1, (int)cubic_meter.load().m_bits.val);
+
+            cubic_meter += scaler;
+            EXPECT_EQ(101, (int)cubic_meter.load().m_bits.val);
+
+            try {
+                cubic_meter += inch;
+                EXPECT_EQ(true, false);
+            } catch (...) {}
 
 
+            auto manual_sq_m = meter * meter;
+            print(manual_sq_m.name());
+            print(manual_sq_m.abbreviation());
+
+            auto manual_cu_m = manual_sq_m * meter;
+            print(manual_cu_m.name());
+            print(manual_cu_m.abbreviation());
+
+            auto manual_sq_ft = foot * foot;
+            print(manual_sq_ft.name());
+            print(manual_sq_ft.abbreviation());
+
+            auto manual_cu_ft = manual_sq_ft * foot;
+            print(manual_cu_ft.name());
+            print(manual_cu_ft.abbreviation());
+
+            auto manual_sq_in = inch * inch;
+            print(manual_sq_in.name());
+            print(manual_sq_in.abbreviation());
+
+            auto manual_scaler = manual_cu_ft / manual_cu_m;
+            print(manual_scaler.name());
+            print(manual_scaler.abbreviation());
+
+            GL::value scaler3;
+            scaler3 += 3.0f;
+            auto manual_cu_m2 = meter.pow(scaler3);
+            print(manual_cu_m2.name());
+            print(manual_cu_m2.abbreviation());
+            print(manual_cu_m2.load().m_bits.val);
+
+            // SOMETHING IS WRONG! CHECK YOU POWER MATH
+            auto manual_cu_ft2 = foot.pow(scaler3);
+            print(manual_cu_ft2.name());
+            print(manual_cu_ft2.abbreviation());
+            print(manual_cu_ft2.load().m_bits.val);
+
+
+            if (auto timer = sw.debug_timer(__LINE__)) {
+                GL::value v(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    ++v;
+                });
+            }
+            if (auto timer = sw.debug_timer(__LINE__)) {
+                GL::atomic_double v{ 0 };
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    ++v;
+                });
+            }
         }
 
         

@@ -117,6 +117,14 @@ namespace GL {
         };
 
     public:
+        GL::string add_to_delim(GL::string const& to_add, GL::string const& delim) const {
+            if (this->length() > 0) {
+                return GL::string(*this) + delim + to_add;
+            }
+            else {
+                return to_add;
+            }
+        };
         std::string to_string() const {
             return std::string(data);
         };
