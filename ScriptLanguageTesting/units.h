@@ -116,7 +116,6 @@ namespace GL {
             };
         };
 
-
         // get the cached si unit for this type (fast, assuming already have the unique hash value)
         static si_unit& get_si_unit(uint16_t hash);
         // get the cached si unit for this type (slow, assumes the unique hash is not known or needs to be initialized)
@@ -141,6 +140,18 @@ namespace GL {
             double intpart;
             return modf(value, &intpart) == 0.0;
         };
+        static GL::string NumStr(double v) {
+            GL::string Num;
+            if (IsInteger(v)) {
+                Num = std::to_string((int)v);
+            }
+            else {
+                Num = std::to_string(v);
+                Num.remove_trailing('0');
+                Num.remove_trailing('.');
+            }
+            return Num;
+        }
         static GL::string get_default_abbreviation(double meters, double kilograms, double seconds, double amperes, double dollars) {
             std::array< GL::string, 5> unitBases{ "m", "kg", "s", "A", "$" };
             std::array< double, 5> data{ meters, kilograms, seconds, amperes, dollars };
@@ -199,7 +210,7 @@ namespace GL {
         };
     
     private:
-        std::atomic<package> packed;
+        package packed;
 
         // return the SI ratio of the current type. 
         static double const& ratio(package const& pkg) {
@@ -225,8 +236,7 @@ namespace GL {
                 // do nothing
             }
             else if (from.m_bits.si_unit == to.m_bits.si_unit) {
-                from.m_bits.val *= ratio(from);
-                from.m_bits.val /= ratio(to);
+                from.m_bits.val = static_cast<float>(static_cast<double>(from.m_bits.val) * ratio(from) / ratio(to));
                 from.m_bits.impl_unit = to.m_bits.impl_unit;
             }
             else {
@@ -234,6 +244,7 @@ namespace GL {
                 auto& A2 = abbreviation(to);
                 throw std::runtime_error(GL::string("Normal arithmetic failed due to incompatible non-scalar value: '" + A1 + "' and '" + A2 + "'").to_string());
             }
+            return from;
         };
 
         static bool same_si_units(package const& LHS, package const& RHS) noexcept {
@@ -310,7 +321,7 @@ namespace GL {
                 return toDo(cast(LHS, RHS).m_bits.val, RHS.m_bits.val);
             }
         };
-        template<typename Func> static void add_or_sub(Func const& toDo, value& lhs, value const& rhs) {
+        template<typename Func> static void atomic_add_or_sub(Func const& toDo, value& lhs, value const& rhs) {
             auto RHS = rhs.load();
             lhs.UpdatePackage([&](package Old) -> package {
                 confirm_unary_arithmetic(Old, RHS);
@@ -322,8 +333,7 @@ namespace GL {
                 else if (Old.m_bits.si_unit == RHS.m_bits.si_unit) {
                     const double& RHS_ratio = ratio(RHS);
                     const double& LHS_ratio = ratio(Old);
-                    toDo(Old.m_bits.val, static_cast<float>((static_cast<double>(RHS.m_bits.val) * RHS_ratio) / LHS_ratio));
-                    // Old.m_bits.val += static_cast<float>((static_cast<double>(RHS.m_bits.val) * RHS_ratio) / LHS_ratio);
+                    toDo(Old.m_bits.val, static_cast<float>(static_cast<double>(RHS.m_bits.val) * RHS_ratio / LHS_ratio));
                 }
                 else if (RHS.m_bits.si_unit == 0) {
                     toDo(Old.m_bits.val, RHS.m_bits.val);
@@ -335,6 +345,29 @@ namespace GL {
                 return Old;
             });
         };
+        template<typename Func> static void ST_add_or_sub(Func const& toDo, value& lhs, value const& rhs) {
+            auto RHS = rhs.load();
+            auto& LHS = lhs.packed;
+
+            confirm_unary_arithmetic(LHS, RHS);
+
+            if (LHS.m_bits2.unit_hash == RHS.m_bits2.unit_hash) {
+                toDo(LHS.m_bits.val, RHS.m_bits.val);
+            }
+            else if (LHS.m_bits.si_unit == RHS.m_bits.si_unit) {
+                const double& RHS_ratio = ratio(RHS);
+                const double& LHS_ratio = ratio(LHS);
+                toDo(LHS.m_bits.val, static_cast<float>(static_cast<double>(RHS.m_bits.val) * RHS_ratio / LHS_ratio));
+            }
+            else if (RHS.m_bits.si_unit == 0) {
+                toDo(LHS.m_bits.val, RHS.m_bits.val);
+            }
+            else /*if (LHS.m_bits.si_unit == 0)*/ {
+                LHS = cast(LHS, RHS);
+                toDo(LHS.m_bits.val, RHS.m_bits.val);
+            }
+        };
+
         static package compound_units(package lhs, package rhs, bool multiplication = true) {
             bool lhs_is_scalar = is_scaler(lhs);
             bool rhs_is_scalar = is_scaler(rhs);
@@ -362,11 +395,13 @@ namespace GL {
                     , lhs_si_units.AMPERES + rhs_si_units.AMPERES
                     , lhs_si_units.DOLLARS + rhs_si_units.DOLLARS
                 );
-                double desired_ratio = ratio(lhs) * ratio(rhs);
+                const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
+                const double& rhs_ratio = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit).ratio;
+                double desired_ratio = lhs_ratio * rhs_ratio;
                 if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) * (rhs.m_bits.val * ratio(rhs)) / _impl_unit->ratio;
+                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) * (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / _impl_unit->ratio);
                     return out;
                 }
                 else {
@@ -377,7 +412,7 @@ namespace GL {
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
                     package out{ new_impl_unit.default_bits };
-                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) * (rhs.m_bits.val * ratio(rhs)) / new_impl_unit.ratio;
+                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) * (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / new_impl_unit.ratio);
                     return out;
                 }               
             }
@@ -389,11 +424,13 @@ namespace GL {
                     , lhs_si_units.AMPERES - rhs_si_units.AMPERES
                     , lhs_si_units.DOLLARS - rhs_si_units.DOLLARS
                 );
-                double desired_ratio = ratio(lhs) / ratio(rhs);
+                const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
+                const double& rhs_ratio = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit).ratio;
+                double desired_ratio = lhs_ratio / rhs_ratio;
                 if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) / (rhs.m_bits.val * ratio(rhs)) / _impl_unit->ratio;
+                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) / (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / _impl_unit->ratio);
                     return out;
                 }
                 else {
@@ -404,7 +441,7 @@ namespace GL {
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
                     package out{ new_impl_unit.default_bits };
-                    out.m_bits.val = (lhs.m_bits.val * ratio(lhs)) / (rhs.m_bits.val * ratio(rhs)) / new_impl_unit.ratio;
+                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) / (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / new_impl_unit.ratio);
                     return out;
                 }
             }
@@ -417,7 +454,7 @@ namespace GL {
                 bool lhs_is_scalar = is_scaler(lhs);
                 // early-exit if the LHS is a scalar
                 if (lhs_is_scalar) {
-                    lhs.m_bits.val = std::pow(lhs.m_bits.val, rhs);
+                    lhs.m_bits.val = static_cast<float>(std::pow(static_cast<double>(lhs.m_bits.val), rhs));
                     return lhs;
                 }
 
@@ -430,11 +467,12 @@ namespace GL {
                     , lhs_si_units.AMPERES * rhs
                     , lhs_si_units.DOLLARS * rhs
                 );
-                double desired_ratio = std::pow(ratio(lhs), rhs);
+                const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
+                double desired_ratio = std::pow(lhs_ratio, rhs);
                 if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = std::pow(lhs.m_bits.val * ratio(lhs), rhs) / _impl_unit->ratio;
+                    out.m_bits.val = static_cast<float>(std::pow(static_cast<double>(lhs.m_bits.val) * lhs_ratio, rhs) / _impl_unit->ratio);
                     return out;
                 }
                 else {
@@ -445,52 +483,103 @@ namespace GL {
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
                     package out{ new_impl_unit.default_bits };
-                    out.m_bits.val = std::pow(lhs.m_bits.val * ratio(lhs), rhs) / new_impl_unit.ratio;
+                    out.m_bits.val = static_cast<float>(std::pow(static_cast<double>(lhs.m_bits.val) * lhs_ratio, rhs) / new_impl_unit.ratio);
                     return out;
                 }
             }
         };
 
-    public:
-        explicit value(package const& from) : packed(from) {};
+        explicit value(package&& from) : packed(std::move(from)) {};
+
+        package load() const {
+            return packed;
+        };
+        void store(package const& data) {
+            InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
+        };
+        void store(package&& data) {
+            InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(data.m_n64));
+        };
+        package exchange(package&& data) {
+            package out;
+            out.m_n64 = InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(data.m_n64));
+            return out;
+        };
+        package exchange(package const& data) {
+            package out;
+            out.m_n64 = InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
+            return out;
+        };
+        bool compare_exchange(package const& expected, package&& newValue) {
+            return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(newValue.m_n64), expected.m_n64) == expected.m_n64;
+        };
+        bool compare_exchange(package const& expected, package const& newValue) {
+            return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), newValue.m_n64, expected.m_n64) == expected.m_n64;
+        };
+
+    public:        
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       
         explicit value(impl_unit const& from) : packed(from.default_bits) {};
-
         value(float rhs) : value(package{ package::bitset2{ 0ull, rhs } }) {};
-        value(value const& rhs) : packed(rhs.load()) {};
-        value(value && rhs) noexcept : packed(rhs.load()) {};
-        value& operator=(value const& rhs){
-            store(rhs.load());
+        value(value const& rhs) : packed(rhs.packed) {};
+        value(value && rhs) noexcept : packed(rhs.packed) {};
+        value& operator=(value const& RHS){
+            if (this == &RHS) return *this;
+
+            auto rhs = RHS.load();
+            UpdatePackage([&](package lhs) -> package {
+                if (is_scaler(lhs) || identical_units(lhs, rhs)) {
+                    return rhs;
+                }
+                else if (is_scaler(rhs)) {
+                    lhs.m_bits.val = rhs.m_bits.val;
+                    return lhs;
+                }
+                else if (same_si_units(lhs, rhs)) {
+                    lhs.m_bits.val = static_cast<float>(static_cast<double>(rhs.m_bits.val) * ratio(rhs) / ratio(lhs));
+                    return lhs;
+                }
+                else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+                    auto& A1 = abbreviation(lhs);
+                    auto& A2 = abbreviation(rhs);
+                    throw std::runtime_error(GL::string("Assignment(=) failed due to incompatible non-scalar value: '" + A1 + "' and '" + A2 + "'").to_string());
+                }
+            });
             return *this;
+
+            //InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), rhs.packed.m_n64);
+            //return *this;
         };
-        value& operator=(value&& rhs) noexcept {
-            store(rhs.load());
+        value& operator=(value&& RHS) noexcept {
+            auto rhs = std::move(RHS.packed);
+            UpdatePackage([&](package lhs) -> package {
+                if (is_scaler(lhs) || identical_units(lhs, rhs)) {
+                    return rhs;
+                }
+                else if (is_scaler(rhs)) {
+                    lhs.m_bits.val = rhs.m_bits.val;
+                    return lhs;
+                }
+                else if (same_si_units(lhs, rhs)) {
+                    lhs.m_bits.val = static_cast<float>(static_cast<double>(rhs.m_bits.val) * ratio(rhs) / ratio(lhs));
+                    return lhs;
+                }
+                else { // incoming unit AND this unit are different non-scalers of different categories. No exchange is reasonable. 
+                    auto& A1 = abbreviation(lhs);
+                    auto& A2 = abbreviation(rhs);
+                    throw std::runtime_error(GL::string("Assignment(=) failed due to incompatible non-scalar value: '" + A1 + "' and '" + A2 + "'").to_string());
+                }
+            });
             return *this;
+
+            //InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), rhs.packed.m_n64);
+            //return *this;
         };
         ~value() = default;
 
-        package load() const {
-            return packed.load();
+        operator float() const {
+            return this->packed.m_bits.val;
         };
-        void store(package const& data) {
-            packed.store(data);
-        };
-        void store(package&& data) {
-            packed.store(std::move(data));
-        };
-        package exchange(package&& data) {
-            return packed.exchange(std::move(data));
-        };
-        package exchange(package const& data) {
-            return packed.exchange(data);
-        };
-        bool compare_exchange(package const& expected, package&& newValue) {
-            return packed.compare_exchange_strong(const_cast<package&>(expected), std::move(newValue));
-        };
-        bool compare_exchange(package const& expected, package const& newValue) {
-            return packed.compare_exchange_strong(const_cast<package&>(expected), newValue);
-        };
-
         GL::string const& name() const {
             auto pkg = load();
             return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).name;
@@ -499,7 +588,7 @@ namespace GL {
             auto pkg = load();
             return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).abbreviation;
         };
-        double ratio() const {
+        const double& ratio() const {
             auto pkg = load();
             return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).ratio;
         };
@@ -533,32 +622,34 @@ namespace GL {
         value operator-() const {
             auto t = load();
             t.m_bits.val *= -1;
-            return value(t);
+            return value(std::move(t));
         };
-
         value& operator+=(value const& rhs) {
-            add_or_sub([](float& lhs, float const& rhs) {
+            atomic_add_or_sub([](float& lhs, float const& rhs) {
                 lhs += rhs;
             }, *this, rhs);
             return *this;
         };
         value& operator-=(value const& rhs) {
-            add_or_sub([](float& lhs, float const& rhs) {
+            atomic_add_or_sub([](float& lhs, float const& rhs) {
                 lhs -= rhs;
             }, *this, rhs);
             return *this;
         };
         friend value operator+(value const& lhs, value const& rhs) {
             value LHS(lhs);
-            LHS += rhs;
+            ST_add_or_sub([](float& lhs, float const& rhs) {
+                lhs += rhs;
+            }, LHS, rhs);
             return LHS;
         };
         friend value operator-(value const& lhs, value const& rhs) {
             value LHS(lhs);
-            LHS -= rhs;
+            ST_add_or_sub([](float& lhs, float const& rhs) {
+                lhs -= rhs;
+            }, LHS, rhs);
             return LHS;
         };
-
         friend value operator*(value const& lhs, value const& rhs) {
             return value(compound_units(lhs.load(), rhs.load(), true));
         };
@@ -568,16 +659,62 @@ namespace GL {
         value& operator*=(value const& RHS) {
             auto rhs = RHS.load();
             this->UpdatePackage([&](package Old) -> package {
-                return compound_units(Old, rhs, true);
+                if ((rhs.m_bits.si_unit == 0) || (Old.m_bits.si_unit == 0)) {
+                    return compound_units(Old, rhs, true);
+                }
+                else {
+                    auto& A1 = abbreviation(Old);
+                    auto& A2 = abbreviation(rhs);
+                    throw std::runtime_error(GL::string("Unary (in-place or self-modifying) arithmetic failed due to incompatible non-scalar value: '" + A1 + "' and '" + A2 + "'").to_string());
+                }
             });
             return *this;
         };
         value& operator/=(value const& RHS) {
             auto rhs = RHS.load();
             this->UpdatePackage([&](package Old) -> package {
-                return compound_units(Old, rhs, false);
+                if ((rhs.m_bits.si_unit == 0) || (Old.m_bits.si_unit == 0)) {
+                    return compound_units(Old, rhs, false);
+                }
+                else {
+                    auto& A1 = abbreviation(Old);
+                    auto& A2 = abbreviation(rhs);
+                    throw std::runtime_error(GL::string("Unary (in-place or self-modifying) arithmetic failed due to incompatible non-scalar value: '" + A1 + "' and '" + A2 + "'").to_string());
+                }
             });
             return *this;
+        };
+
+        friend bool operator==(value const& A, value const& V) noexcept {
+            auto LHS = A.packed;
+            auto RHS = V.packed;
+            if (LHS.m_bits2.unit_hash == RHS.m_bits2.unit_hash) {
+                return A.packed.m_n64 == V.packed.m_n64;
+            }
+            else {
+                return do_comparison([](float const& lhs, float const& rhs) -> bool { return std::abs(lhs - rhs) < 0.000001; }, A, V);
+            }
+        };
+        friend bool operator<(value const& A, value const& V) {
+            return do_comparison([](float const& lhs, float const& rhs) -> bool { return lhs < rhs; }, A, V);
+        };
+        friend bool operator<=(value const& A, value const& V) {
+            return do_comparison([](float const& lhs, float const& rhs) -> bool { return lhs <= rhs; }, A, V);
+        };
+        friend bool operator>(value const& A, value const& V) {
+            return !operator<=(A, V);
+        };
+        friend bool operator>=(value const& A, value const& V) {
+            return !operator<(A, V);
+        };
+        friend bool operator!=(value const& A, value const& V) noexcept {
+            return !operator==(A, V);
+        };
+        friend std::ostream& operator<<(std::ostream& os, value const& obj) {
+            auto pkg = obj.packed;
+            GL::string out = NumStr(static_cast<double>(pkg.m_bits.val)) + " " + abbreviation(pkg);
+            os << out;
+            return os;
         };
 
         // Returns a new value multiplied by itself "V" times. (e.g. (3_m).pow(3) => 3_cu_m)
@@ -586,9 +723,41 @@ namespace GL {
             confirm_is_scalar(other);
             return value(multiply_units(this->load(), other.m_bits.val));
         };
+        // updates the value by exponentiating the underlying value (e.g. (3_m).pow_value(3) => 9_m)
+        value pow_value(value const& V) const {
+            auto other = V.load();
+            confirm_is_scalar(other);
 
+            auto pkg = this->load();
+            pkg.m_bits.val = std::pow(pkg.m_bits.val, other.m_bits.val);
 
+            return value(std::move(pkg));
+        };
+        // pow(0.5)
+        value sqrt() const {
+            return pow(0.5);
+        };
+        // Creates a copy of the value and floors (rounds to lower whole integer) the underlying value
+        value floor() const {
+            value out{ *this };
+            out.packed.m_bits.val = std::floor(out.packed.m_bits.val);
+            return out;
+        };
+        // Creates a copy of the value and ceilings (rounds to upper whole integer) the underlying value
+        value ceiling() const {
+            value out{ *this };
+            out.packed.m_bits.val = std::ceil(out.packed.m_bits.val);
+            return out;
+        };
+
+        // faster call to update the value without atomic ensurances. 
+        template <typename F> value& single_threaded_update(F const& func) {
+            func(this->packed.m_bits.val);
+            return *this;
+        };
     };
+
+
 
 
 };

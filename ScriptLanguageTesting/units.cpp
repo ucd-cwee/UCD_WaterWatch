@@ -8,4 +8,10 @@ namespace GL {
 	value::si_unit& value::get_si_unit(uint16_t hash) {
 		return si_unit_types[hash];
 	};
+
+	//static GL::value meter{ GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter", "m") };
+	//static GL::value meter{ GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter", "m") };
+
+
+
 };
