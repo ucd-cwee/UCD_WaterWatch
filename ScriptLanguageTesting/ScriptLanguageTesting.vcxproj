@@ -143,6 +143,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="atomic_shared_ptr.cpp" />
+    <ClCompile Include="datetime.cpp" />
     <ClCompile Include="Parallel.cpp" />
     <ClCompile Include="ScriptLanguageTesting.cpp" />
     <ClCompile Include="shared_ptr.cpp" />
@@ -168,6 +169,7 @@
     <ClInclude Include="atomic_shared_ptr.h" />
     <ClInclude Include="atomic_stack.h" />
     <ClInclude Include="atomic_vector.h" />
+    <ClInclude Include="datetime.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="shared_ptr.h" />
     <ClInclude Include="strings.h" />

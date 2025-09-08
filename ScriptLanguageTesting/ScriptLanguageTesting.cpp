@@ -33,6 +33,8 @@
 #include <concurrent_unordered_map.h>
 
 #include "units.h"
+#include "datetime.h"
+
 #pragma endregion
 
 
@@ -185,6 +187,17 @@ int main() {
                 print((100_ft).pow(3) / 37_s);
                 print(1300_gpm * 24_hr);
                 print(GL::constants::pi() * (120_ft).pow(2) / 4.0f);
+
+                GL::datetime DT1 = 1757362546.05;                
+                GL::datetime DT2 = 1757362545.00;
+
+                EXPECT_EQ(DT1 - DT2, 1.05_s);
+
+                print(DT1);
+                print(GL::datetime::Now());
+
+
+
             }
 
             if (auto timer = sw.debug_timer("INCREMENT GL::VALUE")) {

@@ -9,6 +9,7 @@
     <ClCompile Include="Parallel.cpp" />
     <ClCompile Include="types.cpp" />
     <ClCompile Include="units.cpp" />
+    <ClCompile Include="datetime.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aba_problem.h" />
@@ -28,5 +29,6 @@
     <ClInclude Include="util.h" />
     <ClInclude Include="types.h" />
     <ClInclude Include="units.h" />
+    <ClInclude Include="datetime.h" />
   </ItemGroup>
 </Project>
