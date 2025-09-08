@@ -255,7 +255,7 @@ namespace GL {
 			} data { &ToDo, start };
 
 			impl::dispatch_context ctx{ 0, nullptr };
-			impl::Dispatch(ctx, end - start, &IterData::DoTask, reinterpret_cast<void*>(&data));
+			impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
@@ -274,10 +274,9 @@ namespace GL {
 			} data{ &ToDo, start, step };
 
 			impl::dispatch_context ctx{ 0, nullptr };
-			impl::Dispatch(ctx, (end - start) / step, &IterData::DoTask, reinterpret_cast<void*>(&data));
+			impl::Dispatch(ctx, static_cast<size_t>((end - start) / step), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
-
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) For_Each(containerType& container, F const& ToDo) {
@@ -372,7 +371,6 @@ namespace GL {
 			);
 			impl::Wait(ctx);
 		};
-
 		/* while (WhileBoolean()) { Do(); } */
 		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
 			struct WhileException : public std::exception {};
@@ -408,7 +406,6 @@ namespace GL {
 				num_thread_jobs = num_thread_jobs << 2; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
 			}
 		};
-
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
 			F out{ std::forward<F>(SharedObject) };

@@ -33,9 +33,9 @@
 #include <concurrent_unordered_map.h>
 
 #include "units.h"
-
-// #include "../GoodLang/Parallel.h"
 #pragma endregion
+
+
 
 #pragma region "Definitions"
 #define SINGLE_ARG(...) __VA_ARGS__
@@ -68,53 +68,53 @@ int main() {
             val = val;
 
             EXPECT_EQ(10, (int)(float)val);
-            EXPECT_EQ(true, val.is_scaler());
+            EXPECT_EQ(true, val.is_scalar());
 
             GL::value meter(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter", "m"));
-            EXPECT_EQ(false, meter.is_scaler());
+            EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
             EXPECT_EQ(meter.name(), "meter");
             EXPECT_EQ(meter.abbreviation(), "m");
 
             meter += GL::value(0);
-            EXPECT_EQ(false, meter.is_scaler());
+            EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
             meter -= GL::value(0);
-            EXPECT_EQ(false, meter.is_scaler());
+            EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
             meter *= GL::value(0);
-            EXPECT_EQ(false, meter.is_scaler());
+            EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
             meter /= GL::value(1);
-            EXPECT_EQ(false, meter.is_scaler());
+            EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
 
             GL::value foot(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
-            EXPECT_EQ(false, foot.is_scaler());
+            EXPECT_EQ(false, foot.is_scalar());
 
             GL::value inch(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit((1.0 / 12.0) * (381.0 / 1250.0), "inch", "in"));
-            EXPECT_EQ(false, inch.is_scaler());
+            EXPECT_EQ(false, inch.is_scalar());
 
             GL::value square_meter(GL::value::get_si_unit(2, 0, 0, 0, 0).get_impl_unit(1.0, "square_meter", "sq_m"));
-            EXPECT_EQ(false, square_meter.is_scaler());
+            EXPECT_EQ(false, square_meter.is_scalar());
 
             GL::value square_foot(GL::value::get_si_unit(2, 0, 0, 0, 0).get_impl_unit(((381.0 / 1250.0) * (381.0 / 1250.0)), "square_foot", "sq_ft"));
-            EXPECT_EQ(false, square_foot.is_scaler());
+            EXPECT_EQ(false, square_foot.is_scalar());
 
             GL::value cubic_meter(GL::value::get_si_unit(3, 0, 0, 0, 0).get_impl_unit(1.0, "cubic_meter", "cu_m"));
-            EXPECT_EQ(false, cubic_meter.is_scaler());
+            EXPECT_EQ(false, cubic_meter.is_scalar());
 
-            GL::value scaler;
-            EXPECT_EQ(0, (int)(float)scaler);
-            EXPECT_EQ(1, (int)scaler.ratio());
-            EXPECT_EQ(true, scaler.is_scaler());
-            EXPECT_EQ(scaler.name(), "scaler");
+            GL::value scalar;
+            EXPECT_EQ(0, (int)(float)scalar);
+            EXPECT_EQ(1, (int)scalar.ratio());
+            EXPECT_EQ(true, scalar.is_scalar());
+            EXPECT_EQ(scalar.name(), "scalar");
 
-            GL::value scaler2(GL::value::get_si_unit(0, 0, 0, 0, 0).get_impl_unit(1, "scaler", ""));
-            EXPECT_EQ(0, (int)(float)scaler2);
-            EXPECT_EQ(1, (int)scaler2.ratio());
-            EXPECT_EQ(true, scaler2.is_scaler());
-            EXPECT_EQ(scaler2.name(), "scaler");
+            GL::value scalar2(GL::value::get_si_unit(0, 0, 0, 0, 0).get_impl_unit(1, "scalar", ""));
+            EXPECT_EQ(0, (int)(float)scalar2);
+            EXPECT_EQ(1, (int)scalar2.ratio());
+            EXPECT_EQ(true, scalar2.is_scalar());
+            EXPECT_EQ(scalar2.name(), "scalar");
 
             meter = 0.0f;
             meter += 10.0f;
@@ -125,13 +125,13 @@ int main() {
             EXPECT_EQ(12, (int)(float)inch);
             foot += inch;
             EXPECT_EQ(2, (int)(float)foot);
-            scaler += 100.0f;
-            EXPECT_EQ(100, (int)(float)scaler);
+            scalar += 100.0f;
+            EXPECT_EQ(100, (int)(float)scalar);
 
             cubic_meter += 1;
             EXPECT_EQ(1, (int)(float)cubic_meter);
 
-            cubic_meter += scaler;
+            cubic_meter += scalar;
             EXPECT_EQ(101, (int)(float)cubic_meter);
 
             try {
@@ -160,51 +160,50 @@ int main() {
             print(manual_sq_in.name());
             print(manual_sq_in.abbreviation());
 
-            auto manual_scaler = manual_cu_ft / manual_cu_m;
-            print(manual_scaler.name());
-            print(manual_scaler.abbreviation());
+            auto manual_scalar = manual_cu_ft / manual_cu_m;
+            print(manual_scalar.name());
+            print(manual_scalar.abbreviation());
 
-            GL::value scaler3;
-            scaler3 += 3.0f;
-            auto manual_cu_m2 = meter.pow(scaler3);
-            print(manual_cu_m2.name());
-            print(manual_cu_m2.abbreviation());
-            print(manual_cu_m2);
+            EXPECT_EQ(GL::foot(100), GL::foot(100));
+            EXPECT_EQ(GL::meter(GL::foot(100)), GL::foot(100));
+            EXPECT_EQ(GL::millimeter(1000), GL::meter(1));
+            EXPECT_EQ(GL::megameter(1), GL::meter(1000000));
+            EXPECT_EQ(GL::second(60), GL::minute(1));
+            EXPECT_EQ(GL::miles_per_hour(1), (GL::mile(1) / GL::hour(1)));
+            EXPECT_EQ(GL::ton_per_kilowatt_hour(10) * GL::kilowatt_hour(10), GL::metric_ton(100));
 
-            auto manual_cu_ft2 = foot.pow(scaler3);
-            print(manual_cu_ft2.abbreviation());
-            print(manual_cu_ft2.ratio()); // correct ratio            
-            print(manual_cu_ft2);
+            if (1) {
+                using namespace GL::literals;
+                EXPECT_EQ(100_ft, 100_ft);
+                EXPECT_EQ(GL::meter(100_ft), 100_ft);
+                EXPECT_EQ(1000_mm, 1_m);
+                EXPECT_EQ(1_Mm, 1000000_m);
+                EXPECT_EQ(60_s, 1_min);
+                EXPECT_EQ(1_mph, 1_mi / 1_hr);
+                EXPECT_EQ(10_t_p_kWh * 10_kWh, 100_t);
 
-            auto made_up_unit = foot * inch;
-            print(made_up_unit.abbreviation());
-            print(made_up_unit.ratio()); // correct ratio            
-            print(made_up_unit);
+                print((100_ft).pow(3) / 37_s);
+                print(1300_gpm * 24_hr);
+                print(GL::constants::pi() * (120_ft).pow(2) / 4.0f);
+            }
 
-            GL::value scaler21;
-            scaler21 += 2.1f;
-            auto made_up_unit2 = foot.pow(scaler21);
-            print(made_up_unit2.abbreviation());
-            print(made_up_unit2.ratio()); // correct ratio            
-            print(made_up_unit2);
-
-            if (auto timer = sw.debug_timer(__LINE__)) {
-                GL::value v(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
+            if (auto timer = sw.debug_timer("INCREMENT GL::VALUE")) {
+                GL::foot v{ 100 };
                 GL::parallel::For(0, 1000000, [&](size_t const& index) {
                     ++v;
                 });
-                EXPECT_EQ((int)(float)v, 1000000);
+                EXPECT_EQ((int)(float)v, 1000100);
             }
             if (auto timer = sw.debug_timer(__LINE__)) {
-                GL::value v(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
-                GL::value s(GL::value::get_si_unit(0, 0, 0, 0, 0).get_impl_unit(2, "scaler", ""));
+                GL::foot v{ 0 };
+                GL::scalar s{ 0 };
                 GL::parallel::For(0, 1000000, [&](size_t const& index) {
                     v *= s;
                 });
                 EXPECT_EQ((int)(float)v, 0);
             }
 
-            if (auto timer = sw.debug_timer(__LINE__)) {
+            if (auto timer = sw.debug_timer("INCREMENT GL::atomic_double")) {
                 GL::atomic_double v{ 0 };
                 GL::parallel::For(0, 1000000, [&](size_t const& index) {
                     ++v;
@@ -220,17 +219,37 @@ int main() {
                 EXPECT_EQ((int)v.load(), 0);
             }
 
+            if (auto timer = sw.debug_timer("INCREMENT GL::atomic_float")) {
+                GL::atomic_float v{ 0 };
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    ++v;
+                });
+                EXPECT_EQ((int)v.load(), 1000000);
+            }
+            if (auto timer = sw.debug_timer(__LINE__)) {
+                GL::atomic_float v{ 0 };
+                GL::atomic_float s{ 2 };
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    v *= s;
+                });
+                EXPECT_EQ((int)v.load(), 0);
+            }
 
-        }
-
-        if (1) {
-            GL::value v = 100;
-            v += 10;
-            v -= 110;
-            EXPECT_EQ(true, v.is_scaler());
-
-
-
+            if (auto timer = sw.debug_timer("INCREMENT volatile float")) {
+                volatile float v{ 0 };
+                for (size_t index = 0; index < 1000000; ++index) {
+                    ++v;
+                };
+                EXPECT_EQ((int)v, 1000000);
+            }
+            if (auto timer = sw.debug_timer(__LINE__)) {
+                volatile float v{ 0 };
+                volatile float s{ 2 };
+                for (size_t index = 0; index < 1000000; ++index) {
+                    v *= s;
+                };
+                EXPECT_EQ((int)v, 0);
+            }
         }
 
         
