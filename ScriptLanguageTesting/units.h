@@ -401,7 +401,7 @@ namespace GL {
                 Old = load();
                 New.m_n64 = Old.m_n64;
                 New.m_bits.val = update_func(Old.m_bits.val);
-                if (compare_exchange(Old, New)) {
+                if (compare_exchange_p(Old, New)) {
                     return Old;
                 }
             }
@@ -410,7 +410,7 @@ namespace GL {
             package Old;
             while (true) {
                 Old = load();
-                if (compare_exchange(Old, update_func(Old))) {
+                if (compare_exchange_p(Old, update_func(Old))) {
                     return Old;
                 }
             }
@@ -520,7 +520,7 @@ namespace GL {
                     // create new
                     GL::string abbrev
                         // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
-                        = abbreviation(lhs) + "*" + abbreviation(rhs);
+                        = "(" + abbreviation(lhs) + ")*(" + abbreviation(rhs) + ")";
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
                     package out{ new_impl_unit.default_bits };
@@ -553,7 +553,7 @@ namespace GL {
                     // create new
                     GL::string abbrev
                         // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
-                        = abbreviation(lhs) + "/" + abbreviation(rhs);
+                        = "(" + abbreviation(lhs) + ")/(" + abbreviation(rhs) + ")";
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
                     package out{ new_impl_unit.default_bits };
@@ -595,7 +595,7 @@ namespace GL {
                     // create new
                     GL::string abbrev
                         // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
-                        = abbreviation(lhs) + "^" + std::to_string(rhs);
+                        = "(" + abbreviation(lhs) + ")^" + NumStr(rhs);
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
                     package out{ new_impl_unit.default_bits };
@@ -604,8 +604,6 @@ namespace GL {
                 }
             }
         };
-
-
 
         package load() const {
             return packed;
@@ -626,10 +624,10 @@ namespace GL {
             out.m_n64 = InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
             return out;
         };
-        bool compare_exchange(package const& expected, package&& newValue) {
+        bool compare_exchange_p(package const& expected, package&& newValue) {
             return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(newValue.m_n64), expected.m_n64) == expected.m_n64;
         };
-        bool compare_exchange(package const& expected, package const& newValue) {
+        bool compare_exchange_p(package const& expected, package const& newValue) {
             return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), newValue.m_n64, expected.m_n64) == expected.m_n64;
         };
 
@@ -676,6 +674,13 @@ namespace GL {
             return *this;
         };
         ~value() = default;
+
+        bool compare_exchange(value& expected, value&& newValue) {
+            return compare_exchange_p(expected.packed, std::move(newValue.packed));
+        };
+        bool compare_exchange(value& expected, value const& newValue) {
+            return compare_exchange_p(expected.packed, newValue.packed);
+        };
 
         explicit operator float() const {
             return this->packed.m_bits.val;
@@ -1172,6 +1177,9 @@ namespace GL {
 #undef DerivedUnitTypeWithMetricPrefix
 #undef DerivedUnitType
 #undef CalculateMetricPrefixV
+
+    /* Unit Literals (e.g. 1_ft, 1_gpm, etc.) */
+    namespace literals {};
 };
 
 #define DerivedUnitType(type, category, abbreviation, ratio) \
@@ -1181,9 +1189,9 @@ namespace GL {
 	    static constexpr double lowest() { return std::numeric_limits<float>::lowest(); } \
 	    static constexpr bool is_integer = std::numeric_limits<float>::is_integer; \
 	    static constexpr bool is_signed = std::numeric_limits<float>::is_signed; }; \
-    }; namespace GL{ /* Unit Literals (e.g. 1_ft, 1_gpm, etc.) */ namespace literals { \
-	    __forceinline static auto operator""_ ## abbreviation (long double d) { return GL::type(static_cast<float>(d)); } \
-	    __forceinline static auto operator""_ ## abbreviation (unsigned long long d) { return GL::type(static_cast<float>(d)); }\
+    }; namespace GL{ namespace literals { \
+	        __forceinline static auto operator""_ ## abbreviation (long double d) { return GL::type(static_cast<float>(d)); } \
+	        __forceinline static auto operator""_ ## abbreviation (unsigned long long d) { return GL::type(static_cast<float>(d)); } \
     } };
 
 #define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, p_abbreviation) \

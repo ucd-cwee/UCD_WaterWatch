@@ -61,6 +61,7 @@ int main() {
             delete p; 
         });
 
+        // check GL::value and GL::datetime
         if (1) {
             GL::value val{ 10.0f };
             val = 10.0f;
@@ -136,36 +137,29 @@ int main() {
             cubic_meter += scalar;
             EXPECT_EQ(101, (int)(float)cubic_meter);
 
-            try {
+            try { // expected to throw an error, because adding an inch to a cubic meter is nonsense. 
                 cubic_meter += inch;
                 EXPECT_EQ(true, false);
             } catch (...) {}
 
-
             auto manual_sq_m = meter * meter;
-            print(manual_sq_m.name());
-            print(manual_sq_m.abbreviation());
-
+            EXPECT_EQ(manual_sq_m.abbreviation(), "sq_m");
+            EXPECT_EQ(manual_sq_m.name(), "square_meter");
             auto manual_cu_m = manual_sq_m * meter;
-            print(manual_cu_m.name());
-            print(manual_cu_m.abbreviation());
-
+            EXPECT_EQ(manual_cu_m.abbreviation(), "cu_m");
+            EXPECT_EQ(manual_cu_m.name(), "cubic_meter");
             auto manual_sq_ft = foot * foot;
-            print(manual_sq_ft.name());
-            print(manual_sq_ft.abbreviation());
-
+            EXPECT_EQ(manual_sq_ft.abbreviation(), "sq_ft");
+            EXPECT_EQ(manual_sq_ft.name(), "square_foot");
             auto manual_cu_ft = manual_sq_ft * foot;
-            print(manual_cu_ft.name());
-            print(manual_cu_ft.abbreviation());
-
+            EXPECT_EQ(manual_cu_ft.abbreviation(), "cu_ft");
+            EXPECT_EQ(manual_cu_ft.name(), "cubic_foot");
             auto manual_sq_in = inch * inch;
-            print(manual_sq_in.name());
-            print(manual_sq_in.abbreviation());
-
+            EXPECT_EQ(manual_sq_in.abbreviation(), "sq_in");
+            EXPECT_EQ(manual_sq_in.name(), "square_inch");
             auto manual_scalar = manual_cu_ft / manual_cu_m;
-            print(manual_scalar.name());
-            print(manual_scalar.abbreviation());
-
+            EXPECT_EQ(manual_scalar.abbreviation(), "");
+            EXPECT_EQ(manual_scalar.name(), "scalar");
             EXPECT_EQ(GL::foot(100), GL::foot(100));
             EXPECT_EQ(GL::meter(GL::foot(100)), GL::foot(100));
             EXPECT_EQ(GL::millimeter(1000), GL::meter(1));
@@ -183,24 +177,23 @@ int main() {
                 EXPECT_EQ(60_s, 1_min);
                 EXPECT_EQ(1_mph, 1_mi / 1_hr);
                 EXPECT_EQ(10_t_p_kWh * 10_kWh, 100_t);
-                print((100_ft).pow(3) / 37_s);
-                print(1300_gpm * 24_hr);
-                print(GL::constants::pi() * (120_ft).pow(2) / 4.0f);
-
                 GL::datetime DT1 = GL::datetime(2025, 1, 1, 0, 0, 0);
-                GL::datetime DT2 = GL::datetime(2025, 1, 1, 0, 0, 1.05);
+                GL::datetime DT2 = GL::datetime(2025, 1, 1, 0, 0, 1.05f);
                 EXPECT_EQ(DT2 - DT1, 1.05_s);
                 EXPECT_EQ(365, (int)(float)(GL::day((DT1 + 365_d) - DT1)));
+                EXPECT_EQ(DT1.ToNextDay() - DT1.ToStartOfDay(), GL::day(1));
+                EXPECT_EQ(DT1.ToNextHour() - DT1.ToStartOfHour(), GL::hour(1));
+                EXPECT_EQ(DT1.ToNextMinute() - DT1.ToStartOfMinute(), GL::minute(1));
             }
 
-            if (auto timer = sw.debug_timer("INCREMENT GL::VALUE")) {
+            if (1) {
                 GL::foot v{ 100 };
                 GL::parallel::For(0, 1000000, [&](size_t const& index) {
                     ++v;
                 });
                 EXPECT_EQ((int)(float)v, 1000100);
             }
-            if (auto timer = sw.debug_timer(__LINE__)) {
+            if (1) {
                 GL::foot v{ 0 };
                 GL::scalar s{ 0 };
                 GL::parallel::For(0, 1000000, [&](size_t const& index) {
@@ -208,72 +201,42 @@ int main() {
                 });
                 EXPECT_EQ((int)(float)v, 0);
             }
+            if (1) {
+                GL::foot v = 0;
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    for (;;) {
+                        GL::foot expected = v;
+                        if (v.compare_exchange(expected, expected + 1)) {
+                            break;
+                        }
+                    }
+                });
+                EXPECT_EQ((int)(float)v, 1000000);
+            }
+            if (1) {
+                GL::datetime v = GL::datetime(2025, 1, 1, 0, 0, 0);
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    v += GL::minute(1);
+                });
+                EXPECT_EQ((int)(float)GL::minute(v - GL::datetime(2025, 1, 1, 0, 0, 0)), 1000000);
+            }
+            if (1) {
+                GL::datetime v = GL::datetime(2025, 1, 1, 0, 0, 0);
+                GL::parallel::For(0, 1000000, [&](size_t const& index) {
+                    for (;;) {
+                        GL::datetime expected = v;
+                        if (v.compare_exchange(expected, expected.ToNextMinute())) {
+                            break;
+                        }
+                    }
+                });
+                EXPECT_EQ((int)(float)GL::minute(v - GL::datetime(2025, 1, 1, 0, 0, 0)), 1000000);
+            }
 
-            if (auto timer = sw.debug_timer("INCREMENT GL::atomic_double")) {
-                GL::atomic_double v{ 0 };
-                GL::parallel::For(0, 1000000, [&](size_t const& index) {
-                    ++v;
-                });
-                EXPECT_EQ((int)v.load(), 1000000);
-            }
-            if (auto timer = sw.debug_timer(__LINE__)) {
-                GL::atomic_double v{ 0 };
-                GL::atomic_double s{ 2 };
-                GL::parallel::For(0, 1000000, [&](size_t const& index) {
-                    v *= s;
-                });
-                EXPECT_EQ((int)v.load(), 0);
-            }
 
-            if (auto timer = sw.debug_timer("INCREMENT GL::atomic_float")) {
-                GL::atomic_float v{ 0 };
-                GL::parallel::For(0, 1000000, [&](size_t const& index) {
-                    ++v;
-                });
-                EXPECT_EQ((int)v.load(), 1000000);
-            }
-            if (auto timer = sw.debug_timer(__LINE__)) {
-                GL::atomic_float v{ 0 };
-                GL::atomic_float s{ 2 };
-                GL::parallel::For(0, 1000000, [&](size_t const& index) {
-                    v *= s;
-                });
-                EXPECT_EQ((int)v.load(), 0);
-            }
-
-            if (auto timer = sw.debug_timer("INCREMENT volatile float")) {
-                volatile float v{ 0 };
-                for (size_t index = 0; index < 1000000; ++index) {
-                    ++v;
-                };
-                EXPECT_EQ((int)v, 1000000);
-            }
-            if (auto timer = sw.debug_timer(__LINE__)) {
-                volatile float v{ 0 };
-                volatile float s{ 2 };
-                for (size_t index = 0; index < 1000000; ++index) {
-                    v *= s;
-                };
-                EXPECT_EQ((int)v, 0);
-            }
         }
 
-        
-
-
-
-
-
-
-
-
-
-
-
-
-        //GL::builtin_type::declare_cpp_derived<long, int>();
-        //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<int>().is_derived_from(GL::builtin_type::get_builtin_type<long>().base_hash));
-        //EXPECT_EQ(true, GL::builtin_type::get_builtin_type<long>().is_base_of(GL::builtin_type::get_builtin_type<int>().base_hash));
+        // check GL::type
         if (1) {
             GL::type ti = GL::type_of<std::string>();
             EXPECT_EQ(false, ti.is_void());
@@ -282,14 +245,13 @@ int main() {
             EXPECT_EQ(false, ti.is_const());
             EXPECT_EQ(false, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            ti |= GL::type::Qualifiers::Const;
+            ti |= GL::type::Const;
             EXPECT_EQ(false, ti.is_void());
             EXPECT_EQ(true, ti.is_cpp_type());
             EXPECT_EQ(true, ti.is_const());
             EXPECT_EQ(false, ti.is_base());
             EXPECT_EQ(false, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            print(ti.name());
         }
         if (1) {
             GL::type ti = GL::type_of<const std::string&>();
@@ -299,23 +261,21 @@ int main() {
             EXPECT_EQ(true, ti.is_const());
             EXPECT_EQ(true, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            print(ti.name());
         }
         if (1) {
             GL::type ti;
             EXPECT_EQ(true, ti.is_void());
             EXPECT_EQ(true, ti.is_base());
             EXPECT_EQ(true, ti.is_cpp_type());
-            print(ti.name());
+            EXPECT_EQ(ti.name(), "void");
         }
         if (1) {
             GL::type ti = GL::type_of<void>();
             EXPECT_EQ(true, ti.is_void());
             EXPECT_EQ(true, ti.is_base());
             EXPECT_EQ(true, ti.is_cpp_type());
-            print(ti.name());
+            EXPECT_EQ(ti.name(), "void");
         }
-
         if (1) {
             auto string_hash = GL::impl::checkout_scripted_type("string");
             GL::type ti(string_hash);
@@ -325,19 +285,20 @@ int main() {
             EXPECT_EQ(false, ti.is_const());
             EXPECT_EQ(false, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            print(ti.name());
-            ti |= GL::type::Qualifiers::Const;
-            ti |= GL::type::Qualifiers::Reference;
+            EXPECT_EQ(ti.name(), "string");
+            ti |= GL::type::Const;
+            ti |= GL::type::Reference;
             EXPECT_EQ(false, ti.is_void());
             EXPECT_EQ(false, ti.is_base());
             EXPECT_EQ(false, ti.is_cpp_type());
             EXPECT_EQ(true, ti.is_const());
             EXPECT_EQ(true, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
-            print(ti.name());
+            EXPECT_EQ(ti.name(), "const string&");
             GL::impl::return_scripted_type(string_hash);
         }
 
+        // check GL::any, including casting and multi-threaded overwrites and access. 
         if (1) {
             using namespace GL;
             using namespace GL::type_erasure;
@@ -397,49 +358,52 @@ int main() {
                     EXPECT_EQ(wrap.cast<std::string const&>(), "TEST");
                 }
             }
+
             if (1) {
-                if (auto timer = sw.debug_timer(__LINE__)) {
+                if (1) {
                     any wrap;                
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         wrap = std::to_string(index);
                     });
                 }
-                if (auto timer = sw.debug_timer(__LINE__)) {
+                if (1) {
                     any wrap = GL::string("TEST");
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         auto& ptr = wrap.cast<GL::string>();
-                        EXPECT_EQ(ptr, "TEST");
+                        EXPECT_EQ(ptr, GL::string("TEST"));
                     });
                 }
-                if (auto timer = sw.debug_timer(__LINE__)) {
+                if (1) {
                     any wrap = GL::string("TEST");
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         auto ptr = wrap.cast<GL::shared_ptr<GL::string>>();
-                        EXPECT_EQ(*ptr, "TEST");
+                        EXPECT_EQ(*ptr, GL::string("TEST"));
                     });
                 }
-                if (auto timer = sw.debug_timer(__LINE__)) {
+                if (1) {
                     any wrap{ GL::string("TEST") };
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         wrap = GL::string("TEST");
+                        auto cmp = GL::string("TEST");
                         if (auto ptr = wrap.cast<GL::shared_ptr<GL::string>>()) {
-                            EXPECT_EQ(*ptr, "TEST");
+                            EXPECT_EQ(*ptr, GL::string("TEST"));
+                        }
+                        else {
+                            EXPECT_EQ(false, true);
                         }
                     });
                 }
-
-                if (auto timer = sw.debug_timer(__LINE__)) {
+                if (1) {
                     var wrap(GL::make_shared<any>(GL::string("TEST")));
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {                        
                         wrap = var(GL::make_shared<any>(GL::string("TEST")));
                         if (auto ptr = wrap.p_data.load_fast()) {
                             if (auto ptr2 = ptr->cast<GL::shared_ptr<GL::string>>()) {
-                                EXPECT_EQ(*ptr2, "TEST");
+                                EXPECT_EQ(*ptr2, GL::string("TEST"));
                             }
                         }
                     });
                 }
-
                 if (1) {
                     any temp = 100;
                     any temp2 = temp.m_casted_type.instance_by_copy(temp);
@@ -448,23 +412,8 @@ int main() {
                     EXPECT_EQ(200, temp2.cast<int&>());
                     EXPECT_EQ(100, GL::type_of<int>().instance_by_value(100.0f).cast<int>());
                 }
-
-
-
-
-
             }
-
-
-
-
-
         }
-
-
-
-
-
 
 
 
@@ -553,7 +502,6 @@ int main() {
                     });
                 }
             }
-
 
         }
 #endif

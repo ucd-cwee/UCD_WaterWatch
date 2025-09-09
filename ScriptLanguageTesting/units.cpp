@@ -13,9 +13,6 @@ namespace GL {
 		return si_unit_types;
 	};
 
-	// declare this so that it exists
-	static auto* scalar_pkg{ &GL::value::get_si_unit(0,0,0,0,0).get_impl_unit(1.0, "scalar", "")}; 
-
 #ifdef DECL_UNIT_LITERALS
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
     static auto* type ## _pkg{ &GL::value::get_si_unit(value::Categories::##category##::unitType_m[0], value::Categories::##category##::unitType_m[1], value::Categories::##category##::unitType_m[2], value::Categories::##category##::unitType_m[3], value::Categories::##category##::unitType_m[4]).get_impl_unit(Ratio, #type, #abbreviation) }; \

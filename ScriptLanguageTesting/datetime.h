@@ -40,18 +40,34 @@ namespace GL {
 		static datetime Now();
 		static datetime createTimeFromMinutes( long long minutes);
 		static int		getNumDaysInSameMonth(datetime const& in);
-		static datetime	make_time(int year = 1970, int month = 1, int day = 1, int hour = 0, int minute = 0, float second = 0, bool useLocalTime = true);
-		static GL::second GetUtcOffset(datetime const& in);
+		static datetime	make_time(int year = 1970, int month = 1, int day = 1, int hour = 0, int minute = 0, float second = 0/*, bool useLocalTime = true*/);
+		static GL::minute GetUtcOffset(datetime const& in);
 
 	public:
-		datetime& ToStartOfMonth();
-		datetime& ToStartOfDay();
-		datetime& ToStartOfHour();
-		datetime& ToStartOfMinute();
-		datetime& ToEndOfMonth();
-		datetime& ToEndOfDay();
-		datetime& ToEndOfHour();
-		datetime& ToEndOfMinute();
+		// snaps to the start of the current month
+		datetime ToStartOfMonth() const;
+		// snaps to the start of the current day
+		datetime ToStartOfDay() const;
+		// snaps to the start of the current hour
+		datetime ToStartOfHour() const;
+		// snaps to the start of the current minute
+		datetime ToStartOfMinute() const;
+		// snaps to one millisecond before the next month
+		datetime ToEndOfMonth() const;
+		// snaps to one millisecond before the next day
+		datetime ToEndOfDay() const;
+		// snaps to one millisecond before the next hour
+		datetime ToEndOfHour() const;
+		// snaps to one millisecond before the next minute
+		datetime ToEndOfMinute() const;
+		// snaps to start of the next month
+		datetime ToNextMonth() const;
+		// snaps to start of the next day
+		datetime ToNextDay() const;
+		// snaps to start of the next hour
+		datetime ToNextHour() const;
+		// snaps to start of the next minute
+		datetime ToNextMinute() const;
 
 	public:
 		/* milliseconds after the second - [0, 1000) including leap second */
@@ -88,6 +104,11 @@ namespace GL {
 		operator GL::string() const;
 		// milliseconds since epoch. May be negative, indicating time prior to the Epoch. 
 		operator long long() const; 
+
+		bool compare_exchange(datetime& expected, datetime const& newValue) {
+			long long expect = expected.time.load();
+			return this->time.compare_exchange_strong(expect, newValue.time.load());
+		};
 
 		friend bool	operator==(const datetime& a, datetime const& t);
 		friend bool	operator!=(const datetime& a, datetime const& t);

@@ -43,8 +43,8 @@ namespace GL {
 
         friend bool operator==(string const& A, string const& V) noexcept {
             if (A.data.length() != V.data.length()) return false;
-            else if (A.data.length() > 1) return A.hash() == V.hash();
-            else return A.data == V.data;
+            /*else if (A.data.length() > 1) */return A.hash() == V.hash();
+            // else return A.data == V.data;
         };
         friend bool operator<(string const& A, string const& V) {
             if (A.data.length() < V.data.length()) return true;
@@ -338,14 +338,18 @@ namespace GL {
             return data.operator[](index);
         };
         size_type hash(size_type out = 0) const {
-            if (out == 0 && length() > 16) {
+            if ((out == 0) && (length() > 16)) {
                 if (_hash == npos) {
-                    for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+                    for (auto& x : data) out ^= (size_t)x + 0x9e3779b9 + (out << 6) + (out >> 2);
                     InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
                 }
-                return _hash;
+                else {
+                    out = _hash;
+                }
             }
-            for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
+            else {
+                for (auto& x : data) out ^= (size_t)x + 0x9e3779b9 + (out << 6) + (out >> 2);
+            }
             return out;
         };
         string& remove_prefix(const size_type _Count) noexcept {
