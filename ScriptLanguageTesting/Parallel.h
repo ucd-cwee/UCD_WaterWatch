@@ -141,9 +141,10 @@ namespace GL {
 
 		namespace impl {
 			// each dispatch call will be "observed" by this context wrapper.
-			struct dispatch_context {
+			struct dispatch_context {				
 				std::atomic<size_t> counter; // how many Tasks* are awaited
 				std::exception_ptr* e; // shared error PTR for re-throwing at the end of the Tasks.
+				void (*callback)(void);
 
 				bool is_busy() const {
 					return counter > 0;
@@ -254,7 +255,7 @@ namespace GL {
 				};
 			} data { &ToDo, start };
 
-			impl::dispatch_context ctx{ 0, nullptr };
+			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
@@ -273,7 +274,7 @@ namespace GL {
 				};
 			} data{ &ToDo, start, step };
 
-			impl::dispatch_context ctx{ 0, nullptr };
+			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(ctx, static_cast<size_t>((end - start) / step), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
@@ -312,7 +313,7 @@ namespace GL {
 				};
 			} data{ &ToDo, begin };
 
-			impl::dispatch_context ctx{ 0, nullptr };
+			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(
 				ctx, 
 				std::distance(begin, end),
@@ -359,7 +360,7 @@ namespace GL {
 				};
 			} data{ &ToDo, begin };
 
-			impl::dispatch_context ctx{ 0, nullptr };
+			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(
 				ctx,
 				std::distance(begin, end),
@@ -418,7 +419,7 @@ namespace GL {
 					(*data->_to_do)(_args.job_index, *data->_obj);
 				};
 			} data{ &ToDo, &out };
-			impl::dispatch_context ctx{ 0, nullptr };
+			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(
 				ctx,
 				numToDispatch,
@@ -439,7 +440,7 @@ namespace GL {
 					(*data->_to_do)(_args.job_index, *data->_obj);
 				};
 			} data{ &ToDo, &SharedObject };
-			impl::dispatch_context ctx{ 0, nullptr };
+			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(
 				ctx,
 				numToDispatch,
@@ -449,9 +450,6 @@ namespace GL {
 			impl::Wait(ctx);
 			return SharedObject;
 		};
-
-
-
 
 	};
 };

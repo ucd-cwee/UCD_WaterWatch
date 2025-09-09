@@ -166,7 +166,12 @@ namespace GL {
 						// Deallocate Shared Group Memory
 						if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
 					}
-					--task.ctx->counter;
+
+					if (--task.ctx->counter == 0) {
+						if (task.ctx->callback) {
+							task.ctx->callback(); // do something with this!
+						}
+					}
 				}
 			};
 		
