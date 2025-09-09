@@ -183,21 +183,14 @@ int main() {
                 EXPECT_EQ(60_s, 1_min);
                 EXPECT_EQ(1_mph, 1_mi / 1_hr);
                 EXPECT_EQ(10_t_p_kWh * 10_kWh, 100_t);
-
                 print((100_ft).pow(3) / 37_s);
                 print(1300_gpm * 24_hr);
                 print(GL::constants::pi() * (120_ft).pow(2) / 4.0f);
 
-                GL::datetime DT1 = 1757362546.05;                
-                GL::datetime DT2 = 1757362545.00;
-
-                EXPECT_EQ(DT1 - DT2, 1.05_s);
-
-                print(DT1);
-                print(GL::datetime::Now());
-
-
-
+                GL::datetime DT1 = GL::datetime(2025, 1, 1, 0, 0, 0);
+                GL::datetime DT2 = GL::datetime(2025, 1, 1, 0, 0, 1.05);
+                EXPECT_EQ(DT2 - DT1, 1.05_s);
+                EXPECT_EQ(365, (int)(float)(GL::day((DT1 + 365_d) - DT1)));
             }
 
             if (auto timer = sw.debug_timer("INCREMENT GL::VALUE")) {
@@ -266,6 +259,9 @@ int main() {
         }
 
         
+
+
+
 
 
 

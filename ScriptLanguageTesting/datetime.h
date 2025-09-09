@@ -8,20 +8,20 @@ namespace GL {
 	// Meant to be used in parallel with Units for proper unit management while manipulating datetime ranges.
 	// E.g: using namespace literals; return datetime::make_time(1940, 1, 1) + 1_d - 30_s;
 	class datetime {
-	public:
-		std::atomic<double> time; // stored as a thread-safe double. 
+	private:
+		std::atomic< long long> time; // milliseconds since epoch
+		explicit datetime(long long unixtime);
 
 	public:
 		datetime();
 		datetime(int year, int month, int day, int hour = 0, int minute = 0, float second = 0, bool useLocalTime = true);
-		datetime(double unixtime);
 		datetime(const datetime& other) : time(other.time.load()) {};
-		datetime(datetime&& other) : time(other.time.load()) {};
+		datetime(datetime&& other) noexcept : time(other.time.load()) {};
 		datetime& operator=(const datetime& other) {
 			time = other.time.load();
 			return *this;
 		};
-		datetime& operator=(datetime&& other) {
+		datetime& operator=(datetime&& other) noexcept {
 			time = other.time.load();
 			return *this;
 		};
@@ -31,13 +31,14 @@ namespace GL {
 	private:
 		// prints the current datetime in the unix format "year/month/day hour:minute:second"
 		GL::string	ToString() const;
+		// determine the datetime from a unix format string "year/month/day hour:minute:second"
 		datetime& FromString(const GL::string& timeStr);
 
 	public:
 		static datetime timeFromString(const GL::string& timeStr = "1970/1/1 0:0:0");
-		static datetime Epoch();
+		static datetime const& Epoch();
 		static datetime Now();
-		static datetime createTimeFromMinutes(double minutes);
+		static datetime createTimeFromMinutes( long long minutes);
 		static int		getNumDaysInSameMonth(datetime const& in);
 		static datetime	make_time(int year = 1970, int month = 1, int day = 1, int hour = 0, int minute = 0, float second = 0, bool useLocalTime = true);
 		static GL::second GetUtcOffset(datetime const& in);
@@ -53,10 +54,10 @@ namespace GL {
 		datetime& ToEndOfMinute();
 
 	public:
-		/* milliseconds after the second - [0, 1000] including leap second */
+		/* milliseconds after the second - [0, 1000) including leap second */
 		long double tm_fractionalsec() const;
 
-		/* seconds after the minute - [0, 60] including leap second */
+		/* seconds after the minute - [0, 60) including leap second */
 		long double tm_sec() const;
 
 		/* minutes after the hour - [0, 59] */
@@ -81,9 +82,12 @@ namespace GL {
 		int tm_yday() const;
 
 	public:
+		// prints the current datetime in the unix format "year/month/day hour:minute:second"
 		GL::string c_str() const;
+		// prints the current datetime in the unix format "year/month/day hour:minute:second"
 		operator GL::string() const;
-		operator double() const;
+		// milliseconds since epoch. May be negative, indicating time prior to the Epoch. 
+		operator long long() const; 
 
 		friend bool	operator==(const datetime& a, datetime const& t);
 		friend bool	operator!=(const datetime& a, datetime const& t);
@@ -94,24 +98,23 @@ namespace GL {
 
 		friend std::ostream& operator<<(std::ostream& os, datetime const& obj);
 
-		datetime& operator+=(GL::second seconds);
-		datetime& operator-=(GL::second seconds);
-		datetime& operator*=(double seconds);
-		datetime& operator/=(double seconds);
+		// add the delta to the current datetime
+		datetime& operator+=(GL::minute delta);
+		// sub the delta to the current datetime
+		datetime& operator-=(GL::minute delta);
+		// multiply the current datetime by this value.
+		datetime& operator*=(double mult);
+		// divide the current datetime by this value.
+		datetime& operator/=(double mult);
 
-		friend datetime operator+(const datetime& a, const datetime& b);
-		friend GL::second operator-(const datetime& a, const datetime& b);
-		friend datetime operator*(const datetime& a, const datetime& b);
-		friend datetime operator/(const datetime& a, const datetime& b);
+		// returns the time difference between the two dates. 
+		friend GL::minute operator-(const datetime& a, const datetime& b);
 
-		friend datetime operator+(const datetime& a, const GL::second& b);
-		friend datetime operator-(const datetime& a, const GL::second& b);
+		friend datetime operator+(const datetime& a, const GL::minute& b);
+		friend datetime operator-(const datetime& a, const GL::minute& b);
 		friend datetime operator*(const datetime& a, double b);
 		friend datetime operator/(const datetime& a, double b);
-
-		friend datetime operator+(const GL::second& a, const datetime& b);
-		friend datetime operator-(const GL::second& a, const datetime& b);
+		friend datetime operator+(const GL::minute& a, const datetime& b);
 		friend datetime operator*(double a, const datetime& b);
-		friend datetime operator/(double a, const datetime& b);
 	};
 };

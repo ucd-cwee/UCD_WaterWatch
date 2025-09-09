@@ -7,19 +7,17 @@ namespace GL {
 		return rc;
 	};
 	boost::posix_time::ptime ToPTime(datetime const& F) {
-		double D = F.time.load();
-		if (D < 0) {
-			long long num_sec = static_cast<long long>(D);
-			long long num_millisec = static_cast<long long>(::fmod(D, 1) * 1000.0);
-			return Shared_Epoch_posixTime() + boost::posix_time::seconds(num_sec) + boost::posix_time::milliseconds(num_millisec);
+		long long D = F;
+		if (D >= 0) {
+			long long num_millisec = static_cast<long long>(D);
+			return Shared_Epoch_posixTime() + boost::posix_time::milliseconds(num_millisec);
 		}
 		else {
-			long long num_sec = static_cast<long long>(-D);
-			long long num_millisec = static_cast<long long>(::fmod(-D, 1) * 1000.0);
-			return Shared_Epoch_posixTime() - (boost::posix_time::seconds(num_sec) + boost::posix_time::milliseconds(num_millisec));
+			long long num_millisec = static_cast<long long>(-D);
+			return Shared_Epoch_posixTime() - boost::posix_time::milliseconds(num_millisec);
 		}
 	};
-	double FromPTime(boost::posix_time::ptime const& time) {
+	 long long FromPTime(boost::posix_time::ptime const& time) {
 		boost::posix_time::ptime const& epoch = Shared_Epoch_posixTime();
 		if (time >= epoch) {
 			return (time - epoch).total_milliseconds();
@@ -35,10 +33,9 @@ namespace GL {
 		: time{ FromPTime(Shared_Epoch_posixTime()) } { this->FromString(GL::printf("%i/%i/%i %i:%i:%f", year, month, day, hour, minute, second)); };
 	datetime::datetime(GL::string const& t)
 		: time{ FromPTime(Shared_Epoch_posixTime()) } { this->FromString(t); };
-	datetime::datetime(double unixtime)
+	datetime::datetime( long long unixtime)
 		: time{ unixtime } {};
-
-	double getUtcOffset_impl() {
+	long long getUtcOffset_impl() {
 		struct tm t;
 		time_t ts = time(0);
 		::localtime_s(&t, &ts);
@@ -50,10 +47,10 @@ namespace GL {
 		std::string offset = buf; // -0800
 		isNegative = offset.find('-') >= 0;
 		// get the right 2 values
-		decltype(auto) minuteOffset = std::atof(offset.substr(offset.length() - 2, 2).c_str()); // 00
-		decltype(auto) hourOffset = std::atof(offset.substr(offset.length() - 4, 4).substr(0, 2).c_str()); // 08
+		decltype(auto) minuteOffset = std::atoll(offset.substr(offset.length() - 2, 2).c_str()); // 00
+		decltype(auto) hourOffset = std::atoll(offset.substr(offset.length() - 4, 4).substr(0, 2).c_str()); // 08
 
-		double offsetV = ((hourOffset * 3600.0) + (minuteOffset * 60.0)) * (isNegative ? -1.0 : 1.0);
+		long long offsetV = ((hourOffset * 3600000ll) + (minuteOffset * 60000ll)) * (isNegative ? -1 : 1);
 
 		if (t.tm_isdst) {
 			// offsetV -= Units::second(3600);
@@ -61,11 +58,11 @@ namespace GL {
 
 		return offsetV;
 	};
-	double getUtcOffset() {
-		static double tr(getUtcOffset_impl());
+	long long getUtcOffset() {
+		static long long tr(getUtcOffset_impl());
 		return tr;
 	};
-	double getUtcOffset_impl(boost::posix_time::ptime const& pt) {
+	long long getUtcOffset_impl(boost::posix_time::ptime const& pt) {
 		bool isNegative;
 
 		// time_t ts = boost::posix_time::to_tm(pt);
@@ -78,10 +75,10 @@ namespace GL {
 		isNegative = offset.find('-') >= 0;
 		// get the right 2 values
 
-		decltype(auto) minuteOffset = std::atof(offset.substr(offset.length() - 2, 2).c_str()); // 00
-		decltype(auto) hourOffset = std::atof(offset.substr(offset.length() - 4, 4).substr(0, 2).c_str()); // 08
+		decltype(auto) minuteOffset = std::atoll(offset.substr(offset.length() - 2, 2).c_str()); // 00
+		decltype(auto) hourOffset = std::atoll(offset.substr(offset.length() - 4, 4).substr(0, 2).c_str()); // 08
 
-		double offsetV = ((hourOffset * 3600.0) + (minuteOffset * 60.0)) * (isNegative ? -1.0 : 1.0);
+		long long offsetV = ((hourOffset * 3600000) + (minuteOffset * 60000)) * (isNegative ? -1 : 1);
 
 		if (t.tm_isdst) {
 			// offsetV -= Units::second(3600);
@@ -89,19 +86,18 @@ namespace GL {
 
 		return offsetV;
 	};
-	double getUtcOffset(boost::posix_time::ptime const& pt) {
+	long long getUtcOffset(boost::posix_time::ptime const& pt) {
 		return getUtcOffset_impl(pt);
 	};
-
 	GL::string	datetime::ToString() const {
-		datetime temp{ 
-			this->time.load() + getUtcOffset(ToPTime(*this))
-		};
+		datetime temp{ *this };
+		temp.time += getUtcOffset(ToPTime(*this));
+
 		auto date = ToPTime(temp).date();
 		auto Time = ToPTime(temp).time_of_day();
 		return GL::printf("%i/%i/%i %i:%i:%i",
-			(int)date.year_month_day().year.operator unsigned short(),
-			(int)date.year_month_day().month.operator unsigned short(),
+			(int)date.year_month_day().year,
+			(int)date.year_month_day().month,
 			(int)date.year_month_day().day.as_number(),
 			(int)Time.hours(),
 			(int)Time.minutes(),
@@ -112,26 +108,22 @@ namespace GL {
 		datetime t{ FromPTime(boost::posix_time::time_from_string(timeStr.to_string())) };
 		return operator=(datetime{ t.time.load() - getUtcOffset(ToPTime(t)) });
 	};
-
-
-	datetime const& Shared_Epoch() {
-		static datetime rc{ FromPTime(Shared_Epoch_posixTime()) };
-		return rc;
-	};
-
 	datetime datetime::timeFromString(const GL::string& timeStr/* = "1970/1/1 0:0:0"*/) { 
 		datetime out;
 		out.FromString(timeStr);
 		return out;
 	};
-	datetime datetime::Epoch() { return Shared_Epoch(); };
-	datetime datetime::Now() { 
-		return datetime{ static_cast<double>(static_cast<long double>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()) / 1000.0) };
+	datetime const& datetime::Epoch() { 
+		static datetime rc{ FromPTime(Shared_Epoch_posixTime()) };
+		return rc;
 	};
-	datetime datetime::createTimeFromMinutes(double minutes) {
+	datetime datetime::Now() { 
+		return datetime{ static_cast< long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()) };
+	};
+	datetime datetime::createTimeFromMinutes( long long minutes) {
 		decltype(auto) t = Now();
 		t.ToStartOfDay();
-		t.time = t.time.load() + (minutes * 60.0);
+		t.time = t.time.load() + (minutes * 60000);
 		return t;
 	}
 	int		datetime::getNumDaysInSameMonth(datetime const& in) {
@@ -144,29 +136,28 @@ namespace GL {
 		return t;
 	};
 	GL::second datetime::GetUtcOffset(datetime const& in) {
-		return GL::second(getUtcOffset(ToPTime(in)));
+		return GL::second(static_cast<float>(getUtcOffset(ToPTime(in))));
 	};
-
 	datetime& datetime::ToStartOfMonth() {
-		this->operator-=(GL::second(tm_sec()));
-		this->operator-=(GL::minute(tm_min()));
-		this->operator-=(GL::hour(tm_hour()));
-		this->operator-=(GL::day(tm_mday() - 1));
+		this->operator-=(GL::second(static_cast<float>(tm_sec())));
+		this->operator-=(GL::minute(static_cast<float>(tm_min())));
+		this->operator-=(GL::hour(static_cast<float>(tm_hour())));
+		this->operator-=(GL::day(static_cast<float>(tm_mday() - 1)));
 		return *this;
 	};
 	datetime& datetime::ToStartOfDay() {
-		this->operator-=(GL::second(tm_sec()));
-		this->operator-=(GL::minute(tm_min()));
-		this->operator-=(GL::hour(tm_hour()));
+		this->operator-=(GL::second(static_cast<float>(tm_sec())));
+		this->operator-=(GL::minute(static_cast<float>(tm_min())));
+		this->operator-=(GL::hour(static_cast<float>(tm_hour())));
 		return *this;
 	};
 	datetime& datetime::ToStartOfHour() {
-		this->operator-=(GL::second(tm_sec()));
-		this->operator-=(GL::minute(tm_min()));
+		this->operator-=(GL::second(static_cast<float>(tm_sec())));
+		this->operator-=(GL::minute(static_cast<float>(tm_min())));
 		return *this;
 	};
 	datetime& datetime::ToStartOfMinute() {
-		this->operator-=(GL::second(tm_sec()));
+		this->operator-=(GL::second(static_cast<float>(tm_sec())));
 		return *this;
 	};
 	datetime& datetime::ToEndOfMonth() {
@@ -183,18 +174,18 @@ namespace GL {
 		return *this;
 	};
 	datetime& datetime::ToEndOfDay() {
-		this->operator+=(GL::second(60 - tm_sec()));
-		this->operator+=(GL::second((59 - tm_min()) * 60));
-		this->operator+=(GL::second((23 - tm_hour()) * 3600));
+		this->operator+=(GL::second(static_cast<float>(60 - tm_sec())));
+		this->operator+=(GL::second(static_cast<float>((59 - tm_min()) * 60)));
+		this->operator+=(GL::second(static_cast<float>((23 - tm_hour()) * 3600)));
 		return *this;
 	};
 	datetime& datetime::ToEndOfHour() {
-		this->operator+=(GL::second(60 - tm_sec()));
-		this->operator+=(GL::second((59 - tm_min()) * 60));
+		this->operator+=(GL::second(static_cast<float>(60 - tm_sec())));
+		this->operator+=(GL::second(static_cast<float>((59 - tm_min()) * 60)));
 		return *this;
 	};
 	datetime& datetime::ToEndOfMinute() {
-		this->operator+=(GL::second(60 - tm_sec()));
+		this->operator+=(GL::second(static_cast<float>(60 - tm_sec())));
 		return *this;
 	};
 
@@ -205,20 +196,19 @@ namespace GL {
 		return t;
 	};
 
-
 	/* seconds after the minute - [0, 60] including leap second */
 	long double datetime::tm_sec() const {
 		return ((long double)ToPTime(*this).time_of_day().seconds()) + tm_fractionalsec();
 	};
 
 	/* minutes after the hour - [0, 59] */
-	int datetime::tm_min() const { return ToPTime(*this).time_of_day().minutes(); };
+	int datetime::tm_min() const { return static_cast<int>(ToPTime(*this).time_of_day().minutes()); };
 
 	/* hours since midnight - [0, 23] */
-	int datetime::tm_hour() const { return ToPTime(*this).time_of_day().hours(); };
+	int datetime::tm_hour() const { return static_cast<int>(ToPTime(*this).time_of_day().hours()); };
 
 	/* day of the month - [1, 31] */
-	int datetime::tm_mday() const { return ToPTime(*this).date().year_month_day().day; };
+	int datetime::tm_mday() const { return static_cast<int>(ToPTime(*this).date().year_month_day().day); };
 
 	/* months since January - [0, 11] */
 	int datetime::tm_mon() const { return ToPTime(*this).date().year_month_day().month - 1; };
@@ -238,7 +228,7 @@ namespace GL {
 	datetime::operator GL::string() const {
 		return c_str();
 	};
-	datetime::operator double() const {
+	datetime::operator  long long() const {
 		return time.load();
 	};
 
@@ -251,60 +241,57 @@ namespace GL {
 
 	std::ostream& operator<<(std::ostream& os, datetime const& obj) { os << obj.ToString(); return os; };
 
-	datetime& datetime::operator+=(GL::second seconds) { 
-		double old;
-		for (;;) {
-			old = time.load();
-			if (time.compare_exchange_strong(old, old + (float)seconds)) break;
-		}
+	datetime& datetime::operator+=(GL::minute delta) {
+		time += (long long)((double)(float)delta * 60000.0);
 		return *this; 
 	};
-	datetime& datetime::operator-=(GL::second seconds) { 
-		double old;
+	datetime& datetime::operator-=(GL::minute delta) {
+		time -= (long long)((double)(float)delta * 60000.0);
+		return *this;
+	};
+	datetime& datetime::operator*=(double mult) {
+		 long long old;
 		for (;;) {
 			old = time.load();
-			if (time.compare_exchange_strong(old, old - (float)seconds)) break;
+			if (time.compare_exchange_strong(old, static_cast<long long>(static_cast<double>(old) * mult))) break;
 		}
 		return *this;
 	};
-	datetime& datetime::operator*=(double seconds) { 
-		double old;
+	datetime& datetime::operator/=(double mult) { 
+		 long long old;
 		for (;;) {
 			old = time.load();
-			if (time.compare_exchange_strong(old, old * seconds)) break;
-		}
-		return *this;
-	};
-	datetime& datetime::operator/=(double seconds) { 
-		double old;
-		for (;;) {
-			old = time.load();
-			if (time.compare_exchange_strong(old, old / seconds)) break;
+			if (time.compare_exchange_strong(old, static_cast<long long>(static_cast<double>(old) / mult))) break;
 		}
 		return *this;
 	};
 
-	datetime operator+(const datetime& a, const datetime& b) { return (a.time.load() + b.time.load()); };
-	GL::second operator-(const datetime& a, const datetime& b) { return GL::value((float)(a.time.load() - b.time.load())); };
-	datetime operator*(const datetime& a, const datetime& b) { return (a.time.load() * b.time.load()); };
-	datetime operator/(const datetime& a, const datetime& b) { return (a.time.load() / b.time.load()); };
-
-	datetime operator+(const datetime& a, const GL::second& b) { return (a.time.load() + (float)b); };
-	datetime operator-(const datetime& a, const GL::second& b) { return (a.time.load() - (float)b); };
-	datetime operator*(const datetime& a, double b) { return (a.time.load() * b); };
-	datetime operator/(const datetime& a, double b) { return (a.time.load() / b); };
-
-	datetime operator+(const GL::second& a, const datetime& b) {
-		return b.time.load() + (float)a;
+	GL::minute operator-(const datetime& a, const datetime& b) { return (float)((long long)a - (long long)b) / 60000.0f; };
+	datetime operator+(const datetime& a, const GL::minute& b) {
+		datetime out{ a };
+		out += b;
+		return out;
+	};	
+	datetime operator-(const datetime& a, const GL::minute& b) { 
+		return operator+(a, -b);
 	};
-	datetime operator-(const GL::second& a, const datetime& b) {
-		return -b.time.load() + (float)a;
+	datetime operator*(const datetime& a, double b) { 
+		datetime out{ a };
+		out *= b;
+		return out;
+	};
+	datetime operator/(const datetime& a, double b) { 
+		datetime out{ a };
+		out /= b;
+		return out;
+	};
+	datetime operator+(const GL::minute& a, const datetime& b) {
+		return b + a;
 	};
 	datetime operator*(double a, const datetime& b) {
-		return b.time.load() * a;
-	};
-	datetime operator/(double a, const datetime& b) {
-		return a / b.time.load();
+		datetime out{ b };
+		out *= a;
+		return out;
 	};
 
 };

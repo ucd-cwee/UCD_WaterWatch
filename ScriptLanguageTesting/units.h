@@ -320,7 +320,7 @@ namespace GL {
             return out;
         };
 
-    private:
+    protected:
         package packed;
 
         // return the SI ratio of the current type. 
@@ -1130,6 +1130,7 @@ namespace GL {
 	public: \
 		constexpr static double conversion_ratio{ Ratio }; \
         type() : value(unique_pkg()) {}; \
+        type(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; }; \
         type(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); }; \
         type(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); }; \
         ~type() = default; \
@@ -1142,6 +1143,7 @@ namespace GL {
 	public: \
 		constexpr static double conversion_ratio{ type::conversion_ratio * ((double)std::prefix::num / (double)std::prefix::den) }; \
         prefix ## type() : value(unique_pkg()) {}; \
+        prefix ## type(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; }; \
         prefix ## type(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); }; \
         prefix ## type(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); }; \
         ~prefix ## type() = default; \
