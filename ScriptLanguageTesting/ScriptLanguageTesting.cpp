@@ -415,6 +415,57 @@ int main() {
             }
         }
 
+#if 1
+        if (auto timer = sw.debug_timer("Parallel Jobs Test")) {
+            std::vector<size_t> jobs;
+            auto analysis_job = GL::parallel::async([&]() {
+                jobs.resize(1000000, 0);
+            });            
+            for (size_t i = 0; i < 1000000; ++i) {
+                analysis_job->and_then([j = i, &jobs]() {
+                    ++jobs[j];
+                });
+            }
+            analysis_job = nullptr; 
+            analysis_job = GL::parallel::async([&jobs]() {
+                size_t out{ 0 };
+                for (auto& x : jobs) out += x;
+                return out;
+            });
+            analysis_job->wait();
+            print(analysis_job->result().cast<size_t>());
+        }
+        if (1) {
+            auto ptr = GL::parallel::async([]() {
+                print("I was Async 2");
+            });
+        }
+        if (1) {
+            GL::parallel::async([]() {
+                print("I was Async 3");
+            });
+        }
+        if (1) {
+            auto job = GL::parallel::async([]() {
+                print("1");
+                ::Sleep(1000);
+                print("2");
+                return 10;
+            });
+            job->and_then([]() {
+                print("3");
+            })->and_then([]() {
+                print("4");
+            })->and_then([]() {
+                print("5");
+            })->and_then([]() {
+                print("6");
+            });
+            job->wait();
+            print(job->result().cast<int>());
+        }
+
+#endif
 
 
 

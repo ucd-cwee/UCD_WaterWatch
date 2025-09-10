@@ -116,7 +116,7 @@ namespace GL {
                 }
             }
         };
-        void push_back(element_t const& srce) noexcept {
+        size_t push_back(element_t const& srce) noexcept {
             size_t position;
             short blockN;
 
@@ -128,8 +128,9 @@ namespace GL {
             }
             blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = srce;
             InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
+            return position;
         };
-        void push_back(element_t&& srce) noexcept {
+        size_t push_back(element_t&& srce) noexcept {
             size_t position;
             short blockN;
 
@@ -141,6 +142,7 @@ namespace GL {
             }
             blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = std::move(srce);
             InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
+            return position;
         };
         size_t size() const {
             return valid_pos;

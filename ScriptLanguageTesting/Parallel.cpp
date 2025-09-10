@@ -169,7 +169,7 @@ namespace GL {
 
 					if (--task.ctx->counter == 0) {
 						if (task.ctx->callback) {
-							task.ctx->callback(); // do something with this!
+							task.ctx->callback(task.ctx->callback_data); // do something with this!
 						}
 					}
 				}
@@ -639,21 +639,14 @@ namespace GL {
 			};
 
 			void Wait(dispatch_context& ctx) {
-				++wait_depth; // allows detection of when job dispatch may be from within an existing job
-				internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
-#if 0 // Does not support jobs calling jobs 
-				work(internal_state.nextQueue.Increment() % internal_state.numThreads, &ctx);
-				while (IsBusy(ctx)) { std::this_thread::yield(); };
-				--wait_depth;
-				HandleExceptions(ctx);
-#else // supports jobs calling jobs
 				while (ctx.is_busy()) { // Do work
+					++wait_depth; // allows detection of when job dispatch may be from within an existing job				
+					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
 					std::this_thread::yield();
 					work(&ctx);
-				}
-				--wait_depth; // allows detection of when job dispatch may be from within an existing job
+					--wait_depth; // allows detection of when job dispatch may be from within an existing job
+				}				
 				ctx.try_rethrow_exception();
-#endif
 			};
 
 		}
