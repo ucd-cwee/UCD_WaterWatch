@@ -48,10 +48,17 @@ namespace GL {
             if (index <= 3ull) return index;
             else return index - (2ull << blockN);
         };
+
         // 0 -> 4, 1 -> 4, 2 -> 8, 3 -> 16, 4 -> 32, etc.
         static size_t block_to_allocsize(short block_n) noexcept {
             if (block_n <= 1) return 4ull;
             else return 2ull << block_n;
+        };
+
+        // 0 -> 4, 1 -> 4, 2 -> 8, 3 -> 16, 4 -> 32, etc.
+        static size_t block_to_total_allocsize(short block_n) noexcept {
+            if (block_n <= 0) return 4ull;
+            else return 2ull << (block_n + 1);
         };
 
         using element_t = T;
@@ -151,41 +158,92 @@ namespace GL {
         public:
             using iterator_category = std::random_access_iterator_tag;
             using value_type = element_t;
-            using difference_type = ptrdiff_t;
+            using difference_type = long long;
             using pointer = element_t*;
             using reference = element_t&;
 
-            Iterator(const atomic_vector* p = nullptr, difference_type pos = 0) : _ptr(pos), parent(const_cast<atomic_vector*>(p)) {}
-            Iterator(const Iterator& rhs) : _ptr(rhs._ptr), parent(rhs.parent) {}
+            void recalc_position() {
+                _block_inner_n = global_index_to_local_index(_ptr);
+                _block_inner_size_n = block_to_allocsize(_block_outer_n = global_index_to_block(_ptr));
+            };
 
-            inline Iterator& operator+=(difference_type rhs) { _ptr += rhs; return *this; }
-            inline Iterator& operator-=(difference_type rhs) { _ptr -= rhs; return *this; }
-            inline reference operator*() { return parent->at(_ptr); }
-            inline pointer operator->() { return &parent->at(_ptr); }
-            inline reference operator[](difference_type rhs) { return parent->at(rhs); }
-            inline const reference operator*() const { return parent->at(_ptr); }
-            inline const pointer operator->() const { return &parent->at(_ptr); }
-            inline const reference operator[](difference_type rhs) const { return parent->at(rhs); }
+            Iterator(const atomic_vector* p = nullptr, difference_type pos = 0) 
+                : _ptr(pos), parent(const_cast<atomic_vector*>(p)) {
+                recalc_position();
+            }
+            Iterator(const Iterator& rhs) 
+                : _ptr(rhs._ptr)
+                , parent(rhs.parent)  
+                , _block_outer_n(rhs._block_outer_n)
+                , _block_inner_n(rhs._block_inner_n)
+                , _block_inner_size_n(rhs._block_inner_size_n)          
+            {}
 
-            inline Iterator& operator++() { _ptr++; return *this; }
-            inline Iterator& operator--() { _ptr--; return *this; }
-            inline Iterator operator++(int) { Iterator tmp(*this); _ptr++; return tmp; }
-            inline Iterator operator--(int) { Iterator tmp(*this); _ptr--; return tmp; }
-            inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr); }
-            inline Iterator operator+(difference_type rhs) const { Iterator tmp(*this); tmp._ptr += rhs; return tmp; }
-            inline Iterator operator-(difference_type rhs) const { Iterator tmp(*this); tmp._ptr -= rhs; return tmp; }
-            friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { Iterator tmp(rhs); tmp._ptr = lhs; tmp._ptr += rhs._ptr; return tmp; }
-            friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { Iterator tmp(rhs); tmp._ptr = lhs; tmp._ptr -= rhs._ptr; return tmp; }
+            /*inline*/ Iterator& operator+=(difference_type rhs) { 
+                if (rhs < 0) return operator-=(-rhs);
 
-            inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
-            inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
-            inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
-            inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
-            inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
-            inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+                if ((_block_inner_n + rhs) >= _block_inner_size_n) {
+                    _ptr += rhs;
+                    recalc_position();
+                }
+                else {
+                    _block_inner_n += rhs;
+                    _ptr += rhs;
+                }
+                return *this; 
+            }
+            /*inline*/ Iterator& operator-=(difference_type rhs) {
+                if (rhs < 0) return operator+=(-rhs);
+                if (rhs > _block_inner_n) {
+                    _ptr -= rhs;
+                    recalc_position();
+                }
+                else {
+                    _block_inner_n -= rhs;
+                    _ptr -= rhs;
+                }
+                return *this;
+            }
+            /*inline*/ reference operator*() {
+                return parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+            }
+            /*inline*/ pointer operator->() {
+                return &parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+            }
+            /*inline*/ reference operator[](difference_type rhs) {
+                return parent->at(rhs); 
+            }
+            /*inline*/ const reference operator*() const {
+                return parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+            }
+            /*inline*/ const pointer operator->() const {
+                return &parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+            }
+            /*inline*/ const reference operator[](difference_type rhs) const { return parent->at(rhs); }
 
-        protected:
+            /*inline*/ Iterator& operator++() { return operator+=(1); }
+            /*inline*/ Iterator& operator--() { return operator-=(1); }
+            /*inline*/ Iterator operator++(int) { Iterator tmp(*this); this->operator++(); return tmp; }
+            /*inline*/ Iterator operator--(int) { Iterator tmp(*this); this->operator--(); return tmp; }
+
+            /*inline*/ difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr); }
+            /*inline*/ Iterator operator+(difference_type rhs) const { Iterator tmp(*this); tmp.operator+=(rhs); return tmp; }
+            /*inline*/ Iterator operator-(difference_type rhs) const { Iterator tmp(*this); tmp.operator-=(rhs); return tmp; }
+            friend /*inline*/ Iterator operator+(difference_type lhs, const Iterator& rhs) { Iterator tmp(rhs); tmp._ptr = lhs + rhs._ptr; tmp.recalc_position(); return tmp; }
+            friend /*inline*/ Iterator operator-(difference_type lhs, const Iterator& rhs) { Iterator tmp(rhs); tmp._ptr = lhs - rhs._ptr; tmp.recalc_position(); return tmp; }
+
+            /*inline*/ bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+            /*inline*/ bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+            /*inline*/ bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+            /*inline*/ bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+            /*inline*/ bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+            /*inline*/ bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
             difference_type _ptr;
+        protected:
+            short _block_outer_n; // [0..max_num_buckets)
+            difference_type _block_inner_n; // [0..max_num_buckets)
+            difference_type _block_inner_size_n; // [0..             
             atomic_vector* parent;
 
         };
@@ -200,5 +258,6 @@ namespace GL {
         auto begin() const { return iterator(this, 0); };
         auto end() const { return iterator(this, valid_pos); };
 
+        friend class atomic_vector::Iterator;
     };
 };

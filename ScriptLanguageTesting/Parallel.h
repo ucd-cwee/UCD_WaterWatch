@@ -505,14 +505,16 @@ namespace GL {
 					impl_job* data = reinterpret_cast<impl_job*>(_args);
 					data->callback();
 				};
-
+				void actual_dispatch() override {
+					impl::DispatchOnce(
+						this->ctx,
+						DoTaskPtr,
+						reinterpret_cast<void*>(this)
+					);
+				};
 				GL::shared_ptr<job> do_dispatch() {
 					if constexpr (!SkipDispatch) {
-						impl::DispatchOnce(
-							this->ctx,
-							DoTaskPtr,
-							reinterpret_cast<void*>(this)
-						);
+						this->actual_dispatch();
 					}
 					return GL::shared_ptr<job>(GL::shared_ptr< impl_job >(this));
 				};
@@ -523,6 +525,60 @@ namespace GL {
 			};
 
 			impl_job* data = new impl_job(std::move(ToDo));
+			data->set_ctx_callback_data();
+			return data->do_dispatch();
+		};
+
+		template<typename iteratorType, typename Callable, bool SkipDispatch = false> GL::shared_ptr<job> async(iteratorType start, iteratorType end, Callable&& ToDo) {
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
+			static constexpr bool returns_void = std::is_same_v<returnType, void>;
+
+			class impl_job final : public job {
+			public:
+				impl_job(iteratorType start_p, iteratorType end_p, Callable&& ToDo) : job(&impl_job::Callback, &impl_job::DoTask), _to_do{ std::move(ToDo) }, start{ start_p }, end{ end_p } {};
+				virtual ~impl_job() = default;
+
+				Callable _to_do;
+				iteratorType start;
+				iteratorType end;
+
+				static void DoTask(impl::job_argument const& _args) {
+					impl_job* data = reinterpret_cast<impl_job*>(_args.task_memory);
+					iteratorType t{ static_cast<iteratorType>(_args.job_index) + data->start };
+
+					if constexpr (returns_void) {
+						data->_to_do(t);
+					}
+					else {
+						data->job_result = data->_to_do(t);
+					}
+				};
+				static void Callback(void* _args) {
+					impl_job* data = reinterpret_cast<impl_job*>(_args);
+					data->callback();
+				};
+
+				void actual_dispatch() override {
+					impl::Dispatch(
+						this->ctx,
+						static_cast<size_t>(end - start),
+						DoTaskPtr,
+						reinterpret_cast<void*>(this)
+					);
+				};
+				GL::shared_ptr<job> do_dispatch() {
+					if constexpr (!SkipDispatch) {
+						this->actual_dispatch();
+					}
+					return GL::shared_ptr<job>(GL::shared_ptr< impl_job >(this));
+				};
+
+				void set_ctx_callback_data() {
+					this->ctx.callback_data = this;
+				};
+			};
+
+			impl_job* data = new impl_job(start, end, std::move(ToDo));
 			data->set_ctx_callback_data();
 			return data->do_dispatch();
 		};
@@ -541,8 +597,10 @@ namespace GL {
 			GL::any job_result; // atomicly updated before the job is completed.
 			impl::dispatch_context ctx; // indicates whether the job is completed or not. 
 			void (*DoTaskPtr)(impl::job_argument const&);
-			GL::atomic_vector<GL::shared_ptr<job>> and_then_list;
+			GL::atomic_vector<std::pair<char, GL::shared_ptr<job>>> and_then_list;
 			std::atomic<long> and_then_progress;
+
+			virtual void actual_dispatch() = 0;
 
 		public:
 			// gets the result of the job. 
@@ -561,7 +619,14 @@ namespace GL {
 			template<typename Callable>
 			GL::shared_ptr<job> and_then(Callable&& to_do) {
 				auto next_job = async<Callable, true>(std::move(to_do));
-				and_then_list.push_back(next_job);
+				and_then_list.push_back({ false, next_job });
+				return next_job;
+			};
+
+			template<typename iteratorType, typename Callable>
+			GL::shared_ptr<job> and_then(iteratorType start, iteratorType end, Callable&& to_do) {
+				auto next_job = async<iteratorType, Callable, true>(start, end, std::move(to_do));
+				and_then_list.push_back({ false, next_job });
 				return next_job;
 			};
 
@@ -576,29 +641,22 @@ namespace GL {
 
 		protected:
 			void DoAndThens() {
-				while (true) {
-					long this_index{ 0 };
-					while (true) {
-						long this_index = and_then_progress.load();
-						if (and_then_list.size() > this_index) {
-							if (and_then_progress.compare_exchange_strong(this_index, this_index + 1)) {
-								break;
+				if (and_then_progress.load() < and_then_list.size()) {
+					auto iter = and_then_list.begin();
+					iter += and_then_progress.load();
+
+					for (; iter._ptr < and_then_list.size(); ++iter) {
+						if (iter->first == 0) {
+							if (InterlockedExchange8(reinterpret_cast<volatile char*>(&iter->first), 1) == 0) {
+								iter->second->actual_dispatch();
+								++and_then_progress;
 							}
 						}
-						else {
-							return;
-						}
 					}
-
-					auto& func = and_then_list[this_index];
-					impl::DispatchOnce(
-						func->ctx,
-						func->DoTaskPtr,
-						reinterpret_cast<void*>(func.get())
-					);
 				}
 			};
 		};
+
 #else
 		class job;		
 		template<typename Callable, bool SkipDispatch = false> GL::shared_ptr<job> async(Callable&& ToDo) {

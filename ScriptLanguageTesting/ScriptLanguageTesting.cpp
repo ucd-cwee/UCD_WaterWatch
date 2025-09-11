@@ -416,17 +416,25 @@ int main() {
         }
 
 #if 1
+        if (auto timer = sw.debug_timer("Inline Test")) {
+            std::vector<size_t> jobs;
+            jobs.resize(1000000, 0);
+            for (size_t i = 0; i < 1000000; ++i) {
+                jobs[i] = std::pow(jobs[i] + 1, 2);
+            }
+            size_t out{ 0 };
+            for (auto& x : jobs) out += x;           
+            print(out);
+        }
         if (auto timer = sw.debug_timer("Parallel Jobs Test")) {
             std::vector<size_t> jobs;
             auto analysis_job = GL::parallel::async([&]() {
                 jobs.resize(1000000, 0);
-            });            
-            for (size_t i = 0; i < 1000000; ++i) {
-                analysis_job->and_then([j = i, &jobs]() {
-                    ++jobs[j];
-                });
-            }
-            analysis_job = nullptr; 
+            });
+            analysis_job->and_then(0, 1000000, [&jobs](size_t i) {
+                jobs[i] = std::pow(jobs[i] + 1, 2);
+            });
+            analysis_job = nullptr;
             analysis_job = GL::parallel::async([&jobs]() {
                 size_t out{ 0 };
                 for (auto& x : jobs) out += x;
