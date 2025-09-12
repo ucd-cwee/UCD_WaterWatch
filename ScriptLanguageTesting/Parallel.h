@@ -15,6 +15,7 @@
 #include "types.h"
 #include <functional>
 #include <tuple>
+#include "ticket_dispensor.h"
 
 #pragma endregion
 
@@ -245,10 +246,23 @@ namespace GL {
 		
 
 
-
-
-		
-
+		namespace impl {
+			template<typename T> struct count_arg;
+			template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
+			template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
+			template<typename R> struct function_traits {
+				typedef R result_type;
+				typedef std::tuple<> arguments;
+			};
+			template<typename R> struct function_traits<std::function<R(void)>> {
+				typedef R result_type;
+				typedef std::tuple<> arguments;
+			};
+			template<typename R, typename... Args> struct function_traits<std::function<R(Args...)>> {
+				typedef R result_type;
+				typedef std::tuple<Args...> arguments;
+			};
+		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
@@ -268,6 +282,7 @@ namespace GL {
 			impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
+
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
@@ -287,6 +302,7 @@ namespace GL {
 			impl::Dispatch(ctx, static_cast<size_t>((end - start) / step), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
+
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) For_Each(containerType& container, F const& ToDo) {
@@ -334,6 +350,7 @@ namespace GL {
 			);
 			impl::Wait(ctx);
 		};
+
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
 		template<typename containerType, typename F> decltype(auto) For_Each(containerType const& container, F const& ToDo) {
@@ -381,6 +398,7 @@ namespace GL {
 			);
 			impl::Wait(ctx);
 		};
+
 		/* while (WhileBoolean()) { Do(); } */
 		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
 			struct WhileException : public std::exception {};
@@ -398,6 +416,7 @@ namespace GL {
 				num_thread_jobs = num_thread_jobs << 2; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
 			}
 		};
+
 		/* while (true){ Do(); if (Until()){ return; } } */
 		template<typename F, typename G> decltype(auto) Until(F const& Do, G const& UntilBoolean) {
 			struct UntilException : public std::exception {};
@@ -416,6 +435,7 @@ namespace GL {
 				num_thread_jobs = num_thread_jobs << 2; // increase the number of parallel jobs, to reduce the down-time of waiting for jobs to collapse to 0.
 			}
 		};
+
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
 			F out{ std::forward<F>(SharedObject) };
@@ -438,6 +458,7 @@ namespace GL {
 			impl::Wait(ctx);
 			return out;
 		};
+
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> decltype(auto) Dispatch(size_t numToDispatch, F& SharedObject, G const& ToDo) {
 			struct IterData {
@@ -461,25 +482,7 @@ namespace GL {
 		};
 
 
-		namespace impl {
-			template<typename T> struct count_arg;
-			template<typename R, typename ...Args> struct count_arg<std::function<R(Args...)>> { static constexpr const size_t value = sizeof...(Args); };
-			template <typename... Args> constexpr size_t sizeOfParameterPack(Args... Fargs) { return sizeof...(Args); }
-			template<typename R> struct function_traits {
-				typedef R result_type;
-				typedef std::tuple<> arguments;
-			};
-			template<typename R> struct function_traits<std::function<R(void)>> {
-				typedef R result_type;
-				typedef std::tuple<> arguments;
-			};
-			template<typename R, typename... Args> struct function_traits<std::function<R(Args...)>> {
-				typedef R result_type;
-				typedef std::tuple<Args...> arguments;
-			};
-		};
-
-#if 1
+#if 0		
 		class job;
 		template<typename Callable, bool SkipDispatch = false> GL::shared_ptr<job> async(Callable&& ToDo) {
 			using returnType = typename impl::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
@@ -528,7 +531,6 @@ namespace GL {
 			data->set_ctx_callback_data();
 			return data->do_dispatch();
 		};
-
 		template<typename iteratorType, typename Callable, bool SkipDispatch = false> GL::shared_ptr<job> async(iteratorType start, iteratorType end, Callable&& ToDo) {
 			using returnType = typename impl::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
 			static constexpr bool returns_void = std::is_same_v<returnType, void>;
@@ -582,7 +584,6 @@ namespace GL {
 			data->set_ctx_callback_data();
 			return data->do_dispatch();
 		};
-		
 		class job {
 		public:
 			job(void (*callback_ptr)(void*), void (*task_ptr)(impl::job_argument const&))
@@ -658,114 +659,397 @@ namespace GL {
 		};
 
 #else
-		class job;		
-		template<typename Callable, bool SkipDispatch = false> GL::shared_ptr<job> async(Callable&& ToDo) {
-			using returnType = typename impl::function_traits<decltype(std::function(std::declval<Callable>()))>::result_type;
-			static constexpr bool returns_void = std::is_same_v<returnType, void>;
-
-			class impl_job final : public job {
-			public:
-				impl_job(Callable&& ToDo) : job(&impl_job::Callback, &impl_job::DoTask), _to_do{ std::move(ToDo) } {};
-				virtual ~impl_job() = default;
-
-				Callable _to_do;
-
-				static void DoTask(impl::job_argument const& _args) {
-					impl_job* data = reinterpret_cast<impl_job*>(_args.task_memory);
-					if constexpr (returns_void) {
-						data->_to_do();
-					}
-					else {
-						data->job_result = data->_to_do();
-					}
-				};
-				static void Callback(void* _args) {
-					impl_job* data = reinterpret_cast<impl_job*>(_args);
-					data->callback();
-				};
-
-				GL::shared_ptr<job> do_dispatch() {
-					if constexpr (!SkipDispatch) {
-						impl::DispatchOnce(
-							this->ctx,
-							DoTaskPtr,
-							reinterpret_cast<void*>(this)
-						);
-					}
-					return GL::shared_ptr<job>(GL::shared_ptr< impl_job >(this));
-				};
-
-				void set_ctx_callback_data() {
-					this->ctx.callback_data = this;
-				};
-			};
-
-			impl_job* data = new impl_job(std::move(ToDo));
-			data->set_ctx_callback_data();
-			return data->do_dispatch();
-		};
+#if 1
+        template<typename F, typename Parent> 
 		class job {
 		public:
-			job(void (*callback_ptr)(void*), void (*task_ptr)(impl::job_argument const&))
-				: job_result{ nullptr }
-			    , ctx{ 0, nullptr, callback_ptr, nullptr }
-			    , DoTaskPtr{ task_ptr }
-			    , and_then_list{} {};
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
+			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
 
 		protected:
-			GL::any job_result; // atomicly updated before the job is completed.
-			impl::dispatch_context ctx; // indicates whether the job is completed or not. 
-			void (*DoTaskPtr)(impl::job_argument const&);
-			GL::atomic_parallel_queue<GL::shared_ptr<job>> and_then_list;
-			GL::atomic_vector<GL::shared_ptr<job>> and_then_cache;
+			GL::any result;
+			F todo;
+			impl::dispatch_context ctx;
+			Parent* parent;
+
+			// called once the dispatched job ends
+			static void Callback(void* _args) {
+				job* data = reinterpret_cast<job*>(_args);
+
+			};
+			static void DoTask(impl::job_argument const& _args) {
+				job* data = reinterpret_cast<job*>(_args.task_memory);
+
+				if constexpr (!this_is_job_start) 
+				    data->parent->wait();
+
+				if constexpr (this_returns_void) data->todo();
+				else data->result = data->todo();
+
+				//if constexpr (parent_returns && (num_args_over_default > 0)) {
+				//	if constexpr (ReturnsVoid) data->_to_do(data->parent_result.cast());
+				//	else data->job_result = data->_to_do(data->parent_result.cast());
+				//}
+				//else if constexpr (num_args_over_default <= 0) {
+				//	if constexpr (ReturnsVoid) data->_to_do();
+				//	else data->job_result = data->_to_do();
+				//}
+			};
 
 		public:
-			// gets the result of the job. 
-			GL::any const& result() const {
-				return job_result;
+			job(F&& _todo, Parent* _parent)
+				: result{}
+				, todo(std::move(_todo))
+				, ctx{ 0, nullptr, nullptr, nullptr /*&job::Callback, reinterpret_cast<void*>(this)*/ }
+				, parent{ _parent }
+			{
+				impl::DispatchOnce(ctx, &job::DoTask, reinterpret_cast<void*>(this));
 			};
-			virtual bool try_wait() const {
-				return ctx.counter.load() == 0;
+			job(job&&) = delete;
+			job(job const&) = delete;
+			job& operator=(job&&) = delete;
+			job& operator=(job const&) = delete;
+			~job() {
+				wait();
 			};
-			// waits for this job to complete. It does NOT wait for the downstream or and_then jobs. That will only happen when this job goes out-of-scope. 
+
 			void wait() {
 				impl::Wait(ctx);
-				DoAndThens();
+			};
+			GL::any const& get() {
+				return result;
+			};
+
+			template<typename G> decltype(auto) and_then(G&& ToDo);
+			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
+		};
+		
+		template<typename F, typename Parent>
+		class jobs {
+		public:
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
+			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
+
+		protected:
+			GL::any result;
+			F todo;
+			impl::dispatch_context ctx;
+			Parent* parent;
+			size_t start;
+			size_t end;
+
+			// called once the dispatched job ends
+			static void Callback(void* _args) {
+				jobs* data = reinterpret_cast<jobs*>(_args);
+
+			};
+			static void DoTask(impl::job_argument const& _args) {
+				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
+				size_t t{ static_cast<size_t>(_args.job_index) + data->start };
+
+				if constexpr (!this_is_job_start)
+					data->parent->wait();
+
+				if constexpr (this_returns_void) data->todo(t);
+				else data->result = data->todo(t);
+
+				//if constexpr (parent_returns && (num_args_over_default > 0)) {
+				//	if constexpr (ReturnsVoid) data->_to_do(data->parent_result.cast());
+				//	else data->job_result = data->_to_do(data->parent_result.cast());
+				//}
+				//else if constexpr (num_args_over_default <= 0) {
+				//	if constexpr (ReturnsVoid) data->_to_do();
+				//	else data->job_result = data->_to_do();
+				//}
+			};
+
+		public:
+			jobs(size_t _start, size_t _end, F&& _todo, Parent* _parent)
+				: result{}
+				, start{ _start }
+				, end{ _end }
+				, todo(std::move(_todo))
+				, ctx{ 0, nullptr, nullptr, nullptr /*&job::Callback, reinterpret_cast<void*>(this)*/ }
+				, parent{ _parent }
+			{
+				impl::Dispatch(ctx, _end - _start, &jobs::DoTask, reinterpret_cast<void*>(this));
+			};
+			jobs(jobs&&) = delete;
+			jobs(jobs const&) = delete;
+			jobs& operator=(jobs&&) = delete;
+			jobs& operator=(jobs const&) = delete;
+			~jobs() {
+				wait();
+			};
+
+			void wait() {
+				impl::Wait(ctx);
+			};
+			GL::any const& get() {
+				return result;
+			};
+
+			template<typename G> decltype(auto) and_then(G&& ToDo);
+			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
+		};
+
+		template<typename F, typename Parent = void> __forceinline decltype(auto) async(F&& ToDo, Parent* parent = nullptr) {
+			return job<F, Parent>(std::move(ToDo), std::move(parent));
+		};
+		template<typename F, typename Parent = void> __forceinline decltype(auto) async(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
+			return jobs<F, Parent>(start, end, std::move(ToDo), std::move(parent));
+		};
+
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(G&& ToDo) {
+			return async(std::move(ToDo), this);
+		};
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+			return async(start, end, std::move(ToDo), this);
+		};
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(G&& ToDo) {
+			return async(std::move(ToDo), this);
+		};
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+			return async(start, end, std::move(ToDo), this);
+		};
+
+#else
+		class job;
+		template<class F, bool delayed_dispatch = false, bool parent_returns = false> GL::shared_ptr<job> async(F&& ToDo) {
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			static constexpr bool ReturnsVoid = std::is_same_v<returnType, void>;
+			static constexpr size_t num_args_over_default = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+
+			class IterData final : public job {
+			public:
+				IterData(F&& ToDo)
+					: job()
+					, dispatch_once{ 0 }
+					, _to_do(std::move(ToDo))
+					, ctx{ 0, nullptr, &IterData::Callback, reinterpret_cast<void*>(this) }
+					, parent_result(nullptr)
+				{
+					returns_void = ReturnsVoid;
+				};
+				virtual ~IterData() {
+					wait_all();
+				}
+
+				GL::any parent_result;
+				size_t dispatch_once;
+				F _to_do;
+				impl::dispatch_context ctx;
+
+				static void Callback(void* _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args);
+					for (auto& x : data->and_then_list) {
+						x->dispatch();
+					}
+				};
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					if constexpr (parent_returns && (num_args_over_default > 0)) {
+						if constexpr (ReturnsVoid) data->_to_do(data->parent_result.cast());
+						else data->job_result = data->_to_do(data->parent_result.cast());
+					}
+					else if constexpr (num_args_over_default <= 0) {
+						if constexpr (ReturnsVoid) data->_to_do();
+						else data->job_result = data->_to_do();
+					}
+				};
+				void dispatch() override {					
+					if (dispatch_once == 0) {
+						if (InterlockedExchange(reinterpret_cast<volatile size_t*>(&dispatch_once), 1) == 0) {
+							if (this->parent) {
+								this->parent->wait();
+								if constexpr (parent_returns) {
+									this->parent_result = this->parent->result();									
+								}
+								this->parent = nullptr;
+							}
+							impl::DispatchOnce(ctx, &IterData::DoTask, reinterpret_cast<void*>(this));
+						}
+					}
+				};
+				void wait() override {
+					dispatch();
+					impl::Wait(ctx);
+				};
+				void wait_all() override {
+					wait();
+					for (auto& x : and_then_list) {
+						x->wait_all();
+					}
+				};
+			};
+
+			GL::shared_ptr<IterData> out(new IterData(std::move(ToDo)));
+			if constexpr (!delayed_dispatch) {
+				out->dispatch();
+			}
+			return GL::shared_ptr<job>(std::move(out));
+		};
+		template<class F, bool delayed_dispatch = false, bool parent_returns = false> GL::shared_ptr<job> async(size_t start, size_t end, F&& ToDo) {
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			static constexpr bool ReturnsVoid = std::is_same_v<returnType, void>;
+			static constexpr size_t num_args_over_default = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments> - 1;
+
+			class IterData final : public job {
+			public:
+				IterData(F&& ToDo, size_t start, size_t end)
+					: job()
+					, dispatch_once{ 0 }
+					, _to_do(std::move(ToDo))
+					, _start{ start }
+					, _end{ end }
+					, ctx{ 0, nullptr, &IterData::Callback, reinterpret_cast<void*>(this) }
+					, parent_result(nullptr)
+				{
+					returns_void = ReturnsVoid;
+				};
+				virtual ~IterData() {
+					wait_all();
+				}
+
+				GL::any parent_result;
+				size_t dispatch_once;
+				F _to_do;
+				size_t _start;
+				size_t _end;
+				impl::dispatch_context ctx;
+
+				static void Callback(void* _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args);
+					for (auto& x : data->and_then_list) {
+						x->dispatch();
+					}
+				};
+				static void DoTask(impl::job_argument const& _args) {
+					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+					size_t t{ static_cast<size_t>(_args.job_index) + data->_start };
+
+					if constexpr (parent_returns && (num_args_over_default > 0)) {
+						if constexpr (ReturnsVoid) data->_to_do(t, data->parent_result.cast());
+						else {
+							data->job_result = data->_to_do(t, data->parent_result.cast());
+						}
+					}
+					else if constexpr (num_args_over_default <= 0) {
+						if constexpr (ReturnsVoid) data->_to_do(t);
+						else {
+							if (data->job_result.empty()) {
+								data->job_result = data->_to_do(t);
+							}
+							else {
+								data->_to_do(t);
+							}							
+						}
+					}
+				};
+				void dispatch() override {	
+					if (dispatch_once == 0) {
+						if (InterlockedExchange(reinterpret_cast<volatile size_t*>(&dispatch_once), 1) == 0) {
+							if (this->parent) {
+								this->parent->wait();
+								if constexpr (parent_returns) {
+									this->parent_result = this->parent->result();									
+								}
+								this->parent = nullptr;
+							}
+							impl::Dispatch(ctx, static_cast<size_t>((size_t)_end - (size_t)_start), &IterData::DoTask, reinterpret_cast<void*>(this));							
+						}
+					}
+				};
+				void wait() override {
+					dispatch();
+					impl::Wait(ctx);
+				};
+				void wait_all() override {
+					wait();
+					for (auto& x : and_then_list) {
+						x->wait_all();
+					}
+				};
+			};
+
+			GL::shared_ptr<IterData> out(new IterData(std::move(ToDo), start, end));
+			if constexpr (!delayed_dispatch) {
+				out->dispatch();
+			}
+			return GL::shared_ptr<job>(std::move(out));
+		};
+		// Atomic job that the user can use to schedule a series of jobs using the and_then sequence.
+		class job {
+		protected:
+			GL::any job_result;
+			GL::atomic_vector<GL::shared_ptr<job>> and_then_list;
+			job* parent;			
+			bool returns_void;
+
+		public:
+			job() 
+				: parent(nullptr)
+				, job_result()
+				, and_then_list()
+			    , returns_void{ false }
+			{
+				parent = nullptr;
 			};
 
 			template<typename Callable>
 			GL::shared_ptr<job> and_then(Callable&& to_do) {
-				auto next_job = async<Callable, true>(std::move(to_do));
-				and_then_list.push(next_job);
-				if (try_wait()) DoAndThens();
-				return next_job;
+				if (this->returns_null()) {
+					auto out = async<Callable, true, false>(std::move(to_do));
+					out->parent = this;
+					and_then_list.push_back(out);
+					return out;
+				}
+				else {
+					auto out = async<Callable, true, true>(std::move(to_do));
+					out->parent = this;
+					and_then_list.push_back(out);
+					return out;
+				}				
 			};
-
-			// this is called when the job is completed on the threading side
-			void callback() {
-				DoAndThens();
-			};
-			virtual ~job() {
-				wait();
-				DoAndThens();
-			};
-
-		protected:
-			void DoAndThens() {
-				GL::shared_ptr<job> func;
-				while (and_then_list.try_pop(func)) {
-					impl::DispatchOnce(
-						func->ctx,
-						func->DoTaskPtr,
-						reinterpret_cast<void*>(func.get())
-					);
-					and_then_cache.push_back(func);
+			template<typename Callable>
+			GL::shared_ptr<job> and_then(size_t start, size_t end, Callable&& to_do) {
+				if (this->returns_null()) {
+					auto out = async<Callable, true, false>(start, end, std::move(to_do));
+					out->parent = this;
+					and_then_list.push_back(out);
+					return out;
+				}
+				else {
+					auto out = async<Callable, true, true>(start, end, std::move(to_do));
+					out->parent = this;
+					and_then_list.push_back(out);
+					return out;
 				}
 			};
+			virtual void wait() = 0;
+			virtual void wait_all() = 0;
+			virtual void dispatch() = 0;
+
+		public:
+			bool returns_null() const {
+				return returns_void;
+			};
+			GL::any const& result() const {
+				return job_result;
+			};
+			virtual ~job() { };
+
 		};
+#endif
+
 
 
 #endif
+
 
 	};
 };

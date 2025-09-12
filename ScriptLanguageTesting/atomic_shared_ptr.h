@@ -70,7 +70,15 @@ namespace /* atomic_shared_ptr */ GL {
         template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(new deleter_control_block<U>(Data, std::move(deleter)))), data{ Data } {}
 
         explicit shared_ptr(control_block_base* ControlBlock, bool) : controlBlock(ControlBlock), data{ reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr) } {}
-
+        static shared_ptr clone_from_control_block(control_block_base* ControlBlock) {
+            shared_ptr out;
+            out.controlBlock = ControlBlock;            
+            if (out.controlBlock != nullptr) {
+                out.controlBlock->refCount.fetch_add(1);
+            }
+            out.data = reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr);
+            return out;
+        };
         shared_ptr(const shared_ptr& other) {
             controlBlock = other.controlBlock;
             data = other.data;
@@ -139,6 +147,9 @@ namespace /* atomic_shared_ptr */ GL {
             return (bool)controlBlock;
         };
 
+        control_block_base* copy_control_block() const {
+            return controlBlock;
+        };
         control_block_base* release_control_block() {
             control_block_base* out = controlBlock;
             controlBlock = nullptr;
@@ -267,11 +278,13 @@ namespace /* atomic_shared_ptr */ GL {
         atomic_shared_ptr(const atomic_shared_ptr& other) : atomic_shared_ptr(const_cast<atomic_shared_ptr&>(other).load()) {};
         atomic_shared_ptr(atomic_shared_ptr&& other) noexcept : atomic_shared_ptr(other.load()) {};
         atomic_shared_ptr& operator=(const atomic_shared_ptr& other) {
-            this->store(other.load());
+            auto ptr = const_cast<atomic_shared_ptr&>(other).load();
+            this->store(std::move(ptr));
             return *this;
         };
         atomic_shared_ptr& operator=(atomic_shared_ptr&& other) noexcept {
-            this->store(other.load());
+            auto ptr = other.load();
+            this->store(std::move(ptr));
             return *this;
         };
         atomic_shared_ptr& operator=(std::nullptr_t) {

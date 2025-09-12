@@ -699,6 +699,7 @@ namespace GL {
                 constexpr bool is_std_shared_ptr = isStdShared::value;
                 constexpr bool is_ptr = std::is_pointer_v<T>;
                 constexpr bool is_ref = std::is_reference_v<T>;
+                constexpr bool is_const = std::is_const_v<T>;
 
                 if (p) {
                     GL::shared_ptr<type_erasure::any_data> container = p->m_ptr.load();
@@ -709,7 +710,7 @@ namespace GL {
                             if constexpr (is_ptr) {
                                 throw("Casting Any to utilities::shared_ptr<T>* or utilities::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to stutilitiesd::shared_ptr<T>.");
                             }
-                            else if constexpr (is_ref) {
+                            else if constexpr (is_ref && !is_const) {
                                 throw("Casting Any to utilities::shared_ptr<T>* or utilities::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to utilities::shared_ptr<T>.");
                             }
 
