@@ -198,8 +198,6 @@ namespace GL {
 				void (*group_start_job)(void* const&); // callback func with memory for type T
 				void (*group_end_job)(void* const&); // callback func with memory for type T
 				void* task_memory;
-
-				// size_t submitting_thread;
 			};
 
 			void Dispatch(
@@ -661,10 +659,10 @@ namespace GL {
 #else
 #if 1
 	};
+
 	class job_base {
 	public:
 		virtual ~job_base() = default;
-
 		virtual void wait() = 0;
 		virtual GL::any const& get() = 0;
 		virtual job_base* parent_ptr() const = 0;
@@ -688,7 +686,7 @@ namespace GL {
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
 				job* data = reinterpret_cast<job*>(_args);
-
+				
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				job* data = reinterpret_cast<job*>(_args.task_memory);
@@ -710,12 +708,12 @@ namespace GL {
 			job(F&& _todo, Parent* _parent)
 				: result{}
 				, todo(std::move(_todo))
-				, ctx{ 0, nullptr, nullptr, nullptr /*&job::Callback, reinterpret_cast<void*>(this)*/ }
+				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) }
 				, parent{ _parent }
 			{
 				impl::DispatchOnce(ctx, &job::DoTask, reinterpret_cast<void*>(this));
 			};
-			job(job&&) = delete;
+			job(job&&) = default;
 			job(job const&) = delete;
 			job& operator=(job&&) = delete;
 			job& operator=(job const&) = delete;
@@ -808,12 +806,12 @@ namespace GL {
 				, start{ _start }
 				, end{ _end }
 				, todo(std::move(_todo))
-				, ctx{ 0, nullptr, nullptr, nullptr /*&job::Callback, reinterpret_cast<void*>(this)*/ }
+				, ctx{ 0, nullptr, &jobs::Callback, reinterpret_cast<void*>(this) }
 				, parent{ _parent }
 			{
 				impl::Dispatch(ctx, _end - _start, &jobs::DoTask, reinterpret_cast<void*>(this));
 			};
-			jobs(jobs&&) = delete;
+			jobs(jobs&&) = default;
 			jobs(jobs const&) = delete;
 			jobs& operator=(jobs&&) = delete;
 			jobs& operator=(jobs const&) = delete;
@@ -857,6 +855,11 @@ namespace GL {
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
 			return async(start, end, std::move(ToDo), this);
 		};
+
+
+
+
+
 
 #else
 		class job;

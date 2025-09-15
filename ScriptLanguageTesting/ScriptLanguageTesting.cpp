@@ -692,7 +692,29 @@ int main() {
                 });
             }
         }
-        if (auto timer = sw.debug_timer("Parallel Jobs Test 2")) {
+        if (auto timer = sw.debug_timer("Parallel Jobs Test 2a")) {
+            size_t out = 0; {
+                auto job1 = GL::parallel::async([&]() {
+                    std::vector<size_t> jobs;
+                    jobs.resize(1000000, 0);
+                    return jobs;
+                });
+                job1.and_then(0, 1000000, [&](size_t i, GL::job_base& parent) {
+                    std::vector<size_t>& jobs = job1.get().cast();
+                    EXPECT_EQ(1000000, jobs.size());
+                    auto start = GL::clock::ns();
+                    while ((GL::clock::ns() - start) < 1000) {}
+                    ++jobs[i];
+                }).and_then([&job1, &out](GL::job_base& parent) {
+                    std::vector<size_t>& jobs = job1.get().cast();
+                    EXPECT_EQ(1000000, jobs.size());
+                    out = std::accumulate(jobs.begin(), jobs.end(), 0);
+                    EXPECT_EQ(1000000, out);
+                });
+            }
+            EXPECT_EQ(1000000, out);
+        }
+        if (auto timer = sw.debug_timer("Parallel Jobs Test 2b")) {
             size_t out = 0; {
                 GL::parallel::async([&]() {
                     std::vector<size_t> jobs;

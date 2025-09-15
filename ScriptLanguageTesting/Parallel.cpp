@@ -167,9 +167,9 @@ namespace GL {
 						if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
 					}
 
-					if (--task.ctx->counter == 0) {
+					if (0ull == --task.ctx->counter) {
 						if (task.ctx->callback) {
-							task.ctx->callback(task.ctx->callback_data); // do something with this!
+							task.ctx->callback(task.ctx->callback_data);
 						}
 					}
 				}
@@ -330,10 +330,9 @@ namespace GL {
 
 							auto start_time = GL::util::get_current_epoch();
 							volatile std::atomic<long> count{ 0 };
-							for (volatile size_t i = 0; i < 1000000; ++i) {
-								++count;
-							}
+							for (volatile size_t i = 0; i < 1000000; ++i) ++count;							
 							internal_state.threads[threadID].relative_speed = 1.0 / (double)((GL::util::get_current_epoch() - start_time) + 1);
+
 							if (1) {
 								thread_task temp{ nullptr, nullptr, 0, 0, 0, 0, nullptr, nullptr, nullptr };
 								(void)internal_state.jobQueue.push(temp); // necessary to instantiate the thread_local object
