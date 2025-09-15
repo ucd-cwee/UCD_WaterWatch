@@ -660,8 +660,19 @@ namespace GL {
 
 #else
 #if 1
+	};
+	class job_base {
+	public:
+		virtual ~job_base() = default;
+
+		virtual void wait() = 0;
+		virtual GL::any const& get() = 0;
+		virtual job_base* parent_ptr() const = 0;
+	};
+
+	namespace parallel {
         template<typename F, typename Parent> 
-		class job {
+		class job final : public job_base {
 		public:
 			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
 			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
@@ -684,18 +695,15 @@ namespace GL {
 
 				if constexpr (!this_is_job_start) 
 				    data->parent->wait();
-
-				if constexpr (this_returns_void) data->todo();
-				else data->result = data->todo();
-
-				//if constexpr (parent_returns && (num_args_over_default > 0)) {
-				//	if constexpr (ReturnsVoid) data->_to_do(data->parent_result.cast());
-				//	else data->job_result = data->_to_do(data->parent_result.cast());
-				//}
-				//else if constexpr (num_args_over_default <= 0) {
-				//	if constexpr (ReturnsVoid) data->_to_do();
-				//	else data->job_result = data->_to_do();
-				//}
+				
+				if constexpr (this_is_job_start || (this_num_args == 0)) {
+					if constexpr (this_returns_void) data->todo();
+					else data->result = data->todo();
+				}
+				else {
+					if constexpr (this_returns_void) data->todo(*dynamic_cast<job_base*>(data->parent));
+					else data->result = data->todo(*dynamic_cast<job_base*>(data->parent));
+				}
 			};
 
 		public:
@@ -715,19 +723,24 @@ namespace GL {
 				wait();
 			};
 
-			void wait() {
+			void wait()  override {
 				impl::Wait(ctx);
 			};
-			GL::any const& get() {
+			GL::any const& get()  override {
 				return result;
 			};
-
+			job_base* parent_ptr() const  override {
+				if constexpr (this_is_job_start)
+					return nullptr;
+				else
+					return dynamic_cast<job_base*>(const_cast<Parent*>(parent));
+			};
 			template<typename G> decltype(auto) and_then(G&& ToDo);
 			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
 		};
 		
 		template<typename F, typename Parent>
-		class jobs {
+		class jobs final : public job_base {
 		public:
 			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
 			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
@@ -749,22 +762,44 @@ namespace GL {
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
-				size_t t{ static_cast<size_t>(_args.job_index) + data->start };
-
+				
 				if constexpr (!this_is_job_start)
 					data->parent->wait();
 
-				if constexpr (this_returns_void) data->todo(t);
-				else data->result = data->todo(t);
-
-				//if constexpr (parent_returns && (num_args_over_default > 0)) {
-				//	if constexpr (ReturnsVoid) data->_to_do(data->parent_result.cast());
-				//	else data->job_result = data->_to_do(data->parent_result.cast());
-				//}
-				//else if constexpr (num_args_over_default <= 0) {
-				//	if constexpr (ReturnsVoid) data->_to_do();
-				//	else data->job_result = data->_to_do();
-				//}
+				if constexpr (this_num_args == 0) {
+					if constexpr (this_returns_void) (void)data->todo();
+					else {
+						if (data->result.empty())
+							data->result = data->todo();
+						else
+							(void)data->todo();
+					}
+				}
+				else {
+					size_t t{ static_cast<size_t>(_args.job_index) + data->start };
+					if constexpr (this_is_job_start || (this_num_args <= 1)) {
+						if constexpr (this_returns_void) {
+							(void)data->todo(t);
+						}
+						else {
+							if (data->result.empty()) 
+								data->result = data->todo(t);
+							else
+								(void)data->todo(t);
+						}
+					}
+					else {
+						if constexpr (this_returns_void) {
+							(void)data->todo(t, *dynamic_cast<job_base*>(data->parent));
+						}
+						else {
+							if (data->result.empty())
+								data->result = data->todo(t, *dynamic_cast<job_base*>(data->parent));
+							else
+								(void)data->todo(t, *dynamic_cast<job_base*>(data->parent));
+						}
+					}
+				}
 			};
 
 		public:
@@ -786,11 +821,17 @@ namespace GL {
 				wait();
 			};
 
-			void wait() {
+			void wait()  override {
 				impl::Wait(ctx);
 			};
-			GL::any const& get() {
+			GL::any const& get()  override {
 				return result;
+			};
+			job_base* parent_ptr() const override {
+				if constexpr (this_is_job_start)
+					return nullptr;
+				else 
+					return dynamic_cast<job_base*>(const_cast<Parent*>(parent));
 			};
 
 			template<typename G> decltype(auto) and_then(G&& ToDo);
