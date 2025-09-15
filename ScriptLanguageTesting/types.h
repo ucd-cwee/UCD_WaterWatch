@@ -29,6 +29,8 @@ namespace GL {
             static GL::any instance_by_copy(GL::any const&);
             // This&&
             static GL::any instance();
+            // p->~T();
+            static void destroy(void*);
         };
 
         class cached_type {
@@ -42,10 +44,13 @@ namespace GL {
                 base_classes{};
             size_t // without const, ref, etc. 
                 base_hash{ 0 };
+            size_t
+                T_size{ 0 };
 
             GL::any(*instance_by_value)(GL::any const&); // const value_t& to This&&
             GL::any(*instance_by_copy)(GL::any const&); // const This& to This&&
             GL::any(*instance)(); // This&&
+            void(*destroy)(void*); // // p->~T();
 
             // returns true if this is found to be a child of the parent type (id'd by its base hash) 
             bool is_derived_from(size_t base) const;
@@ -88,6 +93,9 @@ namespace GL {
                     out.instance_by_value = &instance_funcs<T>::instance_by_value;
                     out.instance_by_copy = &instance_funcs<T>::instance_by_copy;
                     out.instance = &instance_funcs<T>::instance;
+                    out.destroy = &instance_funcs<T>::destroy;
+                    if constexpr (!std::is_void_v<T>) out.T_size = sizeof(BaseType);
+                    else out.T_size = 0;
                 }
             }
             return out;
@@ -238,17 +246,19 @@ namespace GL {
         bool can_cast(type const& to) const {
             return this->match_base_hash(to);
         };
+        size_t size() const;
 
         GL::any instance_by_value(GL::any const&) const; // const value_t& to This&&
         GL::any instance_by_copy(GL::any const&) const; // const This& to This&&
         GL::any instance() const; // This&&
+        void destroy(void*) const; // p->~T();
     };
 
     template<typename T> __forceinline static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
         static constexpr size_t const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0;
         static constexpr size_t ref_modifier = std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0;
-        
+
         static GL::type Base(
             (GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1)
         );
@@ -649,37 +659,32 @@ namespace GL {
             template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
 
         private:
-            template <class VType> static decltype(auto) DoCast_Shared(any* p) noexcept {
+            template <class VType> static decltype(auto) DoCast_Shared(GL::shared_ptr<type_erasure::any_data> && ptr, any* p) noexcept {
                 if (p) {
-                    return GL::static_pointer_cast<VType>(p->shared_ptr());
+                    return GL::static_pointer_cast<VType>(ptr->get(p->m_ptr));
                 }
                 return GL::shared_ptr<VType>{ nullptr };
             };
-            template <class VType> static decltype(auto) DoCast_StdShared(any* p) noexcept {
+            template <class VType> static decltype(auto) DoCast_StdShared(GL::shared_ptr<type_erasure::any_data> && ptr, any* p) noexcept {
                 if (p) {
-                    return std::static_pointer_cast<VType>(p->std_shared_ptr());
+                    return std::static_pointer_cast<VType>(ptr->get_std(p->m_ptr));
                 }
                 return std::shared_ptr<VType>{ nullptr };
             };
-            template <class VType> static decltype(auto) DoCast_Shared_Sentinel(any* p) /*noexcept*/ {
-                throw("Casting Any to  std::shared_ptr<T>* or  std::shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to std::shared_ptr<T>.");
-            };
-            template<typename VType> static decltype(auto) DoCast_Unshared(any* p) /*noexcept*/ {
+            template<typename VType> static decltype(auto) DoCast_Unshared(GL::shared_ptr<type_erasure::any_data> && container) /*noexcept*/ {
                 static constexpr bool is_ptr = std::is_pointer_v<VType>;
-                if (p) {
-                    if (auto container = p->m_ptr.load_fast()) {
-                        if constexpr (is_ptr) {
-                            if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                                return container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
-                            }
-                            else {                                
-                                return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
-                            }
+                if (container) {
+                    if constexpr (is_ptr) {
+                        if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                            return container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
                         }
-                        else {
-                            return *container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                        else {                                
+                            return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
                         }
                     }
+                    else {
+                        return *container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                    }                    
                 }
                 if constexpr (is_ptr) {
                     return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
@@ -715,7 +720,7 @@ namespace GL {
                             }
 
                             if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                return DoCast_Shared<innertype>(p);
+                                return DoCast_Shared<innertype>(std::move(container), p);
                             }
                             else {
                                 if (container->can_cast(type_of<var>())) {
@@ -725,7 +730,7 @@ namespace GL {
                                         continue;
                                     }
                                 }
-                                return DoCast_Shared<innertype>(p);
+                                return DoCast_Shared<innertype>(std::move(container), p);
                             }
                         }
                         else if constexpr (is_std_shared_ptr) {
@@ -739,7 +744,7 @@ namespace GL {
                             }
 
                             if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                return DoCast_StdShared<innertype>(p);
+                                return DoCast_StdShared<innertype>(std::move(container), p);
                             }
                             else {
                                 if (container->can_cast(type_of<var>())) {
@@ -749,13 +754,13 @@ namespace GL {
                                         continue;
                                     }
                                 }
-                                return DoCast_StdShared<innertype>(p);
+                                return DoCast_StdShared<innertype>(std::move(container), p);
                             }
                         }
                         else {
                             // casting to a reference or a pointer
                             if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                return DoCast_Unshared<T>(p);
+                                return DoCast_Unshared<T>(std::move(container));
                             }
                             else {
                                 if (container->can_cast(type_of<var>())) {
@@ -765,7 +770,7 @@ namespace GL {
                                         continue;
                                     }
                                 }
-                                return DoCast_Unshared<T>(p);
+                                return DoCast_Unshared<T>(std::move(container));
                             }
                         }
                     }
@@ -1055,6 +1060,11 @@ namespace GL {
                 return out;
             }
             return {};
+        };
+        // This&&
+        template <typename T> __forceinline void instance_funcs<T>::destroy(void* p) {
+            using base_type = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*            
+            reinterpret_cast<T*>(p)->~T();
         };
     }
 

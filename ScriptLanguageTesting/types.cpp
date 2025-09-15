@@ -113,7 +113,10 @@ namespace GL {
         auto& that_base = get_base(to_match);
         return this_base.match_base_hash(that_base.base_hash);
     };
-
+    size_t type::size() const {
+        auto& this_base = get_base(*this);
+        return this_base.T_size;
+    };
     // const value_t& to This&&
     GL::any type::instance_by_value(GL::any const& rhs) const {
         auto& this_base = get_base(*this);
@@ -129,7 +132,11 @@ namespace GL {
         auto& this_base = get_base(*this);
         return this_base.instance();
     };
-
+    // This&&
+    void type::destroy(void* p) const {
+        auto& this_base = get_base(*this);
+        this_base.destroy(p);
+    };
 
 
 };

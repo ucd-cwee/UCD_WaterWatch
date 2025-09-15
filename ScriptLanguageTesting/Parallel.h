@@ -658,17 +658,340 @@ namespace GL {
 
 #else
 #if 1
+		template<typename F, typename Parent>
+		class job;
+
+		template<typename F, typename Parent>
+		class jobs;
+	};
+	
+	// Type-erasure container that holds a fixed length of bytes. 
+	// If the required amount of data needed is greater than can be stored locally, it will use a pointer. 
+	// Allowed to set-and-forget, as it will use the type system to get the deleter for the object, albiet for a performance penalty. 
+	template <size_t Size = 16 > class StaticContainer {
+		union Unioned {
+			unsigned char local[Size];
+			void* global;
+		};
+		Unioned data;
+		GL::type type;
+
+		void do_delete() {
+			if (type.size() > Size) {
+				type.destroy(data.global);
+				delete data.global;
+			}
+			else {
+				type.destroy(reinterpret_cast<void*>(&data.local[0]));
+			}
+			type = GL::type_of<void>();	
+		};
+
+	public:
+		StaticContainer()
+			: data{ 0 }
+			, type{ GL::type_of<void>() }
+		{};
+		StaticContainer(StaticContainer const&) = delete;
+		StaticContainer(StaticContainer&& rhs) noexcept {
+			std::memcpy(&data.local[0], &rhs.data.local[0], sizeof(Unioned));
+			type = rhs.type;
+			rhs.type = GL::type_of<void>();
+		};
+		StaticContainer& operator=(StaticContainer const&) = delete;
+		StaticContainer& operator=(StaticContainer&& rhs) noexcept {
+			if (!type.is_void()) do_delete();
+
+			std::memcpy(&data.local[0], &rhs.data.local[0], sizeof(Unioned));
+			type = rhs.type;
+			rhs.type = GL::type_of<void>();
+
+			return *this;
+		};
+		~StaticContainer() {
+			if (!type.is_void()) do_delete();			
+		};
+
+		template <typename T, class... _Types> void New(_Types&&... _Args) {
+			if (!type.is_void()) do_delete();
+
+			type = GL::type_of<T>();
+			if constexpr (sizeof(T) > Size) {
+				data.global = new T(_STD forward<_Types>(_Args)...);
+			}
+			else {
+				new (reinterpret_cast<T*>(&data.local[0])) T(_STD forward<_Types>(_Args)...);
+			}
+		};
+		template <typename T> void Delete() {
+			if constexpr (sizeof(T) > Size) {
+				delete reinterpret_cast<T*>(data.global);
+				data.global = nullptr;
+			}
+			else if constexpr (!std::is_pod_v<T>) 
+				reinterpret_cast<T*>(&data.local[0])->~T();			
+
+			type = GL::type_of<void>();
+		};
+		template <typename T> T& Get() {
+			if constexpr (sizeof(T) > Size)
+				return *reinterpret_cast<T*>(data.global);
+			else
+				return *reinterpret_cast<T*>(&data.local[0]);
+		};
+		template <typename T> const T& Get() const {
+			if constexpr (sizeof(T) > Size)
+				return *reinterpret_cast<const T*>(data.global);
+			else
+				return *reinterpret_cast<const T*>(&data.local[0]);
+		};
 	};
 
 	class job_base {
+	protected:
+		GL::StaticContainer<16> todo;
+		GL::atomic_queue< job_base* > and_thens;
+
 	public:
+		job_base() = default;
+		job_base(job_base const&) = delete;
+		job_base(job_base &&) = default;
+		job_base& operator=(job_base const&) = delete;
+		job_base& operator=(job_base&&) = default;
 		virtual ~job_base() = default;
+
+		GL::any result;		
+
+		virtual void dispatch() = 0;
 		virtual void wait() = 0;
-		virtual GL::any const& get() = 0;
 		virtual job_base* parent_ptr() const = 0;
+
+		template<typename F, typename Parent> friend class GL::parallel::job;
+		template<typename F, typename Parent> friend class GL::parallel::jobs;
 	};
 
 	namespace parallel {
+#if 1
+
+		template<typename F, typename Parent>
+		class job final : public job_base {
+			friend class job_base;
+			template<typename G, typename ParentB> friend class jobs;
+
+		public:
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
+			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
+
+		protected:
+			std::atomic<bool> dispatch_once;
+			impl::dispatch_context ctx;
+			Parent* parent;
+			
+			// called once the dispatched job ends
+			static void Callback(void* _args) {
+				job* data = reinterpret_cast<job*>(_args);
+				job_base* to_do_item{ nullptr };
+				while (data->and_thens.try_pop(to_do_item)) {
+					to_do_item->dispatch();
+				}
+			};
+			static void DoTask(impl::job_argument const& _args) {
+				job* data = reinterpret_cast<job*>(_args.task_memory);
+
+				if constexpr (!this_is_job_start)
+					data->parent->wait();
+
+				if constexpr (this_is_job_start || (this_num_args == 0)) {
+					if constexpr (this_returns_void) data->todo.Get<F>()();
+					else data->result = data->todo.Get<F>()();
+				}
+				else {
+					if constexpr (this_returns_void) data->todo.Get<F>()(*dynamic_cast<job_base*>(data->parent));
+					else data->result = data->todo.Get<F>()(*dynamic_cast<job_base*>(data->parent));
+				}
+			};
+
+		public:
+			job(F&& _todo, Parent* _parent)
+				: job_base()
+				, dispatch_once{ false }
+				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) }
+				, parent{ _parent }
+			{
+				todo.New<F>(std::move(_todo));				
+				if constexpr (!this_is_job_start) {
+					parent->and_thens.push(dynamic_cast<job_base*>(this));
+				}
+			};
+			job(job&&) = delete;
+			job(job const&) = delete;
+			job& operator=(job&&) = delete;
+			job& operator=(job const&) = delete;
+			~job() {
+				wait();
+				todo.Delete<F>();
+			};
+
+			void dispatch() override {
+				static bool expected{ false };
+				if (!dispatch_once.load()) {
+					if (dispatch_once.compare_exchange_strong(expected, true)) {
+						impl::DispatchOnce(ctx, &job::DoTask, reinterpret_cast<void*>(this));
+					}
+				}
+			};
+			void wait() override {
+				dispatch();
+				impl::Wait(ctx);
+			};
+			job_base* parent_ptr() const  override {
+				if constexpr (this_is_job_start)
+					return nullptr;
+				else
+					return dynamic_cast<job_base*>(const_cast<Parent*>(parent));
+			};
+			template<typename G> decltype(auto) and_then(G&& ToDo);
+			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
+		};
+
+		template<typename F, typename Parent>
+		class jobs final : public job_base {
+			friend class job_base;
+			template<typename G, typename ParentB> friend class job;
+		public:
+			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
+			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
+
+		protected:		
+			std::atomic<bool> dispatch_once;
+			impl::dispatch_context ctx;
+			Parent* parent;
+			size_t start;
+			size_t end;
+
+			// called once the dispatched job ends
+			static void Callback(void* _args) {
+				jobs* data = reinterpret_cast<jobs*>(_args);
+				job_base* to_do_item{ nullptr };
+				while (data->and_thens.try_pop(to_do_item)) {
+					to_do_item->dispatch();
+				}
+			};
+			static void DoTask(impl::job_argument const& _args) {
+				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
+
+				if constexpr (!this_is_job_start)
+					data->parent->wait();
+
+				if constexpr (this_num_args == 0) {
+					if constexpr (this_returns_void) (void)data->todo.Get<F>()();
+					else {
+						if (data->result.empty())
+							data->result = data->todo.Get<F>()();
+						else
+							(void)data->todo.Get<F>()();
+					}
+				}
+				else {
+					size_t t{ static_cast<size_t>(_args.job_index) + data->start };
+					if constexpr (this_is_job_start || (this_num_args <= 1)) {
+						if constexpr (this_returns_void) {
+							(void)data->todo.Get<F>()(t);
+						}
+						else {
+							if (data->result.empty())
+								data->result = data->todo.Get<F>()(t);
+							else
+								(void)data->todo.Get<F>()(t);
+						}
+					}
+					else {
+						if constexpr (this_returns_void) {
+							(void)data->todo.Get<F>()(t, *dynamic_cast<job_base*>(data->parent));
+						}
+						else {
+							if (data->result.empty())
+								data->result = data->todo.Get<F>()(t, *dynamic_cast<job_base*>(data->parent));
+							else
+								(void)data->todo.Get<F>()(t, *dynamic_cast<job_base*>(data->parent));
+						}
+					}
+				}
+			};
+
+		public:
+			jobs(size_t _start, size_t _end, F&& _todo, Parent* _parent)
+				: job_base()
+				, dispatch_once{ false }
+				, start { _start }
+				, end{ _end }
+				, ctx{ 0, nullptr, &jobs::Callback, reinterpret_cast<void*>(this) }
+				, parent{ _parent }
+			{
+				todo.New<F>(std::move(_todo));		
+				if constexpr (!this_is_job_start) {
+					parent->and_thens.push(dynamic_cast<job_base*>(this));
+				}
+			};
+			jobs(jobs&&) = delete;
+			jobs(jobs const&) = delete;
+			jobs& operator=(jobs&&) = delete;
+			jobs& operator=(jobs const&) = delete;
+			~jobs() {
+				wait();
+				todo.Delete<F>();
+			};
+
+			void dispatch() override {
+				static bool expected{ false };
+				if (!dispatch_once.load()) {
+					if (dispatch_once.compare_exchange_strong(expected, true)) {
+						impl::Dispatch(ctx, end - start, &jobs::DoTask, reinterpret_cast<void*>(this));
+					}
+				}
+			};
+			void wait()  override {
+				dispatch();
+				impl::Wait(ctx);
+			};
+			job_base* parent_ptr() const override {
+				if constexpr (this_is_job_start)
+					return nullptr;
+				else
+					return dynamic_cast<job_base*>(const_cast<Parent*>(parent));
+			};
+
+			template<typename G> decltype(auto) and_then(G&& ToDo);
+			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
+		};
+
+		template<typename F, typename Parent = void> __forceinline decltype(auto) async(F&& ToDo, Parent* parent = nullptr) {
+			return job<F, Parent>(std::move(ToDo), std::move(parent));
+		};
+		template<typename F, typename Parent = void> __forceinline decltype(auto) async(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
+			return jobs<F, Parent>(start, end, std::move(ToDo), std::move(parent));
+		};
+
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(G&& ToDo) {
+			return async(std::move(ToDo), this);
+		};
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+			return async(start, end, std::move(ToDo), this);
+		};
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(G&& ToDo) {
+			return async(std::move(ToDo), this);
+		};
+		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+			return async(start, end, std::move(ToDo), this);
+		};
+
+#else
+
+
         template<typename F, typename Parent> 
 		class job final : public job_base {
 		public:
@@ -857,7 +1180,7 @@ namespace GL {
 		};
 
 
-
+#endif
 
 
 
