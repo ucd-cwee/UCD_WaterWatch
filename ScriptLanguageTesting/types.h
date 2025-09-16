@@ -9,6 +9,7 @@
 // implimentatin of atomic type info and atomic any
 namespace GL {
     class any;
+    class var;
     namespace type_erasure {
         class any_cast;
     };
@@ -256,12 +257,9 @@ namespace GL {
 
     template<typename T> __forceinline static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
-        static constexpr size_t const_modifier = std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0;
-        static constexpr size_t ref_modifier = std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0;
-
-        static GL::type Base(
-            (GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1)
-        );
+        static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
+        static constexpr size_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
+        static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
         return Base;
     };
 
@@ -318,6 +316,7 @@ namespace GL {
             virtual bool can_free_cast(type const& to) const = 0;
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             virtual bool can_cast(type const& to) const = 0;
+            virtual bool can_cast_var() const = 0;
 
         public:
             GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
@@ -348,11 +347,42 @@ namespace GL {
             };
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const override {
-                return GL::type_of<T>().can_free_cast(to);
+                static auto var_hash_code = GL::util::type_id<var>().hash_code();
+                if (to.get_base_hash() == var_hash_code) {
+                    if constexpr (std::is_same_v<T, var>) {
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                else {
+                    return GL::type_of<T>().can_free_cast(to);
+                }
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const override {
-                return GL::type_of<T>().can_cast(to);
+                static auto var_hash_code = GL::util::type_id<var>().hash_code();
+                if (to.get_base_hash() == var_hash_code) {
+                    if constexpr (std::is_same_v<T, var>) {
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                else {
+                    return GL::type_of<T>().can_cast(to);
+                }
+            };
+            // returns true if this type is of the same foundational type as a var
+            bool can_cast_var() const override {
+                if constexpr (std::is_same_v<T, var>) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
             };
 
         public:
@@ -390,11 +420,42 @@ namespace GL {
 
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const override {
-                return GL::type_of<T>().can_free_cast(to);
+                static auto var_hash_code = GL::util::type_id<var>().hash_code();
+                if (to.get_base_hash() == var_hash_code) {
+                    if constexpr (std::is_same_v<T, var>) {
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                else {
+                    return GL::type_of<T>().can_free_cast(to);
+                }                
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const override {
-                return GL::type_of<T>().can_cast(to);
+                static auto var_hash_code = GL::util::type_id<var>().hash_code();
+                if (to.get_base_hash() == var_hash_code) {
+                    if constexpr (std::is_same_v<T, var>) {
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                else {
+                    return GL::type_of<T>().can_cast(to);
+                }
+            };
+            // returns true if this type is of the same foundational type as a var
+            bool can_cast_var() const override {
+                if constexpr (std::is_same_v<T, var>) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
             };
 
         public:
@@ -428,11 +489,42 @@ namespace GL {
 
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const override {
-                return GL::type_of<T>().can_free_cast(to);
+                static auto var_hash_code = GL::util::type_id<var>().hash_code();
+                if (to.get_base_hash() == var_hash_code) {
+                    if constexpr (std::is_same_v<T, var>) {
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                else {
+                    return GL::type_of<T>().can_free_cast(to);
+                }
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const override {
-                return GL::type_of<T>().can_cast(to);
+                static auto var_hash_code = GL::util::type_id<var>().hash_code();
+                if (to.get_base_hash() == var_hash_code) {
+                    if constexpr (std::is_same_v<T, var>) {
+                        return true;
+                    }
+                    else {
+                        return false;
+                    }
+                }
+                else {
+                    return GL::type_of<T>().can_cast(to);
+                }
+            };
+            // returns true if this type is of the same foundational type as a var
+            bool can_cast_var() const override {
+                if constexpr (std::is_same_v<T, var>) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
             };
 
         public:
@@ -725,7 +817,7 @@ namespace GL {
                                 return DoCast_Shared<innertype>(container, p);
                             }
                             else {
-                                if (container->can_cast(type_of<var>())) {
+                                if (container->can_cast_var()) {
                                     var* ptr = container->cast<var>();
                                     if (auto f = ptr->p_data.load_fast()) {
                                         container = f->m_ptr.load_fast();
@@ -749,7 +841,7 @@ namespace GL {
                                 return DoCast_StdShared<innertype>(container, p);
                             }
                             else {
-                                if (container->can_cast(type_of<var>())) {
+                                if (container->can_cast_var()) {
                                     var* ptr = container->cast<var>();
                                     if (auto f = ptr->p_data.load_fast()) {
                                         container = f->m_ptr.load_fast();
@@ -765,7 +857,7 @@ namespace GL {
                                 return DoCast_Unshared<T>(container);
                             }
                             else {
-                                if (container->can_cast(type_of<var>())) {
+                                if (container->can_cast_var()) {
                                     var* ptr = container->cast<var>();
                                     if (auto f = ptr->p_data.load_fast()) {
                                         container = f->m_ptr.load_fast();
