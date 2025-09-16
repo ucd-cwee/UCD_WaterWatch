@@ -749,8 +749,8 @@ namespace GL {
 
 	class job_base {
 	protected:
-		GL::StaticContainer<16> todo;
-		GL::atomic_queue< job_base* > and_thens;
+		// GL::StaticContainer<16> todo;
+		std::vector<job_base*> and_thens;
 
 	public:
 		job_base() = default;
@@ -788,14 +788,12 @@ namespace GL {
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
 			Parent* parent;
-			
+			F todo;
+
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
 				job* data = reinterpret_cast<job*>(_args);
-				job_base* to_do_item{ nullptr };
-				while (data->and_thens.try_pop(to_do_item)) {
-					to_do_item->dispatch();
-				}
+				for (auto& x : data->and_thens) x->dispatch();
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				job* data = reinterpret_cast<job*>(_args.task_memory);
@@ -804,12 +802,12 @@ namespace GL {
 					data->parent->wait();
 
 				if constexpr (this_is_job_start || (this_num_args == 0)) {
-					if constexpr (this_returns_void) data->todo.Get<F>()();
-					else data->result = data->todo.Get<F>()();
+					if constexpr (this_returns_void) data->todo/*.Get<F>()*/();
+					else data->result = data->todo/*.Get<F>()*/();
 				}
 				else {
-					if constexpr (this_returns_void) data->todo.Get<F>()(*dynamic_cast<job_base*>(data->parent));
-					else data->result = data->todo.Get<F>()(*dynamic_cast<job_base*>(data->parent));
+					if constexpr (this_returns_void) data->todo/*.Get<F>()*/(*dynamic_cast<job_base*>(data->parent));
+					else data->result = data->todo/*.Get<F>()*/(*dynamic_cast<job_base*>(data->parent));
 				}
 			};
 
@@ -819,10 +817,11 @@ namespace GL {
 				, dispatch_once{ false }
 				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) }
 				, parent{ _parent }
+				, todo{ std::move(_todo) }
 			{
-				todo.New<F>(std::move(_todo));				
+				// todo.New<F>(std::move(_todo));				
 				if constexpr (!this_is_job_start) {
-					parent->and_thens.push(dynamic_cast<job_base*>(this));
+					parent->and_thens.push_back(dynamic_cast<job_base*>(this));
 				}
 			};
 			job(job&&) = delete;
@@ -831,7 +830,7 @@ namespace GL {
 			job& operator=(job const&) = delete;
 			~job() {
 				wait();
-				todo.Delete<F>();
+				// todo.Delete<F>();
 			};
 
 			void dispatch() override {
@@ -872,14 +871,12 @@ namespace GL {
 			Parent* parent;
 			size_t start;
 			size_t end;
+			F todo;
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args);
-				job_base* to_do_item{ nullptr };
-				while (data->and_thens.try_pop(to_do_item)) {
-					to_do_item->dispatch();
-				}
+				for (auto& x : data->and_thens) x->dispatch();
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
@@ -888,36 +885,36 @@ namespace GL {
 					data->parent->wait();
 
 				if constexpr (this_num_args == 0) {
-					if constexpr (this_returns_void) (void)data->todo.Get<F>()();
+					if constexpr (this_returns_void) (void)data->todo/*.Get<F>()*/();
 					else {
 						if (data->result.empty())
-							data->result = data->todo.Get<F>()();
+							data->result = data->todo/*.Get<F>()*/();
 						else
-							(void)data->todo.Get<F>()();
+							(void)data->todo/*.Get<F>()*/();
 					}
 				}
 				else {
 					size_t t{ static_cast<size_t>(_args.job_index) + data->start };
 					if constexpr (this_is_job_start || (this_num_args <= 1)) {
 						if constexpr (this_returns_void) {
-							(void)data->todo.Get<F>()(t);
+							(void)data->todo/*.Get<F>()*/(t);
 						}
 						else {
 							if (data->result.empty())
-								data->result = data->todo.Get<F>()(t);
+								data->result = data->todo/*.Get<F>()*/(t);
 							else
-								(void)data->todo.Get<F>()(t);
+								(void)data->todo/*.Get<F>()*/(t);
 						}
 					}
 					else {
 						if constexpr (this_returns_void) {
-							(void)data->todo.Get<F>()(t, *dynamic_cast<job_base*>(data->parent));
+							(void)data->todo/*.Get<F>()*/(t, *dynamic_cast<job_base*>(data->parent));
 						}
 						else {
 							if (data->result.empty())
-								data->result = data->todo.Get<F>()(t, *dynamic_cast<job_base*>(data->parent));
+								data->result = data->todo/*.Get<F>()*/(t, *dynamic_cast<job_base*>(data->parent));
 							else
-								(void)data->todo.Get<F>()(t, *dynamic_cast<job_base*>(data->parent));
+								(void)data->todo/*.Get<F>()*/(t, *dynamic_cast<job_base*>(data->parent));
 						}
 					}
 				}
@@ -931,10 +928,11 @@ namespace GL {
 				, end{ _end }
 				, ctx{ 0, nullptr, &jobs::Callback, reinterpret_cast<void*>(this) }
 				, parent{ _parent }
+				, todo{ std::move(_todo) }
 			{
-				todo.New<F>(std::move(_todo));		
+				//todo.New<F>(std::move(_todo));		
 				if constexpr (!this_is_job_start) {
-					parent->and_thens.push(dynamic_cast<job_base*>(this));
+					parent->and_thens.push_back(dynamic_cast<job_base*>(this));
 				}
 			};
 			jobs(jobs&&) = delete;
@@ -943,7 +941,7 @@ namespace GL {
 			jobs& operator=(jobs const&) = delete;
 			~jobs() {
 				wait();
-				todo.Delete<F>();
+				//todo.Delete<F>();
 			};
 
 			void dispatch() override {

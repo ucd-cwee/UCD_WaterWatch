@@ -267,16 +267,18 @@ namespace /* atomic_shared_ptr */ GL {
         };
         ~atomic_shared_ptr() {
             size_t packedPtrCopy = packedPtr.load();
-            auto block = reinterpret_cast<control_block<T>*>(packedPtrCopy >> MAGIC_LEN);
-            size_t diff = packedPtrCopy & MAGIC_MASK;
-            if (diff != 0) {
-                block->refCount.fetch_add(diff);
+            if (packedPtrCopy > 0) {
+                auto block = reinterpret_cast<control_block<T>*>(packedPtrCopy >> MAGIC_LEN);
+                size_t diff = packedPtrCopy & MAGIC_MASK;
+                if (diff != 0) {
+                    block->refCount.fetch_add(diff);
+                }
+                control_block_base::DeferredDeletion(block);
             }
-            control_block_base::DeferredDeletion(block);
         };
 
         atomic_shared_ptr(const atomic_shared_ptr& other) : atomic_shared_ptr(const_cast<atomic_shared_ptr&>(other).load()) {};
-        atomic_shared_ptr(atomic_shared_ptr&& other) noexcept : atomic_shared_ptr(other.load()) {};
+        atomic_shared_ptr(atomic_shared_ptr&& other) noexcept : packedPtr(other.packedPtr.exchange(0)) {};
         atomic_shared_ptr& operator=(const atomic_shared_ptr& other) {
             auto ptr = const_cast<atomic_shared_ptr&>(other).load();
             this->store(std::move(ptr));

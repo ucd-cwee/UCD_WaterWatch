@@ -659,40 +659,42 @@ namespace GL {
             template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
 
         private:
-            template <class VType> static decltype(auto) DoCast_Shared(GL::shared_ptr<type_erasure::any_data> && ptr, any* p) noexcept {
+            template <class VType> static decltype(auto) DoCast_Shared(GL::fast_shared_ptr<type_erasure::any_data> & ptr, any* p) noexcept {
                 if (p) {
                     return GL::static_pointer_cast<VType>(ptr->get(p->m_ptr));
                 }
                 return GL::shared_ptr<VType>{ nullptr };
             };
-            template <class VType> static decltype(auto) DoCast_StdShared(GL::shared_ptr<type_erasure::any_data> && ptr, any* p) noexcept {
+            template <class VType> static decltype(auto) DoCast_StdShared(GL::fast_shared_ptr<type_erasure::any_data> & ptr, any* p) noexcept {
                 if (p) {
                     return std::static_pointer_cast<VType>(ptr->get_std(p->m_ptr));
                 }
                 return std::shared_ptr<VType>{ nullptr };
             };
-            template<typename VType> static decltype(auto) DoCast_Unshared(GL::shared_ptr<type_erasure::any_data> && container) /*noexcept*/ {
+            template<typename VType> static decltype(auto) DoCast_Unshared(GL::fast_shared_ptr<type_erasure::any_data> & container) /*noexcept*/ {
                 static constexpr bool is_ptr = std::is_pointer_v<VType>;
-                if (container) {
+                //if (container) {
                     if constexpr (is_ptr) {
-                        if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                            return container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
-                        }
-                        else {                                
-                            return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
-                        }
+                        //if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                            // return container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                            return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container->m_data);
+                        //}
+                        //else {                                
+                        //    return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
+                        //}
                     }
                     else {
-                        return *container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
+                        return *reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container->m_data);
+                        // return *container->cast< typename std::remove_reference<typename std::remove_pointer<VType>::type>::type >();
                     }                    
-                }
-                if constexpr (is_ptr) {
-                    return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
-                }
-                else {
-                    auto err = "Cannot cast from void-type to " + GL::type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name();
-                    throw std::runtime_error(err.to_string());
-                }
+                //}
+                //if constexpr (is_ptr) {
+                //    return (typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*)nullptr;
+                //}
+                //else {
+                //    auto err = "Cannot cast from void-type to " + GL::type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name();
+                //    throw std::runtime_error(err.to_string());
+                //}
             };
 
         public:
@@ -707,7 +709,7 @@ namespace GL {
                 constexpr bool is_const = std::is_const_v<T>;
 
                 if (p) {
-                    GL::shared_ptr<type_erasure::any_data> container = p->m_ptr.load();
+                    GL::fast_shared_ptr<type_erasure::any_data> container{ p->m_ptr.load_fast() };
                     while (container) {
                         if constexpr (is_shared_ptr) {
                             // casting to utilities::shared_ptr
@@ -720,17 +722,17 @@ namespace GL {
                             }
 
                             if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                return DoCast_Shared<innertype>(std::move(container), p);
+                                return DoCast_Shared<innertype>(container, p);
                             }
                             else {
                                 if (container->can_cast(type_of<var>())) {
                                     var* ptr = container->cast<var>();
                                     if (auto f = ptr->p_data.load_fast()) {
-                                        container = f->m_ptr.load();
+                                        container = f->m_ptr.load_fast();
                                         continue;
                                     }
                                 }
-                                return DoCast_Shared<innertype>(std::move(container), p);
+                                return DoCast_Shared<innertype>(container, p);
                             }
                         }
                         else if constexpr (is_std_shared_ptr) {
@@ -744,33 +746,33 @@ namespace GL {
                             }
 
                             if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                return DoCast_StdShared<innertype>(std::move(container), p);
+                                return DoCast_StdShared<innertype>(container, p);
                             }
                             else {
                                 if (container->can_cast(type_of<var>())) {
                                     var* ptr = container->cast<var>();
                                     if (auto f = ptr->p_data.load_fast()) {
-                                        container = f->m_ptr.load();
+                                        container = f->m_ptr.load_fast();
                                         continue;
                                     }
                                 }
-                                return DoCast_StdShared<innertype>(std::move(container), p);
+                                return DoCast_StdShared<innertype>(container, p);
                             }
                         }
                         else {
                             // casting to a reference or a pointer
                             if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                return DoCast_Unshared<T>(std::move(container));
+                                return DoCast_Unshared<T>(container);
                             }
                             else {
                                 if (container->can_cast(type_of<var>())) {
                                     var* ptr = container->cast<var>();
                                     if (auto f = ptr->p_data.load_fast()) {
-                                        container = f->m_ptr.load();
+                                        container = f->m_ptr.load_fast();
                                         continue;
                                     }
                                 }
-                                return DoCast_Unshared<T>(std::move(container));
+                                return DoCast_Unshared<T>(container);
                             }
                         }
                     }
