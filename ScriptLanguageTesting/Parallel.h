@@ -749,6 +749,9 @@ namespace GL {
 
 	class job_base {
 	public:
+		std::vector< std::weak_ptr<job_base> > children;
+
+	public:
 		job_base() = default;
 		job_base(job_base const&) = delete;
 		job_base(job_base &&) = default;
@@ -780,16 +783,19 @@ namespace GL {
 			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
 			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
 
+		public:
+			std::weak_ptr<job> self;
 		protected:
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
-			Parent* parent;
+			std::shared_ptr<Parent> parent;
 			F todo;
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
 				job* data = reinterpret_cast<job*>(_args);
 				std::this_thread::yield(); // helps with scheduling
+				for (auto& x : data->children) if (auto p = x.lock()) p->dispatch();	
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				job* data = reinterpret_cast<job*>(_args.task_memory);
@@ -802,8 +808,8 @@ namespace GL {
 					else data->result = GL::any(data->todo()).fast();
 				}
 				else {
-					if constexpr (this_returns_void) data->todo(*dynamic_cast<job_base*>(data->parent));
-					else data->result = GL::any(data->todo(*dynamic_cast<job_base*>(data->parent))).fast();
+					if constexpr (this_returns_void) data->todo(*dynamic_cast<job_base*>(&*data->parent));
+					else data->result = GL::any(data->todo(*dynamic_cast<job_base*>(&*data->parent))).fast();
 				}
 			};
 
@@ -811,10 +817,14 @@ namespace GL {
 			job(F&& _todo, Parent* _parent)
 				: job_base()
 				, dispatch_once{ false }
-				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) }
-				, parent{ _parent }
+				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) } 
+				, parent{  }
 				, todo{ std::move(_todo) }
-			{ };
+			{ 
+				if constexpr (!this_is_job_start) {
+					parent = _parent->self.lock();
+				}
+			};
 			job(job&&) = delete;
 			job(job const&) = delete;
 			job& operator=(job&&) = delete;
@@ -839,7 +849,7 @@ namespace GL {
 				if constexpr (this_is_job_start)
 					return nullptr;
 				else
-					return dynamic_cast<job_base*>(const_cast<Parent*>(parent));
+					return dynamic_cast<job_base*>(const_cast<Parent*>(&*parent));
 			};
 			template<typename G> decltype(auto) and_then(G&& ToDo);
 			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
@@ -855,10 +865,12 @@ namespace GL {
 			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
 			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
 
+		public:
+			std::weak_ptr<jobs> self;
 		protected:		
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
-			Parent* parent;
+			std::shared_ptr<Parent> parent;
 			size_t start;
 			size_t end;
 			F todo;
@@ -867,6 +879,7 @@ namespace GL {
 			static void Callback(void* _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args);
 				std::this_thread::yield(); // helps with scheduling
+				for (auto& x : data->children) if (auto p = x.lock()) p->dispatch();
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
@@ -899,13 +912,13 @@ namespace GL {
 						}
 					}
 					else {
-						if constexpr (this_returns_void) (void)data->todo(t, *dynamic_cast<job_base*>(data->parent));						
+						if constexpr (this_returns_void) (void)data->todo(t, *dynamic_cast<job_base*>(&*data->parent));						
 						else {
 							if (_args.job_index == 0){
-							    data->result = GL::any(data->todo(t, *dynamic_cast<job_base*>(data->parent))).fast();
+							    data->result = GL::any(data->todo(t, *dynamic_cast<job_base*>(&*data->parent))).fast();
 							}
 							else {
-								(void)data->todo(t, *dynamic_cast<job_base*>(data->parent));
+								(void)data->todo(t, *dynamic_cast<job_base*>(&*data->parent));
 							}
 						}
 					}
@@ -919,9 +932,13 @@ namespace GL {
 				, start { _start }
 				, end{ _end }
 				, ctx{ 0, nullptr, &jobs::Callback, reinterpret_cast<void*>(this) }
-				, parent{ _parent }
+				, parent{  }
 				, todo{ std::move(_todo) }
-			{};
+			{
+				if constexpr (!this_is_job_start) {
+					parent = _parent->self.lock();
+				}
+			};
 			jobs(jobs&&) = delete;
 			jobs(jobs const&) = delete;
 			jobs& operator=(jobs&&) = delete;
@@ -946,7 +963,7 @@ namespace GL {
 				if constexpr (this_is_job_start)
 					return nullptr;
 				else
-					return dynamic_cast<job_base*>(const_cast<Parent*>(parent));
+					return dynamic_cast<job_base*>(const_cast<Parent*>(&*parent));
 			};
 
 			template<typename G> decltype(auto) and_then(G&& ToDo);
@@ -954,10 +971,20 @@ namespace GL {
 		};
 
 		template<typename F, typename Parent = void> __forceinline decltype(auto) async(F&& ToDo, Parent* parent = nullptr) {
-			return job<F, Parent>(std::move(ToDo), std::move(parent));
+			auto out = std::make_shared<job<F, Parent>>(std::move(ToDo), std::move(parent));
+			out->self = out;
+			if constexpr (!std::is_same_v<void, Parent>) {
+				parent->children.push_back(out);
+			}
+			return out;
 		};
 		template<typename F, typename Parent = void> __forceinline decltype(auto) async(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
-			return jobs<F, Parent>(start, end, std::move(ToDo), std::move(parent));
+			auto out = std::make_shared < jobs<F, Parent> >(start, end, std::move(ToDo), std::move(parent));
+			out->self = out;
+			if constexpr (!std::is_same_v<void, Parent>) {
+				parent->children.push_back(out);
+			}
+			return out;
 		};
 
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(G&& ToDo) {
