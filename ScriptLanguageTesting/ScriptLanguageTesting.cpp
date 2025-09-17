@@ -613,6 +613,42 @@ int main() {
 
 
 #else
+
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            GL::parallel::async([&]() {
+                L += 1;
+                return L.load();
+            })->and_then([&](GL::job_base& parent) {
+                auto V = parent.result.cast<long long>();
+                EXPECT_EQ(1, L.load());
+                EXPECT_EQ(1, V);
+            });
+            EXPECT_EQ(1, L.load());
+        }
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            GL::parallel::async([&]() {
+                L += 1;
+                return L.load();
+            })->and_then([&](long long V) {
+                EXPECT_EQ(1, L.load());
+                EXPECT_EQ(1, V);
+            });
+            EXPECT_EQ(1, L.load());
+        }
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            GL::parallel::async([&]() {
+                L += 1;
+                return L.load();
+            })->and_then([&](GL::job_base& parent, long long V) {
+                EXPECT_EQ(1, parent.result.cast<long long>());
+                EXPECT_EQ(1, L.load());
+                EXPECT_EQ(1, V);
+            });
+            EXPECT_EQ(1, L.load());
+        }
         if (1) {
             std::atomic<long long> L{ 0 };
             GL::parallel::async([&]() {
@@ -624,6 +660,63 @@ int main() {
             });
             EXPECT_EQ(L.load(), 1000000);
         }
+
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            GL::parallel::async([&]() {
+                L += 100;
+            })->and_then(0, 1000000, [&](size_t i, GL::job_base& parent) {
+                L += 1;
+            })->and_then([&]() {
+                L -= 100;
+            });
+            EXPECT_EQ(L.load(), 1000000);
+        }
+
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            GL::parallel::async([&]() {
+                L += 100;
+                return 1ull;
+            })->and_then(0, 1000000, [&](size_t i, GL::job_base& parent, unsigned long long V) {
+                L += V;
+            })->and_then([&]() {
+                L -= 100;
+            });
+            EXPECT_EQ(L.load(), 1000000);
+        }
+
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            std::shared_ptr<GL::job_base> job; {
+                auto job1 = GL::parallel::async([&]() {
+                    L += 100;
+                    return 1ull;
+                }); // this job is dispatched
+                auto job2 = job1->and_then(0, 1000000, [&](size_t i, unsigned long long V, GL::job_base& parent) {
+                    L += V;
+                });
+                job = std::dynamic_pointer_cast<GL::job_base>(job2->and_then([&]() {
+                    L -= 100;
+                }));
+            }
+            job->wait();
+            EXPECT_EQ(L.load(), 1000000);
+        }
+
+        if (1) {
+            std::atomic<long long> L{ 0 };
+            GL::parallel::async([&]() {
+                L += 100;
+                return 1ull;
+            })->and_then(0, 1000000, [&](size_t i, unsigned long long V, GL::job_base& parent) {
+                L += V;
+            })->and_then([&]() {
+                L -= 100;
+            });
+            EXPECT_EQ(L.load(), 1000000);
+        }
+
         if (1) {
             auto job = GL::parallel::async([]() {
                 print("1");
@@ -653,18 +746,14 @@ int main() {
             });
             auto job2 = job1->and_then([]() {
                 print("3");
-            });
-            auto job3 = job2->and_then([]() {
+            })->and_then([]() {
                 ::Sleep(10);
                 print("4");
-            });
-            auto job4 = job3->and_then([]() {
+            })->and_then([]() {
                 print("5");
-            });
-            auto job5 = job4->and_then([]() {
+            })->and_then([]() {
                 print("6");
-            });
-            
+            });            
             job1->wait();
             print(job1->result.cast<int>());
         }
