@@ -241,7 +241,7 @@ namespace /* atomic_shared_ptr */ GL {
 
         size_t knownValue;
         std::atomic<size_t>* foreignPackedPtr;
-        T* data;        
+        T* data;
     };
 
     // lock-free, thread-safe version of std::atomic<shared_ptr>.

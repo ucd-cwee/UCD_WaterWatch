@@ -63,8 +63,8 @@ int main() {
         }
         EXPECT_EQ(std::string("I AM A STRING! Look at me!"), static_temp.Get<std::string>());
     }
-
-
+    GL::parallel::For(0, 1000000, [&](size_t i) {});
+    GL::parallel::Std_For(0, 1000000, [&](size_t i) {});
 
     GL::stopwatch sw;
     while (true) {
@@ -676,8 +676,6 @@ int main() {
                 jobs.resize(10000000, 0);
                 for (size_t i = 0; i < 10000000; ++i) {
                     EXPECT_EQ(10000000, jobs.size());
-                    //auto start = GL::clock::ns();
-                    //while ((GL::clock::ns() - start) < 1000) {}
                     ++jobs[i];
                 }
                 out = std::accumulate(jobs.begin(), jobs.end(), 0ull);
@@ -712,16 +710,16 @@ int main() {
                     jobs.resize(10000000, 0);
                     return jobs;
                 }).and_then(0, 10000000, [](size_t i, GL::job_base& parent) {
-                    std::vector<size_t>& jobs = parent.result.cast();
+                    auto& jobs = parent.result.cast<std::vector<size_t>>();
                     EXPECT_EQ(10000000, jobs.size());
-                    //auto start = GL::clock::ns();
-                    //while ((GL::clock::ns() - start) < 1000) {}
                     ++jobs[i];
                 }).and_then([&out](GL::job_base& parent) {
-                    std::vector<size_t>& jobs = parent.parent_ptr()->result.cast();
-                    EXPECT_EQ(10000000, jobs.size());
-                    out = std::accumulate(jobs.begin(), jobs.end(), 0ull);
-                    EXPECT_EQ(10000000, out);
+                    if (auto* p = parent.parent_ptr()) {
+                        auto& jobs = p->result.cast<std::vector<size_t>>();
+                        EXPECT_EQ(10000000, jobs.size());
+                        out = std::accumulate(jobs.begin(), jobs.end(), 0ull);
+                        EXPECT_EQ(10000000, out);
+                    }
                 });
             }
             EXPECT_EQ(10000000, out);
@@ -733,15 +731,25 @@ int main() {
                 jobs.resize(10000000, 0);
                 GL::parallel::async(0, 10000000, [&](size_t i) {
                     EXPECT_EQ(10000000, jobs.size());
-                    //auto start = GL::clock::ns();
-                    //while ((GL::clock::ns() - start) < 1000) {}
                     ++jobs[i];
                 });
                 out = std::accumulate(jobs.begin(), jobs.end(), 0ull);
             }
             EXPECT_EQ(10000000, out);
         }
-
+        if (auto timer = sw.debug_timer("Parallel Jobs Test 4")) {
+            size_t out = 0;
+            {
+                std::vector<size_t> jobs;
+                jobs.resize(10000000, 0);
+                GL::parallel::For(0, 10000000, [&](size_t i) {
+                    EXPECT_EQ(10000000, jobs.size());
+                    ++jobs[i];
+                });
+                out = std::accumulate(jobs.begin(), jobs.end(), 0ull);
+            }
+            EXPECT_EQ(10000000, out);
+        }
 
 
 
