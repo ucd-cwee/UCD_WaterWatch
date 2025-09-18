@@ -1,5 +1,6 @@
 #include "units.h"
 #include <concurrent_unordered_map.h>
+#include "types.h"
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
 namespace GL {

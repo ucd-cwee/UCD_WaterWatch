@@ -164,6 +164,12 @@ namespace GL {
 						std::rethrow_exception(std::move(copy));
 					}
 				};
+				void clear_exception() {
+					if (e == nullptr) return;
+					if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
+						delete eptr;
+					}
+				};
 				void catch_exception() {
 					if (!e) {
 						if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&e), new std::exception_ptr(std::current_exception())))) {
@@ -220,7 +226,7 @@ namespace GL {
 				void (*Task)(job_argument const&),
 				void* task_memory
 			) noexcept;
-			void Wait(dispatch_context& ctx);
+			void Wait(dispatch_context& ctx, bool rethrow = true);
 		};
 
 		namespace impl {
@@ -659,7 +665,8 @@ namespace GL {
 			job& operator=(job&&) = delete;
 			job& operator=(job const&) = delete;
 			~job() {
-				wait();
+				dispatch();
+				impl::Wait(ctx, false);
 			};
 
 			bool dispatch() override {
@@ -811,7 +818,8 @@ namespace GL {
 			jobs& operator=(jobs&&) = delete;
 			jobs& operator=(jobs const&) = delete;
 			~jobs() {
-				wait();
+				dispatch();
+				impl::Wait(ctx, false);
 			};
 
 			bool dispatch() override {
@@ -968,7 +976,7 @@ namespace GL {
 			};
 		};
 
-		/* returns a future<T> object for awaiting the results of the task. */
+		/* returns a future<T> object for awaiting the results of the task, with optional inputs to the job, that are submitted at the time the job is performed. */
 		template < typename F, typename... Args >
 		__forceinline static auto async(F&& function, Args... Fargs) {
 			static constexpr size_t num_args = sizeof...(Args);

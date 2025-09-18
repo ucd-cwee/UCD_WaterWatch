@@ -615,25 +615,25 @@ int main() {
 #else
         (void)GL::parallel::async([]() {
             return std::string("TEST 0");
-        }).get();
+        }).wait();
 
         (void)GL::parallel::async([](int i) {
             EXPECT_EQ(i, 10);
             return std::string("TEST 1");
-        }, 10).get();
+        }, 10).wait();
 
         (void)GL::parallel::async([](int& i, int j) {
             EXPECT_EQ(i, 10);
             EXPECT_EQ(j, 10);
             return std::string("TEST 2");
-        }, 10, 10).get();
+        }, 10, 10).wait();
 
         (void)GL::parallel::async([](int& i, int* j, double k) {
             EXPECT_EQ(i, 10);
             EXPECT_EQ(*j, 10);
             EXPECT_EQ((int)k, 10);
             return std::string("TEST 3");
-        }, 10, 10, 10.0).get();
+        }, 10, 10, 10.0).wait();
 
         // will complete immediately since it has to wait on destruction
         GL::parallel::async([](GL::string& i, float& j, double& k, int& L) {
@@ -644,18 +644,37 @@ int main() {
         EXPECT_EQ(true, GL::type_of<GL::millinewton>().is_derived_from(GL::type_of<GL::value>()));
         EXPECT_EQ(true, GL::type_of<GL::value>().is_base_of(GL::type_of<GL::decigallon>()));
 
+        if (1) {
+            using namespace GL::literals;
+            EXPECT_EQ(3_kg * 10_mps / 5_s, 6_N);
+
+            auto t_rest = (
+                (-2.40_mps_sq + GL::value((2.40_mps_sq).pow(2) - 4.0 * 0.5 * (0.3_mps_sq / 1_s) * -12.0_mps).sqrt()) / (2.0 * 0.5 * (0.3_mps_sq / 1_s))
+            ).max(
+                (-2.40_mps_sq - GL::value((2.40_mps_sq).pow(2) - 4.0 * 0.5 * (0.3_mps_sq / 1_s) * -12.0_mps).sqrt()) / (2.0 * 0.5 * (0.3_mps_sq / 1_s))
+            );
+            EXPECT_EQ(t_rest, 4_s);
+        }
+
+
+
+
+
+
 
 
 
         try {
             GL::parallel::task([&]() {
-                return GL::foot(100) + GL::gallon(1); // will fail
-            })->wait();
+                return GL::foot(100) + GL::gallon(1); // will throw
+            })->wait(); // calling wait gives the opportunity to catch the exception.
             EXPECT_EQ(true, false);
         }
-        catch (std::exception& e) {
-            print(e.what());
-        }
+        catch (std::exception& e) {} // exception from the async job will ultimately be caught here
+
+        GL::parallel::task([&]() {
+            return GL::foot(100) + GL::gallon(1); // will throw
+        }); // the task may dispatch on construction, but will wait till complete on destruction. Rethrowing exceptions during destruction is a recipe for death of a program, and so the exception is free'd and nothing is done with it. Basically silent failure.
 
         if (1) {
             std::atomic<long long> L{ 0 };

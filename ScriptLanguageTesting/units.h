@@ -5,7 +5,6 @@
 #include <concurrent_unordered_map.h>
 #include <limits>
 #include <sstream>
-#include "types.h"
 
 namespace GL {
     /* 
@@ -200,17 +199,6 @@ namespace GL {
                 else {
                     return nullptr;
                 }
-
-                //uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
-                //if (auto F = implimented_units->find_less_or_equal(impl_hash); F != implimented_units->end()) {
-                //    return &F->second;
-                //}
-                //else if (auto F = implimented_units->find_larger_or_equal(impl_hash); F != implimented_units->end()) {
-                //    return &F->second;
-                //}
-                //else {
-                //    return nullptr;
-                //}
             };
             impl_unit& get_impl_unit(double ratio, GL::string const& name, GL::string const& abbreviation) {
                 uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
@@ -227,7 +215,7 @@ namespace GL {
                         out.name = name;
                         out.abbreviation = abbreviation;
                         out.default_bits = default_bits;
-                        sorted_units->operator[](ratio) = &out;
+                        sorted_units->insert_fast(ratio, &out);
                     }
                 }
                 return out;
@@ -477,14 +465,13 @@ namespace GL {
                 toDo(LHS.m_bits.val, RHS.m_bits.val);
             }
         };
-
-        static package compound_units(package lhs, package rhs, bool multiplication = true) {
+        template <bool multiplication = true> static package compound_units(package lhs, package rhs) {
             bool lhs_is_scalar = is_scalar(lhs);
             bool rhs_is_scalar = is_scalar(rhs);
 
             // early-exit if the RHS is a scalar, which will not change the units of the LHS
             if (rhs_is_scalar) {
-                if (multiplication) {
+                if constexpr (multiplication) {
                     lhs.m_bits.val *= rhs.m_bits.val;
                     return lhs;
                 }
@@ -497,7 +484,7 @@ namespace GL {
             // RHS is not a scalar, so the result could become one.
             auto& lhs_si_units = get_si_unit(lhs.m_bits.si_unit);
             auto& rhs_si_units = get_si_unit(rhs.m_bits.si_unit);
-            if (multiplication) {
+            if constexpr (multiplication) {
                 auto& new_si_units = get_si_unit(
                     lhs_si_units.METERS + rhs_si_units.METERS
                     , lhs_si_units.KILOGRAMS + rhs_si_units.KILOGRAMS
@@ -757,16 +744,16 @@ namespace GL {
             return LHS;
         };
         friend value operator*(value const& lhs, value const& rhs) {
-            return value(compound_units(lhs.load(), rhs.load(), true));
+            return value(compound_units< true >(lhs.load(), rhs.load()));
         };
         friend value operator/(value const& lhs, value const& rhs) {
-            return value(compound_units(lhs.load(), rhs.load(), false));
+            return value(compound_units< false >(lhs.load(), rhs.load()));
         };
         value& operator*=(value const& RHS) {
             auto rhs = RHS.load();
             this->UpdatePackage([&](package Old) -> package {
                 if ((rhs.m_bits.si_unit == 0) || (Old.m_bits.si_unit == 0)) {
-                    return compound_units(Old, rhs, true);
+                    return compound_units< true >(Old, rhs);
                 }
                 else {
                     auto& A1 = abbreviation(Old);
@@ -780,7 +767,7 @@ namespace GL {
             auto rhs = RHS.load();
             this->UpdatePackage([&](package Old) -> package {
                 if ((rhs.m_bits.si_unit == 0) || (Old.m_bits.si_unit == 0)) {
-                    return compound_units(Old, rhs, false);
+                    return compound_units< false >(Old, rhs);
                 }
                 else {
                     auto& A1 = abbreviation(Old);
@@ -996,6 +983,7 @@ namespace GL {
 	DerivedUnitType(meters_per_second, velocity, mps, Conversion<meter>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(feet_per_second, velocity, fps, Conversion<foot>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(feet_per_minute, velocity, fpm, Conversion<foot>(1.0) / Conversion<minute>(1.0)); \
+    DerivedUnitType(inches_per_day, velocity, ipd, Conversion<inch>(1.0) / Conversion<day>(1.0)); \
 	DerivedUnitType(feet_per_hour, velocity, fph, Conversion<foot>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(miles_per_hour, velocity, mph, Conversion<mile>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(kilometers_per_hour, velocity, kph, Conversion<kilometer>(1.0) / Conversion<hour>(1.0)); \
