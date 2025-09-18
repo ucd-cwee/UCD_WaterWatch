@@ -146,7 +146,7 @@ namespace GL {
 
 		namespace impl {
 			// each dispatch call will be "observed" by this context wrapper.
-			struct dispatch_context {					
+			struct dispatch_context {
 				std::atomic<size_t> counter; // how many Tasks* are awaited
 				std::exception_ptr* e; // shared error PTR for re-throwing at the end of the Tasks.
 				void (*callback)(void*);
@@ -175,13 +175,13 @@ namespace GL {
 
 			/* job arguments used to perform work as part of a loop over a Task */
 			struct job_argument {
-				long long 
+				long long
 					job_index;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
-				long long 
+				long long
 					group_id;		// group index relative to dispatch (like SV_GroupID in HLSL)
-				long long 
+				long long
 					group_index;	// job index relative to group (like SV_GroupIndex in HLSL)
-				void* 
+				void*
 					group_memory;		// stack memory shared within the current group (jobs within a group execute serially)
 				void*
 					task_memory;
@@ -221,28 +221,7 @@ namespace GL {
 				void* task_memory
 			) noexcept;
 			void Wait(dispatch_context& ctx);
-		}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-		
-
+		};
 
 		namespace impl {
 			template<typename T> struct count_arg;
@@ -277,7 +256,7 @@ namespace GL {
 			} data { &ToDo, start };
 
 			impl::dispatch_context ctx{ 0, nullptr, nullptr };
-			impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, reinterpret_cast<void*>(&data));
+			impl::Dispatch(ctx, static_cast<size_t>(static_cast<size_t>(end) - static_cast<size_t>(start)), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
 
@@ -297,7 +276,7 @@ namespace GL {
 			} data{ &ToDo, start, step };
 
 			impl::dispatch_context ctx{ 0, nullptr, nullptr };
-			impl::Dispatch(ctx, static_cast<size_t>((end - start) / step), &IterData::DoTask, reinterpret_cast<void*>(&data));
+			impl::Dispatch(ctx, static_cast<size_t>((static_cast<size_t>(end) - static_cast<size_t>(start)) / static_cast<size_t>(step)), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
 		};
 
@@ -479,14 +458,8 @@ namespace GL {
 			return SharedObject;
 		};
 
-
-
-
-    template<typename F, typename Parent>
-		class job;
-
-		template<typename F, typename Parent>
-		class jobs;
+        template<typename F, typename Parent> class job;
+		template<typename F, typename Parent> class jobs;
 	};
 	
 	// Type-erasure container that holds a fixed length of bytes. 
@@ -573,9 +546,6 @@ namespace GL {
 
 	class job_base {
 	public:
-		GL::atomic_vector< std::weak_ptr<job_base> > children;
-
-	public:
 		job_base() = default;
 		job_base(job_base const&) = delete;
 		job_base(job_base &&) = default;
@@ -585,15 +555,16 @@ namespace GL {
 
 		GL::any::fast_any result;		
 
-		virtual void dispatch() = 0;
-		virtual void wait() = 0;
+		// Returns true if the job was dispatched. Returns false if the job had already been dispatched previously. 
+		virtual bool dispatch() = 0;
+		// Will wait until job is and may help with parallel computing. If an exception is caught during the async operation, it will be re-thrown at this time. 
+		virtual job_base& wait() = 0;
+		// returns a pointer to the parent of this job, if one exists. Can be used to get the results of past jobs. 
 		virtual job_base* parent_ptr() const = 0;
 
 		template<typename F, typename Parent> friend class GL::parallel::job;
 		template<typename F, typename Parent> friend class GL::parallel::jobs;
 	};
-
-	
 
 	namespace parallel {
 		template<typename F, typename Parent>
@@ -609,6 +580,7 @@ namespace GL {
 
 		public:
 			std::weak_ptr<job> self;
+			GL::atomic_vector< std::weak_ptr<job_base> > children;
 		protected:
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
@@ -690,17 +662,20 @@ namespace GL {
 				wait();
 			};
 
-			void dispatch() override {
+			bool dispatch() override {
 				static bool expected{ false };
 				if (!dispatch_once.load()) {
 					if (dispatch_once.compare_exchange_strong(expected, true)) {
 						impl::DispatchOnce(ctx, &job::DoTask, reinterpret_cast<void*>(this));
+						return true;
 					}
 				}
+				return false;
 			};
-			void wait() override {
+			job_base& wait() override {
 				dispatch();
 				impl::Wait(ctx);
+				return *dynamic_cast<job_base*>(this);
 			};
 			job_base* parent_ptr() const  override {
 				if constexpr (this_is_job_start)
@@ -724,6 +699,8 @@ namespace GL {
 
 		public:
 			std::weak_ptr<jobs> self;
+			GL::atomic_vector< std::weak_ptr<job_base> > children;
+
 		protected:		
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
@@ -837,17 +814,20 @@ namespace GL {
 				wait();
 			};
 
-			void dispatch() override {
+			bool dispatch() override {
 				static bool expected{ false };
 				if (!dispatch_once.load()) {
 					if (dispatch_once.compare_exchange_strong(expected, true)) {
 						impl::Dispatch(ctx, end - start, &jobs::DoTask, reinterpret_cast<void*>(this));
+						return true;
 					}
 				}
+				return false;
 			};
-			void wait()  override {
+			job_base& wait()  override {
 				dispatch();
 				impl::Wait(ctx);
+				return *dynamic_cast<job_base*>(this);
 			};
 			job_base* parent_ptr() const override {
 				if constexpr (this_is_job_start)
@@ -860,7 +840,7 @@ namespace GL {
 			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
 		};
 
-		template<typename F, typename Parent = void> __forceinline decltype(auto) async(F&& ToDo, Parent* parent = nullptr) {
+		template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
 			auto out = std::make_shared<job<F, Parent>>(std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) {
@@ -871,7 +851,7 @@ namespace GL {
 			}
 			return out;
 		};
-		template<typename F, typename Parent = void> __forceinline decltype(auto) async(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
+		template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
 			auto out = std::make_shared < jobs<F, Parent> >(start, end, std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) {
@@ -884,19 +864,221 @@ namespace GL {
 		};
 
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(G&& ToDo) {
-			return async(std::move(ToDo), this);
+			return task(std::move(ToDo), this);
 		};
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
-			return async(start, end, std::move(ToDo), this);
+			return task(start, end, std::move(ToDo), this);
 		};
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(G&& ToDo) {
-			return async(std::move(ToDo), this);
+			return task(std::move(ToDo), this);
 		};
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
-			return async(start, end, std::move(ToDo), this);
+			return task(start, end, std::move(ToDo), this);
 		};
+
+		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
+		class promise {
+		protected:
+			std::shared_ptr< job_base >
+				_state;
+			GL::type
+				_type;
+
+		public:
+			promise() :
+				_state(nullptr),
+				_type()
+			{};
+			promise(std::shared_ptr< job_base >&& job, type const& Type) :
+				_state(std::move(job)),
+				_type(Type)
+			{};
+			promise(promise const&) = default;
+			promise(promise&&) = default;
+			promise& operator=(promise const&) = default;
+			promise& operator=(promise&&) = default;
+			virtual ~promise() {};
+
+			/* Returns true if this promise has been initialized correctly. Otherwise, false. */
+			bool valid() const noexcept { return (bool)_state; };
+			/* Wait until the requested job is completed. Repeated or simultaneous waiting is OK. */
+			void wait() {
+				if (_state) {
+					_state->wait();
+				}
+			};
+			/* Get the result, waiting if necessary. */
+			GL::any::fast_any get_any() const noexcept {
+				if (_state) {
+					_state->wait();
+					return _state->result;
+				}
+				return GL::any::fast_any();
+			};
+			/* Get the anticipated return type, without needing to wait for the result. */
+			GL::type Type() const {
+				return _type;
+			};
+		};
+
+		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job. */
+		template <typename T> class future final : public promise {
+		public:
+			future() : promise() {};
+			future(std::shared_ptr< job_base >&& job) : promise(std::move(job), GL::type_of<T>()) {};
+			future(promise const& p_promise) : promise(p_promise) {};
+			future(future const&) = default;
+			future(future&&) = default;
+			future& operator=(future const&) = default;
+			future& operator=(future&&) = default;
+			virtual ~future() {};
+
+			/* Cast-down to a generic promise that erases the information on the return type. Useful for sharing tasks between libraries where type info itself cannot be shared. */
+			promise as_promise() const { return promise(reinterpret_cast<const promise&>(*this)); };
+
+			/* get a copy of the result of the task. */
+			decltype(auto) get() {
+				if constexpr (std::is_same<void, T>()) {
+					wait();
+					return;
+				}
+				else {
+					return static_cast<T>(get_any().cast<T>());
+				}
+			};
+			/* get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. */
+			decltype(auto) get_ref() {
+				if constexpr (std::is_same<void, T>()) {
+					wait();
+					return;
+				}
+				else {
+					return get_any().cast<T>();
+				}
+			};
+			/* get a shared_pointer of the result of the task. must have already waited. */
+			decltype(auto) get_shared() {
+				if constexpr (std::is_same<void, T>()) {
+					wait();
+					return;
+				}
+				else {
+					return get_any().cast<GL::shared_ptr<T>>();
+				}
+			};
+		};
+
+		/* returns a future<T> object for awaiting the results of the task. */
+		template < typename F, typename... Args >
+		__forceinline static auto async(F&& function, Args... Fargs) {
+			static constexpr size_t num_args = sizeof...(Args);
+			if constexpr (num_args == 0) {
+				return future<typename impl::function_traits<decltype(std::function(function))>::result_type>(task(std::move(function)));
+			}
+			else {
+				F func = std::move(function);
+				std::array<any::fast_any, num_args> arr; {
+					std::array<any, num_args> arr1{ Fargs... };
+					std::transform(arr1.begin(), arr1.end(), arr.begin(), [](any& from) -> any::fast_any { return from.fast(); });
+				}
+
+				return future<typename impl::function_traits<decltype(std::function(func))>::result_type>(task([ToDo = std::move(func), Arg = std::move(arr)]() {
+					if constexpr (num_args == 1) {
+						return ToDo(Arg[0].cast());
+					}
+					else if constexpr (num_args == 2) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast()
+						);
+					}
+					else if constexpr (num_args == 3) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast()
+						);
+					}
+					else if constexpr (num_args == 4) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast()
+						);
+					}
+					else if constexpr (num_args == 5) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast()
+						);
+					}
+					else if constexpr (num_args == 6) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast()
+						);
+					}
+					else if constexpr (num_args == 7) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast()
+						);
+					}
+					else if constexpr (num_args == 8) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast()
+						);
+					}
+					else if constexpr (num_args == 9) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast()
+						);
+					}
+					else if constexpr (num_args == 10) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast()
+						);
+					}
+					else if constexpr (num_args == 11) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast(), Arg[10].cast()
+						);
+					}
+					else if constexpr (num_args == 12) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast()
+						);
+					}
+					else if constexpr (num_args == 13) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast()
+						);
+					}
+					else if constexpr (num_args == 14) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast(), Arg[13].cast()
+						);
+					}
+					else if constexpr (num_args == 15) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast(), Arg[13].cast(), Arg[14].cast()
+						);
+					}
+					else if constexpr (num_args == 16) {
+						return ToDo(
+							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
+							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast(), Arg[13].cast(), Arg[14].cast(), Arg[15].cast()
+						);
+					}
+					else {
+						static_assert("Not able to process more than 16 inputs to an async job without further specialization");
+					}
+			    }));
+			}
+		};
+
 
 
 
 	};
+
 };

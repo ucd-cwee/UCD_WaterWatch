@@ -5,6 +5,7 @@
 #include <concurrent_unordered_map.h>
 #include <limits>
 #include <sstream>
+#include "types.h"
 
 namespace GL {
     /* 

@@ -432,7 +432,7 @@ int main() {
 #if 0
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async(0, 1000000, [&](size_t i) {
+            GL::parallel::task(0, 1000000, [&](size_t i) {
                 ++L;
                 })->and_then([&]() {
                     EXPECT_EQ(1000000, L.load());
@@ -441,7 +441,7 @@ int main() {
         }
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 1;
                 return L.load();
             })->and_then([&](GL::job_base& parent) {
@@ -453,17 +453,17 @@ int main() {
         }
 
         if (1) {
-            auto ptr = GL::parallel::async([]() {
+            auto ptr = GL::parallel::task([]() {
                 print("I was Async 2");
                 });
         }
         if (1) {
-            GL::parallel::async([]() {
+            GL::parallel::task([]() {
                 print("I was Async 3");
                 });
         }
         if (1) {
-            GL::parallel::async([]() {
+            GL::parallel::task([]() {
                 ::Sleep(1000);
                 print("I was Async 1");
                 })->and_then([]() {
@@ -471,7 +471,7 @@ int main() {
                     });
         }
         if (1) {
-            auto job1 = GL::parallel::async([]() {
+            auto job1 = GL::parallel::task([]() {
                 ::Sleep(1000);
                 print("I was Async 1");
                 });
@@ -481,7 +481,7 @@ int main() {
         }
 
         if (1) {
-            auto job1 = GL::parallel::async([]() {
+            auto job1 = GL::parallel::task([]() {
                 ::Sleep(1000);
                 print("I was Async 1");
                 });
@@ -493,7 +493,7 @@ int main() {
         }
 
         if (1) {
-            GL::parallel::async([]() {
+            GL::parallel::task([]() {
                 ::Sleep(1000);
                 print("I was Async 1");
                 })->and_then([]() {
@@ -501,7 +501,7 @@ int main() {
                     });
         }
         if (1) {
-            auto job = GL::parallel::async([]() {
+            auto job = GL::parallel::task([]() {
                 print("1");
                 ::Sleep(1000);
                 print("2");
@@ -521,7 +521,7 @@ int main() {
                         print(job->result.cast<int>());
         }
         if (1) {
-            auto job = GL::parallel::async([]() {
+            auto job = GL::parallel::task([]() {
                 print("1");
                 ::Sleep(1000);
                 print("2");
@@ -557,7 +557,7 @@ int main() {
         }
         if (auto timer = sw.debug_timer("Parallel Jobs Test 1")) {
             size_t out = 0; {
-                auto job1 = GL::parallel::async([&]() {
+                auto job1 = GL::parallel::task([&]() {
                     std::vector<size_t> jobs;
                     jobs.resize(1000000, 0);
                     return jobs;
@@ -584,7 +584,7 @@ int main() {
             {
                 std::vector<size_t> jobs;
                 jobs.resize(1000000, 0);
-                GL::parallel::async(0, 1000000, [&](size_t i) {
+                GL::parallel::task(0, 1000000, [&](size_t i) {
                     EXPECT_EQ(1000000, jobs.size());
                     auto start = GL::clock::ns();
                     while ((GL::clock::ns() - start) < 1000) {}
@@ -613,10 +613,53 @@ int main() {
 
 
 #else
+        (void)GL::parallel::async([]() {
+            return std::string("TEST 0");
+        }).get();
+
+        (void)GL::parallel::async([](int i) {
+            EXPECT_EQ(i, 10);
+            return std::string("TEST 1");
+        }, 10).get();
+
+        (void)GL::parallel::async([](int& i, int j) {
+            EXPECT_EQ(i, 10);
+            EXPECT_EQ(j, 10);
+            return std::string("TEST 2");
+        }, 10, 10).get();
+
+        (void)GL::parallel::async([](int& i, int* j, double k) {
+            EXPECT_EQ(i, 10);
+            EXPECT_EQ(*j, 10);
+            EXPECT_EQ((int)k, 10);
+            return std::string("TEST 3");
+        }, 10, 10, 10.0).get();
+
+        // will complete immediately since it has to wait on destruction
+        GL::parallel::async([](GL::string& i, float& j, double& k, int& L) {
+            (void)(i + " World -> " + GL::printf("%f %f %i", j, k, L));
+        }, GL::string("Hello"), 1.0f, 2.0, 3);
+
+        EXPECT_EQ(true, GL::type_of<GL::foot>().is_derived_from(GL::type_of<GL::value>()));
+        EXPECT_EQ(true, GL::type_of<GL::millinewton>().is_derived_from(GL::type_of<GL::value>()));
+        EXPECT_EQ(true, GL::type_of<GL::value>().is_base_of(GL::type_of<GL::decigallon>()));
+
+
+
+
+        try {
+            GL::parallel::task([&]() {
+                return GL::foot(100) + GL::gallon(1); // will fail
+            })->wait();
+            EXPECT_EQ(true, false);
+        }
+        catch (std::exception& e) {
+            print(e.what());
+        }
 
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 1;
                 return L.load();
             })->and_then([&](GL::job_base& parent) {
@@ -628,7 +671,7 @@ int main() {
         }
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 1;
                 return L.load();
             })->and_then([&](long long V) {
@@ -639,7 +682,7 @@ int main() {
         }
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 1;
                 return L.load();
             })->and_then([&](GL::job_base& parent, long long V) {
@@ -651,7 +694,7 @@ int main() {
         }
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 100;
             })->and_then(0, 1000000, [&](size_t i) {
                 L += 1;
@@ -663,7 +706,7 @@ int main() {
 
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 100;
             })->and_then(0, 1000000, [&](size_t i, GL::job_base& parent) {
                 L += 1;
@@ -675,7 +718,7 @@ int main() {
 
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 100;
                 return 1ull;
             })->and_then(0, 1000000, [&](size_t i, GL::job_base& parent, unsigned long long V) {
@@ -689,7 +732,7 @@ int main() {
         if (1) {
             std::atomic<long long> L{ 0 };
             std::shared_ptr<GL::job_base> job; {
-                auto job1 = GL::parallel::async([&]() {
+                auto job1 = GL::parallel::task([&]() {
                     L += 100;
                     return 1ull;
                 }); // this job is dispatched
@@ -706,7 +749,7 @@ int main() {
 
         if (1) {
             std::atomic<long long> L{ 0 };
-            GL::parallel::async([&]() {
+            GL::parallel::task([&]() {
                 L += 100;
                 return 1ull;
             })->and_then(0, 1000000, [&](size_t i, unsigned long long V, GL::job_base& parent) {
@@ -718,7 +761,7 @@ int main() {
         }
 
         if (1) {
-            auto job = GL::parallel::async([]() {
+            auto job = GL::parallel::task([]() {
                 print("1");
                 ::Sleep(10);
                 print("2");
@@ -738,7 +781,7 @@ int main() {
             print(job->result.cast<int>());
         }
         if (1) {
-            auto job1 = GL::parallel::async([]() {
+            auto job1 = GL::parallel::task([]() {
                 print("1");
                 ::Sleep(10);
                 print("2");
@@ -772,7 +815,7 @@ int main() {
         }
         if (auto timer = sw.debug_timer("Parallel Jobs Test 1")) {
             size_t out = 0; {
-                GL::parallel::async([&]() {
+                GL::parallel::task([&]() {
                     std::vector<size_t> jobs;
                     jobs.resize(10000000, 0);
                     return jobs;
@@ -796,7 +839,7 @@ int main() {
             {
                 std::vector<size_t> jobs;
                 jobs.resize(10000000, 0);
-                GL::parallel::async(0, 10000000, [&](size_t i) {
+                GL::parallel::task(0, 10000000, [&](size_t i) {
                     EXPECT_EQ(10000000, jobs.size());
                     ++jobs[i];
                 });
