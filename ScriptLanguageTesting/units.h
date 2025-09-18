@@ -17,93 +17,74 @@ namespace GL {
         class Categories {
         public:
             class length {
-            public: static constexpr std::array<double, 5> unitType_m{ 1, 0, 0, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 1, 0, 0, 0, 0, 0 };
             };
             class mass {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 1, 0, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 1, 0, 0, 0, 0 };
             };
             class time {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 0, 1, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 1, 0, 0, 0 };
             };
             class current {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 0, 0, 1, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 1, 0, 0 };
             };
             class dollar {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 0, 0, 0, 1 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 1, 0 };
             };
             class frequency {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 0, -1, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, -1, 0, 0, 0 };
             };
             class velocity {
-            public: static constexpr std::array<double, 5> unitType_m{ 1, 0, -1, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 1, 0, -1, 0, 0, 0 };
             };
             class acceleration {
-            public: static constexpr std::array<double, 5> unitType_m{ 1, 0, -2, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 1, 0, -2, 0, 0, 0 };
             };
             class force {
-            public: static constexpr std::array<double, 5> unitType_m{ 1, 1, -2, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 1, 1, -2, 0, 0, 0 };
             };
             class pressure {
-            public: static constexpr std::array<double, 5> unitType_m{ -1, 1, -2, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ -1, 1, -2, 0, 0, 0 };
             };
             class charge {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 0, 1, 1, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 1, 1, 0, 0 };
             };
             class power {
-            public: static constexpr std::array<double, 5> unitType_m{ 2, 1, -3, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 2, 1, -3, 0, 0, 0 };
             };
             class energy {
-            public: static constexpr std::array<double, 5> unitType_m{ 2, 1, -2, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 2, 1, -2, 0, 0, 0 };
             };
             class voltage {
-            public: static constexpr std::array<double, 5> unitType_m{ 2, 1, -3, -1, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 2, 1, -3, -1, 0, 0 };
             };
             class impedance {
-            public: static constexpr std::array<double, 5> unitType_m{ 2, 1, -3, -2, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 2, 1, -3, -2, 0, 0 };
             };
             class conductance {
-            public: static constexpr std::array<double, 5> unitType_m{ -2, -1, 3, 2, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ -2, -1, 3, 2, 0, 0 };
             };
             class area {
-            public: static constexpr std::array<double, 5> unitType_m{ 2, 0, 0, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 2, 0, 0, 0, 0, 0 };
             };
             class volume {
-            public: static constexpr std::array<double, 5> unitType_m{ 3, 0, 0, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 3, 0, 0, 0, 0, 0 };
             };
             class fillrate {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 1, -1, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 1, -1, 0, 0, 0 };
             };
             class flowrate {
-            public: static constexpr std::array<double, 5> unitType_m{ 3, 0, -1, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ 3, 0, -1, 0, 0, 0 };
             };
             class density {
-            public: static constexpr std::array<double, 5> unitType_m{ -3, 1, 0, 0, 0 };
+            public: static constexpr std::array<double, 6> unitType_m{ -3, 1, 0, 0, 0, 0 };
             };
-            class energy_cost_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ -2, -1, 2, 0, 1 };
+            class temperature {
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 1, 0 };
             };
-            class power_cost_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ -2, -1, 3, 0, 1 };
+            class angle {
+            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 0, 1 };
             };
-            class volume_cost_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ -3, 0, 0, 0, 1 };
-            };
-            class energy_intensity {
-            public: static constexpr std::array<double, 5> unitType_m{ -1, 1, -2, 0, 1 };
-            };
-            class length_cost_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ -1, 0, 0, 0, 1 };
-            };
-            class mass_cost_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, -1, 0, 0, 1 };
-            };
-            class emission_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ -2, 0, 2, 0, 1 };
-            };
-            class time_rate {
-            public: static constexpr std::array<double, 5> unitType_m{ 0, 0, -1, 0, 1 };
-            };
-
 
         };
         union package {
@@ -152,7 +133,9 @@ namespace GL {
             double
                 AMPERES{ 0 }; // si unit for current
             double
-                DOLLARS{ 0 }; // si unit for worth
+                KELVIN{ 0 }; // si unit for temperature
+            double
+                RADIANS{ 0 }; // si unit for angle
             uint32_t
                 hash{ std::numeric_limits< uint32_t>::max() };
             GL::deferred<concurrency::concurrent_unordered_map<uint16_t, impl_unit>>
@@ -160,8 +143,8 @@ namespace GL {
             GL::deferred<GL::atomic_map<double, impl_unit*>>
                 sorted_units{};
 
-            static uint16_t calc_si_hash(double meters, double kilograms, double seconds, double amperes, double dollars) {
-                if ((meters == 0) && (kilograms == 0) && (seconds == 0) && (amperes == 0) && (dollars == 0)) {
+            static uint16_t calc_si_hash(double meters, double kilograms, double seconds, double amperes, double kelvin, double radians) {
+                if ((meters == 0) && (kilograms == 0) && (seconds == 0) && (amperes == 0) && (kelvin == 0) && (radians == 0)) {
                     return 0;
                 }
                 else {
@@ -170,7 +153,8 @@ namespace GL {
                     out ^= *(uint64_t*)(void*)(&kilograms) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     out ^= *(uint64_t*)(void*)(&seconds) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     out ^= *(uint64_t*)(void*)(&amperes) + 0x9e3779b9 + (out << 6) + (out >> 2);
-                    out ^= *(uint64_t*)(void*)(&dollars) + 0x9e3779b9 + (out << 6) + (out >> 2);
+                    out ^= *(uint64_t*)(void*)(&kelvin) + 0x9e3779b9 + (out << 6) + (out >> 2);
+                    out ^= *(uint64_t*)(void*)(&radians) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     return static_cast<uint16_t>(out % std::numeric_limits<uint16_t>::max());
                 }
             };
@@ -224,8 +208,8 @@ namespace GL {
         // get the cached si unit for this type (fast, assuming already have the unique hash value)
         static si_unit& get_si_unit(uint16_t hash);
         // get the cached si unit for this type (slow, assumes the unique hash is not known or needs to be initialized)
-        static si_unit& get_si_unit(double meters, double kilograms, double seconds, double amperes, double dollars) {
-            uint16_t base_hash = si_unit::calc_si_hash(meters, kilograms, seconds, amperes, dollars);
+        static si_unit& get_si_unit(double meters, double kilograms, double seconds, double amperes, double kelvin, double radians) {
+            uint16_t base_hash = si_unit::calc_si_hash(meters, kilograms, seconds, amperes, kelvin, radians);
             si_unit& out = get_si_unit(base_hash);
             if (out.hash == std::numeric_limits< uint32_t>::max()) {
                 if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), base_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
@@ -233,8 +217,8 @@ namespace GL {
                     out.KILOGRAMS = kilograms;
                     out.SECONDS = seconds;
                     out.AMPERES = amperes;
-                    out.DOLLARS = dollars;
-
+                    out.KELVIN = kelvin;
+                    out.RADIANS = radians;
                 }
             }
             return out;
@@ -252,9 +236,9 @@ namespace GL {
             Num = Num.remove_trailing('.');            
             return Num;
         }
-        static GL::string get_default_abbreviation(double meters, double kilograms, double seconds, double amperes, double dollars) {
-            std::array< GL::string, 5> unitBases{ "m", "kg", "s", "A", "$" };
-            std::array< double, 5> data{ meters, kilograms, seconds, amperes, dollars };
+        static GL::string get_default_abbreviation(double meters, double kilograms, double seconds, double amperes, double kelvin, double radians) {
+            std::array< GL::string, 6> unitBases{ "m", "kg", "s", "A", "K", "rad" };
+            std::array< double, 6> data{ meters, kilograms, seconds, amperes, kelvin, radians };
             GL::string out;
             bool anyNegatives = false;
 
@@ -490,7 +474,8 @@ namespace GL {
                     , lhs_si_units.KILOGRAMS + rhs_si_units.KILOGRAMS
                     , lhs_si_units.SECONDS + rhs_si_units.SECONDS
                     , lhs_si_units.AMPERES + rhs_si_units.AMPERES
-                    , lhs_si_units.DOLLARS + rhs_si_units.DOLLARS
+                    , lhs_si_units.KELVIN + rhs_si_units.KELVIN
+                    , lhs_si_units.RADIANS + rhs_si_units.RADIANS
                 );
                 const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
                 const double& rhs_ratio = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit).ratio;
@@ -507,7 +492,6 @@ namespace GL {
                 else {
                     // create new
                     GL::string abbrev
-                        // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
                         = "(" + abbreviation(lhs) + ")*(" + abbreviation(rhs) + ")";
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
@@ -522,7 +506,8 @@ namespace GL {
                     , lhs_si_units.KILOGRAMS - rhs_si_units.KILOGRAMS
                     , lhs_si_units.SECONDS - rhs_si_units.SECONDS
                     , lhs_si_units.AMPERES - rhs_si_units.AMPERES
-                    , lhs_si_units.DOLLARS - rhs_si_units.DOLLARS
+                    , lhs_si_units.KELVIN - rhs_si_units.KELVIN
+                    , lhs_si_units.RADIANS - rhs_si_units.RADIANS
                 );
                 const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
                 const double& rhs_ratio = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit).ratio;
@@ -540,7 +525,6 @@ namespace GL {
                 else {
                     // create new
                     GL::string abbrev
-                        // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
                         = "(" + abbreviation(lhs) + ")/(" + abbreviation(rhs) + ")";
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
@@ -569,7 +553,8 @@ namespace GL {
                     , lhs_si_units.KILOGRAMS * rhs
                     , lhs_si_units.SECONDS * rhs
                     , lhs_si_units.AMPERES * rhs
-                    , lhs_si_units.DOLLARS * rhs
+                    , lhs_si_units.KELVIN * rhs
+                    , lhs_si_units.RADIANS * rhs
                 );
                 const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
                 double desired_ratio = std::pow(lhs_ratio, rhs);
@@ -582,7 +567,6 @@ namespace GL {
                 else {
                     // create new
                     GL::string abbrev
-                        // = get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.DOLLARS);
                         = "(" + abbreviation(lhs) + ")^" + NumStr(rhs);
                     // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
                     auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
@@ -779,14 +763,14 @@ namespace GL {
         };
 
         friend bool operator==(value const& A, value const& V) noexcept {
-            auto LHS = A.packed;
-            auto RHS = V.packed;
-            if (LHS.m_bits2.unit_hash == RHS.m_bits2.unit_hash) {
-                return A.packed.m_n64 == V.packed.m_n64;
-            }
-            else {
+            //auto LHS = A.packed;
+            //auto RHS = V.packed;
+            //if (LHS.m_bits2.unit_hash == RHS.m_bits2.unit_hash) {
+            //    return A.packed.m_n64 == V.packed.m_n64;
+            //}
+            //else {
                 return do_comparison([](float const& lhs, float const& rhs) -> bool { return std::abs(lhs - rhs) < 0.000001; }, A, V);
-            }
+            //}
         };
         friend bool operator<(value const& A, value const& V) {
             return do_comparison([](float const& lhs, float const& rhs) -> bool { return lhs < rhs; }, A, V);
@@ -913,8 +897,13 @@ namespace GL {
             out.packed.m_bits2.val = (out.packed.m_bits2.val < 0.0f ? -1.0f : 1.0f);
             return out;
         };
+#ifdef DECL_UNIT_LITERALS 
+        value sin() const;
+        value cos() const;
+        value tan() const;
+#endif
     };
-    using scalar = value;
+    using scalar = value;    
 };
 
 // std::to_string and std::hash and std::numeric_limits
@@ -938,7 +927,6 @@ namespace std {
         static constexpr bool is_integer = std::numeric_limits<float>::is_integer; 
         static constexpr bool is_signed = std::numeric_limits<float>::is_signed;
     }; 
-    
 };
 
 // LITERALS AND CONSTANTS
@@ -977,8 +965,6 @@ namespace GL {
 	DerivedUnitType(julian_year, time, a_j, Conversion<second>(31557600.0)); \
 	DerivedUnitType(gregorian_year, time, a_g, Conversion<second>(31556952.0)); \
 	DerivedUnitTypeWithMetricPrefixes(ampere, current, A, 1.0); \
-	DerivedUnitType(Dollar, dollar, USD, 1.0); \
-	DerivedUnitType(MillionDollar, dollar, MUSD, Conversion<Dollar>(1000000.0)); \
 	DerivedUnitTypeWithMetricPrefixes(hertz, frequency, Hz, 1.0); \
 	DerivedUnitType(meters_per_second, velocity, mps, Conversion<meter>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(feet_per_second, velocity, fps, Conversion<foot>(1.0) / Conversion<second>(1.0)); \
@@ -1106,16 +1092,9 @@ namespace GL {
 	DerivedUnitType(pounds_per_cubic_inch, density, lb_per_cu_in, Conversion<pound>(1.0) / Conversion<cubic_inch>(1.0)); \
 	DerivedUnitType(pounds_per_gallon, density, lb_per_gal, Conversion<pound>(1.0) / Conversion<gallon>(1.0)); \
 	DerivedUnitType(slugs_per_cubic_foot, density, slug_per_cu_ft, Conversion<slug>(1.0) / Conversion<cubic_foot>(1.0)); \
-	DerivedUnitType(Dollar_per_joule, energy_cost_rate, USD_per_j, Conversion<Dollar>(1.0) / Conversion<joule>(1.0)); \
-	DerivedUnitType(Dollar_per_kilowatt_hour, energy_cost_rate, USD_per_kWh, Conversion<Dollar>(1.0) / Conversion<kilowatt_hour>(1.0)); \
-	DerivedUnitType(Dollar_per_watt, power_cost_rate, USD_per_w, Conversion<Dollar>(1.0) / Conversion<watt>(1.0)); \
-	DerivedUnitType(Dollar_per_kilowatt, power_cost_rate, USD_per_kW, Conversion<Dollar>(1.0) / Conversion<kilowatt>(1.0)); \
-	DerivedUnitType(Dollar_per_cubic_meter, volume_cost_rate, USD_per_cm, Conversion<Dollar>(1.0) / Conversion<cubic_meter>(1.0)); \
-	DerivedUnitType(Dollar_per_gallon, volume_cost_rate, USD_per_gal, Conversion<Dollar>(1.0) / Conversion<gallon>(1.0)); \
-	DerivedUnitType(kilowatt_hour_per_acre_foot, energy_intensity, kWh_p_ac_ft, Conversion<kilowatt_hour>(1.0) / Conversion<acre_foot>(1.0)); \
-	DerivedUnitType(Dollar_per_mile, length_cost_rate, USD_p_mi, Conversion<Dollar>(1.0) / Conversion<mile>(1.0)); \
-	DerivedUnitType(Dollar_per_ton, mass_cost_rate, USD_p_t, Conversion<Dollar>(1.0) / Conversion<metric_ton>(1.0)); \
-	DerivedUnitType(ton_per_kilowatt_hour, emission_rate, t_p_kWh, Conversion<metric_ton>(1.0) / Conversion<kilowatt_hour>(1.0));
+	DerivedUnitType(kelvin, temperature, K, 1.0); \
+    DerivedUnitType(radian, angle, rad, 1.0); \
+    DerivedUnitType(degree, angle, deg, Conversion<radian>(3.141592653589793238462643383279502884197169399375105820974944 / 180.0));
 
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
 	class type final : public value { \
@@ -1210,10 +1189,11 @@ namespace GL {
 #undef DerivedUnitType
 
     namespace GL {
+
         class constants {
         public:
-            /* PI (unitless) */
-            static scalar					
+            /* PI (equal to 180 degrees) */
+            static radian					
                 pi() {
                 return 3.141592653589793238462643383279502884197169399375105820974944f;
             };
@@ -1250,6 +1230,16 @@ namespace GL {
                 return 1.1E-5_sq_ft / 1_s; 
             };
 
+        };
+
+        __forceinline value value::sin() const {
+            return std::sin(GL::radian(*this).operator float());
+        };
+        __forceinline value value::cos() const {
+            return std::cos(GL::radian(*this).operator float());
+        };
+        __forceinline value value::tan() const {
+            return std::tan(GL::radian(*this).operator float());
         };
     };
 

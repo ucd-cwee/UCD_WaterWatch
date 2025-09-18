@@ -86,7 +86,7 @@ int main() {
             EXPECT_EQ(10, (int)(float)val);
             EXPECT_EQ(true, val.is_scalar());
 
-            GL::value meter(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(1.0, "meter", "m"));
+            GL::value meter(GL::value::get_si_unit(1, 0, 0, 0, 0, 0).get_impl_unit(1.0, "meter", "m"));
             EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
             EXPECT_EQ(meter.name(), "meter");
@@ -105,19 +105,19 @@ int main() {
             EXPECT_EQ(false, meter.is_scalar());
             EXPECT_EQ(0, (int)(float)meter);
 
-            GL::value foot(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
+            GL::value foot(GL::value::get_si_unit(1, 0, 0, 0, 0, 0).get_impl_unit(381.0 / 1250.0, "foot", "ft"));
             EXPECT_EQ(false, foot.is_scalar());
 
-            GL::value inch(GL::value::get_si_unit(1, 0, 0, 0, 0).get_impl_unit((1.0 / 12.0) * (381.0 / 1250.0), "inch", "in"));
+            GL::value inch(GL::value::get_si_unit(1, 0, 0, 0, 0, 0).get_impl_unit((1.0 / 12.0) * (381.0 / 1250.0), "inch", "in"));
             EXPECT_EQ(false, inch.is_scalar());
 
-            GL::value square_meter(GL::value::get_si_unit(2, 0, 0, 0, 0).get_impl_unit(1.0, "square_meter", "sq_m"));
+            GL::value square_meter(GL::value::get_si_unit(2, 0, 0, 0, 0, 0).get_impl_unit(1.0, "square_meter", "sq_m"));
             EXPECT_EQ(false, square_meter.is_scalar());
 
-            GL::value square_foot(GL::value::get_si_unit(2, 0, 0, 0, 0).get_impl_unit(((381.0 / 1250.0) * (381.0 / 1250.0)), "square_foot", "sq_ft"));
+            GL::value square_foot(GL::value::get_si_unit(2, 0, 0, 0, 0, 0).get_impl_unit(((381.0 / 1250.0) * (381.0 / 1250.0)), "square_foot", "sq_ft"));
             EXPECT_EQ(false, square_foot.is_scalar());
 
-            GL::value cubic_meter(GL::value::get_si_unit(3, 0, 0, 0, 0).get_impl_unit(1.0, "cubic_meter", "cu_m"));
+            GL::value cubic_meter(GL::value::get_si_unit(3, 0, 0, 0, 0, 0).get_impl_unit(1.0, "cubic_meter", "cu_m"));
             EXPECT_EQ(false, cubic_meter.is_scalar());
 
             GL::value scalar;
@@ -126,7 +126,7 @@ int main() {
             EXPECT_EQ(true, scalar.is_scalar());
             EXPECT_EQ(scalar.name(), "scalar");
 
-            GL::value scalar2(GL::value::get_si_unit(0, 0, 0, 0, 0).get_impl_unit(1, "scalar", ""));
+            GL::value scalar2(GL::value::get_si_unit(0, 0, 0, 0, 0, 0).get_impl_unit(1, "scalar", ""));
             EXPECT_EQ(0, (int)(float)scalar2);
             EXPECT_EQ(1, (int)scalar2.ratio());
             EXPECT_EQ(true, scalar2.is_scalar());
@@ -180,7 +180,6 @@ int main() {
             EXPECT_EQ(GL::megameter(1), GL::meter(1000000));
             EXPECT_EQ(GL::second(60), GL::minute(1));
             EXPECT_EQ(GL::miles_per_hour(1), (GL::mile(1) / GL::hour(1)));
-            EXPECT_EQ(GL::ton_per_kilowatt_hour(10) * GL::kilowatt_hour(10), GL::metric_ton(100));
 
             if (1) {
                 using namespace GL::literals;
@@ -190,7 +189,6 @@ int main() {
                 EXPECT_EQ(1_Mm, 1000000_m);
                 EXPECT_EQ(60_s, 1_min);
                 EXPECT_EQ(1_mph, 1_mi / 1_hr);
-                EXPECT_EQ(10_t_p_kWh * 10_kWh, 100_t);
                 GL::datetime DT1 = GL::datetime(2025, 1, 1, 0, 0, 0);
                 GL::datetime DT2 = GL::datetime(2025, 1, 1, 0, 0, 1.05f);
                 EXPECT_EQ(DT2 - DT1, 1.05_s);
@@ -654,6 +652,22 @@ int main() {
                 (-2.40_mps_sq - GL::value((2.40_mps_sq).pow(2) - 4.0 * 0.5 * (0.3_mps_sq / 1_s) * -12.0_mps).sqrt()) / (2.0 * 0.5 * (0.3_mps_sq / 1_s))
             );
             EXPECT_EQ(t_rest, 4_s);
+
+            EXPECT_EQ(GL::constants::pi(), 180_deg);
+
+            EXPECT_EQ((0_deg).sin(), 0.0f);
+            EXPECT_EQ((0_deg).cos(), 1.0f);
+            EXPECT_EQ((90_deg).sin(), 1.0f);            
+            EXPECT_EQ((90_deg).cos(), 0.0f);
+            EXPECT_EQ((180_deg).cos(), -1.0f);
+            EXPECT_EQ((180_deg).sin(), 0.0f);
+            EXPECT_EQ((270_deg).sin(), -1.0f);
+            EXPECT_EQ((270_deg).cos(), 0.0f);
+
+            //EXPECT_EQ(GL::celsius(0), 0_degC);
+            //EXPECT_EQ(0_degC, 32_degF);
+
+
         }
 
 
