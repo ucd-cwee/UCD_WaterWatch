@@ -498,18 +498,17 @@ namespace GL {
             }
         };
         template <bool multiplication = true> static package compound_units(package lhs, package rhs) {
-            bool lhs_is_scalar = is_scalar(lhs);
             bool rhs_is_scalar = is_scalar(rhs);
 
             // early-exit if the RHS is a scalar, which will not change the units of the LHS
             if (rhs_is_scalar) {
                 if constexpr (multiplication) {
                     lhs.m_bits.val *= rhs.m_bits.val;
-                    return lhs;
+                    return std::move(lhs);
                 }
                 else {
                     lhs.m_bits.val /= rhs.m_bits.val;
-                    return lhs;
+                    return std::move(lhs);
                 }
             }
 
@@ -868,8 +867,49 @@ namespace GL {
         };
         // pow(0.5)
         value sqrt() const {
-            return pow(0.5);
+            value::package copy = this->packed;
+            if (copy.m_bits2.unit_hash == 0) {
+                copy.m_bits.val = std::pow(copy.m_bits.val, 0.5f);
+                return value(std::move(copy));
+            }
+            else {
+                return value(multiply_units(std::move(copy), 0.5f));
+            }
         };
+        // return 1.0 / pow(0.5)
+        value rsqrt() const {
+            value::package copy = this->packed;
+            if (copy.m_bits2.unit_hash == 0) {
+                copy.m_bits.val = 1.0f / std::pow(copy.m_bits.val, 0.5f);
+                return value(std::move(copy));
+            }
+            else {
+                return 1.0f / value(multiply_units(std::move(copy), 0.5f));
+            }
+        };
+        // return 1.0 / pow(0.5)
+        value rsqrt_fast() const {
+            value::package copy = this->packed;
+            if (copy.m_bits2.unit_hash == 0) {
+                if (copy.m_bits.val != 0) {
+                    long i;
+                    float y, r;
+                    y = copy.m_bits.val * 0.5f;
+                    i = *reinterpret_cast<long*>(&copy.m_bits.val);
+                    i = 0x5f3759df - (i >> 1);
+                    r = *reinterpret_cast<float*>(&i);
+                    r = r * (1.5f - r * r * y);
+                    return value(r);
+                }
+                else {
+                    return value(1e30f);
+                }
+            }
+            else {
+                return 1.0 / value(multiply_units(std::move(copy), 0.5f));
+            }
+        };
+
         // Creates a copy of the value and floors (rounds to lower whole integer) the underlying value
         value floor() const {
             value out{ *this };
@@ -946,6 +986,34 @@ namespace GL {
             out.packed.m_bits2.val = std::log(out.packed.m_bits2.val);
             return (float)out;
         };
+        // Returns the natural logarithm of one plus x. For small magnitude values of x, logp1 may be more accurate than log(1 + x).
+        float log1p() const {
+            value out{ *this };
+            out.packed.m_bits2.unit_hash = 0;
+            out.packed.m_bits2.val = std::log1p(out.packed.m_bits2.val);
+            return (float)out;
+        };
+        // return the exp of this value. Returns unitless. 
+        float exp() const {
+            value out{ *this };
+            out.packed.m_bits2.unit_hash = 0;
+            out.packed.m_bits2.val = std::exp(out.packed.m_bits2.val);
+            return (float)out;
+        };
+        // Returns the base-2 exponential function of x, which is 2 raised to the power x: 2^x.
+        float exp2() const {
+            value out{ *this };
+            out.packed.m_bits2.unit_hash = 0;
+            out.packed.m_bits2.val = std::exp2(out.packed.m_bits2.val);
+            return (float)out;
+        };
+        // Returns e raised to the power x minus one: e^x-1. For small magnitude values of x, expm1 may be more accurate than exp(x) - 1.
+        float expm1() const {
+            value out{ *this };
+            out.packed.m_bits2.unit_hash = 0;
+            out.packed.m_bits2.val = std::expm1(out.packed.m_bits2.val);
+            return (float)out;
+        };
         // return the scalar sign of this value (e.g. +1 or -1). Returns unitless. 
         float sign() const {
             value out{ *this };
@@ -959,7 +1027,7 @@ namespace GL {
             out.packed.m_bits2.val = std::fmod(out.packed.m_bits2.val, rhs);
             return out;
         };
-        // 
+        // wraps the number between [min, max]. Numbers larger than max or smaller than min wrap to the other side, and stay within that range. For example, (2).wrap(0, 1) returns 1, whereas (-1).wrap(-2,0) returns -1. 
         value wrap(value const& min_bound, value const& max_bound) const {
             auto this_copy = this->packed;      
             auto min_bound_copy = value::cast(min_bound.packed, this_copy);
@@ -967,10 +1035,19 @@ namespace GL {
             this_copy.m_bits.val = value::fwrap(this_copy.m_bits.val, min_bound_copy.m_bits.val, max_bound_copy.m_bits.val);
             return value(std::move(this_copy));
         };
+        // returns the result of a linear transition from this value to the RHS value, based on the provided ratio (0 = 100% start, 1 = 100% end)
+        value lerp(value const& to, float zero_to_one_ratio) const {
+            auto this_copy = this->packed;
+            auto to_copy = value::cast(to.packed, this_copy);
+            this_copy.m_bits.val = std::fma(1.0f - zero_to_one_ratio, this_copy.m_bits.val, zero_to_one_ratio * to_copy.m_bits.val);
+            return value(std::move(this_copy));
+        };
 
 #ifdef DECL_UNIT_LITERALS 
         // returns the sin(*this). This must be in radians or degrees. Returns unitless [-1, 1].
         value sin() const;
+        // returns the sin(*this). This must be in radians or degrees. Returns unitless [-1, 1]. Less accurate than sin(), providing only about 5 decimal points of accuracy. 
+        value sin_fast() const;
         // returns the cos(*this). This must be in radians or degrees. Returns unitless [-1, 1].
         value cos() const;
         // returns the tan(*this). This must be in radians or degrees. Returns unitless [-1, 1].
@@ -1293,13 +1370,31 @@ namespace GL {
 #undef DerivedUnitType
 
     namespace GL {
-
         class constants {
+        private:
+            static constexpr float _pi = 3.141592653589793238462643383279502884197169399375105820974944f;
+            static constexpr float _pi_over_2 = _pi / 2.0f;
+            static constexpr inline double pow(double x, unsigned long long y) noexcept {
+                return y == 0 ? 1.0 : x * pow(x, y - 1);
+            };
+
+            template<int power> 
+            static inline constexpr double cpow(double V) noexcept {
+                static_assert(power >= 0, "cpow cannot accept negative numbers. Try units::math::pow instead.");
+                return detail::pow(V, power);
+            };
+
         public:
             /* PI (equal to 180 degrees) */
             static radian					
                 pi() {
-                return 3.141592653589793238462643383279502884197169399375105820974944f;
+                return _pi;
+            };
+
+            /* equal to 90 degrees */
+            static radian
+                half_pi() {
+                return _pi_over_2;
             };
 
             /* speed of light in a vacuum (m/s) */
@@ -1335,7 +1430,6 @@ namespace GL {
             };
 
         };
-
         __forceinline value value::sin() const {
             value::package copied = this->packed;
             if (copied.m_bits.si_unit == 0) {
@@ -1372,6 +1466,7 @@ namespace GL {
             value::confirm_is_scalar(copied);
             return GL::radian(std::atan(copied.m_bits.val));
         };
+
     };
 
 #endif

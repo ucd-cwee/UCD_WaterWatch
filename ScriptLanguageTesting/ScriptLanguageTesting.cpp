@@ -642,6 +642,29 @@ int main() {
 
         if (1) {
             using namespace GL::literals;
+            
+            GL::parallel::For(0, 1000000, [](size_t i) {});
+            if (auto timer = sw.debug_timer("No Sin()")) {
+                GL::parallel::For(0, 1000000, [](size_t i) {
+                    (void)GL::degree(i);
+                });
+            }
+            if (auto timer = sw.debug_timer("Sin()")) {
+                GL::parallel::For(0, 1000000, [](size_t i) {
+                    (void)GL::degree(i).sin();
+                });
+            }
+            if (auto timer = sw.debug_timer("SinFast()")) {
+                GL::parallel::For(0, 1000000, [](size_t i) {
+                    (void)GL::degree(i).sin_fast();
+                });
+            }
+
+
+
+
+
+
             EXPECT_EQ(3_kg * 10_mps / 5_s, 6_N);
 
             auto t_rest = (
@@ -650,24 +673,42 @@ int main() {
                 (-2.40_mps_sq - GL::value((2.40_mps_sq).pow(2) - 4.0 * 0.5 * (0.3_mps_sq / 1_s) * -12.0_mps).sqrt()) / (2.0 * 0.5 * (0.3_mps_sq / 1_s))
             );
             EXPECT_EQ(t_rest, 4_s);
-
             EXPECT_EQ(GL::constants::pi(), 180_deg);
-
             EXPECT_EQ((0_deg).sin(), 0.0f);
+            print((0_deg).sin_fast());
             EXPECT_EQ((0_deg).cos(), 1.0f);
-            EXPECT_EQ((90_deg).sin(), 1.0f);            
+            EXPECT_EQ((90_deg).sin(), 1.0f);  
+            print((90_deg).sin_fast());
             EXPECT_EQ((90_deg).cos(), 0.0f);
             EXPECT_EQ((180_deg).cos(), -1.0f);
             EXPECT_EQ((180_deg).sin(), 0.0f);
+            print((180_deg).sin_fast());
             EXPECT_EQ((270_deg).sin(), -1.0f);
+            print((270_deg).sin_fast());
             EXPECT_EQ((270_deg).cos(), 0.0f);
             EXPECT_EQ((GL::constants::pi() - 37_deg).sin(), (37_deg).sin().abs()); // trig identity
+            print((GL::constants::pi() - 37_deg).sin());
+            print((GL::constants::pi() - 37_deg).sin_fast());
+            print((37_deg).sin_fast());
+
+            print((137_deg).sin());
+            print((137_deg).sin_fast());
+
+            print((237_deg).sin());
+            print((237_deg).sin_fast());
+
+            print((337_deg).sin());
+            print((337_deg).sin_fast());
+
+            print((-337_deg).sin());
+            print((-337_deg).sin_fast());
 
             EXPECT_EQ(GL::celsius(0.0f), 0_degC);
             EXPECT_EQ(0_degC, 32_degF);
             EXPECT_EQ(32_degF, 0_degC);
             EXPECT_EQ(41_degF, 5_degC);
             EXPECT_EQ(5_degC, 41_degF);
+            EXPECT_EQ(GL::foot(56_ft).wrap(0_mm, GL::meter(5_ft)), 1_ft);
 
             auto T_0 = GL::fahrenheit(10);
             auto T_melting = GL::celsius(0);
@@ -693,7 +734,7 @@ int main() {
             print(final_water_temp);
             print(GL::fahrenheit(final_water_temp));
 
-            print(GL::foot(55.55f).wrap(0_mm, 5_ft));
+            
 
             print(GL::value(-1.0f).asin());
             print(GL::value(1.0f).asin());
@@ -708,6 +749,9 @@ int main() {
             print(GL::value(2.0f).acos());
             print(GL::value(-0.999f).acos());
             print(GL::value(0.999f).acos());
+
+
+
 
 
         }

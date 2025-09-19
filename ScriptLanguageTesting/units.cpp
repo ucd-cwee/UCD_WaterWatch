@@ -53,6 +53,48 @@ namespace GL {
 #undef DerivedUnitTypeWithMetricPrefixes
 #undef DerivedUnitTypeWithMetricPrefix
 #undef DerivedUnitType
+
+	static float Sin(float a) {
+		float s;
+		if ((a < 0.0f) || (a >= (2.0f * 3.14159265358979323846f))) {
+			a -= std::floor(a / (2.0f * 3.14159265358979323846f)) * (2.0f * 3.14159265358979323846f);
+		}
+		if (a < 3.14159265358979323846f) {
+			if (a > (0.5f * 3.14159265358979323846f)) {
+				a = 3.14159265358979323846f - a;
+			}
+		}
+		else {
+			if (a > 3.14159265358979323846f + (0.5f * 3.14159265358979323846f)) {
+				a = a - (2.0f * 3.14159265358979323846f);
+			}
+			else {
+				a = 3.14159265358979323846f - a;
+			}
+		}
+		s = a * a;
+		return a * (((((-2.39e-08f * s + 2.7526e-06f) * s - 1.98409e-04f) * s + 8.3333315e-03f) * s - 1.666666664e-01f) * s + 1.0f);
+	};
+	value value::sin_fast() const {
+		static const auto radian_hash = radian_pkg->default_bits.m_bits2.unit_hash;
+		static const auto degree_hash = degree_pkg->default_bits.m_bits2.unit_hash;
+		static const float degree_ratio = static_cast<float>(degree_pkg->ratio);
+
+		value::package copied = this->packed;
+		if (copied.m_bits2.unit_hash == radian_hash) {
+			return Sin(copied.m_bits.val);
+		}
+		else if (copied.m_bits2.unit_hash == degree_hash) {
+			return Sin(copied.m_bits.val * degree_ratio);
+		} 
+		else {
+			if (copied.m_bits.si_unit == 0) {
+				throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
+			}
+			return std::sin(GL::radian(GL::value(std::move(copied))).operator float());
+		}
+	};
+
 #endif
 
 };
