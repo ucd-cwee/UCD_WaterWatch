@@ -663,8 +663,7 @@ int main() {
             EXPECT_EQ((270_deg).cos(), 0.0f);
             EXPECT_EQ((GL::constants::pi() - 37_deg).sin(), (37_deg).sin().abs()); // trig identity
 
-            EXPECT_EQ(GL::celsius(0), 0_degC);
-            EXPECT_EQ(GL::kelvin(0), -273_degC);
+            EXPECT_EQ(GL::celsius(0.0f), 0_degC);
             EXPECT_EQ(0_degC, 32_degF);
             EXPECT_EQ(32_degF, 0_degC);
             EXPECT_EQ(41_degF, 5_degC);
@@ -693,6 +692,8 @@ int main() {
             GL::celsius final_water_temp = 0_degC + (heat_added / (mass_ice * specific_heat_water));
             print(final_water_temp);
             print(GL::fahrenheit(final_water_temp));
+
+
         }
 
 

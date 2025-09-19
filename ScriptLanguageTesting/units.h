@@ -343,7 +343,7 @@ namespace GL {
             else if (from.m_bits.si_unit == to.m_bits.si_unit) {
                 auto& from_impl = impl(from);
                 auto& to_impl = impl(to);
-                from.m_bits.val = static_cast<float>((((static_cast<double>(from.m_bits.val) + from_impl.translation) * from_impl.ratio) - to_impl.translation) / to_impl.ratio);
+                from.m_bits.val = static_cast<float>((((static_cast<double>(from.m_bits.val) + from_impl.translation) * from_impl.ratio) / to_impl.ratio) - to_impl.translation);
                 from.m_bits.impl_unit = to.m_bits.impl_unit;
             }
             else {
@@ -438,7 +438,7 @@ namespace GL {
                 else if (Old.m_bits.si_unit == RHS.m_bits.si_unit) {
                     auto& rhs_impl = impl(RHS);
                     auto& lhs_impl = impl(Old);
-                    toDo(Old.m_bits.val, static_cast<float>((((static_cast<double>(RHS.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) - lhs_impl.translation) / lhs_impl.ratio));
+                    toDo(Old.m_bits.val, static_cast<float>((((static_cast<double>(RHS.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) / lhs_impl.ratio ) - lhs_impl.translation));
                 }
                 else if (RHS.m_bits.si_unit == 0) {
                     toDo(Old.m_bits.val, RHS.m_bits.val);
@@ -462,7 +462,7 @@ namespace GL {
             else if (LHS.m_bits.si_unit == RHS.m_bits.si_unit) {
                 auto& rhs_impl = impl(RHS);
                 auto& lhs_impl = impl(LHS);
-                toDo(LHS.m_bits.val, static_cast<float>((((static_cast<double>(RHS.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) - lhs_impl.translation) / lhs_impl.ratio));
+                toDo(LHS.m_bits.val, static_cast<float>((((static_cast<double>(RHS.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) / lhs_impl.ratio) - lhs_impl.translation));
             }
             else if (RHS.m_bits.si_unit == 0) {
                 toDo(LHS.m_bits.val, RHS.m_bits.val);
@@ -511,7 +511,7 @@ namespace GL {
                 if (_impl_unit) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - _impl_unit->translation) / _impl_unit->ratio);
+                    out.m_bits.val = static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) / _impl_unit->ratio) - _impl_unit->translation);
                     return out;
                 }
                 else {
@@ -523,7 +523,7 @@ namespace GL {
                     package out =
                         new_impl_unit.default_bits;
                     out.m_bits.val =
-                        static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - new_impl_unit.translation) / new_impl_unit.ratio);
+                        static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) / new_impl_unit.ratio) - new_impl_unit.translation);
                     return out;
                 }
             }
@@ -547,7 +547,7 @@ namespace GL {
                 if (_impl_unit) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - _impl_unit->translation) / _impl_unit->ratio);
+                    out.m_bits.val = static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) / _impl_unit->ratio) - _impl_unit->translation);
                     return out;
                 }
                 else {
@@ -559,7 +559,7 @@ namespace GL {
                     package out = 
                         new_impl_unit.default_bits;
                     out.m_bits.val = 
-                        static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - new_impl_unit.translation) / new_impl_unit.ratio);
+                        static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) / new_impl_unit.ratio) - new_impl_unit.translation);
                     return out;
                 }
             }
@@ -592,7 +592,7 @@ namespace GL {
                 if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = static_cast<float>((std::pow((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio, rhs) - _impl_unit->translation) / _impl_unit->ratio);
+                    out.m_bits.val = static_cast<float>((std::pow((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio, rhs) / _impl_unit->ratio) - _impl_unit->translation);
                     return out;
                 }
                 else {
@@ -604,7 +604,7 @@ namespace GL {
                     package out =
                         new_impl_unit.default_bits;
                     out.m_bits.val =
-                        static_cast<float>((std::pow((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio, rhs) - new_impl_unit.translation) / new_impl_unit.ratio);
+                        static_cast<float>((std::pow((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio, rhs) / new_impl_unit.ratio) - new_impl_unit.translation);
                     return out;
                 }
             }
@@ -653,7 +653,7 @@ namespace GL {
                 else if (same_si_units(lhs, rhs)) {
                     auto& rhs_impl = impl(rhs);
                     auto& lhs_impl = impl(lhs);
-                    lhs.m_bits.val = static_cast<float>((((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) - lhs_impl.translation) / lhs_impl.ratio);
+                    lhs.m_bits.val = static_cast<float>((((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) / lhs_impl.ratio) - lhs_impl.translation);
                     return lhs;
                 }
                 else { // incoming unit AND this unit are different non-scalars of different categories. No exchange is reasonable. 
