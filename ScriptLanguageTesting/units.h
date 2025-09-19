@@ -93,8 +93,6 @@ namespace GL {
                 uint16_t si_unit; // hash for unique SI unit combination. (e.g. meter, cubic meter, meter per second)
                 uint16_t impl_unit; // hash for unique ratio or unit implimentation within SI unit. (e.g. foot, meter, inch)
                 float val; // as float
-
-
             };
             struct bitset2 {
                 uint32_t unit_hash; // hash for unique unit. 
@@ -116,6 +114,8 @@ namespace GL {
                 abbreviation{ "" };
             double
                 ratio{ 1 }; // si unit ratio. 1 == si unit. negative or 0 is impossible. 
+            double
+                translation{ 0 }; // added BEFORE ratio
             uint32_t
                 hash{ std::numeric_limits< uint32_t>::max() };
             package
@@ -133,7 +133,7 @@ namespace GL {
             double
                 AMPERES{ 0 }; // si unit for current
             double
-                KELVIN{ 0 }; // si unit for temperature
+                CELSIUS{ 0 }; // si unit for temperature
             double
                 RADIANS{ 0 }; // si unit for angle
             uint32_t
@@ -143,8 +143,8 @@ namespace GL {
             GL::deferred<GL::atomic_map<double, impl_unit*>>
                 sorted_units{};
 
-            static uint16_t calc_si_hash(double meters, double kilograms, double seconds, double amperes, double kelvin, double radians) {
-                if ((meters == 0) && (kilograms == 0) && (seconds == 0) && (amperes == 0) && (kelvin == 0) && (radians == 0)) {
+            static uint16_t calc_si_hash(double meters, double kilograms, double seconds, double amperes, double celsius, double radians) {
+                if ((meters == 0) && (kilograms == 0) && (seconds == 0) && (amperes == 0) && (celsius == 0) && (radians == 0)) {
                     return 0;
                 }
                 else {
@@ -153,7 +153,7 @@ namespace GL {
                     out ^= *(uint64_t*)(void*)(&kilograms) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     out ^= *(uint64_t*)(void*)(&seconds) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     out ^= *(uint64_t*)(void*)(&amperes) + 0x9e3779b9 + (out << 6) + (out >> 2);
-                    out ^= *(uint64_t*)(void*)(&kelvin) + 0x9e3779b9 + (out << 6) + (out >> 2);
+                    out ^= *(uint64_t*)(void*)(&celsius) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     out ^= *(uint64_t*)(void*)(&radians) + 0x9e3779b9 + (out << 6) + (out >> 2);
                     return static_cast<uint16_t>(out % std::numeric_limits<uint16_t>::max());
                 }
@@ -166,7 +166,6 @@ namespace GL {
                     return static_cast<uint16_t>((*(uint64_t*)(void*)(&ratio)) % std::numeric_limits<uint16_t>::max());
                 }
             };
-
             impl_unit* try_get_impl_unit(double ratio) {
                 uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
                 if (auto F = implimented_units->find(impl_hash); F != implimented_units->end()) {
@@ -196,6 +195,28 @@ namespace GL {
 
                     if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), impl_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
                         out.ratio = ratio;
+                        out.translation = 0;
+                        out.name = name;
+                        out.abbreviation = abbreviation;
+                        out.default_bits = default_bits;
+                        sorted_units->insert_fast(ratio, &out);
+                    }
+                }
+                return out;
+            };
+            impl_unit& get_impl_unit(double ratio, double translation, GL::string const& name, GL::string const& abbreviation) {
+                uint16_t impl_hash = (((hash == 0) || ((ratio + translation) == 0)) ? 0 : si_unit::calc_impl_hash(ratio + translation));
+                auto& out = implimented_units->operator[](impl_hash);
+                if (out.hash == std::numeric_limits< uint32_t>::max()) {
+                    package default_bits;
+                    default_bits.m_n64 = 0;
+                    default_bits.m_bits.si_unit = hash;
+                    default_bits.m_bits.impl_unit = impl_hash;
+                    default_bits.m_bits.val = 0;
+
+                    if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), impl_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
+                        out.ratio = ratio;
+                        out.translation = translation;
                         out.name = name;
                         out.abbreviation = abbreviation;
                         out.default_bits = default_bits;
@@ -208,8 +229,8 @@ namespace GL {
         // get the cached si unit for this type (fast, assuming already have the unique hash value)
         static si_unit& get_si_unit(uint16_t hash);
         // get the cached si unit for this type (slow, assumes the unique hash is not known or needs to be initialized)
-        static si_unit& get_si_unit(double meters, double kilograms, double seconds, double amperes, double kelvin, double radians) {
-            uint16_t base_hash = si_unit::calc_si_hash(meters, kilograms, seconds, amperes, kelvin, radians);
+        static si_unit& get_si_unit(double meters, double kilograms, double seconds, double amperes, double celsius, double radians) {
+            uint16_t base_hash = si_unit::calc_si_hash(meters, kilograms, seconds, amperes, celsius, radians);
             si_unit& out = get_si_unit(base_hash);
             if (out.hash == std::numeric_limits< uint32_t>::max()) {
                 if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), base_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
@@ -217,7 +238,7 @@ namespace GL {
                     out.KILOGRAMS = kilograms;
                     out.SECONDS = seconds;
                     out.AMPERES = amperes;
-                    out.KELVIN = kelvin;
+                    out.CELSIUS = celsius;
                     out.RADIANS = radians;
                 }
             }
@@ -236,9 +257,9 @@ namespace GL {
             Num = Num.remove_trailing('.');            
             return Num;
         }
-        static GL::string get_default_abbreviation(double meters, double kilograms, double seconds, double amperes, double kelvin, double radians) {
-            std::array< GL::string, 6> unitBases{ "m", "kg", "s", "A", "K", "rad" };
-            std::array< double, 6> data{ meters, kilograms, seconds, amperes, kelvin, radians };
+        static GL::string get_default_abbreviation(double meters, double kilograms, double seconds, double amperes, double celsius, double radians) {
+            std::array< GL::string, 6> unitBases{ "m", "kg", "s", "A", "degC", "rad" };
+            std::array< double, 6> data{ meters, kilograms, seconds, amperes, celsius, radians };
             GL::string out;
             bool anyNegatives = false;
 
@@ -297,8 +318,8 @@ namespace GL {
         package packed;
 
         // return the SI ratio of the current type. 
-        static double const& ratio(package const& pkg) {
-            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).ratio;
+        static impl_unit const& impl(package const& pkg) {
+            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit);
         };
         // return the abbreviation for the current type. 
         static GL::string const& abbreviation(package const& pkg) {
@@ -320,7 +341,9 @@ namespace GL {
                 // do nothing
             }
             else if (from.m_bits.si_unit == to.m_bits.si_unit) {
-                from.m_bits.val = static_cast<float>(static_cast<double>(from.m_bits.val) * ratio(from) / ratio(to));
+                auto& from_impl = impl(from);
+                auto& to_impl = impl(to);
+                from.m_bits.val = static_cast<float>((((static_cast<double>(from.m_bits.val) + from_impl.translation) * from_impl.ratio) - to_impl.translation) / to_impl.ratio);
                 from.m_bits.impl_unit = to.m_bits.impl_unit;
             }
             else {
@@ -413,9 +436,9 @@ namespace GL {
                     // Old.m_bits.val += RHS.m_bits.val;
                 }
                 else if (Old.m_bits.si_unit == RHS.m_bits.si_unit) {
-                    const double& RHS_ratio = ratio(RHS);
-                    const double& LHS_ratio = ratio(Old);
-                    toDo(Old.m_bits.val, static_cast<float>(static_cast<double>(RHS.m_bits.val) * RHS_ratio / LHS_ratio));
+                    auto& rhs_impl = impl(RHS);
+                    auto& lhs_impl = impl(Old);
+                    toDo(Old.m_bits.val, static_cast<float>((((static_cast<double>(RHS.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) - lhs_impl.translation) / lhs_impl.ratio));
                 }
                 else if (RHS.m_bits.si_unit == 0) {
                     toDo(Old.m_bits.val, RHS.m_bits.val);
@@ -437,9 +460,9 @@ namespace GL {
                 toDo(LHS.m_bits.val, RHS.m_bits.val);
             }
             else if (LHS.m_bits.si_unit == RHS.m_bits.si_unit) {
-                const double& RHS_ratio = ratio(RHS);
-                const double& LHS_ratio = ratio(LHS);
-                toDo(LHS.m_bits.val, static_cast<float>(static_cast<double>(RHS.m_bits.val) * RHS_ratio / LHS_ratio));
+                auto& rhs_impl = impl(RHS);
+                auto& lhs_impl = impl(LHS);
+                toDo(LHS.m_bits.val, static_cast<float>((((static_cast<double>(RHS.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) - lhs_impl.translation) / lhs_impl.ratio));
             }
             else if (RHS.m_bits.si_unit == 0) {
                 toDo(LHS.m_bits.val, RHS.m_bits.val);
@@ -474,29 +497,33 @@ namespace GL {
                     , lhs_si_units.KILOGRAMS + rhs_si_units.KILOGRAMS
                     , lhs_si_units.SECONDS + rhs_si_units.SECONDS
                     , lhs_si_units.AMPERES + rhs_si_units.AMPERES
-                    , lhs_si_units.KELVIN + rhs_si_units.KELVIN
+                    , lhs_si_units.CELSIUS + rhs_si_units.CELSIUS
                     , lhs_si_units.RADIANS + rhs_si_units.RADIANS
                 );
-                const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
-                const double& rhs_ratio = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit).ratio;
-                double desired_ratio = lhs_ratio * rhs_ratio;
+                auto& lhs_impl = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit);
+                auto& rhs_impl = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit);
+                double desired_ratio = (lhs_impl.translation + lhs_impl.ratio) * (rhs_impl.translation + rhs_impl.ratio);
 
                 auto* _impl_unit = new_si_units.try_get_impl_unit(desired_ratio);
-                if (!_impl_unit) _impl_unit = _impl_unit = new_si_units.try_get_nearest_impl_unit((static_cast<double>(lhs.m_bits.val) * lhs_ratio) * (static_cast<double>(rhs.m_bits.val) * rhs_ratio));
+                if (!_impl_unit) _impl_unit = _impl_unit = new_si_units.try_get_nearest_impl_unit(
+                    ((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)
+                );
                 if (_impl_unit) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) * (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / _impl_unit->ratio);
+                    out.m_bits.val = static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - _impl_unit->translation) / _impl_unit->ratio);
                     return out;
                 }
                 else {
-                    // create new
-                    GL::string abbrev
-                        = "(" + abbreviation(lhs) + ")*(" + abbreviation(rhs) + ")";
-                    // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
-                    auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
-                    package out{ new_impl_unit.default_bits };
-                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) * (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / new_impl_unit.ratio);
+                    // create new?
+                    GL::string abbrev =
+                        get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.CELSIUS, new_si_units.RADIANS);
+                    auto& new_impl_unit =
+                        new_si_units.get_impl_unit(1.0, "", abbrev);
+                    package out =
+                        new_impl_unit.default_bits;
+                    out.m_bits.val =
+                        static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) * ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - new_impl_unit.translation) / new_impl_unit.ratio);
                     return out;
                 }
             }
@@ -506,30 +533,33 @@ namespace GL {
                     , lhs_si_units.KILOGRAMS - rhs_si_units.KILOGRAMS
                     , lhs_si_units.SECONDS - rhs_si_units.SECONDS
                     , lhs_si_units.AMPERES - rhs_si_units.AMPERES
-                    , lhs_si_units.KELVIN - rhs_si_units.KELVIN
+                    , lhs_si_units.CELSIUS - rhs_si_units.CELSIUS
                     , lhs_si_units.RADIANS - rhs_si_units.RADIANS
                 );
-                const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
-                const double& rhs_ratio = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit).ratio;
-                double desired_ratio = lhs_ratio / rhs_ratio;
-
+                auto& lhs_impl = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit);
+                auto& rhs_impl = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit);
+                double desired_ratio = (lhs_impl.translation + lhs_impl.ratio) / (rhs_impl.translation + rhs_impl.ratio);
                 auto* _impl_unit = new_si_units.try_get_impl_unit(desired_ratio);
-                if (!_impl_unit) _impl_unit = _impl_unit = new_si_units.try_get_nearest_impl_unit((static_cast<double>(lhs.m_bits.val) * lhs_ratio) / (static_cast<double>(rhs.m_bits.val) * rhs_ratio));
 
+                if (!_impl_unit) _impl_unit = _impl_unit = new_si_units.try_get_nearest_impl_unit(
+                    ((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)
+                );
                 if (_impl_unit) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) / (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / _impl_unit->ratio);
+                    out.m_bits.val = static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - _impl_unit->translation) / _impl_unit->ratio);
                     return out;
                 }
                 else {
-                    // create new
-                    GL::string abbrev
-                        = "(" + abbreviation(lhs) + ")/(" + abbreviation(rhs) + ")";
-                    // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
-                    auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
-                    package out{ new_impl_unit.default_bits };
-                    out.m_bits.val = static_cast<float>((static_cast<double>(lhs.m_bits.val) * lhs_ratio) / (static_cast<double>(rhs.m_bits.val) * rhs_ratio) / new_impl_unit.ratio);
+                    // create new?
+                    GL::string abbrev =
+                        get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.CELSIUS, new_si_units.RADIANS);
+                    auto& new_impl_unit = 
+                        new_si_units.get_impl_unit(1.0, "", abbrev);
+                    package out = 
+                        new_impl_unit.default_bits;
+                    out.m_bits.val = 
+                        static_cast<float>(((((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio) / ((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio)) - new_impl_unit.translation) / new_impl_unit.ratio);
                     return out;
                 }
             }
@@ -553,25 +583,28 @@ namespace GL {
                     , lhs_si_units.KILOGRAMS * rhs
                     , lhs_si_units.SECONDS * rhs
                     , lhs_si_units.AMPERES * rhs
-                    , lhs_si_units.KELVIN * rhs
+                    , lhs_si_units.CELSIUS * rhs
                     , lhs_si_units.RADIANS * rhs
                 );
-                const double& lhs_ratio = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit).ratio;
-                double desired_ratio = std::pow(lhs_ratio, rhs);
+
+                auto& lhs_impl = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit);
+                double desired_ratio = std::pow(lhs_impl.translation + lhs_impl.ratio, rhs);
                 if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
                     // found or found nearby
                     package out{ _impl_unit->default_bits };
-                    out.m_bits.val = static_cast<float>(std::pow(static_cast<double>(lhs.m_bits.val) * lhs_ratio, rhs) / _impl_unit->ratio);
+                    out.m_bits.val = static_cast<float>((std::pow((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio, rhs) - _impl_unit->translation) / _impl_unit->ratio);
                     return out;
                 }
                 else {
-                    // create new
-                    GL::string abbrev
-                        = "(" + abbreviation(lhs) + ")^" + NumStr(rhs);
-                    // NOTE: if using the default abbreviations, you must then set the ratio to '0' as this is now an SI unit. 
-                    auto& new_impl_unit = new_si_units.get_impl_unit(desired_ratio, "", abbrev);
-                    package out{ new_impl_unit.default_bits };
-                    out.m_bits.val = static_cast<float>(std::pow(static_cast<double>(lhs.m_bits.val) * lhs_ratio, rhs) / new_impl_unit.ratio);
+                    // create new?
+                    GL::string abbrev =
+                        get_default_abbreviation(new_si_units.METERS, new_si_units.KILOGRAMS, new_si_units.SECONDS, new_si_units.AMPERES, new_si_units.CELSIUS, new_si_units.RADIANS);
+                    auto& new_impl_unit =
+                        new_si_units.get_impl_unit(1.0, "", abbrev);
+                    package out =
+                        new_impl_unit.default_bits;
+                    out.m_bits.val =
+                        static_cast<float>((std::pow((static_cast<double>(lhs.m_bits.val) + lhs_impl.translation) * lhs_impl.ratio, rhs) - new_impl_unit.translation) / new_impl_unit.ratio);
                     return out;
                 }
             }
@@ -618,7 +651,9 @@ namespace GL {
                     return lhs;
                 }
                 else if (same_si_units(lhs, rhs)) {
-                    lhs.m_bits.val = static_cast<float>(static_cast<double>(rhs.m_bits.val) * ratio(rhs) / ratio(lhs));
+                    auto& rhs_impl = impl(rhs);
+                    auto& lhs_impl = impl(lhs);
+                    lhs.m_bits.val = static_cast<float>((((static_cast<double>(rhs.m_bits.val) + rhs_impl.translation) * rhs_impl.ratio) - lhs_impl.translation) / lhs_impl.ratio);
                     return lhs;
                 }
                 else { // incoming unit AND this unit are different non-scalars of different categories. No exchange is reasonable. 
@@ -664,10 +699,6 @@ namespace GL {
         GL::string const& abbreviation() const {
             auto pkg = load();
             return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).abbreviation;
-        };
-        const double& ratio() const {
-            auto pkg = load();
-            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).ratio;
         };
         bool is_scalar() const {
             auto pkg = load();
@@ -901,11 +932,9 @@ namespace GL {
         value sin() const;
         value cos() const;
         value tan() const;
-
         value asin() const;
         value acos() const;
         value atan() const;
-
 #endif
     };
     using scalar = value;    
@@ -1097,7 +1126,7 @@ namespace GL {
 	DerivedUnitType(pounds_per_cubic_inch, density, lb_per_cu_in, Conversion<pound>(1.0) / Conversion<cubic_inch>(1.0)); \
 	DerivedUnitType(pounds_per_gallon, density, lb_per_gal, Conversion<pound>(1.0) / Conversion<gallon>(1.0)); \
 	DerivedUnitType(slugs_per_cubic_foot, density, slug_per_cu_ft, Conversion<slug>(1.0) / Conversion<cubic_foot>(1.0)); \
-	DerivedUnitType(kelvin, temperature, K, 1.0); \
+	DerivedUnitType(celsius, temperature, degC, 1.0); \
     DerivedUnitType(radian, angle, rad, 1.0); \
     DerivedUnitType(degree, angle, deg, Conversion<radian>(3.141592653589793238462643383279502884197169399375105820974944 / 180.0));
 
@@ -1146,13 +1175,37 @@ namespace GL {
 
     DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
+    class kelvin final : public value {
+        static package unique_pkg();
+    public: 
+        kelvin() : value(unique_pkg()) {};
+        kelvin(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; };
+        kelvin(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); };
+        kelvin(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); };
+        ~kelvin() = default;
+    };
+    class fahrenheit final : public value {
+        static package unique_pkg();
+    public:
+        fahrenheit() : value(unique_pkg()) {};
+        fahrenheit(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; };
+        fahrenheit(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); };
+        fahrenheit(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); };
+        ~fahrenheit() = default;
+    };
+
 #undef DerivedUnitTypeWithMetricPrefixes
 #undef DerivedUnitTypeWithMetricPrefix
 #undef DerivedUnitType
 #undef CalculateMetricPrefixV
 
     /* Unit Literals (e.g. 1_ft, 1_gpm, etc.) */
-    namespace literals {};
+    namespace literals {
+        __forceinline static auto operator""_degF(long double d) { return GL::fahrenheit(static_cast<float>(d)); }
+        __forceinline static auto operator""_degF(unsigned long long d) { return GL::fahrenheit(static_cast<float>(d)); }
+        __forceinline static auto operator""_degK(long double d) { return GL::kelvin(static_cast<float>(d)); }
+        __forceinline static auto operator""_degK(unsigned long long d) { return GL::kelvin(static_cast<float>(d)); }
+    }
 };
 
 #define DerivedUnitType(type, category, abbreviation, ratio) \

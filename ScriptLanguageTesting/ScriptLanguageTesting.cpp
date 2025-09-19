@@ -122,13 +122,11 @@ int main() {
 
             GL::value scalar;
             EXPECT_EQ(0, (int)(float)scalar);
-            EXPECT_EQ(1, (int)scalar.ratio());
             EXPECT_EQ(true, scalar.is_scalar());
             EXPECT_EQ(scalar.name(), "scalar");
 
             GL::value scalar2(GL::value::get_si_unit(0, 0, 0, 0, 0, 0).get_impl_unit(1, "scalar", ""));
             EXPECT_EQ(0, (int)(float)scalar2);
-            EXPECT_EQ(1, (int)scalar2.ratio());
             EXPECT_EQ(true, scalar2.is_scalar());
             EXPECT_EQ(scalar2.name(), "scalar");
 
@@ -665,11 +663,36 @@ int main() {
             EXPECT_EQ((270_deg).cos(), 0.0f);
             EXPECT_EQ((GL::constants::pi() - 37_deg).sin(), (37_deg).sin().abs()); // trig identity
 
-            //EXPECT_EQ(GL::celsius(0), 0_degC);
-            //EXPECT_EQ(0_degC, 32_degF);
+            EXPECT_EQ(GL::celsius(0), 0_degC);
+            EXPECT_EQ(GL::kelvin(0), -273_degC);
+            EXPECT_EQ(0_degC, 32_degF);
+            EXPECT_EQ(32_degF, 0_degC);
+            EXPECT_EQ(41_degF, 5_degC);
+            EXPECT_EQ(5_degC, 41_degF);
 
+            auto T_0 = GL::fahrenheit(10);
+            auto T_melting = GL::celsius(0);
+            auto mass_ice = 4_kg;
+            auto specific_heat_ice = (2100_J / 1_kg) / 1_degC;
+            auto specific_heat_water = (4186_J / 1_kg) / 1_degC;
+            auto latent_heat_of_fusion_of_water = 333000.0_J / 1_kg;
 
+            GL::joule heat_to_raise_temp_of_ice = mass_ice * specific_heat_ice * (T_melting - T_0);
+            print(heat_to_raise_temp_of_ice);
+
+            GL::joule heat_to_melt_ice = mass_ice * latent_heat_of_fusion_of_water;
+            print(heat_to_melt_ice);
             
+            GL::joule total_heat = heat_to_raise_temp_of_ice + heat_to_melt_ice;
+            print(total_heat);
+
+            auto time = total_heat / 500_W;
+            print(time);
+
+            auto heat_added = 500_W * 1200_s;
+            GL::celsius final_water_temp = 0_degC + (heat_added / (mass_ice * specific_heat_water));
+            print(final_water_temp);
+            print(GL::fahrenheit(final_water_temp));
         }
 
 
@@ -686,7 +709,7 @@ int main() {
             })->wait(); // calling wait gives the opportunity to catch the exception.
             EXPECT_EQ(true, false);
         }
-        catch (std::exception& e) {} // exception from the async job will ultimately be caught here
+        catch (std::exception&) {} // exception from the async job will ultimately be caught here
 
         GL::parallel::task([&]() {
             return GL::foot(100) + GL::gallon(1); // will throw
