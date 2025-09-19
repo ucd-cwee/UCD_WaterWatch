@@ -16,6 +16,7 @@
 #include <functional>
 #include <tuple>
 #include "ticket_dispensor.h"
+#include <concurrent_vector.h>
 
 #pragma endregion
 
@@ -586,7 +587,7 @@ namespace GL {
 
 		public:
 			std::weak_ptr<job> self;
-			GL::atomic_vector< std::weak_ptr<job_base> > children;
+			concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
 		protected:
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
@@ -706,7 +707,7 @@ namespace GL {
 
 		public:
 			std::weak_ptr<jobs> self;
-			GL::atomic_vector< std::weak_ptr<job_base> > children;
+			concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
 
 		protected:		
 			std::atomic<bool> dispatch_once;

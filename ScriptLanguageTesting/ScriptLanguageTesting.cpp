@@ -663,11 +663,13 @@ int main() {
             EXPECT_EQ((180_deg).sin(), 0.0f);
             EXPECT_EQ((270_deg).sin(), -1.0f);
             EXPECT_EQ((270_deg).cos(), 0.0f);
+            EXPECT_EQ((GL::constants::pi() - 37_deg).sin(), (37_deg).sin().abs()); // trig identity
 
             //EXPECT_EQ(GL::celsius(0), 0_degC);
             //EXPECT_EQ(0_degC, 32_degF);
 
 
+            
         }
 
 

@@ -901,6 +901,11 @@ namespace GL {
         value sin() const;
         value cos() const;
         value tan() const;
+
+        value asin() const;
+        value acos() const;
+        value atan() const;
+
 #endif
     };
     using scalar = value;    
@@ -1233,13 +1238,22 @@ namespace GL {
         };
 
         __forceinline value value::sin() const {
-            return std::sin(GL::radian(*this).operator float());
+            return std::sin(GL::radian(*this).operator float());                
         };
         __forceinline value value::cos() const {
             return std::cos(GL::radian(*this).operator float());
         };
         __forceinline value value::tan() const {
             return std::tan(GL::radian(*this).operator float());
+        };
+        __forceinline value value::asin() const {
+            return std::asin(GL::radian(*this).operator float());
+        };
+        __forceinline value value::acos() const {
+            return std::acos(GL::radian(*this).operator float());
+        };
+        __forceinline value value::atan() const {
+            return std::atan(GL::radian(*this).operator float());
         };
     };
 
