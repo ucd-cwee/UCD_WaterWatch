@@ -693,6 +693,22 @@ int main() {
             print(final_water_temp);
             print(GL::fahrenheit(final_water_temp));
 
+            print(GL::foot(55.55f).wrap(0_mm, 5_ft));
+
+            print(GL::value(-1.0f).asin());
+            print(GL::value(1.0f).asin());
+            print(GL::value(-2.0f).asin());
+            print(GL::value(2.0f).asin());
+            print(GL::value(-0.999f).asin());
+            print(GL::value(0.999f).asin());
+
+            print(GL::value(-1.0f).acos());
+            print(GL::value(1.0f).acos());
+            print(GL::value(-2.0f).acos());
+            print(GL::value(2.0f).acos());
+            print(GL::value(-0.999f).acos());
+            print(GL::value(0.999f).acos());
+
 
         }
 

@@ -7,6 +7,10 @@
 #include <sstream>
 
 namespace GL {
+#ifdef DECL_UNIT_LITERALS 
+    class radian;
+#endif
+
     /* 
     Atomic floating-point value that keeps track of its own units. 
     Allowed to mix-and-match units dynamically, and will attempt to correctly select the most appropriate new unit type. 
@@ -353,7 +357,28 @@ namespace GL {
             }
             return from;
         };
+        static float fwrap(float kX, float min_bound, float max_bound) {
+            if (min_bound > max_bound) {
+                std::swap(min_bound, max_bound); // Ensure min_bound is always less than or equal to max_bound
+            }
 
+            auto range = max_bound - min_bound;
+            if (range == 0) { // Handle cases where the range is zero (e.g., min == max)
+                return min_bound;
+            }
+
+            if (kX == min_bound) return kX;
+            if (kX == max_bound) return kX;
+
+            auto wrapped_value = std::fmod(kX - min_bound, range);
+
+            // Adjust for negative results from fmod, ensuring the result is within [min_bound, max_bound)
+            if (wrapped_value < 0) {
+                wrapped_value += range;
+            }
+
+            return wrapped_value + min_bound;
+        };
         static bool same_si_units(package const& LHS, package const& RHS) noexcept {
             return LHS.m_bits.si_unit == RHS.m_bits.si_unit;
         };
@@ -901,40 +926,61 @@ namespace GL {
             return packed.m_bits.val;
         };
         // return the log2 of this value. Returns unitless. 
-        value log2() const {
+        float log2() const {
             value out{ *this };
             out.packed.m_bits2.unit_hash = 0;
             out.packed.m_bits2.val = std::log2(out.packed.m_bits2.val);
-            return out;
+            return (float)out;
         };
         // return the log10 of this value. Returns unitless. 
-        value log10() const {
+        float log10() const {
             value out{ *this };
             out.packed.m_bits2.unit_hash = 0;
             out.packed.m_bits2.val = std::log10(out.packed.m_bits2.val);
-            return out;
+            return (float)out;
         };
         // return the log of this value. Returns unitless. 
-        value log() const {
+        float log() const {
             value out{ *this };
             out.packed.m_bits2.unit_hash = 0;
             out.packed.m_bits2.val = std::log(out.packed.m_bits2.val);
-            return out;
+            return (float)out;
         };
         // return the scalar sign of this value (e.g. +1 or -1). Returns unitless. 
-        value sign() const {
+        float sign() const {
             value out{ *this };
             out.packed.m_bits2.unit_hash = 0;
             out.packed.m_bits2.val = (out.packed.m_bits2.val < 0.0f ? -1.0f : 1.0f);
+            return (float)out;
+        };
+        // return the modulus (or remainder of division) of the current value with the provided divisor. Returns with the same units as originally used.
+        value mod(float rhs) const {
+            value out{ *this };
+            out.packed.m_bits2.val = std::fmod(out.packed.m_bits2.val, rhs);
             return out;
         };
+        // 
+        value wrap(value const& min_bound, value const& max_bound) const {
+            auto this_copy = this->packed;      
+            auto min_bound_copy = value::cast(min_bound.packed, this_copy);
+            auto max_bound_copy = value::cast(max_bound.packed, this_copy);
+            this_copy.m_bits.val = value::fwrap(this_copy.m_bits.val, min_bound_copy.m_bits.val, max_bound_copy.m_bits.val);
+            return value(std::move(this_copy));
+        };
+
 #ifdef DECL_UNIT_LITERALS 
+        // returns the sin(*this). This must be in radians or degrees. Returns unitless [-1, 1].
         value sin() const;
+        // returns the cos(*this). This must be in radians or degrees. Returns unitless [-1, 1].
         value cos() const;
+        // returns the tan(*this). This must be in radians or degrees. Returns unitless [-1, 1].
         value tan() const;
-        value asin() const;
-        value acos() const;
-        value atan() const;
+        // Returns the arc sine (inverse sine) of this, in radians. Will wrap this to be in the range [-1, 1].
+        radian asin() const;
+        // Returns the arc cosine (inverse sine) of this, in radians. Will wrap this to be in the range [-1, 1].
+        radian acos() const;
+        // Returns the arc tangent (inverse tangent) of this, in radians.
+        radian atan() const;
 #endif
     };
     using scalar = value;    
@@ -1291,22 +1337,40 @@ namespace GL {
         };
 
         __forceinline value value::sin() const {
-            return std::sin(GL::radian(*this).operator float());                
+            value::package copied = this->packed;
+            if (copied.m_bits.si_unit == 0) {
+                throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
+            }
+            return std::sin(GL::radian(GL::value(std::move(copied))).operator float());
         };
         __forceinline value value::cos() const {
-            return std::cos(GL::radian(*this).operator float());
+            value::package copied = this->packed;
+            if (copied.m_bits.si_unit == 0) {
+                throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
+            }
+            return std::cos(GL::radian(GL::value(std::move(copied))).operator float());
         };
         __forceinline value value::tan() const {
-            return std::tan(GL::radian(*this).operator float());
+            value::package copied = this->packed;
+            if (copied.m_bits.si_unit == 0) {
+                throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
+            }
+            return std::tan(GL::radian(GL::value(std::move(copied))).operator float());
         };
-        __forceinline value value::asin() const {
-            return std::asin(GL::radian(*this).operator float());
+        __forceinline radian value::asin() const {
+            package copied = this->packed;
+            value::confirm_is_scalar(copied);
+            return GL::radian(std::asin(fwrap(copied.m_bits.val, -1.0f, 1.0f)));
         };
-        __forceinline value value::acos() const {
-            return std::acos(GL::radian(*this).operator float());
+        __forceinline radian value::acos() const {
+            value::package copied = this->packed;
+            value::confirm_is_scalar(copied);
+            return GL::radian(std::acos(fwrap(copied.m_bits.val, -1.0f, 1.0f)));
         };
-        __forceinline value value::atan() const {
-            return std::atan(GL::radian(*this).operator float());
+        __forceinline radian value::atan() const {
+            package copied = this->packed;
+            value::confirm_is_scalar(copied);
+            return GL::radian(std::atan(copied.m_bits.val));
         };
     };
 
