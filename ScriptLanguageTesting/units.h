@@ -1380,8 +1380,8 @@ namespace GL {
 
             template<int power> 
             static inline constexpr double cpow(double V) noexcept {
-                static_assert(power >= 0, "cpow cannot accept negative numbers. Try units::math::pow instead.");
-                return detail::pow(V, power);
+                static_assert(power >= 0, "cpow cannot accept negative numbers. Try pow instead.");
+                return pow(V, power);
             };
 
         public:
