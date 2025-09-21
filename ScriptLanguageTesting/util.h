@@ -1,6 +1,9 @@
 #pragma once
 
+#ifndef NOMINMAX 
 #define NOMINMAX
+#endif
+
 #include <cstdarg>
 #include <type_traits>
 #include <tuple>

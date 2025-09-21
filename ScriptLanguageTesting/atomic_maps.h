@@ -3,7 +3,9 @@
 #include <limits>
 #include "atomic_allocator.h"
 #include "atomic_queue.h"
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #undef max
 #undef min
 #include <shared_mutex>

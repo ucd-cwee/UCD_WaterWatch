@@ -198,6 +198,8 @@
       <AdditionalLibraryDirectories>$(SolutionDir)arrayfire\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>af.lib;</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -253,6 +255,8 @@ copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"</Command>
       <AdditionalLibraryDirectories>$(SolutionDir)arrayfire\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>af.lib;</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -286,6 +290,8 @@ copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"</Command>
       <AdditionalLibraryDirectories>$(SolutionDir)arrayfire\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>af.lib;</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <PreBuildEvent>
       <Command>xcopy /y /d "$(SolutionDir)arrayfire\lib\*.dll" "$(OutDir)"</Command>
@@ -311,6 +317,8 @@ copy "$(CUDA_PATH)\nvvm\bin\nvvm64*.dll" "$(OutDir)"</Command>
       <AdditionalLibraryDirectories>$(SolutionDir)arrayfire\lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>af.lib;</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
     <PreBuildEvent>
       <Command>xcopy /y /d "$(SolutionDir)arrayfire\lib\*.dll" "$(OutDir)"</Command>

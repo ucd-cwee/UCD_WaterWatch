@@ -1,5 +1,18 @@
 #pragma region "Includes"
 #pragma once
+
+#include <arrayfire.h>
+#include <math.h>
+#include <stdio.h>
+#include <af/util.h>
+#include <algorithm>
+#include <iterator>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -37,6 +50,708 @@
 
 #pragma endregion
 
+// functions or classes which leverage the GPU for improved performance. 
+namespace GPU {
+    // 1- to 3-dimensional matrix accelerated by the GPU, using ArrayFire as the base. Not thread-safe. 
+    template <typename T>
+    class matrix {
+        template<typename F> friend class matrix;
+
+    protected:
+        static_assert(std::is_pod_v<T>, "matrix type must be POD value, such as int, float, double, etc.");
+        
+        static constexpr af::dtype get_type() {
+            if constexpr (std::is_same_v<T, float>) {
+                return af::dtype::f32;
+            }
+            else if constexpr (std::is_same_v<T, double>) {
+                return af::dtype::f64;
+            }
+            else if constexpr (std::is_same_v<T, bool>) {
+                return af::dtype::b8;
+            }
+            else if constexpr (std::is_same_v<long, T> || std::is_same_v<int, T>) {
+                return af::dtype::s32;
+            }
+            else if constexpr (std::is_same_v<unsigned long, T> || std::is_same_v<unsigned int, T>) {
+                return af::dtype::u32;
+            }
+            else if constexpr (std::is_same_v<long long, T>) {
+                return af::dtype::s64;
+            }
+            else if constexpr (std::is_same_v<unsigned long long, T>) {
+                return af::dtype::u64;
+            }
+            else if constexpr (std::is_same_v<T, unsigned char>) {
+                return af::dtype::u8;
+            }
+            else if constexpr (std::is_same_v<T, char>) {
+                return af::dtype::s8;
+            }
+            else {
+                static_assert("FAILED TO DETERMINE THE TYPE OF THE MATRIX.");
+            }
+
+        };
+    public:
+        static constexpr af::dtype type = get_type();
+
+    protected:
+        af::array arr;
+    public:
+        explicit matrix(af::array&& rhs) 
+            : arr(std::move(rhs)) 
+        {};
+
+
+    public:
+        class matrix_proxy {
+            template <typename F> friend class matrix;
+        protected:
+            af::array arr_clone;
+            af::array::array_proxy arr;
+
+        public:
+            explicit matrix_proxy(af::array const& _arr, af::array::array_proxy const& _arr_proxy)
+                : arr_clone{ _arr }
+                , arr{ _arr_proxy }
+            {}
+            matrix_proxy() = default;
+            matrix_proxy(matrix_proxy const&) = default;
+            matrix_proxy(matrix_proxy &&) = default;
+            matrix_proxy& operator=(matrix_proxy const&) = default;
+            matrix_proxy& operator=(matrix_proxy&&) = default;
+            ~matrix_proxy() = default;
+
+            af::array::array_proxy get_arr() const {
+                return arr;
+            };
+
+
+
+
+        };
+
+
+
+        matrix() 
+            : arr(0, type)
+        {};
+        matrix(matrix_proxy const& rhs)
+            : arr{ rhs.get_arr() }
+        {}
+        matrix(size_t num_elements_dim0)
+            : arr(num_elements_dim0, type)
+        {};
+        matrix(size_t num_elements_dim0, size_t num_elements_dim1)
+            : arr(num_elements_dim0, num_elements_dim1, type)
+        {};
+        matrix(size_t num_elements_dim0, size_t num_elements_dim1, size_t num_elements_dim2)
+            : arr(num_elements_dim0, num_elements_dim1, num_elements_dim2, type)
+        {};
+        matrix(matrix const&) = default;
+        matrix(matrix &&) = default;
+        matrix& operator=(matrix const&) = default;
+        matrix& operator=(matrix&&) = default;
+        ~matrix() = default;
+
+        static matrix range(size_t x, size_t y = 1, size_t z = 1, int seq_dim = -1) {
+            return matrix(af::range(x,y,z, 1, seq_dim, type));
+        };
+
+        static matrix constant(T val, size_t num_elements_dim0) {
+            return matrix(af::constant(val, num_elements_dim0, type));
+        };
+        static matrix constant(T val, size_t num_elements_dim0, size_t num_elements_dim1) {
+            return matrix(af::constant(val, num_elements_dim0, num_elements_dim1, type));
+        };
+        static matrix constant(T val, size_t num_elements_dim0, size_t num_elements_dim1, size_t num_elements_dim2) {
+            return matrix(af::constant(val, num_elements_dim0, num_elements_dim1, num_elements_dim2, type));
+        };
+
+        static matrix identity_matrix(size_t num_elements_dim0) {
+            return matrix(af::identity(num_elements_dim0, type));
+        };
+        static matrix identity_matrix(size_t num_elements_dim0, size_t num_elements_dim1) {
+            return matrix(af::identity(num_elements_dim0, num_elements_dim1, type));
+        };
+        static matrix identity_matrix(size_t num_elements_dim0, size_t num_elements_dim1, size_t num_elements_dim2) {
+            return matrix(af::identity(num_elements_dim0, num_elements_dim1, num_elements_dim2, type));
+        };
+
+        static matrix random_uniform_matrix(size_t num_elements_dim0) {
+            return matrix(af::randu(num_elements_dim0, type));
+        };
+        static matrix random_uniform_matrix(size_t num_elements_dim0, size_t num_elements_dim1) {
+            return matrix(af::randu(num_elements_dim0, num_elements_dim1, type));
+        };
+        static matrix random_uniform_matrix(size_t num_elements_dim0, size_t num_elements_dim1, size_t num_elements_dim2) {
+            return matrix(af::randu(num_elements_dim0, num_elements_dim1, num_elements_dim2, type));
+        };
+
+        static matrix random_normalized_matrix(size_t num_elements_dim0) {
+            return matrix(af::randn(num_elements_dim0, type));
+        };
+        static matrix random_normalized_matrix(size_t num_elements_dim0, size_t num_elements_dim1) {
+            return matrix(af::randn(num_elements_dim0, num_elements_dim1, type));
+        };
+        static matrix random_normalized_matrix(size_t num_elements_dim0, size_t num_elements_dim1, size_t num_elements_dim2) {
+            return matrix(af::randn(num_elements_dim0, num_elements_dim1, num_elements_dim2, type));
+        };
+
+        static matrix from_vector(std::vector<T> const& RHS) {
+            return matrix(af::array(RHS.size(), &RHS[0]));
+        };
+        static matrix from_vector(std::vector<T> const& RHS, size_t num_elements_dim0, size_t num_elements_dim1) {
+            return matrix(af::array(num_elements_dim0, num_elements_dim1, &RHS[0]));
+        };
+        static matrix from_vector(std::vector<T> const& RHS, size_t num_elements_dim0, size_t num_elements_dim1, size_t num_elements_dim2) {
+            return matrix(af::array(num_elements_dim0, num_elements_dim1, num_elements_dim2, &RHS[0]));
+        };
+
+        template <typename F>
+        matrix<F> cast() const {
+            return matrix<F>(af::array(arr.as(matrix<F>::type)));
+        }
+
+        size_t size_x() const {
+            return arr.dims(0);
+        }
+        size_t size_y() const {
+            return arr.dims(1);
+        }
+        size_t size_z() const {
+            return arr.dims(2);
+        }
+        size_t size(size_t dimension) const {
+            return arr.dims(dimension);
+        };
+        size_t size() const {
+            return arr.elements();
+        };
+
+        /// get a copy of the current matrix data.
+        std::shared_ptr<T> local() const {
+            return std::shared_ptr<T>(arr.host<T>(), [&arr](T* p) {
+                af::freeHost(p);
+            });
+        }
+        af::array get_arr() const {
+            return arr;
+        }
+
+        /// get a copy of the first value in the matrix. 
+        T first() const {
+            return arr.scalar<T>();
+        };
+
+        /// sum all the values in the matrix
+        T sum() const {
+            return af::sum<T>(arr);
+        };
+
+        T max() const {
+            return af::max<T>(arr);
+        };
+        T min() const {
+            return af::min<T>(arr);
+        };
+
+        matrix abs() const {
+            return matrix(af::abs(arr));
+        };
+        matrix sin() const {
+            return matrix(af::sin(arr));
+        };
+        matrix cos() const {
+            return matrix(af::cos(arr));
+        };
+        matrix tan() const {
+            return matrix(af::tan(arr));
+        };
+        matrix asin() const {
+            return matrix(af::asin(arr));
+        };
+        matrix acos() const {
+            return matrix(af::acos(arr));
+        };
+        matrix atan() const {
+            return matrix(af::atan(arr));
+        };
+        matrix log() const {
+            return matrix(af::log(arr));
+        };
+        matrix log2() const {
+            return matrix(af::log2(arr));
+        };
+        matrix log10() const {
+            return matrix(af::log10(arr));
+        };
+        matrix log1p() const {
+            return matrix(af::log1p(arr));
+        };
+        matrix exp() const {
+            return matrix(af::exp(arr));
+        };
+        matrix transpose() const {
+            return matrix(arr.T());
+        };
+        matrix normalize() const {
+            auto mn = min();
+            auto mx = max();
+            return matrix((arr - mn) / (mx - mn));
+        };
+        matrix flat() const {
+            return matrix(af::flat(arr));
+        };
+        matrix histogram(size_t numBins) const {
+            return matrix(af::histogram(arr, numBins));
+        };
+
+        matrix_proxy column(size_t col) const {
+            return matrix_proxy(arr, arr.col(col));
+        };
+        matrix_proxy row(size_t col) const {
+            return matrix_proxy(arr, arr.row(col));
+        };
+
+
+
+
+        template <typename G>
+        matrix<T> convolve(matrix<G> const& filter, af::convMode mode = af::convMode::AF_CONV_DEFAULT, af::convDomain domain = af::convDomain::AF_CONV_AUTO) const {
+            return matrix<T>(af::convolve(arr, filter.arr, mode, domain));
+        };
+        matrix join(size_t dimension, matrix const& second) const {
+            return matrix(af::join(dimension, arr, second.arr));
+        };
+        matrix join(size_t dimension, matrix const& second, matrix const& third) const {
+            return matrix(af::join(dimension, arr, second.arr, third.arr));
+        };
+        matrix join(size_t dimension, matrix const& second, matrix const& third, matrix const& fourth) const {
+            return matrix(af::join(dimension, arr, second.arr, third.arr, fourth.arr));
+        };
+        matrix tile(size_t x, size_t y = 1, size_t z = 1, size_t w = 1) const {
+            return matrix(af::tile(arr, x, y, z, w));
+        }
+
+        friend matrix<bool> operator&&(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs && rhs.arr);
+        };
+        friend matrix<bool> operator&&(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr && rhs);
+        };
+        friend matrix<bool> operator&&(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr && rhs.arr);
+        };
+
+        friend matrix<bool> operator||(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs || rhs.arr);
+        };
+        friend matrix<bool> operator||(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr || rhs);
+        };
+        friend matrix<bool> operator||(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr || rhs.arr);
+        };
+
+        friend matrix<bool> operator==(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs == rhs.arr);
+        };
+        friend matrix<bool> operator==(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr == rhs);
+        };
+        friend matrix<bool> operator==(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr == rhs.arr);
+        };
+        friend matrix<bool> operator!=(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs != rhs.arr);
+        };
+        friend matrix<bool> operator!=(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr != rhs);
+        };
+        friend matrix<bool> operator!=(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr != rhs.arr);
+        };
+        friend matrix<bool> operator>(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs > rhs.arr);
+        };
+        friend matrix<bool> operator>(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr > rhs);
+        };
+        friend matrix<bool> operator>(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr > rhs.arr);
+        };
+        friend matrix<bool> operator>=(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs >= rhs.arr);
+        };
+        friend matrix<bool> operator>=(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr >= rhs);
+        };
+        friend matrix<bool> operator>=(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr >= rhs.arr);
+        };
+        friend matrix<bool> operator<(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs < rhs.arr);
+        };
+        friend matrix<bool> operator<(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr < rhs);
+        };
+        friend matrix<bool> operator<(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr < rhs.arr);
+        };
+        friend matrix<bool> operator<=(T lhs, matrix const& rhs) {
+            return matrix<bool>(lhs <= rhs.arr);
+        };
+        friend matrix<bool> operator<=(matrix const& lhs, T rhs) {
+            return matrix<bool>(lhs.arr <= rhs);
+        };
+        friend matrix<bool> operator<=(matrix const& lhs, matrix const& rhs) {
+            return matrix<bool>(lhs.arr <= rhs.arr);
+        };
+        friend matrix operator+(T lhs, matrix const& rhs) {
+            return matrix(lhs + rhs.arr);
+        };
+        friend matrix operator+(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr + rhs);
+        };
+        friend matrix operator+(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr + rhs.arr);
+        };
+        friend matrix operator-(T lhs, matrix const& rhs) {
+            return matrix(lhs - rhs.arr);
+        };
+        friend matrix operator-(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr - rhs);
+        };
+        friend matrix operator-(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr - rhs.arr);
+        };
+        friend matrix operator*(T lhs, matrix const& rhs) {
+            return matrix(lhs * rhs.arr);
+        };
+        friend matrix operator*(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr * rhs);
+        };
+        friend matrix operator*(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr * rhs.arr);
+        };
+        friend matrix operator/(T lhs, matrix const& rhs) {
+            return matrix(lhs / rhs.arr);
+        };
+        friend matrix operator/(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr / rhs);
+        };
+        friend matrix operator/(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr / rhs.arr);
+        };
+        matrix operator-() const {
+            return matrix(arr.operator-());
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        matrix operator!() const {
+            return matrix(arr.operator!());
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        matrix operator~() const {
+            return matrix(arr.operator~());
+        };
+        matrix& operator+=(T rhs) {
+            arr += rhs;
+            return *this;
+        };
+        matrix& operator-=(T rhs) {
+            arr -= rhs;
+            return *this;
+        };
+        matrix& operator*=(T rhs) {
+            arr *= rhs;
+            return *this;
+        };
+        matrix& operator/=(T rhs) {
+            arr /= rhs;
+            return *this;
+        };
+        matrix& operator+=(matrix const& rhs) {
+            arr += rhs.arr;
+            return *this;
+        };
+        matrix& operator-=(matrix const& rhs) {
+            arr -= rhs.arr;
+            return *this;
+        };
+        matrix& operator*=(matrix const& rhs) {
+            arr *= rhs.arr;
+            return *this;
+        };
+        matrix& operator/=(matrix const& rhs) {
+            arr /= rhs.arr;
+            return *this;
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator&(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr & rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator|(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr | rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator^(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr ^ rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator%(matrix const& lhs, matrix const& rhs) {
+            return matrix(lhs.arr % rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator&(T lhs, matrix const& rhs) {
+            return matrix(lhs & rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator|(T lhs, matrix const& rhs) {
+            return matrix(lhs | rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator^(T lhs, matrix const& rhs) {
+            return matrix(lhs ^ rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator%(T lhs, matrix const& rhs) {
+            return matrix(lhs % rhs.arr);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator&(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr & rhs);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator|(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr | rhs);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator^(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr ^ rhs);
+        };
+        template < typename = typename std::enable_if_t< std::is_integral_v<T> > >
+        friend matrix operator%(matrix const& lhs, T rhs) {
+            return matrix(lhs.arr % rhs);
+        };
+
+
+        GL::string to_string() const {
+            return std::string(af::toString("", arr));
+        };
+    };
+}
+
+
+// debug test from ArrayFire to demo the use of the GPU for computing and display. 
+static int conway_game_of_life() {
+    using namespace af;
+    try {
+        static const int game_w = 2048, game_h = 2048;
+
+        af::info();
+
+        std::cout << "This example demonstrates the Conway's Game of Life "
+            "using ArrayFire"
+            << std::endl
+            << "There are 4 simple rules of Conways's Game of Life"
+            << std::endl
+            << "1. Any live cell with fewer than two live neighbours "
+            "dies, as if caused by under-population."
+            << std::endl
+            << "2. Any live cell with two or three live neighbours lives "
+            "on to the next generation."
+            << std::endl
+            << "3. Any live cell with more than three live neighbours "
+            "dies, as if by overcrowding."
+            << std::endl
+            << "4. Any dead cell with exactly three live neighbours "
+            "becomes a live cell, as if by reproduction."
+            << std::endl
+            << "Each white block in the visualization represents 1 alive "
+            "cell, black space represents dead cells"
+            << std::endl
+            << std::endl;
+
+        std::cout
+            << "The conway_pretty example visualizes all the states in Conway"
+            << std::endl
+            << "Red   : Cells that have died due to under population"
+            << std::endl
+            << "Yellow: Cells that continue to live from previous state"
+            << std::endl
+            << "Green : Cells that are new as a result of reproduction"
+            << std::endl
+            << "Blue  : Cells that have died due to over population"
+            << std::endl
+            << std::endl;
+
+        std::cout
+            << "This examples is throttled so as to be a better visualization"
+            << std::endl;
+
+        af::Window prettyWindow(1024, 1024,
+            R"( Conway's Game Of Life - Visualizing States )");
+        prettyWindow.setPos(32, 32);
+
+        int frame_count = 0;
+
+        // Initialize the kernel array just once
+        GPU::matrix<int> kernel = GPU::matrix<int>::from_vector({ 1, 1, 1, 1, 0, 1, 1, 1, 1 }, 3, 3);
+        GPU::matrix<float> state = (GPU::matrix<float>::random_uniform_matrix(game_h, game_w) > 0.4f).cast<float>();
+        auto display = state.tile(1, 1, 3, 1);
+
+        while (!prettyWindow.close()) {
+            af::timer delay = timer::start();
+
+            prettyWindow.image(display.get_arr());
+            frame_count++;
+
+            // Convolve gets neighbors
+            auto nHood = state.convolve(kernel);
+
+            // Generate conditions for life
+            // state == 1 && nHood < 2 ->> state = 0
+            // state == 1 && nHood > 3 ->> state = 0
+            // else if state == 1 ->> state = 1
+            // state == 0 && nHood == 3 ->> state = 1
+            auto C0 = (nHood == 2);
+            auto C1 = (nHood == 3);
+
+            auto a0 = (state == 1) && (nHood < 2);  // Die of under population
+            auto a1 = (state != 0) && (C0 || C1);   // Continue to live
+            auto a2 = (state == 0) && C1;           // Reproduction
+            auto a3 = (state == 1) && (nHood > 3);  // Over-population
+            
+            display = (a0 + a1).join(2, a1 + a2, a3).cast<float>();
+
+            // Update state
+            state = state * C0.cast<float>() + C1.cast<float>();
+
+            if (frame_count % 60 == 0)
+                std::cout << 1.0 / timer::stop(delay) << " fps\n";
+        }
+    }
+    catch (af::exception& e) {
+        fprintf(stderr, "%s\n", e.what());
+        throw;
+    }
+    return 0;
+}
+
+using namespace af;
+
+
+
+array normalize(array a, float max) {
+    float mx = max * 0.5;
+    float mn = -max * 0.5;
+    return (a - mn) / (mx - mn);
+}
+
+static void swe(Window& win) {
+    // Grid length, number and spacing
+    const unsigned Lx = 1600, nx = Lx + 1;
+    const unsigned Ly = 1600, ny = Ly + 1;
+    const float dx = Lx / (nx - 1);
+    const float dy = Ly / (ny - 1);
+
+    auto ZERO = GPU::matrix<float>::constant(0, nx, ny);
+    auto 
+        um = ZERO, 
+        vm = ZERO;
+    float
+        io = (float)std::floor(Lx / 6.0f),
+        jo = (float)std::floor(Ly / 6.0f),
+        k = 15;
+
+    auto x = GPU::matrix<float>::range(nx).tile(1, ny);
+    auto y = GPU::matrix<float>::range(1, ny, 1, 1).tile(nx, 1);
+
+    // initial condition
+    auto etam =
+        0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
+
+    float m_eta = etam.max();
+    auto eta = etam;
+    float dt = 0.5;
+
+    // conv kernels
+    GPU::matrix<float> h_diff_kernel_arr = GPU::matrix<float>::from_vector({ 9.81f * (dt / dx), 0, -9.81f * (dt / dx) });
+    GPU::matrix<float> h_lap_kernel_arr = GPU::matrix<float>::from_vector({ 0, 1, 0, 1, -4, 1, 0, 1, 0 }, 3, 3);
+
+    unsigned iter = 0;
+    unsigned random_interval = 30;
+
+    while (!win.close()) {
+        if (iter > 2000) {
+            // Initial condition
+            etam = 0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
+            m_eta = etam.max();
+            eta = etam;
+            iter = 0;
+        }
+
+        // raindrops
+        if (iter % 100 == 0 || iter % 130 == 0 || iter % random_interval == 0) {
+            float
+                io = (float)std::floor(rand() % Lx),
+                jo = (float)std::floor(rand() % Ly);
+            random_interval = rand() % 200 + 1;
+            eta += 0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
+        }
+
+        // compute
+        auto up = um + eta.convolve(h_diff_kernel_arr).cast<float>();
+        auto vp = um + eta.convolve(h_diff_kernel_arr.transpose()).cast<float>();
+        auto e = eta.convolve(h_lap_kernel_arr);
+        auto etap = 2 * eta - etam + (2 * dt * dt) / (dx * dy) * e;
+
+        etam = eta;
+        eta = etap;
+        m_eta = etam.max();
+
+        win(0, 0).setColorMap(AF_COLORMAP_BLUE);
+
+        auto histogram = eta.normalize().histogram(15);
+        win(0, 1).setAxesLimits(0, histogram.size(), 0, histogram.max());
+        win(0, 0).image(eta.normalize().get_arr());
+        win(0, 1).hist(histogram.get_arr(), 0, 1, "Normalized Pressure Distribution");
+        win(1, 0).plot(GPU::matrix<unsigned>::range(up.size(1)).cast<float>().get_arr(), vp.column(1).get_arr(), "Pressure at left boundary");
+        win(1, 1).plot(GPU::matrix<float>(eta.cast<float>().column(0)).flat().get_arr(), GPU::matrix<float>(up.column(0)).flat().get_arr(), GPU::matrix<float>(vp.column(0)).flat().get_arr(), "Gradients versus Magnitude at left boundary");  // viz
+
+        win.show();
+
+        iter++;
+    }
+}
+
+int arrayfire_swe() {
+    Window win(1536, 768, "Shallow Water Equations");
+    win.grid(2, 2);
+
+    try {
+        af::info();
+        printf("Simulation of shallow water equations\n");
+        swe(win);
+    }
+    catch (af::exception& e) {
+        fprintf(stderr, "%s\n", e.what());
+        throw;
+    }
+
+    return 0;
+}
+
+
+
+
+
+
+
+
 #pragma region "Definitions"
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
@@ -51,6 +766,28 @@
 #pragma endregion
 
 int main() {
+    if (1) {
+        using namespace GPU;
+        print(matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }).to_string());
+        print((matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }) + 2.0f).to_string());
+
+        print((matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }) * matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f })).to_string());
+
+        matrix<int> two_by_four_matrix = matrix<int>::from_vector({ 0, 1, 2, 3, 4, 5, 6, 7 });
+        print((two_by_four_matrix % 2).to_string());
+
+
+
+
+
+
+    }
+
+
+
+    (void)conway_game_of_life();
+    (void)arrayfire_swe();
+
     // check GL::StaticContainer
     for (int i = 0; i < 1000000; ++i) {
         GL::StaticContainer<8> static_temp;
@@ -404,9 +1141,9 @@ int main() {
                         });
                 }
                 if (1) {
-                    var wrap(GL::make_shared<any>(GL::string("TEST")));
+                    GL::var wrap(GL::make_shared<any>(GL::string("TEST")));
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
-                        wrap = var(GL::make_shared<any>(GL::string("TEST")));
+                        wrap = GL::var(GL::make_shared<any>(GL::string("TEST")));
                         if (auto ptr = wrap.p_data.load_fast()) {
                             if (auto ptr2 = ptr->cast<GL::shared_ptr<GL::string>>()) {
                                 EXPECT_EQ(*ptr2, GL::string("TEST"));
