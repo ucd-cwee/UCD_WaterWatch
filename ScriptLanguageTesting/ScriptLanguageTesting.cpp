@@ -103,43 +103,10 @@ namespace GPU {
             : arr(std::move(rhs)) 
         {};
 
-
     public:
-        class matrix_proxy {
-            template <typename F> friend class matrix;
-        protected:
-            af::array arr_clone;
-            af::array::array_proxy arr;
-
-        public:
-            explicit matrix_proxy(af::array const& _arr, af::array::array_proxy const& _arr_proxy)
-                : arr_clone{ _arr }
-                , arr{ _arr_proxy }
-            {}
-            matrix_proxy() = default;
-            matrix_proxy(matrix_proxy const&) = default;
-            matrix_proxy(matrix_proxy &&) = default;
-            matrix_proxy& operator=(matrix_proxy const&) = default;
-            matrix_proxy& operator=(matrix_proxy&&) = default;
-            ~matrix_proxy() = default;
-
-            af::array::array_proxy get_arr() const {
-                return arr;
-            };
-
-
-
-
-        };
-
-
-
         matrix() 
             : arr(0, type)
         {};
-        matrix(matrix_proxy const& rhs)
-            : arr{ rhs.get_arr() }
-        {}
         matrix(size_t num_elements_dim0)
             : arr(num_elements_dim0, type)
         {};
@@ -157,6 +124,9 @@ namespace GPU {
 
         static matrix range(size_t x, size_t y = 1, size_t z = 1, int seq_dim = -1) {
             return matrix(af::range(x,y,z, 1, seq_dim, type));
+        };
+        static matrix sequence(T start, T end, T step = (T)1) {
+            return matrix((af::array)(af::array(af::seq(start, end, step)).as(type)));
         };
 
         static matrix constant(T val, size_t num_elements_dim0) {
@@ -245,11 +215,16 @@ namespace GPU {
             return arr.scalar<T>();
         };
 
+        
+
         /// sum all the values in the matrix
         T sum() const {
             return af::sum<T>(arr);
         };
-
+        /// avg all the values in the matrix
+        T avg() const {
+            return sum() / static_cast<T>(size());
+        };
         T max() const {
             return af::max<T>(arr);
         };
@@ -307,16 +282,25 @@ namespace GPU {
         matrix histogram(size_t numBins) const {
             return matrix(af::histogram(arr, numBins));
         };
-
-        matrix_proxy column(size_t col) const {
-            return matrix_proxy(arr, arr.col(col));
+        matrix column(size_t _col) const {
+            return matrix(af::array(arr.col(_col)));
         };
-        matrix_proxy row(size_t col) const {
-            return matrix_proxy(arr, arr.row(col));
+        matrix row(size_t _row) const {
+            return matrix(af::array(arr.row(_row)));
+        };        
+        matrix inverse() const {
+            return matrix(af::inverse(arr));
         };
-
-
-
+        matrix matrix_multiplication(matrix const& rhs) const {
+            return matrix(af::matmul(arr, rhs.arr));
+        };
+        matrix pow(double exponent) const {
+            return matrix(af::pow(arr, exponent));
+        };
+        // extract the diagonal from the matrix
+        matrix diagonal() const {
+            return matrix(af::diag(arr));
+        };
 
         template <typename G>
         matrix<T> convolve(matrix<G> const& filter, af::convMode mode = af::convMode::AF_CONV_DEFAULT, af::convDomain domain = af::convDomain::AF_CONV_AUTO) const {
@@ -537,6 +521,30 @@ namespace GPU {
             return matrix(lhs.arr % rhs);
         };
 
+        class linear_regression {
+        public:
+            // solve for the coefficients or weights in a linear regression, using the provided features and measurements. 
+            static matrix solve_for_weights(matrix const& measurements, matrix const& features) {
+                // return ((X^T * X)^-1) * X^T * Y;
+                return (features.transpose().matrix_multiplication(features)).inverse().matrix_multiplication(features.transpose()).matrix_multiplication(measurements);
+                // return matrix(af::solve(features.get_arr(), measurements.get_arr()));
+            };
+            // evaluate for the standard error of the linear regression
+            static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
+                auto prediction = features.matrix_multiplication(weights);
+                auto std_err = (((measurements - prediction).pow(2.0).sum() / std::max<double>(1.0, static_cast<double>(features.size_x()) - 2.0)) * (features.transpose().matrix_multiplication(features)).inverse()).pow(0.5);
+                return std_err.diagonal();
+            };
+            // evaluate for the standard error of the linear regression
+            static matrix t_statistic(matrix const& weights, matrix const& std_err) {
+                return weights / std_err;
+            };
+        };
+
+
+
+
+
 
         GL::string to_string() const {
             return std::string(af::toString("", arr));
@@ -546,7 +554,7 @@ namespace GPU {
 
 
 // debug test from ArrayFire to demo the use of the GPU for computing and display. 
-static int conway_game_of_life() {
+static int arrayfire_conway_game_of_life() {
     using namespace af;
     try {
         static const int game_w = 2048, game_h = 2048;
@@ -640,102 +648,90 @@ static int conway_game_of_life() {
     }
     return 0;
 }
-
-using namespace af;
-
-
-
-array normalize(array a, float max) {
-    float mx = max * 0.5;
-    float mn = -max * 0.5;
-    return (a - mn) / (mx - mn);
-}
-
-static void swe(Window& win) {
-    // Grid length, number and spacing
-    const unsigned Lx = 1600, nx = Lx + 1;
-    const unsigned Ly = 1600, ny = Ly + 1;
-    const float dx = Lx / (nx - 1);
-    const float dy = Ly / (ny - 1);
-
-    auto ZERO = GPU::matrix<float>::constant(0, nx, ny);
-    auto 
-        um = ZERO, 
-        vm = ZERO;
-    float
-        io = (float)std::floor(Lx / 6.0f),
-        jo = (float)std::floor(Ly / 6.0f),
-        k = 15;
-
-    auto x = GPU::matrix<float>::range(nx).tile(1, ny);
-    auto y = GPU::matrix<float>::range(1, ny, 1, 1).tile(nx, 1);
-
-    // initial condition
-    auto etam =
-        0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
-
-    float m_eta = etam.max();
-    auto eta = etam;
-    float dt = 0.5;
-
-    // conv kernels
-    GPU::matrix<float> h_diff_kernel_arr = GPU::matrix<float>::from_vector({ 9.81f * (dt / dx), 0, -9.81f * (dt / dx) });
-    GPU::matrix<float> h_lap_kernel_arr = GPU::matrix<float>::from_vector({ 0, 1, 0, 1, -4, 1, 0, 1, 0 }, 3, 3);
-
-    unsigned iter = 0;
-    unsigned random_interval = 30;
-
-    while (!win.close()) {
-        if (iter > 2000) {
-            // Initial condition
-            etam = 0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
-            m_eta = etam.max();
-            eta = etam;
-            iter = 0;
-        }
-
-        // raindrops
-        if (iter % 100 == 0 || iter % 130 == 0 || iter % random_interval == 0) {
-            float
-                io = (float)std::floor(rand() % Lx),
-                jo = (float)std::floor(rand() % Ly);
-            random_interval = rand() % 200 + 1;
-            eta += 0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
-        }
-
-        // compute
-        auto up = um + eta.convolve(h_diff_kernel_arr).cast<float>();
-        auto vp = um + eta.convolve(h_diff_kernel_arr.transpose()).cast<float>();
-        auto e = eta.convolve(h_lap_kernel_arr);
-        auto etap = 2 * eta - etam + (2 * dt * dt) / (dx * dy) * e;
-
-        etam = eta;
-        eta = etap;
-        m_eta = etam.max();
-
-        win(0, 0).setColorMap(AF_COLORMAP_BLUE);
-
-        auto histogram = eta.normalize().histogram(15);
-        win(0, 1).setAxesLimits(0, histogram.size(), 0, histogram.max());
-        win(0, 0).image(eta.normalize().get_arr());
-        win(0, 1).hist(histogram.get_arr(), 0, 1, "Normalized Pressure Distribution");
-        win(1, 0).plot(GPU::matrix<unsigned>::range(up.size(1)).cast<float>().get_arr(), vp.column(1).get_arr(), "Pressure at left boundary");
-        win(1, 1).plot(GPU::matrix<float>(eta.cast<float>().column(0)).flat().get_arr(), GPU::matrix<float>(up.column(0)).flat().get_arr(), GPU::matrix<float>(vp.column(0)).flat().get_arr(), "Gradients versus Magnitude at left boundary");  // viz
-
-        win.show();
-
-        iter++;
-    }
-}
-
-int arrayfire_swe() {
+static int arrayfire_shallow_water() {
+    using namespace af;
     Window win(1536, 768, "Shallow Water Equations");
     win.grid(2, 2);
 
     try {
         af::info();
         printf("Simulation of shallow water equations\n");
-        swe(win);
+
+        // Grid length, number and spacing
+        const unsigned Lx = 1600, nx = Lx + 1;
+        const unsigned Ly = 1600, ny = Ly + 1;
+        const float dx = Lx / (nx - 1);
+        const float dy = Ly / (ny - 1);
+
+        auto ZERO = GPU::matrix<float>::constant(0, nx, ny);
+        auto
+            um = ZERO,
+            vm = ZERO;
+        float
+            io = (float)std::floor(Lx / 6.0f),
+            jo = (float)std::floor(Ly / 6.0f),
+            k = 15;
+
+        auto x = GPU::matrix<float>::range(nx).tile(1, ny);
+        auto y = GPU::matrix<float>::range(1, ny, 1, 1).tile(nx, 1);
+
+        // initial condition
+        auto etam =
+            0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
+
+        float m_eta = etam.max();
+        auto eta = etam;
+        float dt = 0.5;
+
+        // conv kernels
+        GPU::matrix<float> h_diff_kernel_arr = GPU::matrix<float>::from_vector({ 9.81f * (dt / dx), 0, -9.81f * (dt / dx) });
+        GPU::matrix<float> h_lap_kernel_arr = GPU::matrix<float>::from_vector({ 0, 1, 0, 1, -4, 1, 0, 1, 0 }, 3, 3);
+
+        unsigned iter = 0;
+        unsigned random_interval = 30;
+
+        while (!win.close()) {
+            if (iter > 2000) {
+                // Initial condition
+                etam = 0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
+                m_eta = etam.max();
+                eta = etam;
+                iter = 0;
+            }
+
+            // raindrops
+            if (iter % 100 == 0 || iter % 130 == 0 || iter % random_interval == 0) {
+                float
+                    io = (float)std::floor(rand() % Lx),
+                    jo = (float)std::floor(rand() % Ly);
+                random_interval = rand() % 200 + 1;
+                eta += 0.01f * ((-((x - io) * (x - io) + (y - jo) * (y - jo))) / (k * k)).exp();
+            }
+
+            // compute
+            auto up = um + eta.convolve(h_diff_kernel_arr).cast<float>();
+            auto vp = um + eta.convolve(h_diff_kernel_arr.transpose()).cast<float>();
+            auto e = eta.convolve(h_lap_kernel_arr);
+            auto etap = 2 * eta - etam + (2 * dt * dt) / (dx * dy) * e;
+
+            etam = eta;
+            eta = etap;
+            m_eta = etam.max();
+
+            win(0, 0).setColorMap(AF_COLORMAP_BLUE);
+
+            auto histogram = eta.normalize().histogram(15);
+            win(0, 1).setAxesLimits(0, histogram.size(), 0, histogram.max());
+            win(0, 0).image(eta.normalize().get_arr());
+            win(0, 1).hist(histogram.get_arr(), 0, 1, "Normalized Pressure Distribution");
+            win(1, 0).plot(GPU::matrix<unsigned>::range(up.size(1)).cast<float>().get_arr(), vp.column(1).get_arr(), "Pressure at left boundary");
+            win(1, 1).plot(GPU::matrix<float>(eta.cast<float>().column(0)).flat().get_arr(), GPU::matrix<float>(up.column(0)).flat().get_arr(), GPU::matrix<float>(vp.column(0)).flat().get_arr(), "Gradients versus Magnitude at left boundary");  // viz
+
+            win.show();
+
+            iter++;
+        }
+
     }
     catch (af::exception& e) {
         fprintf(stderr, "%s\n", e.what());
@@ -744,10 +740,130 @@ int arrayfire_swe() {
 
     return 0;
 }
+static int arrayfire_fields() {
+    using namespace af;
+
+    const static float MINIMUM = -3.0f;
+    const static float MAXIMUM = 3.0f;
+    const static float STEP = 0.18f;
+
+    try {
+        af::info();
+        af::Window myWindow(1024, 1024, "2D Vector Field example: ArrayFire");
+
+        myWindow.grid(2, 2);
+
+        auto dataRange = GPU::matrix<float>::sequence(MINIMUM, MAXIMUM, STEP);
+        auto x = dataRange.tile(1, dataRange.size_x());
+        auto y = dataRange.transpose().tile(dataRange.size_x(), 1);
+
+        // x.eval();
+        // y.eval();
+
+        float scale = 2.0f;
+        while (!myWindow.close()) {
+            auto points = x.flat().join(1, y.flat());
+            auto saddle = x.flat().join(1, -1.0f * y.flat());
+            auto bvals = (scale * ((x * x) + (y * y))).sin();
+            auto hbowl = GPU::matrix<float>::constant(1.0f, x.size()).join(1, bvals.flat());
+            // hbowl.eval();
+
+            // 2D points
+            myWindow(0, 0).vectorField(points.get_arr(), saddle.get_arr(), "Saddle point");
+            myWindow(0, 1).vectorField(points.get_arr(), hbowl.get_arr(), "hilly bowl (in a loop with varying amplitude)");
+
+            // 2D coordinates
+            myWindow(1, 0).vectorField(
+                (x.flat() * 2.0f).get_arr(), 
+                y.flat().get_arr(),
+                x.flat().get_arr(),
+                (-y.flat()).get_arr(),
+                "Saddle point");
+            myWindow(1, 1).vectorField(
+                (x.flat() * 2.0f).get_arr(),
+                y.flat().get_arr(),
+                GPU::matrix<float>::constant(1.0f, x.size()).get_arr(),
+                bvals.flat().get_arr(),
+                "hilly bowl (in a loop with varying amplitude)");
+
+            myWindow.show();
+
+            scale -= 0.0010f;
+            if (scale < -0.01f) { scale = 2.0f; }
+        };
+
+    }
+    catch (af::exception& e) {
+        fprintf(stderr, "%s\n", e.what());
+        throw;
+    }
+    return 0; 
+};
+
+
+static int arrayfire_linear_regression() {
+    using namespace af;
+    try {
+        auto TV_Ads = GPU::matrix<double>::from_vector(std::vector<double>{ 
+            230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
+        });
+        auto Radio_Ads = GPU::matrix<double>::from_vector(std::vector<double>{
+            37.8, 39.3, 45.9, 41.3, 10.8, 48.9, 32.8, 19.6, 2.1, 2.6, 5.8, 24.0, 35.1, 7.6, 32.9, 47.7, 36.6, 39.6, 20.5, 23.9, 27.7, 5.1, 15.9, 16.9, 12.6, 3.5, 29.3, 16.7, 27.1, 16.0, 28.3, 17.4, 1.5, 20.0, 1.4, 4.1, 43.8, 49.4, 26.7, 37.7, 22.3, 33.4, 27.7, 8.4, 25.7, 22.5, 9.9, 41.5, 15.8, 11.7, 3.1, 9.6, 41.7, 46.2, 28.8, 49.4, 28.1, 19.2, 49.6, 29.5, 2.0, 42.7, 15.5, 29.6, 42.8, 9.3, 24.6, 14.5, 27.5, 43.9, 30.6, 14.3, 33.0, 5.7, 24.6, 43.7, 1.6, 28.5, 29.9, 7.7, 26.7, 4.1, 20.3, 44.5, 43.0, 18.4, 27.5, 40.6, 25.5, 47.8, 4.9, 1.5, 33.5, 36.5, 14.0, 31.6, 3.5, 21.0, 42.3, 41.7, 4.3, 36.3, 10.1, 17.2, 34.3, 46.4, 11.0, .3, .4, 26.9, 8.2, 38.0, 15.4, 20.6, 46.8, 35.0, 14.3, .8, 36.9, 16.0, 26.8, 21.7, 2.4, 34.6, 32.3, 11.8, 38.9, .0, 49.0, 12.0, 39.6, 2.9, 27.2, 33.5, 38.6, 47.0, 39.0, 28.9, 25.9, 43.9, 17.0, 35.4, 33.2, 5.7, 14.8, 1.9, 7.3, 49.0, 40.3, 25.8, 13.9, 8.4, 23.3, 39.7, 21.1, 11.6, 43.5, 1.3, 36.9, 18.4, 18.1, 35.8, 18.1, 36.8, 14.7, 3.4, 37.6, 5.2, 23.6, 10.6, 11.6, 20.9, 20.1, 7.1, 3.4, 48.9, 30.2, 7.8, 2.3, 10.0, 2.6, 5.4, 5.7, 43.0, 21.3, 45.1, 2.1, 28.7, 13.9, 12.1, 41.1, 10.8, 4.1, 42.0, 35.6, 3.7, 4.9, 9.3, 42.0, 8.6
+        });
+        auto Newspaper_Ads = GPU::matrix<double>::from_vector(std::vector<double>{
+            69.2, 45.1, 69.3, 58.5, 58.4, 75.0, 23.5, 11.6, 1.0, 21.2, 24.2, 4.0, 65.9, 7.2, 46.0, 52.9, 114.0, 55.8, 18.3, 19.1, 53.4, 23.5, 49.6, 26.2, 18.3, 19.5, 12.6, 22.9, 22.9, 40.8, 43.2, 38.6, 30.0, .3, 7.4, 8.5, 5.0, 45.7, 35.1, 32.0, 31.6, 38.7, 1.8, 26.4, 43.3, 31.5, 35.7, 18.5, 49.9, 36.8, 34.6, 3.6, 39.6, 58.7, 15.9, 60.0, 41.4, 16.6, 37.7, 9.3, 21.4, 54.7, 27.3, 8.4, 28.9, .9, 2.2, 10.2, 11.0, 27.2, 38.7, 31.7, 19.3, 31.3, 13.1, 89.4, 20.7, 14.2, 9.4, 23.1, 22.3, 36.9, 32.5, 35.6, 33.8, 65.7, 16.0, 63.2, 73.4, 51.4, 9.3, 33.0, 59.0, 72.3, 10.9, 52.9, 5.9, 22.0, 51.2, 45.9, 49.8, 100.9, 21.4, 17.9, 5.3, 59.0, 29.7, 23.2, 25.6, 5.5, 56.5, 23.2, 2.4, 10.7, 34.5, 52.7, 25.6, 14.8, 79.2, 22.3, 46.2, 50.4, 15.6, 12.4, 74.2, 25.9, 50.6, 9.2, 3.2, 43.1, 8.7, 43.0, 2.1, 45.1, 65.6, 8.5, 9.3, 59.7, 20.5, 1.7, 12.9, 75.6, 37.9, 34.4, 38.9, 9.0, 8.7, 44.3, 11.9, 20.6, 37.0, 48.7, 14.2, 37.7, 9.5, 5.7, 50.5, 24.3, 45.2, 34.6, 30.7, 49.3, 25.6, 7.4, 5.4, 84.8, 21.6, 19.4, 57.6, 6.4, 18.4, 47.4, 17.0, 12.8, 13.1, 41.8, 20.3, 35.2, 23.7, 17.6, 8.3, 27.4, 29.7, 71.8, 30.0, 19.6, 26.6, 18.2, 3.7, 23.4, 5.8, 6.0, 31.6, 3.6, 6.0, 13.8, 8.1, 6.4, 66.2, 8.7
+        });
+        auto Sales_Revenue = GPU::matrix<double>::from_vector(std::vector<double>{
+            22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
+        });
+        auto Basic = GPU::matrix<double>::constant(1.0, Sales_Revenue.size());
+
+        auto features = Basic.join(1, TV_Ads).join(1, Radio_Ads).join(1, Newspaper_Ads); 
+
+        /* From Excel, ANOVA Linear Regression:
+                    Coefficients	Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%	
+        Intercept	4.640017533	    0.309318899	    15.00075667	    2.50772E-34	    4.029977548	    5.250057519	
+        230.1	    0.054400553	    0.001380292	    39.41233891	    8.02236E-95	    0.051678334	    0.057122771	
+        37.8	    0.106889232	    0.008507645	    12.56390337	    6.55379E-27	    0.09011042	    0.123668044
+        69.2	    3.57871E-06	    0.005831777	    0.000613656	    0.999511	    -0.011497876	0.011505033
+        */
+
+        auto weights = GPU::matrix<double>::linear_regression::solve_for_weights(
+            Sales_Revenue, // measurements to be predicted
+            features // appends each vector as the next column in the matrix
+        );               
+        auto std_err = GPU::matrix<double>::linear_regression::standard_error(
+            Sales_Revenue,
+            features, 
+            weights
+        );
+        auto t_statistics = GPU::matrix<double>::linear_regression::t_statistic(weights, std_err);
+
+
+        auto std_dev = std_err * std::sqrt((1.0 / static_cast<double>(Sales_Revenue.size())) + (std::pow(features.matrix_multiplication(weights).avg() - Sales_Revenue.avg(), 2.0) / (features.matrix_multiplication(weights) - Sales_Revenue.avg()).pow(2.0).avg()));
+
+
+        
+
+
+        // (Sales_Revenue.avg() - features.matrix_multiplication(weights).avg()) / 
+
+
+        af_print(weights.get_arr());
+        af_print(std_err.get_arr());
+        af_print(t_statistics.get_arr());
+        af_print(std_dev.get_arr());
 
 
 
-
+        
+    }
+    catch (af::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return -1;
+    }
+    return 0;    
+};
 
 
 
@@ -776,17 +892,14 @@ int main() {
         matrix<int> two_by_four_matrix = matrix<int>::from_vector({ 0, 1, 2, 3, 4, 5, 6, 7 });
         print((two_by_four_matrix % 2).to_string());
 
-
-
-
-
-
+        //(void)arrayfire_conway_game_of_life();
+        //(void)arrayfire_shallow_water();
+        //(void)arrayfire_fields();
+        (void)arrayfire_linear_regression();
     }
 
 
 
-    (void)conway_game_of_life();
-    (void)arrayfire_swe();
 
     // check GL::StaticContainer
     for (int i = 0; i < 1000000; ++i) {
