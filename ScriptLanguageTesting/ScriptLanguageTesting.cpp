@@ -193,7 +193,7 @@ namespace GPU {
         size_t size_z() const {
             return arr.dims(2);
         }
-        size_t size(size_t dimension) const {
+        size_t size(unsigned int dimension) const {
             return arr.dims(dimension);
         };
         size_t size() const {
@@ -279,13 +279,13 @@ namespace GPU {
         matrix flat() const {
             return matrix(af::flat(arr));
         };
-        matrix histogram(size_t numBins) const {
+        matrix histogram(unsigned int numBins) const {
             return matrix(af::histogram(arr, numBins));
         };
-        matrix column(size_t _col) const {
+        matrix column(int _col) const {
             return matrix(af::array(arr.col(_col)));
         };
-        matrix row(size_t _row) const {
+        matrix row(int _row) const {
             return matrix(af::array(arr.row(_row)));
         };        
         matrix inverse() const {
@@ -306,16 +306,16 @@ namespace GPU {
         matrix<T> convolve(matrix<G> const& filter, af::convMode mode = af::convMode::AF_CONV_DEFAULT, af::convDomain domain = af::convDomain::AF_CONV_AUTO) const {
             return matrix<T>(af::convolve(arr, filter.arr, mode, domain));
         };
-        matrix join(size_t dimension, matrix const& second) const {
+        matrix join(int dimension, matrix const& second) const {
             return matrix(af::join(dimension, arr, second.arr));
         };
-        matrix join(size_t dimension, matrix const& second, matrix const& third) const {
+        matrix join(int dimension, matrix const& second, matrix const& third) const {
             return matrix(af::join(dimension, arr, second.arr, third.arr));
         };
-        matrix join(size_t dimension, matrix const& second, matrix const& third, matrix const& fourth) const {
+        matrix join(int dimension, matrix const& second, matrix const& third, matrix const& fourth) const {
             return matrix(af::join(dimension, arr, second.arr, third.arr, fourth.arr));
         };
-        matrix tile(size_t x, size_t y = 1, size_t z = 1, size_t w = 1) const {
+        matrix tile(unsigned int x, unsigned int y = 1, unsigned int z = 1, unsigned int w = 1) const {
             return matrix(af::tile(arr, x, y, z, w));
         }
 
@@ -721,7 +721,7 @@ static int arrayfire_shallow_water() {
             win(0, 0).setColorMap(AF_COLORMAP_BLUE);
 
             auto histogram = eta.normalize().histogram(15);
-            win(0, 1).setAxesLimits(0, histogram.size(), 0, histogram.max());
+            win(0, 1).setAxesLimits(0, static_cast<float>(histogram.size()), 0, histogram.max());
             win(0, 0).image(eta.normalize().get_arr());
             win(0, 1).hist(histogram.get_arr(), 0, 1, "Normalized Pressure Distribution");
             win(1, 0).plot(GPU::matrix<unsigned>::range(up.size(1)).cast<float>().get_arr(), vp.column(1).get_arr(), "Pressure at left boundary");
@@ -754,8 +754,8 @@ static int arrayfire_fields() {
         myWindow.grid(2, 2);
 
         auto dataRange = GPU::matrix<float>::sequence(MINIMUM, MAXIMUM, STEP);
-        auto x = dataRange.tile(1, dataRange.size_x());
-        auto y = dataRange.transpose().tile(dataRange.size_x(), 1);
+        auto x = dataRange.tile(1, (unsigned int)dataRange.size_x());
+        auto y = dataRange.transpose().tile((unsigned int)dataRange.size_x(), 1);
 
         // x.eval();
         // y.eval();
@@ -799,8 +799,6 @@ static int arrayfire_fields() {
     }
     return 0; 
 };
-
-
 static int arrayfire_linear_regression() {
     using namespace af;
     try {
@@ -882,7 +880,7 @@ static int arrayfire_linear_regression() {
 #pragma endregion
 
 int main() {
-    if (1) {
+    if (0) {
         using namespace GPU;
         print(matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }).to_string());
         print((matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }) + 2.0f).to_string());
@@ -897,9 +895,6 @@ int main() {
         //(void)arrayfire_fields();
         (void)arrayfire_linear_regression();
     }
-
-
-
 
     // check GL::StaticContainer
     for (int i = 0; i < 1000000; ++i) {
@@ -1496,17 +1491,17 @@ int main() {
             GL::parallel::For(0, 1000000, [](size_t i) {});
             if (auto timer = sw.debug_timer("No Sin()")) {
                 GL::parallel::For(0, 1000000, [](size_t i) {
-                    (void)GL::degree(i);
+                    (void)GL::degree(static_cast<float>(i));
                 });
             }
             if (auto timer = sw.debug_timer("Sin()")) {
                 GL::parallel::For(0, 1000000, [](size_t i) {
-                    (void)GL::degree(i).sin();
+                    (void)GL::degree(static_cast<float>(i)).sin();
                 });
             }
             if (auto timer = sw.debug_timer("SinFast()")) {
                 GL::parallel::For(0, 1000000, [](size_t i) {
-                    (void)GL::degree(i).sin_fast();
+                    (void)GL::degree(static_cast<float>(i)).sin_fast();
                 });
             }
 
@@ -1605,6 +1600,14 @@ int main() {
 
 
         }
+
+        // can automatically cast from a foot to float...
+        EXPECT_EQ(100, (int)GL::type_of<float>().instance_by_value(GL::foot(100.0f)).cast<float>());
+        // can automatically cast from a foot to double...
+        EXPECT_EQ(100, (int)GL::type_of<double>().instance_by_value(GL::foot(100.0f)).cast<double>());
+        // can automatically cast from a foot to a meter...
+        EXPECT_EQ(100, (int)(float)GL::type_of<GL::meter>().instance_by_value(GL::foot(GL::meter(100.0f))).cast<GL::meter>());
+
 
 
 
