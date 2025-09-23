@@ -1474,7 +1474,8 @@ namespace GL {
 
 #pragma warning(push)
 #pragma warning(disable : 4244) // suppressing warning on casting size_t to double, etc.
-    // const value_t& to This&&
+    // Allow casting from a GL::value, double, etc. to a GL::value, double, etc.
+    // If the types do not work, it will return an empty container. User must double-check the return type is non-void before use. 
     template <typename T> __forceinline GL::any GL::impl::instance_funcs<T>::instance_by_value(GL::any const& from) {
         using namespace GL;
 

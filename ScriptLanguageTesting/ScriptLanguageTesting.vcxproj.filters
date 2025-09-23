@@ -30,5 +30,6 @@
     <ClInclude Include="types.h" />
     <ClInclude Include="units.h" />
     <ClInclude Include="datetime.h" />
+    <ClInclude Include="functions.h" />
   </ItemGroup>
 </Project>

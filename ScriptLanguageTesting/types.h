@@ -116,6 +116,7 @@ namespace GL {
         };
     };
 
+    // atomic type information about a C++ or scripted class 
     class type {
     public:
         // these qualifiers explicitly change the type from the base. 
@@ -167,6 +168,7 @@ namespace GL {
         bool is_base() const noexcept {  return 0 == (hash & ~0x8FFFFFFFFFFFFFFF); };
         bool is_void() const noexcept { return get_base_hash() == (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2); };
         bool is_cpp_type() const noexcept { return hash & 0x8000000000000000; };
+        bool is_any() const noexcept { return get_base_hash() == (util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2); };
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
         // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
@@ -256,6 +258,29 @@ namespace GL {
         void destroy(void*) const; // p->~T();
     };
 
+    // owner for a scripted type. types can be generated from this to be shared / manipulated as normal. Checks-out and returns space on the heap that can be accessed outside of the type itself. 
+    class script_type {
+    private:
+        size_t ticket;
+    public:
+        script_type(GL::string name) : ticket{ impl::checkout_scripted_type(std::move(name)) } {};
+        script_type(script_type const&) = delete;
+        script_type(script_type &&) = delete;
+        script_type& operator=(script_type const&) = delete;
+        script_type& operator=(script_type&&) = delete;
+        ~script_type() {
+            impl::return_scripted_type(ticket);
+        };
+
+        operator type() const {
+            return GL::type(ticket);
+        };
+        type load() const {
+            return GL::type(ticket);
+        }
+    };
+
+    // get the type information for a c++ type.
     template<typename T> __forceinline static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
         static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
@@ -1230,9 +1255,9 @@ namespace GL {
             : m_type(type)
             , m_objects()
         {
-            //if (type.is_cpp_type()) {
-            //    throw std::runtime_error("Should not use a cpp-type with a dynamic object.");
-            //}
+            if (type.is_cpp_type()) {
+                throw std::runtime_error("Should not use a cpp-type with a dynamic object.");
+            }
         };
         // Cast from one class to another (e.g. from class C : public A {} to class A {})
         dynamic_object(GL::type const& castedType, dynamic_object const& parent)
@@ -1291,7 +1316,6 @@ namespace GL {
     };
 
     namespace impl {
-
         // const This& to This&&
         template <typename T> __forceinline GL::any instance_funcs<T>::instance_by_copy(GL::any const& from) {
             using base_type = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
@@ -1332,7 +1356,6 @@ namespace GL {
             reinterpret_cast<T*>(p)->~T();
         };
     }
-
 };
 
 #include "units.h"

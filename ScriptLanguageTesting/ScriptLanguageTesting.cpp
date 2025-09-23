@@ -47,6 +47,7 @@
 
 #include "units.h"
 #include "datetime.h"
+#include "functions.h"
 
 #pragma endregion
 
@@ -863,9 +864,6 @@ static int arrayfire_linear_regression() {
     return 0;    
 };
 
-
-
-
 #pragma region "Definitions"
 #define SINGLE_ARG(...) __VA_ARGS__
 #define EXPECT_EQ_PRINTF(A,B) [a = (A), b = (B)]()->bool{ \
@@ -879,8 +877,51 @@ static int arrayfire_linear_regression() {
 #define EXPECT_NE(a, b) if (a == b){ print(GL::printf("FAILURE AT LINE %i\n", (int)__LINE__)); }
 #pragma endregion
 
+#include <stdlib.h>
+
 int main() {
+    // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
     if (0) {
+        //print(std::string(_ARRAYFIRELIB));
+
+        //std::string env_new;
+        //if (1) {
+        //    char* env_result;
+        //    EXPECT_EQ(0, ::_dupenv_s(&env_result, nullptr, "PATH"));
+        //    env_new = env_result;
+        //    if (env_result) free(env_result);
+        //    print(env_new);
+        //    std::cout << std::endl;
+        //}
+        //if (env_new.find(_ARRAYFIRELIB) == std::string::npos) {
+        //    env_new += ";";
+        //    env_new += _ARRAYFIRELIB;
+
+        //    print(env_new);
+        //    std::cout << std::endl;
+
+        //    EXPECT_NE(0, SetEnvironmentVariable("PATH", env_new.c_str()));
+
+        //    if (1) {
+        //        char* env_result;
+        //        EXPECT_EQ(0, ::_dupenv_s(&env_result, nullptr, "PATH"));
+        //        env_new = env_result;
+        //        if (env_result) free(env_result);
+        //        print(env_new);
+        //        std::cout << std::endl;
+        //    }
+
+        //}
+
+
+
+        //EXPECT_NE(0, SetEnvironmentVariable("PATH", _ARRAYFIRELIB));
+        //EXPECT_NE(0, SetEnvironmentVariable("AF_PATH", _ARRAYFIREDIR));
+        //EXPECT_NE(0, SetEnvironmentVariable("AF_PATH_v3", _ARRAYFIREDIR));
+
+        print(af::getDevice());
+        print(af::getDeviceCount());
+
         using namespace GPU;
         print(matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }).to_string());
         print((matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }) + 2.0f).to_string());
@@ -896,28 +937,117 @@ int main() {
         (void)arrayfire_linear_regression();
     }
 
-    // check GL::StaticContainer
-    for (int i = 0; i < 1000000; ++i) {
-        GL::StaticContainer<8> static_temp;
-        static_temp.New<int>(100); // made locally using the local storage
-        EXPECT_EQ(100, static_temp.Get<int>()); 
-        if (1) {
-            GL::StaticContainer<8> static_temp_2; // made globally using the new/delete system.
-            static_temp_2.New<std::string>("I AM A STRING! Look at me!");
-            static_temp = std::move(static_temp_2);
-        }
-        EXPECT_EQ(std::string("I AM A STRING! Look at me!"), static_temp.Get<std::string>());
-    }
     GL::parallel::For(0, 1000000, [&](size_t i) {});
     GL::parallel::Std_For(0, 1000000, [&](size_t i) {});
 
     GL::stopwatch sw;
     while (true) {
+        if (1) {
+            GL::function_signature sig(
+                "sum", 
+                GL::type_of<int>(), 
+                { { "a", GL::type_of<int const&>() }, { "b", GL::type_of<int const&>() } },
+                {}
+            );
+            EXPECT_EQ(true, sig.can_call_with_cast({ GL::type_of<int>(), GL::type_of<int>() }));
+            EXPECT_EQ(true, sig.can_call_with_free_cast({ GL::type_of<int>(), GL::type_of<int>() }));
+
+            EXPECT_EQ(true, sig.can_call_with_cast({ GL::type_of<int const&>(), GL::type_of<int const&>() }));
+            EXPECT_EQ(true, sig.can_call_with_free_cast({ GL::type_of<int const&>(), GL::type_of<int const&>() }));
+
+            EXPECT_EQ(false, sig.can_call_with_cast({ GL::type_of<int const&>() }));
+            EXPECT_EQ(false, sig.can_call_with_free_cast({ GL::type_of<int const&>() }));
+        }
+        if (1) {
+            GL::function_signature sig(
+                "sum", 
+                GL::type_of<int>(), 
+                { { "a", GL::type_of<int>() }, { "b", GL::type_of<int>() } },
+                { GL::any{ 0 }, GL::any{ 0 } }
+            );
+            EXPECT_EQ(true, sig.can_call_with_cast({ GL::type_of<int>(), GL::type_of<int>() }));
+            EXPECT_EQ(true, sig.can_call_with_free_cast({ GL::type_of<int>(), GL::type_of<int>() }));
+
+            EXPECT_EQ(true, sig.can_call_with_cast({ GL::type_of<int const&>(), GL::type_of<int const&>() }));
+            EXPECT_EQ(false, sig.can_call_with_free_cast({ GL::type_of<int const&>(), GL::type_of<int const&>() }));
+            EXPECT_EQ(true, sig.can_call_with_cast({  }));
+            EXPECT_EQ(true, sig.can_call_with_free_cast({  }));
+        }
+        if (1) {
+            GL::details::Explicit_Function_Impl function(std::function([](int i) -> int {
+                EXPECT_EQ(i, 100);
+                return i + 1;
+            }));
+            EXPECT_EQ(101, function.operator()({ 100 }).cast<int>());
+        }
+        if (1) {
+            GL::details::Explicit_Function_Impl function([](int i) -> int {
+                return i + 1;
+            }, { 0 });
+            EXPECT_EQ(101, function.operator()({ 100 }).cast<int>());
+            EXPECT_EQ(1, function.operator()({}).cast<int>());
+        }
+        if (1) {
+            GL::details::Explicit_Function_Impl function([]() -> double {
+                return 1.0;
+            });
+            EXPECT_EQ(1.0, function.operator()({}).cast<double>());
+        }
+        if (1) {
+            class temp {
+            public:                
+                int x;
+                double y;
+
+                temp() : x{ 0 }, y{ 0 } {};
+                temp(int X, double Y) : x{ X }, y{ Y } {};
+                temp(temp const&) = default;
+                temp(temp &&) = default;
+                temp& operator=(temp const&) = default;
+                temp& operator=(temp&&) = default;
+                ~temp() = default;
+
+                static double FUNC() {
+                    return 100.0;
+                };
+                double SUM() {
+                    return x+y;
+                };
+            }; 
+
+            if (1) {
+                GL::details::Attribute_Access_Impl function(&temp::x);
+                EXPECT_EQ(100, function.operator()({ temp(100, 200.0) }).cast<int>());
+
+                auto T_ptr = GL::make_shared<temp>();
+                if (1) {
+                    T_ptr->x = 100;
+                    T_ptr->y = 200.0;
+                    EXPECT_EQ(100, function.operator()({ GL::any(GL::shared_ptr<temp>(T_ptr)) }).cast<int>());
+                }
+                if (1) {
+                    T_ptr->x = 500;
+                    EXPECT_EQ(500, function.operator()({ GL::any(GL::shared_ptr<temp>(T_ptr)) }).cast<int>());
+                }
+            }
+            if (1) {
+                GL::details::Static_Function_Impl function(&temp::FUNC);
+                EXPECT_EQ(100.0, function({}).cast<double>());
+            }
+            if (1) {
+                GL::details::Default_Member_Function_Impl function(&temp::SUM);
+                EXPECT_EQ(300.0, function({ temp(100, 200.0) }).cast<double>());
+            }
+
+        }
+
+
+
         // prove that GL::shared_ptr supports custom deleter functions. Note that these are always called on a different thread than the pointer was made on... 
         GL::shared_ptr<int> temp_ptr(new int(100), [](int* p) {
             EXPECT_EQ(*p, 100);
             delete p;
-            });
+        });
 
         // check GL::value and GL::datetime
         if (1) {
@@ -1132,8 +1262,8 @@ int main() {
             EXPECT_EQ(ti.name(), "void");
         }
         if (1) {
-            auto string_hash = GL::impl::checkout_scripted_type("string");
-            GL::type ti(string_hash);
+            GL::script_type custom_type("string");
+            GL::type ti = custom_type;
             EXPECT_EQ(false, ti.is_void());
             EXPECT_EQ(true, ti.is_base());
             EXPECT_EQ(false, ti.is_cpp_type());
@@ -1150,7 +1280,29 @@ int main() {
             EXPECT_EQ(true, ti.is_ref());
             EXPECT_EQ(false, ti.is_temp());
             EXPECT_EQ(ti.name(), "const string&");
-            GL::impl::return_scripted_type(string_hash);
+
+            // a second type (with the same name!) being named by a different class should have a different hash, and be recognized as a different type. 
+            GL::script_type custom_type2("string");
+            GL::type ti2 = custom_type2;
+            EXPECT_EQ(false, ti2.is_void());
+            EXPECT_EQ(true, ti2.is_base());
+            EXPECT_EQ(false, ti2.is_cpp_type());
+            EXPECT_EQ(false, ti2.is_const());
+            EXPECT_EQ(false, ti2.is_ref());
+            EXPECT_EQ(false, ti2.is_temp());
+            EXPECT_EQ(ti2.name(), "string");
+            ti2 |= GL::type::Const;
+            ti2 |= GL::type::Reference;
+            EXPECT_EQ(false, ti2.is_void());
+            EXPECT_EQ(false, ti2.is_base());
+            EXPECT_EQ(false, ti2.is_cpp_type());
+            EXPECT_EQ(true, ti2.is_const());
+            EXPECT_EQ(true, ti2.is_ref());
+            EXPECT_EQ(false, ti2.is_temp());
+            EXPECT_EQ(ti2.name(), "const string&");
+
+            EXPECT_EQ(false, (bool)(ti == ti2));
+            EXPECT_EQ(true, (bool)(ti != ti2));
         }
 
         // check GL::any, including casting and multi-threaded overwrites and access. 
