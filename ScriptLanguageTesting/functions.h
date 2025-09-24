@@ -1,11 +1,16 @@
 #pragma once
 #include "types.h"
 #include "Parallel.h"
+#include "units.h"
 
+// Functions wrapper
 namespace GL {
-
     // function name, function qualifiers (e.g. static), return type, argument types, and (optionally) argument default values. 
     class function_signature {
+    private:
+        size_t 
+            hash_m;
+
     public:
         enum function_state {
             Normal = 0, // default -- meaningless. 
@@ -31,8 +36,42 @@ namespace GL {
         GL::type
             returns_m;
 
-    public:
+    private:
+        void eval_hash() {            
+            size_t new_hash = 0;
+            for (auto& x : argument_types_m)
+                GL::util::hash(new_hash, x.get_hash());
+            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash_m), new_hash);
+        };
 
+    public:
+        size_t get_base_hash() const {
+            if (hash_m == 0) const_cast<function_signature*>(this)->eval_hash();            
+            return hash_m;
+        };
+        size_t get_hash() const {
+            return get_base_hash() | state_m;
+        };
+        friend bool operator==(function_signature const& lhs, function_signature const& rhs) {
+            return lhs.get_hash() == rhs.get_hash();
+        };
+        friend bool operator!=(function_signature const& lhs, function_signature const& rhs) {
+            return !operator==(lhs, rhs);
+        };
+        friend bool operator>(function_signature const& lhs, function_signature const& rhs) {
+            return lhs.get_hash() > rhs.get_hash();
+        };
+        friend bool operator>=(function_signature const& lhs, function_signature const& rhs) {
+            return lhs.get_hash() >= rhs.get_hash();
+        };
+        friend bool operator<(function_signature const& lhs, function_signature const& rhs) {
+            return !operator>=(lhs, rhs);
+        };
+        friend bool operator<=(function_signature const& lhs, function_signature const& rhs) {
+            return !operator>(lhs, rhs);
+        };
+
+    public:
         function_signature() = default;
         // The provided defaults are scooted to the end of the argument list, such as:
            //  argA, argB, argC = default1, argD = default2;        
@@ -40,6 +79,7 @@ namespace GL {
             : name_m{ name }
             , returns_m{ returns }
             , state_m(function_state::Normal)
+            , hash_m{ 0 }
         {
             for (auto& x : defaults)
                 argument_defaults_m.push_back(x.fast());
@@ -133,7 +173,10 @@ namespace GL {
 
             // fast path
             template <typename iter_type> any operator()(iter_type begin, iter_type const& end) const {
-                static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
+                if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
+                    static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
+                }
+
                 static thread_local std::array<any::fast_any*, 16> inputs;
                 std::memset(&inputs[0], 0, sizeof(inputs));
                 short pos{ 0 };
@@ -144,6 +187,10 @@ namespace GL {
                     inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
                 }
                 return do_call(&inputs[0]);
+            };
+            // fastest path
+            any operator()() const {
+                return do_call(nullptr);
             };
             // fast path
             any operator()(std::vector<any::fast_any>& params) const {
@@ -165,6 +212,7 @@ namespace GL {
 
         };
     };
+
     typedef GL::shared_ptr<details::Proxy_Function_Base> Proxy_Function;
 
     namespace details {        
@@ -282,19 +330,34 @@ namespace GL {
                     return any{};
                 }
                 else if constexpr (std::is_same_v<any, T>) {
-                    return begin[0]->cast<Class*>()->*m_attr;
+                    if (begin[0]->m_casted_type.is_const()) {
+                        return GL::any(begin[0]->cast<Class*>()->*m_attr) + (GL::type::Const | GL::type::Reference);
+                    }
+                    else {
+                        return GL::any(begin[0]->cast<Class*>()->*m_attr) + GL::type::Reference;
+                    }                    
                 }
                 else if constexpr (std::is_pointer<T>::value) {
                     GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();
                     auto out = GL::shared_ptr<actualT>(GL::shared_ptr<void>(ptr));
                     out.set_pointer_without_modifying_control_block((*ptr).*m_attr);
-                    return out;
+                    if (begin[0]->m_casted_type.is_const()) {
+                        return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                    }
+                    else {
+                        return GL::any(out) + GL::type::Reference;
+                    }
                 }
                 else {
                     GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();         
                     auto out = GL::shared_ptr<actualT>(GL::shared_ptr<void>(ptr));
                     out.set_pointer_without_modifying_control_block(&(ptr.get()->*m_attr));
-                    return out;
+                    if (begin[0]->m_casted_type.is_const()) {
+                        return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                    }
+                    else {
+                        return GL::any(out) + GL::type::Reference;
+                    }
                 }
             };
             T Class::* m_attr;
@@ -413,148 +476,190 @@ namespace GL {
             };
 
         private:
-            __declspec(noinline) virtual any do_call(any::fast_any** begin) const override {
+            decltype(auto) do_call_impl(any::fast_any** begin) const {
                 if (Class* parent = begin[0]->cast<Class*>()) {
                     if constexpr (numArgs == 15) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast(), begin[13]->cast(), begin[14]->cast(), begin[15]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast(), begin[13]->cast(), begin[14]->cast(), begin[15]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 14) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast(), begin[13]->cast(), begin[14]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast(), begin[13]->cast(), begin[14]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 13) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast(), begin[13]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast(), begin[13]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 12) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast(), begin[12]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 11) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast(), begin[11]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 10) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast(), begin[10]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 9) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast(),
                             begin[9]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 8) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast(), begin[8]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 7) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast(), begin[7]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 6) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast(), begin[6]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 5) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast(), begin[5]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 4) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast(), begin[4]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 3) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast(), begin[3]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 2) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast(), begin[2]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 1) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
                             begin[1]->cast()
-                        );
+                            );
                         else return (parent->*m_attr)(
                             begin[1]->cast()
-                        );
+                            );
                     }
                     else if constexpr (numArgs == 0) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)();
                         else return (parent->*m_attr)();
                     }
                 }
-                return any{};
+                throw std::runtime_error("Cannot call member function on a null object.");
+            };
+
+            virtual any do_call(any::fast_any** begin) const override {
+                if (Class* parent = begin[0]->cast<Class*>()) {
+                    if constexpr (std::is_same_v<returnType, void>)
+                        do_call_impl(begin);
+                    else {
+                        if constexpr (std::is_same_v<any, returnType>) {
+                            return do_call_impl(begin);
+                        }
+                        else if constexpr (std::is_reference_v<R>) {
+                            decltype(auto) ref = do_call_impl(begin);
+
+                            GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();
+                            auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
+                            out.set_pointer_without_modifying_control_block(const_cast<returnType*>(&ref));
+                            if (begin[0]->m_casted_type.is_const()) {
+                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                            }
+                            else {
+                                return GL::any(out) + GL::type::Reference;
+                            }
+                        }
+                        else if constexpr (std::is_pointer_v<R>) {
+                            decltype(auto) ref = do_call_impl(begin);
+
+                            GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();
+                            auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
+                            out.set_pointer_without_modifying_control_block(const_cast<returnType*>(ref));
+                            if (begin[0]->m_casted_type.is_const()) {
+                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                            }
+                            else {
+                                return GL::any(out) + GL::type::Reference;
+                            }
+                        }
+                        else {
+                            return do_call_impl(begin);
+                        }
+                    }
+                }
+                return any{};                
             };
 
             R(Class::* m_attr)(T...);
@@ -608,7 +713,7 @@ namespace GL {
             };
 
         private:
-            __declspec(noinline) virtual any do_call(any::fast_any** begin) const override {
+            decltype(auto) do_call_impl(any::fast_any** begin) const {
                 if (const Class* parent = begin[0]->cast<const Class*>()) {
                     if constexpr (numArgs == 15) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)(
@@ -747,6 +852,48 @@ namespace GL {
                     else if constexpr (numArgs == 0) {
                         if constexpr (std::is_same_v<returnType, void>) (parent->*m_attr)();
                         else return (parent->*m_attr)();
+                    }
+                }
+                throw std::runtime_error("Cannot call member function on a null object.");
+            };
+
+            virtual any do_call(any::fast_any** begin) const override {
+                if (const Class* parent = begin[0]->cast<const Class*>()) {
+                    if constexpr (std::is_same_v<returnType, void>)
+                        do_call_impl(begin);
+                    else {
+                        if constexpr (std::is_same_v<any, returnType>) {
+                            return do_call_impl(begin);
+                        }
+                        else if constexpr (std::is_reference_v<R>) {
+                            decltype(auto) ref = do_call_impl(begin);
+
+                            GL::shared_ptr<const Class> ptr = begin[0]->cast< GL::shared_ptr<const Class> >();
+                            auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
+                            out.set_pointer_without_modifying_control_block(const_cast<returnType*>(&ref));
+                            if (begin[0]->m_casted_type.is_const()) {
+                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                            }
+                            else {
+                                return GL::any(out) + GL::type::Reference;
+                            }
+                        }
+                        else if constexpr (std::is_pointer_v<R>) {
+                            decltype(auto) ref = do_call_impl(begin);
+
+                            GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();
+                            auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
+                            out.set_pointer_without_modifying_control_block(const_cast<returnType*>(ref));
+                            if (begin[0]->m_casted_type.is_const()) {
+                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                            }
+                            else {
+                                return GL::any(out) + GL::type::Reference;
+                            }
+                        }
+                        else {
+                            return do_call_impl(begin);
+                        }
                     }
                 }
                 return any{};
@@ -927,34 +1074,288 @@ namespace GL {
     };
 
     // Convert nearly any function or function pointer to a callable, generic proxy function. 
-    template<typename Func> Proxy_Function make_callable(Func&& func, size_t stateModifier = 0, std::vector<any>&& defaults = {}) {
+    template<typename Func> Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        std::vector<any>&& defaults = {}
+    ) {
+        Proxy_Function out;
         typedef decltype(details::detail::function_signature(func)) function_header;
         if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};            
             auto* function_impl = new details::Explicit_Function_Impl(std::move(func), std::move(defaults));
             function_impl->m_signature.state_m |= function_signature::Static;
             function_impl->m_signature.state_m |= function_signature::Constant;
             //function_impl->m_signature.state |= FunctionState::Async; // static functions are assumed to be async-friendly. 
-            return GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
         }
         else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;            
             auto* function_impl = new details::Attribute_Access_Impl(std::move(func), std::move(defaults));
             function_impl->m_signature.state_m |= function_signature::Constant; // accessing a member object is assumed to be constant -- it does not necessarily change anything just to "look".
             function_impl->m_signature.state_m |= function_signature::Async; // accessing a member object is assumed to be async-friendly.
-            return GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
         }
         else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
-            return details::Member_Function_Impl(std::move(func), std::move(defaults));
+            out = details::Member_Function_Impl(std::move(func), std::move(defaults));
         }
         else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};            
             auto* function_impl = new details::Static_Function_Impl(std::move(func), std::move(defaults));
             function_impl->m_signature.state_m |= function_signature::Static;
             function_impl->m_signature.state_m |= function_signature::Constant;
             //function_impl->m_signature.state_m |= function_signature::Async; // static functions are assumed to be async-friendly. 
-            return GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
         }
         else {
             throw std::runtime_error("Did not handle conversion of provided function to a PROXY_FUNCTION.");
         }
+
+        out->m_signature.name_m = name;
+        return out;
     };
+
+    // Convert nearly any function or function pointer to a callable, generic proxy function. 
+    template<typename Func> Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func, 
+        size_t stateModifier, 
+        std::vector<any>&& defaults = {}
+    ) {
+        auto out = make_callable(name, std::move(func), std::move(defaults));
+        out->m_signature.state_m |= stateModifier;
+        return out;
+    };
+
+    template<typename Func> Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        size_t stateModifier,
+        std::vector<any>&& defaults,
+        std::vector<std::pair<GL::string, GL::type>> const& arguments
+    ) {
+        auto out = make_callable(name, std::move(func), stateModifier, std::move(defaults));
+
+        if (arguments.size() > 0) {
+            for (int i = 0; (i < arguments.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
+                out->m_signature.argument_names_m[i] = arguments[i].first;
+                //if (out->m_signature.argument_types_m[i].is_any()) {
+                    out->m_signature.argument_types_m[i] = arguments[i].second;
+                //}
+            }
+            out->m_signature.evaluate_if_template_function();
+        }
+        return out;
+    };
+
+    template<typename Func> Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        size_t stateModifier,
+        std::vector<any>&& defaults,
+        std::vector<GL::string> const& argument_names
+    ) {
+        auto out = make_callable(name, std::move(func), stateModifier, std::move(defaults));
+
+        if (argument_names.size() > 0) {
+            for (int i = 0; (i < argument_names.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
+                out->m_signature.argument_names_m[i] = argument_names[i];
+            }
+        }
+        return out;
+    };
+
+    template<typename Func> Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        std::vector<any>&& defaults,
+        std::vector<std::pair<GL::string, GL::type>> const& arguments
+    ) {
+        auto out = make_callable(name, std::move(func), std::move(defaults));
+
+        if (arguments.size() > 0) {
+            for (int i = 0; (i < arguments.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
+                out->m_signature.argument_names_m[i] = arguments[i].first;
+               // if (out->m_signature.argument_types_m[i].is_any()) {
+                    out->m_signature.argument_types_m[i] = arguments[i].second;
+               // }
+            }
+            out->m_signature.evaluate_if_template_function();
+        }
+        return out;
+    };
+
+    template<typename Func> Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        std::vector<any>&& defaults,
+        std::vector<GL::string> const& argument_names
+    ) {
+        auto out = make_callable(name, std::move(func), std::move(defaults));
+
+        if (argument_names.size() > 0) {
+            for (int i = 0; (i < argument_names.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
+                out->m_signature.argument_names_m[i] = argument_names[i];
+            }
+        }
+        return out;
+    };
+
+#define decl_func(F, ...) make_callable(GL::string(#F).right_of_last("::"), F, __VA_ARGS__)
+
+    namespace details {
+        template <class From, class To, class = void>
+        struct is_explicitly_convertible_to_impl : std::false_type {};
+
+        template <class From, class To>
+        struct is_explicitly_convertible_to_impl<From, To, std::void_t<decltype(static_cast<To>(std::declval<From>()))>> : std::true_type {};
+
+        template <class From, class To>
+        struct is_explicitly_convertible_to : is_explicitly_convertible_to_impl<From, To> {};
+
+        template <class From, class To>
+        inline constexpr bool is_explicitly_convertible_to_v = is_explicitly_convertible_to<From, To>::value;
+
+        template <typename T>
+        static constexpr bool is_numeric_type() {
+            return
+                std::is_same_v<T, double> ||
+                std::is_same_v<T, float> ||
+                std::is_same_v<T, long> ||
+                std::is_same_v<T, int> ||
+                std::is_same_v<T, char> ||
+                std::is_same_v<T, long double> ||
+                std::is_same_v<T, long long> ||
+                std::is_same_v<T, unsigned long> ||
+                std::is_same_v<T, unsigned long long> ||
+                std::is_same_v<T, unsigned char> ||
+                std::is_same_v<T, unsigned int> ||
+                std::is_same_v<T, GL::value> ||
+                std::is_base_of<GL::value, T>::value;
+        };
+    };
+
+#pragma warning(push)
+#pragma warning(disable : 4244) // suppressing warning on casting size_t to double, etc.
+    // Creates a Proxy_Function whose job is to convert from "From" types to "To" types. 
+    // Supports static conversions (e.g. double to int) and polymorphic conversions (e.g. GL::foot& to GL::value&)
+    template<typename From_Requested, typename To_Requested>
+    __declspec(noinline) Proxy_Function make_converter() {
+        using From = typename std::decay< From_Requested >::type;
+        using To = typename std::decay< To_Requested >::type;
+
+        constexpr static bool is_convertable = details::is_explicitly_convertible_to<From, To>::value;
+        constexpr static bool is_bidir_convertable = details::is_explicitly_convertible_to<To, From>::value;
+        constexpr static bool is_polymorphic = std::is_base_of<To, From>::value;
+
+        if constexpr (is_polymorphic) {
+            // memorize the connection, regardless of outcome
+            static const bool Added{ GL::type_of<To>().add_base(GL::type_of<From>()) };
+        }
+        
+        Proxy_Function out;
+        if constexpr (is_polymorphic && ((std::is_reference_v<To_Requested> || std::is_pointer_v<To_Requested> || std::is_same_v<GL::shared_ptr<To>, To_Requested> || std::is_same_v<std::shared_ptr<To>, To_Requested>) || (!is_convertable))) {
+            out = GL::make_callable(GL::type_of<To>().name(), [](GL::shared_ptr<From> from) -> GL::shared_ptr<To> {
+                return GL::shared_ptr<To>(from);
+            });
+            out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+        }
+        else {
+            if constexpr (is_convertable) {
+                out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
+                    return static_cast<To>(from);
+                });
+                out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+            }
+            else {
+                if constexpr (details::is_numeric_type<From>() && details::is_numeric_type<To>()) {
+                    if constexpr (std::is_same_v<From, GL::value> || std::is_base_of<GL::value, From>::value) {
+                        if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
+                            out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
+                                return To(from);
+                            });
+                            out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                        }
+                        else {
+                            out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
+                                return static_cast<To>((float)from);
+                            });
+                            out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                        }
+                    }
+                    else if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
+                        out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
+                            return To((float)from);
+                        });
+                        out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                    }
+                    else {
+                        out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
+                            return static_cast<To>(from);
+                        });
+                        out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                    }
+                }
+                else {
+                    out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
+                        return To(from);
+                    });
+                    out->m_signature.state_m |= GL::function_signature::Static;
+                }
+            }
+        }
+        return out;
+    };
+#pragma warning(pop)
+
+};
+
+// std::hash< GL::function_signature > 
+namespace std {
+    template <> struct hash<GL::function_signature> {
+        std::size_t operator()(const GL::function_signature& k) const {
+            return k.get_base_hash();
+        };
+    };
+};
+
+// Sorted Proxy_Functions with support for caching
+namespace GL {
+    // quick hash of functions that are sorted by 
+    class FunctionCache {
+    public:
+        GL::atomic_shared_ptr < concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function> > 
+            cache;
+
+        FunctionCache()
+            : cache(GL::make_shared<concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function>>())
+        {};
+        void invalidate() {
+            cache.store(GL::make_shared<concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function>>());
+        };
+        void emplace(GL::function_signature const& key, Proxy_Function const& value) {
+            auto f = cache.load_fast();
+            f->insert({ key, value });
+        };
+        Proxy_Function find(GL::function_signature const& key) {
+            auto f = cache.load_fast();
+            if (auto F = f->find(key); F != f->end()) {
+                return F->second;
+            }
+            else {
+                return nullptr;
+            }            
+        };
+
+    };
+
+    class Functions {
+    public:
+        FunctionCache cache;
+
+
+
+
+
+
+    };
+
 
 };

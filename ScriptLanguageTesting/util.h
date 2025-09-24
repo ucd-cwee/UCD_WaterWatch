@@ -16,6 +16,9 @@ namespace GL {
     namespace util {
         inline static void hash(size_t& seed) { };
         template <typename T, typename... Rest> inline static void hash(size_t& seed, T const& v, Rest const&... rest) {
+            if constexpr (std::is_same_v<size_t, typename std::remove_reference_t<typename std::decay<T>>>) {
+                seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            }
             if constexpr (std::is_same_v<double, typename std::remove_reference_t<typename std::decay<T>>>) {
                 seed ^= *(size_t*)(void*)(&v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
             }

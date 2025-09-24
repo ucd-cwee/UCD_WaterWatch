@@ -179,6 +179,10 @@ namespace GL {
 
         GL::string name() const; 
 
+        size_t get_hash() const {
+            return hash;
+        };
+
         // Operators
         friend bool operator==(const type& a, const type& b) noexcept { return a.hash == b.hash; };
         friend bool operator!=(const type& a, const type& b) noexcept { return a.hash != b.hash; };
@@ -695,27 +699,27 @@ namespace GL {
             m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
             return *this;
         };
-        bool operator&(size_t p_modifiers) const {
+        bool operator&(int p_modifiers) const {
             return m_casted_type & p_modifiers;
         };
-        any operator|(size_t p_modifiers) const {
+        any operator|(int p_modifiers) const {
             return any(m_ptr, m_casted_type | p_modifiers);
         };
-        any operator+(size_t p_modifiers) const {
+        any operator+(int p_modifiers) const {
             return any(m_ptr, m_casted_type + p_modifiers);
         };
-        any operator-(size_t p_modifiers) const {
+        any operator-(int p_modifiers) const {
             return any(m_ptr, m_casted_type - p_modifiers);
         };
-        any& operator|=(size_t p_modifiers) {
+        any& operator|=(int p_modifiers) {
             m_casted_type |= p_modifiers;
             return *this;
         };
-        any& operator+=(size_t p_modifiers) {
+        any& operator+=(int p_modifiers) {
             m_casted_type += p_modifiers;
             return *this;
         };
-        any& operator-=(size_t p_modifiers) {
+        any& operator-=(int p_modifiers) {
             m_casted_type -= p_modifiers;
             return *this;
         };
@@ -1356,6 +1360,17 @@ namespace GL {
             reinterpret_cast<T*>(p)->~T();
         };
     }
+};
+
+namespace std {
+    _NODISCARD inline std::string to_string(GL::type const& _Val) { // convert string to string
+        return _Val.name().to_string();
+    };
+    template <> struct hash<GL::type> {
+        std::size_t operator()(const GL::type& k) const {
+            return k.get_hash();
+        };
+    };
 };
 
 #include "units.h"

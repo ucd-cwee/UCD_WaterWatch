@@ -881,7 +881,7 @@ static int arrayfire_linear_regression() {
 
 int main() {
     // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
-    if (1) {
+    if (0) {
         //print(std::string(_ARRAYFIRELIB));
 
         //std::string env_new;
@@ -1015,6 +1015,12 @@ int main() {
                 double CONST_SUM() const {
                     return x + y;
                 };
+                int& Increment() {
+                    return x;
+                };
+                const int& Get() const {
+                    return x;
+                };
             }; 
 
             if (1) {
@@ -1034,7 +1040,7 @@ int main() {
             }
             if (1) {
                 GL::details::Static_Function_Impl function(&temp::FUNC);
-                EXPECT_EQ(100.0, function({}).cast<double>());
+                EXPECT_EQ(100.0, function().cast<double>());
             }
             if (1) {
                 GL::details::Default_Member_Function_Impl function(&temp::SUM);
@@ -1045,12 +1051,105 @@ int main() {
                 EXPECT_EQ(300.0, function({ temp(100, 200.0) }).cast<double>());
             }
 
-            EXPECT_EQ(300.0, GL::make_callable(&temp::CONST_SUM)->operator()({ temp(100, 200.0) }).cast<double>());
-            EXPECT_EQ(300.0, GL::make_callable(&temp::SUM)->operator()({ temp(100, 200.0) }).cast<double>());
-            EXPECT_EQ(100, GL::make_callable(&temp::x)->operator()({ temp(100, 200.0) }).cast<int>());
-            EXPECT_EQ(100.0, GL::make_callable(&temp::FUNC)->operator()({  }).cast<double>());
+            EXPECT_EQ(300.0, GL::make_callable("CONST_SUM", &temp::CONST_SUM)->operator()({temp(100, 200.0)}).cast<double>());
+            EXPECT_EQ(300.0, GL::make_callable("SUM", &temp::SUM)->operator()({ temp(100, 200.0) }).cast<double>());
+            EXPECT_EQ(100, GL::make_callable("x", &temp::x)->operator()({ temp(100, 200.0) }).cast<int>());
+            EXPECT_EQ(100.0, GL::make_callable("FUNC", &temp::FUNC)->operator()().cast<double>());
+
+            EXPECT_EQ(decl_func(&temp::CONST_SUM)->m_signature.name_m, "CONST_SUM");
+
+
+            decl_func(&temp::CONST_SUM, GL::function_signature::Constant, {}, { "parent" });
+            EXPECT_EQ("int&", decl_func(&temp::x, GL::function_signature::Async, {}, {{"parent", GL::type_of<temp&>()}})->operator()({temp(100, 200.0)}).m_casted_type.name());
+            EXPECT_EQ("const int&", decl_func(&temp::x, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", GL::type_of<temp const&>() } })->operator()({ GL::any(temp(100, 200.0)) + GL::type::Const }).m_casted_type.name());
+
+            GL::decl_func(&temp::x);
+            GL::decl_func(&temp::y, {}, {});
+
+
+            EXPECT_EQ("int&", GL::decl_func(&temp::Increment)->operator()({ temp(100, 200.0) }).m_casted_type.name());
+            EXPECT_EQ("const int&", GL::decl_func(&temp::Get)->operator()({ GL::any(temp(100, 200.0)) + GL::type::Const }).m_casted_type.name());
+
+            if (1) {
+                GL::any Temp;
+                if (1) {
+                    Temp = GL::decl_func(&temp::Get)->operator()({ GL::any(temp(100, 200.0)) + GL::type::Const });
+                }
+                EXPECT_EQ(100, Temp.cast<int>());
+            }
+
+            if (1) {
+                auto converter_func = GL::make_callable("int", [](double x) -> int {
+                    return static_cast<int>(x);
+                }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static);
+                auto to_convert = GL::any(100.0).fast();
+
+                EXPECT_EQ(100, (*converter_func)(&to_convert, &to_convert + 1).cast<int>());
+            }
+            if (1) {
+                auto to_convert = GL::any(100.0).fast();
+                EXPECT_EQ(100, (*GL::make_converter<double, int>())(&to_convert, &to_convert + 1).cast<int>());
+            }
+            if (1) {
+                auto to_convert = GL::any(GL::foot(100.0f)).fast();
+                EXPECT_EQ(100, (*GL::make_converter<GL::foot, int>())(&to_convert, &to_convert + 1).cast<int>());
+            }
+            if (1) {
+                auto to_convert = GL::any(100).fast();
+                EXPECT_EQ(GL::foot(100.0f), (*GL::make_converter<int, GL::foot>())(&to_convert, &to_convert + 1).cast<GL::foot>());
+            }
+            if (1) {
+                auto to_convert = GL::any(GL::meter(100.0f)).fast();
+                EXPECT_EQ(GL::meter(100.0f), (*GL::make_converter<GL::meter, GL::foot>())(&to_convert, &to_convert + 1).cast<GL::foot>());
+            }
+            // because value and can constructed from a meter, and the user is requesting as-value, it will construct a new object.
+            if (1) {
+                auto to_convert = GL::any(GL::meter(100.0f)).fast();
+                EXPECT_EQ(GL::meter(100.0f), (*GL::make_converter<GL::meter, GL::value>())(&to_convert, &to_convert + 1).cast<GL::value>());
+            }
+            // because temp and can constructed from a temp2, and the user is requesting as-value, it will construct a new object.
+            if (1) {
+                class temp2 final : public temp {};
+                auto to_convert = GL::any(temp2()).fast();
+                EXPECT_EQ(0, (*GL::make_converter<temp2, temp>())(&to_convert, &to_convert + 1).cast<temp>().x);
+            }
+            // because foot is not a base of meter, it will construct a new object.
+            if (1) {
+                auto to_convert = GL::any(GL::meter(100.0f)).fast();
+                EXPECT_EQ(GL::meter(100.0f), (*GL::make_converter<GL::meter, GL::foot&>())(&to_convert, &to_convert + 1).cast<GL::foot>());
+            }
+            // because a value is base of meter AND we are requesting a reference or pointer, this will perform a polymorphic cast.
+            if (1) {
+                auto to_convert = GL::any(GL::meter(100.0f)).fast();
+                EXPECT_EQ(GL::meter(100.0f), (*GL::make_converter<GL::meter, GL::value&>())(&to_convert, &to_convert + 1).cast<GL::value>());
+            }
+            // because a temp is base of temp2 AND we are requesting a reference or pointer, this will perform a polymorphic cast.
+            if (1) {
+                class temp2 final : public temp {};
+                auto to_convert = GL::any(temp2()).fast();
+                EXPECT_EQ(0, (*GL::make_converter<temp2, temp&>())(&to_convert, &to_convert + 1).cast<temp>().x);
+            }
+
+
+
+            if (1) {
+                GL::script_type Type("CustomString");
+                auto callable = GL::make_callable("custom_function", [&Type](GL::dynamic_object const& x) {
+                    EXPECT_EQ(x.m_type, Type.load());
+                    return x.m_type;
+                }, 0, {}, { { "Parent", Type.load() } });
+                auto temp_obj = GL::make_shared< GL::dynamic_object >(Type.load());
+                EXPECT_EQ((*callable)({ temp_obj }).cast<GL::type>(), Type.load());
+            }
+
+
+
 
         }
+
+
+
+
 
 
 
