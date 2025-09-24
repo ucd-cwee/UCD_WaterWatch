@@ -881,7 +881,7 @@ static int arrayfire_linear_regression() {
 
 int main() {
     // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
-    if (0) {
+    if (1) {
         //print(std::string(_ARRAYFIRELIB));
 
         //std::string env_new;
@@ -912,15 +912,14 @@ int main() {
         //    }
 
         //}
-
-
-
+        
         //EXPECT_NE(0, SetEnvironmentVariable("PATH", _ARRAYFIRELIB));
         //EXPECT_NE(0, SetEnvironmentVariable("AF_PATH", _ARRAYFIREDIR));
         //EXPECT_NE(0, SetEnvironmentVariable("AF_PATH_v3", _ARRAYFIREDIR));
 
         print(af::getDevice());
         print(af::getDeviceCount());
+        af::info();
 
         using namespace GPU;
         print(matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }).to_string());
@@ -1013,6 +1012,9 @@ int main() {
                 double SUM() {
                     return x+y;
                 };
+                double CONST_SUM() const {
+                    return x + y;
+                };
             }; 
 
             if (1) {
@@ -1038,6 +1040,15 @@ int main() {
                 GL::details::Default_Member_Function_Impl function(&temp::SUM);
                 EXPECT_EQ(300.0, function({ temp(100, 200.0) }).cast<double>());
             }
+            if (1) {
+                GL::details::Const_Member_Function_Impl function(&temp::CONST_SUM);
+                EXPECT_EQ(300.0, function({ temp(100, 200.0) }).cast<double>());
+            }
+
+            EXPECT_EQ(300.0, GL::make_callable(&temp::CONST_SUM)->operator()({ temp(100, 200.0) }).cast<double>());
+            EXPECT_EQ(300.0, GL::make_callable(&temp::SUM)->operator()({ temp(100, 200.0) }).cast<double>());
+            EXPECT_EQ(100, GL::make_callable(&temp::x)->operator()({ temp(100, 200.0) }).cast<int>());
+            EXPECT_EQ(100.0, GL::make_callable(&temp::FUNC)->operator()({  }).cast<double>());
 
         }
 
