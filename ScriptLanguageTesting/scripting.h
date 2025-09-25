@@ -1041,7 +1041,6 @@ namespace GL {
                     }
                 };
 
-
             };
 
             /// <summary>

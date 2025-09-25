@@ -1405,6 +1405,32 @@ int main() {
         }
 #endif // << NO LEAK
 
+        if (1) {
+            GL::scope::impl::RootScope root;
+            auto& std_namespace = root.make_namespace("std");
+            auto& std_string_namespace = std_namespace.make_namespace("string"); {
+                std_string_namespace.emplace_object_here("npos", std::string::npos);
+            }
+            auto& std_vector_namespace = std_namespace.make_namespace("vector");
+            auto& std_map_namespace = std_namespace.make_namespace("map");
+            auto& std_set_namespace = std_namespace.make_namespace("set");
+            auto& std_unordered_map_namespace = std_namespace.make_namespace("unordered_map");
+            auto& std_unordered_set_namespace = std_namespace.make_namespace("unordered_set");
+            
+            auto function_scope = root.make_scope();
+            function_scope.emplace_object_here("x", GL::any(0.0));
+            GL::any* x = function_scope.find_object("x");
+            GL::any* npos = function_scope.find_object("std::string::npos");
+            if (x && npos) {
+                EXPECT_EQ(std::string::npos, (*GL::make_callable("+", [](double a, size_t b) -> size_t { return b; }))({ x->fast(), npos->fast() }).cast<size_t>());
+            }
+            else {
+                EXPECT_EQ(true, false);
+            }
+
+
+        }
+
 
 
 
