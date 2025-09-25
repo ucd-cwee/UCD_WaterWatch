@@ -197,6 +197,7 @@
     <ClInclude Include="datetime.h" />
     <ClInclude Include="functions.h" />
     <ClInclude Include="Parallel.h" />
+    <ClInclude Include="scripting.h" />
     <ClInclude Include="shared_ptr.h" />
     <ClInclude Include="strings.h" />
     <ClInclude Include="thread_object.h" />

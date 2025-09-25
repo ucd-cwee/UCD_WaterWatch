@@ -31,5 +31,6 @@
     <ClInclude Include="units.h" />
     <ClInclude Include="datetime.h" />
     <ClInclude Include="functions.h" />
+    <ClInclude Include="scripting.h" />
   </ItemGroup>
 </Project>

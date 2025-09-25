@@ -51,6 +51,9 @@
 
 #include "../arrayfire/include/CL/opencl.hpp"
 
+#include "scripting.h"
+
+
 #pragma endregion
 
 // functions or classes which leverage the GPU for improved performance. 
@@ -883,7 +886,8 @@ static int arrayfire_linear_regression() {
 
 int main() {
     // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
-    if (1) {
+    // Some success was found by using OpenCL. 
+    if (0) {
         try {
             // Get list of OpenCL platforms.
             std::vector<cl::Platform> platform;
@@ -1057,6 +1061,361 @@ int main() {
 
     GL::stopwatch sw;
     while (true) {
+
+
+        // Testing Scopes::Scopes
+#if 1
+        if (1) {
+            GL::scope::impl::RootScope root; // successfully starts a new script root
+
+       // >> TEST SCOPES
+#if 1
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto scope{ root.make_scope() };
+            });
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto& scope{ root.make_namespace("std") };
+            });
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto& scope{ root.make_namespace("std") };
+                scope.invalidate_cache();
+            });
+
+            // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
+            if (1) {
+                auto& scope1{ root.make_namespace("std") };
+                auto& scope2{ root.make_namespace("UI") };
+
+                scope2.add_using_here(scope1);
+                scope1.add_using_here(scope2);
+
+                scope1.invalidate_cache();
+                scope2.invalidate_cache();
+                root.invalidate_cache();
+            }
+
+#if 1
+            GL::parallel::For(0, 1000000, [&](int i) {
+                switch (i % 3) {
+                case 0: {
+#if 1
+                    auto& scope1{ root.make_namespace("std") };
+                    auto& scope2{ scope1.make_namespace("impl") };
+                    auto scope3{ scope2.make_scope() };
+
+                    scope3.add_using_here(scope2);
+                    scope3.add_using_here(scope1);
+                    scope3.add_using_here(root);
+
+                    auto scope5{ scope3.make_scope() };
+                    scope5.get_unique_index();
+#endif 
+                    break;
+                }
+                case 1: {
+#if 1
+                    auto& scope1{ root.make_namespace("std") };
+                    auto& scope2{ scope1.make_namespace("string") };
+                    auto& scope3{ scope2.make_namespace("impl") };
+                    auto scope4{ scope3.make_scope() };
+
+                    scope2.emplace_object_here("npos", 100); // slow due to conflict with GoodLang::shared_ptr... 
+
+                    scope4.add_using_here(scope3);
+                    scope4.add_using_here(scope2);
+                    scope4.add_using_here(scope1);
+                    scope4.add_using_here(root);
+
+                    auto scope5{ scope3.make_scope() };
+                    auto scope6{ scope4.make_scope() };
+                    scope5.get_unique_index();
+                    scope6.get_unique_index();
+
+#endif 
+                    break;
+                }
+                case 2: {
+#if 1
+                    auto& scope1{ root.make_namespace("string") };
+                    auto& scope2{ scope1.make_namespace("impl") };
+                    auto scope3{ scope2.make_scope() };
+
+                    scope1.emplace_object_here("npos", 200);
+
+                    scope3.add_using_here(scope2);
+                    scope3.add_using_here(scope1);
+                    scope3.add_using_here(root);
+
+                    auto scope5{ scope3.make_scope() };
+                    scope5.get_unique_index();
+#endif
+                    break;
+                }
+                }
+            });
+#endif // << NO LEAK
+
+#if 1
+            auto s = GL::string("::std::string::");
+            print(s.left_of("d::").c_str());
+            print(s.right_of("d::").c_str());
+            print(s.left_of("::std").c_str());
+            print(s.right_of("::std").c_str());
+            print(s.left_of("string::").c_str());
+            print(s.right_of("string::").c_str());
+
+            print(s.left_of_last("d::").c_str());
+            print(s.right_of_last("d::").c_str());
+            print(s.left_of_last("::std").c_str());
+            print(s.right_of_last("::std").c_str());
+            print(s.left_of_last("string::").c_str());
+            print(s.right_of_last("string::").c_str());
+
+            EXPECT_EQ(true, s.ends_with("::"));
+            EXPECT_EQ(true, s.begins_with("::"));
+
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::std::")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::std::string::")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::std::string::impl::")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::string::")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::string::impl::")));
+
+            EXPECT_EQ(nullptr, root.find_namespace(GL::string("impl"))); // could not find "impl" from the root, which is (arguably) correct!             
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("std")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("std::string")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("std::string::impl")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("string"))->this_m.scope->find_namespace(GL::string("impl")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("string")));
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("string::impl")));
+
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("::std::string::"))->this_m.scope->find_object_here("npos"));
+            EXPECT_NE(nullptr, root.find_object("::std::string::npos"));
+            EXPECT_EQ(nullptr, root.find_object("npos")); // should not be successfully found.
+            EXPECT_NE(nullptr, root.find_object("std::string::npos"));
+            //EXPECT_EQ("100", GoodLang::ToString(**root.find_object("std::string::npos")));
+            EXPECT_NE(nullptr, root.find_object("::string::npos"));
+            //EXPECT_EQ("200", GoodLang::ToString(**root.find_object("::string::npos"))); 
+            EXPECT_EQ(nullptr, root.find_object("::npos")); // should not be successfully found.
+
+            EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("npos"));
+            EXPECT_NE(nullptr, root.find_namespace("std")->this_m.scope->find_object("string::npos"));
+            EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("string"));
+            EXPECT_EQ(nullptr, root.find_namespace("std")->this_m.scope->find_object("string2::npos")); // this namespace does not exist and will not be found. 
+            EXPECT_EQ(nullptr, root.find_object("std::npos")); // should not be successfully found.
+            EXPECT_EQ(nullptr, root.find_object("std::string")); // should not be successfully found.
+            EXPECT_EQ(nullptr, root.find_object("std::string2::npos")); // should not be successfully found.
+
+            EXPECT_NE(nullptr, root.find_namespace("::string::impl::")->this_m.scope->find_object("npos"));
+            EXPECT_NE(nullptr, root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos"));
+
+            //EXPECT_EQ("100", GoodLang::ToString(**root.find_namespace("std::string::impl::")->this_m.scope->find_object("npos")));
+            //EXPECT_EQ("200", GoodLang::ToString(**root.find_namespace("::string::impl::")->this_m.scope->find_object("npos")));
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                EXPECT_NE(nullptr, root.find_namespace("std")->this_m.scope->find_object("string::npos"));
+                EXPECT_NE(nullptr, root.find_object("std::string::npos"));
+            });
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                EXPECT_EQ(nullptr, root.find_object("std::string2::npos")); // should not be successfully found.
+            });
+
+            if (1) {
+                auto scope1{ root.make_scope() };
+                scope1.add_using_here(*scope1.find_namespace("::std::string::")->this_m.scope->GetNamespace());
+                EXPECT_NE(nullptr, scope1.find_object("npos")); // should be successfully found now, due to the using statement.
+            }
+
+            if (1) {
+                root.add_using_here(*root.find_namespace("::std::string::")->this_m.scope->GetNamespace());
+                EXPECT_NE(nullptr, root.find_object("npos")); // should be successfully found now, due to the using statement.
+            }
+            EXPECT_NE(nullptr, root.find_object("::std::string::npos"));
+            EXPECT_NE(nullptr, root.find_object("::npos"));
+            EXPECT_NE(nullptr, root.find_namespace("UI")->this_m.scope->find_object("npos"));
+
+
+#endif // << NO LEAK
+#endif // << NO LEAK
+
+            // >> TEST FUNCTION CALLS
+#if 0
+            Functions funcs;
+            funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](void) -> int { return 0; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("a", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("b", utilities::FunctionWrapper(GoodLang::make_callable([](int i) -> int { return i; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("c", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j) -> int { return i + j; }), utilities::FunctionWrapper::FunctionState::Normal, {}));
+            funcs.emplace("d", utilities::FunctionWrapper(GoodLang::make_callable([](int i, int j, int k) -> int { return i + j + k; }), utilities::FunctionWrapper::FunctionState::Normal, { 10, 10, 10 })); // has defaults!
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j, int const& k) -> std::string { return "3 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10, 10, 10 }));
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j) -> std::string { return "2 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10, 10 }));
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i) -> std::string { return "1 param"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10 }));
+
+            funcs.emplace("example", utilities::FunctionWrapper(GoodLang::make_callable(
+                []() -> std::string { return "no params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                {}));
+
+            funcs.emplace("example2", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j, int const& k) -> std::string { return "3 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10.0, 10, 10.0 }));
+
+            funcs.emplace("example2", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](int const& i, int const& j) -> std::string { return "2 params"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal,
+                { 10.0, 10 }));
+
+            funcs.emplace("example2", utilities::FunctionWrapper(GoodLang::make_callable(
+                [](double const& i, double const& j) -> std::string { return "2 param doubles!"; }
+            ), utilities::FunctionWrapper::FunctionState::Normal));
+
+            GoodLang::TypeConverter converter;
+            converter.AddConverter<bool, int>();
+            converter.AddConverter<int, bool>();
+            converter.AddConverter<double, int>();
+            converter.AddConverter<int, double>();
+            converter.AddConverter<float, int>();
+            converter.AddConverter<int, float>();
+            converter.AddConverter<bool, float>();
+            converter.AddConverter<float, bool>();
+            converter.AddConverter<double, float>();
+            converter.AddConverter<float, double>();
+            converter.AddConverter<bool, double>();
+            converter.AddConverter<double, bool>();
+
+            // including these conversion checks "fixes" it. IDK why. 
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<int>(), GoodLang::user_type_shared_ptr<double>()));
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<int>(), GoodLang::user_type_shared_ptr<double>()->MakeConstRef().lock()));
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<double>(), GoodLang::user_type_shared_ptr<int>()));
+            print(converter.ConversionCost_Fast(GoodLang::user_type_shared_ptr<double>(), GoodLang::user_type_shared_ptr<int>()->MakeConstRef().lock()));
+
+
+
+
+
+            EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes(), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>(), GoodLang::user_type_shared<int>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("a", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function); // test providing more params than needed
+            EXPECT_NE(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+
+            print(GoodLang::ToString(funcs.Call("a", {}, converter)));
+            print(GoodLang::ToString(funcs.Call("b", { 100.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("c", { 200.0, 200.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("d", { 500.0, 50, true }, converter)));
+            print(GoodLang::ToString(funcs.Call("a", { 100, 200.0 }, converter)));
+            EXPECT_EQ(nullptr, funcs.BuildMatch("b", GoodLang::ParamTypes(), converter).function);
+            EXPECT_EQ(nullptr, funcs.BuildMatch("c", GoodLang::ParamTypes(), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>(), GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes({ GoodLang::user_type_shared<float>() }), converter).function);
+            EXPECT_NE(nullptr, funcs.BuildMatch("d", GoodLang::ParamTypes(), converter).function);
+            print(GoodLang::ToString(funcs.Call("d", {}, converter)));
+
+            print(GoodLang::ToString(funcs.Call("example", {}, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10, 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10, 10, 10, 10 }, converter)));
+
+            print(GoodLang::ToString(funcs.Call("example", { 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example", { 10.0, 10.0, 10.0, 10.0 }, converter)));
+
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10, 10 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10.0, 10.0, 10.0 }, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", {}, converter)));
+            print(GoodLang::ToString(funcs.Call("example2", { 10.0, 10 }, converter))); // prefers the double-type since it keeps the first type
+            print(GoodLang::ToString(funcs.Call("example2", { 10, 10.0 }, converter))); // prefers the int-type since it keeps the first type
+
+#endif // << NO LEAK
+
+       // TEST SEARCHING FOR SCOPES
+#if 1
+            GL::scope::impl::Breadcrumb* nearest;
+
+            nearest = nullptr;
+            EXPECT_EQ(nullptr, root.find_namespace(GL::string("impl"), nearest)); // does not find it, but returns the root as the nearest location
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("std::string::impl"), nearest)); // successfully finds it
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("std::impl"), nearest)); // successfully finds it
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_NE(nullptr, root.find_namespace(GL::string("string::impl"), nearest)); // successfully finds it
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            nearest = nullptr;
+            EXPECT_EQ(nullptr, root.find_namespace(GL::string("string::impl::impl"), nearest)); // does not find it, but does locate the nearest location
+            EXPECT_NE(nullptr, nearest);
+            if (nearest) print(nearest->GetCurrentNamespace().c_str());
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto scope{ root.make_scope() };
+            });
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto scope{ root.make_scope() };
+                scope.emplace_object_here(GL::printf("%i", i), GL::any(i)); // x = 100.0;
+            });
+
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto scope{ root.make_scope() };
+                scope.emplace_object_here(GL::printf("%i", i), GL::any(i)); // x = 100.0;
+                if (auto* p = scope.find_object_here(GL::printf("%i", i))) {}
+                else {
+                    EXPECT_EQ(true, false);
+                }
+            });
+
+#endif // << NO LEAK
+        }
+#endif // << NO LEAK
+
+
+
+
+
+
+
+
+
+
+
+
         if (1) {
             GL::function_signature sig(
                 "sum", 
