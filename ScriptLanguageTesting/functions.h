@@ -3,7 +3,7 @@
 #include "Parallel.h"
 #include "units.h"
 
-// Functions wrapper
+// GL::Proxy_Functions, which wrap other functions into a shareable interface
 namespace GL {
     // function name, function qualifiers (e.g. static), return type, argument types, and (optionally) argument default values. 
     class function_signature {
@@ -1309,7 +1309,6 @@ namespace GL {
         return out;
     };
 #pragma warning(pop)
-
 };
 
 // std::hash< GL::function_signature > 
@@ -1321,8 +1320,12 @@ namespace std {
     };
 };
 
+
+
+#if 0
 // Sorted Proxy_Functions with support for caching
 namespace GL {
+
     // quick hash of functions that are sorted by 
     class FunctionCache {
     public:
@@ -1361,10 +1364,9 @@ namespace GL {
             }
         };
     };
-
     class Functions {
     public:
-        using cacheT = concurrency::concurrent_unordered_map<GL::string, concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function> >;
+        using cacheT = concurrency::concurrent_unordered_map<GL::string, concurrency::concurrent_unordered_map<size_t, std::pair< GL::function_signature, GL::Proxy_Function>> >;
         FunctionCache 
             cache;        
         cacheT
@@ -1372,13 +1374,27 @@ namespace GL {
 
         void emplace(Proxy_Function const& value) {
             if (value) {
-                originals[value->m_signature.name_m].insert({ value->m_signature, value });
+                originals[value->m_signature.name_m].insert({ 
+                    value->m_signature.get_base_hash(), 
+                    { value->m_signature, value }
+                });
             }
+        };
+        Proxy_Function find(GL::string const& name, size_t types_hash) {
+            auto& M = originals[name];
+            if (auto F = M.find(types_hash); F != M.end()) {
+                return F->second.second;
+            }
+            return nullptr;
+        };
+        auto& at(GL::string const& name) {
+            return originals[name];
         };
 
 
 
     };
 
-
 };
+#endif
+
