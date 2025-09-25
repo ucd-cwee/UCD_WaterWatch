@@ -881,7 +881,7 @@ static int arrayfire_linear_regression() {
 
 int main() {
     // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
-    if (0) {
+    if (1) {
         //print(std::string(_ARRAYFIRELIB));
 
         //std::string env_new;
@@ -1129,8 +1129,6 @@ int main() {
                 auto to_convert = GL::any(temp2()).fast();
                 EXPECT_EQ(0, (*GL::make_converter<temp2, temp&>())(&to_convert, &to_convert + 1).cast<temp>().x);
             }
-
-
 
             if (1) {
                 GL::script_type Type("CustomString");

@@ -1,0 +1,9 @@
+Package: opencl
+Version: v2023.02.06
+Port-Version: 2
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 83fad8c7c598eaa36ad67cdf4220dc8fb0b5fd758233d58d984ab79b7ec42b4a
+Description: C/C++ headers and ICD loader (Installable Client Driver) for OpenCL
+Status: install ok installed

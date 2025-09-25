@@ -36,12 +36,17 @@ namespace GL {
         GL::type
             returns_m;
 
-    private:
-        void eval_hash() {            
+    public:
+        static size_t eval_hash(std::vector<GL::type> const& types) {
             size_t new_hash = 0;
-            for (auto& x : argument_types_m)
+            for (auto& x : types)
                 GL::util::hash(new_hash, x.get_hash());
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash_m), new_hash);
+            return new_hash;
+        };
+
+    private:
+        void eval_hash() {
+            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash_m), eval_hash(argument_types_m));
         };
 
     public:
@@ -1074,7 +1079,7 @@ namespace GL {
     };
 
     // Convert nearly any function or function pointer to a callable, generic proxy function. 
-    template<typename Func> Proxy_Function make_callable(
+    template<typename Func> __forceinline Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         std::vector<any>&& defaults = {}
@@ -1113,7 +1118,7 @@ namespace GL {
     };
 
     // Convert nearly any function or function pointer to a callable, generic proxy function. 
-    template<typename Func> Proxy_Function make_callable(
+    template<typename Func> __forceinline Proxy_Function make_callable(
         GL::string const& name,
         Func&& func, 
         size_t stateModifier, 
@@ -1124,7 +1129,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> Proxy_Function make_callable(
+    template<typename Func> __forceinline Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         size_t stateModifier,
@@ -1145,7 +1150,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> Proxy_Function make_callable(
+    template<typename Func> __forceinline Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         size_t stateModifier,
@@ -1162,7 +1167,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> Proxy_Function make_callable(
+    template<typename Func> __forceinline Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         std::vector<any>&& defaults,
@@ -1182,7 +1187,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> Proxy_Function make_callable(
+    template<typename Func> __forceinline Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         std::vector<any>&& defaults,
@@ -1237,7 +1242,7 @@ namespace GL {
     // Creates a Proxy_Function whose job is to convert from "From" types to "To" types. 
     // Supports static conversions (e.g. double to int) and polymorphic conversions (e.g. GL::foot& to GL::value&)
     template<typename From_Requested, typename To_Requested>
-    __declspec(noinline) Proxy_Function make_converter() {
+    __forceinline Proxy_Function make_converter() {
         using From = typename std::decay< From_Requested >::type;
         using To = typename std::decay< To_Requested >::type;
 
@@ -1321,37 +1326,55 @@ namespace GL {
     // quick hash of functions that are sorted by 
     class FunctionCache {
     public:
-        GL::atomic_shared_ptr < concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function> > 
+        using cacheT = concurrency::concurrent_unordered_map<GL::string, concurrency::concurrent_unordered_map<size_t/*GL::function_signature*/, GL::Proxy_Function> >;
+        GL::atomic_shared_ptr < cacheT >
             cache;
 
         FunctionCache()
-            : cache(GL::make_shared<concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function>>())
+            : cache(GL::make_shared<cacheT>())
         {};
         void invalidate() {
-            cache.store(GL::make_shared<concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function>>());
+            cache.store(GL::make_shared<cacheT>());
         };
         void emplace(GL::function_signature const& key, Proxy_Function const& value) {
             auto f = cache.load_fast();
-            f->insert({ key, value });
+            f->operator[](key.name_m).insert({ key.get_base_hash(), value });
         };
         Proxy_Function find(GL::function_signature const& key) {
             auto f = cache.load_fast();
-            if (auto F = f->find(key); F != f->end()) {
+            auto& M = f->operator[](key.name_m);
+            if (auto F = M.find(key.get_base_hash()); F != M.end()) {
                 return F->second;
             }
             else {
                 return nullptr;
             }            
         };
-
+        Proxy_Function find(GL::string const& name, size_t types_hash) {
+            auto f = cache.load_fast();
+            auto& M = f->operator[](name);
+            if (auto F = M.find(types_hash); F != M.end()) {
+                return F->second;
+            }
+            else {
+                return nullptr;
+            }
+        };
     };
 
     class Functions {
     public:
-        FunctionCache cache;
+        using cacheT = concurrency::concurrent_unordered_map<GL::string, concurrency::concurrent_unordered_map<GL::function_signature, GL::Proxy_Function> >;
+        FunctionCache 
+            cache;        
+        cacheT
+            originals;
 
-
-
+        void emplace(Proxy_Function const& value) {
+            if (value) {
+                originals[value->m_signature.name_m].insert({ value->m_signature, value });
+            }
+        };
 
 
 
