@@ -535,8 +535,7 @@
 #if defined(__APPLE__) || defined(__MACOSX)
 #include <OpenCL/opencl.h>
 #else
-#include "../CL/opencl.h"
-// #include <CL/opencl.h>
+#include <CL/opencl.h>
 #endif // !__APPLE__
 
 #if (__cplusplus >= 201103L || _MSVC_LANG >= 201103L )

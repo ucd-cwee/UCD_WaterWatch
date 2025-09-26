@@ -52,12 +52,12 @@ typedef uint64_t ulong;
 #define nan_double as_double(0xFFFFFFFFFFFFFFFF)
 
 template <typename T> constexpr decltype(auto) type_name() {
-	if constexpr (std::is_same_v<T, char>) return "char";
-	else if constexpr (std::is_same_v<T, uchar>) return "uchar";
+	     if constexpr (std::is_same_v<T, char>) return "char";
+	else if constexpr (std::is_same_v<T, unsigned char>) return "uchar";
 	else if constexpr (std::is_same_v<T, int>) return "int";
-	else if constexpr (std::is_same_v<T, uint>) return "uint";
+	else if constexpr (std::is_same_v<T, unsigned int>) return "uint";
 	else if constexpr (std::is_same_v<T, long>) return "long";
-	else if constexpr (std::is_same_v<T, ulong>) return "ulong";
+	else if constexpr (std::is_same_v<T, unsigned long>) return "ulong";
 	else if constexpr (std::is_same_v<T, float>) return "float";
 	else if constexpr (std::is_same_v<T, double>) return "double";
 	else static_assert("Not all numeric types are supported by GPU calculations.");

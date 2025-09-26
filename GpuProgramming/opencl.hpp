@@ -195,7 +195,44 @@ struct Device_Info {
 	inline Device_Info() {}; // default constructor
 };
 
-string get_opencl_c_code(); // implemented in kernel.hpp
+string opencl_c_container(string const& typeName, bool fp = false); // outsourced to kernel.cpp
+
+template <typename T>
+string get_opencl_c_code(bool) {
+	string r = opencl_c_container(type_name<T>(), std::is_floating_point_v<T>);
+	r = replace(r, "$ifdef", "#ifdef");
+	r = replace(r, "$ifndef", "#ifndef");
+	r = replace(r, "$if", "#if");
+	r = replace(r, "$elif", "#elif");
+	r = replace(r, "$else", "#else");	
+	r = replace(r, "$endif", "#endif");
+	r = replace(r, "$pragma", "#pragma");
+	r = replace(r, "$error", "#error");
+	r = replace(r, "$define", "#define");
+	r = replace(r, "$undef", "#undef");
+	r = replace(r, " ", "\n"); // replace all spaces by new lines
+
+	r = replace(r, "#ifdef\n", "#ifdef ");
+	r = replace(r, "#ifndef\n", "#ifndef ");
+	r = replace(r, "#if\n", "#if ");
+	r = replace(r, "#elif\n", "#elif ");
+	r = replace(r, "#else\n", "#else ");
+	r = replace(r, "#endif\n", "#endif ");
+	r = replace(r, "#pragma\n", "#pragma ");
+	r = replace(r, "#error\n", "#error ");
+	r = replace(r, "#define\n", "#define ");
+	r = replace(r, "#undef\n", "#undef ");
+
+	//r = replace(r, "#ifdef\n", "#ifdef "); // except for the arguments after some preprocessor options that need to be in the same line
+	//r = replace(r, "#ifndef\n", "#ifndef ");
+	//r = replace(r, "#define\n", "#define "); // #define with two arguments will not work
+	//r = replace(r, "#undef\n", "#undef ");
+	//r = replace(r, "#if\n", "#if "); // don't leave any spaces in arguments
+	//r = replace(r, "#elif\n", "#elif "); // don't leave any spaces in arguments
+	// r = replace(r, "#pragma\n", "#pragma ");
+	return "\n" + r;
+}
+
 inline void print_device_info(const Device_Info& d) { // print OpenCL device info
 #if defined(_WIN32)
 	const string os = "Windows";
@@ -305,7 +342,7 @@ private:
 	}
 public:
 	Device_Info info;
-	inline Device(const Device_Info& info, const string& opencl_c_code = get_opencl_c_code()) {
+	inline Device(const Device_Info& info, const string& opencl_c_code) {
 		print_device_info(info);
 		this->info = info;
 		this->cl_queue = cl::CommandQueue(info.cl_context, info.cl_device); // queue to push commands for the device
