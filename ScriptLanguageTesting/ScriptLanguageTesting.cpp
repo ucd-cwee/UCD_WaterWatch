@@ -56,6 +56,17 @@
 
 #pragma endregion
 
+
+
+
+
+
+
+
+
+
+
+
 // functions or classes which leverage the GPU for improved performance. 
 namespace GPU {
     // 1- to 3-dimensional matrix accelerated by the GPU, using ArrayFire as the base. Not thread-safe. 
@@ -884,159 +895,14 @@ static int arrayfire_linear_regression() {
 
 #include <stdlib.h>
 
+#include "../GpuProgramming/GpuProgramming.h"
+
 int main() {
+    fnGpuProgramming();
+
     // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
     // Some success was found by using OpenCL. 
-    if (0) {
-        try {
-            // Get list of OpenCL platforms.
-            std::vector<cl::Platform> platform;
-            cl::Platform::get(&platform);
-
-            if (platform.empty()) {
-                std::cerr << "OpenCL platforms not found." << std::endl;
-                return 1;
-            }
-
-            // Get first available GPU device which supports double precision.
-            cl::Context context;
-            std::vector<cl::Device> device;
-            for (auto p = platform.begin(); device.empty() && p != platform.end(); p++) {
-                std::vector<cl::Device> pldev;
-
-                try {
-                    p->getDevices(CL_DEVICE_TYPE_GPU, &pldev);
-
-                    for (auto d = pldev.begin(); device.empty() && d != pldev.end(); d++) {
-                        if (!d->getInfo<CL_DEVICE_AVAILABLE>()) continue;
-
-                        std::string ext = d->getInfo<CL_DEVICE_EXTENSIONS>();
-                        print(ext);
-
-                        std::cout << d->getInfo<CL_DEVICE_NAME>() << std::endl;
-
-                        device.push_back(*d);
-                        context = cl::Context(device);
-
-                        // Create command queue.
-                        cl::CommandQueue queue(context, device[0]);
-
-                        // Compute c = a + b.
-                        std::string script =  
-                            "kernel void add(\n"
-                            "       ulong n,\n"
-                            "       global const float *a,\n"
-                            "       global const float *b,\n"
-                            "       global float *c\n"
-                            "       )\n"
-                            "{\n"
-                            "    size_t i = get_global_id(0);\n"
-                            "    if (i < n) {\n"
-                            "       c[i] = a[i] + b[i];\n"
-                            "    }\n"
-                            "}\n";
-
-                        // Compile OpenCL program for found device.
-                        cl::Program program(context, cl::Program::Sources{ script }, nullptr);
-
-                        try {
-                            program.build(device);
-                        }
-                        catch (...) {
-                            std::cerr
-                                << "OpenCL compilation error" << std::endl
-                                << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device[0])
-                                << std::endl;
-                            return 1;
-                        }
-
-
-                        cl::Kernel add(program, "add");
-
-                        // Prepare input data.
-                        const size_t N = 1 << 20;                        
-                        std::vector<float> a(N, 1);
-                        std::vector<float> b(N, 2);
-                        std::vector<float> c(N);
-
-                        // Allocate device buffers and transfer input data to device.
-                        cl::Buffer A(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                            a.size() * sizeof(float), a.data());
-
-                        cl::Buffer B(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                            b.size() * sizeof(float), b.data());
-
-                        cl::Buffer C(context, CL_MEM_READ_WRITE,
-                            c.size() * sizeof(float));
-
-                        // Set kernel parameters.
-                        add.setArg(0, static_cast<cl_ulong>(N));
-                        add.setArg(1, A);
-                        add.setArg(2, B);
-                        add.setArg(3, C);
-
-                        // Launch kernel on the compute device.
-                        queue.enqueueNDRangeKernel(add, cl::NullRange, N, cl::NullRange);
-
-                        // Get result back to host.
-                        queue.enqueueReadBuffer(C, CL_TRUE, 0, c.size() * sizeof(float), c.data());
-
-                        // Should get '3' here.
-                        EXPECT_EQ(c[42], 3);
-                    }
-                }
-                catch (...) {
-                    device.clear();
-                }
-            }
-
-            if (device.empty()) {
-                std::cerr << "GPUs with double precision not found." << std::endl;
-                return 1;
-            }
-
-        }
-        catch (...) {
-            return 1;
-        }
-
-
-
-        //print(std::string(_ARRAYFIRELIB));
-
-        //std::string env_new;
-        //if (1) {
-        //    char* env_result;
-        //    EXPECT_EQ(0, ::_dupenv_s(&env_result, nullptr, "PATH"));
-        //    env_new = env_result;
-        //    if (env_result) free(env_result);
-        //    print(env_new);
-        //    std::cout << std::endl;
-        //}
-        //if (env_new.find(_ARRAYFIRELIB) == std::string::npos) {
-        //    env_new += ";";
-        //    env_new += _ARRAYFIRELIB;
-
-        //    print(env_new);
-        //    std::cout << std::endl;
-
-        //    EXPECT_NE(0, SetEnvironmentVariable("PATH", env_new.c_str()));
-
-        //    if (1) {
-        //        char* env_result;
-        //        EXPECT_EQ(0, ::_dupenv_s(&env_result, nullptr, "PATH"));
-        //        env_new = env_result;
-        //        if (env_result) free(env_result);
-        //        print(env_new);
-        //        std::cout << std::endl;
-        //    }
-
-        //}
-        
-        //EXPECT_NE(0, SetEnvironmentVariable("PATH", _ARRAYFIRELIB));
-        //EXPECT_NE(0, SetEnvironmentVariable("AF_PATH", _ARRAYFIREDIR));
-        //EXPECT_NE(0, SetEnvironmentVariable("AF_PATH_v3", _ARRAYFIREDIR));
-
+    if (1) {
         print(af::getDevice());
         print(af::getDeviceCount());
         af::info();
