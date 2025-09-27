@@ -124,6 +124,7 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = (A[n] != B[n]) ? 1 : 0;
 	}
+
 ));
 if (floatingPoint) {
 out = out + GL::string(R(
@@ -240,7 +241,52 @@ out = out + GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = fmod(A[n], B);
 	}
+	kernel void Max(global _type_* A, global _type_* B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = fmax(A[n], B[n]);
+	}
+	kernel void Max_single(global _type_* A, _type_ B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = fmax(A[n], B);
+	}
+	kernel void Min(global _type_* A, global _type_* B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = fmin(A[n], B[n]);
+	}
+	kernel void Min_single(global _type_* A, _type_ B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = fmin(A[n], B);
+	}
 
+	kernel void Lgamma(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = lgamma(A[n]);
+	}
+	kernel void Log(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log(A[n]);
+	}
+	kernel void Log2(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log2(A[n]);
+	}
+	kernel void Log10(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log10(A[n]);
+	}
+	kernel void Log1p(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log1p(A[n]);
+	}
+	//kernel void Rand(global _type_* A, global unsigned int* C) {
+	//	const uint n = get_global_id(0);
+	//	unsigned int x = C[0];
+	//	x ^= x << 13;
+	//	x ^= x >> 17;
+	//	x ^= x << 5;
+	//	atomic_xchg(&C[0], x);
+	//	A[n] = (_type_)x;
+	//}
 ));
 }
 else {
@@ -357,7 +403,51 @@ out = out + GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = A[n] % B;
 	}
-
+	kernel void Max(global _type_* A, global _type_* B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = max(A[n], B[n]);
+	}
+	kernel void Max_single(global _type_* A, _type_ B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = max(A[n], B);
+	}
+	kernel void Min(global _type_* A, global _type_* B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = min(A[n], B[n]);
+	}
+	kernel void Min_single(global _type_* A, _type_ B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = min(A[n], B);
+	}
+	kernel void Lgamma(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = lgamma((float)A[n]);
+	}
+	kernel void Log(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log((float)A[n]);
+	}
+	kernel void Log2(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log2((float)A[n]);
+	}
+	kernel void Log10(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log10((float)A[n]);
+	}
+	kernel void Log1p(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = log1p((float)A[n]);
+	}
+	//kernel void Rand(global _type_* A, global unsigned int* C) {
+	//	const uint n = get_global_id(0);
+	//	unsigned int x = C[0];
+	//	x ^= x << 13;
+	//	x ^= x >> 17;
+	//	x ^= x << 5;
+	//	atomic_xchg(&C[0], x);
+	//	A[n] = x;
+	//}
 ));
 }
 return out.replace("_type_", GL::string(typeName)).to_string();

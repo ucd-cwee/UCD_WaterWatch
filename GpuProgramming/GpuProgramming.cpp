@@ -13,7 +13,6 @@
 
 class ArrayTasks {
 public:
-
     ArrayTasks() = default;
     ArrayTasks(ArrayTasks const&) = default;
     ArrayTasks(ArrayTasks &&) = default;
@@ -157,7 +156,6 @@ public:
         return out;
     };
 
-
     T& operator()(size_t x, size_t y = 0, size_t z = 0) {
         stop_work();
         return data->operator[]((z * LenY * LenX) + (y * LenX) + x);
@@ -169,7 +167,6 @@ public:
     size_t size() const {
         return LenZ * LenY * LenX;
     }
-
 
     T& operator[](size_t n) {
         stop_work();
@@ -186,6 +183,7 @@ public:
         if (data) data->write_to_device();
     }
 
+protected:
     template<class... T> static inline void enqueue_kernel(const ulong N, const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants        
         Kernel kernel(GetDevice(), N, name, parameters...); // kernel that runs on the device
         kernel.enqueue_run();
@@ -197,8 +195,6 @@ public:
     static void complete_kernels() {
         GetDevice().get_cl_queue().finish();
     };
-
-protected:
     template<class... T> inline void work(const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants
         Kernel kernel(GetDevice(), LenX * LenY * LenZ, name, parameters...);
         Event this_event;
@@ -366,7 +362,7 @@ public:
         return *this;
     };
 
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // specialization of POW for integer powers
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // specialization of POW for integer powers
     Array pown(Array<int> const& rhs) const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -381,7 +377,7 @@ public:
         out.work("power_n", *data, *rhs.data, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // power of 
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // power of 
     Array pow(Array const& rhs) const {
         if constexpr (std::is_same_v<T, int>) return pown(rhs);
 
@@ -398,7 +394,7 @@ public:
         out.work("power", *data, *rhs.data, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // specialization of POW for integer powers
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // specialization of POW for integer powers
     Array pown(int rhs) const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -413,7 +409,7 @@ public:
         out.work("power_n_single", *data, rhs, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // power of 
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // power of 
     Array pow(T rhs) const {
         if constexpr (std::is_same_v<T, int>) return pown(rhs);
 
@@ -430,7 +426,7 @@ public:
         out.work("power_single", *data, rhs, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // sqrt
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // sqrt
     Array sqrt() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -445,7 +441,7 @@ public:
         out.work("square_root", *data, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // round to nearest whole number
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // round to nearest whole number
     Array round() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -460,7 +456,7 @@ public:
         out.work("round", *data, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // round to higher integer
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // round to higher integer
     Array ceil() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -475,7 +471,7 @@ public:
         out.work("ceil", *data, *out.data);
         return out;
     };
-    //template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // round to lower integer
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // round to lower integer
     Array floor() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -689,7 +685,7 @@ public:
         out.work("aTanh", *data, *out.data);
         return out;
     };
-    // e^x
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // e^x
     Array exp() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -704,7 +700,7 @@ public:
         out.work("Exp", *data, *out.data);
         return out;
     };
-    // 2^x
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // 2^x
     Array exp2() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -719,7 +715,7 @@ public:
         out.work("Exp2", *data, *out.data);
         return out;
     };
-    // 10^x
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // 10^x
     Array exp10() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -734,7 +730,7 @@ public:
         out.work("Exp10", *data, *out.data);
         return out;
     };
-    // e^x-1
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // e^x-1
     Array expm1() const {
         Array out; {
             out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
@@ -747,6 +743,81 @@ public:
             out.local = false;
         }
         out.work("Expm1", *data, *out.data);
+        return out;
+    };
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // log gamma function
+    Array lgamma() const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Lgamma", *data, *out.data);
+        return out;
+    };
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // ln(x)
+    Array log() const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Log", *data, *out.data);
+        return out;
+    };
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // log_2(x)
+    Array log2() const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Log2", *data, *out.data);
+        return out;
+    };
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // log_10(x)
+    Array log10() const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Log10", *data, *out.data);
+        return out;
+    };
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>> // ln(1+x)
+    Array log1p() const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Log1p", *data, *out.data);
         return out;
     };
 
@@ -780,7 +851,6 @@ public:
         out.work("Mod_single", *data, rhs, *out.data);
         return out;
     };
-
     friend Array operator%(Array const& lhs, Array const& rhs) {
         return lhs.mod(rhs);
     };
@@ -788,7 +858,64 @@ public:
         return lhs.mod(rhs);
     };
 
-    Array<uint > operator==(T rhs) const {
+    Array max(Array const& rhs) const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Max", *data, *rhs.data, *out.data);
+        return out;
+    };
+    Array max(T rhs) const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Max_single", *data, rhs, *out.data);
+        return out;
+    };
+    Array min(Array const& rhs) const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Min", *data, *rhs.data, *out.data);
+        return out;
+    };
+    Array min(T rhs) const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Min_single", *data, rhs, *out.data);
+        return out;
+    };
+
+    Array<uint> operator==(T rhs) const {
         Array<uint > out; {
             out.data = std::make_shared<Memory<uint >>(Array<uint >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
             out.LenX = this->LenX;
@@ -807,7 +934,7 @@ public:
         working = true;
         return out;
     };
-    Array<uint > operator!=(T rhs) const {
+    Array<uint> operator!=(T rhs) const {
         Array<uint > out; {
             out.data = std::make_shared<Memory<uint >>(Array<uint>::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
             out.LenX = this->LenX;
@@ -865,6 +992,32 @@ public:
         return out;
     };
 
+    //static Array rand(size_t xN, size_t yN, size_t zN) {
+    //    thread_local unsigned int x{ 0 };
+    //    Array out(xN, yN, zN);
+    //    out = 0;
+    //    out.work("Rand", *out.data, &x);
+    //    return out;
+    //};
+    //static Array rand(size_t xN, size_t yN) {
+    //    thread_local unsigned int x{ 0 };
+    //    Array out(xN, yN);
+    //    out = 0;
+    //    out.work("Rand", *out.data, &x);
+    //    return out;
+    //};
+    //static Array rand(size_t xN) {
+    //    static auto D{ ([]() -> Array<unsigned int> {
+    //        Array<unsigned int> out(1);
+    //        out = std::rand();
+    //        return out;
+    //    })() };
+    //    Array out(xN);
+    //    out = 0;
+    //    out.work("Rand", *out.data, *D.data);
+    //    return out;
+    //};
+
     template<typename G>
     Array<G> cast() const {
         if constexpr (std::is_same_v<G, T>) {
@@ -905,11 +1058,35 @@ void fnGpuProgramming() {
 
 
 
+    //Typically, you have one thread which intializes the shared(local) atomic followed by some barrier.I.e.your kernel starts like this:
+
+    //__local int sharedNum;
+    //if (get_local_id(0) == 0) {
+    //    sharedNum = 0;
+    //}
+    //barrier(CLK_LOCAL_MEM_FENCE);
+
+    //// Now, you can use sharedNum
+    //while (is_work_left()) {
+    //    atomic_inc(&sharedNum);
+    //}
+    //There's not much magic to it -- all items in a work-group can see the same local variables, so you can just access it as usual.
 
 
 
     const uint N = 1000000u; // size of vectors
     if (1) {
+        //if (1) {
+        //    auto A{ Array<unsigned int>::rand(N) };
+        //    for (uint n = 0u; n < N; n++) {
+        //        print(A[n]);
+        //    }
+
+
+        //}
+    
+
+
         if (1) {
             Array<float> A(N);
             A = 0;
