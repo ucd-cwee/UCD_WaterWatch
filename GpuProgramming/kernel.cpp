@@ -45,7 +45,6 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		A[n] /= B[n];
 	}
-
 	kernel void add_single(global _type_* A, _type_ B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] + B;
@@ -78,7 +77,6 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		A[n] /= B;
 	}
-
 	kernel void from_char(global _type_* A, global char* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
@@ -123,6 +121,89 @@ auto out = GL::string(R(
 	kernel void item_neq(global _type_* A, global _type_* B, global uint* C) {
 		const uint n = get_global_id(0);
 		C[n] = (A[n] != B[n]) ? 1 : 0;
+	}
+
+	global atomic_int __rand_counter = ATOMIC_VAR_INIT(123456789);
+	uint __rand() {
+		uint x, y;
+		for (;;) {
+			x = y = atomic_load(&__rand_counter);
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			if (atom_cmpxchg(&__rand_counter, y, x) == y) break;
+		}
+		return x;
+	};
+
+	kernel void transpose(global _type_* destination, global _type_* RHS, global uint* lengths) {
+		const uint n = get_global_id(0);
+		const uint Z = n / (lengths[4] * lengths[3]);
+		const uint pos2 = n - Z * (lengths[4] * lengths[3]);
+		const uint Y = pos2 / lengths[3];
+		const uint X = pos2 - Y * lengths[3];
+
+		destination[n] = RHS[(Z * lengths[1] * lengths[0]) + (X * lengths[0]) + Y];
+	};
+	kernel void make_square(global _type_* destination, global _type_* RHS, global uint* lengths) {
+		const uint n = get_global_id(0);
+		const uint Z = n / (lengths[4] * lengths[3]);
+		const uint pos2 = n - Z * (lengths[4] * lengths[3]);
+		const uint Y = pos2 / lengths[3];
+		const uint X = pos2 - Y * lengths[3];
+
+		if ((X < lengths[0]) && (Y < lengths[1]) && (Z < lengths[2])) {
+			destination[n] = RHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		}
+		else {
+			destination[n] = 0;
+		}		
+	};
+
+	kernel void join_dim_0(global _type_* destination, global _type_* LHS, global _type_* RHS, global uint* lengths) {
+		const uint n = get_global_id(0);
+		const uint Z = n / (lengths[7] * lengths[6]);
+		const uint pos2 = n - Z * (lengths[7] * lengths[6]);
+		const uint Y = pos2 / lengths[6];
+		uint X = pos2 - Y * lengths[6];
+
+		if ((X < lengths[0])) {
+			destination[n] = LHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		}
+		else {
+			X -= lengths[0];
+			destination[n] = RHS[(Z * lengths[4] * lengths[3]) + (Y * lengths[3]) + X];
+		}
+	}
+	kernel void join_dim_1(global _type_* destination, global _type_* LHS, global _type_* RHS, global uint* lengths) {
+		const uint n = get_global_id(0);
+		const uint Z = n / (lengths[7] * lengths[6]);
+		const uint pos2 = n - Z * (lengths[7] * lengths[6]);
+		uint Y = pos2 / lengths[6];
+		const uint X = pos2 - Y * lengths[6];
+
+		if (Y < lengths[1]) {
+			destination[n] = LHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		}
+		else {
+			Y -= lengths[1];
+			destination[n] = RHS[(Z * lengths[4] * lengths[3]) + (Y * lengths[3]) + X];
+		}
+	}
+	kernel void join_dim_2(global _type_* destination, global _type_* LHS, global _type_* RHS, global uint* lengths) {
+		const uint n = get_global_id(0);
+		uint Z = n / (lengths[7] * lengths[6]);
+		const uint pos2 = n - Z * (lengths[7] * lengths[6]);
+		const uint Y = pos2 / lengths[6];
+		const uint X = pos2 - Y * lengths[6];
+
+		if ((Z < lengths[2])) {
+			destination[n] = LHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		}
+		else {
+			Z -= lengths[2];
+			destination[n] = RHS[(Z * lengths[4] * lengths[3]) + (Y * lengths[3]) + X];
+		}
 	}
 
 ));
@@ -257,7 +338,6 @@ out = out + GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = fmin(A[n], B);
 	}
-
 	kernel void Lgamma(global _type_* A, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = lgamma(A[n]);
@@ -278,15 +358,11 @@ out = out + GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = log1p(A[n]);
 	}
-	//kernel void Rand(global _type_* A, global unsigned int* C) {
-	//	const uint n = get_global_id(0);
-	//	unsigned int x = C[0];
-	//	x ^= x << 13;
-	//	x ^= x >> 17;
-	//	x ^= x << 5;
-	//	atomic_xchg(&C[0], x);
-	//	A[n] = (_type_)x;
-	//}
+	kernel void Rand(global _type_* A) {
+		const uint n = get_global_id(0);
+		A[n] = (_type_)__rand() / ((uint)~((uint)0));
+	}
+
 ));
 }
 else {
@@ -439,15 +515,11 @@ out = out + GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = log1p((float)A[n]);
 	}
-	//kernel void Rand(global _type_* A, global unsigned int* C) {
-	//	const uint n = get_global_id(0);
-	//	unsigned int x = C[0];
-	//	x ^= x << 13;
-	//	x ^= x >> 17;
-	//	x ^= x << 5;
-	//	atomic_xchg(&C[0], x);
-	//	A[n] = x;
-	//}
+	kernel void Rand(global _type_* A) {
+		const uint n = get_global_id(0);
+		A[n] = __rand();
+	}
+
 ));
 }
 return out.replace("_type_", GL::string(typeName)).to_string();

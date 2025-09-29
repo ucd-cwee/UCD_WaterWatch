@@ -8,7 +8,7 @@
 // full catalogue: https://www.khronos.org/files/opencl30-reference-guide.pdf
 
 // string replacement
-#define _Type_
+#define _type_
 
 // general
 #define get_global_id(x) // global index, set x=0
