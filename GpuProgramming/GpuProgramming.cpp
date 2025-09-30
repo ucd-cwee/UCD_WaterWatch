@@ -62,7 +62,7 @@ public:
     size_t LenX;
     size_t LenY;
     size_t LenZ;
-    uint Dim;
+    unsigned int Dim;
 
     Array()
         : data{ nullptr }
@@ -74,7 +74,7 @@ public:
         , working{ false }
         , local{ true }
     {};
-    Array(uint lenX)
+    Array(unsigned int lenX)
         : data{ std::make_shared<Memory<T>>(GetDevice(), lenX, 1) }
         , LenX{ lenX }
         , LenY{ 1 }
@@ -84,7 +84,7 @@ public:
         , working{ false }
         , local{ true }
     {};
-    Array(uint lenX, uint lenY)
+    Array(unsigned int lenX, unsigned int lenY)
         : data{ std::make_shared<Memory<T>>(GetDevice(), lenX * lenY, 2) }
         , LenX{ lenX }
         , LenY{ lenY }
@@ -94,7 +94,7 @@ public:
         , working{ false }
         , local{ true }
     {};
-    Array(uint lenX, uint lenY, uint lenZ)
+    Array(unsigned int lenX, unsigned int lenY, unsigned int lenZ)
         : data{ std::make_shared<Memory<T>>(GetDevice(), lenX * lenY * lenZ, 3) }
         , LenX{ lenX }
         , LenY{ lenY }
@@ -194,7 +194,7 @@ protected:
         Kernel kernel(GetDevice(), N, name, parameters...); // kernel that runs on the device
         kernel.enqueue_run();
     }
-    template<class... T> static inline void enqueue_kernel(const ulong N, const uint workgroup_size, const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants
+    template<class... T> static inline void enqueue_kernel(const ulong N, const unsigned int workgroup_size, const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants
         Kernel kernel(GetDevice(), N, workgroup_size, name, parameters...); // kernel that runs on the device
         kernel.enqueue_run();
     }
@@ -208,7 +208,7 @@ protected:
         tasks.get().push_back(this_event);
         working = true;
     }
-    template<class... T> inline void work(const uint workgroup_size, const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants
+    template<class... T> inline void work(const unsigned int workgroup_size, const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants
         Kernel kernel(GetDevice(), LenX * LenY * LenZ, workgroup_size, name, parameters...);
         Event this_event;
         kernel.enqueue_run(1, &tasks.get(), &this_event);
@@ -922,9 +922,9 @@ public:
         return out;
     };
 
-    Array<uint> operator==(T rhs) const {
-        Array<uint > out; {
-            out.data = std::make_shared<Memory<uint >>(Array<uint >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+    Array<unsigned int> operator==(T rhs) const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
             out.LenX = this->LenX;
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
@@ -941,9 +941,9 @@ public:
         working = true;
         return out;
     };
-    Array<uint> operator!=(T rhs) const {
-        Array<uint > out; {
-            out.data = std::make_shared<Memory<uint >>(Array<uint>::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+    Array<unsigned int> operator!=(T rhs) const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int>::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
             out.LenX = this->LenX;
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
@@ -960,9 +960,9 @@ public:
         working = true;
         return out;
     };
-    friend Array<uint> operator==(Array const& lhs, Array const& rhs) {
-        Array<uint> out; {
-            out.data = std::make_shared<Memory<uint>>(Array<uint>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+    friend Array<unsigned int> operator==(Array const& lhs, Array const& rhs) {
+        Array<unsigned int> out; {
+            out.data = std::make_shared<Memory<unsigned int>>(Array<unsigned int>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
             out.LenX = lhs.LenX;
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
@@ -979,9 +979,9 @@ public:
         out.working = true;
         return out;
     };
-    friend Array<uint> operator!=(Array const& lhs, Array const& rhs) {
-        Array<uint> out; {
-            out.data = std::make_shared<Memory<uint>>(Array<uint>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+    friend Array<unsigned int> operator!=(Array const& lhs, Array const& rhs) {
+        Array<unsigned int> out; {
+            out.data = std::make_shared<Memory<unsigned int>>(Array<unsigned int>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
             out.LenX = lhs.LenX;
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
@@ -1077,65 +1077,16 @@ public:
             lengths.sync();
         }
         if (jdim == 0) {
-            out.work("join_dim_0", *out.data, *this->data, *first.data, *lengths.data);
+            out.work("join_dim_0", *out.data, *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY, (unsigned int)this->LenZ, *first.data, (unsigned int)first.LenX);
             return out;
-            //// append the LHS data            
-            //for (auto x_dim = 0; x_dim < this->LenX; ++x_dim) {
-            //    for (auto y_dim = 0; y_dim < this->LenY; ++y_dim) {
-            //        for (auto z_dim = 0; z_dim < this->LenZ; ++z_dim) {
-            //            out(x_dim, y_dim, z_dim) = (*this)(x_dim, y_dim, z_dim);
-            //        }
-            //    }
-            //}
-            //// append the RHS data
-            //for (auto x_dim = 0; x_dim < first.LenX; ++x_dim) {
-            //    for (auto y_dim = 0; y_dim < first.LenY; ++y_dim) {                
-            //        for (auto z_dim = 0; z_dim < first.LenZ; ++z_dim) {
-            //            out(x_dim + this->LenX, y_dim, z_dim) = first(x_dim, y_dim, z_dim);
-            //        }
-            //    }
-            //}
         }
         else if (jdim == 1) {
-            out.work("join_dim_1", *out.data, *this->data, *first.data, *lengths.data);
+            out.work("join_dim_1", *out.data, *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY, (unsigned int)this->LenZ, *first.data, (unsigned int)first.LenY);
             return out;
-            //// append the LHS data
-            //for (auto y_dim = 0; y_dim < this->LenY; ++y_dim) {
-            //    for (auto x_dim = 0; x_dim < this->LenX; ++x_dim) {
-            //        for (auto z_dim = 0; z_dim < this->LenZ; ++z_dim) {
-            //            out(x_dim, y_dim, z_dim) = (*this)(x_dim, y_dim, z_dim);
-            //        }
-            //    }
-            //}
-            //// append the RHS data
-            //for (auto y_dim = 0; y_dim < first.LenY; ++y_dim) {
-            //    for (auto x_dim = 0; x_dim < first.LenX; ++x_dim) {
-            //        for (auto z_dim = 0; z_dim < first.LenZ; ++z_dim) {
-            //            out(x_dim, y_dim + this->LenY, z_dim) = first(x_dim, y_dim, z_dim);
-            //        }
-            //    }
-            //}            
-            // out.sync();
         }
         else {
-            out.work("join_dim_2", *out.data, *this->data, *first.data, *lengths.data);
+            out.work("join_dim_2", *out.data, *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY, (unsigned int)this->LenZ, *first.data);
             return out;
-            //// append the LHS data            
-            //for (auto x_dim = 0; x_dim < this->LenX; ++x_dim) {
-            //    for (auto y_dim = 0; y_dim < this->LenY; ++y_dim) {
-            //        for (auto z_dim = 0; z_dim < this->LenZ; ++z_dim) {
-            //            out(x_dim, y_dim, z_dim) = (*this)(x_dim, y_dim, z_dim);
-            //        }
-            //    }
-            //}
-            //// append the RHS data
-            //for (auto x_dim = 0; x_dim < first.LenX; ++x_dim) {
-            //    for (auto y_dim = 0; y_dim < first.LenY; ++y_dim) {
-            //        for (auto z_dim = 0; z_dim < first.LenZ; ++z_dim) {
-            //            out(x_dim, y_dim, z_dim + this->LenZ) = first(x_dim, y_dim, z_dim);
-            //        }
-            //    }
-            //}
         }
 
         return out;
@@ -1157,46 +1108,34 @@ public:
         out.LenZ = 1;
         out.Dim = 2;
 
-        Array<unsigned int> lengths(6); {
+        Array<unsigned int> lengths(4); {
             lengths[0] = this->LenX;
             lengths[1] = this->LenY;
-            lengths[2] = this->LenZ;
-            lengths[3] = out.LenX;
-            lengths[4] = out.LenY;
-            lengths[5] = out.LenZ;
+            lengths[2] = out.LenX;
+            lengths[3] = out.LenY;
             lengths.sync();
         }
         
-        out.work("transpose", *out.data, *this->data, *lengths.data);
+        out.work("Transpose", *out.data, *this->data, (unsigned int)LenX, (unsigned int)LenY);
 
         return out;
     }
 
     // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
     Array make_square() const {
-        uint len = std::max<uint>(LenY, LenX);
+        unsigned int len = std::max<unsigned int>(LenY, LenX);
 
         Array out;
         out.tasks = this->tasks;
         out.working = true;
         out.local = false;
-        out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), len * len * LenZ, std::max<uint>(2, Dim), false, true);
+        out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), len * len * LenZ, std::max<unsigned int>(2, Dim), false, true);
         out.LenX = len;
         out.LenY = len;
         out.LenZ = LenZ;
-        out.Dim = std::max<uint>(2, Dim);
+        out.Dim = std::max<unsigned int>(2, Dim);
 
-        Array<unsigned int> lengths(6); {
-            lengths[0] = this->LenX;
-            lengths[1] = this->LenY;
-            lengths[2] = this->LenZ;
-            lengths[3] = out.LenX;
-            lengths[4] = out.LenY;
-            lengths[5] = out.LenZ;
-            lengths.sync();
-        }
-
-        out.work("make_square", *out.data, *this->data, *lengths.data);
+        out.work("make_square", *out.data, *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY, (unsigned int)this->LenZ, (unsigned int)len);
 
         return out;
     }
@@ -1259,7 +1198,8 @@ public:
         }
         size_t dimension = this->LenX;
         Array solution; {
-            solution.working = false;
+            solution.tasks = this->tasks;
+            solution.working = this->working;
             solution.local = true;
             solution.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), (dimension) * (dimension), 2, true, true);
             solution.LenX = dimension;
@@ -1298,6 +1238,7 @@ public:
                 solution(i,j) = std::pow<float>(-1, i + j) * subVect.determinant();
             }
         }
+        solution.sync();
         return solution;
     }
 
@@ -1431,6 +1372,20 @@ private:
             return std::to_string(this->operator()(x,y));
         }
     };
+    std::string to_string_impl(size_t x, size_t y, size_t z) const {
+        if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+            auto c = this->operator()(x, y, z);
+            if (std::isalpha(c) || std::isdigit(c)) {
+                return "'" + std::string(1, c) + "'";
+            }
+            else {
+                return std::to_string(c);
+            }
+        }
+        else {
+            return std::to_string(this->operator()(x, y, z));
+        }
+    };
 
 public:
     // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
@@ -1471,9 +1426,15 @@ public:
                 }
             }
         }
+        else if (this->Dim == 3) {
+            out = "3 dims";
+        }
         return out;
     };
-
+    friend std::ostream& operator<<(std::ostream& os, Array const& obj) {
+        os << obj.to_string();
+        return os;
+    };
 
 };
 
@@ -1496,19 +1457,23 @@ void fnGpuProgramming() {
         Array<float> mat(3, 3);
         for (int i = 0; i < 9; ++i) mat[i] = i + 1;
         mat[8] = 8;
+        mat.sync();
+        mat = mat.transpose();
 
+        print(mat);
+        print("");
+        print(mat.transpose());
         print("");
         print(mat.determinant());
         print("");
-        print(mat.cofactor().to_string());
+        print(mat.cofactor());
         print("");
-        print(mat.cofactor().to_string());
+        print(mat.adjoint());
         print("");
-        print(mat.adjoint().to_string());
-        print("");
-        //print(mat.inverse().to_string());
-
         print((mat.adjoint() / std::abs(mat.determinant())).to_string());
+        print("");
+        print(mat.inverse());
+
 
 
     }
@@ -1572,29 +1537,29 @@ void fnGpuProgramming() {
 
 
 
-    const uint N = 1000000u; // size of vectors
+    const unsigned int N = 1000000u; // size of vectors
     if (1) {
         if (1) {
             auto A{ Array<float>::random(N) };
-            for (uint n = 0u; n < 10; n++) {
+            for (unsigned int n = 0u; n < 10; n++) {
                 print(A[n]);
             }
         }
         if (1) {
             auto A{ Array<unsigned int>::random(N) };
-            for (uint n = 0u; n < 10; n++) {
+            for (unsigned int n = 0u; n < 10; n++) {
                 print(A[n]);
             }
         }
         if (1) {
             auto A{ Array<int>::random(N) };
-            for (uint n = 0u; n < 10; n++) {
+            for (unsigned int n = 0u; n < 10; n++) {
                 print(A[n]);
             }
         }
         if (1) {
             auto A{ Array<unsigned char>::random(N) };
-            for (uint n = 0u; n < 10; n++) {
+            for (unsigned int n = 0u; n < 10; n++) {
                 print(A[n]);
             }
         }
@@ -1604,9 +1569,9 @@ void fnGpuProgramming() {
             A = 0;
             A += 5;
             auto B = A.pow(2).round();
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(B[n], 25.0f);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(B[n], 25.0f);
             auto C = (B * -1.0f).abs().round();
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(C[n], 25.0f);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(C[n], 25.0f);
             
 
             A = 5;
@@ -1615,9 +1580,9 @@ void fnGpuProgramming() {
         }
         if (1) {
             Array<float> A(10, 100000);
-            for (uint col = 0u; col < 10; col++) {
+            for (unsigned int col = 0u; col < 10; col++) {
                 float v = col * 100000;
-                for (uint row = 0u; row < 100000; row++, v++) A(col, row) = v;                
+                for (unsigned int row = 0u; row < 100000; row++, v++) A(col, row) = v;                
             }
         }
         if (1) {
@@ -1628,14 +1593,14 @@ void fnGpuProgramming() {
             B = 1;
 
             auto C = ((A + (B * 2.0f)) / 2.0f);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(C[n], 1.0f);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(C[n], 1.0f);
             
 
             auto D = C.cast<int>();
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(D[n], 1.0f);            
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(D[n], 1.0f);            
 
             auto CMP = (D == C.cast<int>());
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(CMP[n], true);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(CMP[n], true);
             
         }
 
@@ -1649,16 +1614,16 @@ void fnGpuProgramming() {
             auto C = A + B; // 0 + 2 = 2
             auto D = C * B; // 2 * 2 = 4
 
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(C[n], 2);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(D[n], 4);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(C[n], 2);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(D[n], 4);
 
             auto E = ((((((((A + B) * B) + B) * B) + B) * B) + B) * B);
             EXPECT_EQ(E[0], 60);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(E[n], 60);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(E[n], 60);
             
 
             EXPECT_EQ(A[0], 0);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(A[n], 0);            
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(A[n], 0);            
             A += B;
             A *= B;
             A += B;
@@ -1668,7 +1633,7 @@ void fnGpuProgramming() {
             A += B;
             A *= B;
             EXPECT_EQ(A[0], 60);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(A[n], 60);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(A[n], 60);
             
         }
         if (1) {
@@ -1676,7 +1641,7 @@ void fnGpuProgramming() {
             Array<int> B(N);
 
             // initialize memory
-            for (uint n = 0u; n < N; n++) {
+            for (unsigned int n = 0u; n < N; n++) {
                 A[n] = 0;
                 B[n] = 2;
             }
@@ -1687,11 +1652,11 @@ void fnGpuProgramming() {
             auto C = A + B; // 0 + 2 = 2
             auto D = C * B; // 2 * 2 = 4
 
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(C[n], 2);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(D[n], 4);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(C[n], 2);
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(D[n], 4);
             auto E = ((((((((A + B) * B) + B) * B) + B) * B) + B) * B);
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(E[n], 60);            
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(A[n], 0);            
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(E[n], 60);            
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(A[n], 0);            
             A += B;
             A *= B;
             A += B;
@@ -1700,7 +1665,7 @@ void fnGpuProgramming() {
             A *= B;
             A += B;
             A *= B;
-            for (uint n = 0u; n < N; n++) EXPECT_EQ(A[n], 60);            
+            for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(A[n], 60);            
         }
 
 
@@ -1716,7 +1681,7 @@ void fnGpuProgramming() {
 
         //A.data->read_from_device();
 
-        //for (uint n = 0u; n < N; n++) {
+        //for (unsigned int n = 0u; n < N; n++) {
         //    EXPECT_EQ(A[n], 60);
         //}
     }
@@ -1743,7 +1708,7 @@ void fnGpuProgramming() {
     //
 
     //// initialize memory
-    //for (uint n = 0u; n < N; n++) {
+    //for (unsigned int n = 0u; n < N; n++) {
     //    A[n] = 0.0f; 
     //    B[n] = 2.0f;
     //    C[n] = 0.0f;
@@ -1778,7 +1743,7 @@ void fnGpuProgramming() {
 
     //A.read_from_device(); // copy data from device memory to host memory
 
-    //for (uint n = 0u; n < N; n++) {
+    //for (unsigned int n = 0u; n < N; n++) {
     //    EXPECT_EQ(A[n], 60);
     //}
 
@@ -1793,7 +1758,7 @@ void fnGpuProgramming() {
 
     //A.read_from_device(); // copy data from device memory to host memory
     //
-    //for (uint n = 0u; n < N; n++) {
+    //for (unsigned int n = 0u; n < N; n++) {
     //    EXPECT_EQ(A[n], 60);
     //}
 

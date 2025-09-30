@@ -136,73 +136,71 @@ auto out = GL::string(R(
 		return x;
 	};
 
-	kernel void transpose(global _type_* destination, global _type_* RHS, global uint* lengths) {
+	kernel void Transpose(global _type_* destination, global _type_* RHS, uint lenX, uint lenY) {
 		const uint n = get_global_id(0);
-		const uint Z = n / (lengths[4] * lengths[3]);
-		const uint pos2 = n - Z * (lengths[4] * lengths[3]);
-		const uint Y = pos2 / lengths[3];
-		const uint X = pos2 - Y * lengths[3];
-
-		destination[n] = RHS[(Z * lengths[1] * lengths[0]) + (X * lengths[0]) + Y];
+		const uint source_X = (uint)floor((float)n / (float)lenY);
+		const uint source_Y = n - (lenY * source_X);
+		const uint source_N = source_Y * lenX + source_X;
+		destination[n] = RHS[source_N];
 	};
-	kernel void make_square(global _type_* destination, global _type_* RHS, global uint* lengths) {
+	kernel void make_square(global _type_* destination, global _type_* RHS, uint RHS_LenX, uint RHS_LenY, uint LenZ, uint Len) {
 		const uint n = get_global_id(0);
-		const uint Z = n / (lengths[4] * lengths[3]);
-		const uint pos2 = n - Z * (lengths[4] * lengths[3]);
-		const uint Y = pos2 / lengths[3];
-		const uint X = pos2 - Y * lengths[3];
+		const uint Z = (uint)floor((float)n / (float)(Len * Len));
+		const uint pos2 = n - Z * (Len * Len);
+		const uint Y = (uint)floor((float)pos2 / (float)Len);
+		const uint X = pos2 - Y * Len;
 
-		if ((X < lengths[0]) && (Y < lengths[1]) && (Z < lengths[2])) {
-			destination[n] = RHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		if ((X < RHS_LenX) && (Y < RHS_LenY) && (Z < LenZ)) {
+			destination[n] = RHS[(Z * RHS_LenY * RHS_LenX) + (Y * RHS_LenX) + X];
 		}
 		else {
-			destination[n] = 0;
+			destination[n] = (_type_)0;
 		}		
 	};
 
-	kernel void join_dim_0(global _type_* destination, global _type_* LHS, global _type_* RHS, global uint* lengths) {
+	kernel void join_dim_0(global _type_* destination, global _type_* LHS, uint LHS_LenX, uint LenY, uint LenZ, global _type_* RHS, uint RHS_LenX) {
 		const uint n = get_global_id(0);
-		const uint Z = n / (lengths[7] * lengths[6]);
-		const uint pos2 = n - Z * (lengths[7] * lengths[6]);
-		const uint Y = pos2 / lengths[6];
-		uint X = pos2 - Y * lengths[6];
+		const uint Z = (uint)floor((float)n / ((float)(LenY) * (float)(LHS_LenX + RHS_LenX)));
+		const uint pos2 = n - Z * ((LenY) * (LHS_LenX + RHS_LenX));
+		const uint Y = (uint)floor((float)pos2 / (float)(LHS_LenX + RHS_LenX));
+		uint X = pos2 - Y * (LHS_LenX + RHS_LenX);
 
-		if ((X < lengths[0])) {
-			destination[n] = LHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		if (X < LHS_LenX) {
+			destination[n] = LHS[(Z * LenY * LHS_LenX) + (Y * LHS_LenX) + X];
 		}
 		else {
-			X -= lengths[0];
-			destination[n] = RHS[(Z * lengths[4] * lengths[3]) + (Y * lengths[3]) + X];
+			X -= LHS_LenX;
+			destination[n] = RHS[(Z * LenY * RHS_LenX) + (Y * RHS_LenX) + X];
 		}
 	}
-	kernel void join_dim_1(global _type_* destination, global _type_* LHS, global _type_* RHS, global uint* lengths) {
+	kernel void join_dim_1(global _type_* destination, global _type_* LHS, uint LenX, uint LHS_LenY, uint LenZ, global _type_* RHS, uint RHS_LenY) {
 		const uint n = get_global_id(0);
-		const uint Z = n / (lengths[7] * lengths[6]);
-		const uint pos2 = n - Z * (lengths[7] * lengths[6]);
-		uint Y = pos2 / lengths[6];
-		const uint X = pos2 - Y * lengths[6];
+		const uint Z = (uint)floor((float)n / ((float)(LHS_LenY + RHS_LenY) * (float)LenX));
+		const uint pos2 = n - Z * ((LHS_LenY + RHS_LenY) * LenX);
+		uint Y = (uint)floor((float)pos2 / (float)LenX);
+		const uint X = pos2 - Y * LenX;
 
-		if (Y < lengths[1]) {
-			destination[n] = LHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		if (Y < LHS_LenY) {
+			destination[n] = LHS[(Z * LHS_LenY * LenX) + (Y * LenX) + X];
 		}
 		else {
-			Y -= lengths[1];
-			destination[n] = RHS[(Z * lengths[4] * lengths[3]) + (Y * lengths[3]) + X];
+			Y -= LHS_LenY;
+			destination[n] = RHS[(Z * RHS_LenY * LenX) + (Y * LenX) + X];
 		}
 	}
-	kernel void join_dim_2(global _type_* destination, global _type_* LHS, global _type_* RHS, global uint* lengths) {
+	kernel void join_dim_2(global _type_* destination, global _type_* LHS, uint LenX, uint LenY, uint LHS_LenZ, global _type_* RHS) {
 		const uint n = get_global_id(0);
-		uint Z = n / (lengths[7] * lengths[6]);
-		const uint pos2 = n - Z * (lengths[7] * lengths[6]);
-		const uint Y = pos2 / lengths[6];
-		const uint X = pos2 - Y * lengths[6];
+		uint Z = (uint)floor((float)n / ((float)(LenY) * (float)LenX));
+		const uint pos2 = n - Z * ((LenY) * LenX);
+		const uint Y = (uint)floor((float)pos2 / (float)LenX);
+		const uint X = pos2 - Y * LenX;
 
-		if ((Z < lengths[2])) {
-			destination[n] = LHS[(Z * lengths[1] * lengths[0]) + (Y * lengths[0]) + X];
+		if (Z < LHS_LenZ) {
+			destination[n] = LHS[(Z * LenY * LenX) + (Y * LenX) + X];
 		}
 		else {
-			Z -= lengths[2];
-			destination[n] = RHS[(Z * lengths[4] * lengths[3]) + (Y * lengths[3]) + X];
+			Z -= LHS_LenZ;
+			destination[n] = RHS[(Z * LenY * LenX) + (Y * LenX) + X];
 		}
 	}
 
