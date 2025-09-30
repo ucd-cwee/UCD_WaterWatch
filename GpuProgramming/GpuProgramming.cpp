@@ -1107,15 +1107,7 @@ public:
         out.LenY = LenX;
         out.LenZ = 1;
         out.Dim = 2;
-
-        Array<unsigned int> lengths(4); {
-            lengths[0] = this->LenX;
-            lengths[1] = this->LenY;
-            lengths[2] = out.LenX;
-            lengths[3] = out.LenY;
-            lengths.sync();
-        }
-        
+                
         out.work("Transpose", *out.data, *this->data, (unsigned int)LenX, (unsigned int)LenY);
 
         return out;
@@ -1192,9 +1184,10 @@ public:
     }
 
     // cofactor of a square matrix, essential for calculating the inverse
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
     Array cofactor() const {
         if (this->LenX != this->LenY) {
-            return {};
+            return make_square().cofactor();
         }
         size_t dimension = this->LenX;
         Array solution; {
@@ -1243,50 +1236,49 @@ public:
     }
 
     // transpose of the cofactor of a square matrix
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
     Array adjoint() const {
         return cofactor().transpose();
     }
 
-
     // solve for the inverse of the matrix. Does not support solving for the inverse of a 3-D matrix. 
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
     Array inverse() const {
-        if (this->LenX != this->LenY) {
-            return {};
+        return adjoint() / std::abs(determinant());
+    };
+
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+    Array matrix_multiply(Array const& rhs) const {
+        if (this->LenY == rhs.LenX) {
+            // only useful for dim-2 matrices. 
+            unsigned int final_num_rows = this->LenX;
+            unsigned int final_num_cols = rhs.LenY;
+
+            Array out;
+            out.tasks = this->tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), final_num_rows * final_num_cols, 2, false, true);
+            out.LenX = final_num_rows;
+            out.LenY = final_num_cols;
+            out.LenZ = 1;
+            out.Dim = 2;
+
+            out.work("matx_mult",
+                *out.data, (unsigned int)final_num_rows, (unsigned int)final_num_cols,
+                *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY,
+                *rhs.data, (unsigned int)rhs.LenX, (unsigned int)rhs.LenY
+            );
+
+            return out;
         }
-        size_t dimension = this->LenX;
-
-        float det = this->determinant();
-        if (det == 0) {
-            return {};
+        else if (this->LenY > rhs.LenX) {
+            return matrix_multiply(rhs.copy().join(0, Array(this->LenY - rhs.LenX, rhs.LenY, rhs.LenZ) = 1));
         }
-
-        float d = 1.0 / det;
-
-        Array solution; {
-            solution.working = false;
-            solution.local = true;
-            solution.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), (dimension) * (dimension), 2, true, true);
-            solution.LenX = dimension;
-            solution.LenY = dimension;
-            solution.LenZ = 1;
-            solution.Dim = 2;
+        else /*if (this->LenY < rhs.LenX)*/ {
+            // To-Do: need to set final column in joining array to 1?
+            return this->copy().join(1, Array(this->LenX, rhs.LenX - this->LenY, this->LenZ) = 0).matrix_multiply(rhs);
         }
-
-        for (size_t i = 0; i < dimension; i++) {
-            for (size_t j = 0; j < dimension; j++) {
-                solution(i,j) = (*this)(i, j);
-            }
-        }
-
-        auto adj = solution.cofactor().transpose();
-
-        for (size_t i = 0; i < dimension; i++) {
-            for (size_t j = 0; j < dimension; j++) {
-                adj(i,j) *= d;
-            }
-        }
-
-        return adj;
     };
 
 
@@ -1462,17 +1454,9 @@ void fnGpuProgramming() {
 
         print(mat);
         print("");
-        print(mat.transpose());
-        print("");
-        print(mat.determinant());
-        print("");
-        print(mat.cofactor());
-        print("");
-        print(mat.adjoint());
-        print("");
-        print((mat.adjoint() / std::abs(mat.determinant())).to_string());
-        print("");
         print(mat.inverse());
+        print("");
+        print(mat.matrix_multiply(mat.inverse()));
 
 
 
@@ -1497,18 +1481,17 @@ void fnGpuProgramming() {
 
         auto features = Basic.join(1, TV_Ads).join(1, Radio_Ads).join(1, Newspaper_Ads);
 
+        auto weights = (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(Sales_Revenue);
+        auto prediction = features.matrix_multiply(weights);
 
-        print((Array<char>(4, 2) = 'T').make_square().to_string());
+        print(""); 
+        print(weights);
+        print("");        
+        print(Sales_Revenue.join(1, prediction));
+        print("");
 
-
-        print(features.make_square().to_string());
-        print(TV_Ads.to_string());
-        print(TV_Ads.transpose().to_string());
-
-
-        // return (features.transpose().matrix_multiplication(features)).inverse().matrix_multiplication(features.transpose()).matrix_multiplication(measurements);
-
-
+        //auto std_err = (((Sales_Revenue - prediction).pow(2.0).sum() / std::max<double>(1.0, static_cast<double>(features.size_x()) - 2.0)) * (features.transpose().matrix_multiplication(features)).inverse()).pow(0.5);
+        //return std_err.diagonal();
 
 
 
