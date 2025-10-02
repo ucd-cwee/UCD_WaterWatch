@@ -73,6 +73,10 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = A[n] / B;
 	}
+	kernel void divide_single_inv(global _type_* A, _type_ B, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = B / A[n];
+	}
 	kernel void divide_single_inplace(global _type_* A, _type_ B) {
 		const uint n = get_global_id(0);
 		A[n] /= B;
@@ -123,6 +127,46 @@ auto out = GL::string(R(
 		C[n] = (A[n] != B[n]) ? 1 : 0;
 	}
 
+	kernel void item_not(global uint* A, global _type_* B) {
+		const uint n = get_global_id(0);
+		A[n] = !B[n];
+	};
+	kernel void item_ls_single(global _type_* A, _type_ B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] < B) ? 1 : 0;
+	}
+	kernel void item_lse_single(global _type_* A, _type_ B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] <= B) ? 1 : 0;
+	}
+	kernel void item_ls(global _type_* A, global _type_* B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] < B[n]) ? 1 : 0;
+	}
+	kernel void item_lse(global _type_* A, global _type_* B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] <= B[n]) ? 1 : 0;
+	}
+	kernel void item_gr_single(global _type_* A, _type_ B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] > B) ? 1 : 0;
+	}
+	kernel void item_gre_single(global _type_* A, _type_ B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] >= B) ? 1 : 0;
+	}
+	kernel void item_gr(global _type_* A, global _type_* B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] > B[n]) ? 1 : 0;
+	}
+	kernel void item_gre(global _type_* A, global _type_* B, global uint* C) {
+		const uint n = get_global_id(0);
+		C[n] = (A[n] >= B[n]) ? 1 : 0;
+	}
+
+
+
+
 	global atomic_int __rand_counter = ATOMIC_VAR_INIT(123456789);
 	uint __rand() {
 		uint x, y;
@@ -157,7 +201,27 @@ auto out = GL::string(R(
 			destination[n] = (_type_)0;
 		}		
 	};
+	kernel void identity(global _type_* destination, uint LenX) {
+		const uint n = get_global_id(0);
+		const uint Y = (uint)floor((float)n / (float)LenX);
+		const uint X = n - Y * LenX;
 
+		if (X == Y) {
+			destination[n] = (_type_)1;
+		}
+		else {
+			destination[n] = (_type_)0;
+		}
+	};
+	kernel void diagonal(global _type_* destination, global _type_* source, uint LenX) {
+		const uint n = get_global_id(0);
+		const uint Y = (uint)floor((float)n / (float)LenX);
+		const uint X = n - Y * LenX;
+
+		if (X == Y) {
+			destination[X] = source[n];
+		}
+	};
 	kernel void join_dim_0(global _type_* destination, global _type_* LHS, uint LHS_LenX, uint LenY, uint LenZ, global _type_* RHS, uint RHS_LenX) {
 		const uint n = get_global_id(0);
 		const uint Z = (uint)floor((float)n / ((float)(LenY) * (float)(LHS_LenX + RHS_LenX)));
@@ -203,7 +267,28 @@ auto out = GL::string(R(
 			destination[n] = RHS[(Z * LenY * LenX) + (Y * LenX) + X];
 		}
 	}
+	kernel void reduce_sum(global _type_* input, global _type_* output, local _type_* scratch, uint n) {
+		uint global_id = get_global_id(0);
+		uint local_id = get_local_id(0);
+		uint group_size = get_local_size(0);
 
+		// Copy data from global to local memory
+		scratch[local_id] = (global_id < n) ? input[global_id] : 0.0f;
+		barrier(CLK_LOCAL_MEM_FENCE);
+
+		// Perform reduction within the work-group
+		for (uint s = group_size / 2; s > 0; s /= 2) {
+			if (local_id < s) {
+				scratch[local_id] += scratch[local_id + s];
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+		}
+
+		// Write the work-group's partial sum to global memory
+		if (local_id == 0) {
+			output[get_group_id(0)] = scratch[0];
+		}
+	}
 ));
 if (floatingPoint) {
 out = out + GL::string(R(
@@ -388,8 +473,50 @@ out = out + GL::string(R(
 
 		destination[n] = v;
 	};
+	kernel void reduce_max(global _type_* input, global _type_* output, local _type_* scratch, uint n, _type_ minV) {
+		uint global_id = get_global_id(0);
+		uint local_id = get_local_id(0);
+		uint group_size = get_local_size(0);
 
+		// Copy data from global to local memory
+		scratch[local_id] = (global_id < n) ? input[global_id] : minV;
+		barrier(CLK_LOCAL_MEM_FENCE);
 
+		// Perform reduction within the work-group
+		for (uint s = group_size / 2; s > 0; s /= 2) {
+			if (local_id < s) {
+				scratch[local_id] = fmax(scratch[local_id], scratch[local_id + s]);
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+		}
+
+		// Write the work-group's partial sum to global memory
+		if (local_id == 0) {
+			output[get_group_id(0)] = scratch[0];
+		}
+	}
+	kernel void reduce_min(global _type_* input, global _type_* output, local _type_* scratch, uint n, _type_ maxV) {
+		uint global_id = get_global_id(0);
+		uint local_id = get_local_id(0);
+		uint group_size = get_local_size(0);
+
+		// Copy data from global to local memory
+		scratch[local_id] = (global_id < n) ? input[global_id] : maxV;
+		barrier(CLK_LOCAL_MEM_FENCE);
+
+		// Perform reduction within the work-group
+		for (uint s = group_size / 2; s > 0; s /= 2) {
+			if (local_id < s) {
+				scratch[local_id] = fmin(scratch[local_id], scratch[local_id + s]);
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+		}
+
+		// Write the work-group's partial sum to global memory
+		if (local_id == 0) {
+			output[get_group_id(0)] = scratch[0];
+		}
+	}
 
 ));
 }
@@ -546,6 +673,50 @@ out = out + GL::string(R(
 	kernel void Rand(global _type_* A) {
 		const uint n = get_global_id(0);
 		A[n] = __rand();
+	}
+	kernel void reduce_max(global _type_* input, global _type_* output, local _type_* scratch, uint n, _type_ minV) {
+		uint global_id = get_global_id(0);
+		uint local_id = get_local_id(0);
+		uint group_size = get_local_size(0);
+
+		// Copy data from global to local memory
+		scratch[local_id] = (global_id < n) ? input[global_id] : minV;
+		barrier(CLK_LOCAL_MEM_FENCE);
+
+		// Perform reduction within the work-group
+		for (uint s = group_size / 2; s > 0; s /= 2) {
+			if (local_id < s) {
+				scratch[local_id] = max(scratch[local_id], scratch[local_id + s]);
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+		}
+
+		// Write the work-group's partial sum to global memory
+		if (local_id == 0) {
+			output[get_group_id(0)] = scratch[0];
+		}
+	}
+	kernel void reduce_min(global _type_* input, global _type_* output, local _type_* scratch, uint n, _type_ maxV) {
+		uint global_id = get_global_id(0);
+		uint local_id = get_local_id(0);
+		uint group_size = get_local_size(0);
+
+		// Copy data from global to local memory
+		scratch[local_id] = (global_id < n) ? input[global_id] : maxV;
+		barrier(CLK_LOCAL_MEM_FENCE);
+
+		// Perform reduction within the work-group
+		for (uint s = group_size / 2; s > 0; s /= 2) {
+			if (local_id < s) {
+				scratch[local_id] = min(scratch[local_id], scratch[local_id + s]);
+			}
+			barrier(CLK_LOCAL_MEM_FENCE);
+		}
+
+		// Write the work-group's partial sum to global memory
+		if (local_id == 0) {
+			output[get_group_id(0)] = scratch[0];
+		}
 	}
 
 ));

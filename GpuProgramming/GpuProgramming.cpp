@@ -1,10 +1,11 @@
 // GpuProgramming.cpp : Defines the functions for the static library.
 //
-
+#include <boost/math/distributions/students_t.hpp>
 #include <iostream>
 #include "GpuProgramming.h"
 #include "../arrayfire/include/CL/opencl.hpp"
 #include "opencl.hpp"
+
 
 #define print(a) std::cout << a << std::endl
 #define EXPECT_EQ(a, b) if (a != b){ std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
@@ -20,7 +21,7 @@ public:
     ArrayTasks& operator=(ArrayTasks&&) = default;
     ~ArrayTasks() = default;
 
-    std::vector<Event>& get() {
+    std::vector<Event>& get() const {
         if (!tasks) tasks = std::make_shared<std::vector<Event>>();
         return *tasks;
     };
@@ -62,44 +63,44 @@ public:
     size_t LenX;
     size_t LenY;
     size_t LenZ;
-    unsigned int Dim;
+    size_t Dim;
 
     Array()
         : data{ nullptr }
-        , LenX{ 0 }
-        , LenY{ 0 }
-        , LenZ{ 0 }
-        , Dim{ 0 }
+        , LenX{ 0ull }
+        , LenY{ 0ull }
+        , LenZ{ 0ull }
+        , Dim{ 0ull }
         , tasks{}
         , working{ false }
         , local{ true }
     {};
-    Array(unsigned int lenX)
+    explicit Array(size_t lenX)
         : data{ std::make_shared<Memory<T>>(GetDevice(), lenX, 1) }
         , LenX{ lenX }
-        , LenY{ 1 }
-        , LenZ{ 1 }
-        , Dim{ 1 }
+        , LenY{ 1ull }
+        , LenZ{ 1ull }
+        , Dim{ 1ull }
         , tasks{}
         , working{ false }
         , local{ true }
     {};
-    Array(unsigned int lenX, unsigned int lenY)
-        : data{ std::make_shared<Memory<T>>(GetDevice(), lenX * lenY, 2) }
+    explicit Array(size_t lenX, size_t lenY)
+        : data{ std::make_shared<Memory<T>>(GetDevice(), lenX * lenY, 2ull) }
         , LenX{ lenX }
         , LenY{ lenY }
-        , LenZ{ 1 }
-        , Dim{ 2 }
+        , LenZ{ 1ull }
+        , Dim{ std::max<size_t>(1ull, (size_t)(lenY > 1ull) + (size_t)(lenX > 1ull)) }
         , tasks{}
         , working{ false }
         , local{ true }
     {};
-    Array(unsigned int lenX, unsigned int lenY, unsigned int lenZ)
-        : data{ std::make_shared<Memory<T>>(GetDevice(), lenX * lenY * lenZ, 3) }
+    explicit Array(size_t lenX, size_t lenY, size_t lenZ, bool GPU_Only = false)
+        : data{ std::make_shared<Memory<T>>(GetDevice(), lenX * lenY * lenZ, 3ull, !GPU_Only, true) }
         , LenX{ lenX }
         , LenY{ lenY }
         , LenZ{ lenZ }
-        , Dim{ 3 }
+        , Dim{ std::max<size_t>(1ull, (size_t)(lenZ > 1ull) + (size_t)(lenY > 1ull) + (size_t)(lenX > 1ull)) }
         , tasks{}
         , working{ false }
         , local{ true }
@@ -361,6 +362,64 @@ public:
     Array& operator/=(T rhs) {
         this->work("divide_single_inplace", *data, rhs);
         return *this;
+    };
+
+    friend Array operator+(T rhs, Array const& lhs) {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("add_single", *lhs.data, rhs, *out.data);
+        return out;
+    };
+    friend Array operator-(T rhs, Array const& lhs) {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("mult_single", *lhs.data, -1, *out.data);
+        out.work("add_single", *lhs.data, rhs, *out.data);
+        return out;
+    };
+    friend Array operator*(T rhs, Array const& lhs) {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("mult_single", *lhs.data, rhs, *out.data);
+        return out;
+    };
+    friend Array operator/(T rhs, Array const& lhs) {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("divide_single_inv", *lhs.data, rhs, *out.data);
+        return out;
     };
 
     Array& operator=(T rhs) {
@@ -922,6 +981,24 @@ public:
         return out;
     };
 
+    Array<unsigned int> operator!() const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+            out.LenX = this->LenX;
+            out.LenY = this->LenY;
+            out.LenZ = this->LenZ;
+            out.Dim = this->Dim;
+            out.tasks = this->tasks;
+            out.working = true;
+            out.local = false;
+        }
+        Kernel kernel(this->GetDevice(), LenX * LenY * LenZ, "item_not", *out.data, *data);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        working = true;
+        return out;
+    };
     Array<unsigned int> operator==(T rhs) const {
         Array<unsigned int > out; {
             out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
@@ -998,6 +1075,160 @@ public:
         out.working = true;
         return out;
     };
+    Array<unsigned int> operator<(T rhs) const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+            out.LenX = this->LenX;
+            out.LenY = this->LenY;
+            out.LenZ = this->LenZ;
+            out.Dim = this->Dim;
+            out.tasks = this->tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(this->GetDevice(), LenX * LenY * LenZ, "item_ls_single", *data, rhs, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        working = true;
+        return out;
+    };
+    Array<unsigned int> operator<=(T rhs) const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int>::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+            out.LenX = this->LenX;
+            out.LenY = this->LenY;
+            out.LenZ = this->LenZ;
+            out.Dim = this->Dim;
+            out.tasks = this->tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(this->GetDevice(), LenX * LenY * LenZ, "item_lse_single", *data, rhs, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        working = true;
+        return out;
+    };
+    friend Array<unsigned int> operator<(Array const& lhs, Array const& rhs) {
+        Array<unsigned int> out; {
+            out.data = std::make_shared<Memory<unsigned int>>(Array<unsigned int>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(Array<T>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, "item_ls", *lhs.data, *rhs.data, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        out.working = true;
+        return out;
+    };
+    friend Array<unsigned int> operator<=(Array const& lhs, Array const& rhs) {
+        Array<unsigned int> out; {
+            out.data = std::make_shared<Memory<unsigned int>>(Array<unsigned int>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(Array<T>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, "item_lse", *lhs.data, *rhs.data, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        out.working = true;
+        return out;
+    };
+    Array<unsigned int> operator>(T rhs) const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int >::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+            out.LenX = this->LenX;
+            out.LenY = this->LenY;
+            out.LenZ = this->LenZ;
+            out.Dim = this->Dim;
+            out.tasks = this->tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(this->GetDevice(), LenX * LenY * LenZ, "item_gr_single", *data, rhs, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        working = true;
+        return out;
+    };
+    Array<unsigned int> operator>=(T rhs) const {
+        Array<unsigned int > out; {
+            out.data = std::make_shared<Memory<unsigned int >>(Array<unsigned int>::GetDevice(), this->LenX * this->LenY * this->LenZ, this->Dim, false, true);
+            out.LenX = this->LenX;
+            out.LenY = this->LenY;
+            out.LenZ = this->LenZ;
+            out.Dim = this->Dim;
+            out.tasks = this->tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(this->GetDevice(), LenX * LenY * LenZ, "item_gre_single", *data, rhs, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        working = true;
+        return out;
+    };
+    friend Array<unsigned int> operator>(Array const& lhs, Array const& rhs) {
+        Array<unsigned int> out; {
+            out.data = std::make_shared<Memory<unsigned int>>(Array<unsigned int>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(Array<T>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, "item_gr", *lhs.data, *rhs.data, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        out.working = true;
+        return out;
+    };
+    friend Array<unsigned int> operator>=(Array const& lhs, Array const& rhs) {
+        Array<unsigned int> out; {
+            out.data = std::make_shared<Memory<unsigned int>>(Array<unsigned int>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, lhs.Dim, false, true);
+            out.LenX = lhs.LenX;
+            out.LenY = lhs.LenY;
+            out.LenZ = lhs.LenZ;
+            out.Dim = lhs.Dim;
+            out.tasks = lhs.tasks + rhs.tasks;
+            out.working = true;
+            out.local = false;
+        }
+
+        Kernel kernel(Array<T>::GetDevice(), lhs.LenX * lhs.LenY * lhs.LenZ, "item_gre", *lhs.data, *rhs.data, *out.data);
+        Event this_event;
+        kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        out.working = true;
+        return out;
+    };
+
+
 
 protected:
     //std::tuple<size_t, size_t, size_t> position_to_coordinate(size_t pos) const {
@@ -1239,7 +1470,7 @@ public:
     template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
     Array adjoint() const {
         return cofactor().transpose();
-    }
+    };
 
     // solve for the inverse of the matrix. Does not support solving for the inverse of a 3-D matrix. 
     template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
@@ -1264,6 +1495,21 @@ public:
             out.LenZ = 1;
             out.Dim = 2;
 
+
+            //Kernel kernel(
+            //    Array<T>::GetDevice(), 
+            //    out.size(), "matx_mult", 
+            //    *out.data, (unsigned int)final_num_rows, (unsigned int)final_num_cols,
+            //    *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY,
+            //    *rhs.data, (unsigned int)rhs.LenX, (unsigned int)rhs.LenY
+            //);
+            //Event this_event;
+            //kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+            //out.tasks.get().push_back(this_event);
+            //out.working = true;
+            //return out;
+
+
             out.work("matx_mult",
                 *out.data, (unsigned int)final_num_rows, (unsigned int)final_num_cols,
                 *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY,
@@ -1281,7 +1527,177 @@ public:
         }
     };
 
+private:
+    Array sum_iteration() const {
+        if (this->size() > 1000) {
+            Array out; {
+                out.tasks = this->tasks;
+                out.working = this->working;
+                out.local = false;
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::ceilf((float)(LenX * LenY * LenZ) / (float)64), 1, false, true);
+                out.LenX = std::ceilf((float)(LenX * LenY * LenZ) / (float)64);
+                out.LenY = 1;
+                out.LenZ = 1;
+                out.Dim = 1;
+            }
+            Array scratch; {
+                scratch.working = false;
+                scratch.local = false;
+                scratch.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), 65, Dim, false, true);
+                scratch.LenX = 65;
+                scratch.LenY = 1;
+                scratch.LenZ = 1;
+                scratch.Dim = Dim;
+            }
 
+            Kernel kernel(this->GetDevice(), this->size(), "reduce_sum", *data, *out.data, *scratch.data, this->size());
+            Event this_event;
+            kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+            out.tasks.get().push_back(this_event);
+            out.working = true;
+            // out.work("reduce_sum", *data, *out.data, *scratch.data, this->size());
+            return out;
+        }
+        else {
+            return *this;
+        }
+    };
+    Array max_iteration() const {
+        if (this->size() > 1000) {
+            Array out; {
+                out.tasks = this->tasks;
+                out.working = this->working;
+                out.local = false;
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::ceilf((float)(LenX * LenY * LenZ) / (float)64), 1, false, true);
+                out.LenX = std::ceilf((float)(LenX * LenY * LenZ) / (float)64);
+                out.LenY = 1;
+                out.LenZ = 1;
+                out.Dim = 1;
+            }
+            Array scratch; {
+                scratch.working = false;
+                scratch.local = false;
+                scratch.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), 65, Dim, false, true);
+                scratch.LenX = 65;
+                scratch.LenY = 1;
+                scratch.LenZ = 1;
+                scratch.Dim = Dim;
+            }
+
+            Kernel kernel(this->GetDevice(), this->size(), "reduce_max", *data, *out.data, *scratch.data, this->size(), std::numeric_limits<T>::lowest());
+            Event this_event;
+            kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+            out.tasks.get().push_back(this_event);
+            out.working = true;
+            // out.work("reduce_sum", *data, *out.data, *scratch.data, this->size());
+            return out;
+        }
+        else {
+            return *this;
+        }
+    };
+    Array min_iteration() const {
+        if (this->size() > 1000) {
+            Array out; {
+                out.tasks = this->tasks;
+                out.working = this->working;
+                out.local = false;
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::ceilf((float)(LenX * LenY * LenZ) / (float)64), 1, false, true);
+                out.LenX = std::ceilf((float)(LenX * LenY * LenZ) / (float)64);
+                out.LenY = 1;
+                out.LenZ = 1;
+                out.Dim = 1;
+            }
+            Array scratch; {
+                scratch.working = false;
+                scratch.local = false;
+                scratch.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), 65, Dim, false, true);
+                scratch.LenX = 65;
+                scratch.LenY = 1;
+                scratch.LenZ = 1;
+                scratch.Dim = Dim;
+            }
+
+            Kernel kernel(this->GetDevice(), this->size(), "reduce_min", *data, *out.data, *scratch.data, this->size(), std::numeric_limits<T>::max());
+            Event this_event;
+            kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+            out.tasks.get().push_back(this_event);
+            out.working = true;
+            // out.work("reduce_sum", *data, *out.data, *scratch.data, this->size());
+            return out;
+        }
+        else {
+            return *this;
+        }
+    };
+
+public:
+    T sum() const {
+        Array t = sum_iteration();
+        while (t.size() > 10000) {
+            t = t.sum_iteration();
+        }
+        t.stop_work();
+        auto N = t.size();
+        T out = (T)0;
+        for (size_t n = 0; n < N; ++n) {
+            out += t.data->operator[](n);
+        }
+        return out;
+    };
+    T avg() const {
+        return (T)((double)sum() / (double)this->size());
+    };
+    T max() const {
+        Array t = max_iteration();
+        while (t.size() > 10000) {
+            t = t.max_iteration();
+        }
+        t.stop_work();
+        auto N = t.size();
+        T out = std::numeric_limits<T>::lowest();
+        for (size_t n = 0; n < N; ++n) {
+            out = std::max(out, t.data->operator[](n));
+        }
+        return out;
+    };
+    T min() const {
+        Array t = min_iteration();
+        while (t.size() > 10000) {
+            t = t.min_iteration();
+        }
+        t.stop_work();
+        auto N = t.size();
+        T out = (T)std::numeric_limits<T>::max();
+        for (size_t n = 0; n < N; ++n) {
+            out = std::min(out, t.data->operator[](n));
+        }
+        return out;
+    };
+
+    // extracts the diagonal of a 2-D matrix as a 1-D array
+    Array diagonal() const {
+        if (this->Dim == 0) return *this;
+        else if (this->Dim == 1) return *this;
+        else if (this->Dim > 2) return Array();
+
+        Array out; {
+            out.tasks = this->tasks;
+            out.working = true;
+            out.local = false;
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::min<size_t>(LenX, LenY), 1, false, true);
+            out.LenX = std::min<size_t>(LenX, LenY);
+            out.LenY = 1;
+            out.LenZ = 1;
+            out.Dim = 1;
+        }
+        
+        Kernel kernel(this->GetDevice(), this->size(), "diagonal", *out.data, *data, this->LenX);
+        Event this_event;
+        kernel.enqueue_run(1, &out.tasks.get(), &this_event);
+        out.tasks.get().push_back(this_event);
+        return out;
+    };
 
     template<typename G>
     Array<G> cast() const {
@@ -1306,18 +1722,103 @@ public:
     };
 
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
-    template <typename... P> static Array random(const P&... parameters) {
+    static Array random(size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
         if constexpr (std::is_floating_point_v<T> || std::is_same_v<unsigned int, T>) {
-            Array out(parameters...);
+            int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+            Array<T> out; {
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
+                out.LenX = lenX;
+                out.LenY = lenY;
+                out.LenZ = lenZ;
+                out.Dim = num_dim;
+                out.working = true;
+                out.local = false;
+            }
             out.work("Rand", *out.data);
             return out;
         }
         else {
-            Array<float> out(parameters...);
+            int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+            Array<float> out; {
+                out.data = std::make_shared<Memory<float>>(Array<float>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
+                out.LenX = lenX;
+                out.LenY = lenY;
+                out.LenZ = lenZ;
+                out.Dim = num_dim;
+                out.working = true;
+                out.local = false;
+            }
             out.work("Rand", *out.data);
             out *= std::numeric_limits<T>::max();
             return out.cast<T>();
         }
+    };
+    
+    static Array random_between(T lower, T upper, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
+        if constexpr (std::is_floating_point_v<T> || std::is_same_v<unsigned int, T>) {
+            int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+            Array<T> out; {
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
+                out.LenX = lenX;
+                out.LenY = lenY;
+                out.LenZ = lenZ;
+                out.Dim = num_dim;
+                out.working = true;
+                out.local = false;
+            }
+            out.work("Rand", *out.data);
+            out *= (upper - lower);
+            out += lower;
+            return out;
+        }
+        else {
+            int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+            Array<float> out; {
+                out.data = std::make_shared<Memory<float>>(Array<float>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
+                out.LenX = lenX;
+                out.LenY = lenY;
+                out.LenZ = lenZ;
+                out.Dim = num_dim;
+                out.working = true;
+                out.local = false;
+            }
+            out.work("Rand", *out.data);
+            out *= (upper - lower);
+            out += lower;
+            return out.cast<T>();
+        }
+    };
+
+    // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
+    template <typename... P> static Array identity(size_t width) {
+        Array<T> out; {
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), width * width * 1, 2, false, true);
+            out.LenX = width;
+            out.LenY = width;
+            out.LenZ = 1;
+            out.Dim = 2;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("identity", *out.data, width);
+        return out;
+    };
+
+    // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
+    template <typename... P> static Array constant(T value, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
+        int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+
+        Array<T> out; {
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
+            out.LenX = lenX;
+            out.LenY = lenY;
+            out.LenZ = lenZ;
+            out.Dim = num_dim;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("copy_single", *out.data, value);
+        return out;
     };
 
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
@@ -1378,44 +1879,128 @@ private:
             return std::to_string(this->operator()(x, y, z));
         }
     };
+    std::vector<size_t> evaluate_column_sizes(std::vector<std::string> column_titles = {}) const {
+        std::vector<size_t> out;
+        out.resize(this->LenY);
 
+        for (size_t i = 0; i < out.size(); ++i) {
+            if (i < column_titles.size())
+                out[i] = column_titles[i].size();
+            else
+                out[i] = 0;
+        }
+
+        // only tests the first and last 10 rows of each column
+        for (size_t ColN = 0; ColN < this->LenY; ++ColN) {
+            for (size_t RowN = 0; RowN < this->LenX && (RowN < 10); ++RowN) {
+                out[ColN] = std::max<size_t>(out[ColN], to_string_impl(RowN, ColN).size());
+            }
+            if (this->LenX > 10) {
+                for (size_t RowN = this->LenX - 10; RowN < this->LenX; ++RowN) {
+                    out[ColN] = std::max<size_t>(out[ColN], to_string_impl(RowN, ColN).size());
+                }
+            }
+        }
+
+        return out;
+    };
+    static std::string resize(std::string&& rhs, size_t len, const char def = 0) {
+        rhs.resize(len, def);
+        return std::move(rhs);
+    };
 public:
     // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
-    std::string to_string() const {
+    std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
         std::string out;
         if (this->Dim == 0) return out;
         else if (this->Dim == 1) {
+            auto col_sizes = evaluate_column_sizes(column_titles);
+            
             unsigned int n = 0;
             for (; (n < this->size()) && (n < 1); ++n) {
-                out += to_string_impl(n);
+                out += resize(to_string_impl(n), col_sizes[0], ' ');
             }
-            for (; n < this->size(); ++n) {
-                out += "\n";
-                out += to_string_impl(n);
+            if (!doNotSkip && (this->size() >= 21)) {
+                for (; (n < this->size()) && (n < 10); ++n) {
+                    out += "\n";
+                    out += resize(to_string_impl(n), col_sizes[0], ' ');
+                }
+                out += "\n...";
+                for (n = this->size() - 10; n < this->size(); ++n) {
+                    out += "\n";
+                    out += resize(to_string_impl(n), col_sizes[0], ' ');
+                }                
+            }
+            else {
+                for (; n < this->size(); ++n) {
+                    out += "\n";
+                    out += resize(to_string_impl(n), col_sizes[0], ' ');
+                }
+            }
+            if (column_titles.size() > 0) {
+                out = resize(std::string(column_titles[0]), col_sizes[0], ' ') + "\n" + out;
             }
         }
         else if (this->Dim == 2) {
+            auto col_sizes = evaluate_column_sizes(column_titles);
+
             unsigned int n = 0;
             for (; (n < this->LenX) && (n < 1); ++n) {
                 unsigned int y = 0;
                 for (; (y < this->LenY) && (y < 1); ++y) {
-                    out += to_string_impl(n, y);
+                    out += resize(to_string_impl(n, y), col_sizes[y], ' ');
                 }
                 for (; y < this->LenY; ++y) {
                     out += "\t";
-                    out += to_string_impl(n, y);
+                    out += resize(to_string_impl(n, y), col_sizes[y], ' ');
                 }                
             }
-            for (; n < this->LenX; ++n) {
-                out += "\n";
-                unsigned int y = 0;
-                for (; (y < this->LenY) && (y < 1); ++y) {
-                    out += to_string_impl(n, y);
+            if (!doNotSkip && (this->LenX >= 21)) {
+                for (; (n < this->LenX) && (n < 10); ++n) {
+                    out += "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->LenY) && (y < 1); ++y) {
+                        out += resize(to_string_impl(n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->LenY; ++y) {
+                        out += "\t";
+                        out += resize(to_string_impl(n, y), col_sizes[y], ' ');
+                    }
                 }
-                for (; y < this->LenY; ++y) {
-                    out += "\t";
-                    out += to_string_impl(n, y);
+                out += "\n...";
+                for (n = this->LenX - 10; n < this->LenX; ++n) {
+                    out += "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->LenY) && (y < 1); ++y) {
+                        out += resize(to_string_impl(n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->LenY; ++y) {
+                        out += "\t";
+                        out += resize(to_string_impl(n, y), col_sizes[y], ' ');
+                    }
                 }
+            }
+            else {
+                for (; n < this->LenX; ++n) {
+                    out += "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->LenY) && (y < 1); ++y) {
+                        out += resize(to_string_impl(n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->LenY; ++y) {
+                        out += "\t";
+                        out += resize(to_string_impl(n, y), col_sizes[y], ' ');
+                    }
+                }
+            }
+
+            if (column_titles.size() > 0) {
+                std::string temp = column_titles[0];
+                for (size_t i = 1; i < column_titles.size(); ++i){
+                    temp += "\t";
+                    temp += resize(std::string(column_titles[i]), col_sizes[i], ' ');
+                }                    
+                out = temp + "\n" + out;
             }
         }
         else if (this->Dim == 3) {
@@ -1430,9 +2015,46 @@ public:
 
 };
 
+// linear algebra functions to perform a linear regression.
+namespace linear_regression {
+    // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
+    __forceinline static Array<float> solve_for_weights(Array<float> const& measurements, Array<float> const& features) {
+        return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
+    };
+    // solve for the linearized prediction.
+    __forceinline static Array<float> predict(Array<float> const& features, Array<float> const& weights) {
+        return features.matrix_multiply(weights);
+    };
+    // returns the standard error of the linear regression.
+    __forceinline static Array<float> standard_error(Array<float> const& measurements, Array<float> const& features, Array<float> const& weights) {
+        auto prediction = predict(features, weights);
+        return ((((measurements - prediction).pow(2.0).sum() / std::max<double>(1.0, static_cast<double>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+    };
+    // returns the population standard deviation.
+    __forceinline static Array<float> standard_deviation(
+        Array<float> const& measurements, 
+        Array<float> const& features, 
+        Array<float> const& weights
+    ) {
+        return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
+    };
+    // evaluate for the students-t test
+    __forceinline static Array<float> t_statistic(Array<float> const& weights, Array<float> const& std_err) {
+        return weights / std_err;
+    };
 
-
-
+    // evaluate for the p-value
+    __forceinline static Array<float> p_value(Array<float> const& features, Array<float> const& t_stat) {
+        boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
+        Array<float> P(t_stat.size(0));
+        size_t N = P.size();
+        for (size_t i = 0; i < N; ++i) {
+            P[i] = (1.0f - (float)boost::math::cdf(dist, t_stat[i])) + boost::math::cdf(dist, -t_stat[i]);
+        }
+        P.sync();
+        return P;
+    };
+};
 
 // TODO: This is an example of a library function
 void fnGpuProgramming() {  
@@ -1445,8 +2067,31 @@ void fnGpuProgramming() {
     Array<float>(1);
 
     if (1) {
+        print(Array<float>::identity(5));
+        print(Array<int>::constant(1, 1000000).sum());
+
+        auto arr = Array<int>::random_between(0, 100, 1000000);
+        print(arr.sum());
+        print(arr.avg());
+        print(arr.max());
+        print(arr.min());
+
+
+
+        //sum.stop_work();
+        //for (int i = 0; i < 1000000; ++i) {
+        //    print(std::to_string(i) + std::string(": ") + std::to_string(sum[i]));
+        //}
+
+
+        //print(Array<float>::constant(1, 1000000).sum());
+
+    }
+
+    if (1) {
         // https://stackoverflow.com/questions/60300482/c-calculating-the-inverse-of-a-matrix
         Array<float> mat(3, 3);
+
         for (int i = 0; i < 9; ++i) mat[i] = i + 1;
         mat[8] = 8;
         mat.sync();
@@ -1462,8 +2107,6 @@ void fnGpuProgramming() {
 
     }
 
-
-
     if (1) {
         auto TV_Ads = Array<float>::from_vector(std::vector<double>{
             230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
@@ -1477,26 +2120,120 @@ void fnGpuProgramming() {
         auto Sales_Revenue = Array<float>::from_vector(std::vector<double>{
             22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
         });
-        Array<float> Basic(Sales_Revenue.size()); Basic = 1.0;
+        auto Basic{ Array<float>::constant(1, Sales_Revenue.size()) };
 
         auto features = Basic.join(1, TV_Ads).join(1, Radio_Ads).join(1, Newspaper_Ads);
 
-        auto weights = (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(Sales_Revenue);
-        auto prediction = features.matrix_multiply(weights);
-
+        auto weights = linear_regression::solve_for_weights(Sales_Revenue, features); 
+        auto std_err = linear_regression::standard_error(Sales_Revenue, features, weights);
+        auto std_dev = linear_regression::standard_deviation(Sales_Revenue, features, weights);
+        auto t_stat = linear_regression::t_statistic(weights, std_err);
+        auto p_value = linear_regression::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = linear_regression::predict(features, weights);
+        
         print(""); 
-        print(weights);
-        print("");        
-        print(Sales_Revenue.join(1, prediction));
+        print(
+            weights.join(1, 
+                std_err).join(1, 
+                    t_stat).join(1, 
+                        p_value).join(1,
+                            lower_95).join(1, 
+                                upper_95).to_string(
+                { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        );
+        print("");       
+
+        print(Sales_Revenue.join(1, prediction).to_string({"Measured", "Predicted"}));
+        print("");
+    }
+
+    if (1) {
+        auto measured = Array<float>::random_between(2, 4, 24 * 365);
+        auto random_noise = Array<float>::random_between(2, 4, 24 * 365);
+        auto hours = Array<float>(24 * 365);
+        auto months = Array<float>(24 * 365);        
+
+        std::array<float, 24> hourly {
+            59, 58, 59, 60, 61, 62,
+            64, 69, 72, 76, 79, 81,
+            82, 80, 78, 76, 75, 74,
+            70, 68, 66, 64, 62, 60
+        };
+        std::array<float, 12> monthly {
+            0, -2, 6, 10, 14, 20,
+            19, 18, 16, 12, 8, 4
+        };
+        for (size_t day = 0; day < 365; ++day) {
+            for (size_t hr = 0; hr < 24; ++hr) {
+                measured[(day * 24) + hr] += (monthly[day / 31] + hourly[hr]);
+                hours[(day * 24) + hr] = hr;
+                months[(day * 24) + hr] = day / 31;
+            }
+        }
+
+        measured.sync();
+        hours.sync();
+        months.sync();
+
+        auto dawn = (hours < 6).cast<float>();
+        auto dusk = (hours > 18).cast<float>();
+        auto midday = (!(dawn + dusk)).cast<float>();
+        auto winter = ((months >= 10) + (months <= 4)).cast<float>();
+        auto summer = (!winter).cast<float>();
+        auto Basic{ Array<float>::constant(1, summer.size()) };
+
+        auto features = Basic.join(1, random_noise); // dawn.join(1, dusk.join(1, midday.join(1, winter.join(1, summer)))));
+        print(measured);
+        print(features.to_string({}, true));
+
+        //auto weights = linear_regression::solve_for_weights(measured, features);
+        //auto std_err = linear_regression::standard_error(measured, features, weights);
+        //auto std_dev = linear_regression::standard_deviation(measured, features, weights);
+        //auto t_stat = linear_regression::t_statistic(weights, std_err);
+        //auto p_value = linear_regression::p_value(features, t_stat);
+        //auto lower_95 = weights - (1.96 * std_err);
+        //auto upper_95 = weights + (1.96 * std_err);
+        //auto prediction = linear_regression::predict(features, weights);
+
+        //measured.sync();
+        //features.sync();
+
+
+        // ISSUE: CPU is not correctly waiting for the GPU to finish. If you stall, it works just fine, but if you fail to stall, it'll report zero when it really should not.
+
+        auto W = /*(*/features.transpose().matrix_multiply(features)/*).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements)*/;
+        //W.sync();
+
+        print("");
+        print(W);
         print("");
 
-        //auto std_err = (((Sales_Revenue - prediction).pow(2.0).sum() / std::max<double>(1.0, static_cast<double>(features.size_x()) - 2.0)) * (features.transpose().matrix_multiplication(features)).inverse()).pow(0.5);
-        //return std_err.diagonal();
+
+
+        //print("");
+        //print(
+        //    weights.join(1,
+        //        std_err).join(1,
+        //            t_stat).join(1,
+        //                p_value).join(1,
+        //                    lower_95).join(1,
+        //                        upper_95).to_string(
+        //                            { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        //);
+        //print("");
+
+        //print(measured.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        //print("");
+
+
+
+
 
 
 
     }
-
 
 
 
@@ -1524,27 +2261,14 @@ void fnGpuProgramming() {
     if (1) {
         if (1) {
             auto A{ Array<float>::random(N) };
-            for (unsigned int n = 0u; n < 10; n++) {
-                print(A[n]);
-            }
-        }
-        if (1) {
-            auto A{ Array<unsigned int>::random(N) };
-            for (unsigned int n = 0u; n < 10; n++) {
-                print(A[n]);
-            }
-        }
-        if (1) {
-            auto A{ Array<int>::random(N) };
-            for (unsigned int n = 0u; n < 10; n++) {
-                print(A[n]);
-            }
-        }
-        if (1) {
-            auto A{ Array<unsigned char>::random(N) };
-            for (unsigned int n = 0u; n < 10; n++) {
-                print(A[n]);
-            }
+            auto B{ Array<unsigned int>::random(N) };
+            auto C{ Array<int>::random(N) };
+            auto D{ Array<unsigned char>::random_between('0', 'z', N) };
+
+            for (unsigned int n = 0u; n < 10; n++) print(A[n]);
+            for (unsigned int n = 0u; n < 10; n++) print(B[n]);
+            for (unsigned int n = 0u; n < 10; n++) print(C[n]);  
+            for (unsigned int n = 0u; n < 10; n++) print(D[n]);
         }
 
         if (1) {

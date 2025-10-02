@@ -858,6 +858,7 @@ static int arrayfire_linear_regression() {
         auto std_dev = std_err * std::sqrt((1.0 / static_cast<double>(Sales_Revenue.size())) + (std::pow(features.matrix_multiplication(weights).avg() - Sales_Revenue.avg(), 2.0) / (features.matrix_multiplication(weights) - Sales_Revenue.avg()).pow(2.0).avg()));
 
 
+
         
 
 
