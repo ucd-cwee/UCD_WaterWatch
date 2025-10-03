@@ -800,11 +800,13 @@ namespace cl {
 namespace detail
 {
 #if defined(CL_HPP_ENABLE_EXCEPTIONS)
-static inline cl_int errHandler (
+__declspec(noinline) static /*inline*/ cl_int errHandler (
     cl_int err,
     const char * errStr = NULL)
 {
     if (err != CL_SUCCESS) {
+        std::cout << err << std::endl;
+        std::cout << errStr << std::endl;
         throw Error(err, errStr);
     }
     return err;
@@ -2258,9 +2260,11 @@ public:
     template <typename T>
     cl_int getInfo(cl_device_info name, T* param) const
     {
-        return detail::errHandler(
-            detail::getInfo(&::clGetDeviceInfo, object_, name, param),
-            __GET_DEVICE_INFO_ERR);
+        //>> This function throws on integrated GPUs, which is not desired.
+        return //detail::errHandler(
+            detail::getInfo(&::clGetDeviceInfo, object_, name, param)
+            //, __GET_DEVICE_INFO_ERR)
+        ;
     }
 
     //! \brief Wrapper for clGetDeviceInfo() that returns by value.

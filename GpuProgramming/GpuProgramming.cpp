@@ -1,16 +1,156 @@
 // GpuProgramming.cpp : Defines the functions for the static library.
-//
-#include <boost/math/distributions/students_t.hpp>
+
+#include <cstdarg>
+#include <type_traits>
+#include <tuple>
+#include <ShlDisp.h>
+#include <winnt.h>
+#include <thread>
+#include <execution>
+#include <vector>
 #include <iostream>
+#include <boost/math/distributions/students_t.hpp>
+
+#pragma region "Convenience implementation of CPU parallel computing for the conditions where GPU parallel compute is not available or not convenient."
+namespace parallel {
+    /// <summary>
+    /// Iterator that steps through a list, without needing to instance the whole list. 
+    /// </summary>
+    /// <typeparam name="Type"></typeparam>
+    template<typename Type = size_t>
+    class sequence {
+    private:
+        Type min;
+        Type max;
+        Type step;
+
+        static std::tuple<Type, Type, Type> DetermineSteps(Type N0, Type N1, Type Step) {
+            if (Step >= 0) {
+                // want to go from small to large
+                if (N1 >= N0) {
+                    return { N0, N1, Step };
+                }
+                else {
+                    return { N1, N0, Step };
+                }
+            }
+            else {
+                // want to go from large to small
+                if (N1 >= N0) {
+                    return { N1, N0, Step };
+                }
+                else {
+                    return { N0, N1, Step };
+                }
+            }
+        };
+
+    public:
+        sequence(Type N0, Type N1, Type Step) {
+            std::tie(min, max, step) = DetermineSteps(std::move(N0), std::move(N1), std::move(Step));
+        };
+        sequence() : sequence(0, 0, 1) {};
+        sequence(Type N) : sequence(0, N, 1) {};
+        sequence(Type N0, Type N1) : sequence(N0, N1, 1) {};
+
+        class Iterator { // : public std::iterator<std::random_access_iterator_tag, Type>
+        public:
+            using iterator_category = std::random_access_iterator_tag;
+            using value_type = Type;
+            using difference_type = ptrdiff_t;
+            using pointer = Type*;
+            using reference = Type&;
+
+            Iterator() : _ptr(0), _min(0), _step(1) {}
+            Iterator(Type rhs, Type min, Type step) : _ptr(rhs), _min(min), _step(step) {}
+            Iterator(const Iterator& rhs) : _ptr(rhs._ptr), _min(rhs._min), _step(rhs._step) {}
+
+            inline Iterator& operator+=(difference_type rhs) { _ptr += static_cast<Type>(rhs) * _step; return *this; }
+            inline Iterator& operator-=(difference_type rhs) { _ptr -= static_cast<Type>(rhs) * _step; return *this; }
+            inline Type& operator*() { return _ptr; }
+            inline Type* operator->() { return &_ptr; }
+            inline Type operator[](difference_type rhs) { return static_cast<Type>(_min + static_cast<Type>(rhs) * _step); }
+            inline const Type& operator*() const { return _ptr; }
+            inline const Type* operator->() const { return &_ptr; }
+            inline const Type operator[](difference_type rhs) const { return static_cast<Type>(_min + static_cast<Type>(rhs) * _step); }
+
+            inline Iterator& operator++() { _ptr += _step; return *this; }
+            inline Iterator& operator--() { _ptr -= _step; return *this; }
+            inline Iterator operator++(int) { Iterator tmp(*this); _ptr += _step; return tmp; }
+            inline Iterator operator--(int) { Iterator tmp(*this); _ptr -= _step; return tmp; }
+            inline difference_type operator-(const Iterator& rhs) const { return (_ptr - rhs._ptr) / _step; }
+            inline Iterator operator+(difference_type rhs) const { return Iterator(_ptr + static_cast<Type>(rhs) * _step, _min, _step); }
+            inline Iterator operator-(difference_type rhs) const { return Iterator(_ptr - static_cast<Type>(rhs) * _step, _min, _step); }
+            friend inline Iterator operator+(difference_type lhs, const Iterator& rhs) { return Iterator((static_cast<Type>(lhs) * rhs._step) + rhs._ptr, rhs._min, rhs._step); }
+            friend inline Iterator operator-(difference_type lhs, const Iterator& rhs) { return Iterator((static_cast<Type>(lhs) * rhs._step) - rhs._ptr, rhs._min, rhs._step); }
+
+            inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+            inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+            inline bool operator>(const Iterator& rhs) const { return _ptr > rhs._ptr; }
+            inline bool operator<(const Iterator& rhs) const { return _ptr < rhs._ptr; }
+            inline bool operator>=(const Iterator& rhs) const { return _ptr >= rhs._ptr; }
+            inline bool operator<=(const Iterator& rhs) const { return _ptr <= rhs._ptr; }
+
+        protected:
+            Type _min;
+            Type _ptr;
+            Type _step;
+        };
+
+        using iterator = Iterator;
+        using const_iterator = iterator;
+
+        auto begin() { return Iterator(min, min, step); };
+        auto end() { return Iterator(max, min, step); };
+        auto cbegin() const { return iterator(min, min, step); };
+        auto cend() const { return iterator(max, min, step); };
+        auto begin() const { return iterator(min, min, step); };
+        auto end() const { return iterator(max, min, step); };
+    };
+
+    /* parallel_for (auto i = start; i < end; i++){ todo(i); }
+    If the todo(i) returns anything, it will be collected into a vector at the end. */
+    template<typename iteratorType, class F> decltype(auto) Std_For(iteratorType start, iteratorType end, F const& ToDo) {
+        sequence<iteratorType> seq(start, end); // 0..999
+        std::exception_ptr* e{ nullptr };
+
+        std::for_each(
+            std::execution::par,
+            seq.begin(),
+            seq.end(),
+            [&](auto& x) { // copies are safer, and the resulting code will be as quick.
+                try {
+                    if (!e) ToDo(x);
+                }
+                catch (...) {
+                    if (!e) {
+                        auto ptr = new std::exception_ptr(std::current_exception());
+                        if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+                            delete ptr;
+                        }
+                    }
+                }
+            }
+        );
+        if (e) {
+            std::exception_ptr copy{ *e };
+            delete e;
+            std::rethrow_exception(std::move(copy));
+        }
+    };
+};
+#pragma endregion
+
+#pragma region "Includes and Defines"
 #include "GpuProgramming.h"
+#define CL_HPP_ENABLE_EXCEPTIONS
 #include "../arrayfire/include/CL/opencl.hpp"
 #include "opencl.hpp"
-
 
 #define print(a) std::cout << a << std::endl
 #define EXPECT_EQ(a, b) if (a != b){ std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 #define EXPECT_NE(a, b) if (a == b){ std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
-
+#pragma endregion
 
 class ArrayTasks {
 public:
@@ -128,6 +268,11 @@ public:
             }
         }
     }
+    // call this if this vector has been manually updated on the host, or if you need the results to be finished. Slow on repeat calls.
+    void sync() {
+        stop_work();
+        if (data) data->write_to_device();
+    }
     ~Array() {
         stop_work(false);
     };
@@ -148,12 +293,15 @@ public:
 
         {
             out.LenX = LenX;
-            out.LenX = LenY;
-            out.LenX = LenZ;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
             out.Dim = Dim;
             out.working = false;
             out.local = true;
         }
+
+        out.sync();
+
         return out;
     };
 
@@ -183,12 +331,6 @@ public:
         stop_work();
         return data->operator[](n);
     };
-
-    // call this if this vector has been manually updated on the host, or if you need the results to be finished. Slow on repeat calls.
-    void sync() {
-        stop_work();
-        if (data) data->write_to_device();
-    }
 
 protected:
     template<class... T> static inline void enqueue_kernel(const ulong N, const string& name, const T&... parameters) { // accepts Memory<T> objects and fundamental data type constants        
@@ -1254,7 +1396,7 @@ protected:
 
 public:
     // joins two matrices along one of the dimensions.
-    Array join(unsigned int jdim, Array const& first) {        
+    Array join(unsigned int jdim, Array const& first) const {        
         // All dimensions except join dimension must be equal
         for (unsigned int I = 0; I < 3; ++I) {
             if (I == jdim) continue;
@@ -1328,7 +1470,7 @@ public:
         // matrix must be 2-D
         if (this->Dim == 0) return Array();
         else if (this->Dim > 2) return Array();
-        
+
         Array out;
         out.tasks = this->tasks;
         out.working = true;
@@ -1338,11 +1480,18 @@ public:
         out.LenY = LenX;
         out.LenZ = 1;
         out.Dim = 2;
-                
-        out.work("Transpose", *out.data, *this->data, (unsigned int)LenX, (unsigned int)LenY);
+
+        Kernel kernel(this->GetDevice(), out.size(), "Transpose", *out.data, *this->data, (unsigned int)LenX, (unsigned int)LenY);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        this->tasks.get().push_back(this_event);
+        out.tasks.get().push_back(this_event);
+        out.working = true;
+
+        // out.work("Transpose", *out.data, *this->data, (unsigned int)LenX, (unsigned int)LenY);
 
         return out;
-    }
+    };
 
     // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
     Array make_square() const {
@@ -1406,7 +1555,7 @@ public:
                 }
 
                 //recursive call
-                result = result + sign * (*this)(0,i) * subVect.determinant();
+                result += sign * (*this)(0,i) * subVect.determinant();
                 sign = -sign;
             }
 
@@ -1478,45 +1627,65 @@ public:
         return adjoint() / std::abs(determinant());
     };
 
+    // performs a cross-multiplication of two square matrices. This is not accelerated by the GPU, and is CPU-bound.
     template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
     Array matrix_multiply(Array const& rhs) const {
         if (this->LenY == rhs.LenX) {
             // only useful for dim-2 matrices. 
-            unsigned int final_num_rows = this->LenX;
-            unsigned int final_num_cols = rhs.LenY;
+            constexpr static bool always_cpu = true;
+            if (always_cpu || ((this->LenY > this->LenX) && (this->LenY > 500))) {
+                // this requires using the CPU, rather than the GPU.
+                this->stop_work();
+                rhs.stop_work();
 
-            Array out;
-            out.tasks = this->tasks + rhs.tasks;
-            out.working = true;
-            out.local = false;
-            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), final_num_rows * final_num_cols, 2, false, true);
-            out.LenX = final_num_rows;
-            out.LenY = final_num_cols;
-            out.LenZ = 1;
-            out.Dim = 2;
+                size_t final_num_rows = this->LenX;
+                size_t final_num_cols = rhs.LenY;
 
+                Array out;
+                out.working = false;
+                out.local = true;
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), final_num_rows * final_num_cols, 2, true, true);
+                out.LenX = final_num_rows;
+                out.LenY = final_num_cols;
+                out.LenZ = 1;
+                out.Dim = 2;
 
-            //Kernel kernel(
-            //    Array<T>::GetDevice(), 
-            //    out.size(), "matx_mult", 
-            //    *out.data, (unsigned int)final_num_rows, (unsigned int)final_num_cols,
-            //    *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY,
-            //    *rhs.data, (unsigned int)rhs.LenX, (unsigned int)rhs.LenY
-            //);
-            //Event this_event;
-            //kernel.enqueue_run(1, &out.tasks.get(), &this_event);
-            //out.tasks.get().push_back(this_event);
-            //out.working = true;
-            //return out;
-
-
-            out.work("matx_mult",
-                *out.data, (unsigned int)final_num_rows, (unsigned int)final_num_cols,
-                *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY,
-                *rhs.data, (unsigned int)rhs.LenX, (unsigned int)rhs.LenY
-            );
-
-            return out;
+                parallel::Std_For<size_t>(0, out.size(), [&](size_t n) {
+                    T v = (T)0;
+                    const size_t destination_Y = (uint)std::floor((T)n / (T)final_num_rows);
+                    const size_t destination_X = n - (final_num_rows * destination_Y);
+                    const size_t LHS_X = destination_X; // row from LHS		
+                    const size_t RHS_Y = destination_Y; // column from RHS                    
+                    for (unsigned int index = 0; index < this->LenY; ++index) {
+                        const size_t LHS_n = index * this->LenX + LHS_X;
+                        const size_t RHS_n = RHS_Y * rhs.LenX + index;
+                        v += (*this->data)[index * this->LenX + LHS_X] * (*rhs.data)[RHS_Y * rhs.LenX + index];
+                    }
+                    (*out.data)[n] = v;
+                });
+                out.sync();
+                return out;
+            }
+            else {
+                // this may benefit from using the GPU, rather than the CPU. 
+                unsigned int final_num_rows = this->LenX;
+                unsigned int final_num_cols = rhs.LenY;
+                Array out;
+                out.tasks = this->tasks + rhs.tasks;
+                out.working = true;
+                out.local = false;
+                out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), final_num_rows * final_num_cols, 2, false, true);
+                out.LenX = final_num_rows;
+                out.LenY = final_num_cols;
+                out.LenZ = 1;
+                out.Dim = 2;
+                out.work("matx_mult_2",
+                    *out.data, (unsigned int)final_num_rows, (unsigned int)final_num_cols,
+                    *this->data, (unsigned int)this->LenX, (unsigned int)this->LenY,
+                    *rhs.data, (unsigned int)rhs.LenX, (unsigned int)rhs.LenY
+                );
+                return out;
+            }  
         }
         else if (this->LenY > rhs.LenX) {
             return matrix_multiply(rhs.copy().join(0, Array(this->LenY - rhs.LenX, rhs.LenY, rhs.LenZ) = 1));
@@ -1525,6 +1694,12 @@ public:
             // To-Do: need to set final column in joining array to 1?
             return this->copy().join(1, Array(this->LenX, rhs.LenX - this->LenY, this->LenZ) = 0).matrix_multiply(rhs);
         }
+    }; 
+
+    // test to see if there is any colinearity in the feature set. If so, it is impossible to solve for the linear regression. One or multiple features must be removed until it is no longer invalid.
+    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+    bool is_colinear() const {
+        return std::abs(this->transpose().matrix_multiply(*this).determinant()) == 0;
     };
 
 private:
@@ -1698,9 +1873,8 @@ public:
         out.tasks.get().push_back(this_event);
         return out;
     };
-
-    template<typename G>
-    Array<G> cast() const {
+    // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
+    template<typename G> Array<G> cast() const {
         if constexpr (std::is_same_v<G, T>) {
             return *this;
         }
@@ -1720,7 +1894,6 @@ public:
 
         return out;
     };
-
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
     static Array random(size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
         if constexpr (std::is_floating_point_v<T> || std::is_same_v<unsigned int, T>) {
@@ -1753,7 +1926,7 @@ public:
             return out.cast<T>();
         }
     };
-    
+    // returns a random number in the range of (lower, upper]
     static Array random_between(T lower, T upper, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
         if constexpr (std::is_floating_point_v<T> || std::is_same_v<unsigned int, T>) {
             int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
@@ -1788,9 +1961,8 @@ public:
             return out.cast<T>();
         }
     };
-
     // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
-    template <typename... P> static Array identity(size_t width) {
+    static Array identity(size_t width) {
         Array<T> out; {
             out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), width * width * 1, 2, false, true);
             out.LenX = width;
@@ -1803,9 +1975,8 @@ public:
         out.work("identity", *out.data, width);
         return out;
     };
-
     // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
-    template <typename... P> static Array constant(T value, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
+    static Array constant(T value, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
         int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
 
         Array<T> out; {
@@ -1820,7 +1991,6 @@ public:
         out.work("copy_single", *out.data, value);
         return out;
     };
-
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
     template <typename P> static Array from_vector(const P& parameters) {
         size_t count=0;
@@ -1911,6 +2081,8 @@ private:
 public:
     // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
     std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
+        this->stop_work();
+
         std::string out;
         if (this->Dim == 0) return out;
         else if (this->Dim == 1) {
@@ -2016,6 +2188,8 @@ public:
 };
 
 // linear algebra functions to perform a linear regression.
+// Meant to test and help build the linear algebra functions in the Array<T> class,
+// to support comparing with standard regression tools like those found in Excel. 
 namespace linear_regression {
     // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
     __forceinline static Array<float> solve_for_weights(Array<float> const& measurements, Array<float> const& features) {
@@ -2042,7 +2216,6 @@ namespace linear_regression {
     __forceinline static Array<float> t_statistic(Array<float> const& weights, Array<float> const& std_err) {
         return weights / std_err;
     };
-
     // evaluate for the p-value
     __forceinline static Array<float> p_value(Array<float> const& features, Array<float> const& t_stat) {
         boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
@@ -2053,6 +2226,19 @@ namespace linear_regression {
         }
         P.sync();
         return P;
+    };
+    // build a collection of features for a linear regression while avoiding colinearity. 
+    __forceinline static Array<float> build_features(Array<float> const& current_best) {
+        return current_best;
+    };
+    // build a collection of features for a linear regression while avoiding colinearity. 
+    template <typename T, typename... Ts> __forceinline static Array<float> build_features(Array<float> const& current_best, T const& candidate, const Ts&... further_candidates) {
+        if (current_best.join(1, candidate).is_colinear()) {
+            return build_features(current_best, further_candidates...);
+        }
+        else {
+            return build_features(current_best.join(1, candidate), further_candidates...);
+        }
     };
 };
 
@@ -2075,39 +2261,21 @@ void fnGpuProgramming() {
         print(arr.avg());
         print(arr.max());
         print(arr.min());
-
-
-
-        //sum.stop_work();
-        //for (int i = 0; i < 1000000; ++i) {
-        //    print(std::to_string(i) + std::string(": ") + std::to_string(sum[i]));
-        //}
-
-
-        //print(Array<float>::constant(1, 1000000).sum());
-
     }
 
+    // Demonstrate the creation, use, and destruction of a floating-point matrix with 100M items as part of a CPU-bound matrix multiplication
+    Array<float>::constant(1, 10000).matrix_multiply(Array<float>::constant(1, 10000).transpose()).stop_work();
+
+    // Advertisement regression. Generally correct analysis.
     if (1) {
-        // https://stackoverflow.com/questions/60300482/c-calculating-the-inverse-of-a-matrix
-        Array<float> mat(3, 3);
-
-        for (int i = 0; i < 9; ++i) mat[i] = i + 1;
-        mat[8] = 8;
-        mat.sync();
-        mat = mat.transpose();
-
-        print(mat);
-        print("");
-        print(mat.inverse());
-        print("");
-        print(mat.matrix_multiply(mat.inverse()));
+        /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%	
+        Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
+        TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
+        Radio	    0.107001228	    0.008489563	    12.60385655	    4.6021E-27	    0.090258612	    0.123743844
+        Newspaper	0.000335658	    0.005788056	    0.057991479	    0.953814495	    -0.011079206	0.011750522
+        */
 
 
-
-    }
-
-    if (1) {
         auto TV_Ads = Array<float>::from_vector(std::vector<double>{
             230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
         });
@@ -2120,9 +2288,12 @@ void fnGpuProgramming() {
         auto Sales_Revenue = Array<float>::from_vector(std::vector<double>{
             22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
         });
-        auto Basic{ Array<float>::constant(1, Sales_Revenue.size()) };
-
-        auto features = Basic.join(1, TV_Ads).join(1, Radio_Ads).join(1, Newspaper_Ads);
+        auto Basic{ 
+            Array<float>::constant(1, Sales_Revenue.size(0)) 
+        };
+        auto features = linear_regression::build_features( // double-checks and removes colinearity
+            Basic, TV_Ads, Radio_Ads, Newspaper_Ads 
+        );
 
         auto weights = linear_regression::solve_for_weights(Sales_Revenue, features); 
         auto std_err = linear_regression::standard_error(Sales_Revenue, features, weights);
@@ -2149,7 +2320,145 @@ void fnGpuProgramming() {
         print("");
     }
 
+    // MPG regression. Not being performed correctly in any way, for reasons not yet understood.
     if (1) {
+        /*              Coefficients	Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
+        Intercept	    -17.21843462	4.644294149	    -3.707438433	0.000240184	    -26.34986447	-8.087004775
+        cylinders	    -0.493376319	0.323282315	    -1.526146951	0.127796468	    -1.129001385	0.142248747
+        displacement	0.019895644	    0.007515079	    2.647429695	    0.008444649	    0.005119788	    0.034671499
+        horsepower	    -0.016951144	0.013786891	    -1.229511695	0.219632823	    -0.044058392	0.010156103
+        weight	        -0.006474043	0.000652048	    -9.928787106	7.87495E-21	    -0.007756074	-0.005192013
+        acceleration	0.080575838	    0.098844957	    0.815173996	    0.415478018	    -0.113769257	0.274920933
+        model year	    0.750772678	    0.050973122	    14.72879519	    3.05598E-39	    0.650551315	    0.850994041
+        origin	        1.426140495	    0.278136092	    5.127491665	    4.66568E-07	    0.879280169	    1.973000822
+        */
+
+        auto mpg = Array<float>::from_vector(std::vector<double>{
+            18, 15, 18, 16, 17, 15, 14, 14, 14, 15, 15, 14, 15, 14, 24, 22, 18, 21, 27, 26, 25, 24, 25, 26, 21, 10, 10, 11, 9, 27, 28, 25, 19, 16, 17, 19, 18, 14, 14, 14, 14, 12, 13, 13, 18, 22, 19, 18, 23, 28, 30, 30, 31, 35, 27, 26, 24, 25, 23, 20, 21, 13, 14, 15, 14, 17, 11, 13, 12, 13, 19, 15, 13, 13, 14, 18, 22, 21, 26, 22, 28, 23, 28, 27, 13, 14, 13, 14, 15, 12, 13, 13, 14, 13, 12, 13, 18, 16, 18, 18, 23, 26, 11, 12, 13, 12, 18, 20, 21, 22, 18, 19, 21, 26, 15, 16, 29, 24, 20, 19, 15, 24, 20, 11, 20, 19, 15, 31, 26, 32, 25, 16, 16, 18, 16, 13, 14, 14, 14, 29, 26, 26, 31, 32, 28, 24, 26, 24, 26, 31, 19, 18, 15, 15, 16, 15, 16, 14, 17, 16, 15, 18, 21, 20, 13, 29, 23, 20, 23, 24, 25, 24, 18, 29, 19, 23, 23, 22, 25, 33, 28, 25, 25, 26, 27, 17.5, 16, 15.5, 14.5, 22, 22, 24, 22.5, 29, 24.5, 29, 33, 20, 18, 18.5, 17.5, 29.5, 32, 28, 26.5, 20, 13, 19, 19, 16.5, 16.5, 13, 13, 13, 31.5, 30, 36, 25.5, 33.5, 17.5, 17, 15.5, 15, 17.5, 20.5, 19, 18.5, 16, 15.5, 15.5, 16, 29, 24.5, 26, 25.5, 30.5, 33.5, 30, 30.5, 22, 21.5, 21.5, 43.1, 36.1, 32.8, 39.4, 36.1, 19.9, 19.4, 20.2, 19.2, 20.5, 20.2, 25.1, 20.5, 19.4, 20.6, 20.8, 18.6, 18.1, 19.2, 17.7, 18.1, 17.5, 30, 27.5, 27.2, 30.9, 21.1, 23.2, 23.8, 23.9, 20.3, 17, 21.6, 16.2, 31.5, 29.5, 21.5, 19.8, 22.3, 20.2, 20.6, 17, 17.6, 16.5, 18.2, 16.9, 15.5, 19.2, 18.5, 31.9, 34.1, 35.7, 27.4, 25.4, 23, 27.2, 23.9, 34.2, 34.5, 31.8, 37.3, 28.4, 28.8, 26.8, 33.5, 41.5, 38.1, 32.1, 37.2, 28, 26.4, 24.3, 19.1, 34.3, 29.8, 31.3, 37, 32.2, 46.6, 27.9, 40.8, 44.3, 43.4, 36.4, 30, 44.6, 33.8, 29.8, 32.7, 23.7, 35, 32.4, 27.2, 26.6, 25.8, 23.5, 30, 39.1, 39, 35.1, 32.3, 37, 37.7, 34.1, 34.7, 34.4, 29.9, 33, 33.7, 32.4, 32.9, 31.6, 28.1, 30.7, 25.4, 24.2, 22.4, 26.6, 20.2, 17.6, 28, 27, 34, 31, 29, 27, 24, 36, 37, 31, 38, 36, 36, 36, 34, 38, 32, 38, 25, 38, 26, 22, 32, 36, 27, 27, 44, 32, 28, 31
+        });
+        auto cylinders = Array<float>::from_vector(std::vector<double>{
+            8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4, 6, 6, 6, 4, 4, 4, 4, 4, 4, 6, 8, 8, 8, 8, 4, 4, 4, 6, 6, 6, 6, 6, 8, 8, 8, 8, 8, 8, 8, 6, 4, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 3, 8, 8, 8, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 6, 6, 6, 6, 6, 4, 8, 8, 8, 8, 6, 4, 4, 4, 3, 4, 6, 4, 8, 8, 4, 4, 4, 4, 8, 4, 6, 8, 6, 6, 6, 4, 4, 4, 4, 6, 6, 6, 8, 8, 8, 8, 8, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 8, 8, 8, 8, 6, 6, 6, 6, 6, 8, 8, 4, 4, 6, 4, 4, 4, 4, 6, 4, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 8, 8, 8, 6, 6, 6, 6, 4, 4, 4, 4, 6, 6, 6, 6, 4, 4, 4, 4, 4, 8, 4, 6, 6, 8, 8, 8, 8, 4, 4, 4, 4, 4, 8, 8, 8, 8, 6, 6, 6, 6, 8, 8, 8, 8, 4, 4, 4, 4, 4, 4, 4, 4, 6, 4, 3, 4, 4, 4, 4, 4, 8, 8, 8, 6, 6, 6, 4, 6, 6, 6, 6, 6, 6, 8, 6, 8, 8, 4, 4, 4, 4, 4, 4, 4, 4, 5, 6, 4, 6, 4, 4, 6, 6, 4, 6, 6, 8, 8, 8, 8, 8, 8, 8, 8, 4, 4, 4, 4, 5, 8, 4, 8, 4, 4, 4, 4, 4, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 4, 4, 4, 4, 6, 3, 4, 4, 4, 4, 4, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 6, 6, 8, 6, 6, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 6, 6, 4, 6, 4, 4, 4, 4, 4, 4, 4, 4
+        });
+        auto displacement = Array<float>::from_vector(std::vector<double>{
+            307, 350, 318, 304, 302, 429, 454, 440, 455, 390, 383, 340, 400, 455, 113, 198, 199, 200, 97, 97, 110, 107, 104, 121, 199, 360, 307, 318, 304, 97, 140, 113, 232, 225, 250, 250, 232, 350, 400, 351, 318, 383, 400, 400, 258, 140, 250, 250, 122, 116, 79, 88, 71, 72, 97, 91, 113, 97.5, 97, 140, 122, 350, 400, 318, 351, 304, 429, 350, 350, 400, 70, 304, 307, 302, 318, 121, 121, 120, 96, 122, 97, 120, 98, 97, 350, 304, 350, 302, 318, 429, 400, 351, 318, 440, 455, 360, 225, 250, 232, 250, 198, 97, 400, 400, 360, 350, 232, 97, 140, 108, 70, 122, 155, 98, 350, 400, 68, 116, 114, 121, 318, 121, 156, 350, 198, 232, 250, 79, 122, 71, 140, 250, 258, 225, 302, 350, 318, 302, 304, 98, 79, 97, 76, 83, 90, 90, 116, 120, 108, 79, 225, 250, 250, 250, 400, 350, 318, 351, 231, 250, 258, 225, 231, 262, 302, 97, 140, 232, 140, 134, 90, 119, 171, 90, 232, 115, 120, 121, 121, 91, 107, 116, 140, 98, 101, 305, 318, 304, 351, 225, 250, 200, 232, 85, 98, 90, 91, 225, 250, 250, 258, 97, 85, 97, 140, 130, 318, 120, 156, 168, 350, 350, 302, 318, 98, 111, 79, 122, 85, 305, 260, 318, 302, 250, 231, 225, 250, 400, 350, 400, 351, 97, 151, 97, 140, 98, 98, 97, 97, 146, 121, 80, 90, 98, 78, 85, 91, 260, 318, 302, 231, 200, 200, 140, 225, 232, 231, 200, 225, 258, 305, 231, 302, 318, 98, 134, 119, 105, 134, 156, 151, 119, 131, 163, 121, 163, 89, 98, 231, 200, 140, 232, 225, 305, 302, 351, 318, 350, 351, 267, 360, 89, 86, 98, 121, 183, 350, 141, 260, 105, 105, 85, 91, 151, 173, 173, 151, 98, 89, 98, 86, 151, 140, 151, 225, 97, 134, 120, 119, 108, 86, 156, 85, 90, 90, 121, 146, 91, 97, 89, 168, 70, 122, 107, 135, 151, 156, 173, 135, 79, 86, 81, 97, 85, 89, 91, 105, 98, 98, 105, 107, 108, 119, 120, 141, 145, 168, 146, 231, 350, 200, 225, 112, 112, 112, 112, 135, 151, 140, 105, 91, 91, 105, 98, 120, 107, 108, 91, 91, 91, 181, 262, 156, 232, 144, 135, 151, 140, 97, 135, 120, 119
+        });
+        auto horsepower = Array<float>::from_vector(std::vector<double>{
+            130, 165, 150, 150, 140, 198, 220, 215, 225, 190, 170, 160, 150, 225, 95, 95, 97, 85, 88, 46, 87, 90, 95, 113, 90, 215, 200, 210, 193, 88, 90, 95, 100, 105, 100, 88, 100, 165, 175, 153, 150, 180, 170, 175, 110, 72, 100, 88, 86, 90, 70, 76, 65, 69, 60, 70, 95, 80, 54, 90, 86, 165, 175, 150, 153, 150, 208, 155, 160, 190, 97, 150, 130, 140, 150, 112, 76, 87, 69, 86, 92, 97, 80, 88, 175, 150, 145, 137, 150, 198, 150, 158, 150, 215, 225, 175, 105, 100, 100, 88, 95, 46, 150, 167, 170, 180, 100, 88, 72, 94, 90, 85, 107, 90, 145, 230, 49, 75, 91, 112, 150, 110, 122, 180, 95, 100, 100, 67, 80, 65, 75, 100, 110, 105, 140, 150, 150, 140, 150, 83, 67, 78, 52, 61, 75, 75, 75, 97, 93, 67, 95, 105, 72, 72, 170, 145, 150, 148, 110, 105, 110, 95, 110, 110, 129, 75, 83, 100, 78, 96, 71, 97, 97, 70, 90, 95, 88, 98, 115, 53, 86, 81, 92, 79, 83, 140, 150, 120, 152, 100, 105, 81, 90, 52, 60, 70, 53, 100, 78, 110, 95, 71, 70, 75, 72, 102, 150, 88, 108, 120, 180, 145, 130, 150, 68, 80, 58, 96, 70, 145, 110, 145, 130, 110, 105, 100, 98, 180, 170, 190, 149, 78, 88, 75, 89, 63, 83, 67, 78, 97, 110, 110, 48, 66, 52, 70, 60, 110, 140, 139, 105, 95, 85, 88, 100, 90, 105, 85, 110, 120, 145, 165, 139, 140, 68, 95, 97, 75, 95, 105, 85, 97, 103, 125, 115, 133, 71, 68, 115, 85, 88, 90, 110, 130, 129, 138, 135, 155, 142, 125, 150, 71, 65, 80, 80, 77, 125, 71, 90, 70, 70, 65, 69, 90, 115, 115, 90, 76, 60, 70, 65, 90, 88, 90, 90, 78, 90, 75, 92, 75, 65, 105, 65, 48, 48, 67, 67, 67, 67, 62, 132, 100, 88, 72, 84, 84, 92, 110, 84, 58, 64, 60, 67, 65, 62, 68, 63, 65, 65, 74, 75, 75, 100, 74, 80, 76, 116, 120, 110, 105, 88, 85, 88, 88, 88, 85, 84, 90, 92, 74, 68, 68, 63, 70, 88, 75, 70, 67, 67, 67, 110, 85, 92, 112, 96, 84, 90, 86, 52, 84, 79, 82
+        });
+        auto weight = Array<float>::from_vector(std::vector<double>{
+            3504, 3693, 3436, 3433, 3449, 4341, 4354, 4312, 4425, 3850, 3563, 3609, 3761, 3086, 2372, 2833, 2774, 2587, 2130, 1835, 2672, 2430, 2375, 2234, 2648, 4615, 4376, 4382, 4732, 2130, 2264, 2228, 2634, 3439, 3329, 3302, 3288, 4209, 4464, 4154, 4096, 4955, 4746, 5140, 2962, 2408, 3282, 3139, 2220, 2123, 2074, 2065, 1773, 1613, 1834, 1955, 2278, 2126, 2254, 2408, 2226, 4274, 4385, 4135, 4129, 3672, 4633, 4502, 4456, 4422, 2330, 3892, 4098, 4294, 4077, 2933, 2511, 2979, 2189, 2395, 2288, 2506, 2164, 2100, 4100, 3672, 3988, 4042, 3777, 4952, 4464, 4363, 4237, 4735, 4951, 3821, 3121, 3278, 2945, 3021, 2904, 1950, 4997, 4906, 4654, 4499, 2789, 2279, 2401, 2379, 2124, 2310, 2472, 2265, 4082, 4278, 1867, 2158, 2582, 2868, 3399, 2660, 2807, 3664, 3102, 2901, 3336, 1950, 2451, 1836, 2542, 3781, 3632, 3613, 4141, 4699, 4457, 4638, 4257, 2219, 1963, 2300, 1649, 2003, 2125, 2108, 2246, 2489, 2391, 2000, 3264, 3459, 3432, 3158, 4668, 4440, 4498, 4657, 3907, 3897, 3730, 3785, 3039, 3221, 3169, 2171, 2639, 2914, 2592, 2702, 2223, 2545, 2984, 1937, 3211, 2694, 2957, 2945, 2671, 1795, 2464, 2220, 2572, 2255, 2202, 4215, 4190, 3962, 4215, 3233, 3353, 3012, 3085, 2035, 2164, 1937, 1795, 3651, 3574, 3645, 3193, 1825, 1990, 2155, 2565, 3150, 3940, 3270, 2930, 3820, 4380, 4055, 3870, 3755, 2045, 2155, 1825, 2300, 1945, 3880, 4060, 4140, 4295, 3520, 3425, 3630, 3525, 4220, 4165, 4325, 4335, 1940, 2740, 2265, 2755, 2051, 2075, 1985, 2190, 2815, 2600, 2720, 1985, 1800, 1985, 2070, 1800, 3365, 3735, 3570, 3535, 3155, 2965, 2720, 3430, 3210, 3380, 3070, 3620, 3410, 3425, 3445, 3205, 4080, 2155, 2560, 2300, 2230, 2515, 2745, 2855, 2405, 2830, 3140, 2795, 3410, 1990, 2135, 3245, 2990, 2890, 3265, 3360, 3840, 3725, 3955, 3830, 4360, 4054, 3605, 3940, 1925, 1975, 1915, 2670, 3530, 3900, 3190, 3420, 2200, 2150, 2020, 2130, 2670, 2595, 2700, 2556, 2144, 1968, 2120, 2019, 2678, 2870, 3003, 3381, 2188, 2711, 2542, 2434, 2265, 2110, 2800, 2110, 2085, 2335, 2950, 3250, 1850, 2145, 1845, 2910, 2420, 2500, 2290, 2490, 2635, 2620, 2725, 2385, 1755, 1875, 1760, 2065, 1975, 2050, 1985, 2215, 2045, 2380, 2190, 2210, 2350, 2615, 2635, 3230, 3160, 2900, 2930, 3415, 3725, 3060, 3465, 2605, 2640, 2395, 2575, 2525, 2735, 2865, 1980, 2025, 1970, 2125, 2125, 2160, 2205, 2245, 1965, 1965, 1995, 2945, 3015, 2585, 2835, 2665, 2370, 2950, 2790, 2130, 2295, 2625, 2720
+        });
+        auto acceleration = Array<float>::from_vector(std::vector<double>{
+            12, 11.5, 11, 12, 10.5, 10, 9, 8.5, 10, 8.5, 10, 8, 9.5, 10, 15, 15.5, 15.5, 16, 14.5, 20.5, 17.5, 14.5, 17.5, 12.5, 15, 14, 15, 13.5, 18.5, 14.5, 15.5, 14, 13, 15.5, 15.5, 15.5, 15.5, 12, 11.5, 13.5, 13, 11.5, 12, 12, 13.5, 19, 15, 14.5, 14, 14, 19.5, 14.5, 19, 18, 19, 20.5, 15.5, 17, 23.5, 19.5, 16.5, 12, 12, 13.5, 13, 11.5, 11, 13.5, 13.5, 12.5, 13.5, 12.5, 14, 16, 14, 14.5, 18, 19.5, 18, 16, 17, 14.5, 15, 16.5, 13, 11.5, 13, 14.5, 12.5, 11.5, 12, 13, 14.5, 11, 11, 11, 16.5, 18, 16, 16.5, 16, 21, 14, 12.5, 13, 12.5, 15, 19, 19.5, 16.5, 13.5, 18.5, 14, 15.5, 13, 9.5, 19.5, 15.5, 14, 15.5, 11, 14, 13.5, 11, 16.5, 16, 17, 19, 16.5, 21, 17, 17, 18, 16.5, 14, 14.5, 13.5, 16, 15.5, 16.5, 15.5, 14.5, 16.5, 19, 14.5, 15.5, 14, 15, 15.5, 16, 16, 16, 21, 19.5, 11.5, 14, 14.5, 13.5, 21, 18.5, 19, 19, 15, 13.5, 12, 16, 17, 16, 18.5, 13.5, 16.5, 17, 14.5, 14, 17, 15, 17, 14.5, 13.5, 17.5, 15.5, 16.9, 14.9, 17.7, 15.3, 13, 13, 13.9, 12.8, 15.4, 14.5, 17.6, 17.6, 22.2, 22.1, 14.2, 17.4, 17.7, 21, 16.2, 17.8, 12.2, 17, 16.4, 13.6, 15.7, 13.2, 21.9, 15.5, 16.7, 12.1, 12, 15, 14, 18.5, 14.8, 18.6, 15.5, 16.8, 12.5, 19, 13.7, 14.9, 16.4, 16.9, 17.7, 19, 11.1, 11.4, 12.2, 14.5, 14.5, 16, 18.2, 15.8, 17, 15.9, 16.4, 14.1, 14.5, 12.8, 13.5, 21.5, 14.4, 19.4, 18.6, 16.4, 15.5, 13.2, 12.8, 19.2, 18.2, 15.8, 15.4, 17.2, 17.2, 15.8, 16.7, 18.7, 15.1, 13.2, 13.4, 11.2, 13.7, 16.5, 14.2, 14.7, 14.5, 14.8, 16.7, 17.6, 14.9, 15.9, 13.6, 15.7, 15.8, 14.9, 16.6, 15.4, 18.2, 17.3, 18.2, 16.6, 15.4, 13.4, 13.2, 15.2, 14.9, 14.3, 15, 13, 14, 15.2, 14.4, 15, 20.1, 17.4, 24.8, 22.2, 13.2, 14.9, 19.2, 14.7, 16, 11.3, 12.9, 13.2, 14.7, 18.8, 15.5, 16.4, 16.5, 18.1, 20.1, 18.7, 15.8, 15.5, 17.5, 15, 15.2, 17.9, 14.4, 19.2, 21.7, 23.7, 19.9, 21.8, 13.8, 18, 15.3, 11.4, 12.5, 15.1, 17, 15.7, 16.4, 14.4, 12.6, 12.9, 16.9, 16.4, 16.1, 17.8, 19.4, 17.3, 16, 14.9, 16.2, 20.7, 14.2, 14.4, 16.8, 14.8, 18.3, 20.4, 19.6, 12.6, 13.8, 15.8, 19, 17.1, 16.6, 19.6, 18.6, 18, 16.2, 16, 18, 16.4, 15.3, 18.2, 17.6, 14.7, 17.3, 14.5, 14.5, 16.9, 15, 15.7, 16.2, 16.4, 17, 14.5, 14.7, 13.9, 13, 17.3, 15.6, 24.6, 11.6, 18.6, 19.4
+        });
+        auto model_year = Array<float>::from_vector(std::vector<double>{
+            70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 70, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 71, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 72, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 74, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 75, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 76, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 77, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 79, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 81, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82
+        });
+        auto origin = Array<float>::from_vector(std::vector<double>{
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 2, 1, 3, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 2, 2, 2, 2, 1, 3, 3, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 3, 1, 3, 3, 1, 1, 2, 1, 1, 2, 2, 2, 2, 1, 2, 3, 1, 1, 1, 1, 3, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 1, 2, 2, 3, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 3, 2, 3, 1, 2, 1, 2, 2, 2, 2, 3, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 1, 1, 1, 1, 2, 3, 3, 1, 2, 1, 2, 3, 2, 1, 1, 1, 1, 3, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 3, 1, 1, 1, 3, 2, 3, 2, 3, 2, 1, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 1, 3, 1, 1, 3, 2, 2, 2, 2, 2, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 1, 1, 2, 1, 2, 1, 1, 1, 3, 2, 1, 1, 1, 1, 2, 3, 1, 3, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 1, 3, 2, 2, 2, 2, 3, 3, 2, 3, 3, 2, 3, 1, 1, 1, 1, 1, 3, 1, 3, 3, 3, 3, 3, 1, 1, 1, 2, 3, 3, 3, 3, 2, 2, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 1, 1, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 3, 1, 1, 1, 2, 1, 1, 1
+        });
+        auto constant {
+            Array<float>::constant(1, origin.size(0))
+        };
+        auto features = linear_regression::build_features( // double-checks and removes colinearity
+            constant, cylinders, displacement, horsepower, weight, acceleration, model_year, origin
+        );
+
+        auto weights = linear_regression::solve_for_weights(mpg, features);
+        auto std_err = linear_regression::standard_error(mpg, features, weights);
+        auto std_dev = linear_regression::standard_deviation(mpg, features, weights);
+        auto t_stat = linear_regression::t_statistic(weights, std_err);
+        auto p_value = linear_regression::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = linear_regression::predict(features, weights);
+
+        print("");
+        print(
+            weights.join(1,
+                std_err).join(1,
+                    t_stat).join(1,
+                        p_value).join(1,
+                            lower_95).join(1,
+                                upper_95).to_string(
+                                    { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        );
+        print("");
+        print(mpg.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        print("");
+    }
+
+    // Fish market regression. Not being performed correctly in any way, for reasons not yet understood.
+    if (1) {
+        /*          Coefficients	Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
+        Intercept	-499.5869554	29.57223974	    -16.89378146	8.44136E-37	    -558.0095858	-441.1643249
+        Length1	    62.35521443	    40.20873868	    1.550787627	    0.123018636	    -17.08078028	141.7912091
+        Length2	    -6.526752492	41.75876083	    -0.156296604	0.876005273	    -89.02495596	75.97145098
+        Length3	    -29.02621861	17.35295765	    -1.672695756	0.096430795	    -63.30855369	5.256116464
+        Height	    28.29735132	    8.729226223	    3.241679228	    0.001458477	    11.05197654	    45.54272611
+        Width	    22.47330665	    20.37173285	    1.103161268	    0.271689248	    -17.77289147	62.71950478
+        */
+
+        auto weight = Array<float>::from_vector(std::vector<double>{
+            242, 290, 340, 363, 430, 450, 500, 390, 450, 500, 475, 500, 500, 340, 600, 600, 700, 700, 610, 650, 575, 685, 620, 680, 700, 725, 720, 714, 850, 1000, 920, 955, 925, 975, 950, 40, 69, 78, 87, 120, 0, 110, 120, 150, 145, 160, 140, 160, 169, 161, 200, 180, 290, 272, 390, 270, 270, 306, 540, 800, 1000, 55, 60, 90, 120, 150, 140, 170, 145, 200, 273, 300, 5.9, 32, 40, 51.5, 70, 100, 78, 80, 85, 85, 110, 115, 125, 130, 120, 120, 130, 135, 110, 130, 150, 145, 150, 170, 225, 145, 188, 180, 197, 218, 300, 260, 265, 250, 250, 300, 320, 514, 556, 840, 685, 700, 700, 690, 900, 650, 820, 850, 900, 1015, 820, 1100, 1000, 1100, 1000, 1000, 200, 300, 300, 300, 430, 345, 456, 510, 540, 500, 567, 770, 950, 1250, 1600, 1550, 1650, 6.7, 7.5, 7, 9.7, 9.8, 8.7, 10, 9.9, 9.8, 12.2, 13.4, 12.2, 19.7, 19.9
+        });
+        auto length1 = Array<float>::from_vector(std::vector<double>{
+            23.2, 24, 23.9, 26.3, 26.5, 26.8, 26.8, 27.6, 27.6, 28.5, 28.4, 28.7, 29.1, 29.5, 29.4, 29.4, 30.4, 30.4, 30.9, 31, 31.3, 31.4, 31.5, 31.8, 31.9, 31.8, 32, 32.7, 32.8, 33.5, 35, 35, 36.2, 37.4, 38, 12.9, 16.5, 17.5, 18.2, 18.6, 19, 19.1, 19.4, 20.4, 20.5, 20.5, 21, 21.1, 22, 22, 22.1, 23.6, 24, 25, 29.5, 23.6, 24.1, 25.6, 28.5, 33.7, 37.3, 13.5, 14.3, 16.3, 17.5, 18.4, 19, 19, 19.8, 21.2, 23, 24, 7.5, 12.5, 13.8, 15, 15.7, 16.2, 16.8, 17.2, 17.8, 18.2, 19, 19, 19, 19.3, 20, 20, 20, 20, 20, 20.5, 20.5, 20.7, 21, 21.5, 22, 22, 22.6, 23, 23.5, 25, 25.2, 25.4, 25.4, 25.4, 25.9, 26.9, 27.8, 30.5, 32, 32.5, 34, 34, 34.5, 34.6, 36.5, 36.5, 36.6, 36.9, 37, 37, 37.1, 39, 39.8, 40.1, 40.2, 41.1, 30, 31.7, 32.7, 34.8, 35.5, 36, 40, 40, 40.1, 42, 43.2, 44.8, 48.3, 52, 56, 56, 59, 9.3, 10, 10.1, 10.4, 10.7, 10.8, 11.3, 11.3, 11.4, 11.5, 11.7, 12.1, 13.2, 13.8
+        });
+        auto length2 = Array<float>::from_vector(std::vector<double>{
+            25.4, 26.3, 26.5, 29, 29, 29.7, 29.7, 30, 30, 30.7, 31, 31, 31.5, 32, 32, 32, 33, 33, 33.5, 33.5, 34, 34, 34.5, 35, 35, 35, 35, 36, 36, 37, 38.5, 38.5, 39.5, 41, 41, 14.1, 18.2, 18.8, 19.8, 20, 20.5, 20.8, 21, 22, 22, 22.5, 22.5, 22.5, 24, 23.4, 23.5, 25.2, 26, 27, 31.7, 26, 26.5, 28, 31, 36.4, 40, 14.7, 15.5, 17.7, 19, 20, 20.7, 20.7, 21.5, 23, 25, 26, 8.4, 13.7, 15, 16.2, 17.4, 18, 18.7, 19, 19.6, 20, 21, 21, 21, 21.3, 22, 22, 22, 22, 22, 22.5, 22.5, 22.7, 23, 23.5, 24, 24, 24.6, 25, 25.6, 26.5, 27.3, 27.5, 27.5, 27.5, 28, 28.7, 30, 32.8, 34.5, 35, 36.5, 36, 37, 37, 39, 39, 39, 40, 40, 40, 40, 42, 43, 43, 43.5, 44, 32.3, 34, 35, 37.3, 38, 38.5, 42.5, 42.5, 43, 45, 46, 48, 51.7, 56, 60, 60, 63.4, 9.8, 10.5, 10.6, 11, 11.2, 11.3, 11.8, 11.8, 12, 12.2, 12.4, 13, 14.3, 15
+        });
+        auto length3 = Array<float>::from_vector(std::vector<double>{
+            30, 31.2, 31.1, 33.5, 34, 34.7, 34.5, 35, 35.1, 36.2, 36.2, 36.2, 36.4, 37.3, 37.2, 37.2, 38.3, 38.5, 38.6, 38.7, 39.5, 39.2, 39.7, 40.6, 40.5, 40.9, 40.6, 41.5, 41.6, 42.6, 44.1, 44, 45.3, 45.9, 46.5, 16.2, 20.3, 21.2, 22.2, 22.2, 22.8, 23.1, 23.7, 24.7, 24.3, 25.3, 25, 25, 27.2, 26.7, 26.8, 27.9, 29.2, 30.6, 35, 28.7, 29.3, 30.8, 34, 39.6, 43.5, 16.5, 17.4, 19.8, 21.3, 22.4, 23.2, 23.2, 24.1, 25.8, 28, 29, 8.8, 14.7, 16, 17.2, 18.5, 19.2, 19.4, 20.2, 20.8, 21, 22.5, 22.5, 22.5, 22.8, 23.5, 23.5, 23.5, 23.5, 23.5, 24, 24, 24.2, 24.5, 25, 25.5, 25.5, 26.2, 26.5, 27, 28, 28.7, 28.9, 28.9, 28.9, 29.4, 30.1, 31.6, 34, 36.5, 37.3, 39, 38.3, 39.4, 39.3, 41.4, 41.4, 41.3, 42.3, 42.5, 42.4, 42.5, 44.6, 45.2, 45.5, 46, 46.6, 34.8, 37.8, 38.8, 39.8, 40.5, 41, 45.5, 45.5, 45.8, 48, 48.7, 51.2, 55.1, 59.7, 64, 64, 68, 10.8, 11.6, 11.6, 12, 12.4, 12.6, 13.1, 13.1, 13.2, 13.4, 13.5, 13.8, 15.2, 16.2
+        });
+        auto height = Array<float>::from_vector(std::vector<double>{
+            11.52, 12.48, 12.3778, 12.73, 12.444, 13.6024, 14.1795, 12.67, 14.0049, 14.2266, 14.2628, 14.3714, 13.7592, 13.9129, 14.9544, 15.438, 14.8604, 14.938, 15.633, 14.4738, 15.1285, 15.9936, 15.5227, 15.4686, 16.2405, 16.36, 16.3618, 16.517, 16.8896, 18.957, 18.0369, 18.084, 18.7542, 18.6354, 17.6235, 4.1472, 5.2983, 5.5756, 5.6166, 6.216, 6.4752, 6.1677, 6.1146, 5.8045, 6.6339, 7.0334, 6.55, 6.4, 7.5344, 6.9153, 7.3968, 7.0866, 8.8768, 8.568, 9.485, 8.3804, 8.1454, 8.778, 10.744, 11.7612, 12.354, 6.8475, 6.5772, 7.4052, 8.3922, 8.8928, 8.5376, 9.396, 9.7364, 10.3458, 11.088, 11.368, 2.112, 3.528, 3.824, 4.5924, 4.588, 5.2224, 5.1992, 5.6358, 5.1376, 5.082, 5.6925, 5.9175, 5.6925, 6.384, 6.11, 5.64, 6.11, 5.875, 5.5225, 5.856, 6.792, 5.9532, 5.2185, 6.275, 7.293, 6.375, 6.7334, 6.4395, 6.561, 7.168, 8.323, 7.1672, 7.0516, 7.2828, 7.8204, 7.5852, 7.6156, 10.03, 10.2565, 11.4884, 10.881, 10.6091, 10.835, 10.5717, 11.1366, 11.1366, 12.4313, 11.9286, 11.73, 12.3808, 11.135, 12.8002, 11.9328, 12.5125, 12.604, 12.4888, 5.568, 5.7078, 5.9364, 6.2884, 7.29, 6.396, 7.28, 6.825, 7.786, 6.96, 7.792, 7.68, 8.9262, 10.6863, 9.6, 9.6, 10.812, 1.7388, 1.972, 1.7284, 2.196, 2.0832, 1.9782, 2.2139, 2.2139, 2.2044, 2.0904, 2.43, 2.277, 2.8728, 2.9322
+        });
+        auto width = Array<float>::from_vector(std::vector<double>{
+            4.02, 4.3056, 4.6961, 4.4555, 5.134, 4.9274, 5.2785, 4.69, 4.8438, 4.9594, 5.1042, 4.8146, 4.368, 5.0728, 5.1708, 5.58, 5.2854, 5.1975, 5.1338, 5.7276, 5.5695, 5.3704, 5.2801, 6.1306, 5.589, 6.0532, 6.09, 5.8515, 6.1984, 6.603, 6.3063, 6.292, 6.7497, 6.7473, 6.3705, 2.268, 2.8217, 2.9044, 3.1746, 3.5742, 3.3516, 3.3957, 3.2943, 3.7544, 3.5478, 3.8203, 3.325, 3.8, 3.8352, 3.6312, 4.1272, 3.906, 4.4968, 4.7736, 5.355, 4.2476, 4.2485, 4.6816, 6.562, 6.5736, 6.525, 2.3265, 2.3142, 2.673, 2.9181, 3.2928, 3.2944, 3.4104, 3.1571, 3.6636, 4.144, 4.234, 1.408, 1.9992, 2.432, 2.6316, 2.9415, 3.3216, 3.1234, 3.0502, 3.0368, 2.772, 3.555, 3.3075, 3.6675, 3.534, 3.4075, 3.525, 3.525, 3.525, 3.995, 3.624, 3.624, 3.63, 3.626, 3.725, 3.723, 3.825, 4.1658, 3.6835, 4.239, 4.144, 5.1373, 4.335, 4.335, 4.5662, 4.2042, 4.6354, 4.7716, 6.018, 6.3875, 7.7957, 6.864, 6.7408, 6.2646, 6.3666, 7.4934, 6.003, 7.3514, 7.1064, 7.225, 7.4624, 6.63, 6.8684, 7.2772, 7.4165, 8.142, 7.5958, 3.3756, 4.158, 4.3844, 4.0198, 4.5765, 3.977, 4.3225, 4.459, 5.1296, 4.896, 4.87, 5.376, 6.1712, 6.9849, 6.144, 6.144, 7.48, 1.0476, 1.16, 1.1484, 1.38, 1.2772, 1.2852, 1.2838, 1.1659, 1.1484, 1.3936, 1.269, 1.2558, 2.0672, 1.8792
+        });
+        auto constant{
+            Array<float>::constant(1, width.size(0))
+        };
+        auto features = linear_regression::build_features( // double-checks and removes colinearity
+            constant, length1, length2, length3, height, width
+        );
+
+        auto weights = linear_regression::solve_for_weights(weight, features);
+        auto std_err = linear_regression::standard_error(weight, features, weights);
+        auto std_dev = linear_regression::standard_deviation(weight, features, weights);
+        auto t_stat = linear_regression::t_statistic(weights, std_err);
+        auto p_value = linear_regression::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = linear_regression::predict(features, weights);
+
+        print("");
+        print(
+            weights.join(1,
+                std_err).join(1,
+                    t_stat).join(1,
+                        p_value).join(1,
+                            lower_95).join(1,
+                                upper_95).to_string(
+                                    { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        );
+        print("");
+
+        print(weight.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        print("");
+
+    }
+
+    // Custom weather regression. P-values are being incorrectly predicted. 
+    if (1) {
+        /*          Coefficients	Standard Error	t Stat	        P-value	    Lower 95%	    Upper 95%
+        Intercept	93.67835922	    0.121802957	    769.0975786	    0	        93.43959502	    93.91712343	    
+        dawn	    -14.4227875	    0.153113204	    -94.19688942	0	        -14.72292761	-14.12264739	
+        dusk	    -10.26652003	0.162912373	    -63.01866368	0	        -10.58586896	-9.947171106	
+        winter	    -10.2061204	    0.131022469	    -77.89595536	0	        -10.46295715	-9.949283644	
+        */
+
         auto measured = Array<float>::random_between(2, 4, 24 * 365);
         auto random_noise = Array<float>::random_between(2, 4, 24 * 365);
         auto hours = Array<float>(24 * 365);
@@ -2179,53 +2488,37 @@ void fnGpuProgramming() {
 
         auto dawn = (hours < 6).cast<float>();
         auto dusk = (hours > 18).cast<float>();
-        auto midday = (!(dawn + dusk)).cast<float>();
+        auto midday = (!((hours > 18) + (hours < 6))).cast<float>();
         auto winter = ((months >= 10) + (months <= 4)).cast<float>();
         auto summer = (!winter).cast<float>();
-        auto Basic{ Array<float>::constant(1, summer.size()) };
+        auto Basic{ Array<float>::constant(1, winter.size(0)) };
+        auto features = linear_regression::build_features( // double-checks and removes colinearity
+            Basic, dawn, dusk, midday, winter, summer
+        );
 
-        auto features = Basic.join(1, random_noise); // dawn.join(1, dusk.join(1, midday.join(1, winter.join(1, summer)))));
-        print(measured);
-        print(features.to_string({}, true));
-
-        //auto weights = linear_regression::solve_for_weights(measured, features);
-        //auto std_err = linear_regression::standard_error(measured, features, weights);
-        //auto std_dev = linear_regression::standard_deviation(measured, features, weights);
-        //auto t_stat = linear_regression::t_statistic(weights, std_err);
-        //auto p_value = linear_regression::p_value(features, t_stat);
-        //auto lower_95 = weights - (1.96 * std_err);
-        //auto upper_95 = weights + (1.96 * std_err);
-        //auto prediction = linear_regression::predict(features, weights);
-
-        //measured.sync();
-        //features.sync();
-
-
-        // ISSUE: CPU is not correctly waiting for the GPU to finish. If you stall, it works just fine, but if you fail to stall, it'll report zero when it really should not.
-
-        auto W = /*(*/features.transpose().matrix_multiply(features)/*).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements)*/;
-        //W.sync();
+        auto weights = linear_regression::solve_for_weights(measured, features);
+        auto std_err = linear_regression::standard_error(measured, features, weights);
+        auto std_dev = linear_regression::standard_deviation(measured, features, weights);
+        auto t_stat = linear_regression::t_statistic(weights, std_err);       
+        auto p_value = linear_regression::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = linear_regression::predict(features, weights);
 
         print("");
-        print(W);
+        print(
+            weights.join(1,
+                std_err).join(1,
+                    t_stat).join(1,
+                        p_value).join(1,
+                            lower_95).join(1,
+                                upper_95).to_string(
+            { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        );
         print("");
 
-
-
-        //print("");
-        //print(
-        //    weights.join(1,
-        //        std_err).join(1,
-        //            t_stat).join(1,
-        //                p_value).join(1,
-        //                    lower_95).join(1,
-        //                        upper_95).to_string(
-        //                            { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
-        //);
-        //print("");
-
-        //print(measured.join(1, prediction).to_string({ "Measured", "Predicted" }));
-        //print("");
+        print(measured.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        print("");
 
 
 
@@ -2241,34 +2534,13 @@ void fnGpuProgramming() {
 
 
 
-    //Typically, you have one thread which intializes the shared(local) atomic followed by some barrier.I.e.your kernel starts like this:
-
-    //__local int sharedNum;
-    //if (get_local_id(0) == 0) {
-    //    sharedNum = 0;
-    //}
-    //barrier(CLK_LOCAL_MEM_FENCE);
-
-    //// Now, you can use sharedNum
-    //while (is_work_left()) {
-    //    atomic_inc(&sharedNum);
-    //}
-    //There's not much magic to it -- all items in a work-group can see the same local variables, so you can just access it as usual.
-
-
-
     const unsigned int N = 1000000u; // size of vectors
     if (1) {
         if (1) {
-            auto A{ Array<float>::random(N) };
-            auto B{ Array<unsigned int>::random(N) };
-            auto C{ Array<int>::random(N) };
-            auto D{ Array<unsigned char>::random_between('0', 'z', N) };
-
-            for (unsigned int n = 0u; n < 10; n++) print(A[n]);
-            for (unsigned int n = 0u; n < 10; n++) print(B[n]);
-            for (unsigned int n = 0u; n < 10; n++) print(C[n]);  
-            for (unsigned int n = 0u; n < 10; n++) print(D[n]);
+            print(Array<float>::random(N));
+            print(Array<unsigned int>::random(N));
+            print(Array<int>::random(N));
+            print(Array<unsigned char>::random_between('0', 'z', N));
         }
 
         if (1) {
@@ -2276,11 +2548,11 @@ void fnGpuProgramming() {
             A = 0;
             A += 5;
             auto B = A.pow(2).round();
+            EXPECT_EQ((B == 25.0f).sum(), 0);
             for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(B[n], 25.0f);
             auto C = (B * -1.0f).abs().round();
             for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(C[n], 25.0f);
             
-
             A = 5;
             auto D = (A % 2.0f).round();
             EXPECT_EQ(1.0f, D[0]);
@@ -2302,15 +2574,12 @@ void fnGpuProgramming() {
             auto C = ((A + (B * 2.0f)) / 2.0f);
             for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(C[n], 1.0f);
             
-
             auto D = C.cast<int>();
             for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(D[n], 1.0f);            
 
             auto CMP = (D == C.cast<int>());
             for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(CMP[n], true);
-            
         }
-
         if (1) {
             Array<float> A(N);
             Array<float> B(N);
@@ -2374,220 +2643,7 @@ void fnGpuProgramming() {
             A *= B;
             for (unsigned int n = 0u; n < N; n++) EXPECT_EQ(A[n], 60);            
         }
-
-
-        //Array<float>::enqueue_kernel(N, "add_inplace", *A.data, *B.data);  // 0 + 2 = 2
-        //Array<float>::enqueue_kernel(N, "mult_inplace", *A.data, *B.data); // 2 * 2 = 4
-        //Array<float>::enqueue_kernel(N, "add_inplace", *A.data, *B.data);  // 4 + 2 = 6
-        //Array<float>::enqueue_kernel(N, "mult_inplace", *A.data, *B.data); // 6 * 2 = 12
-        //Array<float>::enqueue_kernel(N, "add_inplace", *A.data, *B.data);  // 12 + 2 = 14
-        //Array<float>::enqueue_kernel(N, "mult_inplace", *A.data, *B.data); // 14 * 2 = 28
-        //Array<float>::enqueue_kernel(N, "add_inplace", *A.data, *B.data);  // 28 + 2 = 30
-        //Array<float>::enqueue_kernel(N, "mult_inplace", *A.data, *B.data); // 30 * 2 = 60
-        //Array<float>::complete_kernels();
-
-        //A.data->read_from_device();
-
-        //for (unsigned int n = 0u; n < N; n++) {
-        //    EXPECT_EQ(A[n], 60);
-        //}
     }
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    //Device device(select_device_with_most_flops()); // compile OpenCL C code for the fastest available device
-    //Memory<float> A(device, N, 3); // allocate memory on both host and device
-    //Memory<float> B(device, N, 3);
-    //Memory<float> C(device, N, 3);
-    //
-    //
-
-    //// initialize memory
-    //for (unsigned int n = 0u; n < N; n++) {
-    //    A[n] = 0.0f; 
-    //    B[n] = 2.0f;
-    //    C[n] = 0.0f;
-    //}
-
-    //A.write_to_device(); // copy data from host memory to device memory
-    //B.write_to_device();
-
-    //if (1) {
-    //    Kernel add_kernel(device, N, "add_inplace", A, B); // kernel that runs on the device
-    //    Kernel mult_kernel(device, N, "mult_inplace", A, B); // kernel that runs on the device
-
-    //    std::vector<Event> events;
-
-    //    add_kernel.enqueue_run(1, &events); // 0 + 2 = 2
-    //    mult_kernel.enqueue_run(1, &events); // 2 * 2 = 4
-
-    //    add_kernel.enqueue_run(1, &events); // 4 + 2 = 6
-    //    mult_kernel.enqueue_run(1, &events); // 6 * 2 = 12
-
-    //    add_kernel.enqueue_run(1, &events); // 12 + 2 = 14
-    //    mult_kernel.enqueue_run(1, &events); // 14 * 2 = 28
-
-    //    add_kernel.enqueue_run(1, &events); // 28 + 2 = 30
-    //    mult_kernel.enqueue_run(1, &events); // 30 * 2 = 60
-
-    //    Event::waitForEvents(events);
-
-    //    //add_kernel.finish_queue();
-    //    //mult_kernel.finish_queue();
-    //}
-
-    //A.read_from_device(); // copy data from device memory to host memory
-
-    //for (unsigned int n = 0u; n < N; n++) {
-    //    EXPECT_EQ(A[n], 60);
-    //}
-
-
-    //if (1) {
-    //    Kernel add_kernel(device, N, "add_inplace", A, B); // kernel that runs on the device
-    //    Kernel mult_kernel(device, N, "mult_inplace", A, B); // kernel that runs on the device
-    //    
-    //    add_kernel.finish_queue();
-    //    mult_kernel.finish_queue();
-    //}
-
-    //A.read_from_device(); // copy data from device memory to host memory
-    //
-    //for (unsigned int n = 0u; n < N; n++) {
-    //    EXPECT_EQ(A[n], 60);
-    //}
-
-
-
-
-
-
-
-
-
-    //try {
-    //    // Get list of OpenCL platforms.
-    //    std::vector<cl::Platform> platform;
-    //    cl::Platform::get(&platform);
-
-    //    if (platform.empty()) {
-    //        std::cerr << "OpenCL platforms not found." << std::endl;
-    //        return;
-    //    }
-
-    //    // Get first available GPU device which supports double precision.
-    //    cl::Context context;
-    //    std::vector<cl::Device> device;
-    //    for (auto p = platform.begin(); device.empty() && p != platform.end(); p++) {
-    //        std::vector<cl::Device> pldev;
-
-    //        try {
-    //            p->getDevices(CL_DEVICE_TYPE_GPU, &pldev);
-
-    //            for (auto d = pldev.begin(); device.empty() && d != pldev.end(); d++) {
-    //                if (!d->getInfo<CL_DEVICE_AVAILABLE>()) continue;
-
-    //                std::string ext = d->getInfo<CL_DEVICE_EXTENSIONS>();
-    //                print(ext);
-
-    //                std::cout << d->getInfo<CL_DEVICE_NAME>() << std::endl;
-
-    //                device.push_back(*d);
-    //                context = cl::Context(device);
-
-    //                // Create command queue.
-    //                cl::CommandQueue queue(context, device[0]);
-
-    //                // Compute c = a + b.
-    //                std::string script =
-    //                    "kernel void add(\n"
-    //                    "       ulong n,\n"
-    //                    "       global const float *a,\n"
-    //                    "       global const float *b,\n"
-    //                    "       global float *c\n"
-    //                    "       )\n"
-    //                    "{\n"
-    //                    "    size_t i = get_global_id(0);\n"
-    //                    "    if (i < n) {\n"
-    //                    "       c[i] = a[i] + b[i];\n"
-    //                    "    }\n"
-    //                    "}\n";
-
-    //                // Compile OpenCL program for found device.
-    //                cl::Program program(context, cl::Program::Sources{ script }, nullptr);
-
-    //                try {
-    //                    program.build(device);
-    //                }
-    //                catch (...) {
-    //                    std::cerr
-    //                        << "OpenCL compilation error" << std::endl
-    //                        << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device[0])
-    //                        << std::endl;
-    //                    return;
-    //                }
-
-
-    //                cl::Kernel add(program, "add");
-
-    //                // Prepare input data.
-    //                const size_t N = 1 << 20;
-    //                std::vector<float> a(N, 1);
-    //                std::vector<float> b(N, 2);
-    //                std::vector<float> c(N);
-
-    //                // Allocate device buffers and transfer input data to device.
-    //                cl::Buffer A(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-    //                    a.size() * sizeof(float), a.data());
-
-    //                cl::Buffer B(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-    //                    b.size() * sizeof(float), b.data());
-
-    //                cl::Buffer C(context, CL_MEM_READ_WRITE,
-    //                    c.size() * sizeof(float));
-
-    //                // Set kernel parameters.
-    //                add.setArg(0, static_cast<cl_ulong>(N));
-    //                add.setArg(1, A);
-    //                add.setArg(2, B);
-    //                add.setArg(3, C);
-
-    //                // Launch kernel on the compute device.
-    //                queue.enqueueNDRangeKernel(add, cl::NullRange, N, cl::NullRange);
-
-    //                // Get result back to host.
-    //                queue.enqueueReadBuffer(C, CL_TRUE, 0, c.size() * sizeof(float), c.data());
-
-    //                // Should get '3' here.
-    //                EXPECT_EQ(c[42], 3);
-    //            }
-    //        }
-    //        catch (...) {
-    //            device.clear();
-    //        }
-    //    }
-
-    //    if (device.empty()) {
-    //        std::cerr << "GPUs with double precision not found." << std::endl;
-    //        return;
-    //    }
-
-    //}
-    //catch (...) {
-    //    return;
-    //}
 
 
 

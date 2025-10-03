@@ -444,8 +444,32 @@ out = out + GL::string(R(
 	kernel void Rand(global _type_* A) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)__rand() / ((uint)~((uint)0));
-	}
-	kernel void matx_mult(
+	}	
+	kernel void matx_mult_2( // utilizes unrolling to improve performance.
+		global _type_* destination,
+		uint destination_lenX, uint destination_lenY,
+		global _type_* LHS,
+		uint LHS_lenX, const uint LHS_lenY,
+		global _type_* RHS,
+		uint RHS_lenX, uint RHS_lenY
+	) {
+		_type_ v = 0;
+        $pragma unroll
+		for (unsigned int index = 0; index < LHS_lenY; ++index) {
+			const uint n = get_global_id(0);
+			const uint destination_Y = (uint)floor((float)n / (float)destination_lenX);
+			const uint destination_X = n - (destination_lenX * destination_Y);
+			const uint LHS_X = destination_X; // row from LHS		
+			const uint RHS_Y = destination_Y; // column from RHS
+			const uint LHS_Y = index;
+			const uint RHS_X = index;
+			const uint LHS_n = index * LHS_lenX + LHS_X;
+			const uint RHS_n = RHS_Y * RHS_lenX + index;
+			v += LHS[LHS_n] * RHS[RHS_n];
+		}
+		destination[get_global_id(0)] = v;
+	};	
+	kernel void matx_mult( // does not utilize unrolling, which may be desireable if the unroll would exceed the capacity of the processor.
 		global _type_* destination,
 		uint destination_lenX, uint destination_lenY,
 		global _type_* LHS,
