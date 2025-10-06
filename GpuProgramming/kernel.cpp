@@ -109,7 +109,6 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
 	}
-
 	kernel void item_eq_single(global _type_* A, _type_ B, global uint* C) {
 		const uint n = get_global_id(0);
 		C[n] = (A[n] == B) ? 1 : 0;
@@ -126,7 +125,6 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = (A[n] != B[n]) ? 1 : 0;
 	}
-
 	kernel void item_not(global uint* A, global _type_* B) {
 		const uint n = get_global_id(0);
 		A[n] = !B[n];
@@ -163,9 +161,6 @@ auto out = GL::string(R(
 		const uint n = get_global_id(0);
 		C[n] = (A[n] >= B[n]) ? 1 : 0;
 	}
-
-
-
 
 	global atomic_int __rand_counter = ATOMIC_VAR_INIT(123456789);
 	uint __rand() {
@@ -289,6 +284,39 @@ auto out = GL::string(R(
 			output[get_group_id(0)] = scratch[0];
 		}
 	}
+)) + GL::string(R(
+	kernel void linear_between(global _type_ * A, _type_ Low, _type_ High, unsigned long Count) {
+		const uint n = get_global_id(0);
+		A[n] = (_type_)((float)(High - Low) * (float)((float)n / (float)Count)) + Low;
+	};
+	kernel void wrap_around(global _type_* C, global _type_* A, unsigned long Count) {
+		const uint n = get_global_id(0);
+		if (n > Count) {
+			C[n] = A[n % Count];
+		}
+		else {
+			C[n] = A[n];
+		}
+	};
+	kernel void row_of(global _type_* destination, global _type_* LHS, uint RowN, uint LHS_LenX, uint LHS_LenY, uint LHS_LenZ) {
+		const uint n = get_global_id(0);
+		const uint destination_Y = (uint)floor((float)n / (float)(LHS_LenY));
+		const uint destination_X = n - destination_Y * LHS_LenY;
+		const uint source_Z = destination_Y;
+		const uint source_Y = destination_X;
+		const uint source_X = RowN;
+		const uint source_n = (source_X + (LHS_LenX * source_Y) + ((LHS_LenX * LHS_LenY) * source_Z));
+		destination[n] = LHS[source_n];
+	};
+	kernel void resample(global _type_* destination, global _type_* Source, global uint* Indexes) {
+		const uint n = get_global_id(0);
+		const uint I = Indexes[n];
+		destination[n] = Source[I];
+	};
+	kernel void Sign(global _type_* A, global _type_* C) {
+		const uint n = get_global_id(0);
+		C[n] = A[n] >= 0 ? (_type_)1 : (_type_)-1;
+	};
 ));
 if (floatingPoint) {
 out = out + GL::string(R(

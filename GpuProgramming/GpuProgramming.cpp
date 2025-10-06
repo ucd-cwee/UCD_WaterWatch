@@ -9,6 +9,7 @@
 #include <execution>
 #include <vector>
 #include <iostream>
+#include <map>
 #include <boost/math/distributions/students_t.hpp>
 
 #pragma region "Convenience implementation of CPU parallel computing for the conditions where GPU parallel compute is not available or not convenient."
@@ -155,9 +156,23 @@ namespace parallel {
 class ArrayTasks {
 public:
     ArrayTasks() = default;
-    ArrayTasks(ArrayTasks const&) = default;
+    ArrayTasks(ArrayTasks const& rhs) = default; /*{
+        if (rhs.tasks) {
+            tasks = std::make_shared<std::vector<Event>>(rhs.get());            
+        }
+    };*/
     ArrayTasks(ArrayTasks &&) = default;
-    ArrayTasks& operator=(ArrayTasks const&) = default;
+    ArrayTasks& operator=(ArrayTasks const& rhs) = default; /*{
+        if (rhs.tasks) {
+            if (!tasks) {
+                tasks = std::make_shared<std::vector<Event>>(rhs.get());
+            }
+            else {
+                get().insert(get().end(), rhs.tasks->begin(), rhs.tasks->end());
+            }
+        }
+        return *this;
+    };*/
     ArrayTasks& operator=(ArrayTasks&&) = default;
     ~ArrayTasks() = default;
 
@@ -181,8 +196,15 @@ public:
         tasks = nullptr;
     };
 
-    mutable std::shared_ptr<std::vector<Event>> tasks;
+    ArrayTasks copy() const {
+        ArrayTasks out;
+        if (this->tasks) {
+            out.tasks = std::make_shared<std::vector<Event>>(this->get());
+        }
+        return *this;
+    };
 
+    mutable std::shared_ptr<std::vector<Event>> tasks;
 };
 
 template<typename T> class Array {
@@ -440,7 +462,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -458,7 +480,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -476,7 +498,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -494,7 +516,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -513,7 +535,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -527,7 +549,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -542,7 +564,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -556,7 +578,7 @@ public:
             out.LenY = lhs.LenY;
             out.LenZ = lhs.LenZ;
             out.Dim = lhs.Dim;
-            out.tasks = lhs.tasks;
+            out.tasks = lhs.tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -609,7 +631,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -626,7 +648,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -641,7 +663,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -656,7 +678,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -671,7 +693,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -686,7 +708,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -716,11 +738,26 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
         out.work("absolute", *data, *out.data);
+        return out;
+    };
+    // +1 if positive, -1 if negative
+    Array sign() const {
+        Array out; {
+            out.data = std::make_shared<Memory<T>>(GetDevice(), LenX * LenY * LenZ, Dim, false, true);
+            out.LenX = LenX;
+            out.LenY = LenY;
+            out.LenZ = LenZ;
+            out.Dim = Dim;
+            out.tasks = tasks.copy();
+            out.working = true;
+            out.local = false;
+        }
+        out.work("Sign", *data, *out.data);
         return out;
     };
 
@@ -731,7 +768,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -745,7 +782,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -759,7 +796,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -773,7 +810,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -787,7 +824,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -801,7 +838,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -815,7 +852,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -829,7 +866,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -843,7 +880,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -857,7 +894,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -871,7 +908,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -885,7 +922,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -901,7 +938,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -916,7 +953,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -931,7 +968,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -946,7 +983,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -961,7 +998,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -976,7 +1013,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -991,7 +1028,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1006,7 +1043,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1021,7 +1058,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1052,7 +1089,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1087,7 +1124,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1115,7 +1152,7 @@ public:
             out.LenY = LenY;
             out.LenZ = LenZ;
             out.Dim = Dim;
-            out.tasks = tasks;
+            out.tasks = tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1130,7 +1167,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1148,7 +1185,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1167,7 +1204,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1224,7 +1261,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1243,7 +1280,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1300,7 +1337,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1319,7 +1356,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1370,7 +1407,44 @@ public:
         return out;
     };
 
-
+    // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
+    Array grow_by_wrapping(size_t new_length) const {
+        if (this->Dim == 1) {
+            Array out; {
+                out.data = std::make_shared<Memory<T>>(GetDevice(), new_length * 1 * 1, 1, false, true);
+                out.LenX = new_length;
+                out.LenY = 1;
+                out.LenZ = 1;
+                out.Dim = 1;
+                out.tasks = tasks.copy();
+                out.working = true;
+                out.local = false;
+            }
+            out.work("wrap_around", *out.data, *data, this->size());
+            return out;
+        }
+        else {
+            // ??
+            throw std::runtime_error("Cannot grow a matrix by wrapping -- yet. Depends on how we want to grow it? Y-axis growth is off, but X-axis growth makes sense with wrapping");
+        }        
+    };
+    // create a new array by sampling this array at the provided indices. E.g. This = [5,4,3,2,1,0]
+    // Indices = [5,5,5,5,5,5,5,4,4,4,4,4,4,3,3,3,3,3,2,2,2,2,1,1,1,0,0]
+    // Result = [0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,5,5]
+    Array resample(Array<unsigned int> const& sample_indices) const {
+        Array out; {
+            out.tasks = this->tasks + sample_indices.tasks;
+            out.working = true;
+            out.local = false;
+            out.LenX = sample_indices.LenX;
+            out.LenY = sample_indices.LenY;
+            out.LenZ = sample_indices.LenZ;
+            out.Dim = std::max<size_t>(1ull, (size_t)(out.LenZ > 1ull) + (size_t)(out.LenY > 1ull) + (size_t)(out.LenX > 1ull));
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), out.LenX * out.LenY * out.LenZ, out.Dim, false, true);
+        }
+        out.work("resample", *out.data, *data, *sample_indices.data);
+        return out;     
+    };
 
 protected:
     //std::tuple<size_t, size_t, size_t> position_to_coordinate(size_t pos) const {
@@ -1465,6 +1539,28 @@ public:
         return out;
     };
 
+    // extract a row from this 2-D matrix as a 1-D array
+    Array row(unsigned int rowN) const {
+        Array out; {
+            out.tasks = this->tasks.copy();
+            out.working = true;
+            out.local = false;
+            out.LenX = LenY;
+            out.LenY = LenZ;
+            out.LenZ = 1;
+            out.Dim = std::max<size_t>(1ull, (size_t)(out.LenZ > 1ull) + (size_t)(out.LenY > 1ull) + (size_t)(out.LenX > 1ull));
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), out.LenX * out.LenY * out.LenZ, out.Dim, false, true);
+        }
+        Kernel kernel(this->GetDevice(), out.size(), "row_of", *out.data, *this->data, (unsigned int)rowN, (unsigned int)this->LenX, (unsigned int)this->LenY, (unsigned int)this->LenZ);
+        Event this_event;
+        kernel.enqueue_run(1, &this->tasks.get(), &this_event);
+        this->tasks.get().push_back(this_event);
+        out.tasks.get().push_back(this_event);
+        out.working = true;
+
+        return out;
+    };
+
     // transpose a 2-D matrix along its diagonal. Does not support transposition of 3-D matrices. 
     Array transpose() const {
         // matrix must be 2-D
@@ -1472,7 +1568,7 @@ public:
         else if (this->Dim > 2) return Array();
 
         Array out;
-        out.tasks = this->tasks;
+        out.tasks = this->tasks.copy();
         out.working = true;
         out.local = false;
         out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), LenX * LenY, 2, false, true);
@@ -1498,7 +1594,7 @@ public:
         unsigned int len = std::max<unsigned int>(LenY, LenX);
 
         Array out;
-        out.tasks = this->tasks;
+        out.tasks = this->tasks.copy();
         out.working = true;
         out.local = false;
         out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), len * len * LenZ, std::max<unsigned int>(2, Dim), false, true);
@@ -1571,7 +1667,7 @@ public:
         }
         size_t dimension = this->LenX;
         Array solution; {
-            solution.tasks = this->tasks;
+            solution.tasks = this->tasks.copy();
             solution.working = this->working;
             solution.local = true;
             solution.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), (dimension) * (dimension), 2, true, true);
@@ -1706,7 +1802,7 @@ private:
     Array sum_iteration() const {
         if (this->size() > 1000) {
             Array out; {
-                out.tasks = this->tasks;
+                out.tasks = this->tasks.copy();
                 out.working = this->working;
                 out.local = false;
                 out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::ceilf((float)(LenX * LenY * LenZ) / (float)64), 1, false, true);
@@ -1740,7 +1836,7 @@ private:
     Array max_iteration() const {
         if (this->size() > 1000) {
             Array out; {
-                out.tasks = this->tasks;
+                out.tasks = this->tasks.copy();
                 out.working = this->working;
                 out.local = false;
                 out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::ceilf((float)(LenX * LenY * LenZ) / (float)64), 1, false, true);
@@ -1774,7 +1870,7 @@ private:
     Array min_iteration() const {
         if (this->size() > 1000) {
             Array out; {
-                out.tasks = this->tasks;
+                out.tasks = this->tasks.copy();
                 out.working = this->working;
                 out.local = false;
                 out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::ceilf((float)(LenX * LenY * LenZ) / (float)64), 1, false, true);
@@ -1857,7 +1953,7 @@ public:
         else if (this->Dim > 2) return Array();
 
         Array out; {
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
             out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), std::min<size_t>(LenX, LenY), 1, false, true);
@@ -1885,7 +1981,7 @@ public:
             out.LenY = this->LenY;
             out.LenZ = this->LenZ;
             out.Dim = this->Dim;
-            out.tasks = this->tasks;
+            out.tasks = this->tasks.copy();
             out.working = true;
             out.local = false;
         }
@@ -1928,7 +2024,7 @@ public:
     };
     // returns a random number in the range of (lower, upper]
     static Array random_between(T lower, T upper, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
-        if constexpr (std::is_floating_point_v<T> || std::is_same_v<unsigned int, T>) {
+        if constexpr (std::is_floating_point_v<T>) {
             int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
             Array<T> out; {
                 out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
@@ -1975,7 +2071,7 @@ public:
         out.work("identity", *out.data, width);
         return out;
     };
-    // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
+    // Returns a matrix with all values equal to the provided value
     static Array constant(T value, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
         int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
 
@@ -1989,6 +2085,22 @@ public:
             out.local = false;
         }
         out.work("copy_single", *out.data, value);
+        return out;
+    };
+    // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
+    static Array linear(T low, T high, size_t lenX, size_t lenY = 1, size_t lenZ = 1) {
+        int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+
+        Array<T> out; {
+            out.data = std::make_shared<Memory<T>>(Array<T>::GetDevice(), lenX * lenY * lenZ, num_dim, false, true);
+            out.LenX = lenX;
+            out.LenY = lenY;
+            out.LenZ = lenZ;
+            out.Dim = num_dim;
+            out.working = true;
+            out.local = false;
+        }
+        out.work("linear_between", *out.data, low, high, (unsigned long)out.size());
         return out;
     };
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
@@ -2222,7 +2334,12 @@ namespace linear_regression {
         Array<float> P(t_stat.size(0));
         size_t N = P.size();
         for (size_t i = 0; i < N; ++i) {
-            P[i] = (1.0f - (float)boost::math::cdf(dist, t_stat[i])) + boost::math::cdf(dist, -t_stat[i]);
+            P[i] = 
+                (1.0f - (float)boost::math::cdf(dist, t_stat[i])) + boost::math::cdf(dist, -t_stat[i]);
+            if ((P[i] > 1.0f) || (P[i] < 0.0f)) {
+                P[i] = (1.0f - (float)boost::math::cdf(dist, -t_stat[i])) + boost::math::cdf(dist, t_stat[i]);
+            }
+
         }
         P.sync();
         return P;
@@ -2265,6 +2382,94 @@ void fnGpuProgramming() {
 
     // Demonstrate the creation, use, and destruction of a floating-point matrix with 100M items as part of a CPU-bound matrix multiplication
     Array<float>::constant(1, 10000).matrix_multiply(Array<float>::constant(1, 10000).transpose()).stop_work();
+
+    // Water Demand Modeling Example
+    if (1) {
+        Array<float> DemandPatterns = Array<float>::constant(1, 24); // series of demand patterns;
+        for (int i = 0; i < 24; ++i) {
+            DemandPatterns = DemandPatterns.join(1, ((Array<float>::linear(0.0f, 3.14f, 24).sin() * 0.5f) + 0.5f) * Array<float>::random_between(0.75, 1.25, 24));
+        }
+
+        const int num_timesteps = 24 * (60 / 5);
+        Array<float> junctions_base_multipliers = Array<float>::random_between(0, 5, 40000);
+        Array<unsigned int> junction_pattern_indices = Array<unsigned int>::random_between(1, 23, junctions_base_multipliers.size(0));
+        Array<float> junctions_X_flow = Array<float>::constant(0, junctions_base_multipliers.size(0));
+
+        print("");
+        print(junction_pattern_indices);
+        print("");
+
+        Array<unsigned int> pipe_open = Array<unsigned int>::constant(1, 24000);
+        Array<float> pipe_flow_resistance = Array<float>::random_between(80, 140, pipe_open.size(0));
+        Array<float> pipe_headloss_gradient = Array<float>::constant(0, pipe_open.size(0));
+        Array<float> pipe_headloss = Array<float>::constant(0, pipe_open.size(0));
+        Array<float> pipe_flow = Array<float>::constant(0, pipe_open.size(0));
+        Array<float> P_coeff;
+        Array<float> Y_coeff;
+        Array<unsigned int> pipe_upstream_node_index = Array<unsigned int>::random_between(0, junctions_base_multipliers.size(0) - 1, pipe_open.size(0));
+        Array<unsigned int> pipe_downstream_node_index = Array<unsigned int>::random_between(0, junctions_base_multipliers.size(0) - 1, pipe_open.size(0));
+
+        for (int TimeStep = 0; TimeStep < num_timesteps; ++TimeStep) {
+            auto DemandPatterns_AtThisTime = DemandPatterns.row(TimeStep % DemandPatterns.size(0)); // sample a row from the demand patterns at this timestep
+            auto junction_pattern_multipliers = DemandPatterns_AtThisTime.resample(junction_pattern_indices); // re-sample the row of demand pattern for each junction based on that junction's indices. 
+            Array<float> junction_demands_this_iteration = junction_pattern_multipliers * junctions_base_multipliers; // junction.demand * pattern[now] = current flowrate at each junction in the model
+
+            // pipecoeff
+            {
+                pipe_headloss_gradient.stop_work();
+
+                pipe_headloss_gradient = Array<float>::constant(1.852, pipe_headloss_gradient.size(0));
+                pipe_headloss_gradient *= pipe_flow_resistance;
+                pipe_headloss_gradient *= pipe_flow.pow(1.852 - 1.0);
+
+                auto switch_condition =
+                    (pipe_headloss_gradient < 1E-7).cast<float>();
+                pipe_headloss_gradient =
+                    (switch_condition * 1E-7) + ((1.0f - switch_condition) * pipe_headloss_gradient);
+                pipe_headloss =
+                    (switch_condition * pipe_flow * 1E-7) // if (pipe_headloss_gradient < 1E-7)
+                    + ((1.0f - switch_condition) * pipe_headloss_gradient * pipe_flow / 1.852); // ... otherwise use original formula            
+                pipe_headloss *= pipe_flow.sign(); // Adjust head loss sign for flow direction
+
+                // P and Y coeffs.
+                P_coeff = 1.0 / pipe_headloss_gradient;
+                Y_coeff = pipe_headloss / pipe_headloss_gradient;
+            }
+
+            // linkcoeff
+            {
+                auto do_nothing_check_1 = (P_coeff != 0).cast<float>();
+
+                // Update nodal flow excess (Xflow). (Flow out of node is (-), flow into node is (+))
+                junctions_X_flow -= pipe_flow.resample(pipe_upstream_node_index) * do_nothing_check_1;
+                junctions_X_flow += pipe_flow.resample(pipe_downstream_node_index) * do_nothing_check_1;
+
+
+
+
+
+            }
+        }
+
+        
+
+
+
+
+        // junctions_base_multipliers = junctions_base_multipliers.grow_by_wrapping(junctions_base_multipliers.size(0) * num_timesteps);
+        // junctions_base_multipliers
+
+
+
+
+
+        // print(DemandPatterns["0"].grow_by_wrapping(128));
+
+
+
+
+    }
+
 
     // Advertisement regression. Generally correct analysis.
     if (1) {
@@ -2318,6 +2523,84 @@ void fnGpuProgramming() {
 
         print(Sales_Revenue.join(1, prediction).to_string({"Measured", "Predicted"}));
         print("");
+    }
+
+    // Custom weather regression. Generally correct analysis.
+    if (1) {
+        /*          Coefficients	Standard Error	t Stat	        P-value	    Lower 95%	    Upper 95%
+        Intercept	93.67835922	    0.121802957	    769.0975786	    0	        93.43959502	    93.91712343
+        dawn	    -14.4227875	    0.153113204	    -94.19688942	0	        -14.72292761	-14.12264739
+        dusk	    -10.26652003	0.162912373	    -63.01866368	0	        -10.58586896	-9.947171106
+        winter	    -10.2061204	    0.131022469	    -77.89595536	0	        -10.46295715	-9.949283644
+        */
+
+        auto measured = Array<float>::random_between(2, 4, 24 * 365);
+        auto random_noise = Array<float>::random_between(2, 4, 24 * 365);
+        auto hours = Array<float>(24 * 365);
+        auto months = Array<float>(24 * 365);
+
+        std::array<float, 24> hourly{
+            59, 58, 59, 60, 61, 62,
+            64, 69, 72, 76, 79, 81,
+            82, 80, 78, 76, 75, 74,
+            70, 68, 66, 64, 62, 60
+        };
+        std::array<float, 12> monthly{
+            0, -2, 6, 10, 14, 20,
+            19, 18, 16, 12, 8, 4
+        };
+        for (size_t day = 0; day < 365; ++day) {
+            for (size_t hr = 0; hr < 24; ++hr) {
+                measured[(day * 24) + hr] += (monthly[day / 31] + hourly[hr]);
+                hours[(day * 24) + hr] = hr;
+                months[(day * 24) + hr] = day / 31;
+            }
+        }
+
+        measured.sync();
+        hours.sync();
+        months.sync();
+
+        auto dawn = (hours < 6).cast<float>();
+        auto dusk = (hours > 18).cast<float>();
+        auto midday = (!((hours > 18) + (hours < 6))).cast<float>();
+        auto winter = ((months >= 10) + (months <= 4)).cast<float>();
+        auto summer = (!winter).cast<float>();
+        auto Basic{ Array<float>::constant(1, winter.size(0)) };
+        auto features = linear_regression::build_features( // double-checks and removes colinearity
+            Basic, dawn, dusk, midday, winter, summer
+        );
+
+        auto weights = linear_regression::solve_for_weights(measured, features);
+        auto std_err = linear_regression::standard_error(measured, features, weights);
+        auto std_dev = linear_regression::standard_deviation(measured, features, weights);
+        auto t_stat = linear_regression::t_statistic(weights, std_err);
+        auto p_value = linear_regression::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = linear_regression::predict(features, weights);
+
+        print("");
+        print(
+            weights.join(1,
+                std_err).join(1,
+                    t_stat).join(1,
+                        p_value).join(1,
+                            lower_95).join(1,
+                                upper_95).to_string(
+                                    { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        );
+        print("");
+
+        print(measured.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        print("");
+
+
+
+
+
+
+
     }
 
     // MPG regression. Not being performed correctly in any way, for reasons not yet understood.
@@ -2450,83 +2733,7 @@ void fnGpuProgramming() {
 
     }
 
-    // Custom weather regression. P-values are being incorrectly predicted. 
-    if (1) {
-        /*          Coefficients	Standard Error	t Stat	        P-value	    Lower 95%	    Upper 95%
-        Intercept	93.67835922	    0.121802957	    769.0975786	    0	        93.43959502	    93.91712343	    
-        dawn	    -14.4227875	    0.153113204	    -94.19688942	0	        -14.72292761	-14.12264739	
-        dusk	    -10.26652003	0.162912373	    -63.01866368	0	        -10.58586896	-9.947171106	
-        winter	    -10.2061204	    0.131022469	    -77.89595536	0	        -10.46295715	-9.949283644	
-        */
 
-        auto measured = Array<float>::random_between(2, 4, 24 * 365);
-        auto random_noise = Array<float>::random_between(2, 4, 24 * 365);
-        auto hours = Array<float>(24 * 365);
-        auto months = Array<float>(24 * 365);        
-
-        std::array<float, 24> hourly {
-            59, 58, 59, 60, 61, 62,
-            64, 69, 72, 76, 79, 81,
-            82, 80, 78, 76, 75, 74,
-            70, 68, 66, 64, 62, 60
-        };
-        std::array<float, 12> monthly {
-            0, -2, 6, 10, 14, 20,
-            19, 18, 16, 12, 8, 4
-        };
-        for (size_t day = 0; day < 365; ++day) {
-            for (size_t hr = 0; hr < 24; ++hr) {
-                measured[(day * 24) + hr] += (monthly[day / 31] + hourly[hr]);
-                hours[(day * 24) + hr] = hr;
-                months[(day * 24) + hr] = day / 31;
-            }
-        }
-
-        measured.sync();
-        hours.sync();
-        months.sync();
-
-        auto dawn = (hours < 6).cast<float>();
-        auto dusk = (hours > 18).cast<float>();
-        auto midday = (!((hours > 18) + (hours < 6))).cast<float>();
-        auto winter = ((months >= 10) + (months <= 4)).cast<float>();
-        auto summer = (!winter).cast<float>();
-        auto Basic{ Array<float>::constant(1, winter.size(0)) };
-        auto features = linear_regression::build_features( // double-checks and removes colinearity
-            Basic, dawn, dusk, midday, winter, summer
-        );
-
-        auto weights = linear_regression::solve_for_weights(measured, features);
-        auto std_err = linear_regression::standard_error(measured, features, weights);
-        auto std_dev = linear_regression::standard_deviation(measured, features, weights);
-        auto t_stat = linear_regression::t_statistic(weights, std_err);       
-        auto p_value = linear_regression::p_value(features, t_stat);
-        auto lower_95 = weights - (1.96 * std_err);
-        auto upper_95 = weights + (1.96 * std_err);
-        auto prediction = linear_regression::predict(features, weights);
-
-        print("");
-        print(
-            weights.join(1,
-                std_err).join(1,
-                    t_stat).join(1,
-                        p_value).join(1,
-                            lower_95).join(1,
-                                upper_95).to_string(
-            { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
-        );
-        print("");
-
-        print(measured.join(1, prediction).to_string({ "Measured", "Predicted" }));
-        print("");
-
-
-
-
-
-
-
-    }
 
 
 
