@@ -2440,6 +2440,8 @@ namespace detail {
         const BuildLogType &buildLogs)
     {
         if (err != CL_SUCCESS) {
+            std::cout << err << std::endl;
+            std::cout << errStr << std::endl;
             throw BuildError(err, errStr, buildLogs);
         }
         return err;

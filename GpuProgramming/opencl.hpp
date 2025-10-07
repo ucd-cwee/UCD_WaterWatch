@@ -491,17 +491,11 @@ public:
 			read_from_device();
 			host_buffer_exists = true;
 		}
-		else if (!device_buffer_exists) {
-			print_error("There is no existing device buffer, so can't add host buffer.");
-		}
 	}
 	inline void add_device_buffer(const bool allow_zero_copy = true) { // makes only sense if there is no device buffer yet but an existing host buffer
 		if (!device_buffer_exists && host_buffer_exists) {
 			allocate_device_buffer(*device, true, allow_zero_copy);
 			write_to_device();
-		}
-		else if (!host_buffer_exists) {
-			print_error("There is no existing host buffer, so can't add device buffer.");
 		}
 	}
 	inline void delete_host_buffer() {
@@ -666,14 +660,31 @@ private:
 		if (error == -54) print_error("Workgrop size " + to_string(WORKGROUP_SIZE) + " for OpenCL kernel \"" + name + "(...)\" is invalid!");
 		if (error != 0) print_error("OpenCL kernel \"" + name + "(...)\" failed with error code " + to_string(error) + "!");
 	}
-	template<typename T> inline void link_parameter(const uint position, const Memory<T>& memory) {
-		check_for_errors(cl_kernel.setArg(position, memory.get_cl_buffer()));
-	}
-	template<typename T> inline void link_parameter(const uint position, const T& constant) {
+
+	template<typename T>
+	inline void link_parameter(const uint position, const T& constant) {
 		check_for_errors(cl_kernel.setArg(position, sizeof(T), (void*)&constant));
+	}	
+	template<> inline void link_parameter<cl::Buffer>(const uint position, const cl::Buffer& memory) {
+		check_for_errors(cl_kernel.setArg(position, memory));
 	}
+	//template<> inline void link_parameter<Memory<T>>(const uint position, const Memory<G>& memory) {
+	//	check_for_errors(cl_kernel.setArg(position, memory.get_cl_buffer()));
+	//}
 	inline void link_parameters(const uint starting_position) {
 		number_of_parameters = max(number_of_parameters, starting_position);
+	}
+	template<template<class> typename G, typename T, class... U> inline void link_parameters(const uint starting_position, const G<T>& parameter, const U&... parameters) {
+		if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
+			link_parameters(starting_position, *parameter, parameters...);
+		}
+		else if constexpr (std::is_same_v<G<T>, Memory<T>>) {
+			link_parameter(starting_position, parameter.get_cl_buffer());
+		}
+		else {
+			link_parameter(starting_position, parameter);
+		}
+		link_parameters(starting_position + 1u, parameters...);
 	}
 	template<class T, class... U> inline void link_parameters(const uint starting_position, const T& parameter, const U&... parameters) {
 		link_parameter(starting_position, parameter);
