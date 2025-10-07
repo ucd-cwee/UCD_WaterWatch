@@ -20,111 +20,114 @@ auto out = GL::string(R(
 	kernel void add_inplace(global _type_* A, global _type_* B) {
 		const uint n = get_global_id(0);
 		A[n] += B[n];
-	}
+	};
 	kernel void sub(global _type_* A, global _type_* B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] - B[n];
-	}
+	};
 	kernel void sub_inplace(global _type_* A, global _type_* B) {
 		const uint n = get_global_id(0);
 		A[n] -= B[n];
-	}
+	};
 	kernel void mult(global _type_* A, global _type_* B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] * B[n];
-	}
+	};
 	kernel void mult_inplace(global _type_* A, global _type_* B) {
 		const uint n = get_global_id(0);
 		A[n] *= B[n];
-	}
+	};
 	kernel void divide(global _type_* A, global _type_* B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] / B[n];
-	}
+	};
 	kernel void divide_inplace(global _type_* A, global _type_* B) {
 		const uint n = get_global_id(0);
 		A[n] /= B[n];
-	}
+	};
 	kernel void add_single(global _type_* A, _type_ B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] + B;
-	}
+	};
 	kernel void add_single_inplace(global _type_* A, _type_ B) {
 		const uint n = get_global_id(0);
 		A[n] += B;
-	}
+	};
 	kernel void sub_single(global _type_* A, _type_ B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] - B;
-	}
+	};
+
 	kernel void sub_single_inplace(global _type_* A, _type_ B) {
 		const uint n = get_global_id(0);
 		A[n] -= B;
-	}
+	};
 	kernel void mult_single(global _type_* A, _type_ B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] * B;
-	}
+	};
 	kernel void mult_single_inplace(global _type_* A, _type_ B) {
 		const uint n = get_global_id(0);
 		A[n] *= B;
-	}
+	};
 	kernel void divide_single(global _type_* A, _type_ B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = A[n] / B;
-	}
+	};
 	kernel void divide_single_inv(global _type_* A, _type_ B, global _type_* C) {
 		const uint n = get_global_id(0);
 		C[n] = B / A[n];
-	}
+	};
 	kernel void divide_single_inplace(global _type_* A, _type_ B) {
 		const uint n = get_global_id(0);
 		A[n] /= B;
-	}
+	};
+
 	kernel void from_char(global _type_* A, global char* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
 	kernel void from_uchar(global _type_* A, global uchar* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
 	kernel void from_ulong(global _type_* A, global ulong* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
 	kernel void from_uint(global _type_* A, global uint* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
 	kernel void from_long(global _type_* A, global long* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
 	kernel void from_int(global _type_* A, global int* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
 	kernel void from_float(global _type_* A, global float* B) {
 		const uint n = get_global_id(0);
 		A[n] = (_type_)B[n];
-	}
+	};
+
 	kernel void item_eq_single(global _type_* A, _type_ B, global uint* C) {
 		const uint n = get_global_id(0);
 		C[n] = (A[n] == B) ? 1 : 0;
-	}
+	};
 	kernel void item_neq_single(global _type_* A, _type_ B, global uint* C) {
 		const uint n = get_global_id(0);
 		C[n] = (A[n] != B) ? 1 : 0;
-	}
+	};
 	kernel void item_eq(global _type_* A, global _type_* B, global uint* C) {
 		const uint n = get_global_id(0);
 		C[n] = (A[n] == B[n]) ? 1 : 0;
-	}
+	};
 	kernel void item_neq(global _type_* A, global _type_* B, global uint* C) {
 		const uint n = get_global_id(0);
 		C[n] = (A[n] != B[n]) ? 1 : 0;
-	}
+	};
 	kernel void item_not(global uint* A, global _type_* B) {
 		const uint n = get_global_id(0);
 		A[n] = !B[n];
@@ -231,7 +234,7 @@ auto out = GL::string(R(
 			X -= LHS_LenX;
 			destination[n] = RHS[(Z * LenY * RHS_LenX) + (Y * RHS_LenX) + X];
 		}
-	}
+	};
 	kernel void join_dim_1(global _type_* destination, global _type_* LHS, uint LenX, uint LHS_LenY, uint LenZ, global _type_* RHS, uint RHS_LenY) {
 		const uint n = get_global_id(0);
 		const uint Z = (uint)floor((float)n / ((float)(LHS_LenY + RHS_LenY) * (float)LenX));
@@ -246,11 +249,11 @@ auto out = GL::string(R(
 			Y -= LHS_LenY;
 			destination[n] = RHS[(Z * RHS_LenY * LenX) + (Y * LenX) + X];
 		}
-	}
+	};
 	kernel void join_dim_2(global _type_* destination, global _type_* LHS, uint LenX, uint LenY, uint LHS_LenZ, global _type_* RHS) {
 		const uint n = get_global_id(0);
 		uint Z = (uint)floor((float)n / ((float)(LenY) * (float)LenX));
-		const uint pos2 = n - Z * ((LenY) * LenX);
+		const uint pos2 = n - Z * ((LenY)*LenX);
 		const uint Y = (uint)floor((float)pos2 / (float)LenX);
 		const uint X = pos2 - Y * LenX;
 
@@ -261,12 +264,12 @@ auto out = GL::string(R(
 			Z -= LHS_LenZ;
 			destination[n] = RHS[(Z * LenY * LenX) + (Y * LenX) + X];
 		}
-	}
-	kernel void reduce_sum(global _type_* input, global _type_* output, local _type_* scratch, uint n) {
+	};
+	kernel void reduce_sum(global _type_* input, global _type_* output, /*local _type_* scratch, */uint n) {
 		uint global_id = get_global_id(0);
 		uint local_id = get_local_id(0);
 		uint group_size = get_local_size(0);
-
+		local _type_ scratch[64];
 		// Copy data from global to local memory
 		scratch[local_id] = (global_id < n) ? input[global_id] : 0.0f;
 		barrier(CLK_LOCAL_MEM_FENCE);
@@ -283,7 +286,8 @@ auto out = GL::string(R(
 		if (local_id == 0) {
 			output[get_group_id(0)] = scratch[0];
 		}
-	}
+	};
+
 )) + GL::string(R(
 	kernel void linear_between(global _type_ * A, _type_ Low, _type_ High, unsigned long Count) {
 		const uint n = get_global_id(0);
@@ -313,10 +317,10 @@ auto out = GL::string(R(
 		const uint I = Indexes[n];
 		destination[n] = Source[I];
 	};
-	kernel void Sign(global _type_* A, global _type_* C) {
-		const uint n = get_global_id(0);
-		C[n] = A[n] >= 0 ? (_type_)1 : (_type_)-1;
-	};
+	//kernel void Sign(global _type_* A, global _type_* C) {
+	//	const uint n = get_global_id(0);
+	//	C[n] = A[n] >= 0 ? (_type_)1 : (_type_)-1;
+	//};
 ));
 if (floatingPoint) {
 out = out + GL::string(R(
@@ -525,10 +529,11 @@ out = out + GL::string(R(
 
 		destination[n] = v;
 	};
-	kernel void reduce_max(global _type_* input, global _type_* output, local _type_* scratch, uint n, _type_ minV) {
+	kernel void reduce_max(global _type_* input, global _type_* output, /*local _type_* scratch, */uint n, _type_ minV) {
 		uint global_id = get_global_id(0);
 		uint local_id = get_local_id(0);
 		uint group_size = get_local_size(0);
+		local _type_ scratch[64];
 
 		// Copy data from global to local memory
 		scratch[local_id] = (global_id < n) ? input[global_id] : minV;
@@ -547,10 +552,11 @@ out = out + GL::string(R(
 			output[get_group_id(0)] = scratch[0];
 		}
 	}
-	kernel void reduce_min(global _type_* input, global _type_* output, local _type_* scratch, uint n, _type_ maxV) {
+	kernel void reduce_min(global _type_* input, global _type_* output, /*local _type_* scratch, */uint n, _type_ maxV) {
 		uint global_id = get_global_id(0);
 		uint local_id = get_local_id(0);
 		uint group_size = get_local_size(0);
+		local _type_ scratch[64];
 
 		// Copy data from global to local memory
 		scratch[local_id] = (global_id < n) ? input[global_id] : maxV;
