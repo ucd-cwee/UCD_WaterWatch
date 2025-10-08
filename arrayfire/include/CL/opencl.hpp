@@ -2442,6 +2442,11 @@ namespace detail {
         if (err != CL_SUCCESS) {
             std::cout << err << std::endl;
             std::cout << errStr << std::endl;
+            int I = 0;
+            for (auto& log : buildLogs) {
+                std::cout << std::to_string(I++) + ":\t" + log.second << std::endl;
+            }
+
             throw BuildError(err, errStr, buildLogs);
         }
         return err;

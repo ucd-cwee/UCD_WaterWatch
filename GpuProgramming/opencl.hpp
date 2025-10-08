@@ -680,11 +680,12 @@ private:
 		}
 		else if constexpr (std::is_same_v<G<T>, Memory<T>>) {
 			link_parameter(starting_position, parameter.get_cl_buffer());
+			link_parameters(starting_position + 1u, parameters...);
 		}
 		else {
 			link_parameter(starting_position, parameter);
-		}
-		link_parameters(starting_position + 1u, parameters...);
+			link_parameters(starting_position + 1u, parameters...);
+		}		
 	}
 	template<class T, class... U> inline void link_parameters(const uint starting_position, const T& parameter, const U&... parameters) {
 		link_parameter(starting_position, parameter);
