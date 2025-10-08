@@ -903,7 +903,8 @@ public:
 };
 
 template<typename T> class gpu_array {
-protected:
+public:
+    using type = T;
     class reader {
         Memory<T>* data;
         dimensions dim;
@@ -913,10 +914,10 @@ protected:
             data->add_host_buffer();
             data->read_from_device();
         };
-        reader(reader const&) = delete;
-        reader(reader &&) = delete;
-        reader& operator=(reader const&) = delete;
-        reader& operator=(reader&&) = delete;
+        reader(reader const&) = default;
+        reader(reader &&) = default;
+        reader& operator=(reader const&) = default;
+        reader& operator=(reader&&) = default;
         ~reader() = default;
         operator bool() const {
             return data->length() > 0;
@@ -956,17 +957,37 @@ protected:
             }
         };
         writer(writer const&) = delete;
-        writer(writer&&) = delete;
+        writer(writer&& rhs) : data(std::move(rhs.data)), tasks(std::move(rhs.tasks)), write_event(std::move(rhs.write_event)), dim(std::move(rhs.dim)) {
+            rhs.data = nullptr;
+            rhs.write_event = nullptr;
+        };
         writer& operator=(writer const&) = delete;
-        writer& operator=(writer&&) = delete;
+        writer& operator=(writer&& rhs) {
+            if (data) {
+                if (tasks.get().size() > 0) data->write_to_device(false, &tasks.get(), write_event);                
+                else data->write_to_device(false, nullptr, write_event);                
+            }
+
+
+            data = std::move(rhs.data);
+            tasks = std::move(rhs.tasks);
+            write_event = std::move(rhs.write_event);
+            dim = std::move(rhs.dim);
+
+            rhs.data = nullptr;
+            rhs.write_event = nullptr;
+
+            return *this;
+        };
         ~writer() {
-            if (tasks.get().size() > 0) {
-                data->write_to_device(false, &tasks.get(), write_event);
-            }
-            else {
-                data->write_to_device(false, nullptr, write_event);
-            }
-            // write_event->wait();            
+            if (data) {
+                if (tasks.get().size() > 0) {
+                    data->write_to_device(false, &tasks.get(), write_event);
+                }
+                else {
+                    data->write_to_device(false, nullptr, write_event);
+                }
+            }         
         };
         operator bool() const {
             return data->length() > 0;
@@ -978,6 +999,8 @@ protected:
             return data->operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);
         };
     };
+
+protected:
     template<class... P> static inline array_tasks work(array_tasks const& Tasks, unsigned int count, const string& name, const P&... parameters) { // accepts Memory<T> objects and fundamental data type constants
         Kernel kernel(opencl_impl::get_device(), count, name + opencl_impl::type_name<T>(), parameters...);
         Event this_event;
@@ -1136,7 +1159,7 @@ public:
     // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
     template<typename G> gpu_array<G> cast() const {
         if constexpr (std::is_same_v<G, T>) {
-            return *this;
+            return copy();
         }
         else {
             static std::string CastFunc{ std::string("from_") + opencl_impl::type_name<T>() }; // from_int
@@ -1246,7 +1269,7 @@ public:
             return out;
         }
         else {
-            return *this;
+            return copy();
         }
     };
     // round to higher integer
@@ -1256,7 +1279,7 @@ public:
             out.tasks = gpu_array::work(tasks, this->size(), "ceil", data, out.data);
             return out;
         }else{
-            return *this;
+            return copy();
         }
     };
     // round to lower integer
@@ -1267,7 +1290,7 @@ public:
             return out;
         }
         else {
-            return *this;
+            return copy();
         }
     };
     // return (this * multiply) + add;
@@ -1424,7 +1447,7 @@ public:
     // returns the max of the two arrays (item-by-item, as an array)
     gpu_array max(T rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "Max_single", data, rhs, out.data);
+        out.tasks = gpu_array::work(tasks, this->size(), "Max_single", data, rhs, out.data);
         return out;
     };
     // returns the min of the two arrays (item-by-item, as an array)
@@ -1436,7 +1459,7 @@ public:
     // returns the min of the two arrays (item-by-item, as an array)
     gpu_array min(T rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "Min_single", data, rhs, out.data);
+        out.tasks = gpu_array::work(tasks, this->size(), "Min_single", data, rhs, out.data);
         return out;
     };
 
@@ -1476,33 +1499,33 @@ public:
         return out;
     };
     friend gpu_array<unsigned int> operator==(gpu_array const& lhs, gpu_array const& rhs) {
-        gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_eq", data, rhs.data, out.data);
+        gpu_array<unsigned int> out(lhs.dim);
+        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_eq", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator!=(gpu_array const& lhs, gpu_array const& rhs) {
-        gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_neq", data, rhs.data, out.data);
+        gpu_array<unsigned int> out(lhs.dim);
+        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_neq", lhs.data, rhs.data, out.data);
         return out;        
     };
     friend gpu_array<unsigned int> operator<(gpu_array const& lhs, gpu_array const& rhs) {
-        gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_ls", data, rhs.data, out.data);
+        gpu_array<unsigned int> out(lhs.dim);
+        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_ls", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator<=(gpu_array const& lhs, gpu_array const& rhs) {
-        gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_lse", data, rhs.data, out.data);
+        gpu_array<unsigned int> out(lhs.dim);
+        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_lse", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator>(gpu_array const& lhs, gpu_array const& rhs) {
-        gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_gr", data, rhs.data, out.data);
+        gpu_array<unsigned int> out(lhs.dim);
+        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_gr", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator>=(gpu_array const& lhs, gpu_array const& rhs) {
-        gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_gre", data, rhs.data, out.data);
+        gpu_array<unsigned int> out(lhs.dim);
+        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_gre", lhs.data, rhs.data, out.data);
         return out;
     };
 
@@ -2036,8 +2059,1074 @@ namespace gpu_linear_regressions {
 
 };
 
+// type-erased version on a floating-point OR integer type.
+class Number {
+public:
+    union {
+        double V1;
+        long long V2;
+    } data;
+    bool integer;
+
+    Number() = default;
+    Number(Number const&) = default;
+    Number(Number &&) = default;
+    Number& operator=(Number const&) = default;
+    Number& operator=(Number&&) = default;
+    ~Number() = default;
+
+    template <typename T, typename = std::enable_if_t<!std::is_same_v<T, Number>>>
+    Number(T rhs) {
+        if constexpr (std::is_floating_point_v<T>) {
+            data.V1 = (long double)rhs;
+            integer = false;
+        }
+        else {
+            data.V2 = (long long)rhs;
+            integer = true;
+        }        
+    };
+
+    operator char() const {
+        if (integer) return data.V2;
+        else return (long long)data.V1;
+    };
+    operator unsigned char() const {
+        if (integer) return data.V2;
+        else return (long long)data.V1;
+    };
+    operator int() const {
+        if (integer) return data.V2;
+        else return (long long)data.V1;
+    };
+    operator unsigned int() const {
+        if (integer) return data.V2;
+        else return (long long)data.V1;
+    };
+    operator long() const {
+        if (integer) return data.V2;
+        else return (long long)data.V1;
+    };
+    operator unsigned long() const {
+        if (integer) return data.V2;
+        else return (long long)data.V1;
+    };
+    operator float() const {
+        if (integer) return (long double)data.V2;
+        else return data.V1;
+    };
+    operator double() const {
+        if (integer) return (long double)data.V2;
+        else return data.V1;
+    };
+};
+
+// type-erased version of gpu_array, to be used as the library API
+class Array {
+public:
+    enum class ArrayTypes {
+          EMPTY
+        , CHAR
+        , UCHAR
+        , INT
+        , UINT
+        , LONG
+        , ULONG
+        , FLOAT
+        , DOUBLE
+    };
+
+private:
+    ArrayTypes _type;
+    std::shared_ptr<void> _data; // gpu_array<T>
+
+protected: 
+    // NOT PART OF API >>
+    static std::shared_ptr<void> initialize(ArrayTypes T, unsigned int X, unsigned int Y, unsigned int Z) {
+        switch (T) {
+        case ArrayTypes::EMPTY: return nullptr;
+        case ArrayTypes::CHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<char>>(X,Y,Z));
+        case ArrayTypes::UCHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned char>>(X, Y, Z));
+        case ArrayTypes::INT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<int>>(X, Y, Z));
+        case ArrayTypes::UINT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned int>>(X, Y, Z));
+        case ArrayTypes::LONG: return std::static_pointer_cast<void>(std::make_shared<gpu_array<long>>(X, Y, Z));
+        case ArrayTypes::ULONG: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned long>>(X, Y, Z));
+        case ArrayTypes::FLOAT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<float>>(X, Y, Z));
+        case ArrayTypes::DOUBLE: return std::static_pointer_cast<void>(std::make_shared<gpu_array<double>>(X, Y, Z));
+        }
+    };
+    static std::shared_ptr<void> initialize(ArrayTypes T) {
+        switch (T) {
+        case ArrayTypes::EMPTY: return nullptr;
+        case ArrayTypes::CHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<char>>());
+        case ArrayTypes::UCHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned char>>());
+        case ArrayTypes::INT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<int>>());
+        case ArrayTypes::UINT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned int>>());
+        case ArrayTypes::LONG: return std::static_pointer_cast<void>(std::make_shared<gpu_array<long>>());
+        case ArrayTypes::ULONG: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned long>>());
+        case ArrayTypes::FLOAT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<float>>());
+        case ArrayTypes::DOUBLE: return std::static_pointer_cast<void>(std::make_shared<gpu_array<double>>());
+        }
+    };    
+    template<typename T> static ArrayTypes TypeOf() {
+        if constexpr (std::is_same_v<T, char>) return ArrayTypes::CHAR;
+        else if constexpr (std::is_same_v<T, unsigned char>) return ArrayTypes::UCHAR;
+        else if constexpr (std::is_same_v<T, int>) return ArrayTypes::INT;
+        else if constexpr (std::is_same_v<T, unsigned int>) return ArrayTypes::UINT;
+        else if constexpr (std::is_same_v<T, long>) return ArrayTypes::LONG;
+        else if constexpr (std::is_same_v<T, unsigned long>) return ArrayTypes::ULONG;
+        else if constexpr (std::is_same_v<T, float>) return ArrayTypes::FLOAT;
+        else if constexpr (std::is_same_v<T, double>) return ArrayTypes::DOUBLE;
+        else return ArrayTypes::EMPTY;
+    };
+    template<typename T> Array(gpu_array<T>&& V) : _type(TypeOf<T>()), _data(std::static_pointer_cast<void>(std::make_shared<gpu_array<T>>(std::move(V)))) {};
+    template <typename T> auto& get() const {
+        return *std::static_pointer_cast<gpu_array<T>>(_data);
+    };
+    template <typename F> auto visit(F const& func) const {
+        switch (_type) {
+        case ArrayTypes::EMPTY: throw std::runtime_error("Array was empty");
+        case ArrayTypes::CHAR: return func(get<char>());
+        case ArrayTypes::UCHAR: return func(get<unsigned char>());
+        case ArrayTypes::INT: return func(get<int>());
+        case ArrayTypes::UINT: return func(get<unsigned int>());
+        case ArrayTypes::LONG: return func(get<long>());
+        case ArrayTypes::ULONG: return func(get<unsigned long>());
+        case ArrayTypes::FLOAT: return func(get<float>());
+        case ArrayTypes::DOUBLE: return func(get<double>());
+        }        
+    };
+    // << NOT PART OF API
+
+public:
+    Array() : _type(ArrayTypes::EMPTY), _data{ nullptr } {};
+    Array(ArrayTypes type) : _type(type), _data{ initialize(type) } {};
+    Array(ArrayTypes type, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) : _type(type), _data{ initialize(type, X, Y, Z) } {};
+    Array(Array const&) = default;
+    Array(Array &&) = default;
+    Array& operator=(Array const&) = default;
+    Array& operator=(Array&&) = default;
+    ~Array() = default;
+
+    class reader {
+    private:
+        // NOT PART OF API >>
+        template <typename T> auto& get() const {
+            return *std::static_pointer_cast<gpu_array<T>::reader>(_reader_impl);
+        };
+        template <typename F> auto visit(F const& func) const {
+            switch (_type) {
+            case ArrayTypes::EMPTY: throw std::runtime_error("Array was empty");
+            case ArrayTypes::CHAR: return func(get<char>());
+            case ArrayTypes::UCHAR: return func(get<unsigned char>());
+            case ArrayTypes::INT: return func(get<int>());
+            case ArrayTypes::UINT: return func(get<unsigned int>());
+            case ArrayTypes::LONG: return func(get<long>());
+            case ArrayTypes::ULONG: return func(get<unsigned long>());
+            case ArrayTypes::FLOAT: return func(get<float>());
+            case ArrayTypes::DOUBLE: return func(get<double>());
+            }
+        };
+        // << NOT PART OF API
+
+        ArrayTypes _type;
+        std::shared_ptr<void> _reader_impl;
+
+    public:
+        reader(ArrayTypes T, std::shared_ptr<void>&& _reader) : _type(T), _reader_impl(std::move(_reader)) {};
+        reader(reader const&) = delete;
+        reader(reader&&) = delete;
+        reader& operator=(reader const&) = delete;
+        reader& operator=(reader&&) = delete;
+        ~reader() = default;
+        operator bool() const {
+            return visit([](auto& read) {
+                return read.operator bool();
+            });
+        };
+        Number operator[](unsigned int X) const {
+            return visit([&](auto& read) {
+                return Number(read[X]);
+            });
+        };
+        Number operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
+            return visit([&](auto& read) {
+                return Number(read(X,Y,Z));
+            });
+        };
+    };
+    class writer {
+    private:
+        // NOT PART OF API >>
+        template <typename T> auto& get() const {
+            return *std::static_pointer_cast<gpu_array<T>::writer>(_reader_impl);
+        };
+        template <typename F> auto visit(F const& func) const {
+            switch (_type) {
+            case ArrayTypes::EMPTY: throw std::runtime_error("Array was empty");
+            case ArrayTypes::CHAR: return func(get<char>());
+            case ArrayTypes::UCHAR: return func(get<unsigned char>());
+            case ArrayTypes::INT: return func(get<int>());
+            case ArrayTypes::UINT: return func(get<unsigned int>());
+            case ArrayTypes::LONG: return func(get<long>());
+            case ArrayTypes::ULONG: return func(get<unsigned long>());
+            case ArrayTypes::FLOAT: return func(get<float>());
+            case ArrayTypes::DOUBLE: return func(get<double>());
+            }
+        };
+        // << NOT PART OF API
+
+        ArrayTypes _type;
+        std::shared_ptr<void> _reader_impl;
+
+    public:
+        writer(ArrayTypes T, std::shared_ptr<void>&& _reader) : _type(T), _reader_impl(std::move(_reader)) {};
+        writer(writer const&) = delete;
+        writer(writer&&) = delete;
+        writer& operator=(writer const&) = delete;
+        writer& operator=(writer&&) = delete;
+        ~writer() = default;
+        operator bool() const {
+            return visit([](auto& read) {
+                return read.operator bool();
+            });
+        };
+
+        Number load(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
+            return visit([&](auto& read) {
+                return Number(read(X,Y,Z));
+            });
+        };
+        void store(Number V, unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
+            visit([&](auto& read) {
+                read(X,Y,Z) = V;
+            });
+        };
+        Number exchange(Number V, unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
+            return visit([&](auto& read) {
+                Number out = read(X,Y,Z);
+                read(X, Y, Z) = V;
+                return out;
+            });
+        };
+
+    };
+
+    // wrapper that allows reads the current values from the GPU buffer. Reading is done once on construction. 
+    reader read() const {
+        return visit([&](auto& arr) {
+            return reader(this->_type, std::static_pointer_cast<void>(std::make_shared<typename std::decay_t<decltype(arr)>::reader>(arr.read())));
+        });
+    };
+    // wrapper that allows overwritting the current values on the GPU buffer. Updates are queued until the wrapper is destroyed then submitted all-at-once. 
+    writer write() const {
+        return visit([&](auto& arr) {
+            return writer(this->_type, std::static_pointer_cast<void>(std::make_shared<typename std::decay_t<decltype(arr)>::writer>(arr.write())));
+        });
+    };
+    unsigned int size() const {
+        return visit([](auto& arr) {
+            return arr.size();
+        });
+    }
+    unsigned int size(unsigned int D) const {
+        return visit([&](auto& arr) {
+            return arr.size(D);
+        });
+    }
+
+    Array copy() const {
+        return visit([](auto& arr) {
+            return Array(arr.copy());
+        });
+    };
+    Array& operator=(Number rhs) {
+        visit([&](auto& arr) {
+            arr = rhs;
+        });
+        return *this;
+    };
+    Array& operator+=(Number rhs) {
+        visit([&](auto& arr) {
+            arr += rhs;
+        });
+        return *this;
+    };
+    Array& operator-=(Number rhs) {
+        visit([&](auto& arr) {
+            arr -= rhs;
+        });
+        return *this;
+    };
+    Array& operator*=(Number rhs) {
+        visit([&](auto& arr) {
+            arr *= rhs;
+        });
+        return *this;
+    };    
+    Array& operator/=(Number rhs) {
+        visit([&](auto& arr) {
+            arr /= rhs;
+        });
+        return *this;
+    };
+    Array& operator+=(Array const& rhs) {
+        visit([&](auto& arr) {
+            arr += rhs.get<typename typename std::decay_t<decltype(arr)>::type>();
+        });
+        return *this;
+    };
+    Array& operator-=(Array const& rhs) {
+        visit([&](auto& arr) {
+            arr -= rhs.get<typename typename std::decay_t<decltype(arr)>::type>();
+        });
+        return *this;
+    };
+    Array& operator*=(Array const& rhs) {
+        visit([&](auto& arr) {
+            arr *= rhs.get<typename typename std::decay_t<decltype(arr)>::type>();
+        });
+        return *this;
+    };
+    Array& operator/=(Array const& rhs) {
+        visit([&](auto& arr) {
+            arr /= rhs.get<typename typename std::decay_t<decltype(arr)>::type>();
+        });
+        return *this;
+    };
+
+    friend Array operator+(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr + rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator-(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr - rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator*(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr * rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator/(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr / rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        }); 
+    };
+    friend Array operator+(Array const& lhs, Number rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr + rhs);
+        });
+    };
+    friend Array operator-(Array const& lhs, Number rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr - rhs);
+        });
+    };
+    friend Array operator*(Array const& lhs, Number rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr * rhs);
+        });
+    };
+    friend Array operator/(Array const& lhs, Number rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr / rhs);
+        });
+    };
+    friend Array operator+(Number rhs, Array const& lhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(rhs + arr);
+        });
+    };
+    friend Array operator-(Number rhs, Array const& lhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(rhs - arr);
+        });
+    };
+    friend Array operator*(Number rhs, Array const& lhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(rhs * arr);
+        });
+    };
+    friend Array operator/(Number rhs, Array const& lhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(rhs / arr);
+        });
+    };
+
+    Array operator!() const {
+        return visit([&](auto& arr) {
+            return Array(!arr);
+        });
+    };
+    Array operator==(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr==rhs);
+        });
+    };
+    Array operator!=(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr != rhs);
+        });
+    };
+    Array operator<(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr < rhs);
+        });
+    };
+    Array operator<=(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr <= rhs);
+        });
+    };
+    Array operator>(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr > rhs);
+        });
+    };
+    Array operator>=(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr >= rhs);
+        });
+    };
+
+    friend Array operator==(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr == rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator!=(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr != rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator<(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr < rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator<=(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr <= rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator>(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr > rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator>=(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr >= rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator%(Array const& lhs, Array const& rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr % rhs.get<typename typename std::decay_t<decltype(arr)>::type>());
+        });
+    };
+    friend Array operator%(Array const& lhs, Number rhs) {
+        return lhs.visit([&](auto& arr) {
+            return Array(arr % rhs);
+        });
+    };
+
+    // power of 
+    Array pow(Array const& rhs) const {
+        if (rhs._type == Array::ArrayTypes::INT) {
+            return visit([&](auto& arr) {
+                return Array(arr.pown(rhs.get<int>()));
+            });
+        }
+        else {
+            return visit([&](auto& arr) {
+                return Array(arr.pow(rhs.get<typename typename std::decay_t<decltype(arr)>::type>()));
+            });
+        }
+    };
+    // specialization of POW for integer powers
+    Array pown(int rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr.pown(rhs));
+        });
+    };
+    // power of 
+    Array pow(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr.pow(rhs));
+        });
+    };
+    // sqrt
+    Array sqrt() const {
+        return visit([&](auto& arr) {
+            return Array(arr.sqrt());
+        });
+    };
+    // round to nearest whole number
+    Array round() const {
+        if (_type == Array::ArrayTypes::FLOAT || _type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                return Array(arr.round());
+            });
+        }
+        else {
+            return *this;
+        }
+    };
+    // round to higher integer
+    Array ceil() const {
+        if (_type == Array::ArrayTypes::FLOAT || _type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                return Array(arr.ceil());
+            });
+        }
+        else {
+            return *this;
+        }
+    };
+    // round to lower integer
+    Array floor() const {
+        if (_type == Array::ArrayTypes::FLOAT || _type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                return Array(arr.floor());
+            });
+        }
+        else {
+            return *this;
+        }
+    };
+    // absolute value
+    Array abs() const {
+        return visit([&](auto& arr) {
+            return Array(arr.abs());
+        });
+    };
+    Array cos() const {
+        return visit([&](auto& arr) {
+            return Array(arr.cos());
+        });
+    };
+    Array sin() const {
+        return visit([&](auto& arr) {
+            return Array(arr.sin());
+        });
+    };
+    Array tan() const {
+        return visit([&](auto& arr) {
+            return Array(arr.tan());
+        });
+    };
+    Array acos() const {
+        return visit([&](auto& arr) {
+            return Array(arr.acos());
+            });
+    };
+    Array asin() const {
+        return visit([&](auto& arr) {
+            return Array(arr.asin());
+            });
+    };
+    Array atan() const {
+        return visit([&](auto& arr) {
+            return Array(arr.atan());
+            });
+    };
+    Array cosh() const {
+        return visit([&](auto& arr) {
+            return Array(arr.cosh());
+            });
+    };
+    Array sinh() const {
+        return visit([&](auto& arr) {
+            return Array(arr.sinh());
+            });
+    };
+    Array tanh() const {
+        return visit([&](auto& arr) {
+            return Array(arr.tanh());
+            });
+    };
+    Array acosh() const {
+        return visit([&](auto& arr) {
+            return Array(arr.acosh());
+            });
+    };
+    Array asinh() const {
+        return visit([&](auto& arr) {
+            return Array(arr.asinh());
+            });
+    };
+    Array atanh() const {
+        return visit([&](auto& arr) {
+            return Array(arr.atanh());
+            });
+    };
+    // e^x
+    Array exp() const {
+        return visit([&](auto& arr) {
+            return Array(arr.exp());
+            });
+    };
+    // 2^x
+    Array exp2() const {
+        return visit([&](auto& arr) {
+            return Array(arr.exp2());
+            });
+    };
+    // 10^x
+    Array exp10() const {
+        return visit([&](auto& arr) {
+            return Array(arr.exp10());
+            });
+    };
+    // e^x-1
+    Array expm1() const {
+        return visit([&](auto& arr) {
+            return Array(arr.expm1());
+            });
+    };
+    // log gamma function
+    Array lgamma() const {
+        return visit([&](auto& arr) {
+            return Array(arr.lgamma());
+            });
+    };
+    // ln(x)
+    Array log() const {
+        return visit([&](auto& arr) {
+            return Array(arr.log());
+            });
+    };
+    // log_2(x)
+    Array log2() const {
+        return visit([&](auto& arr) {
+            return Array(arr.log2());
+            });
+    };
+    // log_10(x)
+    Array log10() const {
+        return visit([&](auto& arr) {
+            return Array(arr.log10());
+            });
+    };
+    // ln(1+x)
+    Array log1p() const {
+        return visit([&](auto& arr) {
+            return Array(arr.log1p());
+            });
+    };
+    // return this % rhs
+    Array mod(Number rhs) const {
+        return *this % rhs;
+    };
+    // return this % rhs
+    Array mod(Array const& rhs) const {
+        return *this % rhs;
+    };
+    // return (this * multiply) + add;
+    Array fma(Array const& multiply, Array const& add) const {
+        return visit([&](auto& arr) {
+            return Array(arr.fma(multiply.get<typename typename std::decay_t<decltype(arr)>::type>(), add.get<typename typename std::decay_t<decltype(arr)>::type>()));
+        });
+    };
+    // returns the max of the two arrays (item-by-item, as an array)
+    Array max(Array const& rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr.max(rhs.get<typename typename std::decay_t<decltype(arr)>::type>()));
+        });
+    };
+    // returns the max of the two arrays (item-by-item, as an array)
+    Array max(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr.max(rhs));
+        });
+    };
+    // returns the min of the two arrays (item-by-item, as an array)
+    Array min(Array const& rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr.min(rhs.get<typename typename std::decay_t<decltype(arr)>::type>()));
+        });
+    };
+    // returns the min of the two arrays (item-by-item, as an array)
+    Array min(Number rhs) const {
+        return visit([&](auto& arr) {
+            return Array(arr.min(rhs));
+        });
+    };
+
+    std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
+        return visit([&](auto& arr) {
+            return arr.to_string(column_titles, doNotSkip);
+        });
+    };
+    friend std::ostream& operator<<(std::ostream& os, Array const& obj) {
+        os << obj.to_string();
+        return os;
+    };
+
+    // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
+    Array cast(ArrayTypes T) const {
+        if (T == this->_type) return *this;
+        return visit([&](auto& arr) {
+            switch (T) {
+            case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+            case ArrayTypes::CHAR: return Array(arr.cast<char>());
+            case ArrayTypes::UCHAR: return Array(arr.cast<unsigned char>());
+            case ArrayTypes::INT: return Array(arr.cast<int>());
+            case ArrayTypes::UINT: return Array(arr.cast<unsigned int>());
+            case ArrayTypes::LONG: return Array(arr.cast<long>());
+            case ArrayTypes::ULONG: return Array(arr.cast<unsigned long>());
+            case ArrayTypes::FLOAT: return Array(arr.cast<float>());
+            case ArrayTypes::DOUBLE: return Array(arr.cast<double>());
+            }
+        });
+
+    };
+
+    // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
+    static Array random(ArrayTypes T, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
+        return Array(T).visit([&](auto& arr) {
+            return Array(arr.random(X,Y,Z));
+        });
+    };
+    // returns a random number in the range of (lower, upper]
+    static Array random_between(ArrayTypes T, Number lower, Number upper, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
+        return Array(T).visit([&](auto& arr) {
+            return Array(arr.random_between(lower, upper, X, Y, Z));
+        });
+    };
+    // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
+    static Array identity(ArrayTypes T, unsigned int width) {
+        return Array(T).visit([&](auto& arr) {
+            return Array(arr.identity(width));
+        });
+    };
+    // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
+    static Array linear(ArrayTypes T, Number low, Number high, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
+        return Array(T).visit([&](auto& arr) {
+            return Array(arr.linear(low, high, X, Y, Z));
+        });
+    };
+    // Returns a matrix with all values equal to the provided value
+    static Array constant(ArrayTypes T, Number value, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
+        return Array(T).visit([&](auto& arr) {
+            return Array(arr.constant(value, X, Y, Z));
+        });
+    };
+    static Array from_vector(ArrayTypes T, const std::vector<Number>& parameters) {
+        unsigned int count = 0;
+        for (auto& x : parameters) {
+            ++count;
+        }
+        Array out(T, count, 1, 1);
+        count = 0;
+        if (auto W = out.write()) {
+            for (auto& x : parameters) {
+                W.store(x, count++);
+            }
+        }
+        return out;
+    };
+
+
+    // joins two matrices along one of the dimensions.
+    Array join(unsigned int jdim, Array const& first) const {
+        return visit([&](auto& arr) {
+            return Array(arr.join(jdim, first.get<typename typename std::decay_t<decltype(arr)>::type>()));
+        });
+    };
+    // transpose a 2-D matrix along its diagonal. Does not support transposition of 3-D matrices. 
+    Array transpose() const {
+        return visit([&](auto& arr) {
+            return Array(arr.transpose());
+        });
+    };
+    // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
+    Array make_square() const {
+        return visit([&](auto& arr) {
+            return Array(arr.make_square());
+        });        
+    }
+    // extracts the diagonal of a 2-D matrix as a 1-D array
+    Array diagonal() const {
+        return visit([&](auto& arr) {
+            return Array(arr.diagonal());
+        });                
+    };
+    // extract a row from this 2-D matrix as a 1-D array
+    Array row(unsigned int rowN) const {
+        return visit([&](auto& arr) {
+            return Array(arr.row(rowN));
+        });                
+    };
+    // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
+    Array grow_by_wrapping(unsigned int new_length) const {
+        return visit([&](auto& arr) {
+            return Array(arr.grow_by_wrapping(new_length));
+        });  
+    };
+    // create a new array by sampling this array at the provided indices. E.g. This = [5,4,3,2,1,0]
+    // Indices = [5,5,5,5,5,5,5,4,4,4,4,4,4,3,3,3,3,3,2,2,2,2,1,1,1,0,0]
+    // Result = [0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,5,5]
+    Array resample(Array const& sample_indices) const {        
+        return visit([&](auto& arr) {
+            return Array(arr.resample(sample_indices.cast(Array::ArrayTypes::UINT).get<unsigned int>()));
+        });          
+    };
+    // calculate the determinant for a square matrix. Performed on the CPU, and minimizes exchanges with the GPU. 
+    float determinant() const {
+        if (this->_type == Array::ArrayTypes::FLOAT || this->_type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                if constexpr (std::is_same_v<typename typename std::decay_t<decltype(arr)>::type, float>) return arr.determinant();
+                else return 0.0f;
+            });  
+        }
+        else {
+            return this->cast(Array::ArrayTypes::FLOAT).determinant();
+        }
+    }
+    // cofactor of a square matrix, essential for calculating the inverse
+    Array cofactor() const {
+        if (this->_type == Array::ArrayTypes::FLOAT || this->_type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                if constexpr (std::is_same_v<typename typename std::decay_t<decltype(arr)>::type, float>) return Array(arr.cofactor());
+                else return Array();
+            }); 
+        }
+        else {
+            return this->cast(Array::ArrayTypes::FLOAT).cofactor();
+        }
+    };
+    // transpose of the cofactor of a square matrix
+    Array adjoint() const {
+        if (this->_type == Array::ArrayTypes::FLOAT || this->_type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                if constexpr (std::is_same_v<typename typename std::decay_t<decltype(arr)>::type, float>) return Array(arr.adjoint());
+                else return Array();
+            }); 
+        }
+        else {
+            return this->cast(Array::ArrayTypes::FLOAT).adjoint();
+        }
+    };
+    // solve for the inverse of the matrix. Does not support solving for the inverse of a 3-D matrix. 
+    Array inverse() const {
+        if (this->_type == Array::ArrayTypes::FLOAT || this->_type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                if constexpr (std::is_same_v<typename typename std::decay_t<decltype(arr)>::type, float>) return Array(arr.inverse());
+                else return Array();
+            }); 
+        }
+        else {
+            return this->cast(Array::ArrayTypes::FLOAT).inverse();
+        }
+    };
+    // performs a cross-multiplication of two rectangular matrices. This is not accelerated by the GPU, and is CPU-bound. Uses CPU multithreading to (attempt) to speed-up this bottleneck. 
+    // the number of columns in this matrix must equal the number of rows in the RHS matrix. 
+    Array matrix_multiply(Array const& rhs) const {
+        if (this->_type == Array::ArrayTypes::FLOAT || this->_type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                if constexpr (std::is_same_v<typename typename std::decay_t<decltype(arr)>::type, float>) return Array(arr.matrix_multiply(rhs.get<typename typename std::decay_t<decltype(arr)>::type>()));
+                else return Array();
+            }); 
+        }
+        else {
+            return this->cast(Array::ArrayTypes::FLOAT).matrix_multiply(rhs);
+        }
+    };
+    // test to see if there is any colinearity in the feature set. If so, it is impossible to solve for the linear regression. One or multiple features must be removed until it is no longer invalid.
+    bool is_colinear() const {
+        if (this->_type == Array::ArrayTypes::FLOAT || this->_type == Array::ArrayTypes::DOUBLE) {
+            return visit([&](auto& arr) {
+                if constexpr (std::is_same_v<typename typename std::decay_t<decltype(arr)>::type, float>) return arr.is_colinear();
+                else return true;
+            });
+        }
+        else {
+            return this->cast(Array::ArrayTypes::FLOAT).is_colinear();
+        }
+    };
+    Number sum() const {
+        return visit([&](auto& arr) {
+            return Number(arr.sum());
+        });
+    };
+    Number avg() const {
+        return visit([&](auto& arr) {
+            return Number(arr.avg());
+        });        
+    };
+    Number max() const {
+        return visit([&](auto& arr) {
+            return Number(arr.max());
+        });
+    };
+    Number min() const {
+        return visit([&](auto& arr) {
+            return Number(arr.min());
+        });       
+    };
+
+};
+namespace linear_regression {
+    using matrix = Array;
+    // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
+    __forceinline static matrix solve_for_weights(matrix const& measurements, matrix const& features) {
+        return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
+    };
+    // solve for the linearized prediction.
+    __forceinline static matrix predict(matrix const& features, matrix const& weights) {
+        return features.matrix_multiply(weights);
+    };
+    // returns the standard error of the linear regression.
+    __forceinline static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
+        auto prediction = predict(features, weights);
+        return ((((double)(measurements - prediction).pow(2.0).sum() / std::max<double>(1.0, static_cast<double>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+    };
+    // returns the population standard deviation.
+    __forceinline static matrix standard_deviation(
+        matrix const& measurements,
+        matrix const& features,
+        matrix const& weights
+    ) {
+        return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
+    };
+    // evaluate for the students-t test
+    __forceinline static matrix t_statistic(matrix const& weights, matrix const& std_err) {
+        return weights / std_err;
+    };
+    // evaluate for the p-value
+    __forceinline static matrix p_value(matrix const& features, matrix const& t_stat) {
+        boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
+        matrix out(Array::ArrayTypes::FLOAT, t_stat.size(0), 1, 1);
+        unsigned int N = out.size();
+        if (auto R = t_stat.read()) {
+            if (auto W = out.write()) {
+                for (unsigned int i = 0; i < N; ++i) {
+                    W.store((1.0f - (float)boost::math::cdf(dist, R[i])) + boost::math::cdf(dist, -(float)R[i]), i);
+                    if (((float)W.load(i) > 1.0f) || ((float)W.load(i) < 0.0f))
+                        W.store((1.0f - (float)boost::math::cdf(dist, -(float)R[i])) + boost::math::cdf(dist, (float)R[i]), i);
+                }
+            }
+        }
+        return out.copy();
+    };
+
+    // build a collection of features for a linear regression while avoiding colinearity. 
+    __forceinline static matrix build_features(matrix const& current_best) {
+        return current_best.copy();
+    };
+    // build a collection of features for a linear regression while avoiding colinearity. 
+    __forceinline static matrix build_features(matrix&& current_best) {
+        return std::move(current_best);
+    };
+    // build a collection of features for a linear regression while avoiding colinearity. 
+    template <typename T, typename... Ts> __forceinline static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
+        if (current_best.join(1, candidate).is_colinear()) {
+            return build_features(current_best, further_candidates...);
+        }
+        else {
+            return build_features(current_best.join(1, candidate), further_candidates...);
+        }
+    };
+
+};
+
+
+
+
+
+
 // TODO: This is an example of a library function
 void fnGpuProgramming() {  
+    if (1) {
+        Array arr(Array::ArrayTypes::FLOAT, 100, 2, 1);
+        print(arr.size());
+
+        arr = 5;
+        arr.write().store(100, 0);
+
+        print(arr);
+
+        arr += 5.0f;
+        arr += arr;
+
+        arr = arr * arr;
+        arr = 5.0f;
+        arr = arr * 5.0f;
+
+        print(arr);
+        print(arr.cast(Array::ArrayTypes::INT));
+
+        print(Array::random_between(Array::ArrayTypes::FLOAT, 0.0f, 100.0f, 1000, 1, 1));
+
+        // Advertisement regression. Generally correct analysis.
+        if (1) {
+            /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
+            Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
+            TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
+            Radio	    0.107001228	    0.008489563	    12.60385655	    4.6021E-27	    0.090258612	    0.123743844
+            Newspaper	0.000335658	    0.005788056	    0.057991479	    0.953814495	    -0.011079206	0.011750522
+            */
+            auto TV_Ads = Array::from_vector(Array::ArrayTypes::FLOAT, std::vector<Number>{
+                230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
+            });
+            auto Radio_Ads = Array::from_vector(Array::ArrayTypes::FLOAT, std::vector<Number>{
+                37.8, 39.3, 45.9, 41.3, 10.8, 48.9, 32.8, 19.6, 2.1, 2.6, 5.8, 24.0, 35.1, 7.6, 32.9, 47.7, 36.6, 39.6, 20.5, 23.9, 27.7, 5.1, 15.9, 16.9, 12.6, 3.5, 29.3, 16.7, 27.1, 16.0, 28.3, 17.4, 1.5, 20.0, 1.4, 4.1, 43.8, 49.4, 26.7, 37.7, 22.3, 33.4, 27.7, 8.4, 25.7, 22.5, 9.9, 41.5, 15.8, 11.7, 3.1, 9.6, 41.7, 46.2, 28.8, 49.4, 28.1, 19.2, 49.6, 29.5, 2.0, 42.7, 15.5, 29.6, 42.8, 9.3, 24.6, 14.5, 27.5, 43.9, 30.6, 14.3, 33.0, 5.7, 24.6, 43.7, 1.6, 28.5, 29.9, 7.7, 26.7, 4.1, 20.3, 44.5, 43.0, 18.4, 27.5, 40.6, 25.5, 47.8, 4.9, 1.5, 33.5, 36.5, 14.0, 31.6, 3.5, 21.0, 42.3, 41.7, 4.3, 36.3, 10.1, 17.2, 34.3, 46.4, 11.0, .3, .4, 26.9, 8.2, 38.0, 15.4, 20.6, 46.8, 35.0, 14.3, .8, 36.9, 16.0, 26.8, 21.7, 2.4, 34.6, 32.3, 11.8, 38.9, .0, 49.0, 12.0, 39.6, 2.9, 27.2, 33.5, 38.6, 47.0, 39.0, 28.9, 25.9, 43.9, 17.0, 35.4, 33.2, 5.7, 14.8, 1.9, 7.3, 49.0, 40.3, 25.8, 13.9, 8.4, 23.3, 39.7, 21.1, 11.6, 43.5, 1.3, 36.9, 18.4, 18.1, 35.8, 18.1, 36.8, 14.7, 3.4, 37.6, 5.2, 23.6, 10.6, 11.6, 20.9, 20.1, 7.1, 3.4, 48.9, 30.2, 7.8, 2.3, 10.0, 2.6, 5.4, 5.7, 43.0, 21.3, 45.1, 2.1, 28.7, 13.9, 12.1, 41.1, 10.8, 4.1, 42.0, 35.6, 3.7, 4.9, 9.3, 42.0, 8.6
+            });
+            auto Newspaper_Ads = Array::from_vector(Array::ArrayTypes::FLOAT, std::vector<Number>{
+                69.2, 45.1, 69.3, 58.5, 58.4, 75.0, 23.5, 11.6, 1.0, 21.2, 24.2, 4.0, 65.9, 7.2, 46.0, 52.9, 114.0, 55.8, 18.3, 19.1, 53.4, 23.5, 49.6, 26.2, 18.3, 19.5, 12.6, 22.9, 22.9, 40.8, 43.2, 38.6, 30.0, .3, 7.4, 8.5, 5.0, 45.7, 35.1, 32.0, 31.6, 38.7, 1.8, 26.4, 43.3, 31.5, 35.7, 18.5, 49.9, 36.8, 34.6, 3.6, 39.6, 58.7, 15.9, 60.0, 41.4, 16.6, 37.7, 9.3, 21.4, 54.7, 27.3, 8.4, 28.9, .9, 2.2, 10.2, 11.0, 27.2, 38.7, 31.7, 19.3, 31.3, 13.1, 89.4, 20.7, 14.2, 9.4, 23.1, 22.3, 36.9, 32.5, 35.6, 33.8, 65.7, 16.0, 63.2, 73.4, 51.4, 9.3, 33.0, 59.0, 72.3, 10.9, 52.9, 5.9, 22.0, 51.2, 45.9, 49.8, 100.9, 21.4, 17.9, 5.3, 59.0, 29.7, 23.2, 25.6, 5.5, 56.5, 23.2, 2.4, 10.7, 34.5, 52.7, 25.6, 14.8, 79.2, 22.3, 46.2, 50.4, 15.6, 12.4, 74.2, 25.9, 50.6, 9.2, 3.2, 43.1, 8.7, 43.0, 2.1, 45.1, 65.6, 8.5, 9.3, 59.7, 20.5, 1.7, 12.9, 75.6, 37.9, 34.4, 38.9, 9.0, 8.7, 44.3, 11.9, 20.6, 37.0, 48.7, 14.2, 37.7, 9.5, 5.7, 50.5, 24.3, 45.2, 34.6, 30.7, 49.3, 25.6, 7.4, 5.4, 84.8, 21.6, 19.4, 57.6, 6.4, 18.4, 47.4, 17.0, 12.8, 13.1, 41.8, 20.3, 35.2, 23.7, 17.6, 8.3, 27.4, 29.7, 71.8, 30.0, 19.6, 26.6, 18.2, 3.7, 23.4, 5.8, 6.0, 31.6, 3.6, 6.0, 13.8, 8.1, 6.4, 66.2, 8.7
+            });
+            auto Sales_Revenue = Array::from_vector(Array::ArrayTypes::FLOAT, std::vector<Number>{
+                22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
+            });
+
+            auto Basic{
+                Array::constant(Array::ArrayTypes::FLOAT, 1, Sales_Revenue.size(0))
+            };
+            auto features = linear_regression::build_features( // double-checks and removes colinearity
+                Basic, TV_Ads, Radio_Ads, Newspaper_Ads
+            );
+
+            auto weights = linear_regression::solve_for_weights(Sales_Revenue, features);
+            auto std_err = linear_regression::standard_error(Sales_Revenue, features, weights);
+            auto std_dev = linear_regression::standard_deviation(Sales_Revenue, features, weights);
+            auto t_stat = linear_regression::t_statistic(weights, std_err);
+            auto p_value = linear_regression::p_value(features, t_stat);
+            auto lower_95 = weights - (1.96 * std_err);
+            auto upper_95 = weights + (1.96 * std_err);
+            auto prediction = linear_regression::predict(features, weights);
+
+            print("");
+            print(
+                weights.join(1,
+                    std_err).join(1,
+                        t_stat).join(1,
+                            p_value).join(1,
+                                lower_95).join(1,
+                                    upper_95).to_string(
+                                        { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+            );
+            print("");
+
+            print(Sales_Revenue.join(1, prediction).to_string({ "Measured", "Predicted" }));
+            print("");
+        }
+
+
+
+
+    }
+
+
+
+
+
+
+
+
     if (1) {
         auto arr = gpu_array<int>(100);
         arr = 5;
