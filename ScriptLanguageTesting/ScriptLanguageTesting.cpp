@@ -899,7 +899,7 @@ static int arrayfire_linear_regression() {
 #include "../GpuProgramming/GpuProgramming.h"
 
 int main() {
-    // fnGpuProgramming();
+    fnGpuProgramming();
     if (1) {
         GL::Array arr(GL::ArrayTypes::FLOAT, 100, 2, 1);
         print(arr.size());

@@ -31,36 +31,36 @@ namespace GL {
         };
 
         operator char() const {
-            if (integer) return data.V2;
-            else return (long long)data.V1;
+            if (integer) return static_cast<char>(data.V2);
+            else return static_cast<char>((long long)data.V1);
         };
         operator unsigned char() const {
-            if (integer) return data.V2;
-            else return (long long)data.V1;
+            if (integer) return static_cast<unsigned char>(data.V2);
+            else return static_cast<unsigned char>((long long)data.V1);
         };
         operator int() const {
-            if (integer) return data.V2;
-            else return (long long)data.V1;
+            if (integer) return static_cast<int>(data.V2);
+            else return static_cast<int>((long long)data.V1);
         };
         operator unsigned int() const {
-            if (integer) return data.V2;
-            else return (long long)data.V1;
+            if (integer) return static_cast<unsigned int>(data.V2);
+            else return static_cast<unsigned int>((long long)data.V1);
         };
         operator long() const {
-            if (integer) return data.V2;
-            else return (long long)data.V1;
+            if (integer) return static_cast<long>(data.V2);
+            else return static_cast<long>((long long)data.V1);
         };
         operator unsigned long() const {
-            if (integer) return data.V2;
-            else return (long long)data.V1;
+            if (integer) return static_cast<unsigned long>(data.V2);
+            else return static_cast<unsigned long>((long long)data.V1);
         };
         operator float() const {
-            if (integer) return (long double)data.V2;
-            else return data.V1;
+            if (integer) return (float)(long double)data.V2;
+            else return (float)data.V1;
         };
         operator double() const {
-            if (integer) return (long double)data.V2;
-            else return data.V1;
+            if (integer) return (double)(long double)data.V2;
+            else return (double)data.V1;
         };
     };
     enum class ArrayTypes {
@@ -174,6 +174,11 @@ namespace GL {
         friend Array operator%(Array const& lhs, Array const& rhs);
         friend Array operator%(Array const& lhs, Number rhs);
 
+        Array operator&&(Number rhs) const;
+        Array operator&&(Array const& rhs) const;
+        Array operator||(Number rhs) const;
+        Array operator||(Array const& rhs) const;
+
         // power of 
         Array pow(Array const& rhs) const;
         // specialization of POW for integer powers
@@ -252,6 +257,7 @@ namespace GL {
         // Returns a matrix with all values equal to the provided value
         static Array constant(ArrayTypes T, Number value, unsigned int X, unsigned int Y = 1, unsigned int Z = 1);
         static Array from_vector(ArrayTypes T, const std::vector<Number>& parameters, unsigned int Y = 1, unsigned int Z = 1);
+        static Array guassian_kernel(unsigned int X, unsigned int Y);
 
         // joins two matrices along one of the dimensions.
         Array join(unsigned int jdim, Array const& first) const;
@@ -286,7 +292,7 @@ namespace GL {
         Number avg() const;
         Number max() const;
         Number min() const;
-
+        Array convolve(Array const& kernel) const;
     };
     class linear_regression {
     public:
