@@ -1,5 +1,6 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
+#include <map>
 
 namespace GL {
     // type-erased version on a floating-point OR integer type.
@@ -241,6 +242,7 @@ namespace GL {
         Array min(Number rhs) const;
 
         std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const;
+        void printf(std::vector<std::string> column_titles = {}, bool doNotSkip = false, std::map<int, int> const& colorMap = {}) const;
         friend std::ostream& operator<<(std::ostream& os, Array const& obj);
 
         // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.

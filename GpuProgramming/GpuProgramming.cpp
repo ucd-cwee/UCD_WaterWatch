@@ -788,17 +788,16 @@ public:
             destination[n] = LHS[source_n];
         };
 
-        kernel void convolve_type_(global _type_* A, global _type_* B, global _type_* K, uint lX, uint lY, uint kX, uint kY) {
-            const uint kS = kX * kY;
+        kernel void convolve_type_(global _type_* A, global _type_* B, global _type_* K, uint lX, uint lY, uint kX, uint kY, float kTot) {
             const int n = (int)get_global_id(0);
-            const int Y = (int)floor((float)n / (float)lY);
-            const int X = (int)n - Y * (int)lY;
-            uint successful_pixels = 0;
+            const int Y = (int)floor((float)n / (float)lX);
+            const int X = (int)n - Y * (int)lX;
+            float kernel_captured = 0;
 
             const int kW = (int)floor((float)(kX - 1) / 2.0f);
             const int kH = (int)floor((float)(kY - 1) / 2.0f);
 
-            float result = 0;
+            float result = 0.0f;
             for (int offset_x = -kW; offset_x <= kW; ++offset_x) {
                 const int x = X + offset_x;
                 if (x < 0) { continue; }
@@ -814,10 +813,12 @@ public:
 
                     result += (float)B[b_i] * (float)K[k_i];
 
-                    ++successful_pixels;
+                    kernel_captured += (float)K[k_i];
                 }
             }
-            result *= ((float)kS / (float)successful_pixels);
+            if (kernel_captured > 0) {
+                result = result * kTot / kernel_captured;
+            }
             A[n] = (_type_)result;
         };
 
@@ -2082,7 +2083,8 @@ public:
         if (this->dim.num_dimensions() == 2) {
             gpu_array out(this->dim);
             kernel.tasks.wait();
-            gpu_array::work(out.tasks, this->tasks, this->size(), "convolve", out.data, data, kernel.data, this->size(0), this->size(1), kernel.size(0), kernel.size(1));
+            float kernel_tot = kernel.sum();
+            gpu_array::work(out.tasks, this->tasks, this->size(), "convolve", out.data, data, kernel.data, this->size(0), this->size(1), kernel.size(0), kernel.size(1), kernel_tot);
             return out;
         }
         else {
@@ -2270,6 +2272,131 @@ public:
         }
         return out;
     };
+
+private:
+    static void SetColor(std::map<int, int> const& colorMap, HANDLE const& hConsole, T V) {
+        if (auto f = colorMap.find((int)V); f != colorMap.end()) {
+            SetConsoleTextAttribute(hConsole, f->second);
+        }
+    }
+
+public:
+    // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
+    void printf(std::vector<std::string> column_titles = {}, bool doNotSkip = false, std::map<int, int> const& colorMap = {}) const {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 15);
+
+        reader R = this->read();
+        std::string column_spacer = " ";
+        if (this->dim.num_dimensions() == 0) return;
+        else if (this->dim.num_dimensions() == 1) {
+            auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+            unsigned int n = 0;
+            if (column_titles.size() > 0) {
+                std::cout << resize(std::string(column_titles[0]), col_sizes[0], ' ');
+                std::cout << "\n";
+            }
+            for (; (n < this->size()) && (n < 1); ++n) {
+                SetColor(colorMap, hConsole, R[n]);
+                std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+            }
+            if (!doNotSkip && (this->size() >= 21)) {
+                for (; (n < this->size()) && (n < 10); ++n) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << "\n";                    
+                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+                }
+                out += "\n...";
+                for (n = this->size() - 10; n < this->size(); ++n) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << "\n";
+                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+                }
+            }
+            else {
+                for (; n < this->size(); ++n) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << "\n";
+                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+                }
+            }
+
+        }
+        else if (this->dim.num_dimensions() == 2) {
+            auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+            unsigned int n = 0;
+            if (column_titles.size() > 0) {
+                std::cout << column_titles[0];
+                for (unsigned int i = 1; i < column_titles.size(); ++i) {
+                    std::cout << column_spacer;
+                    std::cout << resize(std::string(column_titles[i]), col_sizes[i], ' ');
+                }
+                std::cout << "\n";
+            }
+            for (; (n < this->dim.X) && (n < 1); ++n) {
+                unsigned int y = 0;
+                for (; (y < this->dim.Y) && (y < 1); ++y) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+                for (; y < this->dim.Y; ++y) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << column_spacer;
+                    std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+            }
+            if (!doNotSkip && (this->dim.X >= 21)) {
+                for (; (n < this->dim.X) && (n < 10); ++n) {
+                    std::cout << "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->dim.Y) && (y < 1); ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->dim.Y; ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << column_spacer;
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                }
+                std::cout << "\n...";
+                for (n = this->dim.X - 10; n < this->dim.X; ++n) {
+                    std::cout << "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->dim.Y) && (y < 1); ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->dim.Y; ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << column_spacer;
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                }
+            }
+            else {
+                for (; n < this->dim.X; ++n) {
+                    std::cout << "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->dim.Y) && (y < 1); ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->dim.Y; ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << column_spacer;
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                }
+            }
+        }
+        else if (this->dim.num_dimensions() == 3) {
+        }
+        return;
+    };
+
     friend std::ostream& operator<<(std::ostream& os, gpu_array const& obj) {
         os << obj.to_string();
         return os;
@@ -2940,7 +3067,12 @@ namespace GL {
     std::string Array::to_string(std::vector<std::string> column_titles, bool doNotSkip) const {
         return visit_array(_type, _data, [&](auto& arr) {
             return arr.to_string(column_titles, doNotSkip);
-            });
+        });
+    };
+    void Array::printf(std::vector<std::string> column_titles, bool doNotSkip, std::map<int, int> const& colorMap) const {
+        visit_array(_type, _data, [&](auto& arr) {
+            arr.printf(column_titles, doNotSkip, colorMap);
+        });
     };
     std::ostream& operator<<(std::ostream& os, Array const& obj) {
         os << obj.to_string();
@@ -3291,9 +3423,7 @@ void fnGpuProgramming() {
         print(arr.convolve(kernel));
     }
 
-
-
-    if (1) {
+    if (0) {
         static const int game_w = 70, game_h = 40;
 
         // Initialize the kernel array just once
@@ -3343,7 +3473,6 @@ void fnGpuProgramming() {
 
     }
 
-
     if (1) {
         Array arr(ArrayTypes::FLOAT, 100, 2, 1);
         print(arr.size());
@@ -3385,6 +3514,11 @@ void fnGpuProgramming() {
             auto Sales_Revenue = Array::from_vector(ArrayTypes::FLOAT, std::vector<Number>{
                 22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
             });
+
+            TV_Ads = TV_Ads.grow_by_wrapping(1000000);
+            Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
+            Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
+            Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
 
             auto Basic{
                 Array::constant(ArrayTypes::FLOAT, 1, Sales_Revenue.size(0))

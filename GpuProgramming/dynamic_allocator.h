@@ -405,9 +405,15 @@ public:
 			usedBlockMemory += block->GetSize();
 
 			type* ptr = block->GetMemory();
-			if (clearMemory && std::is_pod<type>::value) {
-				::memset((void*)ptr, 0, sizeof(type) * num);
+			if constexpr (std::is_pod<type>::value) {
+				::memset((void*)ptr, 0, sizeof(type) * num);				
 			}
+			else {
+				for (int i = 0; i < num; ++i) {
+					new (ptr + i) type();
+				}
+			}
+
 			return ptr;
 		}
 	};
@@ -434,10 +440,15 @@ public:
 		}
 		return p;
 	};
-	void							Free(type* ptr) {
+	void  Free(type* ptr) {
 		numFrees++;
 		if (!ptr) { return; }
 		cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+		if constexpr (!std::is_pod<type>::value) {
+			for (int i = 0; i < block->size; ++i) {
+				(ptr + i)->~type();
+			}
+		}
 		numUsedBlocks--;
 		usedBlockMemory -= block->GetSize();
 		FreeInternal(block);
