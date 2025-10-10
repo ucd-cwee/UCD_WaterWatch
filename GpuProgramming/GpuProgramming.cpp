@@ -1424,7 +1424,7 @@ public:
             return out;
         }
         else {
-            return (gpu_array<float>::random(X, Y, Z) * std::numeric_limits<T>::max()).cast<T>();
+            return (gpu_array<float>::random(X, Y, Z) * (float)std::numeric_limits<T>::max()).cast<T>();
         }
     };
     // returns a random number in the range of (lower, upper]
@@ -1437,7 +1437,7 @@ public:
             return out;
         }
         else {
-            return gpu_array<float>::random_between(lower, upper, X, Y, Z).cast<T>();
+            return gpu_array<float>::random_between((float)lower, (float)upper, X, Y, Z).cast<T>();
         }
     };
     // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
@@ -1927,9 +1927,9 @@ public: // Support functions for linear regressions
                 for (unsigned int i = 0; i < dimension; ++i) {
                     if (auto W = subVect.write(true)) {
                         // build a sub-matrix
-                        for (int m = 1; m < dimension; m++) {
-                            int z = 0;
-                            for (int n = 0; n < dimension; n++) {
+                        for (unsigned int m = 1; m < dimension; m++) {
+                            unsigned int z = 0;
+                            for (unsigned int n = 0; n < dimension; n++) {
                                 if (n != i) {
                                     W(m - 1, z) = R(m, n);
                                     z++;
@@ -2187,19 +2187,19 @@ private:
 
         for (unsigned int i = 0; i < out.size(); ++i) {
             if (i < column_titles.size())
-                out[i] = column_titles[i].size();
+                out[i] = (unsigned int)column_titles[i].size();
             else
-                out[i] = 0;
+                out[i] = 0u;
         }
 
         // only tests the first and last 10 rows of each column
         for (unsigned int ColN = 0; ColN < this->dim.Y; ++ColN) {
             for (unsigned int RowN = 0; RowN < this->dim.X && (RowN < 10); ++RowN) {
-                out[ColN] = std::max<unsigned int>(out[ColN], to_string_impl(R, RowN, ColN).size());
+                out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
             }
             if (this->dim.X > 10) {
                 for (unsigned int RowN = this->dim.X - 10; RowN < this->dim.X; ++RowN) {
-                    out[ColN] = std::max<unsigned int>(out[ColN], to_string_impl(R, RowN, ColN).size());
+                    out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
                 }
             }
         }
@@ -2445,7 +2445,7 @@ namespace GL {
     };
     template <typename F> static auto visit_reader(ArrayTypes _type, std::shared_ptr<void> const& _reader_impl, F const& func) {
         switch (_type) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Array was empty");
+        default: throw std::runtime_error("Array was empty");
         case ArrayTypes::CHAR: return func(get_reader<char>(_reader_impl));
         case ArrayTypes::UCHAR: return func(get_reader<unsigned char>(_reader_impl));
         case ArrayTypes::INT: return func(get_reader<int>(_reader_impl));
@@ -2990,7 +2990,7 @@ namespace GL {
         if (T == this->_type) return *this;
         return visit_array(_type, _data, [&](auto& arr) {
             switch (T) {
-            case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+            default: throw std::runtime_error("Cannot cast to empty type");
             case ArrayTypes::CHAR: return BuildArray(arr.cast<char>());
             case ArrayTypes::UCHAR: return BuildArray(arr.cast<unsigned char>());
             case ArrayTypes::INT: return BuildArray(arr.cast<int>());
@@ -3000,13 +3000,12 @@ namespace GL {
             case ArrayTypes::FLOAT: return BuildArray(arr.cast<float>());
             case ArrayTypes::DOUBLE: return BuildArray(arr.cast<double>());
             }
-            });
-
+        });
     };
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
     Array Array::random(ArrayTypes T, unsigned int X, unsigned int Y, unsigned int Z) {
         switch (T) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+        default: throw std::runtime_error("Cannot cast to empty type");
         case ArrayTypes::CHAR: return BuildArray(gpu_array<char>::random(X, Y, Z));
         case ArrayTypes::UCHAR: return BuildArray(gpu_array<unsigned char>::random(X, Y, Z));
         case ArrayTypes::INT: return BuildArray(gpu_array<int>::random(X, Y, Z));
@@ -3020,7 +3019,7 @@ namespace GL {
     // returns a random number in the range of (lower, upper]
     Array Array::random_between(ArrayTypes T, Number lower, Number upper, unsigned int X, unsigned int Y, unsigned int Z) {
         switch (T) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+        default: throw std::runtime_error("Cannot cast to empty type");
         case ArrayTypes::CHAR: return BuildArray(gpu_array<char>::random_between(lower, upper, X, Y, Z));
         case ArrayTypes::UCHAR: return BuildArray(gpu_array<unsigned char>::random_between(lower, upper, X, Y, Z));
         case ArrayTypes::INT: return BuildArray(gpu_array<int>::random_between(lower, upper, X, Y, Z));
@@ -3034,7 +3033,7 @@ namespace GL {
     // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
     Array Array::identity(ArrayTypes T, unsigned int width) {
         switch (T) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+        default: throw std::runtime_error("Cannot cast to empty type");
         case ArrayTypes::CHAR: return BuildArray(gpu_array<char>::identity(width));
         case ArrayTypes::UCHAR: return BuildArray(gpu_array<unsigned char>::identity(width));
         case ArrayTypes::INT: return BuildArray(gpu_array<int>::identity(width));
@@ -3048,7 +3047,7 @@ namespace GL {
     // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
     Array Array::linear(ArrayTypes T, Number low, Number high, unsigned int X, unsigned int Y, unsigned int Z) {
         switch (T) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+        default: throw std::runtime_error("Cannot cast to empty type");
         case ArrayTypes::CHAR: return BuildArray(gpu_array<char>::linear(low, high, X, Y, Z));
         case ArrayTypes::UCHAR: return BuildArray(gpu_array<unsigned char>::linear(low, high, X, Y, Z));
         case ArrayTypes::INT: return BuildArray(gpu_array<int>::linear(low, high, X, Y, Z));
@@ -3062,7 +3061,7 @@ namespace GL {
     // Returns a matrix with all values equal to the provided value
     Array Array::constant(ArrayTypes T, Number value, unsigned int X, unsigned int Y, unsigned int Z) {
         switch (T) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Cannot cast to empty type");
+        default: throw std::runtime_error("Cannot cast to empty type");
         case ArrayTypes::CHAR: return BuildArray(gpu_array<char>::constant(value, X, Y, Z));
         case ArrayTypes::UCHAR: return BuildArray(gpu_array<unsigned char>::constant(value, X, Y, Z));
         case ArrayTypes::INT: return BuildArray(gpu_array<int>::constant(value, X, Y, Z));
@@ -3288,11 +3287,6 @@ namespace GL {
     
 };
 
-
-
-
-
-
 void clear() {
     COORD topLeft = { 0, 0 };
     HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -3310,7 +3304,626 @@ void clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
-void fnGpuProgramming() {  
+
+#include "dynamic_allocator.h"
+#include "../ScriptLanguageTesting/thread_object.h"
+
+// Thread-safe, dynamic-length allocator that re-uses pages of data based on the requested page size(s). 
+template <typename _type_>
+class parallel_dynamic_allocator {
+private:
+    class lockable {
+    public:
+        cweeDynamicBlockAlloc<char, 16, 8, sizeof(size_t)> alloc{};
+        long lock{ 0 };
+    };
+    GL::thread_object_no_default<lockable>
+        TLS;
+
+public:
+    parallel_dynamic_allocator() = default;
+    ~parallel_dynamic_allocator() = default;
+
+    template <typename... TArgs> __declspec(noinline) _type_* Alloc(unsigned int num, bool clear = true) {
+        const auto threadID = GL::util::get_thread_id();
+        lockable& obj = *TLS;
+        while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
+        char* ptr;
+        if (1) {
+            ptr = obj.alloc.Alloc(num * sizeof(_type_) / sizeof(char), clear);
+            InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
+            cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
+            *reinterpret_cast<size_t*>(&block->padding[0]) = threadID;
+        }
+        return (_type_*)(ptr);
+    };
+    __declspec(noinline) void Free(const _type_* ptr) {
+        cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
+        size_t threadID = *reinterpret_cast<size_t*>(&block->padding[0]);
+        lockable& obj = TLS[threadID];
+        while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
+        if (1) {
+            obj.alloc.Free((char*)ptr);
+            InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
+        }
+    };
+
+};
+
+namespace GL {
+    namespace GPU {
+        // Compiles OpenCL code and makes it available through its assigned device.
+        class Program {
+        public:
+            class ProgramImpl {
+            private:
+                static std::string combine(std::vector<std::string> const& opencl_code) {
+                    std::string out;
+                    if (opencl_code.size() > 0) {
+                        out = opencl_code[0];
+                        for (int i = 1; i < opencl_code.size(); i++) {
+                            out += "\n";
+                            out += opencl_code[i];
+                        }
+                    }
+                    return out;
+                };
+                static cl::Program::Sources make_kernel_code(Device_Info const& info, const std::string& opencl_c_code) {
+                    return cl::Program::Sources{ enable_device_capabilities(info) + "\n" + opencl_c_code };
+                };
+
+            public:
+                cl::Program cl_program;
+
+            public:
+                // Instantiates and compiles the program.
+                ProgramImpl(Device_Info const& info, std::vector<std::string> const& opencl_code)
+                    : cl_program(info.cl_context, make_kernel_code(info, combine(opencl_code)))
+                {
+                    const std::string build_options
+                        = "-cl-std=CL" + info.opencl_c_version + " -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable" + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
+                    int error
+                        = cl_program.build(info.cl_device, (build_options + " -w").c_str());
+                    if (error)
+                        print_warning(cl_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
+                }
+                ProgramImpl() = default;
+                ProgramImpl(ProgramImpl const&) = delete;
+                ProgramImpl(ProgramImpl&&) = delete;
+                ProgramImpl& operator=(ProgramImpl const&) = delete;
+                ProgramImpl& operator=(ProgramImpl&&) = delete;
+                ~ProgramImpl() = default;
+            };
+
+        private:
+            //cl::Program cl_program;
+            //cl::CommandQueue cl_queue;
+            static std::string enable_device_capabilities(Device_Info const& info) {
+                return // enable FP64/FP16 capabilities if available
+                    std::string(info.patch_nvidia_fp16 ? "\n #define cl_khr_fp16" : "") + // Nvidia Pascal and newer GPUs with driver>=520.00 don't report cl_khr_fp16, but do support basic FP16 arithmetic
+                    std::string(info.patch_legacy_gpu_fma ? "\n #define fma(a, b, c) ((a)*(b)+(c))" : "") + // some old GPUs have terrible fma performance, so replace with a*b+c
+                    std::string(info.nvidia_compute_capability ? "\n #define cl_nv_compute_capability " + to_string(info.nvidia_compute_capability) : "") + // allows querying Nvidia compute capability for inline PTX
+                    std::string(info.is_dp4a_capable == 0u ? "\n #undef __opencl_c_integer_dot_product_input_4x8bit\n #undef __opencl_c_integer_dot_product_input_4x8bit_packed" : "") + // patch false dp4a reporting on Intel
+                    "\n #define cl_workgroup_size " + to_string(WORKGROUP_SIZE) + "u"
+                    "\n #ifdef cl_khr_fp64"
+                    "\n #pragma OPENCL EXTENSION cl_khr_fp64 : enable" // make sure cl_khr_fp64 extension is enabled
+                    "\n #endif"
+                    "\n #ifdef cl_khr_fp16"
+                    "\n #pragma OPENCL EXTENSION cl_khr_fp16 : enable" // make sure cl_khr_fp16 extension is enabled
+                    "\n #endif"
+                    "\n #ifdef cl_khr_int64_base_atomics"
+                    "\n #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable" // make sure cl_khr_int64_base_atomics extension is enabled
+                    "\n #endif";
+            };
+
+        public:
+            Device_Info info;
+            ProgramImpl program;
+
+            Program(std::vector<std::string> const& opencl_c_code)
+                : info(select_device_with_most_flops(get_devices(false))) 
+                , program(info, opencl_c_code)
+            {
+                //this->cl_queue = cl::CommandQueue(info.cl_context, info.cl_device); // queue to push commands for the device
+            }
+            Program()
+                : info()
+                , program()
+            {}
+            Program(Program const&) = delete;
+            Program(Program &&) = delete;
+            Program& operator=(Program const&) = delete;
+            Program& operator=(Program&&) = delete;
+            ~Program() = default;
+
+            //inline void barrier(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
+            //inline void finish_queue() { cl_queue.finish(); }
+            inline cl::Context get_cl_context() const { return info.cl_context; }
+            //inline cl::Program get_cl_program() const { return cl_program; }
+            //inline cl::CommandQueue get_cl_queue() const { return cl_queue; }
+
+        };
+
+        class Queue {
+        public:
+            cl::CommandQueue cl_queue;
+            bool valid;
+
+        public:
+            // Instantiates and compiles the program.
+            Queue(Program const& device)
+                : cl_queue(device.info.cl_context, device.info.cl_device), valid(true)
+            {}
+            Queue() : cl_queue{}, valid{ false } {};
+            Queue(Queue const&) = delete;
+            Queue(Queue&&) = delete;
+            Queue& operator=(Queue const&) = delete;
+            Queue& operator=(Queue&&) = delete;
+            ~Queue() {
+                if (valid) cl_queue.finish();
+            };
+        };
+
+        static parallel_dynamic_allocator<char> shared_mem_allocator;
+
+        template<typename T> class Memory {
+        private:
+            ulong N = 0ull; // buffer length
+            uint d = 1u; // buffer dimensions
+            bool host_buffer_exists = false;
+            bool device_buffer_exists = false;
+            bool external_host_buffer = false; // Memory object has been created with an externally supplied host buffer/pointer
+            bool is_zero_copy = false; // if possible (device is CPU or iGPU), and if allowed by user, use zero-copy buffer: host+device buffers are fused into one
+            T* host_buffer = nullptr; // host buffer
+            T* host_buffer_unaligned = nullptr; // unaligned host buffer (only required for zero-copy to align host_buffer)
+            cl::Buffer device_buffer; // device buffer
+            Program* device = nullptr; // pointer to linked Program            
+
+        public:
+            Queue cl_queue; // command queue
+
+        private:
+            void initialize_auxiliary_pointers() {
+                /********/ x = s0 = host_buffer; /******/ if (d > 0x4u) s4 = host_buffer + N * 0x4ull; if (d > 0x8u) s8 = host_buffer + N * 0x8ull; if (d > 0xCu) sC = host_buffer + N * 0xCull;
+                if (d > 0x1u) y = s1 = host_buffer + N; /****/ if (d > 0x5u) s5 = host_buffer + N * 0x5ull; if (d > 0x9u) s9 = host_buffer + N * 0x9ull; if (d > 0xDu) sD = host_buffer + N * 0xDull;
+                if (d > 0x2u) z = s2 = host_buffer + N * 0x2ull; if (d > 0x6u) s6 = host_buffer + N * 0x6ull; if (d > 0xAu) sA = host_buffer + N * 0xAull; if (d > 0xEu) sE = host_buffer + N * 0xEull;
+                if (d > 0x3u) w = s3 = host_buffer + N * 0x3ull; if (d > 0x7u) s7 = host_buffer + N * 0x7ull; if (d > 0xBu) sB = host_buffer + N * 0xBull; if (d > 0xFu) sF = host_buffer + N * 0xFull;
+            }
+            __declspec(noinline) void allocate_host_buffer(Program& device, const bool allocate_host, const bool allow_zero_copy) {
+                if (allocate_host) {
+                    const ulong alignment = allow_zero_copy && device.info.uses_ram ? 4096ull : 64ull; // host_buffer must be aligned to 4096 Bytes for CL_MEM_USE_HOST_PTR, and to 64 Bytes for optimal enqueueReadBuffer performance on modern CPUs
+                    const ulong padding = allow_zero_copy && device.info.uses_ram ? 64ull : 0ull; // for CL_MEM_USE_HOST_PTR, 64 Bytes padding is required because device_buffer capacity in this case must be a multiple of 64 Bytes
+                    const ulong alloc_size = N * (ulong)d + (alignment + padding) / sizeof(T);
+                    const ulong alloc_char_size = alloc_size * sizeof(T) / sizeof(char);
+                    host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true); // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
+                    // host_buffer_unaligned = new T[N * (ulong)d + (alignment + padding) / sizeof(T)]; // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
+                    host_buffer = (T*)((((ulong)host_buffer_unaligned + alignment - 1ull) / alignment) * alignment); // align host_buffer by fine-tuning pointer to be a multiple of alignment
+                    initialize_auxiliary_pointers();
+                    host_buffer_exists = true;
+                }
+            }
+            inline void allocate_device_buffer(Program& device, const bool allocate_device, const bool allow_zero_copy) {
+                this->device = &device;
+                if (allocate_device) {
+                    device.info.memory_used += (uint)(capacity() / 1048576ull); // track device memory usage
+                    if (device.info.memory_used > device.info.memory) print_error("Program \"" + device.info.name + "\" does not have enough memory. Allocating another " + to_string((uint)(capacity() / 1048576ull)) + " MB would use a total of " + to_string(device.info.memory_used) + " MB / " + to_string(device.info.memory) + " MB.");
+                    int error = 0;
+                    is_zero_copy = allow_zero_copy && host_buffer_exists && device.info.uses_ram && (!external_host_buffer || ((ulong)host_buffer % 4096ull == 0ull && capacity() % 64ull == 0ull));
+                    device_buffer = cl::Buffer( // if(is_zero_copy) { don't allocate extra memory on CPUs/iGPUs } else { allocate VRAM on GPUs }
+                        device.get_cl_context(),
+                        CL_MEM_READ_WRITE | ((int)is_zero_copy * CL_MEM_USE_HOST_PTR) | ((int)device.info.patch_intel_gpu_above_4gb << 23), // for Intel GPUs set flag CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1<<23)
+                        is_zero_copy ? ((capacity() + 63ull) / 64ull) * 64ull : capacity(), // device_buffer capacity must be a multiple of 64 Bytes for CL_MEM_USE_HOST_PTR
+                        is_zero_copy ? (void*)host_buffer : nullptr,
+                        &error
+                    );
+                    if (error == -61) print_error("Memory size is too large at " + to_string((uint)(capacity() / 1048576ull)) + " MB. Program \"" + device.info.name + "\" accepts a maximum buffer size of " + to_string(device.info.max_global_buffer) + " MB.");
+                    else if (error) print_error("Program buffer allocation failed with error code " + to_string(error) + ".");
+                    device_buffer_exists = true;
+                }
+            }
+        public:
+            T* x = nullptr, * y = nullptr, * z = nullptr, * w = nullptr; // host buffer auxiliary pointers for multi-dimensional array access (array of structures)
+            T* s0 = nullptr, * s1 = nullptr, * s2 = nullptr, * s3 = nullptr, * s4 = nullptr, * s5 = nullptr, * s6 = nullptr, * s7 = nullptr, * s8 = nullptr, * s9 = nullptr, * sA = nullptr, * sB = nullptr, * sC = nullptr, * sD = nullptr, * sE = nullptr, * sF = nullptr;
+            Memory(Program& device, const ulong N, const uint dimensions = 1u, const bool allocate_host = true, const bool allocate_device = true, const T value = (T)0, const bool allow_zero_copy = true) 
+                : cl_queue(device)
+            {              
+                if (N * (ulong)dimensions == 0ull) print_error("Memory size must be larger than 0.");
+                this->N = N;
+                this->d = dimensions;
+                allocate_host_buffer(device, allocate_host, allow_zero_copy); // allocate host_buffer first
+                allocate_device_buffer(device, allocate_device, allow_zero_copy); // allocate device_buffer second
+                reset(value);
+            }
+            Memory(Program& device, const ulong N, const uint dimensions, T* const host_buffer, const bool allocate_device = true, const bool allow_zero_copy = true) 
+                : cl_queue(device) 
+            {
+                if (N * (ulong)dimensions == 0ull) print_error("Memory size must be larger than 0.");
+                this->N = N;
+                this->d = dimensions;
+                this->host_buffer = host_buffer;
+                initialize_auxiliary_pointers();
+                host_buffer_exists = true;
+                external_host_buffer = true;
+                allocate_device_buffer(device, allocate_device, allow_zero_copy);
+                write_to_device();
+            }
+            Memory() {} // default constructor
+            Memory(Memory const&) = delete;
+            Memory(Memory &&) = delete;
+            Memory& operator=(Memory const&) = delete;
+            Memory& operator=(Memory&&) = delete;
+            __declspec(noinline) ~Memory() {
+                if (host_buffer_exists && !external_host_buffer) {
+                    shared_mem_allocator.Free((char*)host_buffer_unaligned);
+                    host_buffer_unaligned = nullptr;
+                }
+                delete_buffers();
+            };
+
+            void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
+                if (!host_buffer_exists && device_buffer_exists) {
+                    const ulong alloc_char_size = N * (ulong)d * sizeof(T) / sizeof(char);
+                    host_buffer = host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true);
+                    // host_buffer = new T[N * (ulong)d];
+                    initialize_auxiliary_pointers();
+                    read_from_device();
+                    host_buffer_exists = true;
+                }
+            }
+            inline void add_device_buffer(const bool allow_zero_copy = true) { // makes only sense if there is no device buffer yet but an existing host buffer
+                if (!device_buffer_exists && host_buffer_exists) {
+                    allocate_device_buffer(*device, true, allow_zero_copy);
+                    write_to_device();
+                }
+            }
+            __declspec(noinline) void delete_host_buffer() {
+                host_buffer_exists = false;
+                if (!external_host_buffer) {
+                    host_buffer = nullptr;
+                    // if (host_buffer_unaligned) shared_mem_allocator.Free((char*)host_buffer_unaligned);
+                    // delete[] host_buffer_unaligned;
+                }
+                if (!device_buffer_exists) {
+                    N = 0ull;
+                    d = 1u;
+                }
+            }
+            inline void delete_device_buffer() {
+                if (device_buffer_exists) device->info.memory_used -= (uint)(capacity() / 1048576ull); // track device memory usage
+                device_buffer_exists = false;
+                device_buffer = nullptr;
+                if (!host_buffer_exists) {
+                    N = 0ull;
+                    d = 1u;
+                }
+            }
+            __declspec(noinline)  void delete_buffers() {
+                delete_device_buffer();
+                delete_host_buffer();
+            }
+            inline void reset(const T value = (T)0) {
+                //if(device_buffer_exists) cl_queue.enqueueFillBuffer(device_buffer, value, 0ull, capacity()); // faster than "write_to_device();"
+                if (host_buffer_exists) std::fill(host_buffer, host_buffer + range(), value); // faster than "for(ulong i=0ull; i<range(); i++) host_buffer[i] = value;"
+                write_to_device(); // enqueueFillBuffer is broken for large buffers on Nvidia GPUs!
+                //if(device_buffer_exists) cl_queue.finish();
+            }
+            inline const ulong length() const { return N; }
+            inline const uint dimensions() const { return d; }
+            inline const ulong range() const { return N * (ulong)d; }
+            inline const ulong capacity() const { return N * (ulong)d * sizeof(T); } // returns capacity of the buffer in Bytes
+            inline T* const data() { return host_buffer; }
+            inline const T* const data() const { return host_buffer; }
+            inline T* const operator()() { return host_buffer; }
+            inline const T* const operator()() const { return host_buffer; }
+            inline T& operator[](const ulong i) { return host_buffer[i]; }
+            inline const T& operator[](const ulong i) const { return host_buffer[i]; }
+            inline const T operator()(const ulong i) const { return host_buffer[i]; }
+            inline const T operator()(const ulong i, const uint dimension) const { return host_buffer[i + (ulong)dimension * N]; } // array of structures
+            inline void read_from_device(const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    cl_queue.cl_queue.enqueueReadBuffer(device_buffer, blocking, 0ull, capacity(), (void*)host_buffer, event_waitlist, event_returned);
+                }
+            }
+            inline void write_to_device(const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, blocking, 0ull, capacity(), (void*)host_buffer, event_waitlist, event_returned);
+                }
+            }
+            inline void read_from_device(const ulong offset, const ulong length, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    const ulong safe_offset = min(offset, range()), safe_length = min(length, range() - safe_offset);
+                    if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, blocking, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                }
+            }
+            inline void write_to_device(const ulong offset, const ulong length, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    const ulong safe_offset = min(offset, range()), safe_length = min(length, range() - safe_offset);
+                    if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, blocking, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                }
+            }
+            inline void read_from_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 1D domain from device, either for all vector dimensions (-1) or for a specified dimension
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
+                    for (uint i = i0; i < i1; i++) {
+                        const ulong safe_offset = min((ulong)i * N + x0, range()), safe_length = min(x1 - x0, range() - safe_offset);
+                        if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                    }
+                    if (blocking) cl_queue.cl_queue.finish();
+                }
+            }
+            inline void write_to_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 1D domain to device, either for all vector dimensions (-1) or for a specified dimension
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
+                    for (uint i = i0; i < i1; i++) {
+                        const ulong safe_offset = min((ulong)i * N + x0, range()), safe_length = min(x1 - x0, range() - safe_offset);
+                        if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                    }
+                    if (blocking) cl_queue.cl_queue.finish();
+                }
+            }
+            inline void read_from_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 2D domain from device, either for all vector dimensions (-1) or for a specified dimension
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    for (uint y = y0; y < y1; y++) {
+                        const ulong n = x0 + y * Nx;
+                        const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
+                        for (uint i = i0; i < i1; i++) {
+                            const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
+                            if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                        }
+                    }
+                    if (blocking) cl_queue.cl_queue.finish();
+                }
+            }
+            inline void write_to_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 2D domain to device, either for all vector dimensions (-1) or for a specified dimension
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    for (uint y = y0; y < y1; y++) {
+                        const ulong n = x0 + y * Nx;
+                        const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
+                        for (uint i = i0; i < i1; i++) {
+                            const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
+                            if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                        }
+                    }
+                    if (blocking) cl_queue.cl_queue.finish();
+                }
+            }
+            inline void read_from_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 3D domain from device, either for all vector dimensions (-1) or for a specified dimension
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    for (uint z = z0; z < z1; z++) {
+                        for (uint y = y0; y < y1; y++) {
+                            const ulong n = x0 + (y + z * Ny) * Nx;
+                            const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
+                            for (uint i = i0; i < i1; i++) {
+                                const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
+                                if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                            }
+                        }
+                    }
+                    if (blocking) cl_queue.cl_queue.finish();
+                }
+            }
+            inline void write_to_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 3D domain to device, either for all vector dimensions (-1) or for a specified dimension
+                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
+                    for (uint z = z0; z < z1; z++) {
+                        for (uint y = y0; y < y1; y++) {
+                            const ulong n = x0 + (y + z * Ny) * Nx;
+                            const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
+                            for (uint i = i0; i < i1; i++) {
+                                const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
+                                if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
+                            }
+                        }
+                    }
+                    if (blocking) cl_queue.cl_queue.finish();
+                }
+            }
+            inline void enqueue_read_from_device(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { 
+                read_from_device(false, event_waitlist, event_returned); 
+            }
+            inline void enqueue_write_to_device(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { 
+                write_to_device(false, event_waitlist, event_returned); 
+            }
+            inline void enqueue_read_from_device(const ulong offset, const ulong length, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                read_from_device(offset, length, false, event_waitlist, event_returned);
+            }
+            inline void enqueue_write_to_device(const ulong offset, const ulong length, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { 
+                write_to_device(offset, length, false, event_waitlist, event_returned); 
+            }
+            inline void finish_queue() { 
+                cl_queue.cl_queue.finish();
+            }
+            inline const cl::Buffer& get_cl_buffer() const {
+                return device_buffer; 
+            }
+        };
+
+        class Kernel {
+        private:
+            ulong 
+                N = 0ull; // kernel range
+            uint 
+                number_of_parameters = 0u;
+            std::string 
+                name = "";
+            cl::Kernel 
+                cl_kernel;
+            cl::NDRange 
+                cl_range_global, 
+                cl_range_local;
+            const Queue* 
+                cl_queue = nullptr;
+
+            void check_for_errors(const int error) {
+                if (error == -48) print_error("There is no OpenCL kernel with name \"" + name + "(...)\" in the OpenCL C code! Check spelling!");
+                if (error<-48 && error>-53) print_error("Parameters for OpenCL kernel \"" + name + "(...)\" don't match between C++ and OpenCL C!");
+                if (error == -54) print_error("Workgrop size " + to_string(WORKGROUP_SIZE) + " for OpenCL kernel \"" + name + "(...)\" is invalid!");
+                if (error != 0) print_error("OpenCL kernel \"" + name + "(...)\" failed with error code " + to_string(error) + "!");
+            }
+
+            template<typename T>
+            void link_parameter(const uint position, const T& constant) {
+                check_for_errors(cl_kernel.setArg(position, sizeof(T), (void*)&constant));
+            }
+            template<> void link_parameter<cl::Buffer>(const uint position, const cl::Buffer& memory) {
+                check_for_errors(cl_kernel.setArg(position, memory));
+            }
+            void link_parameters(const uint starting_position) {
+                number_of_parameters = max(number_of_parameters, starting_position);
+            }
+            template<template<class> typename G, typename T, class... U> void link_parameters(const uint starting_position, const G<T>& parameter, const U&... parameters) {
+                if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
+                    link_parameters(starting_position, *parameter, parameters...);
+                }
+                else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
+                    link_parameter(starting_position, parameter.get_cl_buffer());
+                    link_parameters(starting_position + 1u, parameters...);
+                }
+                else {
+                    link_parameter(starting_position, parameter);
+                    link_parameters(starting_position + 1u, parameters...);
+                }
+            }
+            template<class T, class... U> void link_parameters(const uint starting_position, const T& parameter, const U&... parameters) {
+                link_parameter(starting_position, parameter);
+                link_parameters(starting_position + 1u, parameters...);
+            }
+        public:
+            template<class... T> Kernel(const Program& device, Queue const& queue, const ulong N, const std::string& Name, const T&... parameters) 
+                : name(Name), cl_queue(&queue)
+            { // accepts Memory<T> objects and fundamental data type constants
+                cl_kernel = cl::Kernel(device.program.cl_program, name.c_str());
+                link_parameters(0u, parameters...); // expand variadic template to link kernel parameters
+                set_ranges(N);
+            }
+            template<class... T> Kernel(const Program& device, Queue const& queue, const ulong N, const uint workgroup_size, const std::string& Name, const T&... parameters) 
+                : name(Name), cl_queue(&queue)
+            { // accepts Memory<T> objects and fundamental data type constants
+                cl_kernel = cl::Kernel(device.program.cl_program, name.c_str());
+                link_parameters(0u, parameters...); // expand variadic template to link kernel parameters
+                set_ranges(N, (ulong)workgroup_size);
+            }
+            Kernel() = default; // default constructor
+            Kernel& set_ranges(const ulong N, const ulong workgroup_size = (ulong)WORKGROUP_SIZE) {
+                this->N = N;
+                cl_range_global = cl::NDRange(((N + workgroup_size - 1ull) / workgroup_size) * workgroup_size); // make global range a multiple of local range
+                cl_range_local = cl::NDRange(workgroup_size);
+                return *this;
+            }
+            const ulong range() const { return N; }
+            uint get_number_of_parameters() const { return number_of_parameters; }
+            template<class... T> Kernel& add_parameters(const T&... parameters) { // add parameters to the list of existing parameters
+                link_parameters(number_of_parameters, parameters...); // expand variadic template to link kernel parameters
+                return *this;
+            }
+            template<class... T> Kernel& set_parameters(const uint starting_position, const T&... parameters) { // set parameters starting at specified position
+                link_parameters(starting_position, parameters...); // expand variadic template to link kernel parameters
+                return *this;
+            }
+            Kernel& finish_queue() {
+                cl_queue->cl_queue.finish();
+                return *this;
+            }
+            Kernel& enqueue_run(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                for (uint i = 0u; i < t; i++) {
+                    check_for_errors(cl_queue->cl_queue.enqueueNDRangeKernel(cl_kernel, cl::NullRange, cl_range_global, cl_range_local, event_waitlist, event_returned));
+                }
+                return *this;
+            }
+            Kernel& run(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                enqueue_run(t, event_waitlist, event_returned);
+                finish_queue();
+                return *this;
+            }
+            Kernel& operator()(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+                return run(t, event_waitlist, event_returned);
+            }
+
+        };
+
+
+
+    };
+
+}
+
+
+void fnGpuProgramming() {
+    if (0) {
+        parallel_dynamic_allocator<float> block_alloc;
+
+
+
+
+        //parallel::Std_For<long>(0, 1000, [&](long T) {
+
+
+
+
+
+            long i = 17;
+            for (; i >= 1; --i) {
+                long SIZE = (8 << i);
+                long pS = (8 << (i - 1));
+
+                auto p = block_alloc.Alloc(SIZE, i == 17);
+                for (long j = pS; j < SIZE; ++j) {
+                    p[j] = i;
+                }
+                block_alloc.Free(p);
+            }
+            for (; i >= 0; --i) {
+                long SIZE = 8;
+                auto p = block_alloc.Alloc(SIZE, false);
+                for (long j = 0; j < SIZE; ++j) {
+                    p[j] = i;
+                }
+                block_alloc.Free(p);
+            }
+            if (1) {
+                auto p = block_alloc.Alloc(8 << 17, false);
+                for (long j = 0; j < (8 << 17); ++j) {
+                    print(p[j]);
+                }
+                block_alloc.Free(p);
+            }
+        //});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        using namespace GL;
+        // Array arr = Array::random_between(ArrayTypes::FLOAT, 0.0, 1.0, 10, 10, 1);
+    }
+
+    if (1) {
+        GL::GPU::Program program({ opencl_impl::create_kernels() });
+
+        // leak-free (so far) implementation that uses shared memory for the local, host buffers. 
+        for (unsigned int v = 0; v < 1000; ++v) {
+            GL::GPU::Memory<unsigned int> arr1(program, 1000000, 1, false, true);
+            GL::GPU::Kernel kernel(program, arr1.cl_queue, arr1.length(), std::string("copy_single") + opencl_impl::type_name<unsigned int>(), arr1, v);
+            Event this_event;
+            kernel.enqueue_run(1, { nullptr, nullptr }, &this_event);
+            arr1.add_host_buffer();
+            arr1.read_from_device(true, { &this_event, &this_event + 1 });
+            print(arr1[0]);
+        }
+
+    }
+
     using namespace GL;
 
     if (1) {
@@ -3913,3 +4526,9 @@ void fnGpuProgramming() {
     }
 
 }
+
+
+
+
+
+

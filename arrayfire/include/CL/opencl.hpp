@@ -9351,7 +9351,7 @@ inline cl_int enqueueMapSVM(
     cl_bool blocking,
     cl_map_flags flags,
     size_type size,
-    const vector<Event>* events,
+    const std::pair<Event*, Event*> events,
     Event* event)
 {
     cl_int error;
@@ -9359,10 +9359,8 @@ inline cl_int enqueueMapSVM(
     if (error != CL_SUCCESS) {
         return detail::errHandler(error, __ENQUEUE_MAP_BUFFER_ERR);
     }
-
-    return queue.enqueueMapSVM(
-        ptr, blocking, flags, size, events, event);
-}
+    return queue.enqueueMapSVM(ptr, blocking, flags, size, events, event);
+};
 
 /**
  * Enqueues to the default queue a command that will allow the host to 
@@ -9574,7 +9572,7 @@ inline cl_int copy( const CommandQueue &queue, IteratorType startIterator, Itera
     size_type byteLength = length*sizeof(DataType);
 
     DataType *pointer = 
-        static_cast<DataType*>(queue.enqueueMapBuffer(buffer, CL_TRUE, CL_MAP_WRITE, 0, byteLength, 0, 0, &error));
+        static_cast<DataType*>(queue.enqueueMapBuffer(buffer, CL_TRUE, CL_MAP_WRITE, 0, byteLength, { nullptr, nullptr }, 0, &error));
     // if exceptions enabled, enqueueMapBuffer will throw
     if( error != CL_SUCCESS ) {
         return error;
@@ -9589,7 +9587,7 @@ inline cl_int copy( const CommandQueue &queue, IteratorType startIterator, Itera
     std::copy(startIterator, endIterator, pointer);
 #endif
     Event endEvent;
-    error = queue.enqueueUnmapMemObject(buffer, pointer, 0, &endEvent);
+    error = queue.enqueueUnmapMemObject(buffer, pointer, { nullptr, nullptr }, &endEvent);
     // if exceptions enabled, enqueueUnmapMemObject will throw
     if( error != CL_SUCCESS ) { 
         return error;
@@ -9613,14 +9611,14 @@ inline cl_int copy( const CommandQueue &queue, const cl::Buffer &buffer, Iterato
     size_type byteLength = length*sizeof(DataType);
 
     DataType *pointer = 
-        static_cast<DataType*>(queue.enqueueMapBuffer(buffer, CL_TRUE, CL_MAP_READ, 0, byteLength, 0, 0, &error));
+        static_cast<DataType*>(queue.enqueueMapBuffer(buffer, CL_TRUE, CL_MAP_READ, 0, byteLength, { nullptr, nullptr }, 0, &error));
     // if exceptions enabled, enqueueMapBuffer will throw
     if( error != CL_SUCCESS ) {
         return error;
     }
     std::copy(pointer, pointer + length, startIterator);
     Event endEvent;
-    error = queue.enqueueUnmapMemObject(buffer, pointer, 0, &endEvent);
+    error = queue.enqueueUnmapMemObject(buffer, pointer, { nullptr, nullptr }, &endEvent);
     // if exceptions enabled, enqueueUnmapMemObject will throw
     if( error != CL_SUCCESS ) { 
         return error;
@@ -10164,12 +10162,18 @@ public:
         Event event;
         setArgs<0>(std::forward<Ts>(ts)...);
         
+        std::pair<Event*, Event*> events{ nullptr, nullptr };
+        if (args.events_.size() > 0) {
+            events.first = const_cast<Event*>(&args.events_[0]);
+            events.second = events.first + args.events_.size();
+        }
+
         args.queue_.enqueueNDRangeKernel(
             kernel_,
             args.offset_,
             args.global_,
             args.local_,
-            &args.events_,
+            events,
             &event);
 
         return event;
@@ -10189,12 +10193,18 @@ public:
         Event event;
         setArgs<0>(std::forward<Ts>(ts)...);
 
+        std::pair<Event*, Event*> events{ nullptr, nullptr };
+        if (args.events_.size() > 0) {
+            events.first = const_cast<Event*>(&args.events_[0]);
+            events.second = events.first + args.events_.size();
+        }
+
         error = args.queue_.enqueueNDRangeKernel(
             kernel_,
             args.offset_,
             args.global_,
             args.local_,
-            &args.events_,
+            events,
             &event);
         
         return event;

@@ -915,7 +915,7 @@ __forceinline void console_clear() {
 }
 
 int main() {
-    // fnGpuProgramming();
+    fnGpuProgramming();
 
     if (0) {
         using namespace GL;

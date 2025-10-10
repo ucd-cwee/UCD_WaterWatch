@@ -282,20 +282,29 @@ private:
 
 #include "BTree.h"
 
-template<class type>
+template<class type, int additional_buffer = 0>
 class cweeDynamicBlock {
 public:
-	type* GetMemory() const { return (type*)(((::byte*)this) + sizeof(cweeDynamicBlock<type>)); }
+	type* GetMemory() const { 
+		return (type*)(((::byte*)this) + sizeof(cweeDynamicBlock<type, additional_buffer>));
+	}
 	int								GetSize() const { return abs(size); }
 	void							SetSize(int s, bool isBaseBlock) { size = isBaseBlock ? -s : s; }
 	bool							IsBaseBlock() const { return (size < 0); }
-	int								size = 0;					// size in bytes of the block
-	cweeDynamicBlock<type>* prev = NULL;					// previous memory block
-	cweeDynamicBlock<type>* next = NULL;					// next memory block
-	cweeBTreeNode<cweeDynamicBlock<type>, int>* node = NULL;			// node in the B-Tree with free blocks
+	
+	int								
+		size = 0;					// size in bytes of the block
+	cweeDynamicBlock<type, additional_buffer>*
+		prev = NULL;					// previous memory block
+	cweeDynamicBlock<type, additional_buffer>*
+		next = NULL;					// next memory block
+	cweeBTreeNode<cweeDynamicBlock<type, additional_buffer>, int>*
+		node = NULL;			// node in the B-Tree with free blocks
+	char
+		padding[additional_buffer];
 };
 
-template<class type, int baseBlockSize, int minBlockSize>
+template<class type, int baseBlockSize, int minBlockSize, int additional_buffer = 0>
 class cweeDynamicBlockAlloc {
 public:
 	cweeDynamicBlockAlloc() {
@@ -311,7 +320,7 @@ public:
 	void							Shutdown() {
 		Free(Alloc(2));
 
-		cweeDynamicBlock<type>* block;
+		cweeDynamicBlock<type, additional_buffer>* block;
 
 		for (block = firstBlock; block != NULL; block = block->next) {
 			if (block->node == NULL) {
@@ -329,11 +338,11 @@ public:
 		Clear();
 	};
 	void							SetFixedBlocks(int numBlocks) {
-		cweeDynamicBlock<type>* block;
+		cweeDynamicBlock<type, additional_buffer>* block;
 
 		for (int i = numBaseBlocks; i < numBlocks; i++) {
-			block = (cweeDynamicBlock<type>*) Mem_Alloc16((size_t)baseBlockSize);
-			block->SetSize(baseBlockSize - (int)sizeof(cweeDynamicBlock<type>), true);
+			block = (cweeDynamicBlock<type, additional_buffer>*) Mem_Alloc16((size_t)baseBlockSize);
+			block->SetSize(baseBlockSize - (int)sizeof(cweeDynamicBlock<type, additional_buffer>), true);
 			block->next = NULL;
 			block->prev = lastBlock;
 			if (lastBlock) {
@@ -357,7 +366,7 @@ public:
 		lockMemory = lock;
 	};
 	void							FreeEmptyBaseBlocks() {
-		cweeDynamicBlock<type>* block, * next;
+		cweeDynamicBlock<type, additional_buffer>* block, * next;
 
 		for (block = firstBlock; block != NULL; block = next) {
 			next = block->next;
@@ -377,7 +386,7 @@ public:
 					lastBlock = block->prev;
 				}
 				numBaseBlocks--;
-				baseBlockMemory -= block->GetSize() + (int)sizeof(cweeDynamicBlock<type>);
+				baseBlockMemory -= block->GetSize() + (int)sizeof(cweeDynamicBlock<type, additional_buffer>);
 				Mem_Free16(block);
 			}
 		}
@@ -389,7 +398,7 @@ public:
 			return NULL;
 		}
 		else {
-			cweeDynamicBlock<type>* block;
+			cweeDynamicBlock<type, additional_buffer>* block;
 			numAllocs++;
 
 			block = AllocInternal(num);
@@ -406,7 +415,9 @@ public:
 
 			type* ptr = block->GetMemory();
 			if constexpr (std::is_pod<type>::value) {
-				::memset((void*)ptr, 0, sizeof(type) * num);				
+				if (clearMemory) {
+					::memset((void*)ptr, 0, sizeof(type) * num);
+				}
 			}
 			else {
 				for (int i = 0; i < num; ++i) {
@@ -426,7 +437,7 @@ public:
 			Free(ptr);
 			return NULL;
 		}
-		cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+		cweeDynamicBlock<type, additional_buffer>* block = (cweeDynamicBlock<type, additional_buffer>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type, additional_buffer>));
 		usedBlockMemory -= block->GetSize();
 		block = ResizeInternal(block, num);
 		if (block == NULL) {
@@ -443,7 +454,7 @@ public:
 	void  Free(type* ptr) {
 		numFrees++;
 		if (!ptr) { return; }
-		cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+		cweeDynamicBlock<type, additional_buffer>* block = (cweeDynamicBlock<type, additional_buffer>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type, additional_buffer>));
 		if constexpr (!std::is_pod<type>::value) {
 			for (int i = 0; i < block->size; ++i) {
 				(ptr + i)->~type();
@@ -454,13 +465,13 @@ public:
 		FreeInternal(block);
 	};
 	const char* CheckMemory(const type* ptr) const {
-		cweeDynamicBlock<type>* block;
+		cweeDynamicBlock<type, additional_buffer>* block;
 
 		if (ptr == NULL) {
 			return NULL;
 		}
 
-		block = (cweeDynamicBlock<type>*) (((byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
+		block = (cweeDynamicBlock<type, additional_buffer>*) (((byte*)ptr) - (int)sizeof(cweeDynamicBlock<type, additional_buffer>));
 
 		if (block->node != NULL) {
 			return "memory has been freed";
@@ -476,7 +487,7 @@ public:
 	int								GetFreeBlockMemory() const { return freeBlockMemory; }
 	int								GetNumEmptyBaseBlocks() const {
 		int numEmptyBaseBlocks;
-		cweeDynamicBlock<type>* block;
+		cweeDynamicBlock<type, additional_buffer>* block;
 
 		numEmptyBaseBlocks = 0;
 		for (block = firstBlock; block != NULL; block = block->next) {
@@ -488,9 +499,9 @@ public:
 	};
 
 private:
-	cweeDynamicBlock<type>* firstBlock;				// first block in list in order of increasing address
-	cweeDynamicBlock<type>* lastBlock;				// last block in list in order of increasing address
-	cweeBTree<cweeDynamicBlock<type>, int, 4>freeTree;			// B-Tree with free memory blocks
+	cweeDynamicBlock<type, additional_buffer>* firstBlock;				// first block in list in order of increasing address
+	cweeDynamicBlock<type, additional_buffer>* lastBlock;				// last block in list in order of increasing address
+	cweeBTree<cweeDynamicBlock<type, additional_buffer>, int, 4>freeTree;			// B-Tree with free memory blocks
 	bool							allowAllocs = true;			// allow base block allocations
 	bool							lockMemory = false;				// lock memory so it cannot get swapped out
 	int								numBaseBlocks = 0;			// number of base blocks
@@ -519,8 +530,8 @@ private:
 		numResizes = 0;
 		numFrees = 0;
 	};
-	cweeDynamicBlock<type>* AllocInternal(const int num) {
-		cweeDynamicBlock<type>* block;
+	cweeDynamicBlock<type, additional_buffer>* AllocInternal(const int num) {
+		cweeDynamicBlock<type, additional_buffer>* block;
 		int alignedBytes = (num * sizeof(type) + 15) & ~15;
 
 		block = freeTree.FindSmallestLargerEqual(alignedBytes);
@@ -528,9 +539,9 @@ private:
 			UnlinkFreeInternal(block);
 		}
 		else if (allowAllocs) {
-			int allocSize = CONST_MAX(baseBlockSize, alignedBytes + (int)sizeof(cweeDynamicBlock<type>));
-			block = (cweeDynamicBlock<type>*) Mem_Alloc16((size_t)allocSize);
-			block->SetSize(allocSize - (int)sizeof(cweeDynamicBlock<type>), true);
+			int allocSize = CONST_MAX(baseBlockSize, alignedBytes + (int)sizeof(cweeDynamicBlock<type, additional_buffer>));
+			block = (cweeDynamicBlock<type, additional_buffer>*) Mem_Alloc16((size_t)allocSize);
+			block->SetSize(allocSize - (int)sizeof(cweeDynamicBlock<type, additional_buffer>), true);
 			block->next = NULL;
 			block->prev = lastBlock;
 			if (lastBlock) {
@@ -548,19 +559,19 @@ private:
 
 		return block;
 	};
-	cweeDynamicBlock<type>* ResizeInternal(cweeDynamicBlock<type>* block, const int num) {
+	cweeDynamicBlock<type, additional_buffer>* ResizeInternal(cweeDynamicBlock<type, additional_buffer>* block, const int num) {
 		int alignedBytes = (num * sizeof(type) + 15) & ~15;
 		// if the new size is larger
 		if (alignedBytes > block->GetSize()) {
 
-			cweeDynamicBlock<type>* nextBlock = block->next;
+			cweeDynamicBlock<type, additional_buffer>* nextBlock = block->next;
 
 			// try to annexate the next block if it's free
 			if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL &&
-				block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize() >= alignedBytes) {
+				block->GetSize() + (int)sizeof(cweeDynamicBlock<type, additional_buffer>) + nextBlock->GetSize() >= alignedBytes) {
 
 				UnlinkFreeInternal(nextBlock);
-				block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
+				block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type, additional_buffer>) + nextBlock->GetSize(), block->IsBaseBlock());
 				block->next = nextBlock->next;
 				if (nextBlock->next) {
 					nextBlock->next->prev = block;
@@ -571,7 +582,7 @@ private:
 			}
 			else {
 				// allocate a new block and copy
-				cweeDynamicBlock<type>* oldBlock = block;
+				cweeDynamicBlock<type, additional_buffer>* oldBlock = block;
 				block = AllocInternal(num);
 				if (block == NULL) {
 					return NULL;
@@ -582,15 +593,15 @@ private:
 		}
 
 		// if the unused space at the end of this block is large enough to hold a block with at least one element
-		if (block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>) < CONST_MAX(minBlockSize, (int)sizeof(type))) {
+		if (block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type, additional_buffer>) < CONST_MAX(minBlockSize, (int)sizeof(type))) {
 			return block;
 		}
 
-		cweeDynamicBlock<type>* newBlock;
+		cweeDynamicBlock<type, additional_buffer>* newBlock;
 
-		newBlock = (cweeDynamicBlock<type>*) (((::byte*)block) + (int)sizeof(cweeDynamicBlock<type>) + alignedBytes);
+		newBlock = (cweeDynamicBlock<type, additional_buffer>*) (((::byte*)block) + (int)sizeof(cweeDynamicBlock<type, additional_buffer>) + alignedBytes);
 		try {
-			newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>), false);
+			newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type, additional_buffer>), false);
 		}
 		catch (...) {}
 		newBlock->next = block->next;
@@ -609,12 +620,12 @@ private:
 
 		return block;
 	};
-	void							FreeInternal(cweeDynamicBlock<type>* block) {
+	void							FreeInternal(cweeDynamicBlock<type, additional_buffer>* block) {
 		// try to merge with a next free block
-		cweeDynamicBlock<type>* nextBlock = block->next;
+		cweeDynamicBlock<type, additional_buffer>* nextBlock = block->next;
 		if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL) {
 			UnlinkFreeInternal(nextBlock);
-			block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
+			block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type, additional_buffer>) + nextBlock->GetSize(), block->IsBaseBlock());
 			block->next = nextBlock->next;
 			if (nextBlock->next) {
 				nextBlock->next->prev = block;
@@ -625,11 +636,11 @@ private:
 		}
 
 		// try to merge with a previous free block
-		cweeDynamicBlock<type>* prevBlock = block->prev;
+		cweeDynamicBlock<type, additional_buffer>* prevBlock = block->prev;
 		//if (prevBlock && !block->IsBaseBlock() && prevBlock->node != NULL) {
 		if (prevBlock && !prevBlock->IsBaseBlock() && prevBlock->node != NULL) {
 			UnlinkFreeInternal(prevBlock);
-			prevBlock->SetSize(prevBlock->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + block->GetSize(), prevBlock->IsBaseBlock());
+			prevBlock->SetSize(prevBlock->GetSize() + (int)sizeof(cweeDynamicBlock<type, additional_buffer>) + block->GetSize(), prevBlock->IsBaseBlock());
 			prevBlock->next = block->next;
 			if (block->next) {
 				block->next->prev = prevBlock;
@@ -643,19 +654,19 @@ private:
 			LinkFreeInternal(block);
 		}
 	};
-	void							LinkFreeInternal(cweeDynamicBlock<type>* block) {
+	void							LinkFreeInternal(cweeDynamicBlock<type, additional_buffer>* block) {
 		block->node = freeTree.Add(block, block->GetSize());
 		numFreeBlocks++;
 		freeBlockMemory += block->GetSize();
 	};
-	void							UnlinkFreeInternal(cweeDynamicBlock<type>* block) {
+	void							UnlinkFreeInternal(cweeDynamicBlock<type, additional_buffer>* block) {
 		freeTree.Remove(block->node);
 		block->node = NULL;
 		numFreeBlocks--;
 		freeBlockMemory -= block->GetSize();
 	};
 	void							CheckMemory() const {
-		cweeDynamicBlock<type>* block;
+		cweeDynamicBlock<type, additional_buffer>* block;
 
 		for (block = firstBlock; block != NULL; block = block->next) {
 			// make sure the block is properly linked
