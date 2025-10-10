@@ -167,6 +167,8 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="BTree.h" />
+    <ClInclude Include="dynamic_allocator.h" />
     <ClInclude Include="GpuProgramming.h" />
     <ClInclude Include="kernel.hpp" />
     <ClInclude Include="opencl.hpp" />

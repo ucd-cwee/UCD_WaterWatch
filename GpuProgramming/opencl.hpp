@@ -368,7 +368,7 @@ public:
 		this->exists = true;
 	}
 	inline Device() {} // default constructor
-	inline void barrier(const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
+	inline void barrier(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
 	inline void finish_queue() { cl_queue.finish(); }
 	inline cl::Context get_cl_context() const { return info.cl_context; }
 	inline cl::Program get_cl_program() const { return cl_program; }
@@ -540,29 +540,29 @@ public:
 	inline const T& operator[](const ulong i) const { return host_buffer[i]; }
 	inline const T operator()(const ulong i) const { return host_buffer[i]; }
 	inline const T operator()(const ulong i, const uint dimension) const { return host_buffer[i + (ulong)dimension * N]; } // array of structures
-	inline void read_from_device(const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline void read_from_device(const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			cl_queue.enqueueReadBuffer(device_buffer, blocking, 0ull, capacity(), (void*)host_buffer, event_waitlist, event_returned);
 		}
 	}
-	inline void write_to_device(const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline void write_to_device(const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			cl_queue.enqueueWriteBuffer(device_buffer, blocking, 0ull, capacity(), (void*)host_buffer, event_waitlist, event_returned);
 		}
 	}
-	inline void read_from_device(const ulong offset, const ulong length, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline void read_from_device(const ulong offset, const ulong length, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			const ulong safe_offset = min(offset, range()), safe_length = min(length, range() - safe_offset);
 			if (safe_length > 0ull) cl_queue.enqueueReadBuffer(device_buffer, blocking, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
 		}
 	}
-	inline void write_to_device(const ulong offset, const ulong length, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline void write_to_device(const ulong offset, const ulong length, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			const ulong safe_offset = min(offset, range()), safe_length = min(length, range() - safe_offset);
 			if (safe_length > 0ull) cl_queue.enqueueWriteBuffer(device_buffer, blocking, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
 		}
 	}
-	inline void read_from_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { // read 1D domain from device, either for all vector dimensions (-1) or for a specified dimension
+	inline void read_from_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 1D domain from device, either for all vector dimensions (-1) or for a specified dimension
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
 			for (uint i = i0; i < i1; i++) {
@@ -572,7 +572,7 @@ public:
 			if (blocking) cl_queue.finish();
 		}
 	}
-	inline void write_to_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { // write 1D domain to device, either for all vector dimensions (-1) or for a specified dimension
+	inline void write_to_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 1D domain to device, either for all vector dimensions (-1) or for a specified dimension
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
 			for (uint i = i0; i < i1; i++) {
@@ -582,7 +582,7 @@ public:
 			if (blocking) cl_queue.finish();
 		}
 	}
-	inline void read_from_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { // read 2D domain from device, either for all vector dimensions (-1) or for a specified dimension
+	inline void read_from_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 2D domain from device, either for all vector dimensions (-1) or for a specified dimension
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			for (uint y = y0; y < y1; y++) {
 				const ulong n = x0 + y * Nx;
@@ -595,7 +595,7 @@ public:
 			if (blocking) cl_queue.finish();
 		}
 	}
-	inline void write_to_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { // write 2D domain to device, either for all vector dimensions (-1) or for a specified dimension
+	inline void write_to_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 2D domain to device, either for all vector dimensions (-1) or for a specified dimension
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			for (uint y = y0; y < y1; y++) {
 				const ulong n = x0 + y * Nx;
@@ -608,7 +608,7 @@ public:
 			if (blocking) cl_queue.finish();
 		}
 	}
-	inline void read_from_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { // read 3D domain from device, either for all vector dimensions (-1) or for a specified dimension
+	inline void read_from_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 3D domain from device, either for all vector dimensions (-1) or for a specified dimension
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			for (uint z = z0; z < z1; z++) {
 				for (uint y = y0; y < y1; y++) {
@@ -623,7 +623,7 @@ public:
 			if (blocking) cl_queue.finish();
 		}
 	}
-	inline void write_to_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { // write 3D domain to device, either for all vector dimensions (-1) or for a specified dimension
+	inline void write_to_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 3D domain to device, either for all vector dimensions (-1) or for a specified dimension
 		if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
 			for (uint z = z0; z < z1; z++) {
 				for (uint y = y0; y < y1; y++) {
@@ -638,10 +638,10 @@ public:
 			if (blocking) cl_queue.finish();
 		}
 	}
-	inline void enqueue_read_from_device(const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { read_from_device(false, event_waitlist, event_returned); }
-	inline void enqueue_write_to_device(const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { write_to_device(false, event_waitlist, event_returned); }
-	inline void enqueue_read_from_device(const ulong offset, const ulong length, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { read_from_device(offset, length, false, event_waitlist, event_returned); }
-	inline void enqueue_write_to_device(const ulong offset, const ulong length, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) { write_to_device(offset, length, false, event_waitlist, event_returned); }
+	inline void enqueue_read_from_device(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { read_from_device(false, event_waitlist, event_returned); }
+	inline void enqueue_write_to_device(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { write_to_device(false, event_waitlist, event_returned); }
+	inline void enqueue_read_from_device(const ulong offset, const ulong length, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { read_from_device(offset, length, false, event_waitlist, event_returned); }
+	inline void enqueue_write_to_device(const ulong offset, const ulong length, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { write_to_device(offset, length, false, event_waitlist, event_returned); }
 	inline void finish_queue() { cl_queue.finish(); }
 	inline const cl::Buffer& get_cl_buffer() const { return device_buffer; }
 };
@@ -724,18 +724,18 @@ public:
 		link_parameters(starting_position, parameters...); // expand variadic template to link kernel parameters
 		return *this;
 	}
-	inline Kernel& enqueue_run(const uint t = 1u, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline Kernel& enqueue_run(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		for (uint i = 0u; i < t; i++) {
 			check_for_errors(cl_queue.enqueueNDRangeKernel(cl_kernel, cl::NullRange, cl_range_global, cl_range_local, event_waitlist, event_returned));
 		}
 		return *this;
 	}
-	inline Kernel& run(const uint t = 1u, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline Kernel& run(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		enqueue_run(t, event_waitlist, event_returned);
 		finish_queue();
 		return *this;
 	}
-	inline Kernel& operator()(const uint t = 1u, const vector<Event>* event_waitlist = nullptr, Event* event_returned = nullptr) {
+	inline Kernel& operator()(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
 		return run(t, event_waitlist, event_returned);
 	}
 	inline Kernel& finish_queue() {

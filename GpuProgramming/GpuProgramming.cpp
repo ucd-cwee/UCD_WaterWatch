@@ -11,6 +11,7 @@
 #include <iostream>
 #include <map>
 #include <boost/math/distributions/students_t.hpp>
+#include "dynamic_allocator.h"
 
 #pragma region "Convenience implementation of CPU parallel computing for the conditions where GPU parallel compute is not available or not convenient."
 namespace parallel {
@@ -154,55 +155,220 @@ namespace parallel {
 #define EXPECT_NE(a, b) if (a == b){ std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
 #pragma endregion
 
+#pragma once
+#pragma hdrstop
+#include <stdint.h>
+#include <chrono>
+#include <ShlDisp.h>
+#include <winnt.h>
+#include <string>
+#include <memory>
+#include <iostream>
+
+namespace GL {
+    namespace clock {
+        // seconds since boot
+        __forceinline static long long s() {
+            return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        };
+        // milliseconds since boot
+        __forceinline static long long ms() {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        };
+        // microseconds since boot
+        __forceinline static long long us() {
+            return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        };
+        // nanoseconds since boot
+        __forceinline static long long ns() {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        };
+    };
+    class stopwatch {
+    public:
+        stopwatch() : t0(clock::ns()), t1(0) {};
+        // resets the timer to start "now"
+        long long reset() {
+            InterlockedExchange64(reinterpret_cast<volatile long long*>(&t0), clock::ns());
+            return t0;
+        };
+        // stops the timer and returns the time passed since in seconds
+        long double stop() {
+            InterlockedExchange64(reinterpret_cast<volatile long long*>(&t1), clock::ns());
+            return static_cast<long double>(t1 - t0) / 1000000000.0;
+        };
+        // does not stop the timer, but does return the time passed since in seconds
+        long double check() const {
+            if (t1 < t0) InterlockedExchange64(reinterpret_cast<volatile long long*>(&const_cast<stopwatch*>(this)->t1), clock::ns()); // const_cast<stopwatch*>(this)->t1 = clock::ns();
+            return static_cast<long double>(t1 - t0) / 1000000000.0;
+        };
+
+        std::shared_ptr<void> debug_timer() {
+            return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this](int* p) -> void {
+                auto stopTime = this->stop();
+                std::string to_print = std::to_string(stopTime) + " s\n";
+                std::cout << to_print;
+                delete p;
+            }));
+        };
+
+        template <size_t N>
+        __forceinline std::shared_ptr<void> debug_timer(const char(&additional_message_content)[N]) {
+            return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this, additional_message = additional_message_content](int* p) -> void {
+                auto stopTime = this->stop();
+                if constexpr (N == 0) {
+                    std::string to_print = std::to_string(stopTime) + " s\n";
+                    std::cout << to_print;
+                }
+                else {
+                    std::string to_print = std::string(additional_message) + ": " + std::to_string(stopTime) + " s\n";
+                    std::cout << to_print;
+                }
+                delete p;
+            }));
+        };
+
+        template<typename T>
+        __forceinline std::shared_ptr<void> debug_timer(T const& additional_message_content) {
+            return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this, additional_message = std::to_string(additional_message_content)](int* p) -> void {
+                auto stopTime = this->stop();
+                if (additional_message.empty()) {
+                    std::string to_print = std::to_string(stopTime) + " s\n";
+                    std::cout << to_print;
+                }
+                else {
+                    std::string to_print = additional_message + ": " + std::to_string(stopTime) + " s\n";
+                    std::cout << to_print;
+                }
+                delete p;
+            }));
+        };
+
+    private:
+        long long t0;
+        long long t1;
+    };
+};
+
 #pragma region OPEN CL ARRAY
 class array_tasks {
     mutable std::vector<cl::Event> events;
+    mutable size_t num_reserved;
+    mutable size_t num_events;
+    mutable bool someone_waiting;
 
 public:
-    array_tasks() {
-        events.reserve(16);
+    array_tasks() : events(), someone_waiting(false), num_events{ 0 }, num_reserved{ 0 } {};
+    array_tasks(array_tasks const& copy) : events(), someone_waiting(false), num_events{ copy.num_events }, num_reserved{ copy.num_reserved } {
+        if (copy.num_events > 0) {
+            events.reserve(copy.num_reserved);
+            events.insert(events.end(), copy.events.begin(), copy.events.end());
+            someone_waiting = false;
+        }
     };
-    ~array_tasks() = default;
+    array_tasks& operator=(array_tasks const& copy) {
+        if (copy.num_events > 0) {
+            if (someone_waiting) wait();
+
+            events.reserve(copy.num_reserved);
+            events.insert(events.end(), copy.events.begin(), copy.events.end());
+            num_events = copy.num_events;
+            num_reserved = copy.num_reserved;
+            someone_waiting = false;
+        }
+        return *this;
+    };
+    array_tasks& operator=(array_tasks && copy) noexcept {
+        if (copy.num_events > 0) {
+            if (this->num_events == 0) {
+                events = std::move(copy.events);
+                num_events = std::move(copy.num_events);
+                num_reserved = std::move(copy.num_reserved);
+                someone_waiting = false;
+            }
+            else {
+                if (someone_waiting) wait();
+
+                events.reserve(copy.num_reserved);
+                events.insert(events.end(), copy.events.begin(), copy.events.end());
+                num_events = copy.num_events;
+                num_reserved = copy.num_reserved;
+                someone_waiting = false;
+            }
+        }
+        return *this;
+    };
+    ~array_tasks() {
+        if (someone_waiting) wait();
+    };
 
     array_tasks operator+(array_tasks const& rhs) const {
         array_tasks out;
-        out.events.insert(out.events.end(), events.begin(), events.end());
-        out.events.insert(out.events.end(), rhs.events.begin(), rhs.events.end());
+        if ((rhs.num_events > 0) || (this->num_events > 0)) {
+            out.events.reserve(num_events + rhs.num_events + 16);
+            out.num_reserved = num_events + rhs.num_events + 16;
+            out.events.insert(out.events.end(), events.begin(), events.end());
+            out.events.insert(out.events.end(), rhs.events.begin(), rhs.events.end());
+            out.num_events = num_events + rhs.num_events;
+        }
         return out;
     };
     array_tasks operator+(cl::Event const& rhs) const {
         array_tasks out;
-        out.events.insert(out.events.end(), events.begin(), events.end());
+        if (this->num_events > 0) {
+            out.events.reserve(num_events + 16);
+            out.num_reserved = num_events + 16;
+            out.events.insert(out.events.end(), events.begin(), events.end());            
+            out.num_events = num_events;
+        }
+        else {
+            out.events.reserve(16);
+            out.num_reserved = 16;
+        }
         out.events.insert(out.events.end(), rhs);
+        out.num_events += 1;
         return out;
     };
     array_tasks& operator+=(array_tasks const& rhs) {
-        if (rhs.events.size() > 0) {
-            if (events.capacity() <= events.size() + rhs.events.size()) {
+        if (rhs.num_events > 0) {
+            if (num_reserved <= num_events + rhs.num_events) {
                 wait();
-                events.reserve((rhs.events.size() * 2) + 16);
+                events.reserve((rhs.num_events * 2) + 16);
+                num_reserved = (rhs.num_events * 2) + 16;
             }
             events.insert(events.end(), rhs.events.begin(), rhs.events.end());
+            num_events += rhs.num_events;
         }
         return *this;
     };
     array_tasks& operator+=(cl::Event const& rhs) {
-        if (events.capacity() <= events.size() + 1) {
+        if (num_reserved <= num_events + 1) {
             wait();
-            events.reserve((events.capacity() * 2) + 16);
+            events.reserve((num_reserved * 2) + 16);
+            num_reserved = (num_reserved * 2) + 16;
         }
-        events.insert(events.end(), rhs);        
+        events.insert(events.end(), rhs);
+        num_events += 1;
         return *this;
     };
 
     void wait() const {
-        if (events.size() > 0) {
-            cl::WaitForEvents(events);
+        if (num_events > 0) {
+            cl::WaitForEvents({ &events[0], &events[0] + num_events });
             events.clear();
+            num_events = 0;
+            num_reserved = 0;
+            someone_waiting = false;
         }
     };
-    std::vector<cl::Event>& get() const {
-        return events;
+    std::pair<cl::Event*, cl::Event*> get() const {
+        if (num_events > 0) {
+            someone_waiting = true;
+            return { &events[0], &events[0] + num_events };
+        }
+        else {            
+            return { nullptr, nullptr};
+        }
     };
 };
 struct dimensions {
@@ -621,6 +787,41 @@ public:
             const uint source_n = (source_X + (LHS_LenX * source_Y) + ((LHS_LenX * LHS_LenY) * source_Z));
             destination[n] = LHS[source_n];
         };
+
+        kernel void convolve_type_(global _type_* A, global _type_* B, global _type_* K, uint lX, uint lY, uint kX, uint kY, float kTot) {
+            const int n = (int)get_global_id(0);
+            const int Y = (int)floor((float)n / (float)lX);
+            const int X = (int)n - Y * (int)lX;
+            float kernel_captured = 0;
+
+            const int kW = (int)floor((float)(kX - 1) / 2.0f);
+            const int kH = (int)floor((float)(kY - 1) / 2.0f);
+
+            float result = 0.0f;
+            for (int offset_x = -kW; offset_x <= kW; ++offset_x) {
+                const int x = X + offset_x;
+                if (x < 0) { continue; }
+                if (x >= lX) { continue; }
+
+                for (int offset_y = -kH; offset_y <= kH; ++offset_y) {
+                    const int y = Y + offset_y;
+                    if (y < 0) { continue; }
+                    if (y >= lY) { continue; }
+
+                    const uint b_i = (y * lX) + x;
+                    const uint k_i = (offset_y + kH) * kX + (offset_x + kW);
+
+                    result += (float)B[b_i] * (float)K[k_i];
+
+                    kernel_captured += (float)K[k_i];
+                }
+            }
+            if (kernel_captured > 0) {
+                result = result * kTot / kernel_captured;
+            }
+            A[n] = (_type_)result;
+        };
+
         );
         if constexpr (std::is_floating_point_v<T>) {
             out = out + R(
@@ -656,7 +857,6 @@ public:
 
                 A[n] = (_type_)__this_rand_counter / ((uint)~((uint)0));
             };
-
             kernel void power_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = pow(A[n], B);
@@ -665,11 +865,11 @@ public:
                 const uint n = get_global_id(0);
                 C[n] = pown(A[n], B);
             };
-            kernel void power_type_(global _type_ * A, global _type_ * B, global _type_ * C) {
+            kernel void power_type_(global _type_* A, global _type_ * B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = pow(A[n], B[n]);
             };
-            kernel void power_n_type_(global _type_ * A, global int* B, global _type_ * C) {
+            kernel void power_n_type_(global _type_* A, global int* B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = pown(A[n], B[n]);
             };
@@ -677,29 +877,28 @@ public:
                 const uint n = get_global_id(0);
                 C[n] = native_sqrt(A[n]);
             };
-            kernel void round_type_(global _type_ * A, global _type_ * C) {
+            kernel void round_type_(global _type_* A, global _type_ * C) {
                 const uint n = get_global_id(0);
                 const _type_ H = ((_type_)1) / (_type_)2;
                 C[n] = floor(A[n] + H);
             };
-            kernel void flr_type_(global _type_ * A, global _type_ * C) {
+            kernel void flr_type_(global _type_* A, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = floor(A[n]);
             };
-            kernel void ceil_type_(global _type_ * A, global _type_ * C) {
+            kernel void ceil_type_(global _type_* A, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = floor(A[n] + 1);
             };
-            kernel void mult_add_type_(global _type_ * A, global _type_ * B, global _type_ * C, global _type_ * D) {
+            kernel void mult_add_type_(global _type_* A, global _type_ * B, global _type_ * C, global _type_ * D) {
                 const uint n = get_global_id(0);
                 D[n] = fma(A[n], B[n], C[n]);
             };
-            kernel void absolute_type_(global _type_ * A, global _type_ * C) {
+            kernel void absolute_type_(global _type_* A, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = fabs(A[n]);
             };
-
-            kernel void Mod_type_(global _type_ * A, global _type_ * B, global _type_ * C) {
+            kernel void Mod_type_(global _type_* A, global _type_ * B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = fmod(A[n], B[n]);
             }
@@ -707,23 +906,23 @@ public:
                 const uint n = get_global_id(0);
                 C[n] = fmod(A[n], B);
             }
-            kernel void Max_type_(global _type_ * A, global _type_ * B, global _type_ * C) {
+            kernel void Max_type_(global _type_* A, global _type_ * B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = fmax(A[n], B[n]);
             }
-            kernel void Max_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
+            kernel void Max_single_type_(global _type_* A, _type_ B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = fmax(A[n], B);
             }
-            kernel void Min_type_(global _type_ * A, global _type_ * B, global _type_ * C) {
+            kernel void Min_type_(global _type_* A, global _type_ * B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = fmin(A[n], B[n]);
             }
-            kernel void Min_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
+            kernel void Min_single_type_(global _type_* A, _type_ B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = fmin(A[n], B);
             }
-            kernel void reduce_max_type_(global _type_ * input, global _type_ * output, uint n, _type_ minV) {
+            kernel void reduce_max_type_(global _type_* input, global _type_* output, uint n, _type_ minV) {
                 uint global_id = get_global_id(0);
                 uint local_id = get_local_id(0);
                 uint group_size = get_local_size(0);
@@ -746,7 +945,7 @@ public:
                     output[get_group_id(0)] = scratch[0];
                 }
             }
-            kernel void reduce_min_type_(global _type_ * input, global _type_ * output, uint n, _type_ maxV) {
+            kernel void reduce_min_type_(global _type_* input, global _type_* output, uint n, _type_ maxV) {
                 uint global_id = get_global_id(0);
                 uint local_id = get_local_id(0);
                 uint group_size = get_local_size(0);
@@ -769,6 +968,19 @@ public:
                     output[get_group_id(0)] = scratch[0];
                 }
             }
+            );
+            out = out + R(
+
+            kernel void guassian_type_(global _type_* A, uint lX, uint lY) {
+                const int n = (int)get_global_id(0);
+                const int Y = (int)floor((float)n / (float)lY);
+                const int X = (int)n - Y * (int)lY;
+
+                const _type_ x = ((_type_)X + 0.5) - ((_type_)lX / 2.0);
+                const _type_ y = ((_type_)Y + 0.5) - ((_type_)lY / 2.0);
+
+                A[n] = (1.0 / (2.0 * 3.141592653589793238462643383279502884197169399375105820974944)) * exp(-(x * x + y * y) / 2.0);
+            };
 
             );
         }
@@ -876,7 +1088,22 @@ public:
                     output[get_group_id(0)] = scratch[0];
                 }
             }
-
+            kernel void item_AND_type_(global _type_* A, global _type_* B, global _type_* C) {
+                const uint n = get_global_id(0);
+                A[n] = B[n] && C[n];
+            };
+            kernel void item_OR_type_(global _type_* A, global _type_* B, global _type_* C) {
+                const uint n = get_global_id(0);
+                A[n] = B[n] || C[n];
+            };
+            kernel void item_AND_single_type_(global _type_* A, global _type_* B, _type_ C) {
+                const uint n = get_global_id(0);
+                A[n] = B[n] && C;
+            };
+            kernel void item_OR_single_type_(global _type_* A, global _type_* B, _type_ C) {
+                const uint n = get_global_id(0);
+                A[n] = B[n] || C;
+            };
 
             );
         }
@@ -947,8 +1174,8 @@ public:
             data->add_host_buffer();
             data->read_from_device();
             if (!cpu_only) {
-                Tasks.get().push_back(cl::Event());
-                write_event = &Tasks.get()[Tasks.get().size() - 1];
+                Tasks += cl::Event();
+                write_event = (Tasks.get().second - 1);
             }
             else {
                 write_event = nullptr;
@@ -979,12 +1206,7 @@ public:
         };
         ~writer() {
             if (data) {
-                if (tasks.get().size() > 0) {
-                    data->write_to_device(false, &tasks.get(), write_event);
-                }
-                else {
-                    data->write_to_device(false, nullptr, write_event);
-                }
+                data->write_to_device(false, tasks.get(), write_event);
             }         
         };
         operator bool() const {
@@ -999,17 +1221,18 @@ public:
     };
 
 protected:
-    template<class... P> static inline array_tasks work(array_tasks const& Tasks, unsigned int count, const string& name, const P&... parameters) { // accepts Memory<T> objects and fundamental data type constants
+    template<class... P> static inline void work(array_tasks& destination, array_tasks const& Tasks, unsigned int count, const string& name, const P&... parameters) { // accepts Memory<T> objects and fundamental data type constants
         Kernel kernel(opencl_impl::get_device(), count, name + opencl_impl::type_name<T>(), parameters...);
         Event this_event;
-        kernel.enqueue_run(1, &Tasks.get(), &this_event);
-        return Tasks + this_event;
+        kernel.enqueue_run(1, Tasks.get(), &this_event);
+        destination += Tasks;
+        destination += this_event;
     };
-    template<class... P> static inline Event self_work(array_tasks const& Tasks, unsigned int count, const string& name, const P&... parameters) { // accepts Memory<T> objects and fundamental data type constants
+    template<class... P> static inline void self_work(array_tasks& destination, array_tasks const& Tasks, unsigned int count, const string& name, const P&... parameters) { // accepts Memory<T> objects and fundamental data type constants
         Kernel kernel(opencl_impl::get_device(), count, name + opencl_impl::type_name<T>(), parameters...);
         Event this_event;
-        kernel.enqueue_run(1, &Tasks.get(), &this_event);
-        return this_event;
+        kernel.enqueue_run(1, Tasks.get(), &this_event);
+        destination += this_event;
     };
     template <typename G> friend class gpu_array;
 
@@ -1019,6 +1242,9 @@ public:
     mutable std::shared_ptr<Memory<T>> data;
 
     gpu_array() : data(nullptr), dim{ 0,0,0 }, tasks{} {}
+    explicit gpu_array(dimensions const& D, array_tasks&& arr)
+        : data(std::make_shared<Memory<T>>(opencl_impl::get_device(), D.count(), 1, false, true)), dim{ D }, tasks{ std::move(arr) }
+    {};
     explicit gpu_array(dimensions const& D, bool cpu_only = false) 
         : data(std::make_shared<Memory<T>>(opencl_impl::get_device(), D.count(), 1, cpu_only, !cpu_only)), dim{ D }, tasks{}
     {};
@@ -1053,104 +1279,108 @@ public:
 
     gpu_array copy() const {
         auto out = gpu_array(dim);
-        out.tasks = gpu_array::work(tasks, out.size(), "copy", out.data, data);
+        gpu_array::work(out.tasks, tasks, out.size(), "copy", out.data, data);
         return out;
     };
     gpu_array& operator=(T rhs) {
-        this->tasks += gpu_array::self_work(tasks, this->size(), "copy_single", data, rhs);
+        gpu_array::self_work(this->tasks, tasks, this->size(), "copy_single", data, rhs);
         return *this;
     };
     gpu_array& operator+=(T rhs) {
-        this->tasks += gpu_array::self_work(tasks, this->size(), "add_single_inplace", data, rhs);
+        gpu_array::self_work(this->tasks, tasks, this->size(), "add_single_inplace", data, rhs);
         return *this;
     };
     gpu_array& operator-=(T rhs) {
-        this->tasks += gpu_array::self_work(tasks, this->size(), "sub_single_inplace", data, rhs);
+        gpu_array::self_work(this->tasks, tasks, this->size(), "sub_single_inplace", data, rhs);
         return *this;
     };
     gpu_array& operator*=(T rhs) {
-        this->tasks += gpu_array::self_work(tasks, this->size(), "mult_single_inplace", data, rhs);
+        gpu_array::self_work(this->tasks, tasks, this->size(), "mult_single_inplace", data, rhs);
         return *this;
     };
     gpu_array& operator/=(T rhs) {
-        this->tasks += gpu_array::self_work(tasks, this->size(), "divide_single_inplace", data, rhs);
+        gpu_array::self_work(this->tasks, tasks, this->size(), "divide_single_inplace", data, rhs);
         return *this;
     };
     gpu_array& operator+=(gpu_array const& rhs) {
-        this->tasks += gpu_array::self_work(tasks + rhs.tasks, this->size(), "add_inplace", data, rhs.data);
+        gpu_array::self_work(this->tasks, tasks + rhs.tasks, this->size(), "add_inplace", data, rhs.data);
         return *this;
     };
     gpu_array& operator-=(gpu_array const& rhs) {
-        this->tasks += gpu_array::self_work(tasks + rhs.tasks, this->size(), "sub_inplace", data, rhs.data);
+        gpu_array::self_work(this->tasks, tasks + rhs.tasks, this->size(), "sub_inplace", data, rhs.data);
         return *this;
     };
     gpu_array& operator*=(gpu_array const& rhs) {
-        this->tasks += gpu_array::self_work(tasks + rhs.tasks, this->size(), "mult_inplace", data, rhs.data);
+        gpu_array::self_work(this->tasks, tasks + rhs.tasks, this->size(), "mult_inplace", data, rhs.data);
         return *this;
     };
     gpu_array& operator/=(gpu_array const& rhs) {
-        this->tasks += gpu_array::self_work(tasks + rhs.tasks, this->size(), "divide_inplace", data, rhs.data);
+        gpu_array::self_work(this->tasks, tasks + rhs.tasks, this->size(), "divide_inplace", data, rhs.data);
         return *this;
     };
 
     friend gpu_array operator+(gpu_array const& lhs, gpu_array const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "add", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.size(), "add", lhs.data, rhs.data, out.data);
         return out;
     };    
     friend gpu_array operator-(gpu_array const& lhs, gpu_array const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.dim.count(), "sub", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "sub", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array operator*(gpu_array const& lhs, gpu_array const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.dim.count(), "mult", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "mult", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array operator/(gpu_array const& lhs, gpu_array const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.dim.count(), "divide", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "divide", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array operator+(gpu_array const& lhs, T const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "add_single", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "add_single", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator-(gpu_array const& lhs, T const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "sub_single", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "sub_single", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator*(gpu_array const& lhs, T const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "mult_single", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "mult_single", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator/(gpu_array const& lhs, T const& rhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "divide_single", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "divide_single", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator+(T const& rhs, gpu_array const& lhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "add_single", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "add_single", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator-(T const& rhs, gpu_array const& lhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "sub_single_inv", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "sub_single_inv", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator*(T const& rhs, gpu_array const& lhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "mult_single", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "mult_single", lhs.data, rhs, out.data);
         return out;
     };
     friend gpu_array operator/(T const& rhs, gpu_array const& lhs) {
         auto out = gpu_array(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks, out.dim.count(), "divide_single_inv", lhs.data, rhs, out.data);
+        gpu_array::work(out.tasks, lhs.tasks, out.dim.count(), "divide_single_inv", lhs.data, rhs, out.data);
         return out;
     };
 
@@ -1162,7 +1392,7 @@ public:
         else {
             static std::string CastFunc{ std::string("from_") + opencl_impl::type_name<T>() }; // from_int
             auto out = gpu_array<G>(this->dim);   
-            out.tasks = gpu_array<G>::work(tasks, out.dim.count(), CastFunc, out.data, data);
+            gpu_array<G>::work(out.tasks, tasks, out.dim.count(), CastFunc, out.data, data);
             return out;
         }
     };
@@ -1171,7 +1401,7 @@ public:
     static gpu_array random(unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
         if constexpr (std::is_floating_point_v<T>) {
             gpu_array out(dimensions{ X, Y, Z });
-            out.tasks = gpu_array::work({}, out.size(), "Rand", out.data);
+            gpu_array::work(out.tasks, {}, out.size(), "Rand", out.data);
             return out;
         }
         else {
@@ -1182,7 +1412,7 @@ public:
     static gpu_array random_between(T lower, T upper, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
         if constexpr (std::is_floating_point_v<T>) {
             gpu_array out(dimensions{ X, Y, Z });
-            out.tasks = gpu_array::work({}, out.size(), "Rand", out.data);
+            gpu_array::work(out.tasks, {}, out.size(), "Rand", out.data);
             out *= (upper - lower);
             out += lower;
             return out;
@@ -1194,7 +1424,7 @@ public:
     // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
     static gpu_array identity(unsigned int width) {
         gpu_array out(dimensions{ width, width, 1 });
-        out.tasks = gpu_array::work({}, out.size(), "identity", out.data, (unsigned int)width);
+        gpu_array::work(out.tasks, {}, out.size(), "identity", out.data, (unsigned int)width);
         return out;
     };
     // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
@@ -1202,7 +1432,7 @@ public:
         int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
 
         gpu_array out(dimensions{ lenX, lenY, lenZ });
-        out.tasks = gpu_array::work({}, out.size(), "linear_between", out.data, low, high, (unsigned int)out.size());
+        gpu_array::work(out.tasks, {}, out.size(), "linear_between", out.data, low, high, (unsigned int)out.size());
         return out;
     };
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
@@ -1223,47 +1453,49 @@ public:
     // Returns a matrix with all values equal to the provided value
     static gpu_array constant(T value, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
         gpu_array out(dimensions{ lenX, lenY, lenZ });
-        out.tasks = gpu_array::work({}, out.size(), "copy_single", out.data, value);
+        gpu_array::work(out.tasks, {}, out.size(), "copy_single", out.data, value);
         return out;        
     };
 
     // specialization of POW for integer powers
     gpu_array pown(gpu_array<int> const& rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "power_n", data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "power_n", data, rhs.data, out.data);
         return out;
     };
     // power of 
     gpu_array pow(gpu_array const& rhs) const {
         if constexpr (std::is_same_v<T, int>) return pown(rhs);
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "power", data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "power", data, rhs.data, out.data);
         return out;
     };
     // specialization of POW for integer powers
     gpu_array pown(int rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "power_n_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "power_n_single", data, rhs, out.data);
         return out;
     };
     // power of 
     gpu_array pow(T rhs) const {
         if constexpr (std::is_same_v<T, int>) return pown(rhs);
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "power_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "power_single", data, rhs, out.data);
         return out;
     };
     // sqrt
     gpu_array<float> sqrt() const {
         gpu_array<float> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "square_root", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "square_root", data, out.data);
         return out;
     };
     // round to nearest whole number
     gpu_array round() const {
         if constexpr (std::is_floating_point_v<T>) {
             gpu_array out(this->dim);
-            out.tasks = gpu_array::work(tasks, this->size(), "round", data, out.data);
+            gpu_array::work(out.tasks, tasks, this->size(), "round", data, out.data);
             return out;
         }
         else {
@@ -1274,7 +1506,7 @@ public:
     gpu_array ceil() const {
         if constexpr (std::is_floating_point_v<T>) {
             gpu_array out(this->dim);
-            out.tasks = gpu_array::work(tasks, this->size(), "ceil", data, out.data);
+            gpu_array::work(out.tasks, tasks, this->size(), "ceil", data, out.data);
             return out;
         }else{
             return copy();
@@ -1284,7 +1516,7 @@ public:
     gpu_array floor() const {
         if constexpr (std::is_floating_point_v<T>) {
             gpu_array out(this->dim);
-            out.tasks = gpu_array::work(tasks, this->size(), "flr", data, out.data);
+            gpu_array::work(out.tasks, tasks, this->size(), "flr", data, out.data);
             return out;
         }
         else {
@@ -1294,140 +1526,143 @@ public:
     // return (this * multiply) + add;
     gpu_array fma(gpu_array const& multiply, gpu_array const& add) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + multiply.tasks + add.tasks, this->size(), "mult_add", data, multiply.data, add.data, out.data);
+        add.tasks.wait();
+        multiply.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "mult_add", data, multiply.data, add.data, out.data);
         return out;        
     };
     // absolute value
     gpu_array abs() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "absolute", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "absolute", data, out.data);
         return out;
     };
 
     gpu_array cos() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Cos", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Cos", data, out.data);
         return out;
     };
     gpu_array sin() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Sin", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Sin", data, out.data);
         return out;
     };
     gpu_array tan() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Tan", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Tan", data, out.data);
         return out;
     };
     gpu_array acos() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "aCos", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "aCos", data, out.data);
         return out;
     };
     gpu_array asin() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "aSin", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "aSin", data, out.data);
         return out;
     };
     gpu_array atan() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "aTan", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "aTan", data, out.data);
         return out;
     };
     gpu_array cosh() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Cosh", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Cosh", data, out.data);
         return out;
     };
     gpu_array sinh() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Sinh", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Sinh", data, out.data);
         return out;
     };
     gpu_array tanh() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Tanh", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Tanh", data, out.data);
         return out;
     };
     gpu_array acosh() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "aCosh", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "aCosh", data, out.data);
         return out;
     };
     gpu_array asinh() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "aSinh", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "aSinh", data, out.data);
         return out;
     };
     gpu_array atanh() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "aTanh", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "aTanh", data, out.data);
         return out;
     };
     // e^x
     gpu_array exp() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Exp", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Exp", data, out.data);
         return out;
     };
     // 2^x
     gpu_array exp2() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Exp2", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Exp2", data, out.data);
         return out;
     };
     // 10^x
     gpu_array exp10() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Exp10", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Exp10", data, out.data);
         return out;
     };
     // e^x-1
     gpu_array expm1() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Expm1", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Expm1", data, out.data);
         return out;
     };
     // log gamma function
     gpu_array lgamma() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Lgamma", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Lgamma", data, out.data);
         return out;
     };
     // ln(x)
     gpu_array log() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Log", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Log", data, out.data);
         return out;
     };
     // log_2(x)
     gpu_array log2() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Log2", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Log2", data, out.data);
         return out;
     };
     // log_10(x)
     gpu_array log10() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Log10", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Log10", data, out.data);
         return out;
     };
     // ln(1+x)
     gpu_array log1p() const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Log1p", data, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Log1p", data, out.data);
         return out;
     };
     // return this % rhs
     gpu_array mod(T rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Mod_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Mod_single", data, rhs, out.data);
         return out;
     };
     // return this % rhs
     gpu_array mod(gpu_array const& rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "Mod", data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "Mod", data, rhs.data, out.data);
         return out;
     };
     friend gpu_array operator%(gpu_array const& lhs, gpu_array const& rhs) {
@@ -1439,91 +1674,122 @@ public:
     // returns the max of the two arrays (item-by-item, as an array)
     gpu_array max(gpu_array const& rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "Max", data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "Max", data, rhs.data, out.data);
         return out;
     };
     // returns the max of the two arrays (item-by-item, as an array)
     gpu_array max(T rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Max_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Max_single", data, rhs, out.data);
         return out;
     };
     // returns the min of the two arrays (item-by-item, as an array)
     gpu_array min(gpu_array const& rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks + rhs.tasks, this->size(), "Min", data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "Min", data, rhs.data, out.data);
         return out;
     };
     // returns the min of the two arrays (item-by-item, as an array)
     gpu_array min(T rhs) const {
         gpu_array out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "Min_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "Min_single", data, rhs, out.data);
         return out;
     };
 
     gpu_array<unsigned int> operator!() const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_not", out.data, data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_not", out.data, data);
         return out;
     };
     gpu_array<unsigned int> operator==(T rhs) const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_eq_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_eq_single", data, rhs, out.data);
         return out;
     };
     gpu_array<unsigned int> operator!=(T rhs) const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_neq_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_neq_single", data, rhs, out.data);
         return out;
     };
     gpu_array<unsigned int> operator<(T rhs) const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_ls_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_ls_single", data, rhs, out.data);
         return out;
     };
     gpu_array<unsigned int> operator<=(T rhs) const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_lse_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_lse_single", data, rhs, out.data);
         return out;
     };
     gpu_array<unsigned int> operator>(T rhs) const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_gr_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_gr_single", data, rhs, out.data);
         return out;
     };
     gpu_array<unsigned int> operator>=(T rhs) const {
         gpu_array<unsigned int> out(this->dim);
-        out.tasks = gpu_array::work(tasks, this->size(), "item_gre_single", data, rhs, out.data);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_gre_single", data, rhs, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator==(gpu_array const& lhs, gpu_array const& rhs) {
         gpu_array<unsigned int> out(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_eq", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.size(), "item_eq", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator!=(gpu_array const& lhs, gpu_array const& rhs) {
         gpu_array<unsigned int> out(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_neq", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.size(), "item_neq", lhs.data, rhs.data, out.data);
         return out;        
     };
     friend gpu_array<unsigned int> operator<(gpu_array const& lhs, gpu_array const& rhs) {
         gpu_array<unsigned int> out(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_ls", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.size(), "item_ls", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator<=(gpu_array const& lhs, gpu_array const& rhs) {
         gpu_array<unsigned int> out(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_lse", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks , out.size(), "item_lse", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator>(gpu_array const& lhs, gpu_array const& rhs) {
         gpu_array<unsigned int> out(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_gr", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.size(), "item_gr", lhs.data, rhs.data, out.data);
         return out;
     };
     friend gpu_array<unsigned int> operator>=(gpu_array const& lhs, gpu_array const& rhs) {
         gpu_array<unsigned int> out(lhs.dim);
-        out.tasks = gpu_array::work(lhs.tasks + rhs.tasks, out.size(), "item_gre", lhs.data, rhs.data, out.data);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, lhs.tasks, out.size(), "item_gre", lhs.data, rhs.data, out.data);
+        return out;
+    };
+
+    gpu_array<unsigned int> operator&&(T rhs) const {
+        gpu_array<unsigned int> out(this->dim);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_AND_single", out.data, data, rhs);
+        return out;
+    };
+    gpu_array<unsigned int> operator&&(gpu_array const& rhs) const {
+        gpu_array<unsigned int> out(this->dim);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "item_AND", out.data, data, rhs.data);
+        return out;
+    };
+    gpu_array<unsigned int> operator||(T rhs) const {
+        gpu_array<unsigned int> out(this->dim);
+        gpu_array::work(out.tasks, tasks, this->size(), "item_OR_single", out.data, data, rhs);
+        return out;
+    };
+    gpu_array<unsigned int> operator||(gpu_array const& rhs) const {
+        gpu_array<unsigned int> out(this->dim);
+        rhs.tasks.wait();
+        gpu_array::work(out.tasks, tasks, this->size(), "item_OR", out.data, data, rhs.data);
         return out;
     };
 
@@ -1544,14 +1810,15 @@ public:
             NewZ = this->size(2) + first.size(2) * (jdim == 2);
 
         gpu_array out(dimensions{ NewX, NewY, NewZ });
+        first.tasks.wait();
         if (jdim == 0) {
-            out.tasks = gpu_array::work(this->tasks + first.tasks, out.size(), "join_dim_0", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.X);
+            gpu_array::work(out.tasks, this->tasks, out.size(), "join_dim_0", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.X);
         }
         else if (jdim == 1) {
-            out.tasks = gpu_array::work(this->tasks + first.tasks, out.size(), "join_dim_1", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.Y);
+            gpu_array::work(out.tasks, this->tasks, out.size(), "join_dim_1", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.Y);
         }
         else {
-            out.tasks = gpu_array::work(this->tasks + first.tasks, out.size(), "join_dim_2", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data);
+            gpu_array::work(out.tasks, this->tasks, out.size(), "join_dim_2", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data);
         }
 
         return out;
@@ -1563,7 +1830,7 @@ public:
         else if (this->dim.num_dimensions() > 2) return gpu_array();
 
         gpu_array out(dimensions{ this->dim.Y, this->dim.X, 1 });
-        out.tasks = gpu_array::work(this->tasks, out.size(), "Transpose", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y);
+        gpu_array::work(out.tasks, this->tasks, out.size(), "Transpose", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y);
         return out;
     };
     // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
@@ -1571,7 +1838,7 @@ public:
         unsigned int len = std::max<unsigned int>(dim.X, dim.Y);
 
         gpu_array out(dimensions{ len, len, 1 });
-        out.tasks = gpu_array::work(this->tasks, out.size(), "make_square", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len);
+        gpu_array::work(out.tasks, this->tasks, out.size(), "make_square", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len);
 
         return out;
     }
@@ -1581,20 +1848,20 @@ public:
         else if (this->dim.num_dimensions() == 1) return this->copy();
         else if (this->dim.num_dimensions() > 2) return gpu_array();
         gpu_array out(dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
-        out.tasks = gpu_array::work(this->tasks, this->size(), "diagonal", out.data, data, dim.X);
+        gpu_array::work(out.tasks, this->tasks, this->size(), "diagonal", out.data, data, dim.X);
         return out;
     };
     // extract a row from this 2-D matrix as a 1-D array
     gpu_array row(unsigned int rowN) const {
         gpu_array out(dimensions{ dim.Y, dim.Z, 1 });
-        out.tasks = gpu_array::work(this->tasks, out.size(), "row_of", out.data, data, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z);
+        gpu_array::work(out.tasks, this->tasks, out.size(), "row_of", out.data, data, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z);
         return out;
     };
     // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
     gpu_array grow_by_wrapping(unsigned int new_length) const {
         if (this->dim.num_dimensions() == 1) {
             gpu_array out(dimensions{ new_length, 1, 1 });
-            out.tasks = gpu_array::work(this->tasks, out.size(), "wrap_around", out.data, data, (unsigned int)this->size());
+            gpu_array::work(out.tasks, this->tasks, out.size(), "wrap_around", out.data, data, (unsigned int)this->size());
             return out;
         }
         else {
@@ -1607,7 +1874,8 @@ public:
     // Result = [0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,5,5]
     gpu_array resample(gpu_array<unsigned int> const& sample_indices) const {
         gpu_array out(sample_indices.dim);
-        out.tasks = gpu_array::work(this->tasks + sample_indices.tasks, out.size(), "resample", out.data, data, sample_indices.data);
+        sample_indices.tasks.wait();
+        gpu_array::work(out.tasks, this->tasks, out.size(), "resample", out.data, data, sample_indices.data);
         return out;
     };
 
@@ -1759,7 +2027,7 @@ public:
     T sum() const {
         if (this->size() > 1000) {
             gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-            out.tasks = gpu_array::work(this->tasks, this->size(), "reduce_sum", data, out.data, (unsigned int)this->size());
+            gpu_array::work(out.tasks, this->tasks, this->size(), "reduce_sum", data, out.data, (unsigned int)this->size());
             return out.sum();
         }
         else {
@@ -1779,7 +2047,7 @@ public:
     T max() const {
         if (this->size() > 1000) {
             gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-            out.tasks = gpu_array::work(this->tasks, this->size(), "reduce_max", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::lowest());
+            gpu_array::work(out.tasks, this->tasks, this->size(), "reduce_max", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::lowest());
             return out.max();
         }
         else {
@@ -1796,7 +2064,7 @@ public:
     T min() const {
         if (this->size() > 1000) {
             gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-            out.tasks = gpu_array::work(this->tasks, this->size(), "reduce_min", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::max());
+            gpu_array::work(out.tasks, this->tasks, this->size(), "reduce_min", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::max());
             return out.min();
         }
         else {
@@ -1809,6 +2077,24 @@ public:
             }
             return out;
         }
+    };
+
+    gpu_array convolve(gpu_array const& kernel) const {
+        if (this->dim.num_dimensions() == 2) {
+            gpu_array out(this->dim);
+            kernel.tasks.wait();
+            float kernel_tot = kernel.sum();
+            gpu_array::work(out.tasks, this->tasks, this->size(), "convolve", out.data, data, kernel.data, this->size(0), this->size(1), kernel.size(0), kernel.size(1), kernel_tot);
+            return out;
+        }
+        else {
+            throw std::runtime_error("Convolution not supported for this number of dimensions");
+        }
+    };
+    static gpu_array<float> guassian_kernel(unsigned int X, unsigned int Y) {
+        gpu_array<float> out(dimensions{ X, Y, 1 });
+        gpu_array<float>::work(out.tasks, out.tasks, out.size(), "guassian", out.data, out.size(0), out.size(1));
+        return out * (1.0f / out.sum());
     };
 
 private:
@@ -1888,7 +2174,7 @@ public:
     // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
     std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
         reader R = this->read();
-
+        std::string column_spacer = " ";
         std::string out;
         if (this->dim.num_dimensions() == 0) return out;
         else if (this->dim.num_dimensions() == 1) {
@@ -1929,7 +2215,7 @@ public:
                     out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                 }
                 for (; y < this->dim.Y; ++y) {
-                    out += "\t";
+                    out += column_spacer;
                     out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                 }
             }
@@ -1941,7 +2227,7 @@ public:
                         out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                     }
                     for (; y < this->dim.Y; ++y) {
-                        out += "\t";
+                        out += column_spacer;
                         out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                     }
                 }
@@ -1953,7 +2239,7 @@ public:
                         out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                     }
                     for (; y < this->dim.Y; ++y) {
-                        out += "\t";
+                        out += column_spacer;
                         out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                     }
                 }
@@ -1966,7 +2252,7 @@ public:
                         out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                     }
                     for (; y < this->dim.Y; ++y) {
-                        out += "\t";
+                        out += column_spacer;
                         out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
                     }
                 }
@@ -1975,7 +2261,7 @@ public:
             if (column_titles.size() > 0) {
                 std::string temp = column_titles[0];
                 for (unsigned int i = 1; i < column_titles.size(); ++i) {
-                    temp += "\t";
+                    temp += column_spacer;
                     temp += resize(std::string(column_titles[i]), col_sizes[i], ' ');
                 }
                 out = temp + "\n" + out;
@@ -1986,6 +2272,131 @@ public:
         }
         return out;
     };
+
+private:
+    static void SetColor(std::map<int, int> const& colorMap, HANDLE const& hConsole, T V) {
+        if (auto f = colorMap.find((int)V); f != colorMap.end()) {
+            SetConsoleTextAttribute(hConsole, f->second);
+        }
+    }
+
+public:
+    // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
+    void printf(std::vector<std::string> column_titles = {}, bool doNotSkip = false, std::map<int, int> const& colorMap = {}) const {
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        SetConsoleTextAttribute(hConsole, 15);
+
+        reader R = this->read();
+        std::string column_spacer = " ";
+        if (this->dim.num_dimensions() == 0) return;
+        else if (this->dim.num_dimensions() == 1) {
+            auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+            unsigned int n = 0;
+            if (column_titles.size() > 0) {
+                std::cout << resize(std::string(column_titles[0]), col_sizes[0], ' ');
+                std::cout << "\n";
+            }
+            for (; (n < this->size()) && (n < 1); ++n) {
+                SetColor(colorMap, hConsole, R[n]);
+                std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+            }
+            if (!doNotSkip && (this->size() >= 21)) {
+                for (; (n < this->size()) && (n < 10); ++n) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << "\n";                    
+                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+                }
+                out += "\n...";
+                for (n = this->size() - 10; n < this->size(); ++n) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << "\n";
+                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+                }
+            }
+            else {
+                for (; n < this->size(); ++n) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << "\n";
+                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
+                }
+            }
+
+        }
+        else if (this->dim.num_dimensions() == 2) {
+            auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+            unsigned int n = 0;
+            if (column_titles.size() > 0) {
+                std::cout << column_titles[0];
+                for (unsigned int i = 1; i < column_titles.size(); ++i) {
+                    std::cout << column_spacer;
+                    std::cout << resize(std::string(column_titles[i]), col_sizes[i], ' ');
+                }
+                std::cout << "\n";
+            }
+            for (; (n < this->dim.X) && (n < 1); ++n) {
+                unsigned int y = 0;
+                for (; (y < this->dim.Y) && (y < 1); ++y) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+                for (; y < this->dim.Y; ++y) {
+                    SetColor(colorMap, hConsole, R[n]);
+                    std::cout << column_spacer;
+                    std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+            }
+            if (!doNotSkip && (this->dim.X >= 21)) {
+                for (; (n < this->dim.X) && (n < 10); ++n) {
+                    std::cout << "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->dim.Y) && (y < 1); ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->dim.Y; ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << column_spacer;
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                }
+                std::cout << "\n...";
+                for (n = this->dim.X - 10; n < this->dim.X; ++n) {
+                    std::cout << "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->dim.Y) && (y < 1); ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->dim.Y; ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << column_spacer;
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                }
+            }
+            else {
+                for (; n < this->dim.X; ++n) {
+                    std::cout << "\n";
+                    unsigned int y = 0;
+                    for (; (y < this->dim.Y) && (y < 1); ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                    for (; y < this->dim.Y; ++y) {
+                        SetColor(colorMap, hConsole, R[n]);
+                        std::cout << column_spacer;
+                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                    }
+                }
+            }
+        }
+        else if (this->dim.num_dimensions() == 3) {
+        }
+        return;
+    };
+
     friend std::ostream& operator<<(std::ostream& os, gpu_array const& obj) {
         os << obj.to_string();
         return os;
@@ -2005,7 +2416,7 @@ namespace gpu_linear_regressions {
     // returns the standard error of the linear regression.
     __forceinline static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
         auto prediction = predict(features, weights);
-        return ((((measurements - prediction).pow(2.0).sum() / std::max<double>(1.0, static_cast<double>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+        return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
     };
     // returns the population standard deviation.
     __forceinline static matrix standard_deviation(
@@ -2063,7 +2474,7 @@ namespace GL {
     class Array;
     static std::shared_ptr<void> array_initialize(ArrayTypes T, unsigned int X, unsigned int Y, unsigned int Z) {
         switch (T) {
-        case ArrayTypes::EMPTY: return nullptr;
+        default: return nullptr;
         case ArrayTypes::CHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<char>>(X, Y, Z));
         case ArrayTypes::UCHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned char>>(X, Y, Z));
         case ArrayTypes::INT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<int>>(X, Y, Z));
@@ -2076,7 +2487,7 @@ namespace GL {
     };
     static std::shared_ptr<void> array_initialize(ArrayTypes T) {
         switch (T) {
-        case ArrayTypes::EMPTY: return nullptr;
+        default: return nullptr;
         case ArrayTypes::CHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<char>>());
         case ArrayTypes::UCHAR: return std::static_pointer_cast<void>(std::make_shared<gpu_array<unsigned char>>());
         case ArrayTypes::INT: return std::static_pointer_cast<void>(std::make_shared<gpu_array<int>>());
@@ -2106,7 +2517,7 @@ namespace GL {
     };
     template <typename F> static auto visit_array(ArrayTypes _type, std::shared_ptr<void> const& _data, F const& func) {
         switch (_type) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Array was empty");
+        default: throw std::runtime_error("Array was empty");
         case ArrayTypes::CHAR: return func(get_array<char>(_data));
         case ArrayTypes::UCHAR: return func(get_array<unsigned char>(_data));
         case ArrayTypes::INT: return func(get_array<int>(_data));
@@ -2138,7 +2549,7 @@ namespace GL {
     };
     template <typename F> static auto visit_writer(ArrayTypes _type, std::shared_ptr<void> const& _reader_impl, F const& func) {
         switch (_type) {
-        case ArrayTypes::EMPTY: throw std::runtime_error("Array was empty");
+        default: throw std::runtime_error("Array was empty");
         case ArrayTypes::CHAR: return func(get_writer<char>(_reader_impl));
         case ArrayTypes::UCHAR: return func(get_writer<unsigned char>(_reader_impl));
         case ArrayTypes::INT: return func(get_writer<int>(_reader_impl));
@@ -2407,6 +2818,30 @@ namespace GL {
             return BuildArray(arr % rhs);
             });
     };
+    Array Array::operator&&(Number rhs) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr && rhs);
+        });
+    };
+    Array Array::operator&&(Array const& rhs) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr && get_array<typename typename std::decay_t<decltype(arr)>::type>(rhs._data));
+        });
+    };
+    Array Array::operator||(Number rhs) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr || rhs);
+        });
+    };
+    Array Array::operator||(Array const& rhs) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr || get_array<typename typename std::decay_t<decltype(arr)>::type>(rhs._data));
+        });
+    };
+
+
+
+
     // power of 
     Array Array::pow(Array const& rhs) const {
         if (rhs._type == ArrayTypes::INT) {
@@ -2632,7 +3067,12 @@ namespace GL {
     std::string Array::to_string(std::vector<std::string> column_titles, bool doNotSkip) const {
         return visit_array(_type, _data, [&](auto& arr) {
             return arr.to_string(column_titles, doNotSkip);
-            });
+        });
+    };
+    void Array::printf(std::vector<std::string> column_titles, bool doNotSkip, std::map<int, int> const& colorMap) const {
+        visit_array(_type, _data, [&](auto& arr) {
+            arr.printf(column_titles, doNotSkip, colorMap);
+        });
     };
     std::ostream& operator<<(std::ostream& os, Array const& obj) {
         os << obj.to_string();
@@ -2726,6 +3166,11 @@ namespace GL {
         case ArrayTypes::DOUBLE: return BuildArray(gpu_array<double>::constant(value, X, Y, Z));
         }
     };
+    // Returns a matrix with all values equal to the provided value
+    Array Array::guassian_kernel(unsigned int X, unsigned int Y) {
+        return BuildArray(gpu_array<float>::guassian_kernel(X, Y));
+    };
+
     Array Array::from_vector(ArrayTypes T, const std::vector<Number>& parameters, unsigned int Y, unsigned int Z) {
         unsigned int count = 0;
         for (auto& x : parameters) {
@@ -2878,7 +3323,11 @@ namespace GL {
             return Number(arr.min());
             });
     };
-
+    Array Array::convolve(Array const& kernel) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr.convolve(get_array<typename typename std::decay_t<decltype(arr)>::type>(kernel._data)));
+        });
+    };
     // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
     Array linear_regression::solve_for_weights(Array const& measurements, Array const& features) {
         return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
@@ -2898,7 +3347,7 @@ namespace GL {
         Array const& features,
         Array const& weights
     ) {
-        return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
+        return standard_error(measurements, features, weights) * std::sqrt((double)measurements.size(0));
     };
     // evaluate for the students-t test
     Array linear_regression::t_statistic(Array const& weights, Array const& std_err) {
@@ -2937,51 +3386,92 @@ namespace GL {
 
 
 
+void clear() {
+    COORD topLeft = { 0, 0 };
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO screen;
+    DWORD written;
 
+    GetConsoleScreenBufferInfo(console, &screen);
+    FillConsoleOutputCharacterA(
+        console, ' ', screen.dwSize.X * screen.dwSize.Y, topLeft, &written
+    );
+    FillConsoleOutputAttribute(
+        console, FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+        screen.dwSize.X * screen.dwSize.Y, topLeft, &written
+    );
+    SetConsoleCursorPosition(console, topLeft);
+}
 
 void fnGpuProgramming() {  
     using namespace GL;
 
-    //if (1) {
-    //    int frame_count = 0;
-    //    static const int game_w = 2048, game_h = 2048;
+    if (1) {
+        Array arr = Array::random_between(ArrayTypes::FLOAT, 0.0, 1.0, 10, 10, 1);
+        // arr = 10;
 
-    //    // Initialize the kernel array just once
-    //    auto kernel = Array::from_vector(ArrayTypes::FLOAT, std::vector<Number>{
-    //        1, 1, 1, 1, 0, 1, 1, 1, 1
-    //    }, 3);
-    //    auto state = (Array::random_between(ArrayTypes::FLOAT, 0.0f, 1.0f, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::FLOAT);
+        print("");
+        print(arr);
 
-    //    while (1) {
-    //        frame_count++;
+        Array kernel = Array::guassian_kernel(3, 3);
+        // kernel = 1.0f / (float)kernel.size(); 
 
-    //        // Convolve gets neighbors
-    //        auto nHood = state.convolve(kernel);
+        print("");
+        print(kernel);
 
-    //        // Generate conditions for life
-    //        // state == 1 && nHood < 2 ->> state = 0
-    //        // state == 1 && nHood > 3 ->> state = 0
-    //        // else if state == 1 ->> state = 1
-    //        // state == 0 && nHood == 3 ->> state = 1
-    //        auto C0 = (nHood == 2);
-    //        auto C1 = (nHood == 3);
+        print("");
+        print(arr.convolve(kernel));
+    }
 
-    //        auto a0 = (state == 1) && (nHood < 2);  // Die of under population
-    //        auto a1 = (state != 0) && (C0 || C1);   // Continue to live
-    //        auto a2 = (state == 0) && C1;           // Reproduction
-    //        auto a3 = (state == 1) && (nHood > 3);  // Over-population
+    if (0) {
+        static const int game_w = 70, game_h = 40;
 
-    //        display = (a0 + a1).join(2, a1 + a2, a3).cast<float>();
+        // Initialize the kernel array just once
+        auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
+            1, 1, 1, 1, 0, 1, 1, 1, 1
+        }, 3);
+        auto state = (Array::random_between(ArrayTypes::FLOAT, 0.0f, 1.0f, game_h, game_w, 1) > 0.5f).cast(ArrayTypes::UINT);
 
-    //        // Update state
-    //        state = state * C0.cast<float>() + C1.cast<float>();
+        while (1) {
+            GL::stopwatch sw;
 
-    //        if (frame_count % 60 == 0)
-    //            std::cout << 1.0 / timer::stop(delay) << " fps\n";
-    //    }
+            // add random chance for life to spawn
+            state = state.max((Array::random_between(ArrayTypes::FLOAT, 0.0f, 1.0f, game_h, game_w, 1) > 0.99f).cast(ArrayTypes::UINT));
 
-    //}
+            // Convolve gets neighbors
+            auto nHood = state.convolve(kernel);
 
+            
+
+            // Generate conditions for life
+            // state == 1 && nHood < 2 ->> state = 0
+            // state == 1 && nHood > 3 ->> state = 0
+            // else if state == 1 ->> state = 1
+            // state == 0 && nHood == 3 ->> state = 1
+            auto C0 = (nHood == 2);
+            auto C1 = (nHood == 3);
+
+            auto a0 = (state == 1) && (nHood < 2);  // Die of under population
+            auto a1 = (state > 0) && (C0 || C1);   // Continue to live
+            auto a2 = (state <= 0) && C1;           // Reproduction
+            auto a3 = (state == 1) && (nHood > 3);  // Over-population
+
+            // display = (a0 + a1).join(2, a1 + a2).join(2, a3).cast(ArrayTypes::FLOAT);
+
+            // Update state
+            state = state * C0.cast(ArrayTypes::UINT) + C1.cast(ArrayTypes::UINT);
+            
+            while (sw.stop() < 1.0 / 30.0) {
+                std::this_thread::yield(); 
+            }
+
+            clear();
+            print(state.to_string({}, true));
+            print("");
+            print(std::to_string(1.0 / sw.stop()) + " fps");
+        }
+
+    }
 
     if (1) {
         Array arr(ArrayTypes::FLOAT, 100, 2, 1);
@@ -3024,6 +3514,11 @@ void fnGpuProgramming() {
             auto Sales_Revenue = Array::from_vector(ArrayTypes::FLOAT, std::vector<Number>{
                 22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
             });
+
+            TV_Ads = TV_Ads.grow_by_wrapping(1000000);
+            Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
+            Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
+            Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
 
             auto Basic{
                 Array::constant(ArrayTypes::FLOAT, 1, Sales_Revenue.size(0))
