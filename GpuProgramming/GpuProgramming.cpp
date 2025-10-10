@@ -259,13 +259,19 @@ class array_tasks {
 
 public:
     array_tasks() : events(), someone_waiting(false), num_events{ 0 }, num_reserved{ 0 } {};
-    array_tasks(array_tasks const& copy) : events(), someone_waiting(false), num_events{ copy.num_events }, num_reserved{ copy.num_reserved } {
+    array_tasks(array_tasks const& copy) : events(), someone_waiting(false), num_events{ copy.num_events }, num_reserved{ copy.num_events } {
         if (copy.num_events > 0) {
-            events.reserve(copy.num_reserved);
+            events.reserve(num_reserved);
             events.insert(events.end(), copy.events.begin(), copy.events.end());
             someone_waiting = false;
         }
     };
+    array_tasks(array_tasks && copy) 
+        : events(std::move(copy.events))
+        , someone_waiting(std::move(copy.someone_waiting))
+        , num_events{ std::move(copy.num_events) }
+        , num_reserved{ std::move(copy.num_events) } 
+    {};
     array_tasks& operator=(array_tasks const& copy) {
         if (copy.num_events > 0) {
             if (someone_waiting) wait();
@@ -351,7 +357,9 @@ public:
         num_events += 1;
         return *this;
     };
-
+    void try_wait() const {
+        if (someone_waiting) wait();
+    };
     void wait() const {
         if (num_events > 0) {
             cl::WaitForEvents({ &events[0], &events[0] + num_events });
@@ -1254,10 +1262,21 @@ public:
     gpu_array(gpu_array const&) = delete;
     gpu_array(gpu_array&& rhs) noexcept : 
         data(std::move(rhs.data)), dim{ rhs.dim }, tasks{ std::move(rhs.tasks) }
-    {}
-    gpu_array& operator=(gpu_array const&) = default;
-    gpu_array& operator=(gpu_array&&) noexcept = default;
-    ~gpu_array() = default;
+    {
+        rhs.data = nullptr;
+    }
+    gpu_array& operator=(gpu_array const&) = delete;
+    gpu_array& operator=(gpu_array&& rhs) noexcept {
+        tasks = std::move(rhs.tasks);
+        dim = rhs.dim;
+        data = std::move(rhs.data);
+        rhs.data = nullptr;
+        return *this;
+    };
+    ~gpu_array() {
+        tasks.try_wait();
+        data = nullptr;
+    };
 
     reader read() const {
         tasks.wait();
@@ -2024,13 +2043,9 @@ public: // Support functions for linear regressions
     };
 
 public:
+    template<bool use_cpu = false>
     T sum() const {
-        if (this->size() > 1000) {
-            gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-            gpu_array::work(out.tasks, this->tasks, this->size(), "reduce_sum", data, out.data, (unsigned int)this->size());
-            return out.sum();
-        }
-        else {
+        if constexpr (use_cpu) {
             auto N = this->size();
             T out = (T)0;
             if (auto R = this->read()) {
@@ -2039,6 +2054,34 @@ public:
                 }
             }
             return out;
+        }
+        else {
+            if (this->size() > 1000) {
+                T out = (T)0;
+                if (1) {
+                    gpu_array Temp(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+                    gpu_array::work(Temp.tasks, this->tasks, this->size(), "reduce_sum", data, Temp.data, (unsigned int)this->size());
+                    auto N = Temp.size();
+                    Temp.tasks.wait();
+                    if (auto R = Temp.read()) {
+                        for (unsigned int n = 0; n < N; ++n) {
+                            out += R(n);
+                        }
+                    }
+                    Temp.data = nullptr;
+                }
+                return out;
+            }
+            else {
+                auto N = this->size();
+                T out = (T)0;
+                if (auto R = this->read()) {
+                    for (unsigned int n = 0; n < N; ++n) {
+                        out += R(n);
+                    }
+                }
+                return out;
+            }
         }
     };
     T avg() const {
@@ -2105,12 +2148,10 @@ private:
     std::string to_string_impl(reader const& R, unsigned int x) const {
         if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
             auto c = R(x);
-            if (std::isalpha(c) || std::isdigit(c)) {
-                return "'" + std::string(1, c) + "'";
-            }
-            else {
-                return std::to_string(c);
-            }
+            if ((c >= 32) && (c <= 126))
+                return std::string(1, c);
+            else
+                return " ";
         }
         else {
             return std::to_string(R(x));
@@ -2119,12 +2160,10 @@ private:
     std::string to_string_impl(reader const& R, unsigned int x, unsigned int y) const {
         if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
             auto c = R(x, y);
-            if (std::isalpha(c) || std::isdigit(c)) {
-                return "'" + std::string(1, c) + "'";
-            }
-            else {
-                return std::to_string(c);
-            }
+            if ((c >= 32) && (c <= 126))
+                return std::string(1, c);
+            else
+                return " ";
         }
         else {
             return std::to_string(R(x, y));
@@ -2133,12 +2172,10 @@ private:
     std::string to_string_impl(reader const& R, unsigned int x, unsigned int y, unsigned int z) const {
         if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
             auto c = R(x, y, z);
-            if (std::isalpha(c) || std::isdigit(c)) {
-                return "'" + std::string(1, c) + "'";
-            }
-            else {
-                return std::to_string(c);
-            }
+            if ((c >= 32) && (c <= 126))
+                return std::string(1, c);
+            else
+                return " ";
         }
         else {
             return std::to_string(R(x, y, z));
@@ -2272,131 +2309,6 @@ public:
         }
         return out;
     };
-
-private:
-    static void SetColor(std::map<int, int> const& colorMap, HANDLE const& hConsole, T V) {
-        if (auto f = colorMap.find((int)V); f != colorMap.end()) {
-            SetConsoleTextAttribute(hConsole, f->second);
-        }
-    }
-
-public:
-    // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
-    void printf(std::vector<std::string> column_titles = {}, bool doNotSkip = false, std::map<int, int> const& colorMap = {}) const {
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        SetConsoleTextAttribute(hConsole, 15);
-
-        reader R = this->read();
-        std::string column_spacer = " ";
-        if (this->dim.num_dimensions() == 0) return;
-        else if (this->dim.num_dimensions() == 1) {
-            auto col_sizes = evaluate_column_sizes(R, column_titles);
-
-            unsigned int n = 0;
-            if (column_titles.size() > 0) {
-                std::cout << resize(std::string(column_titles[0]), col_sizes[0], ' ');
-                std::cout << "\n";
-            }
-            for (; (n < this->size()) && (n < 1); ++n) {
-                SetColor(colorMap, hConsole, R[n]);
-                std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
-            }
-            if (!doNotSkip && (this->size() >= 21)) {
-                for (; (n < this->size()) && (n < 10); ++n) {
-                    SetColor(colorMap, hConsole, R[n]);
-                    std::cout << "\n";                    
-                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
-                }
-                out += "\n...";
-                for (n = this->size() - 10; n < this->size(); ++n) {
-                    SetColor(colorMap, hConsole, R[n]);
-                    std::cout << "\n";
-                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
-                }
-            }
-            else {
-                for (; n < this->size(); ++n) {
-                    SetColor(colorMap, hConsole, R[n]);
-                    std::cout << "\n";
-                    std::cout << resize(to_string_impl(R, n), col_sizes[0], ' ');
-                }
-            }
-
-        }
-        else if (this->dim.num_dimensions() == 2) {
-            auto col_sizes = evaluate_column_sizes(R, column_titles);
-
-            unsigned int n = 0;
-            if (column_titles.size() > 0) {
-                std::cout << column_titles[0];
-                for (unsigned int i = 1; i < column_titles.size(); ++i) {
-                    std::cout << column_spacer;
-                    std::cout << resize(std::string(column_titles[i]), col_sizes[i], ' ');
-                }
-                std::cout << "\n";
-            }
-            for (; (n < this->dim.X) && (n < 1); ++n) {
-                unsigned int y = 0;
-                for (; (y < this->dim.Y) && (y < 1); ++y) {
-                    SetColor(colorMap, hConsole, R[n]);
-                    std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                }
-                for (; y < this->dim.Y; ++y) {
-                    SetColor(colorMap, hConsole, R[n]);
-                    std::cout << column_spacer;
-                    std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                }
-            }
-            if (!doNotSkip && (this->dim.X >= 21)) {
-                for (; (n < this->dim.X) && (n < 10); ++n) {
-                    std::cout << "\n";
-                    unsigned int y = 0;
-                    for (; (y < this->dim.Y) && (y < 1); ++y) {
-                        SetColor(colorMap, hConsole, R[n]);
-                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                    for (; y < this->dim.Y; ++y) {
-                        SetColor(colorMap, hConsole, R[n]);
-                        std::cout << column_spacer;
-                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                }
-                std::cout << "\n...";
-                for (n = this->dim.X - 10; n < this->dim.X; ++n) {
-                    std::cout << "\n";
-                    unsigned int y = 0;
-                    for (; (y < this->dim.Y) && (y < 1); ++y) {
-                        SetColor(colorMap, hConsole, R[n]);
-                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                    for (; y < this->dim.Y; ++y) {
-                        SetColor(colorMap, hConsole, R[n]);
-                        std::cout << column_spacer;
-                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                }
-            }
-            else {
-                for (; n < this->dim.X; ++n) {
-                    std::cout << "\n";
-                    unsigned int y = 0;
-                    for (; (y < this->dim.Y) && (y < 1); ++y) {
-                        SetColor(colorMap, hConsole, R[n]);
-                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                    for (; y < this->dim.Y; ++y) {
-                        SetColor(colorMap, hConsole, R[n]);
-                        std::cout << column_spacer;
-                        std::cout << resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                }
-            }
-        }
-        else if (this->dim.num_dimensions() == 3) {
-        }
-        return;
-    };
-
     friend std::ostream& operator<<(std::ostream& os, gpu_array const& obj) {
         os << obj.to_string();
         return os;
@@ -3067,11 +2979,6 @@ namespace GL {
     std::string Array::to_string(std::vector<std::string> column_titles, bool doNotSkip) const {
         return visit_array(_type, _data, [&](auto& arr) {
             return arr.to_string(column_titles, doNotSkip);
-        });
-    };
-    void Array::printf(std::vector<std::string> column_titles, bool doNotSkip, std::map<int, int> const& colorMap) const {
-        visit_array(_type, _data, [&](auto& arr) {
-            arr.printf(column_titles, doNotSkip, colorMap);
         });
     };
     std::ostream& operator<<(std::ostream& os, Array const& obj) {

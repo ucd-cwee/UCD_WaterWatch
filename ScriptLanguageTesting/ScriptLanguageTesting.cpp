@@ -954,13 +954,20 @@ int main() {
 
         auto state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
 
-        for (int J = 0; J < 30 * 30; ++J) {
+        float prev_avg2 = 0;
+        float prev_avg = 0;
+        for (;;/*int J = 0; J < 30 * 30; ++J*/) {
             GL::stopwatch sw;
 
             // add random chance for life to spawn
-            if ((double)state.cast(ArrayTypes::FLOAT).avg() < 0.1) {
-                state = state.max((Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.90f).cast(ArrayTypes::UINT));
+            float new_avg = state.cast(ArrayTypes::FLOAT).sum();
+            if ((prev_avg2 == new_avg) && (prev_avg == new_avg)) {
+                state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.98f).cast(ArrayTypes::UINT);
+                state = state.min(1);
             }
+            prev_avg2 = prev_avg;
+            prev_avg = new_avg;
+
             // Convolve gets neighbors
             auto nHood = state.convolve(kernel);
 
@@ -978,7 +985,9 @@ int main() {
             auto a3 = (state == 1) && (nHood > 3);  // Over-population
 
             // display = (a0 + a1).join(2, a1 + a2).join(2, a3).cast(ArrayTypes::FLOAT);
-            // auto display = ((a0 * 3) + (a1 * 5) + (a2 * 7) + (a3 * 13)).cast(ArrayTypes::CHAR) + 'a';
+            auto R = a0 * a1;
+            auto G = a1 * a2;
+            auto B = a3;
 
             // Update state
             state = state * C0.cast(ArrayTypes::UINT) + C1.cast(ArrayTypes::UINT);
@@ -989,18 +998,28 @@ int main() {
 
             console_clear();
 
-            state.printf({}, true, std::map<int,int>{ { 0, 0 }, { 1, 1 }, { 2, 2 } });
+            print((
+                a0.cast(ArrayTypes::CHAR) * '-'
+                +
+                state.cast(ArrayTypes::CHAR) * 'O'
+                +
+                a2.cast(ArrayTypes::CHAR) * '+'
+                +
+                a3.cast(ArrayTypes::CHAR) * '-'
+            ).to_string({}, true));              
 
-            // print(state.to_string({}, true)); // state
+            //auto display = a1.cast(ArrayTypes::CHAR) * 'O';
+
+
+
+            //print(display.to_string({}, true)); // state
             print("");
             print(std::to_string(1.0 / sw.stop()) + " fps");
         }
 
     }
 
-
-
-    if (1) {
+    if (0) {
         GL::Array arr(GL::ArrayTypes::FLOAT, 100, 2, 1);
         print(arr.size());
 
