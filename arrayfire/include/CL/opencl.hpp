@@ -3383,12 +3383,8 @@ public:
      *  Wraps clWaitForEvents().
      */
     static cl_int
-    waitForEvents(const vector<Event>& events)
-    {
-        return detail::errHandler(
-            ::clWaitForEvents(
-                (cl_uint) events.size(), (events.size() > 0) ? (cl_event*)&events.front() : NULL),
-            __WAIT_FOR_EVENTS_ERR);
+    waitForEvents(const std::pair<Event*, Event*> events) {
+        return detail::errHandler( ::clWaitForEvents((cl_int)(events.second - events.first), (cl_event*)events.first), __WAIT_FOR_EVENTS_ERR);
     }
 };
 
@@ -3440,11 +3436,11 @@ public:
  *  Wraps clWaitForEvents().
  */
 inline static cl_int
-WaitForEvents(const vector<Event>& events)
+WaitForEvents(const std::pair<Event*, Event*> events)
 {
     return detail::errHandler(
         ::clWaitForEvents(
-            (cl_uint) events.size(), (events.size() > 0) ? (cl_event*)&events.front() : NULL),
+            (cl_int)(events.second - events.first), (cl_event*)events.first),
         __WAIT_FOR_EVENTS_ERR);
 }
 
@@ -3667,7 +3663,7 @@ inline cl_int enqueueMapSVM(
     cl_bool blocking,
     cl_map_flags flags,
     size_type size,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL);
 
 /**
@@ -7667,7 +7663,7 @@ public:
         size_type offset,
         size_type size,
         void* ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7675,8 +7671,8 @@ public:
             ::clEnqueueReadBuffer(
                 object_, buffer(), blocking, offset, size,
                 ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_READ_BUFFER_ERR);
 
@@ -7692,7 +7688,7 @@ public:
         size_type offset,
         size_type size,
         const void* ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7700,8 +7696,8 @@ public:
             ::clEnqueueWriteBuffer(
                 object_, buffer(), blocking, offset, size,
                 ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_WRITE_BUFFER_ERR);
 
@@ -7717,15 +7713,15 @@ public:
         size_type src_offset,
         size_type dst_offset,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueCopyBuffer(
                 object_, src(), dst(), src_offset, dst_offset, size,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQEUE_COPY_BUFFER_ERR);
 
@@ -7746,7 +7742,7 @@ public:
         size_type host_row_pitch,
         size_type host_slice_pitch,
         void *ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7763,8 +7759,8 @@ public:
                 host_row_pitch,
                 host_slice_pitch,
                 ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_READ_BUFFER_RECT_ERR);
 
@@ -7785,7 +7781,7 @@ public:
         size_type host_row_pitch,
         size_type host_slice_pitch,
         const void *ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7802,8 +7798,8 @@ public:
                 host_row_pitch,
                 host_slice_pitch,
                 ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_WRITE_BUFFER_RECT_ERR);
 
@@ -7823,7 +7819,7 @@ public:
         size_type src_slice_pitch,
         size_type dst_row_pitch,
         size_type dst_slice_pitch,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7839,8 +7835,8 @@ public:
                 src_slice_pitch,
                 dst_row_pitch,
                 dst_slice_pitch,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQEUE_COPY_BUFFER_RECT_ERR);
 
@@ -7868,7 +7864,7 @@ public:
         PatternType pattern,
         size_type offset,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7880,8 +7876,8 @@ public:
                 sizeof(PatternType), 
                 offset, 
                 size,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_FILL_BUFFER_ERR);
 
@@ -7900,7 +7896,7 @@ public:
         size_type row_pitch,
         size_type slice_pitch,
         void* ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7914,8 +7910,8 @@ public:
                 row_pitch, 
                 slice_pitch, 
                 ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_READ_IMAGE_ERR);
 
@@ -7933,7 +7929,7 @@ public:
         size_type row_pitch,
         size_type slice_pitch,
         const void* ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7947,8 +7943,8 @@ public:
                 row_pitch, 
                 slice_pitch, 
                 ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_WRITE_IMAGE_ERR);
 
@@ -7964,7 +7960,7 @@ public:
         const array<size_type, 3>& src_origin,
         const array<size_type, 3>& dst_origin,
         const array<size_type, 3>& region,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -7976,8 +7972,8 @@ public:
                 src_origin.data(),
                 dst_origin.data(), 
                 region.data(),
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_COPY_IMAGE_ERR);
 
@@ -8000,7 +7996,7 @@ public:
         cl_float4 fillColor,
         const array<size_type, 3>& origin,
         const array<size_type, 3>& region,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8011,8 +8007,8 @@ public:
                 static_cast<void*>(&fillColor), 
                 origin.data(),
                 region.data(),
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_FILL_IMAGE_ERR);
 
@@ -8034,7 +8030,7 @@ public:
         cl_int4 fillColor,
         const array<size_type, 3>& origin,
         const array<size_type, 3>& region,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8045,8 +8041,8 @@ public:
                 static_cast<void*>(&fillColor), 
                 origin.data(),
                 region.data(),
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_FILL_IMAGE_ERR);
 
@@ -8068,7 +8064,7 @@ public:
         cl_uint4 fillColor,
         const array<size_type, 3>& origin,
         const array<size_type, 3>& region,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8079,8 +8075,8 @@ public:
                 static_cast<void*>(&fillColor), 
                 origin.data(),
                 region.data(),
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
                 __ENQUEUE_FILL_IMAGE_ERR);
 
@@ -8097,7 +8093,7 @@ public:
         const array<size_type, 3>& src_origin,
         const array<size_type, 3>& region,
         size_type dst_offset,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8109,8 +8105,8 @@ public:
                 src_origin.data(),
                 region.data(), 
                 dst_offset,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_COPY_IMAGE_TO_BUFFER_ERR);
 
@@ -8126,7 +8122,7 @@ public:
         size_type src_offset,
         const array<size_type, 3>& dst_origin,
         const array<size_type, 3>& region,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8138,8 +8134,8 @@ public:
                 src_offset,
                 dst_origin.data(), 
                 region.data(),
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_COPY_BUFFER_TO_IMAGE_ERR);
 
@@ -8155,7 +8151,7 @@ public:
         cl_map_flags flags,
         size_type offset,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL,
         cl_int* err = NULL) const
     {
@@ -8163,8 +8159,8 @@ public:
         cl_int error;
         void * result = ::clEnqueueMapBuffer(
             object_, buffer(), blocking, flags, offset, size,
-            (events != NULL) ? (cl_uint) events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL,
             &error);
 
@@ -8186,7 +8182,7 @@ public:
         const array<size_type, 3>& region,
         size_type * row_pitch,
         size_type * slice_pitch,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL,
         cl_int* err = NULL) const
     {
@@ -8197,8 +8193,8 @@ public:
             origin.data(), 
             region.data(),
             row_pitch, slice_pitch,
-            (events != NULL) ? (cl_uint) events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL,
             &error);
 
@@ -8222,14 +8218,14 @@ public:
         cl_bool blocking,
         cl_map_flags flags,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(::clEnqueueSVMMap(
             object_, blocking, flags, static_cast<void*>(ptr), size,
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_MAP_BUFFER_ERR);
 
@@ -8250,14 +8246,14 @@ public:
         cl_bool blocking,
         cl_map_flags flags,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(::clEnqueueSVMMap(
             object_, blocking, flags, static_cast<void*>(ptr.get()), size,
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_MAP_BUFFER_ERR);
 
@@ -8276,14 +8272,14 @@ public:
         cl::vector<T, Alloc> &container,
         cl_bool blocking,
         cl_map_flags flags,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(::clEnqueueSVMMap(
             object_, blocking, flags, static_cast<void*>(container.data()), container.size()*sizeof(T),
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_MAP_BUFFER_ERR);
 
@@ -8297,15 +8293,15 @@ public:
     cl_int enqueueUnmapMemObject(
         const Memory& memory,
         void* mapped_ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueUnmapMemObject(
                 object_, memory(), mapped_ptr,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_UNMAP_MEM_OBJECT_ERR);
 
@@ -8324,15 +8320,15 @@ public:
     template<typename T>
     cl_int enqueueUnmapSVM(
         T* ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueSVMUnmap(
             object_, static_cast<void*>(ptr),
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_UNMAP_MEM_OBJECT_ERR);
 
@@ -8349,15 +8345,15 @@ public:
     template<typename T, class D>
     cl_int enqueueUnmapSVM(
         cl::pointer<T, D> &ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueSVMUnmap(
             object_, static_cast<void*>(ptr.get()),
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_UNMAP_MEM_OBJECT_ERR);
 
@@ -8374,15 +8370,15 @@ public:
     template<typename T, class Alloc>
     cl_int enqueueUnmapSVM(
         cl::vector<T, Alloc> &container,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueSVMUnmap(
             object_, static_cast<void*>(container.data()),
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_UNMAP_MEM_OBJECT_ERR);
 
@@ -8406,15 +8402,15 @@ public:
      * have completed.
      */
     cl_int enqueueMarkerWithWaitList(
-        const vector<Event> *events = 0,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event *event = 0) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueMarkerWithWaitList(
                 object_,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_MARKER_WAIT_LIST_ERR);
 
@@ -8436,15 +8432,15 @@ public:
      * before this command to command_queue, have completed.
      */
     cl_int enqueueBarrierWithWaitList(
-        const vector<Event> *events = 0,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event *event = 0) const
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueBarrierWithWaitList(
                 object_,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_BARRIER_WAIT_LIST_ERR);
 
@@ -8461,7 +8457,7 @@ public:
     cl_int enqueueMigrateMemObjects(
         const vector<Memory> &memObjects,
         cl_mem_migration_flags flags,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL
         ) const
     {
@@ -8479,8 +8475,8 @@ public:
                 (cl_uint)memObjects.size(), 
                 localMemObjects.data(),
                 flags,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_UNMAP_MEM_OBJECT_ERR);
 
@@ -8503,7 +8499,7 @@ public:
         const cl::vector<T*> &svmRawPointers,
         const cl::vector<size_type> &sizes,
         cl_mem_migration_flags flags = 0,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8512,8 +8508,8 @@ public:
             svmRawPointers.size(), static_cast<void**>(svmRawPointers.data()),
             sizes.data(), // array of sizes not passed
             flags,
-            (events != NULL) ? (cl_uint)events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (event != NULL) ? &tmp : NULL),
             __ENQUEUE_MIGRATE_SVM_ERR);
 
@@ -8531,7 +8527,7 @@ public:
     cl_int enqueueMigrateSVM(
         const cl::vector<T*> &svmRawPointers,
         cl_mem_migration_flags flags = 0,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         return enqueueMigrateSVM(svmRawPointers, cl::vector<size_type>(svmRawPointers.size()), flags, events, event);
@@ -8548,7 +8544,7 @@ public:
         const cl::vector<cl::pointer<T, D>> &svmPointers,
         const cl::vector<size_type> &sizes,
         cl_mem_migration_flags flags = 0,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl::vector<void*> svmRawPointers;
@@ -8569,7 +8565,7 @@ public:
     cl_int enqueueMigrateSVM(
         const cl::vector<cl::pointer<T, D>> &svmPointers,
         cl_mem_migration_flags flags = 0,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         return enqueueMigrateSVM(svmPointers, cl::vector<size_type>(svmPointers.size()), flags, events, event);
@@ -8585,7 +8581,7 @@ public:
         const cl::vector<cl::vector<T, Alloc>> &svmContainers,
         const cl::vector<size_type> &sizes,
         cl_mem_migration_flags flags = 0,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl::vector<void*> svmRawPointers;
@@ -8605,7 +8601,7 @@ public:
     cl_int enqueueMigrateSVM(
         const cl::vector<cl::vector<T, Alloc>> &svmContainers,
         cl_mem_migration_flags flags = 0,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         return enqueueMigrateSVM(svmContainers, cl::vector<size_type>(svmContainers.size()), flags, events, event);
@@ -8618,7 +8614,7 @@ public:
         const NDRange& offset,
         const NDRange& global,
         const NDRange& local = NullRange,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr },
         Event* event = NULL) const
     {
         cl_event tmp;
@@ -8628,8 +8624,8 @@ public:
                 offset.dimensions() != 0 ? (const size_type*) offset : NULL,
                 (const size_type*) global,
                 local.dimensions() != 0 ? (const size_type*) local : NULL,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(event_waitlist.second - event_waitlist.first),
+                (cl_event*)event_waitlist.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_NDRANGE_KERNEL_ERR);
 
@@ -8642,15 +8638,15 @@ public:
 #if defined(CL_USE_DEPRECATED_OPENCL_1_2_APIS)
     CL_API_PREFIX__VERSION_1_2_DEPRECATED cl_int enqueueTask(
         const Kernel& kernel,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const CL_API_SUFFIX__VERSION_1_2_DEPRECATED
     {
         cl_event tmp;
         cl_int err = detail::errHandler(
             ::clEnqueueTask(
                 object_, kernel(),
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_TASK_ERR);
 
@@ -8666,7 +8662,7 @@ public:
         std::pair<void*, size_type> args,
         const vector<Memory>* mem_objects = NULL,
         const vector<const void*>* mem_locs = NULL,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL) const
     {
         size_type elements = 0;
@@ -8685,8 +8681,8 @@ public:
                 (mem_objects != NULL) ? (cl_uint) mem_objects->size() : 0,
                 mems.data(),
                 (mem_locs != NULL && mem_locs->size() > 0) ? (const void **) &mem_locs->front() : NULL,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_NATIVE_KERNEL);
 
@@ -8730,7 +8726,7 @@ public:
 
     cl_int enqueueAcquireGLObjects(
          const vector<Memory>* mem_objects = NULL,
-         const vector<Event>* events = NULL,
+         const std::pair<Event*, Event*> events = { nullptr, nullptr },
          Event* event = NULL) const
      {
         cl_event tmp;
@@ -8739,8 +8735,8 @@ public:
                  object_,
                  (mem_objects != NULL) ? (cl_uint) mem_objects->size() : 0,
                  (mem_objects != NULL && mem_objects->size() > 0) ? (const cl_mem *) &mem_objects->front(): NULL,
-                 (events != NULL) ? (cl_uint) events->size() : 0,
-                 (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                 (cl_int)(events.second - events.first),
+                 (cl_event*)events.first,
                  (event != NULL) ? &tmp : NULL),
              __ENQUEUE_ACQUIRE_GL_ERR);
 
@@ -8752,7 +8748,7 @@ public:
 
     cl_int enqueueReleaseGLObjects(
          const vector<Memory>* mem_objects = NULL,
-         const vector<Event>* events = NULL,
+         const std::pair<Event*, Event*> events = { nullptr, nullptr },
          Event* event = NULL) const
      {
         cl_event tmp;
@@ -8761,8 +8757,8 @@ public:
                  object_,
                  (mem_objects != NULL) ? (cl_uint) mem_objects->size() : 0,
                  (mem_objects != NULL && mem_objects->size() > 0) ? (const cl_mem *) &mem_objects->front(): NULL,
-                 (events != NULL) ? (cl_uint) events->size() : 0,
-                 (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                 (cl_int)(events.second - events.first),
+                 (cl_event*)events.first,
                  (event != NULL) ? &tmp : NULL),
              __ENQUEUE_RELEASE_GL_ERR);
 
@@ -8784,7 +8780,7 @@ typedef CL_API_ENTRY cl_int (CL_API_CALL *PFN_clEnqueueReleaseD3D10ObjectsKHR)(
 
     cl_int enqueueAcquireD3D10Objects(
          const vector<Memory>* mem_objects = NULL,
-         const vector<Event>* events = NULL,
+         const std::pair<Event*, Event*> events = { nullptr, nullptr },
          Event* event = NULL) const
     {
         static PFN_clEnqueueAcquireD3D10ObjectsKHR pfn_clEnqueueAcquireD3D10ObjectsKHR = NULL;
@@ -8804,7 +8800,7 @@ typedef CL_API_ENTRY cl_int (CL_API_CALL *PFN_clEnqueueReleaseD3D10ObjectsKHR)(
                  object_,
                  (mem_objects != NULL) ? (cl_uint) mem_objects->size() : 0,
                  (mem_objects != NULL && mem_objects->size() > 0) ? (const cl_mem *) &mem_objects->front(): NULL,
-                 (events != NULL) ? (cl_uint) events->size() : 0,
+                 (cl_int)(events.second - events.first),
                  (events != NULL) ? (cl_event*) &events->front() : NULL,
                  (event != NULL) ? &tmp : NULL),
              __ENQUEUE_ACQUIRE_GL_ERR);
@@ -8817,7 +8813,7 @@ typedef CL_API_ENTRY cl_int (CL_API_CALL *PFN_clEnqueueReleaseD3D10ObjectsKHR)(
 
     cl_int enqueueReleaseD3D10Objects(
          const vector<Memory>* mem_objects = NULL,
-         const vector<Event>* events = NULL,
+         const std::pair<Event*, Event*> events = { nullptr, nullptr },
          Event* event = NULL) const
     {
         static PFN_clEnqueueReleaseD3D10ObjectsKHR pfn_clEnqueueReleaseD3D10ObjectsKHR = NULL;
@@ -8837,8 +8833,8 @@ typedef CL_API_ENTRY cl_int (CL_API_CALL *PFN_clEnqueueReleaseD3D10ObjectsKHR)(
                 object_,
                 (mem_objects != NULL) ? (cl_uint) mem_objects->size() : 0,
                 (mem_objects != NULL && mem_objects->size() > 0) ? (const cl_mem *) &mem_objects->front(): NULL,
-                (events != NULL) ? (cl_uint) events->size() : 0,
-                (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+                (cl_int)(events.second - events.first),
+                (cl_event*)events.first,
                 (event != NULL) ? &tmp : NULL),
             __ENQUEUE_RELEASE_GL_ERR);
 
@@ -9279,7 +9275,7 @@ inline cl_int enqueueReadBuffer(
     size_type offset,
     size_type size,
     void* ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9298,7 +9294,7 @@ inline cl_int enqueueWriteBuffer(
         size_type offset,
         size_type size,
         const void* ptr,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL)
 {
     cl_int error;
@@ -9317,7 +9313,7 @@ inline void* enqueueMapBuffer(
         cl_map_flags flags,
         size_type offset,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL,
         cl_int* err = NULL)
 {
@@ -9330,8 +9326,8 @@ inline void* enqueueMapBuffer(
 
     void * result = ::clEnqueueMapBuffer(
             queue(), buffer(), blocking, flags, offset, size,
-            (events != NULL) ? (cl_uint) events->size() : 0,
-            (events != NULL && events->size() > 0) ? (cl_event*) &events->front() : NULL,
+            (cl_int)(events.second - events.first),
+            (cl_event*)events.first,
             (cl_event*) event,
             &error);
 
@@ -9379,7 +9375,7 @@ inline cl_int enqueueMapSVM(
     cl_bool blocking,
     cl_map_flags flags,
     size_type size,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9402,7 +9398,7 @@ inline cl_int enqueueMapSVM(
     cl::vector<T, Alloc> &container,
     cl_bool blocking,
     cl_map_flags flags,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9420,7 +9416,7 @@ inline cl_int enqueueMapSVM(
 inline cl_int enqueueUnmapMemObject(
     const Memory& memory,
     void* mapped_ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9434,8 +9430,8 @@ inline cl_int enqueueUnmapMemObject(
     cl_int err = detail::errHandler(
         ::clEnqueueUnmapMemObject(
         queue(), memory(), mapped_ptr,
-        (events != NULL) ? (cl_uint)events->size() : 0,
-        (events != NULL && events->size() > 0) ? (cl_event*)&events->front() : NULL,
+        (cl_int)(events.second - events.first),
+        (cl_event*)events.first,
         (event != NULL) ? &tmp : NULL),
         __ENQUEUE_UNMAP_MEM_OBJECT_ERR);
 
@@ -9454,7 +9450,7 @@ inline cl_int enqueueUnmapMemObject(
 template<typename T>
 inline cl_int enqueueUnmapSVM(
     T* ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9476,7 +9472,7 @@ inline cl_int enqueueUnmapSVM(
 template<typename T, class D>
 inline cl_int enqueueUnmapSVM(
     cl::pointer<T, D> &ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9497,7 +9493,7 @@ inline cl_int enqueueUnmapSVM(
 template<typename T, class Alloc>
 inline cl_int enqueueUnmapSVM(
     cl::vector<T, Alloc> &container,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9518,7 +9514,7 @@ inline cl_int enqueueCopyBuffer(
         size_type src_offset,
         size_type dst_offset,
         size_type size,
-        const vector<Event>* events = NULL,
+        const std::pair<Event*, Event*> events = { nullptr, nullptr },
         Event* event = NULL)
 {
     cl_int error;
@@ -9667,7 +9663,7 @@ inline cl_int enqueueReadBufferRect(
     size_type host_row_pitch,
     size_type host_slice_pitch,
     void *ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9703,7 +9699,7 @@ inline cl_int enqueueWriteBufferRect(
     size_type host_row_pitch,
     size_type host_slice_pitch,
     const void *ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9738,7 +9734,7 @@ inline cl_int enqueueCopyBufferRect(
     size_type src_slice_pitch,
     size_type dst_row_pitch,
     size_type dst_slice_pitch,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9771,7 +9767,7 @@ inline cl_int enqueueReadImage(
     size_type row_pitch,
     size_type slice_pitch,
     void* ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL) 
 {
     cl_int error;
@@ -9801,7 +9797,7 @@ inline cl_int enqueueWriteImage(
     size_type row_pitch,
     size_type slice_pitch,
     const void* ptr,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9829,7 +9825,7 @@ inline cl_int enqueueCopyImage(
     const array<size_type, 3>& src_origin,
     const array<size_type, 3>& dst_origin,
     const array<size_type, 3>& region,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9855,7 +9851,7 @@ inline cl_int enqueueCopyImageToBuffer(
     const array<size_type, 3>& src_origin,
     const array<size_type, 3>& region,
     size_type dst_offset,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
@@ -9881,7 +9877,7 @@ inline cl_int enqueueCopyBufferToImage(
     size_type src_offset,
     const array<size_type, 3>& dst_origin,
     const array<size_type, 3>& region,
-    const vector<Event>* events = NULL,
+    const std::pair<Event*, Event*> events = { nullptr, nullptr },
     Event* event = NULL)
 {
     cl_int error;
