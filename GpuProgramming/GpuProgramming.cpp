@@ -3309,12 +3309,12 @@ void clear() {
 #include "../ScriptLanguageTesting/thread_object.h"
 
 // Thread-safe, dynamic-length allocator that re-uses pages of data based on the requested page size(s). 
-template <typename _type_>
+template <typename _type_, int baseBlockSize = 1024, int minBlockSize = 256>
 class parallel_dynamic_allocator {
 private:
     class lockable {
     public:
-        cweeDynamicBlockAlloc<char, 16, 8, sizeof(size_t)> alloc{};
+        cweeDynamicBlockAlloc<char, baseBlockSize, minBlockSize, sizeof(size_t)> alloc{};
         long lock{ 0 };
     };
     GL::thread_object_no_default<lockable>
@@ -3464,7 +3464,7 @@ namespace GL {
             };
         };
 
-        static parallel_dynamic_allocator<char> shared_mem_allocator;
+        static parallel_dynamic_allocator<char, 8 << 12, 8> shared_mem_allocator;                
 
         template<typename T> class Memory {
         private:
@@ -3560,7 +3560,7 @@ namespace GL {
                 delete_buffers();
             };
 
-            void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
+            __declspec(noinline) void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
                 if (!host_buffer_exists && device_buffer_exists) {
                     const ulong alloc_char_size = N * (ulong)d * sizeof(T) / sizeof(char);
                     host_buffer = host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true);
@@ -3839,9 +3839,6 @@ namespace GL {
             }
 
         };
-
-
-
     };
 
 }
@@ -3911,17 +3908,31 @@ void fnGpuProgramming() {
     if (1) {
         GL::GPU::Program program({ opencl_impl::create_kernels() });
 
-        // leak-free (so far) implementation that uses shared memory for the local, host buffers. 
-        for (unsigned int v = 0; v < 1000; ++v) {
-            GL::GPU::Memory<unsigned int> arr1(program, 1000000, 1, false, true);
-            GL::GPU::Kernel kernel(program, arr1.cl_queue, arr1.length(), std::string("copy_single") + opencl_impl::type_name<unsigned int>(), arr1, v);
-            Event this_event;
-            kernel.enqueue_run(1, { nullptr, nullptr }, &this_event);
-            arr1.add_host_buffer();
-            arr1.read_from_device(true, { &this_event, &this_event + 1 });
-            print(arr1[0]);
-        }
+        for (int iter = 0; iter < 3; ++iter) {
+            // leak-free (so far) implementation that uses shared memory for the local, host buffers. 
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::Memory<unsigned int> arr1(program, 1000 + (1000 * v), 1, false, true);
+                GL::GPU::Kernel kernel(program, arr1.cl_queue, arr1.length(), std::string("copy_single") + opencl_impl::type_name<unsigned int>(), arr1, v);
+                Event this_event;
+                kernel.enqueue_run(1, { nullptr, nullptr }, &this_event);
 
+                arr1.add_host_buffer();
+                arr1.read_from_device(true, { &this_event, &this_event + 1 });
+                // print(arr1[0]);
+            }
+        }
+        for (int iter = 0; iter < 3; ++iter) {
+            parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
+                GL::GPU::Memory<unsigned int> arr1(program, 1000 + (1000 * v), 1, false, true);
+                GL::GPU::Kernel kernel(program, arr1.cl_queue, arr1.length(), std::string("copy_single") + opencl_impl::type_name<unsigned int>(), arr1, v);
+                Event this_event;
+                kernel.enqueue_run(1, { nullptr, nullptr }, &this_event);
+
+                arr1.add_host_buffer();
+                arr1.read_from_device(true, { &this_event, &this_event + 1 });
+                //print(arr1[0]);
+            });
+        }
     }
 
     using namespace GL;
