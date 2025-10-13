@@ -164,6 +164,7 @@ namespace parallel {
 #include <string>
 #include <memory>
 #include <iostream>
+#include <set>
 
 namespace GL {
     namespace clock {
@@ -3308,48 +3309,106 @@ void clear() {
 #include "dynamic_allocator.h"
 #include "../ScriptLanguageTesting/thread_object.h"
 
-// Thread-safe, dynamic-length allocator that re-uses pages of data based on the requested page size(s). 
-template <typename _type_, int baseBlockSize = 1024, int minBlockSize = 256>
-class parallel_dynamic_allocator {
-private:
-    class lockable {
+namespace GL {
+    template <typename T> class Lockable {
+    private:
+        T obj;
+        std::mutex mut;
+
     public:
-        cweeDynamicBlockAlloc<char, baseBlockSize, minBlockSize, sizeof(size_t)> alloc{};
-        long lock{ 0 };
+        template <typename... U> Lockable(const U&... args) : obj(args...), mut() {};
+        Lockable(Lockable const&) = delete;
+        Lockable(Lockable&&) = delete;
+        Lockable& operator=(Lockable const&) = delete;
+        Lockable& operator=(Lockable&&) = delete;
+        ~Lockable() = default;
+
+        class Locked {
+            std::scoped_lock<std::mutex> locked;
+
+        public:
+            T& obj;
+
+            Locked(std::mutex const& l, const T& o) : locked(const_cast<std::mutex&>(l)), obj{ const_cast<T&>(o) } {};
+            Locked(Locked const&) = delete;
+            Locked(Locked&&) = delete;
+            Locked& operator=(Locked const&) = delete;
+            Locked& operator=(Locked&&) = delete;
+            ~Locked() = default;
+        };
+        class cLocked {
+            std::scoped_lock<std::mutex> locked;
+
+        public:
+            const T& obj;
+
+            cLocked(std::mutex const& l, const T& o) : locked(const_cast<std::mutex&>(l)), obj{ o } {};
+            cLocked(cLocked const&) = delete;
+            cLocked(cLocked&&) = delete;
+            cLocked& operator=(cLocked const&) = delete;
+            cLocked& operator=(cLocked&&) = delete;
+            ~cLocked() = default;
+        };
+
+        cLocked get() const {
+            return cLocked(mut, obj);
+        };
+        Locked get() {
+            return Locked(mut, obj);
+        };
     };
-    GL::thread_object_no_default<lockable>
-        TLS;
 
-public:
-    parallel_dynamic_allocator() = default;
-    ~parallel_dynamic_allocator() = default;
+    // Thread-safe, dynamic-length allocator that re-uses pages of data based on the requested page size(s). 
+    template <typename _type_, int baseBlockSize = 1024, int minBlockSize = 256>
+    class parallel_dynamic_allocator {
+    private:
+        // Lockable<cweeDynamicBlockAlloc<char, baseBlockSize, minBlockSize, sizeof(size_t)>> alloc;
 
-    template <typename... TArgs> __declspec(noinline) _type_* Alloc(unsigned int num, bool clear = true) {
-        const auto threadID = GL::util::get_thread_id();
-        lockable& obj = *TLS;
-        while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
-        char* ptr;
-        if (1) {
-            ptr = obj.alloc.Alloc(num * sizeof(_type_) / sizeof(char), clear);
-            InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
+        class lockable {
+        public:
+            cweeDynamicBlockAlloc<char, baseBlockSize, minBlockSize, sizeof(size_t)> alloc{};
+            long lock{ 0 };
+        };
+        GL::thread_object_no_default<lockable>
+            TLS;
+
+    public:
+        parallel_dynamic_allocator() = default; //  : alloc{}, mut{ 0 } {};
+        ~parallel_dynamic_allocator() = default;
+
+        template <typename... TArgs> __declspec(noinline) _type_* Alloc(unsigned int num, bool clear = true) {
+            //return (_type_*)alloc.get().obj.Alloc(num * sizeof(_type_) / sizeof(char), clear);
+
+            const auto threadID = GL::util::get_thread_id();
+            lockable& obj = *TLS;
+            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
+            char* ptr;
+            if (1) {
+                ptr = obj.alloc.Alloc(num * sizeof(_type_) / sizeof(char), clear);
+                cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
+                *reinterpret_cast<size_t*>(&block->padding[0]) = threadID;
+                InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
+            }
+            return (_type_*)(ptr);
+        };
+        __declspec(noinline) void Free(const _type_* ptr) {
+            //auto locked = alloc.get();
+            //locked.obj.Free((char*)ptr);
+            //if (locked.obj.GetFreeBlockMemory() > (locked.obj.GetUsedBlockMemory() + baseBlockSize)) locked.obj.FreeEmptyBaseBlocks();
+
             cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
-            *reinterpret_cast<size_t*>(&block->padding[0]) = threadID;
-        }
-        return (_type_*)(ptr);
-    };
-    __declspec(noinline) void Free(const _type_* ptr) {
-        cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
-        size_t threadID = *reinterpret_cast<size_t*>(&block->padding[0]);
-        lockable& obj = TLS[threadID];
-        while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
-        if (1) {
-            obj.alloc.Free((char*)ptr);
-            InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
-        }
+            size_t threadID = *reinterpret_cast<size_t*>(&block->padding[0]);
+            lockable& obj = TLS[threadID];
+            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
+            if (1) {
+                obj.alloc.Free((char*)ptr);
+                if (obj.alloc.GetFreeBlockMemory() > (obj.alloc.GetUsedBlockMemory() + baseBlockSize)) obj.alloc.FreeEmptyBaseBlocks();
+                InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
+            }
+        };
     };
 
 };
-
 namespace GL {
     namespace GPU {
         // Compiles OpenCL code and makes it available through its assigned device.
@@ -3373,7 +3432,8 @@ namespace GL {
                 };
 
             public:
-                cl::Program cl_program;
+                Lockable<cl::Program> cl_program;
+                bool initialized = false;
 
             public:
                 // Instantiates and compiles the program.
@@ -3383,9 +3443,11 @@ namespace GL {
                     const std::string build_options
                         = "-cl-std=CL" + info.opencl_c_version + " -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable" + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
                     int error
-                        = cl_program.build(info.cl_device, (build_options + " -w").c_str());
+                        = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
                     if (error)
-                        print_warning(cl_program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
+                        print_warning(cl_program.get().obj.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
+
+                    initialized = true;
                 }
                 ProgramImpl() = default;
                 ProgramImpl(ProgramImpl const&) = delete;
@@ -3393,11 +3455,24 @@ namespace GL {
                 ProgramImpl& operator=(ProgramImpl const&) = delete;
                 ProgramImpl& operator=(ProgramImpl&&) = delete;
                 ~ProgramImpl() = default;
+
+                void try_initialize(Device_Info const& info, std::vector<std::string> const& opencl_code) {
+                    if (!initialized) {
+                        cl_program.get().obj = cl::Program(info.cl_context, make_kernel_code(info, combine(opencl_code)));
+                        const std::string build_options
+                            = "-cl-std=CL" + info.opencl_c_version + " -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable" + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
+                        int error
+                            = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
+                        if (error)
+                            print_warning(cl_program.get().obj.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
+
+                        initialized = true;
+                    }
+                }
+
             };
 
         private:
-            //cl::Program cl_program;
-            //cl::CommandQueue cl_queue;
             static std::string enable_device_capabilities(Device_Info const& info) {
                 return // enable FP64/FP16 capabilities if available
                     std::string(info.patch_nvidia_fp16 ? "\n #define cl_khr_fp16" : "") + // Nvidia Pascal and newer GPUs with driver>=520.00 don't report cl_khr_fp16, but do support basic FP16 arithmetic
@@ -3417,24 +3492,41 @@ namespace GL {
             };
 
         public:
-            Device_Info info;
-            ProgramImpl program;
+            Device_Info 
+                info;
+            ProgramImpl 
+                program;
+            Lockable<cl::CommandQueue>
+                queue;
+            bool initialized = false;            
 
             Program(std::vector<std::string> const& opencl_c_code)
-                : info(select_device_with_most_flops(get_devices(false))) 
+                : info(select_device_with_most_flops(get_devices(false)))
                 , program(info, opencl_c_code)
-            {
-                //this->cl_queue = cl::CommandQueue(info.cl_context, info.cl_device); // queue to push commands for the device
-            }
+                , queue(info.cl_context, info.cl_device)
+                , initialized(true)
+            {}
             Program()
-                : info()
+                : info(select_device_with_most_flops(get_devices(false)))
                 , program()
+                , queue()
+                , initialized(false)
             {}
             Program(Program const&) = delete;
             Program(Program &&) = delete;
             Program& operator=(Program const&) = delete;
             Program& operator=(Program&&) = delete;
             ~Program() = default;
+
+            template <typename F>
+            void try_initialize(F const& opencl_c_code) {
+                if (!initialized) {
+                    program.try_initialize(info, opencl_c_code());
+                    queue.get().obj = cl::CommandQueue(info.cl_context, info.cl_device);
+                    initialized = true;
+                }
+            };
+
 
             //inline void barrier(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
             //inline void finish_queue() { cl_queue.finish(); }
@@ -3443,28 +3535,15 @@ namespace GL {
             //inline cl::CommandQueue get_cl_queue() const { return cl_queue; }
 
         };
-
-        class Queue {
+        static parallel_dynamic_allocator<char, 8 << 12, 8> shared_mem_allocator;                
+        
+        class opencl {
         public:
-            cl::CommandQueue cl_queue;
-            bool valid;
-
-        public:
-            // Instantiates and compiles the program.
-            Queue(Program const& device)
-                : cl_queue(device.info.cl_context, device.info.cl_device), valid(true)
-            {}
-            Queue() : cl_queue{}, valid{ false } {};
-            Queue(Queue const&) = delete;
-            Queue(Queue&&) = delete;
-            Queue& operator=(Queue const&) = delete;
-            Queue& operator=(Queue&&) = delete;
-            ~Queue() {
-                if (valid) cl_queue.finish();
+            static GL::GPU::Program& get_program() {
+                static GL::GPU::Program out({ opencl_impl::create_kernels() });
+                return out;
             };
         };
-
-        static parallel_dynamic_allocator<char, 8 << 12, 8> shared_mem_allocator;                
 
         template<typename T> class Memory {
         private:
@@ -3479,9 +3558,6 @@ namespace GL {
             cl::Buffer device_buffer; // device buffer
             Program* device = nullptr; // pointer to linked Program            
 
-        public:
-            Queue cl_queue; // command queue
-
         private:
             void initialize_auxiliary_pointers() {
                 /********/ x = s0 = host_buffer; /******/ if (d > 0x4u) s4 = host_buffer + N * 0x4ull; if (d > 0x8u) s8 = host_buffer + N * 0x8ull; if (d > 0xCu) sC = host_buffer + N * 0xCull;
@@ -3489,10 +3565,10 @@ namespace GL {
                 if (d > 0x2u) z = s2 = host_buffer + N * 0x2ull; if (d > 0x6u) s6 = host_buffer + N * 0x6ull; if (d > 0xAu) sA = host_buffer + N * 0xAull; if (d > 0xEu) sE = host_buffer + N * 0xEull;
                 if (d > 0x3u) w = s3 = host_buffer + N * 0x3ull; if (d > 0x7u) s7 = host_buffer + N * 0x7ull; if (d > 0xBu) sB = host_buffer + N * 0xBull; if (d > 0xFu) sF = host_buffer + N * 0xFull;
             }
-            __declspec(noinline) void allocate_host_buffer(Program& device, const bool allocate_host, const bool allow_zero_copy) {
+            __declspec(noinline) void allocate_host_buffer(const bool allocate_host, const bool allow_zero_copy) {
                 if (allocate_host) {
-                    const ulong alignment = allow_zero_copy && device.info.uses_ram ? 4096ull : 64ull; // host_buffer must be aligned to 4096 Bytes for CL_MEM_USE_HOST_PTR, and to 64 Bytes for optimal enqueueReadBuffer performance on modern CPUs
-                    const ulong padding = allow_zero_copy && device.info.uses_ram ? 64ull : 0ull; // for CL_MEM_USE_HOST_PTR, 64 Bytes padding is required because device_buffer capacity in this case must be a multiple of 64 Bytes
+                    const ulong alignment = allow_zero_copy && device->info.uses_ram ? 4096ull : 64ull; // host_buffer must be aligned to 4096 Bytes for CL_MEM_USE_HOST_PTR, and to 64 Bytes for optimal enqueueReadBuffer performance on modern CPUs
+                    const ulong padding = allow_zero_copy && device->info.uses_ram ? 64ull : 0ull; // for CL_MEM_USE_HOST_PTR, 64 Bytes padding is required because device_buffer capacity in this case must be a multiple of 64 Bytes
                     const ulong alloc_size = N * (ulong)d + (alignment + padding) / sizeof(T);
                     const ulong alloc_char_size = alloc_size * sizeof(T) / sizeof(char);
                     host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true); // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
@@ -3502,40 +3578,41 @@ namespace GL {
                     host_buffer_exists = true;
                 }
             }
-            inline void allocate_device_buffer(Program& device, const bool allocate_device, const bool allow_zero_copy) {
-                this->device = &device;
+            inline void allocate_device_buffer(const bool allocate_device, const bool allow_zero_copy) {
                 if (allocate_device) {
-                    device.info.memory_used += (uint)(capacity() / 1048576ull); // track device memory usage
-                    if (device.info.memory_used > device.info.memory) print_error("Program \"" + device.info.name + "\" does not have enough memory. Allocating another " + to_string((uint)(capacity() / 1048576ull)) + " MB would use a total of " + to_string(device.info.memory_used) + " MB / " + to_string(device.info.memory) + " MB.");
+                    device->info.memory_used += (uint)(capacity() / 1048576ull); // track device memory usage
+                    if (device->info.memory_used > device->info.memory) print_error("Program \"" + device->info.name + "\" does not have enough memory. Allocating another " + to_string((uint)(capacity() / 1048576ull)) + " MB would use a total of " + to_string(device->info.memory_used) + " MB / " + to_string(device->info.memory) + " MB.");
                     int error = 0;
-                    is_zero_copy = allow_zero_copy && host_buffer_exists && device.info.uses_ram && (!external_host_buffer || ((ulong)host_buffer % 4096ull == 0ull && capacity() % 64ull == 0ull));
+                    is_zero_copy = allow_zero_copy && host_buffer_exists && device->info.uses_ram && (!external_host_buffer || ((ulong)host_buffer % 4096ull == 0ull && capacity() % 64ull == 0ull));
                     device_buffer = cl::Buffer( // if(is_zero_copy) { don't allocate extra memory on CPUs/iGPUs } else { allocate VRAM on GPUs }
-                        device.get_cl_context(),
-                        CL_MEM_READ_WRITE | ((int)is_zero_copy * CL_MEM_USE_HOST_PTR) | ((int)device.info.patch_intel_gpu_above_4gb << 23), // for Intel GPUs set flag CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1<<23)
+                        device->get_cl_context(),
+                        CL_MEM_READ_WRITE | ((int)is_zero_copy * CL_MEM_USE_HOST_PTR) | ((int)device->info.patch_intel_gpu_above_4gb << 23), // for Intel GPUs set flag CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1<<23)
                         is_zero_copy ? ((capacity() + 63ull) / 64ull) * 64ull : capacity(), // device_buffer capacity must be a multiple of 64 Bytes for CL_MEM_USE_HOST_PTR
                         is_zero_copy ? (void*)host_buffer : nullptr,
                         &error
                     );
-                    if (error == -61) print_error("Memory size is too large at " + to_string((uint)(capacity() / 1048576ull)) + " MB. Program \"" + device.info.name + "\" accepts a maximum buffer size of " + to_string(device.info.max_global_buffer) + " MB.");
+                    if (error == -61) print_error("Memory size is too large at " + to_string((uint)(capacity() / 1048576ull)) + " MB. Program \"" + device->info.name + "\" accepts a maximum buffer size of " + to_string(device->info.max_global_buffer) + " MB.");
                     else if (error) print_error("Program buffer allocation failed with error code " + to_string(error) + ".");
                     device_buffer_exists = true;
                 }
             }
         public:
+            std::vector<cl::Event> jobs_that_reference_me;
+
             T* x = nullptr, * y = nullptr, * z = nullptr, * w = nullptr; // host buffer auxiliary pointers for multi-dimensional array access (array of structures)
             T* s0 = nullptr, * s1 = nullptr, * s2 = nullptr, * s3 = nullptr, * s4 = nullptr, * s5 = nullptr, * s6 = nullptr, * s7 = nullptr, * s8 = nullptr, * s9 = nullptr, * sA = nullptr, * sB = nullptr, * sC = nullptr, * sD = nullptr, * sE = nullptr, * sF = nullptr;
-            Memory(Program& device, const ulong N, const uint dimensions = 1u, const bool allocate_host = true, const bool allocate_device = true, const T value = (T)0, const bool allow_zero_copy = true) 
-                : cl_queue(device)
+            Memory(const ulong N, const uint dimensions = 1u, const bool allocate_host = true, const bool allocate_device = true, const T value = (T)0, const bool allow_zero_copy = true) 
+                : device(&opencl::get_program())
             {              
                 if (N * (ulong)dimensions == 0ull) print_error("Memory size must be larger than 0.");
                 this->N = N;
                 this->d = dimensions;
-                allocate_host_buffer(device, allocate_host, allow_zero_copy); // allocate host_buffer first
-                allocate_device_buffer(device, allocate_device, allow_zero_copy); // allocate device_buffer second
+                allocate_host_buffer(allocate_host, allow_zero_copy); // allocate host_buffer first
+                allocate_device_buffer(allocate_device, allow_zero_copy); // allocate device_buffer second
                 reset(value);
             }
-            Memory(Program& device, const ulong N, const uint dimensions, T* const host_buffer, const bool allocate_device = true, const bool allow_zero_copy = true) 
-                : cl_queue(device) 
+            Memory(const ulong N, const uint dimensions, T* const host_buffer, const bool allocate_device = true, const bool allow_zero_copy = true) 
+                : device(&opencl::get_program())
             {
                 if (N * (ulong)dimensions == 0ull) print_error("Memory size must be larger than 0.");
                 this->N = N;
@@ -3544,7 +3621,7 @@ namespace GL {
                 initialize_auxiliary_pointers();
                 host_buffer_exists = true;
                 external_host_buffer = true;
-                allocate_device_buffer(device, allocate_device, allow_zero_copy);
+                allocate_device_buffer(allocate_device, allow_zero_copy);
                 write_to_device();
             }
             Memory() {} // default constructor
@@ -3553,6 +3630,10 @@ namespace GL {
             Memory& operator=(Memory const&) = delete;
             Memory& operator=(Memory&&) = delete;
             __declspec(noinline) ~Memory() {
+                if (jobs_that_reference_me.size() > 0) {
+                    cl::Event::waitForEvents({ &jobs_that_reference_me[0], &jobs_that_reference_me[0] + jobs_that_reference_me.size() });
+                }
+
                 if (host_buffer_exists && !external_host_buffer) {
                     shared_mem_allocator.Free((char*)host_buffer_unaligned);
                     host_buffer_unaligned = nullptr;
@@ -3572,7 +3653,7 @@ namespace GL {
             }
             inline void add_device_buffer(const bool allow_zero_copy = true) { // makes only sense if there is no device buffer yet but an existing host buffer
                 if (!device_buffer_exists && host_buffer_exists) {
-                    allocate_device_buffer(*device, true, allow_zero_copy);
+                    allocate_device_buffer(true, allow_zero_copy);
                     write_to_device();
                 }
             }
@@ -3580,7 +3661,7 @@ namespace GL {
                 host_buffer_exists = false;
                 if (!external_host_buffer) {
                     host_buffer = nullptr;
-                    // if (host_buffer_unaligned) shared_mem_allocator.Free((char*)host_buffer_unaligned);
+                    // if (host_buffer_unaligned) device.shared_mem_allocator.Free((char*)host_buffer_unaligned);
                     // delete[] host_buffer_unaligned;
                 }
                 if (!device_buffer_exists) {
@@ -3619,321 +3700,642 @@ namespace GL {
             inline const T& operator[](const ulong i) const { return host_buffer[i]; }
             inline const T operator()(const ulong i) const { return host_buffer[i]; }
             inline const T operator()(const ulong i, const uint dimension) const { return host_buffer[i + (ulong)dimension * N]; } // array of structures
-            inline void read_from_device(const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+            
+            void wait() {
+                if (jobs_that_reference_me.size() > 0) {
+                    cl::Event::waitForEvents(std::pair<Event*, Event*>{ &jobs_that_reference_me[0], &jobs_that_reference_me[0] + jobs_that_reference_me.size() });
+                    jobs_that_reference_me.clear();
+                }
+            };
+
+            inline void read_from_device() {
                 if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    cl_queue.cl_queue.enqueueReadBuffer(device_buffer, blocking, 0ull, capacity(), (void*)host_buffer, event_waitlist, event_returned);
+                    cl::Event event_returned;
+                    device->queue.get().obj.enqueueReadBuffer(device_buffer, false, 0ull, capacity(), (void*)host_buffer,
+                    jobs_that_reference_me.size() > 0 ? std::pair<Event*, Event*>{ &jobs_that_reference_me[0], &jobs_that_reference_me[0] + jobs_that_reference_me.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }
+                    , &event_returned);
+                    jobs_that_reference_me.push_back(event_returned);
                 }
             }
-            inline void write_to_device(const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
+            inline void write_to_device() {
                 if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, blocking, 0ull, capacity(), (void*)host_buffer, event_waitlist, event_returned);
+                    cl::Event event_returned; 
+                    device->queue.get().obj.enqueueWriteBuffer(device_buffer, false, 0ull, capacity(), (void*)host_buffer,
+                    jobs_that_reference_me.size() > 0 ? std::pair<Event*, Event*>{ &jobs_that_reference_me[0], & jobs_that_reference_me[0] + jobs_that_reference_me.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }
+                    , &event_returned);
+                    jobs_that_reference_me.push_back(event_returned);
                 }
-            }
-            inline void read_from_device(const ulong offset, const ulong length, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    const ulong safe_offset = min(offset, range()), safe_length = min(length, range() - safe_offset);
-                    if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, blocking, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                }
-            }
-            inline void write_to_device(const ulong offset, const ulong length, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    const ulong safe_offset = min(offset, range()), safe_length = min(length, range() - safe_offset);
-                    if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, blocking, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                }
-            }
-            inline void read_from_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 1D domain from device, either for all vector dimensions (-1) or for a specified dimension
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
-                    for (uint i = i0; i < i1; i++) {
-                        const ulong safe_offset = min((ulong)i * N + x0, range()), safe_length = min(x1 - x0, range() - safe_offset);
-                        if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                    }
-                    if (blocking) cl_queue.cl_queue.finish();
-                }
-            }
-            inline void write_to_device_1d(const ulong x0, const ulong x1, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 1D domain to device, either for all vector dimensions (-1) or for a specified dimension
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
-                    for (uint i = i0; i < i1; i++) {
-                        const ulong safe_offset = min((ulong)i * N + x0, range()), safe_length = min(x1 - x0, range() - safe_offset);
-                        if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                    }
-                    if (blocking) cl_queue.cl_queue.finish();
-                }
-            }
-            inline void read_from_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 2D domain from device, either for all vector dimensions (-1) or for a specified dimension
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    for (uint y = y0; y < y1; y++) {
-                        const ulong n = x0 + y * Nx;
-                        const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
-                        for (uint i = i0; i < i1; i++) {
-                            const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
-                            if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                        }
-                    }
-                    if (blocking) cl_queue.cl_queue.finish();
-                }
-            }
-            inline void write_to_device_2d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong Nx, const ulong Ny, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 2D domain to device, either for all vector dimensions (-1) or for a specified dimension
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    for (uint y = y0; y < y1; y++) {
-                        const ulong n = x0 + y * Nx;
-                        const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
-                        for (uint i = i0; i < i1; i++) {
-                            const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
-                            if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                        }
-                    }
-                    if (blocking) cl_queue.cl_queue.finish();
-                }
-            }
-            inline void read_from_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // read 3D domain from device, either for all vector dimensions (-1) or for a specified dimension
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    for (uint z = z0; z < z1; z++) {
-                        for (uint y = y0; y < y1; y++) {
-                            const ulong n = x0 + (y + z * Ny) * Nx;
-                            const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
-                            for (uint i = i0; i < i1; i++) {
-                                const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
-                                if (safe_length > 0ull) cl_queue.cl_queue.enqueueReadBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                            }
-                        }
-                    }
-                    if (blocking) cl_queue.cl_queue.finish();
-                }
-            }
-            inline void write_to_device_3d(const ulong x0, const ulong x1, const ulong y0, const ulong y1, const ulong z0, const ulong z1, const ulong Nx, const ulong Ny, const ulong Nz, const int dimension = -1, const bool blocking = true, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { // write 3D domain to device, either for all vector dimensions (-1) or for a specified dimension
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    for (uint z = z0; z < z1; z++) {
-                        for (uint y = y0; y < y1; y++) {
-                            const ulong n = x0 + (y + z * Ny) * Nx;
-                            const uint i0 = (uint)max(0, dimension), i1 = dimension < 0 ? d : i0 + 1u;
-                            for (uint i = i0; i < i1; i++) {
-                                const ulong safe_offset = min((ulong)i * N + n, range()), safe_length = min(x1 - x0, range() - safe_offset);
-                                if (safe_length > 0ull) cl_queue.cl_queue.enqueueWriteBuffer(device_buffer, false, safe_offset * sizeof(T), safe_length * sizeof(T), (void*)(host_buffer + safe_offset), event_waitlist, event_returned);
-                            }
-                        }
-                    }
-                    if (blocking) cl_queue.cl_queue.finish();
-                }
-            }
-            inline void enqueue_read_from_device(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { 
-                read_from_device(false, event_waitlist, event_returned); 
-            }
-            inline void enqueue_write_to_device(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { 
-                write_to_device(false, event_waitlist, event_returned); 
-            }
-            inline void enqueue_read_from_device(const ulong offset, const ulong length, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
-                read_from_device(offset, length, false, event_waitlist, event_returned);
-            }
-            inline void enqueue_write_to_device(const ulong offset, const ulong length, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { 
-                write_to_device(offset, length, false, event_waitlist, event_returned); 
-            }
-            inline void finish_queue() { 
-                cl_queue.cl_queue.finish();
             }
             inline const cl::Buffer& get_cl_buffer() const {
                 return device_buffer; 
             }
         };
 
-        class Kernel {
-        private:
-            ulong 
-                N = 0ull; // kernel range
-            uint 
-                number_of_parameters = 0u;
-            std::string 
+        class Function {
+        public:
+            std::string
                 name = "";
-            cl::Kernel 
+            const Program*
+                cl_program = nullptr;
+            cl::Kernel
                 cl_kernel;
-            cl::NDRange 
-                cl_range_global, 
-                cl_range_local;
-            const Queue* 
-                cl_queue = nullptr;
 
-            void check_for_errors(const int error) {
+        public:
+            Function()
+                : name(""), cl_program(nullptr), cl_kernel()
+            {}
+            Function(const std::string& Name)
+                : name(Name), cl_program(&opencl::get_program()), cl_kernel(cl_program->program.cl_program.get().obj, name.c_str())
+            {}
+            Function(Function&&) = default;
+            Function& operator=(Function&&) = default;
+            Function(Function const&) = delete;
+            Function& operator=(Function const&) = delete;
+            ~Function() = default;
+
+
+        private:
+            void check_for_errors(const int error) const {
                 if (error == -48) print_error("There is no OpenCL kernel with name \"" + name + "(...)\" in the OpenCL C code! Check spelling!");
                 if (error<-48 && error>-53) print_error("Parameters for OpenCL kernel \"" + name + "(...)\" don't match between C++ and OpenCL C!");
                 if (error == -54) print_error("Workgrop size " + to_string(WORKGROUP_SIZE) + " for OpenCL kernel \"" + name + "(...)\" is invalid!");
                 if (error != 0) print_error("OpenCL kernel \"" + name + "(...)\" failed with error code " + to_string(error) + "!");
             }
-
-            template<typename T>
-            void link_parameter(const uint position, const T& constant) {
+            template<typename T> void link_parameter(const uint position, const T& constant) {
                 check_for_errors(cl_kernel.setArg(position, sizeof(T), (void*)&constant));
             }
             template<> void link_parameter<cl::Buffer>(const uint position, const cl::Buffer& memory) {
                 check_for_errors(cl_kernel.setArg(position, memory));
             }
-            void link_parameters(const uint starting_position) {
+            void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position) {
                 number_of_parameters = max(number_of_parameters, starting_position);
             }
-            template<template<class> typename G, typename T, class... U> void link_parameters(const uint starting_position, const G<T>& parameter, const U&... parameters) {
+            template<template<class> typename G, typename T, class... U> void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position, const G<T>& parameter, const U&... parameters) {
                 if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
-                    link_parameters(starting_position, *parameter, parameters...);
+                    link_parameters(number_of_parameters, waitlist, starting_position, *parameter, parameters...);
                 }
                 else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
+                    waitlist.insert(parameter.jobs_that_reference_me.begin(), parameter.jobs_that_reference_me.end());
+
                     link_parameter(starting_position, parameter.get_cl_buffer());
-                    link_parameters(starting_position + 1u, parameters...);
+                    link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
                 }
                 else {
                     link_parameter(starting_position, parameter);
-                    link_parameters(starting_position + 1u, parameters...);
+                    link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
                 }
             }
-            template<class T, class... U> void link_parameters(const uint starting_position, const T& parameter, const U&... parameters) {
+            template<class T, class... U> void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
                 link_parameter(starting_position, parameter);
-                link_parameters(starting_position + 1u, parameters...);
+                link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
             }
+        
         public:
-            template<class... T> Kernel(const Program& device, Queue const& queue, const ulong N, const std::string& Name, const T&... parameters) 
-                : name(Name), cl_queue(&queue)
-            { // accepts Memory<T> objects and fundamental data type constants
-                cl_kernel = cl::Kernel(device.program.cl_program, name.c_str());
-                link_parameters(0u, parameters...); // expand variadic template to link kernel parameters
-                set_ranges(N);
-            }
-            template<class... T> Kernel(const Program& device, Queue const& queue, const ulong N, const uint workgroup_size, const std::string& Name, const T&... parameters) 
-                : name(Name), cl_queue(&queue)
-            { // accepts Memory<T> objects and fundamental data type constants
-                cl_kernel = cl::Kernel(device.program.cl_program, name.c_str());
-                link_parameters(0u, parameters...); // expand variadic template to link kernel parameters
-                set_ranges(N, (ulong)workgroup_size);
-            }
-            Kernel() = default; // default constructor
-            Kernel& set_ranges(const ulong N, const ulong workgroup_size = (ulong)WORKGROUP_SIZE) {
-                this->N = N;
-                cl_range_global = cl::NDRange(((N + workgroup_size - 1ull) / workgroup_size) * workgroup_size); // make global range a multiple of local range
-                cl_range_local = cl::NDRange(workgroup_size);
-                return *this;
-            }
-            const ulong range() const { return N; }
-            uint get_number_of_parameters() const { return number_of_parameters; }
-            template<class... T> Kernel& add_parameters(const T&... parameters) { // add parameters to the list of existing parameters
-                link_parameters(number_of_parameters, parameters...); // expand variadic template to link kernel parameters
-                return *this;
-            }
-            template<class... T> Kernel& set_parameters(const uint starting_position, const T&... parameters) { // set parameters starting at specified position
-                link_parameters(starting_position, parameters...); // expand variadic template to link kernel parameters
-                return *this;
-            }
-            Kernel& finish_queue() {
-                cl_queue->cl_queue.finish();
-                return *this;
-            }
-            Kernel& enqueue_run(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
-                for (uint i = 0u; i < t; i++) {
-                    check_for_errors(cl_queue->cl_queue.enqueueNDRangeKernel(cl_kernel, cl::NullRange, cl_range_global, cl_range_local, event_waitlist, event_returned));
+            static void append_events(cl::Event const& _event) {}
+            template<template<class> typename G, typename T, class... U> static void append_events(cl::Event const& _event, const G<T>& parameter, const U&... parameters) {
+                if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
+                    append_events(_event, *parameter, parameters...);
                 }
-                return *this;
+                else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
+                    const_cast<G<T>&>(parameter).jobs_that_reference_me.push_back(_event);
+                    append_events(_event, parameters...);
+                }
+                else {
+                    append_events(_event, parameters...);
+                }
             }
-            Kernel& run(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
-                enqueue_run(t, event_waitlist, event_returned);
-                finish_queue();
-                return *this;
-            }
-            Kernel& operator()(const uint t = 1u, const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) {
-                return run(t, event_waitlist, event_returned);
+            template<class T, class... U> static void append_events(cl::Event const& _event, const T& parameter, const U&... parameters) {
+                append_events(_event, parameters...);
             }
 
+        public:
+            template<class... T> cl::Event operator()(unsigned int N, const T&... parameters) {
+                unsigned int 
+                    number_of_parameters = 0u;
+                std::set<cl::Event> 
+                    waitlist_set;
+                std::vector<cl::Event>
+                    waitlist;
+
+                link_parameters(number_of_parameters, waitlist_set, 0u, parameters...); // expand variadic template to link kernel parameters
+                waitlist.insert(waitlist.end(), waitlist_set.begin(), waitlist_set.end());
+
+                cl::NDRange
+                    cl_range_global = cl::NDRange(((N + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
+                    cl_range_local = cl::NDRange(WORKGROUP_SIZE);
+                
+                cl::Event out;
+                check_for_errors(cl_program->queue.get().obj.enqueueNDRangeKernel(cl_kernel, cl::NullRange, cl_range_global, cl_range_local, waitlist.size() > 0 ? std::pair<Event*, Event*>{ &waitlist[0], &waitlist[0] + waitlist.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }, &out));
+                append_events(out, parameters...);
+                return out;
+            };
+
+
+
         };
+
+        struct dimensions {
+            unsigned int X;
+            unsigned int Y;
+            unsigned int Z;
+            unsigned int num_dimensions() const {
+                return std::max<unsigned int>(1u, (unsigned int)(X > 1u) + (unsigned int)(Y > 1u) + (unsigned int)(Z > 1u));
+            };
+            unsigned int count() const {
+                return X * Y * Z;
+            };
+        };
+        
+        template<typename T> class gpu_array {
+            template <typename G> friend class gpu_array;
+            std::shared_ptr<Memory<T>> data;
+            dimensions dim;
+
+        public:
+            using type = T;
+            class reader {
+                Memory<T>* data;
+                dimensions dim;
+
+            public:
+                reader(Memory<T>& copy, dimensions const& D) : data(&copy), dim(D) {
+                    data->add_host_buffer();
+                    data->read_from_device();
+                    data->wait();
+                };
+                reader(reader const&) = default;
+                reader(reader&&) = default;
+                reader& operator=(reader const&) = default;
+                reader& operator=(reader&&) = default;
+                ~reader() = default;
+                operator bool() const {                    
+                    return data->length() > 0;
+                };
+                T const& operator[](unsigned int X) const {
+                    return data->operator[](X);
+                };
+                T const& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
+                    return data->operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);                    
+                };
+            };
+            class writer {
+                Memory<T>* data;
+                dimensions dim;
+                bool _cpu_only = false;
+
+            public:
+                writer(Memory<T>& copy, dimensions const& D, bool cpu_only = false) : data(&copy), dim(D), _cpu_only(cpu_only) {
+                    data->add_host_buffer();
+                    data->read_from_device();
+                    data->wait();
+                };
+                writer(writer const&) = delete;
+                writer(writer&& rhs) : data(std::move(rhs.data)), dim(std::move(rhs.dim)), _cpu_only(rhs._cpu_only) {
+                    rhs.data = nullptr;
+                };
+                writer& operator=(writer const&) = delete;
+                writer& operator=(writer&& rhs) {
+                    if (data) { data->write_to_device(); }
+
+                    data = std::move(rhs.data);
+                    dim = std::move(rhs.dim);
+                    rhs.data = nullptr;
+
+                    return *this;
+                };
+                ~writer() {
+                    if (data) {
+                        data->write_to_device();
+                    }
+                };
+                operator bool() const {
+                    return data->length() > 0;
+                };
+                T& operator[](unsigned int X) const {
+                    return data->operator[](X);
+                };
+                T& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
+                    return data->operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);
+                };
+            };
+
+        private:
+            template<class... P> static inline void work(gpu_array& destination, unsigned int count, const std::string& name, const P&... parameters) { 
+                GL::GPU::Function kernel(name + opencl_impl::type_name<T>());
+                if (destination.data) {
+                    destination.data->jobs_that_reference_me.push_back(kernel(count, parameters...));
+                }
+                else {
+                    GL::GPU::Function::append_events(kernel(count, parameters...), parameters...);
+                }
+            };
+
+        public:
+            gpu_array() : data(nullptr), dim{ 0,0,0 } {}
+            explicit gpu_array(dimensions const& D, bool cpu_only = false)
+                : data(std::make_shared<Memory<T>>(D.count(), 1, cpu_only, !cpu_only)), dim{ D }
+            {};
+            explicit gpu_array(unsigned int X, unsigned int Y = 1, unsigned int Z = 1)
+                : data(std::make_shared<Memory<T>>(X* Y* Z, 1, false, true)), dim{ X, Y, Z }
+            {}
+            gpu_array(gpu_array const&) = delete;
+            gpu_array(gpu_array&& rhs) noexcept : data(std::move(rhs.data)) , dim{ rhs.dim } 
+            {
+                rhs.data = nullptr;
+            }
+            gpu_array& operator=(gpu_array const&) = delete;
+            gpu_array& operator=(gpu_array&& rhs) noexcept {
+                dim = rhs.dim;
+                data = std::move(rhs.data);
+                rhs.data = nullptr;
+                return *this;
+            };
+            ~gpu_array() {
+                data = nullptr;
+            };
+
+
+        public:
+            reader read() const {
+                return reader(*data, dim);
+            };
+            writer write(bool cpu_only = false) {
+                return writer(*data, dim, cpu_only);
+            };
+            unsigned int size() const {
+                return dim.count();
+            }
+            unsigned int size(unsigned int D) const {
+                if (D == 0) return dim.X;
+                if (D == 1) return dim.Y;
+                if (D == 2) return dim.Z;
+                else throw std::runtime_error("Array does not support more than 3 dimensions yet");
+            }
+
+            gpu_array& operator=(T rhs) {
+                gpu_array::work(*this, this->size(), "copy_single", data, rhs);
+                return *this;
+            };
+            gpu_array& operator+=(T rhs) {
+                gpu_array::work(*this, this->size(), "add_single_inplace", data, rhs);
+                return *this;
+            };
+            gpu_array& operator-=(T rhs) {
+                gpu_array::work(*this, this->size(), "sub_single_inplace", data, rhs);
+                return *this;
+            };
+            gpu_array& operator*=(T rhs) {
+                gpu_array::work(*this, this->size(), "mult_single_inplace", data, rhs);
+                return *this;
+            };
+            gpu_array& operator/=(T rhs) {
+                gpu_array::work(*this, this->size(), "divide_single_inplace", data, rhs);
+                return *this;
+            };
+            gpu_array& operator+=(gpu_array const& rhs) {
+                gpu_array::work(*this, this->size(), "add_inplace", data, rhs.data);
+                return *this;
+            };
+            gpu_array& operator-=(gpu_array const& rhs) {
+                gpu_array::work(*this, this->size(), "sub_inplace", data, rhs.data);
+                return *this;
+            };
+            gpu_array& operator*=(gpu_array const& rhs) {
+                gpu_array::work(*this, this->size(), "mult_inplace", data, rhs.data);
+                return *this;
+            };
+            gpu_array& operator/=(gpu_array const& rhs) {
+                gpu_array::work(*this, this->size(), "divide_inplace", data, rhs.data);
+                return *this;
+            };
+
+            friend gpu_array operator+(gpu_array const& lhs, gpu_array const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "add", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array operator-(gpu_array const& lhs, gpu_array const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "sub", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array operator*(gpu_array const& lhs, gpu_array const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "mult", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array operator/(gpu_array const& lhs, gpu_array const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "divide", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array operator+(gpu_array const& lhs, T const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "add_single", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator-(gpu_array const& lhs, T const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "sub_single", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator*(gpu_array const& lhs, T const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "mult_single", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator/(gpu_array const& lhs, T const& rhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "divide_single", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator+(T const& rhs, gpu_array const& lhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "add_single", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator-(T const& rhs, gpu_array const& lhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "sub_single_inv", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator*(T const& rhs, gpu_array const& lhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "mult_single", lhs.data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array operator/(T const& rhs, gpu_array const& lhs) {
+                auto out = gpu_array(lhs.dim);
+                gpu_array::work(out, out.size(), "divide_single_inv", lhs.data, rhs, out.data);
+                return out;
+            };
+            gpu_array copy() const {
+                auto out = gpu_array(dim);
+                gpu_array::work(out, out.size(), "copy", out.data, data);
+                return out;
+            };
+            // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
+            template<typename G> gpu_array<G> cast() const {
+                if constexpr (std::is_same_v<G, T>) {
+                    return copy();
+                }
+                else {
+                    static std::string CastFunc{ std::string("from_") + opencl_impl::type_name<T>() }; // from_int
+                    auto out = gpu_array<G>(this->dim);
+                    gpu_array<G>::work(out, out.dim.count(), CastFunc, out.data, data);
+                    return out;
+                }
+            };
+
+            // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
+            static gpu_array random(unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
+                if constexpr (std::is_floating_point_v<T>) {
+                    gpu_array out(dimensions{ X, Y, Z });
+                    gpu_array::work(out, out.size(), "Rand", out.data);
+                    return out;
+                }
+                else {
+                    return (gpu_array<float>::random(X, Y, Z) * (float)std::numeric_limits<T>::max()).cast<T>();
+                }
+            };
+            // returns a random number in the range of (lower, upper]
+            static gpu_array random_between(T lower, T upper, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
+                if constexpr (std::is_floating_point_v<T>) {
+                    gpu_array out(dimensions{ X, Y, Z });
+                    gpu_array::work(out, out.size(), "Rand", out.data);
+                    out *= (upper - lower);
+                    out += lower;
+                    return out;
+                }
+                else {
+                    return gpu_array<float>::random_between((float)lower, (float)upper, X, Y, Z).cast<T>();
+                }
+            };
+            // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
+            static gpu_array identity(unsigned int width) {
+                gpu_array out(dimensions{ width, width, 1 });
+                gpu_array::work(out, out.size(), "identity", out.data, (unsigned int)width);
+                return out;
+            };
+            // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
+            static gpu_array linear(T low, T high, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
+                int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
+
+                gpu_array out(dimensions{ lenX, lenY, lenZ });
+                gpu_array::work(out, out.size(), "linear_between", out.data, low, high, (unsigned int)out.size());
+                return out;
+            };
+            // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
+            template <typename P> static gpu_array from_vector(const P& parameters) {
+                unsigned int count = 0;
+                for (auto& x : parameters) {
+                    ++count;
+                }
+                gpu_array out(dimensions{ count, 1, 1 });
+                count = 0;
+                if (auto W = out.write()) {
+                    for (auto& x : parameters) {
+                        W[count++] = static_cast<T>(x);
+                    }
+                }
+                return out;
+            };
+            // Returns a matrix with all values equal to the provided value
+            static gpu_array constant(T value, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
+                gpu_array out(dimensions{ lenX, lenY, lenZ });
+                gpu_array::work(out, out.size(), "copy_single", out.data, value);
+                return out;
+            };
+
+
+
+
+        };
+
+
+
+
+
+
     };
+
+
+
+
+
+
 
 }
 
 
 void fnGpuProgramming() {
-    if (0) {
-        parallel_dynamic_allocator<float> block_alloc;
-
-
-
-
-        //parallel::Std_For<long>(0, 1000, [&](long T) {
-
-
-
-
-
-            long i = 17;
-            for (; i >= 1; --i) {
-                long SIZE = (8 << i);
-                long pS = (8 << (i - 1));
-
-                auto p = block_alloc.Alloc(SIZE, i == 17);
-                for (long j = pS; j < SIZE; ++j) {
-                    p[j] = i;
-                }
-                block_alloc.Free(p);
-            }
-            for (; i >= 0; --i) {
-                long SIZE = 8;
-                auto p = block_alloc.Alloc(SIZE, false);
-                for (long j = 0; j < SIZE; ++j) {
-                    p[j] = i;
-                }
-                block_alloc.Free(p);
-            }
-            if (1) {
-                auto p = block_alloc.Alloc(8 << 17, false);
-                for (long j = 0; j < (8 << 17); ++j) {
-                    print(p[j]);
-                }
-                block_alloc.Free(p);
-            }
-        //});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        using namespace GL;
-        // Array arr = Array::random_between(ArrayTypes::FLOAT, 0.0, 1.0, 10, 10, 1);
-    }
-
-    if (1) {
-        GL::GPU::Program program({ opencl_impl::create_kernels() });
+    while (1) {
+        // instantiate the program once... 
 
         for (int iter = 0; iter < 3; ++iter) {
-            // leak-free (so far) implementation that uses shared memory for the local, host buffers. 
             for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::Memory<unsigned int> arr1(program, 1000 + (1000 * v), 1, false, true);
-                GL::GPU::Kernel kernel(program, arr1.cl_queue, arr1.length(), std::string("copy_single") + opencl_impl::type_name<unsigned int>(), arr1, v);
-                Event this_event;
-                kernel.enqueue_run(1, { nullptr, nullptr }, &this_event);
-
-                arr1.add_host_buffer();
-                arr1.read_from_device(true, { &this_event, &this_event + 1 });
-                // print(arr1[0]);
+                GL::GPU::gpu_array<unsigned int> _arr;
+                if (1) {
+                    auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+                    auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+                    _arr = _arr1 + _arr2;
+                }
+                if (auto r = _arr.read()) {
+                    print(r[0]);
+                }
             }
         }
         for (int iter = 0; iter < 3; ++iter) {
             parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-                GL::GPU::Memory<unsigned int> arr1(program, 1000 + (1000 * v), 1, false, true);
-                GL::GPU::Kernel kernel(program, arr1.cl_queue, arr1.length(), std::string("copy_single") + opencl_impl::type_name<unsigned int>(), arr1, v);
-                Event this_event;
-                kernel.enqueue_run(1, { nullptr, nullptr }, &this_event);
-
-                arr1.add_host_buffer();
-                arr1.read_from_device(true, { &this_event, &this_event + 1 });
-                //print(arr1[0]);
+                GL::GPU::gpu_array<unsigned int> _arr;
+                if (1) {
+                    auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+                    auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+                    _arr = _arr1 + _arr2;
+                }
+                if (auto r = _arr.read()) {
+                    print(r[0]);
+                }
             });
         }
+
+
+        for (int iter = 0; iter < 3; ++iter) {
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
+                _arr1 = 5;
+                if (1) {
+                    GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
+                    _arr2 = v;
+                    _arr1 += _arr2;
+                }
+                if (auto r = _arr1.read()) {
+                    EXPECT_EQ(r[0], v + 5);
+                }
+            }
+        }
+        for (int iter = 0; iter < 3; ++iter) {
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::gpu_array<unsigned int> _arr;
+                {
+                    GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
+                    _arr1 = 5;
+
+                    GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
+                    _arr2 = v;
+
+                    _arr = _arr1 + _arr2;
+                }
+                if (auto r = _arr.read()) {
+                    EXPECT_EQ(r[0], v + 5);
+                }
+            }
+        }
+        for (int iter = 0; iter < 3; ++iter) {
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::gpu_array<unsigned int> _arr;
+                {
+                    GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
+                    _arr1 = 5;
+
+                    GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
+                    _arr2 = v;
+
+                    _arr = _arr1 + _arr2;
+                }
+            }
+        }
+
+        for (int iter = 0; iter < 3; ++iter) {
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
+                _arr = v;
+                _arr *= 0;
+                _arr /= 1;
+                _arr += v;
+                if (auto r = _arr.read()) {
+                    EXPECT_EQ(r[0], v);
+                }
+            }
+        }
+        for (int iter = 0; iter < 3; ++iter) {
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
+                _arr = v;
+                _arr *= 0;
+                _arr /= 1;
+                _arr += v;
+            }
+        }
+        for (int iter = 0; iter < 3; ++iter) {
+            parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
+                GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
+                _arr = v;
+                _arr *= 0;
+                _arr /= 1;
+                _arr += v;
+                if (auto r = _arr.read()) {
+                    EXPECT_EQ(r[0], v);
+                }
+            });
+        }
+
+        // instantiate the program once... 
+        for (int iter = 0; iter < 3; ++iter) {
+            for (unsigned int v = 0; v < 1000; ++v) {
+                GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
+
+                if (1) {
+                    GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
+                    arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
+                }
+                if (1) {
+                    arr1.add_host_buffer(); // immediately creates the data on the RAM
+                    arr1.read_from_device(); // read_from_device does not wait
+                }
+                arr1.wait();
+
+                EXPECT_EQ(arr1[0], v);
+            }
+        }
+        for (int iter = 0; iter < 3; ++iter) {                
+            parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
+                GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
+
+                if (1) {
+                    GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
+                    arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
+                }
+                if (1) {
+                    arr1.add_host_buffer(); // immediately creates the data on the RAM
+                    arr1.read_from_device(); // read_from_device does not wait
+                }
+                arr1.wait();
+
+                EXPECT_EQ(arr1[0], v);
+            });
+        }        
+
+
+
+
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     using namespace GL;
 

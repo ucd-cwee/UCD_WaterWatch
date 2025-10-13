@@ -3278,6 +3278,10 @@ class Event : public detail::Wrapper<cl_event>
 public:
     //! \brief Default constructor - initializes to NULL.
     Event() : detail::Wrapper<cl_type>() { }
+    
+    friend bool operator<(Event const& lhs, Event const& rhs) {
+        return lhs.get() < rhs.get();
+    };
 
     /*! \brief Constructor from cl_event - takes ownership.
      * 
