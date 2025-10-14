@@ -1056,15 +1056,15 @@ namespace GL {
         };
     };
 
-#if 1
-    template <typename T, unsigned int minAllocCount = (sizeof(T) << 8)>
-    class dynamic_allocator {
-    public:        
+    template <typename T, unsigned int minAllocCount = (sizeof(T) << 8), unsigned int padding_bytes = 0>
+    class dynamic_allocator {         
         struct dynamic_block {
             dynamic_block*
                 prev;
             dynamic_block*
                 next;
+            long long
+                generated_epoch;
             unsigned int 
                 num;
             unsigned int
@@ -1072,88 +1072,110 @@ namespace GL {
             bool 
                 is_free;
             bool
-                is_available;
-            unsigned int
-                free_index;
+                is_available;           
+            char 
+                Padding[padding_bytes];
 
             bool is_base_block() const {
                 return (prev == nullptr);
+            };
+            dynamic_block* get_base_block() {
+                if (prev) return prev->get_base_block();
+                else return this;
             };
             bool is_split() const {
                 if (next || prev) return true;
                 else return false;
             };
         };
-        //cweeBTree< dynamic_block*, unsigned int, 8>
-            //free_tree;
-        GL::atomic_map<unsigned int, GL::atomic_vector<dynamic_block*>>
-            free;
+        cweeBTree< dynamic_block, unsigned int, 8>
+            free_tree{};
+        unsigned int 
+            total_allocations{ 0 };
+        __declspec(noinline) bool try_combine(dynamic_block* lhs) {
+            if (lhs) {
+                if (lhs->is_free && lhs->next) {
+                    if (lhs->next->is_available && lhs->next->is_free) {
+                        // we are free, and the next pointer is free
+                        lhs->next->is_available = false;
+                        lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
+                        if (lhs->next->next) {
+                            lhs->next->next->prev = lhs;
+                        }
 
-        __declspec(noinline) void try_combine(dynamic_block* lhs) {
-            if (lhs->is_free && lhs->next) {
-                if (lhs->next->is_available && lhs->next->is_free) {
-                    // we are free, and the next pointer is free
-                    lhs->next->is_available = false;
-                    lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
-                    if (lhs->next->next) {
-                        lhs->next->next->prev = lhs;
+                        // lhs->next is no longer valid and should be removed from the list
+                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->num);
+                        while (tree_node) {
+                            if (tree_node->object) {
+                                if (tree_node->key == lhs->next->num) {
+                                    if (tree_node->object == lhs->next) {
+                                        free_tree.Remove(tree_node);
+                                        break;
+                                    }
+                                }
+                            }
+                            tree_node = free_tree.GetNextLeaf(tree_node);
+                        }
+
+                        lhs->next = lhs->next->next;
+
+                        if (!lhs->next && !lhs->prev) {
+                            lhs->num = lhs->original_allocation;
+                        }
+
+                        // try to combine again!
+                        (void)try_combine(lhs);
+
+                        return true;
                     }
-
-                    // lhs->next is no longer valid and should be removed from the list
-                    auto& list = free[lhs->next->num];
-                    list[lhs->next->free_index] = nullptr;
-
-                    lhs->next = lhs->next->next;
-
-                    if (!lhs->next && !lhs->prev) {
-                        lhs->num = lhs->original_allocation;
-                    }
-
-                    // try to combine again!
-                    try_combine(lhs);
                 }
+                //if (lhs->is_free && lhs->prev) {
+                //    if (lhs->prev->is_available && lhs->prev->is_free) {
+                //        // we are free, and the prev pointer is free
+                //        return try_combine(lhs->prev);
+                //    }
+                //}
             }
+            return false;
         };
+        std::mutex 
+            mut;
 
-
-
-        unsigned int total_allocations = 0;
-        
+    public:
         T* Alloc(unsigned int N) {
             if (N == 0) return nullptr;
+
+            std::scoped_lock locked(mut);
 
             dynamic_block* free_block = nullptr;
             // try to get a free block
             if (1) {
-                // auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
-                
-
-
-
-                auto iter = free.find_larger_or_equal(N);
-                while (iter != free.end()) {
-                    if (iter->first >= N) {
-                        GL::atomic_vector<dynamic_block*>& options = iter->second;
-                        for (auto& x : options) {
-                            if (x && x->is_available) {
-                                free_block = x;
-                                x = nullptr;
+                auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
+                while (tree_node) {
+                    if (tree_node->object) {
+                        if (tree_node->key >= N) {
+                            if (tree_node->object->is_available) {
+                                free_block = tree_node->object;
+                                free_block->get_base_block()->generated_epoch = GL::util::get_current_epoch();
+                                free_tree.Remove(tree_node);
                                 break;
                             }
                         }
                     }
-                    ++iter;
-                }
+                    tree_node = free_tree.GetNextLeaf(tree_node);
+                }                
             }
             // otherwise make a block
             if (!free_block) { // allocate a new buffer to fit the requested size
                 unsigned int alloc_count = CONST_MAX(minAllocCount, ((N > minAllocCount) ? (N + (N % minAllocCount)) : N) );
                 free_block = (dynamic_block*)Mem_Alloc(sizeof(dynamic_block) + sizeof(T) * alloc_count);
+                if (!free_block) return nullptr;
                 free_block->prev = nullptr;
                 free_block->next = nullptr;
                 free_block->num = alloc_count;
                 free_block->original_allocation = alloc_count;
                 free_block->is_available = true;
+                free_block->generated_epoch = GL::util::get_current_epoch();
                 total_allocations += free_block->original_allocation;
             }
             // split the block if too large
@@ -1172,12 +1194,7 @@ namespace GL {
                     if (child_block->next) child_block->next->prev = child_block;
                     free_block->num = N;
 
-                    auto& list = free[child_block->num];
-                    unsigned int pos = 0;
-                    for (auto& x : list) if (!x) break; else ++pos;
-                    child_block->free_index = pos;
-                    list.grow_to_at_least(child_block->free_index + 16);
-                    list[child_block->free_index] = child_block;
+                    free_tree.Add(child_block, child_block->num);
                 }
             }
             // return the result
@@ -1186,32 +1203,59 @@ namespace GL {
         };
         __declspec(noinline) void Free(T* ptr) {
             if (!ptr) return;
+
+            std::scoped_lock locked(mut);
+
             dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
             free_block->is_free = true;
             try_combine(free_block);
             if (free_block->is_base_block() && !free_block->is_split() && ((total_allocations - free_block->original_allocation) > 0)) {
-                total_allocations -= free_block->original_allocation;
-                Mem_Free(free_block);
+                long long curr_epoch = GL::util::get_current_epoch();
+
+                // has enough time passed to warrant this?
+                if ((curr_epoch - free_block->generated_epoch) > 1000) {
+                    total_allocations -= free_block->original_allocation;
+                    Mem_Free(free_block);
+                }
+                else {
+                    free_block->generated_epoch = curr_epoch;
+                    free_tree.Add(free_block, free_block->num);
+                }
+
+                // review the free tree and see if anyone is expired...
+                if (auto* tree_node = free_tree.GetRoot()) {
+                    while (tree_node) {
+                        if (tree_node->object) {
+                            if (try_combine(tree_node->object)) break;
+                            if (!tree_node->object->is_split() && tree_node->object->is_base_block()) {
+                                if ((curr_epoch - tree_node->object->generated_epoch) > 10) {
+                                    total_allocations -= tree_node->object->original_allocation;
+                                    Mem_Free(tree_node->object);
+
+                                    free_tree.Remove(tree_node);
+                                    break;
+                                }
+                            }                        
+                        }
+                        tree_node = free_tree.GetNextLeaf(tree_node);
+                    }
+                }
             }
             else {
-                auto& list = free[free_block->num];
-                unsigned int pos = 0;
-                for (auto& x : list) if (!x) break; else ++pos;
-                free_block->free_index = pos;
-                list.grow_to_at_least(free_block->free_index + 16);
-                list[free_block->free_index] = free_block;
+                free_tree.Add(free_block, free_block->num);
             }
         };
-
         __declspec(noinline) ~dynamic_allocator() {
             std::vector< dynamic_block* > blocks;
-            for (auto& x : free) {
-                GL::atomic_vector<dynamic_block*>& options = x.second;
-                for (auto& y : options) {
-                    if (y && y->is_base_block()) {
-                        blocks.push_back(y);
+            if (auto* tree_node = free_tree.GetRoot()) {
+                while (tree_node) {
+                    if (tree_node->object) {
+                        if (tree_node->object->is_base_block()) {
+                            blocks.push_back(tree_node->object);
+                        }
                     }
-                }          
+                    tree_node = free_tree.GetNextLeaf(tree_node);
+                }
             }
             for (auto& free_block : blocks) {
                 total_allocations -= free_block->original_allocation;
@@ -1219,61 +1263,101 @@ namespace GL {
             }
             EXPECT_EQ(total_allocations, 0);
         };
+        static char* get_padded_content(T* ptr) {
+            if (!ptr) return nullptr;
+            dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
+            return &free_block->Padding[0];
+        };
+
+        class unique_ptr {
+            T* data;
+            dynamic_allocator* parent;
+
+        public:
+            explicit unique_ptr(T* d, dynamic_allocator* p) : data{ d }, parent{ p } {};
+            unique_ptr() : data{ nullptr }, parent{ nullptr } {};
+            unique_ptr(unique_ptr const&) = delete;
+            unique_ptr(unique_ptr && rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
+                rhs.data = nullptr;
+                rhs.parent = nullptr;
+            };
+            unique_ptr& operator=(unique_ptr const&) = delete;
+            unique_ptr& operator=(unique_ptr&& rhs) noexcept {
+                if (data && parent) { parent->Free(data); }
+                data = rhs.data;
+                parent = rhs.parent;
+                rhs.data = nullptr;
+                rhs.parent = nullptr;
+            };
+            ~unique_ptr() {
+                if (data && parent) { parent->Free(data); }
+            };
+
+            const T* operator->() const {
+                return data;
+            };
+            T* operator->() {
+                return data;
+            };
+            const T& operator*() const {
+                return data;
+            };
+            T& operator*() {
+                return data;
+            };
+            const T* get() const {
+                return data;
+            };
+            T* get() {
+                return data;
+            };
+
+            T& operator[](unsigned int N) {
+                return data[N];
+            };
+            const T& operator[](unsigned int N) const {
+                return data[N];
+            };
+
+        };
+
+        unique_ptr make_unique(unsigned int N) {
+            return unique_ptr(this->Alloc(N), this);
+        };
+        std::shared_ptr<T[]> make_shared(unsigned int N) {
+            return std::shared_ptr<T[]>(this->Alloc(N), [this](T* p) {
+                this->Free(p);
+            });
+        };
+
     };
 
-
-#else
-    // Thread-safe, dynamic-length allocator that re-uses pages of data based on the requested page size(s). 
-    template <typename _type_, int baseBlockSize = 1024, int minBlockSize = 256>
+    // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use. Optimized for heavy multithreading. 
+    template <typename _type_, size_t minAllocCount = (sizeof(_type_) << 8)>
     class parallel_dynamic_allocator {
     private:
-        // Lockable<cweeDynamicBlockAlloc<char, baseBlockSize, minBlockSize, sizeof(size_t)>> alloc;
-
-        class lockable {
-        public:
-            cweeDynamicBlockAlloc<char, baseBlockSize, minBlockSize, sizeof(size_t)> alloc{};
-            long lock{ 0 };
-        };
-        GL::thread_object_no_default<lockable>
+        thread_object_no_default<dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>>
             TLS;
 
     public:
-        parallel_dynamic_allocator() = default; //  : alloc{}, mut{ 0 } {};
+        parallel_dynamic_allocator() = default;
         ~parallel_dynamic_allocator() = default;
 
-        template <typename... TArgs> __declspec(noinline) _type_* Alloc(unsigned int num, bool clear = true) {
-            //return (_type_*)alloc.get().obj.Alloc(num * sizeof(_type_) / sizeof(char), clear);
-
+        _type_* Alloc(unsigned int N) {
             const auto threadID = GL::util::get_thread_id();
-            lockable& obj = *TLS;
-            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
-            char* ptr;
-            if (1) {
-                ptr = obj.alloc.Alloc(num * sizeof(_type_) / sizeof(char), clear);
-                cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
-                *reinterpret_cast<size_t*>(&block->padding[0]) = threadID;
-                InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
-            }
-            return (_type_*)(ptr);
+            _type_* out = TLS->Alloc(N);
+            auto& thread_id = reinterpret_cast<size_t&>(*dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>::get_padded_content(out));
+            thread_id = threadID;
+            return out;
         };
-        __declspec(noinline) void Free(const _type_* ptr) {
-            //auto locked = alloc.get();
-            //locked.obj.Free((char*)ptr);
-            //if (locked.obj.GetFreeBlockMemory() > (locked.obj.GetUsedBlockMemory() + baseBlockSize)) locked.obj.FreeEmptyBaseBlocks();
+        __declspec(noinline) void Free(_type_* t) {
+            if (t) {
+                auto& thread_id = reinterpret_cast<size_t&>(*dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>::get_padded_content(t));
+                TLS[thread_id].Free(t);
+            }
+        };
 
-            cweeDynamicBlock<char, sizeof(size_t)>* block = (cweeDynamicBlock<char, sizeof(size_t)>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<char, sizeof(size_t)>));
-            size_t threadID = *reinterpret_cast<size_t*>(&block->padding[0]);
-            lockable& obj = TLS[threadID];
-            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&obj.lock), 1, 0) == 0) {}
-            if (1) {
-                obj.alloc.Free((char*)ptr);
-                if (obj.alloc.GetFreeBlockMemory() > (obj.alloc.GetUsedBlockMemory() + baseBlockSize)) obj.alloc.FreeEmptyBaseBlocks();
-                InterlockedDecrement(reinterpret_cast<volatile long*>(&obj.lock));
-            }
-        };
     };
-#endif
-
 };
 namespace GL {
     namespace GPU {
@@ -1402,6 +1486,7 @@ namespace GL {
 
         };
         // static parallel_dynamic_allocator<char, 8 << 12, 8 << 2> shared_mem_allocator;
+        static parallel_dynamic_allocator<char> shared_mem_allocator;
 
         class opencl {
         public:
@@ -1431,14 +1516,14 @@ namespace GL {
                 if (d > 0x2u) z = s2 = host_buffer + N * 0x2ull; if (d > 0x6u) s6 = host_buffer + N * 0x6ull; if (d > 0xAu) sA = host_buffer + N * 0xAull; if (d > 0xEu) sE = host_buffer + N * 0xEull;
                 if (d > 0x3u) w = s3 = host_buffer + N * 0x3ull; if (d > 0x7u) s7 = host_buffer + N * 0x7ull; if (d > 0xBu) sB = host_buffer + N * 0xBull; if (d > 0xFu) sF = host_buffer + N * 0xFull;
             }
-            __declspec(noinline) void allocate_host_buffer(const bool allocate_host, const bool allow_zero_copy) {
+            inline void allocate_host_buffer(const bool allocate_host, const bool allow_zero_copy) {
                 if (allocate_host) {
                     const ulong alignment = allow_zero_copy && device->info.uses_ram ? 4096ull : 64ull; // host_buffer must be aligned to 4096 Bytes for CL_MEM_USE_HOST_PTR, and to 64 Bytes for optimal enqueueReadBuffer performance on modern CPUs
                     const ulong padding = allow_zero_copy && device->info.uses_ram ? 64ull : 0ull; // for CL_MEM_USE_HOST_PTR, 64 Bytes padding is required because device_buffer capacity in this case must be a multiple of 64 Bytes
                     const ulong alloc_size = N * (ulong)d + (alignment + padding) / sizeof(T);
                     const ulong alloc_char_size = alloc_size * sizeof(T) / sizeof(char);
-                    // host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true); // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
-                    host_buffer_unaligned = std::make_unique<T[]>(N * (ulong)d + (alignment + padding) / sizeof(T)); 
+                    host_buffer_unaligned = std::make_unique<T[]>(alloc_size);
+                    //host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size);
                     host_buffer = (T*)((((ulong)host_buffer_unaligned.get() + alignment - 1ull) / alignment) * alignment); // align host_buffer by fine-tuning pointer to be a multiple of alignment
                     initialize_auxiliary_pointers();
                     host_buffer_exists = true;
@@ -1495,17 +1580,17 @@ namespace GL {
             Memory(Memory&&) = delete;
             Memory& operator=(Memory const&) = delete;
             Memory& operator=(Memory&&) = delete;
-            __declspec(noinline) ~Memory() {
+            ~Memory() {
                 if (jobs_that_reference_me.size() > 0) {
                     cl::Event::waitForEvents({ &jobs_that_reference_me[0], &jobs_that_reference_me[0] + jobs_that_reference_me.size() });
                 }
                 delete_buffers();
             };
 
-            __declspec(noinline) void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
+            inline void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
                 if (!host_buffer_exists && device_buffer_exists) {
                     const ulong alloc_char_size = N * (ulong)d * sizeof(T) / sizeof(char);
-                    host_buffer_unaligned = std::make_unique<T[]>(N * (ulong)d); 
+                    host_buffer_unaligned = std::make_unique<T[]>(N * (ulong)d); //  (T*)shared_mem_allocator.Alloc(alloc_char_size); // 
                     host_buffer = host_buffer_unaligned.get();
                     initialize_auxiliary_pointers();
                     read_from_device();
@@ -1518,11 +1603,12 @@ namespace GL {
                     write_to_device();
                 }
             }
-            __declspec(noinline) void delete_host_buffer() {
+            inline void delete_host_buffer() {
                 host_buffer_exists = false;
                 if (!external_host_buffer) {
                     host_buffer = nullptr;
                     host_buffer_unaligned = nullptr;
+                    // shared_mem_allocator.Free((char*)host_buffer_unaligned);
                 }
                 if (!device_buffer_exists) {
                     N = 0ull;
@@ -1538,7 +1624,7 @@ namespace GL {
                     d = 1u;
                 }
             }
-            __declspec(noinline)  void delete_buffers() {
+            inline void delete_buffers() {
                 delete_device_buffer();
                 delete_host_buffer();
             }
@@ -2878,21 +2964,35 @@ namespace GL {
             };
 
             // build a collection of features for a linear regression while avoiding colinearity. 
-            __forceinline static matrix build_features(matrix const& current_best) {
+            __declspec(noinline) static matrix build_features(matrix const& current_best) {
                 return current_best.copy();
             };
             // build a collection of features for a linear regression while avoiding colinearity. 
-            __forceinline static matrix build_features(matrix&& current_best) {
+            __declspec(noinline) static matrix build_features(matrix&& current_best) {
                 return std::move(current_best);
             };
             // build a collection of features for a linear regression while avoiding colinearity. 
-            template <typename T, typename... Ts> __forceinline static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
-                if (current_best.join(1, candidate).is_colinear()) {
+            template <typename T, typename... Ts> __declspec(noinline) static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
+                auto joined = current_best.join(1, candidate);
+                if (joined.is_colinear()) {
                     return build_features(current_best, further_candidates...);
                 }
                 else {
-                    return build_features(current_best.join(1, candidate), further_candidates...);
+                    return build_features(joined, further_candidates...);
                 }
+            };
+
+            // build a collection of features for a linear regression while avoiding colinearity. 
+            __declspec(noinline) static matrix build_features_fast(matrix const& current_best) {
+                return current_best.copy();
+            };
+            // build a collection of features for a linear regression while avoiding colinearity. 
+            __declspec(noinline) static matrix build_features_fast(matrix&& current_best) {
+                return std::move(current_best);
+            };
+            // build a collection of features for a linear regression while avoiding colinearity. 
+            template <typename T, typename... Ts> __declspec(noinline) static matrix build_features_fast(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
+                return build_features_fast(current_best.join(1, candidate), further_candidates...);                
             };
 
         };
@@ -3841,7 +3941,7 @@ __forceinline void console_clear() {
 }
 
 void fnGpuProgramming() {
-    while (1) {
+    while (0) {
        GL::dynamic_allocator<int, 256> alloc;
        for (int i = 2; i <= 256; i *= 2) {
            int* p = alloc.Alloc(i);
@@ -3850,41 +3950,27 @@ void fnGpuProgramming() {
            }
            alloc.Free(p);
        }
-
        for (int i = 0; i <= 1000000; i += 10000) {
-           std::shared_ptr<int[]> p = std::shared_ptr<int[]>(alloc.Alloc(i), [&alloc](int* p) {
-               alloc.Free(p);
-           });
-
-           for (int j = 0; j < i; ++j) 
-               p[j] = i;
-           
-           for (int j = 0; j < i; ++j)
-               EXPECT_EQ(p[j], i);
+           auto p = alloc.make_unique(i);
+           for (int j = 0; j < i; ++j) p[j] = i;
        }
-
        for (int i = 1000000; i >= 0; i -= 10000) {
-           std::shared_ptr<int[]> p = std::shared_ptr<int[]>(alloc.Alloc(i), [&alloc](int* p) {
-               alloc.Free(p);
-           });
-
-           for (int j = 0; j < i; ++j)
-               p[j] = i;
-
-           for (int j = 0; j < i; ++j)
-               EXPECT_EQ(p[j], i);
+           auto p = alloc.make_unique(i);
+           for (int j = 0; j < i; ++j) p[j] = i;
        }
-
+       for (int i = 0; i < 10000; ++i) {
+           int N = GL::util::rand_fast() * 1000000;
+           auto p = alloc.make_unique(N);
+           for (int j = 0; j < N; ++j) p[j] = N;
+       }
     }
 
-
-    if (1) {
-
+    while (1) {
         //Conway's Game of Life.
-        if (0) {
+        if (1) {
             using namespace GL;
             using namespace GL::GPU;
-            const int game_w = 100, game_h = 100;
+            const int game_w = 50, game_h = 50;
 
             // Initialize the kernel array just once
             auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
@@ -3895,19 +3981,10 @@ void fnGpuProgramming() {
 
             float prev_avg2 = 0;
             float prev_avg = 0;
-            for (;;/*int J = 0; J < 30 * 30; ++J*/) {
+            for (;;) {
                 GL::stopwatch sw;
 
-                // add random chance for life to spawn
-                float new_avg = state.cast(ArrayTypes::FLOAT).sum();
-                if ((prev_avg2 == new_avg) && (prev_avg == new_avg)) {
-                    state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.98f).cast(ArrayTypes::UINT);
-                    state = state.min(1);
-                }
-                prev_avg2 = prev_avg;
-                prev_avg = new_avg;
-
-                // Convolve gets neighbors
+                // Convolve aligns the kernel ontop of each pixel, multiplies the neighboring pixels by the kernel, and sums the results. The edges are correctly handled using weighted-balancing on the kernel itself.
                 auto nHood = state.convolve(kernel);
 
                 // Generate conditions for life
@@ -3929,7 +4006,8 @@ void fnGpuProgramming() {
                 auto B = a3;
 
                 // Update state
-                state = state * C0.cast(ArrayTypes::UINT) + C1.cast(ArrayTypes::UINT);
+                state *= C0.cast(ArrayTypes::UINT);
+                state += C1.cast(ArrayTypes::UINT);
 
                 while (sw.stop() < 1.0 / 30.0) {
                     std::this_thread::yield();
@@ -3948,12 +4026,16 @@ void fnGpuProgramming() {
                 ).to_string({}, true));
                 print("");
                 print(std::to_string(1.0 / sw.stop()) + " fps");
+
+                // add random chance for life to spawn nearby the existing life. 
+                state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
+                state = state.min(1);
             }
 
         }
 
         // Advertisement regression. Generally correct analysis.
-        if (1) {
+        if (0) {
             /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
             Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
             TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
@@ -3981,9 +4063,10 @@ void fnGpuProgramming() {
             auto Basic{
                 GL::GPU::gpu_array<float>::constant(1, Sales_Revenue.size(0))
             };
-            auto features = GL::GPU::linear_regressions::build_features( // double-checks and removes colinearity
+
+            auto features = GL::GPU::linear_regressions::build_features( // does not double-check or remove colinearity
                 Basic, TV_Ads, Radio_Ads, Newspaper_Ads
-            );
+            ); 
 
             auto weights = GL::GPU::linear_regressions::solve_for_weights(Sales_Revenue, features);
             auto std_err = GL::GPU::linear_regressions::standard_error(Sales_Revenue, features, weights);
@@ -4008,243 +4091,8 @@ void fnGpuProgramming() {
 
             print(Sales_Revenue.join(1, prediction).to_string({ "Measured", "Predicted" }));
             print("");
-        }
-
-        if (0) {
-            using namespace GL;
-            const int game_w = 70, game_h = 40;
-
-            // Initialize the kernel array just once
-            auto kernel = GL::GPU::gpu_array<unsigned int>::from_vector(std::vector<unsigned int>{
-                1, 1, 1, 1, 0, 1, 1, 1, 1
-            }, 3);
-
-            auto state = (GL::GPU::gpu_array<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
-
-            float prev_avg2 = 0;
-            float prev_avg = 0;
-            for (;;/*int J = 0; J < 30 * 30; ++J*/) {
-                GL::stopwatch sw;
-
-                // add random chance for life to spawn
-                float new_avg = state.cast<float>().sum();
-                if ((prev_avg2 == new_avg) && (prev_avg == new_avg)) {
-                    state += (GL::GPU::gpu_array<float>::random(game_h, game_w, 1) > 0.98f).cast<unsigned int>();
-                    state = state.min(1);
-                }
-                prev_avg2 = prev_avg;
-                prev_avg = new_avg;
-
-                // Convolve gets neighbors
-                auto nHood = state.convolve(kernel);
-
-                // Generate conditions for life
-                // state == 1 && nHood < 2 ->> state = 0
-                // state == 1 && nHood > 3 ->> state = 0
-                // else if state == 1 ->> state = 1
-                // state == 0 && nHood == 3 ->> state = 1
-                auto C0 = (nHood == 2);
-                auto C1 = (nHood == 3);
-
-                auto a0 = (state == 1) && (nHood < 2);  // Die of under population
-                auto a1 = (state > 0) && (C0 || C1);   // Continue to live
-                auto a2 = (state <= 0) && C1;           // Reproduction
-                auto a3 = (state == 1) && (nHood > 3);  // Over-population
-
-                // display = (a0 + a1).join(2, a1 + a2).join(2, a3).cast(ArrayTypes::FLOAT);
-                auto R = a0 * a1;
-                auto G = a1 * a2;
-                auto B = a3.copy();
-
-                // Update state
-                state = state * C0.cast<unsigned int>() + C1.cast<unsigned int>();
-
-                while (sw.stop() < 1.0 / 30.0) {
-                    std::this_thread::yield();
-                }
-
-                console_clear();
-
-                print((
-                    a0.cast<char>() * '-'
-                    +
-                    state.cast<char>() * 'O'
-                    +
-                    a2.cast<char>() * '+'
-                    +
-                    a3.cast<char>() * '-'
-                ).to_string({}, true));
-
-                //auto display = a1.cast(ArrayTypes::CHAR) * 'O';
-
-
-
-                //print(display.to_string({}, true)); // state
-                print("");
-                print(std::to_string(1.0 / sw.stop()) + " fps");
-            }
 
         }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr;
-        //        if (1) {
-        //            auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-        //            auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-        //            _arr = _arr1 + _arr2;
-        //        }
-        //        //if (auto r = _arr.read()) {
-        //        //    print(r[0]);
-        //        //}
-        //    }
-        //}
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr;
-        //        if (1) {
-        //            auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-        //            auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-        //            _arr = _arr1 + _arr2;
-        //        }
-        //        //if (auto r = _arr.read()) {
-        //        //    print(r[0]);
-        //        //}
-        //    });
-        //}
-
-
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
-        //        _arr1 = 5;
-        //        if (1) {
-        //            GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
-        //            _arr2 = v;
-        //            _arr1 += _arr2;
-        //        }
-        //        if (auto r = _arr1.read()) {
-        //            EXPECT_EQ(r[0], v + 5);
-        //        }
-        //    }
-        //}
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr;
-        //        {
-        //            GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
-        //            _arr1 = 5;
-
-        //            GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
-        //            _arr2 = v;
-
-        //            _arr = _arr1 + _arr2;
-        //        }
-        //        if (auto r = _arr.read()) {
-        //            EXPECT_EQ(r[0], v + 5);
-        //        }
-        //    }
-        //}
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr;
-        //        {
-        //            GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
-        //            _arr1 = 5;
-
-        //            GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
-        //            _arr2 = v;
-
-        //            _arr = _arr1 + _arr2;
-        //        }
-        //    }
-        //}
-
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
-        //        _arr = v;
-        //        _arr *= 0;
-        //        _arr /= 1;
-        //        _arr += v;
-        //        if (auto r = _arr.read()) {
-        //            EXPECT_EQ(r[0], v);
-        //        }
-        //    }
-        //}
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
-        //        _arr = v;
-        //        _arr *= 0;
-        //        _arr /= 1;
-        //        _arr += v;
-        //    }
-        //}
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-        //        GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
-        //        _arr = v;
-        //        _arr *= 0;
-        //        _arr /= 1;
-        //        _arr += v;
-        //        if (auto r = _arr.read()) {
-        //            EXPECT_EQ(r[0], v);
-        //        }
-        //    });
-        //}
-
-        //// instantiate the program once... 
-        //for (int iter = 0; iter < 3; ++iter) {
-        //    for (unsigned int v = 0; v < 1000; ++v) {
-        //        GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
-
-        //        if (1) {
-        //            GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
-        //            arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
-        //        }
-        //        if (1) {
-        //            arr1.add_host_buffer(); // immediately creates the data on the RAM
-        //            arr1.read_from_device(); // read_from_device does not wait
-        //        }
-        //        arr1.wait();
-
-        //        EXPECT_EQ(arr1[0], v);
-        //    }
-        //}
-        //for (int iter = 0; iter < 3; ++iter) {                
-        //    parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-        //        GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
-
-        //        if (1) {
-        //            GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
-        //            arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
-        //        }
-        //        if (1) {
-        //            arr1.add_host_buffer(); // immediately creates the data on the RAM
-        //            arr1.read_from_device(); // read_from_device does not wait
-        //        }
-        //        arr1.wait();
-
-        //        EXPECT_EQ(arr1[0], v);
-        //    });
-        //}        
-
-
-
 
     }
 
