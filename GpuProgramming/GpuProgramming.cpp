@@ -4140,6 +4140,21 @@ namespace GL {
                 }
                 return out;
             };
+            // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
+            template <typename P> static gpu_array from_vector(const P& parameters, unsigned int LenX) {
+                unsigned int count = 0;
+                for (auto& x : parameters) {
+                    ++count;
+                }
+                gpu_array out(dimensions{ LenX, count / LenX, 1 });
+                count = 0;
+                if (auto W = out.write()) {
+                    for (auto& x : parameters) {
+                        W[count++] = static_cast<T>(x);
+                    }
+                }
+                return out;
+            };
             // Returns a matrix with all values equal to the provided value
             static gpu_array constant(T value, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
                 gpu_array out(dimensions{ lenX, lenY, lenZ });
@@ -4147,8 +4162,880 @@ namespace GL {
                 return out;
             };
 
+            // specialization of POW for integer powers
+            gpu_array pown(gpu_array<int> const& rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "power_n", data, rhs.data, out.data);
+                return out;
+            };
+            // power of 
+            gpu_array pow(gpu_array const& rhs) const {
+                if constexpr (std::is_same_v<T, int>) return pown(rhs);
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "power", data, rhs.data, out.data);
+                return out;
+            };
+            // specialization of POW for integer powers
+            gpu_array pown(int rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "power_n_single", data, rhs, out.data);
+                return out;
+            };
+            // power of 
+            gpu_array pow(T rhs) const {
+                if constexpr (std::is_same_v<T, int>) return pown(rhs);
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "power_single", data, rhs, out.data);
+                return out;
+            };
+            // sqrt
+            gpu_array<float> sqrt() const {
+                gpu_array<float> out(this->dim);
+                gpu_array::work(out, out.size(), "square_root", data, out.data);
+                return out;
+            };
+            // round to nearest whole number
+            gpu_array round() const {
+                if constexpr (std::is_floating_point_v<T>) {
+                    gpu_array out(this->dim);
+                    gpu_array::work(out, out.size(), "round", data, out.data);
+                    return out;
+                }
+                else {
+                    return copy();
+                }
+            };
+            // round to higher integer
+            gpu_array ceil() const {
+                if constexpr (std::is_floating_point_v<T>) {
+                    gpu_array out(this->dim);
+                    gpu_array::work(out, out.size(), "ceil", data, out.data);
+                    return out;
+                }
+                else {
+                    return copy();
+                }
+            };
+            // round to lower integer
+            gpu_array floor() const {
+                if constexpr (std::is_floating_point_v<T>) {
+                    gpu_array out(this->dim);
+                    gpu_array::work(out, out.size(), "flr", data, out.data);
+                    return out;
+                }
+                else {
+                    return copy();
+                }
+            };
+            // return (this * multiply) + add;
+            gpu_array fma(gpu_array const& multiply, gpu_array const& add) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "mult_add", data, multiply.data, add.data, out.data);
+                return out;
+            };
+            // absolute value
+            gpu_array abs() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "absolute", data, out.data);
+                return out;
+            };
 
+            gpu_array cos() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Cos", data, out.data);
+                return out;
+            };
+            gpu_array sin() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Sin", data, out.data);
+                return out;
+            };
+            gpu_array tan() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Tan", data, out.data);
+                return out;
+            };
+            gpu_array acos() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "aCos", data, out.data);
+                return out;
+            };
+            gpu_array asin() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "aSin", data, out.data);
+                return out;
+            };
+            gpu_array atan() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "aTan", data, out.data);
+                return out;
+            };
+            gpu_array cosh() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Cosh", data, out.data);
+                return out;
+            };
+            gpu_array sinh() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Sinh", data, out.data);
+                return out;
+            };
+            gpu_array tanh() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Tanh", data, out.data);
+                return out;
+            };
+            gpu_array acosh() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "aCosh", data, out.data);
+                return out;
+            };
+            gpu_array asinh() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "aSinh", data, out.data);
+                return out;
+            };
+            gpu_array atanh() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "aTanh", data, out.data);
+                return out;
+            };
+            // e^x
+            gpu_array exp() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Exp", data, out.data);
+                return out;
+            };
+            // 2^x
+            gpu_array exp2() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Exp2", data, out.data);
+                return out;
+            };
+            // 10^x
+            gpu_array exp10() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Exp10", data, out.data);
+                return out;
+            };
+            // e^x-1
+            gpu_array expm1() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Expm1", data, out.data);
+                return out;
+            };
+            // log gamma function
+            gpu_array lgamma() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Lgamma", data, out.data);
+                return out;
+            };
+            // ln(x)
+            gpu_array log() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Log", data, out.data);
+                return out;
+            };
+            // log_2(x)
+            gpu_array log2() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Log2", data, out.data);
+                return out;
+            };
+            // log_10(x)
+            gpu_array log10() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Log10", data, out.data);
+                return out;
+            };
+            // ln(1+x)
+            gpu_array log1p() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Log1p", data, out.data);
+                return out;
+            };
+            // return this % rhs
+            gpu_array mod(T rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Mod_single", data, rhs, out.data);
+                return out;
+            };
+            // return this % rhs
+            gpu_array mod(gpu_array const& rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Mod", data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array operator%(gpu_array const& lhs, gpu_array const& rhs) {
+                return lhs.mod(rhs);
+            };
+            friend gpu_array operator%(gpu_array const& lhs, T rhs) {
+                return lhs.mod(rhs);
+            };
+            // returns the max of the two arrays (item-by-item, as an array)
+            gpu_array max(gpu_array const& rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Max", data, rhs.data, out.data);
+                return out;
+            };
+            // returns the max of the two arrays (item-by-item, as an array)
+            gpu_array max(T rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Max_single", data, rhs, out.data);
+                return out;
+            };
+            // returns the min of the two arrays (item-by-item, as an array)
+            gpu_array min(gpu_array const& rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Min", data, rhs.data, out.data);
+                return out;
+            };
+            // returns the min of the two arrays (item-by-item, as an array)
+            gpu_array min(T rhs) const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, out.size(), "Min_single", data, rhs, out.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator!() const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_not", out.data, data);
+                return out;
+            };
+            gpu_array<unsigned int> operator==(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_eq_single", data, rhs, out.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator!=(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_neq_single", data, rhs, out.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator<(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_ls_single", data, rhs, out.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator<=(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_lse_single", data, rhs, out.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator>(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_gr_single", data, rhs, out.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator>=(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_gre_single", data, rhs, out.data);
+                return out;
+            };
+            friend gpu_array<unsigned int> operator==(gpu_array const& lhs, gpu_array const& rhs) {
+                gpu_array<unsigned int> out(lhs.dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_eq", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array<unsigned int> operator!=(gpu_array const& lhs, gpu_array const& rhs) {
+                gpu_array<unsigned int> out(lhs.dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_neq", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array<unsigned int> operator<(gpu_array const& lhs, gpu_array const& rhs) {
+                gpu_array<unsigned int> out(lhs.dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_ls", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array<unsigned int> operator<=(gpu_array const& lhs, gpu_array const& rhs) {
+                gpu_array<unsigned int> out(lhs.dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_lse", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array<unsigned int> operator>(gpu_array const& lhs, gpu_array const& rhs) {
+                gpu_array<unsigned int> out(lhs.dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_gr", lhs.data, rhs.data, out.data);
+                return out;
+            };
+            friend gpu_array<unsigned int> operator>=(gpu_array const& lhs, gpu_array const& rhs) {
+                gpu_array<unsigned int> out(lhs.dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_gre", lhs.data, rhs.data, out.data);
+                return out;
+            };
 
+            gpu_array<unsigned int> operator&&(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_AND_single", out.data, data, rhs);
+                return out;
+            };
+            gpu_array<unsigned int> operator&&(gpu_array const& rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_AND", out.data, data, rhs.data);
+                return out;
+            };
+            gpu_array<unsigned int> operator||(T rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_OR_single", out.data, data, rhs);
+                return out;
+            };
+            gpu_array<unsigned int> operator||(gpu_array const& rhs) const {
+                gpu_array<unsigned int> out(this->dim);
+                gpu_array<unsigned int>::work(out, out.size(), "item_OR", out.data, data, rhs.data);
+                return out;
+            };
+            // joins two matrices along one of the dimensions.
+            gpu_array join(unsigned int jdim, gpu_array const& first) const {
+                // All dimensions except join dimension must be equal
+                for (unsigned int I = 0; I < 3; ++I) {
+                    if (I == jdim) continue;
+                    if (this->size(I) != first.size(I)) {
+                        return gpu_array();
+                    }
+                }
+
+                // Compute output dims
+                unsigned int
+                    NewX = this->size(0) + first.size(0) * (jdim == 0),
+                    NewY = this->size(1) + first.size(1) * (jdim == 1),
+                    NewZ = this->size(2) + first.size(2) * (jdim == 2);
+
+                gpu_array out(dimensions{ NewX, NewY, NewZ });
+                if (jdim == 0) {
+                    gpu_array::work(out, out.size(), "join_dim_0", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.X);
+                }
+                else if (jdim == 1) {
+                    gpu_array::work(out, out.size(), "join_dim_1", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.Y);
+                }
+                else {
+                    gpu_array::work(out, out.size(), "join_dim_2", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data);
+                }
+
+                return out;
+            };
+            // transpose a 2-D matrix along its diagonal. Does not support transposition of 3-D matrices. 
+            gpu_array transpose() const {
+                // matrix must be 2-D
+                if (this->dim.num_dimensions() == 0) return gpu_array();
+                else if (this->dim.num_dimensions() > 2) return gpu_array();
+
+                gpu_array out(dimensions{ this->dim.Y, this->dim.X, 1 });
+                gpu_array::work(out, out.size(), "Transpose", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y);
+                return out;
+            };
+            // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
+            gpu_array make_square() const {
+                unsigned int len = std::max<unsigned int>(dim.X, dim.Y);
+
+                gpu_array out(dimensions{ len, len, 1 });
+                gpu_array::work(out, out.size(), "make_square", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len);
+
+                return out;
+            }
+            // extracts the diagonal of a 2-D matrix as a 1-D array
+            gpu_array diagonal() const {
+                if (this->dim.num_dimensions() == 0) return gpu_array();
+                else if (this->dim.num_dimensions() == 1) return this->copy();
+                else if (this->dim.num_dimensions() > 2) return gpu_array();
+                gpu_array out(dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
+                gpu_array::work(out, this->size(), "diagonal", out.data, data, dim.X);
+                return out;
+            };
+            // extract a row from this 2-D matrix as a 1-D array
+            gpu_array row(unsigned int rowN) const {
+                gpu_array out(dimensions{ dim.Y, dim.Z, 1 });
+                gpu_array::work(out, out.size(), "row_of", out.data, data, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z);
+                return out;
+            };
+            // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
+            gpu_array grow_by_wrapping(unsigned int new_length) const {
+                if (this->dim.num_dimensions() == 1) {
+                    gpu_array out(dimensions{ new_length, 1, 1 });
+                    gpu_array::work(out, out.size(), "wrap_around", out.data, data, (unsigned int)this->size());
+                    return out;
+                }
+                else {
+                    // ??
+                    throw std::runtime_error("Cannot grow a matrix by wrapping -- yet. Depends on how we want to grow it? Y-axis growth is off, but X-axis growth makes sense with wrapping");
+                }
+            };
+            // create a new array by sampling this array at the provided indices. E.g. This = [5,4,3,2,1,0]
+            // Indices = [5,5,5,5,5,5,5,4,4,4,4,4,4,3,3,3,3,3,2,2,2,2,1,1,1,0,0]
+            // Result = [0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,5,5]
+            gpu_array resample(gpu_array<unsigned int> const& sample_indices) const {
+                gpu_array out(sample_indices.dim);
+                gpu_array::work(out, out.size(), "resample", out.data, data, sample_indices.data);
+                return out;
+            };
+
+            // calculate the determinant for a square matrix. Performed on the CPU, and minimizes exchanges with the GPU. 
+            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+            float determinant() const {
+                if (this->dim.X != this->dim.Y) {
+                    return 1;
+                }
+                unsigned int dimension = this->dim.X;
+
+                if (dimension == 0) {
+                    return 1;
+                }
+                else if (dimension == 1) {
+                    auto R = this->read();
+                    return R(0);
+                }
+                else if (dimension == 2) {
+                    auto R = this->read();
+                    return R(0, 0) * R(1, 1) - R(0, 1) * R(1, 0);
+                }
+                else {
+                    float result = 0;
+                    int sign = 1;
+
+                    if (auto R = this->read()) {
+                        gpu_array subVect(dimensions{ dimension - 1, dimension - 1, 1 }, true);
+                        for (unsigned int i = 0; i < dimension; ++i) {
+                            if (auto W = subVect.write(true)) {
+                                // build a sub-matrix
+                                for (unsigned int m = 1; m < dimension; m++) {
+                                    unsigned int z = 0;
+                                    for (unsigned int n = 0; n < dimension; n++) {
+                                        if (n != i) {
+                                            W(m - 1, z) = R(m, n);
+                                            z++;
+                                        }
+                                    }
+                                }
+                            }
+                            //recursive call
+                            result += sign * R(0, i) * subVect.determinant();
+                            sign = -sign;
+                        }
+                    }
+                    return result;
+                }
+            }
+
+            // cofactor of a square matrix, essential for calculating the inverse
+            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+            gpu_array cofactor() const {
+                if (this->dim.X != this->dim.Y) {
+                    return make_square().cofactor();
+                }
+                unsigned int dimension = this->dim.X;
+                gpu_array solution(dimensions{ dimension, dimension, 1 });
+                if (auto W1 = solution.write()) {
+                    gpu_array subVect(dimensions{ dimension - 1, dimension - 1, 1 }, true);
+                    if (auto R = this->read()) {
+                        for (unsigned int i = 0; i < dimension; i++) {
+                            for (unsigned int j = 0; j < dimension; j++) {
+                                int p = 0;
+                                if (auto W = subVect.write(true)) {
+                                    for (unsigned int x = 0; x < dimension; x++) {
+                                        if (x == i) continue;
+                                        int q = 0;
+
+                                        for (unsigned int y = 0; y < dimension; y++) {
+                                            if (y == j) continue;
+                                            W(p, q) = R(x, y);
+                                            q++;
+                                        }
+                                        p++;
+                                    }
+                                }
+                                W1(i, j) = (T)(std::pow<long double>(-1.0l, (long double)(i + j)) * (long double)subVect.determinant());
+                            }
+                        }
+                    }
+                }
+                return solution;
+            };
+
+            // transpose of the cofactor of a square matrix
+            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+            gpu_array adjoint() const {
+                return cofactor().transpose();
+            };
+
+            // solve for the inverse of the matrix. Does not support solving for the inverse of a 3-D matrix. 
+            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+            gpu_array inverse() const {
+                return adjoint() / std::abs(determinant());
+            };
+
+            // performs a cross-multiplication of two rectangular matrices. This is not accelerated by the GPU, and is CPU-bound. Uses CPU multithreading to (attempt) to speed-up this bottleneck. 
+            // the number of columns in this matrix must equal the number of rows in the RHS matrix. 
+            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+            gpu_array matrix_multiply(gpu_array const& rhs) const {
+                if (this->dim.Y == rhs.dim.X) {
+                    // only useful for dim-2 matrices. 
+                    unsigned int final_num_rows = this->dim.X;
+                    unsigned int final_num_cols = rhs.dim.Y;
+
+                    gpu_array out(dimensions{ final_num_rows, final_num_cols, 1 });
+                    auto R_lhs = this->read();
+                    auto R_rhs = rhs.read();
+                    if (auto W = out.write()) {
+                        if (R_lhs && R_rhs && W) {
+                            auto N = out.dim.count();
+                            for (unsigned int n = 0; n < N; ++n) {
+                                if (n >= N) continue;
+
+                                // parallel::Std_For<unsigned int>(0, out.size(), [&](unsigned int n) {
+                                T v = (T)0;
+                                const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
+                                const unsigned int destination_X = n - (final_num_rows * destination_Y);
+                                for (unsigned int index = 0; index < this->dim.Y; ++index) {
+                                    v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
+                                }
+                                W[n] = v;
+                            } // );
+                        }
+                    }
+                    return out;
+                }
+                else if (this->dim.Y > rhs.dim.X) {
+                    return matrix_multiply(rhs.copy().join(0, gpu_array(dimensions{ this->dim.Y - rhs.dim.X, rhs.dim.Y, rhs.dim.Z }) = 1));
+                }
+                else /*if (this->LenY < rhs.LenX)*/ {
+                    // To-Do: need to set final column in joining array to 1?
+                    return this->copy().join(1, gpu_array(dimensions{ this->dim.X, rhs.dim.X - this->dim.Y, this->dim.Z }) = 0).matrix_multiply(rhs);
+                }
+            };
+
+            // test to see if there is any colinearity in the feature set. If so, it is impossible to solve for the linear regression. One or multiple features must be removed until it is no longer invalid.
+            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
+            bool is_colinear() const {
+                return std::abs(this->transpose().matrix_multiply(*this).determinant()) == 0;
+            };
+
+            template<bool use_cpu = false>
+            T sum() const {
+                if constexpr (use_cpu) {
+                    auto N = this->size();
+                    T out = (T)0;
+                    if (auto R = this->read()) {
+                        for (unsigned int n = 0; n < N; ++n) {
+                            out += R(n);
+                        }
+                    }
+                    return out;
+                }
+                else {
+                    if (this->size() > 1000) {
+                        T out = (T)0;
+                        if (1) {
+                            gpu_array Temp(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+                            gpu_array::work(Temp, this->size(), "reduce_sum", data, Temp.data, (unsigned int)this->size());
+                            auto N = Temp.size();
+                            if (auto R = Temp.read()) {
+                                for (unsigned int n = 0; n < N; ++n) {
+                                    out += R(n);
+                                }
+                            }
+                        }
+                        return out;
+                    }
+                    else {
+                        auto N = this->size();
+                        T out = (T)0;
+                        if (auto R = this->read()) {
+                            for (unsigned int n = 0; n < N; ++n) {
+                                out += R(n);
+                            }
+                        }
+                        return out;
+                    }
+                }
+            };
+            T avg() const {
+                return (T)((long double)sum() / (long double)this->size());
+            };
+            T max() const {
+                if (this->size() > 1000) {
+                    gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+                    gpu_array::work(out, this->size(), "reduce_max", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::lowest());
+                    return out.max();
+                }
+                else {
+                    auto N = this->size();
+                    T out = std::numeric_limits<T>::lowest();
+                    if (auto R = this->read()) {
+                        for (unsigned int n = 0; n < N; ++n) {
+                            out = std::max(out, R(n));
+                        }
+                    }
+                    return out;
+                }
+            };
+            T min() const {
+                if (this->size() > 1000) {
+                    gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+                    gpu_array::work(out, this->size(), "reduce_min", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::max());
+                    return out.min();
+                }
+                else {
+                    auto N = this->size();
+                    T out = std::numeric_limits<T>::max();
+                    if (auto R = this->read()) {
+                        for (unsigned int n = 0; n < N; ++n) {
+                            out = std::min(out, R(n));
+                        }
+                    }
+                    return out;
+                }
+            };
+
+            gpu_array convolve(gpu_array const& kernel) const {
+                if (this->dim.num_dimensions() == 2) {
+                    gpu_array out(this->dim);
+                    float kernel_tot = kernel.sum();
+                    gpu_array::work(out, this->size(), "convolve", out.data, data, kernel.data, this->size(0), this->size(1), kernel.size(0), kernel.size(1), kernel_tot);
+                    return out;
+                }
+                else {
+                    throw std::runtime_error("Convolution not supported for this number of dimensions");
+                }
+            };
+            static gpu_array<float> guassian_kernel(unsigned int X, unsigned int Y) {
+                gpu_array<float> out(dimensions{ X, Y, 1 });
+                gpu_array<float>::work(out, out.size(), "guassian", out.data, out.size(0), out.size(1));
+                return out * (1.0f / out.sum());
+            };
+
+        private:
+            static std::string resize(std::string&& rhs, unsigned int len, const char def = 0) {
+                rhs.resize(len, def);
+                return std::move(rhs);
+            };
+            std::string to_string_impl(reader const& R, unsigned int x) const {
+                if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+                    auto c = R(x);
+                    if ((c >= 32) && (c <= 126))
+                        return std::string(1, c);
+                    else
+                        return " ";
+                }
+                else {
+                    return std::to_string(R(x));
+                }
+            };
+            std::string to_string_impl(reader const& R, unsigned int x, unsigned int y) const {
+                if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+                    auto c = R(x, y);
+                    if ((c >= 32) && (c <= 126))
+                        return std::string(1, c);
+                    else
+                        return " ";
+                }
+                else {
+                    return std::to_string(R(x, y));
+                }
+            };
+            std::string to_string_impl(reader const& R, unsigned int x, unsigned int y, unsigned int z) const {
+                if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+                    auto c = R(x, y, z);
+                    if ((c >= 32) && (c <= 126))
+                        return std::string(1, c);
+                    else
+                        return " ";
+                }
+                else {
+                    return std::to_string(R(x, y, z));
+                }
+            };
+            std::vector<unsigned int> evaluate_column_sizes(reader const& R, std::vector<std::string> column_titles = {}) const {
+                std::vector<unsigned int> out;
+                out.resize(this->dim.Y);
+
+                for (unsigned int i = 0; i < out.size(); ++i) {
+                    if (i < column_titles.size())
+                        out[i] = (unsigned int)column_titles[i].size();
+                    else
+                        out[i] = 0u;
+                }
+
+                // only tests the first and last 10 rows of each column
+                for (unsigned int ColN = 0; ColN < this->dim.Y; ++ColN) {
+                    for (unsigned int RowN = 0; RowN < this->dim.X && (RowN < 10); ++RowN) {
+                        out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
+                    }
+                    if (this->dim.X > 10) {
+                        for (unsigned int RowN = this->dim.X - 10; RowN < this->dim.X; ++RowN) {
+                            out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
+                        }
+                    }
+                }
+
+                return out;
+            };
+
+        public:
+            // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
+            std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
+                reader R = this->read();
+                std::string column_spacer = " ";
+                std::string out;
+                if (this->dim.num_dimensions() == 0) return out;
+                else if (this->dim.num_dimensions() == 1) {
+                    auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+                    unsigned int n = 0;
+                    for (; (n < this->size()) && (n < 1); ++n) {
+                        out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+                    }
+                    if (!doNotSkip && (this->size() >= 21)) {
+                        for (; (n < this->size()) && (n < 10); ++n) {
+                            out += "\n";
+                            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+                        }
+                        out += "\n...";
+                        for (n = this->size() - 10; n < this->size(); ++n) {
+                            out += "\n";
+                            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+                        }
+                    }
+                    else {
+                        for (; n < this->size(); ++n) {
+                            out += "\n";
+                            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+                        }
+                    }
+                    if (column_titles.size() > 0) {
+                        out = resize(std::string(column_titles[0]), col_sizes[0], ' ') + "\n" + out;
+                    }
+                }
+                else if (this->dim.num_dimensions() == 2) {
+                    auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+                    unsigned int n = 0;
+                    for (; (n < this->dim.X) && (n < 1); ++n) {
+                        unsigned int y = 0;
+                        for (; (y < this->dim.Y) && (y < 1); ++y) {
+                            out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                        }
+                        for (; y < this->dim.Y; ++y) {
+                            out += column_spacer;
+                            out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                        }
+                    }
+                    if (!doNotSkip && (this->dim.X >= 21)) {
+                        for (; (n < this->dim.X) && (n < 10); ++n) {
+                            out += "\n";
+                            unsigned int y = 0;
+                            for (; (y < this->dim.Y) && (y < 1); ++y) {
+                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                            }
+                            for (; y < this->dim.Y; ++y) {
+                                out += column_spacer;
+                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                            }
+                        }
+                        out += "\n...";
+                        for (n = this->dim.X - 10; n < this->dim.X; ++n) {
+                            out += "\n";
+                            unsigned int y = 0;
+                            for (; (y < this->dim.Y) && (y < 1); ++y) {
+                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                            }
+                            for (; y < this->dim.Y; ++y) {
+                                out += column_spacer;
+                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                            }
+                        }
+                    }
+                    else {
+                        for (; n < this->dim.X; ++n) {
+                            out += "\n";
+                            unsigned int y = 0;
+                            for (; (y < this->dim.Y) && (y < 1); ++y) {
+                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                            }
+                            for (; y < this->dim.Y; ++y) {
+                                out += column_spacer;
+                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                            }
+                        }
+                    }
+
+                    if (column_titles.size() > 0) {
+                        std::string temp = column_titles[0];
+                        for (unsigned int i = 1; i < column_titles.size(); ++i) {
+                            temp += column_spacer;
+                            temp += resize(std::string(column_titles[i]), col_sizes[i], ' ');
+                        }
+                        out = temp + "\n" + out;
+                    }
+                }
+                else if (this->dim.num_dimensions() == 3) {
+                    out = "3 dims";
+                }
+                return out;
+            };
+            friend std::ostream& operator<<(std::ostream& os, gpu_array const& obj) {
+                os << obj.to_string();
+                return os;
+            };
+
+        };
+        namespace linear_regression {
+            using matrix = gpu_array<float>;
+            // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
+            __forceinline static matrix solve_for_weights(matrix const& measurements, matrix const& features) {
+                return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
+            };
+            // solve for the linearized prediction.
+            __forceinline static matrix predict(matrix const& features, matrix const& weights) {
+                return features.matrix_multiply(weights);
+            };
+            // returns the standard error of the linear regression.
+            __forceinline static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
+                auto prediction = predict(features, weights);
+                return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+            };
+            // returns the population standard deviation.
+            __forceinline static matrix standard_deviation(
+                matrix const& measurements,
+                matrix const& features,
+                matrix const& weights
+            ) {
+                return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
+            };
+            // evaluate for the students-t test
+            __forceinline static matrix t_statistic(matrix const& weights, matrix const& std_err) {
+                return weights / std_err;
+            };
+            // evaluate for the p-value
+            __forceinline static matrix p_value(matrix const& features, matrix const& t_stat) {
+                boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
+                matrix out(dimensions{ t_stat.size(0), 1, 1 });
+                unsigned int N = out.size();
+                if (auto R = t_stat.read()) {
+                    if (auto W = out.write()) {
+                        for (unsigned int i = 0; i < N; ++i) {
+                            W[i] = (1.0f - (float)boost::math::cdf(dist, R[i])) + boost::math::cdf(dist, -R[i]);
+                            if ((W[i] > 1.0f) || (W[i] < 0.0f))
+                                W[i] = (1.0f - (float)boost::math::cdf(dist, -R[i])) + boost::math::cdf(dist, R[i]);
+                        }
+                    }
+                }
+                return out.copy();
+            };
+
+            // build a collection of features for a linear regression while avoiding colinearity. 
+            __forceinline static matrix build_features(matrix const& current_best) {
+                return current_best.copy();
+            };
+            // build a collection of features for a linear regression while avoiding colinearity. 
+            __forceinline static matrix build_features(matrix&& current_best) {
+                return std::move(current_best);
+            };
+            // build a collection of features for a linear regression while avoiding colinearity. 
+            template <typename T, typename... Ts> __forceinline static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
+                if (current_best.join(1, candidate).is_colinear()) {
+                    return build_features(current_best, further_candidates...);
+                }
+                else {
+                    return build_features(current_best.join(1, candidate), further_candidates...);
+                }
+            };
 
         };
 
@@ -4167,154 +5054,317 @@ namespace GL {
 
 }
 
+__forceinline void console_clear() {
+    COORD topLeft = { 0, 0 };
+    HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO screen;
+    DWORD written;
+
+    GetConsoleScreenBufferInfo(console, &screen);
+    FillConsoleOutputCharacterA(
+        console, ' ', screen.dwSize.X * screen.dwSize.Y, topLeft, &written
+    );
+    FillConsoleOutputAttribute(
+        console, FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+        screen.dwSize.X * screen.dwSize.Y, topLeft, &written
+    );
+    SetConsoleCursorPosition(console, topLeft);
+}
 
 void fnGpuProgramming() {
     while (1) {
         // instantiate the program once... 
-
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::gpu_array<unsigned int> _arr;
-                if (1) {
-                    auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-                    auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-                    _arr = _arr1 + _arr2;
-                }
-                if (auto r = _arr.read()) {
-                    print(r[0]);
-                }
-            }
-        }
-        for (int iter = 0; iter < 3; ++iter) {
-            parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-                GL::GPU::gpu_array<unsigned int> _arr;
-                if (1) {
-                    auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-                    auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
-                    _arr = _arr1 + _arr2;
-                }
-                if (auto r = _arr.read()) {
-                    print(r[0]);
-                }
+        
+        // Advertisement regression. Generally correct analysis.
+        if (0) {
+            /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
+            Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
+            TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
+            Radio	    0.107001228	    0.008489563	    12.60385655	    4.6021E-27	    0.090258612	    0.123743844
+            Newspaper	0.000335658	    0.005788056	    0.057991479	    0.953814495	    -0.011079206	0.011750522
+            */
+            auto TV_Ads = GL::GPU::gpu_array<float>::from_vector(std::vector<float>{
+                230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
             });
-        }
-
-
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
-                _arr1 = 5;
-                if (1) {
-                    GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
-                    _arr2 = v;
-                    _arr1 += _arr2;
-                }
-                if (auto r = _arr1.read()) {
-                    EXPECT_EQ(r[0], v + 5);
-                }
-            }
-        }
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::gpu_array<unsigned int> _arr;
-                {
-                    GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
-                    _arr1 = 5;
-
-                    GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
-                    _arr2 = v;
-
-                    _arr = _arr1 + _arr2;
-                }
-                if (auto r = _arr.read()) {
-                    EXPECT_EQ(r[0], v + 5);
-                }
-            }
-        }
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::gpu_array<unsigned int> _arr;
-                {
-                    GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
-                    _arr1 = 5;
-
-                    GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
-                    _arr2 = v;
-
-                    _arr = _arr1 + _arr2;
-                }
-            }
-        }
-
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
-                _arr = v;
-                _arr *= 0;
-                _arr /= 1;
-                _arr += v;
-                if (auto r = _arr.read()) {
-                    EXPECT_EQ(r[0], v);
-                }
-            }
-        }
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
-                _arr = v;
-                _arr *= 0;
-                _arr /= 1;
-                _arr += v;
-            }
-        }
-        for (int iter = 0; iter < 3; ++iter) {
-            parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-                GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
-                _arr = v;
-                _arr *= 0;
-                _arr /= 1;
-                _arr += v;
-                if (auto r = _arr.read()) {
-                    EXPECT_EQ(r[0], v);
-                }
+            auto Radio_Ads = GL::GPU::gpu_array<float>::from_vector(std::vector<float>{
+                37.8, 39.3, 45.9, 41.3, 10.8, 48.9, 32.8, 19.6, 2.1, 2.6, 5.8, 24.0, 35.1, 7.6, 32.9, 47.7, 36.6, 39.6, 20.5, 23.9, 27.7, 5.1, 15.9, 16.9, 12.6, 3.5, 29.3, 16.7, 27.1, 16.0, 28.3, 17.4, 1.5, 20.0, 1.4, 4.1, 43.8, 49.4, 26.7, 37.7, 22.3, 33.4, 27.7, 8.4, 25.7, 22.5, 9.9, 41.5, 15.8, 11.7, 3.1, 9.6, 41.7, 46.2, 28.8, 49.4, 28.1, 19.2, 49.6, 29.5, 2.0, 42.7, 15.5, 29.6, 42.8, 9.3, 24.6, 14.5, 27.5, 43.9, 30.6, 14.3, 33.0, 5.7, 24.6, 43.7, 1.6, 28.5, 29.9, 7.7, 26.7, 4.1, 20.3, 44.5, 43.0, 18.4, 27.5, 40.6, 25.5, 47.8, 4.9, 1.5, 33.5, 36.5, 14.0, 31.6, 3.5, 21.0, 42.3, 41.7, 4.3, 36.3, 10.1, 17.2, 34.3, 46.4, 11.0, .3, .4, 26.9, 8.2, 38.0, 15.4, 20.6, 46.8, 35.0, 14.3, .8, 36.9, 16.0, 26.8, 21.7, 2.4, 34.6, 32.3, 11.8, 38.9, .0, 49.0, 12.0, 39.6, 2.9, 27.2, 33.5, 38.6, 47.0, 39.0, 28.9, 25.9, 43.9, 17.0, 35.4, 33.2, 5.7, 14.8, 1.9, 7.3, 49.0, 40.3, 25.8, 13.9, 8.4, 23.3, 39.7, 21.1, 11.6, 43.5, 1.3, 36.9, 18.4, 18.1, 35.8, 18.1, 36.8, 14.7, 3.4, 37.6, 5.2, 23.6, 10.6, 11.6, 20.9, 20.1, 7.1, 3.4, 48.9, 30.2, 7.8, 2.3, 10.0, 2.6, 5.4, 5.7, 43.0, 21.3, 45.1, 2.1, 28.7, 13.9, 12.1, 41.1, 10.8, 4.1, 42.0, 35.6, 3.7, 4.9, 9.3, 42.0, 8.6
             });
-        }
-
-        // instantiate the program once... 
-        for (int iter = 0; iter < 3; ++iter) {
-            for (unsigned int v = 0; v < 1000; ++v) {
-                GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
-
-                if (1) {
-                    GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
-                    arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
-                }
-                if (1) {
-                    arr1.add_host_buffer(); // immediately creates the data on the RAM
-                    arr1.read_from_device(); // read_from_device does not wait
-                }
-                arr1.wait();
-
-                EXPECT_EQ(arr1[0], v);
-            }
-        }
-        for (int iter = 0; iter < 3; ++iter) {                
-            parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
-                GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
-
-                if (1) {
-                    GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
-                    arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
-                }
-                if (1) {
-                    arr1.add_host_buffer(); // immediately creates the data on the RAM
-                    arr1.read_from_device(); // read_from_device does not wait
-                }
-                arr1.wait();
-
-                EXPECT_EQ(arr1[0], v);
+            auto Newspaper_Ads = GL::GPU::gpu_array<float>::from_vector(std::vector<float>{
+                69.2, 45.1, 69.3, 58.5, 58.4, 75.0, 23.5, 11.6, 1.0, 21.2, 24.2, 4.0, 65.9, 7.2, 46.0, 52.9, 114.0, 55.8, 18.3, 19.1, 53.4, 23.5, 49.6, 26.2, 18.3, 19.5, 12.6, 22.9, 22.9, 40.8, 43.2, 38.6, 30.0, .3, 7.4, 8.5, 5.0, 45.7, 35.1, 32.0, 31.6, 38.7, 1.8, 26.4, 43.3, 31.5, 35.7, 18.5, 49.9, 36.8, 34.6, 3.6, 39.6, 58.7, 15.9, 60.0, 41.4, 16.6, 37.7, 9.3, 21.4, 54.7, 27.3, 8.4, 28.9, .9, 2.2, 10.2, 11.0, 27.2, 38.7, 31.7, 19.3, 31.3, 13.1, 89.4, 20.7, 14.2, 9.4, 23.1, 22.3, 36.9, 32.5, 35.6, 33.8, 65.7, 16.0, 63.2, 73.4, 51.4, 9.3, 33.0, 59.0, 72.3, 10.9, 52.9, 5.9, 22.0, 51.2, 45.9, 49.8, 100.9, 21.4, 17.9, 5.3, 59.0, 29.7, 23.2, 25.6, 5.5, 56.5, 23.2, 2.4, 10.7, 34.5, 52.7, 25.6, 14.8, 79.2, 22.3, 46.2, 50.4, 15.6, 12.4, 74.2, 25.9, 50.6, 9.2, 3.2, 43.1, 8.7, 43.0, 2.1, 45.1, 65.6, 8.5, 9.3, 59.7, 20.5, 1.7, 12.9, 75.6, 37.9, 34.4, 38.9, 9.0, 8.7, 44.3, 11.9, 20.6, 37.0, 48.7, 14.2, 37.7, 9.5, 5.7, 50.5, 24.3, 45.2, 34.6, 30.7, 49.3, 25.6, 7.4, 5.4, 84.8, 21.6, 19.4, 57.6, 6.4, 18.4, 47.4, 17.0, 12.8, 13.1, 41.8, 20.3, 35.2, 23.7, 17.6, 8.3, 27.4, 29.7, 71.8, 30.0, 19.6, 26.6, 18.2, 3.7, 23.4, 5.8, 6.0, 31.6, 3.6, 6.0, 13.8, 8.1, 6.4, 66.2, 8.7
             });
-        }        
+            auto Sales_Revenue = GL::GPU::gpu_array<float>::from_vector(std::vector<float>{
+                22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
+            });
+
+            // TV_Ads = TV_Ads.grow_by_wrapping(1000000);
+            // Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
+            // Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
+            // Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
+
+            auto Basic{
+                GL::GPU::gpu_array<float>::constant(1, Sales_Revenue.size(0))
+            };
+            auto features = GL::GPU::linear_regression::build_features( // double-checks and removes colinearity
+                Basic, TV_Ads, Radio_Ads, Newspaper_Ads
+            );
+
+            auto weights = GL::GPU::linear_regression::solve_for_weights(Sales_Revenue, features);
+            auto std_err = GL::GPU::linear_regression::standard_error(Sales_Revenue, features, weights);
+            auto std_dev = GL::GPU::linear_regression::standard_deviation(Sales_Revenue, features, weights);
+            auto t_stat = GL::GPU::linear_regression::t_statistic(weights, std_err);
+            auto p_value = GL::GPU::linear_regression::p_value(features, t_stat);
+            auto lower_95 = weights - (1.96 * std_err);
+            auto upper_95 = weights + (1.96 * std_err);
+            auto prediction = GL::GPU::linear_regression::predict(features, weights);
+
+            print("");
+            print(
+                weights.join(1,
+                    std_err).join(1,
+                        t_stat).join(1,
+                            p_value).join(1,
+                                lower_95).join(1,
+                                    upper_95).to_string(
+                                        { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+            );
+            print("");
+
+            print(Sales_Revenue.join(1, prediction).to_string({ "Measured", "Predicted" }));
+            print("");
+        }
+
+        if (1) {
+            using namespace GL;
+            const int game_w = 70, game_h = 40;
+
+            // Initialize the kernel array just once
+            auto kernel = GL::GPU::gpu_array<unsigned int>::from_vector(std::vector<unsigned int>{
+                1, 1, 1, 1, 0, 1, 1, 1, 1
+            }, 3);
+
+            auto state = (GL::GPU::gpu_array<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
+
+            float prev_avg2 = 0;
+            float prev_avg = 0;
+            for (;;/*int J = 0; J < 30 * 30; ++J*/) {
+                GL::stopwatch sw;
+
+                // add random chance for life to spawn
+                float new_avg = state.cast<float>().sum();
+                if ((prev_avg2 == new_avg) && (prev_avg == new_avg)) {
+                    state += (GL::GPU::gpu_array<float>::random(game_h, game_w, 1) > 0.98f).cast<unsigned int>();
+                    state = state.min(1);
+                }
+                prev_avg2 = prev_avg;
+                prev_avg = new_avg;
+
+                // Convolve gets neighbors
+                auto nHood = state.convolve(kernel);
+
+                // Generate conditions for life
+                // state == 1 && nHood < 2 ->> state = 0
+                // state == 1 && nHood > 3 ->> state = 0
+                // else if state == 1 ->> state = 1
+                // state == 0 && nHood == 3 ->> state = 1
+                auto C0 = (nHood == 2);
+                auto C1 = (nHood == 3);
+
+                auto a0 = (state == 1) && (nHood < 2);  // Die of under population
+                auto a1 = (state > 0) && (C0 || C1);   // Continue to live
+                auto a2 = (state <= 0) && C1;           // Reproduction
+                auto a3 = (state == 1) && (nHood > 3);  // Over-population
+
+                // display = (a0 + a1).join(2, a1 + a2).join(2, a3).cast(ArrayTypes::FLOAT);
+                auto R = a0 * a1;
+                auto G = a1 * a2;
+                auto B = a3.copy();
+
+                // Update state
+                state = state * C0.cast<unsigned int>() + C1.cast<unsigned int>();
+
+                while (sw.stop() < 1.0 / 30.0) {
+                    std::this_thread::yield();
+                }
+
+                console_clear();
+
+                print((
+                    a0.cast<char>() * '-'
+                    +
+                    state.cast<char>() * 'O'
+                    +
+                    a2.cast<char>() * '+'
+                    +
+                    a3.cast<char>() * '-'
+                ).to_string({}, true));
+
+                //auto display = a1.cast(ArrayTypes::CHAR) * 'O';
+
+
+
+                //print(display.to_string({}, true)); // state
+                print("");
+                print(std::to_string(1.0 / sw.stop()) + " fps");
+            }
+
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr;
+        //        if (1) {
+        //            auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+        //            auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+        //            _arr = _arr1 + _arr2;
+        //        }
+        //        //if (auto r = _arr.read()) {
+        //        //    print(r[0]);
+        //        //}
+        //    }
+        //}
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr;
+        //        if (1) {
+        //            auto _arr1 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+        //            auto _arr2 = GL::GPU::gpu_array<unsigned int>::random_between(0, 100, 1000 + (1000 * v));
+        //            _arr = _arr1 + _arr2;
+        //        }
+        //        //if (auto r = _arr.read()) {
+        //        //    print(r[0]);
+        //        //}
+        //    });
+        //}
+
+
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
+        //        _arr1 = 5;
+        //        if (1) {
+        //            GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
+        //            _arr2 = v;
+        //            _arr1 += _arr2;
+        //        }
+        //        if (auto r = _arr1.read()) {
+        //            EXPECT_EQ(r[0], v + 5);
+        //        }
+        //    }
+        //}
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr;
+        //        {
+        //            GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
+        //            _arr1 = 5;
+
+        //            GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
+        //            _arr2 = v;
+
+        //            _arr = _arr1 + _arr2;
+        //        }
+        //        if (auto r = _arr.read()) {
+        //            EXPECT_EQ(r[0], v + 5);
+        //        }
+        //    }
+        //}
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr;
+        //        {
+        //            GL::GPU::gpu_array<unsigned int> _arr1(1000 + (1000 * v));
+        //            _arr1 = 5;
+
+        //            GL::GPU::gpu_array<unsigned int> _arr2(1000 + (1000 * v));
+        //            _arr2 = v;
+
+        //            _arr = _arr1 + _arr2;
+        //        }
+        //    }
+        //}
+
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
+        //        _arr = v;
+        //        _arr *= 0;
+        //        _arr /= 1;
+        //        _arr += v;
+        //        if (auto r = _arr.read()) {
+        //            EXPECT_EQ(r[0], v);
+        //        }
+        //    }
+        //}
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
+        //        _arr = v;
+        //        _arr *= 0;
+        //        _arr /= 1;
+        //        _arr += v;
+        //    }
+        //}
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
+        //        GL::GPU::gpu_array<unsigned int> _arr(1000 + (1000 * v));
+        //        _arr = v;
+        //        _arr *= 0;
+        //        _arr /= 1;
+        //        _arr += v;
+        //        if (auto r = _arr.read()) {
+        //            EXPECT_EQ(r[0], v);
+        //        }
+        //    });
+        //}
+
+        //// instantiate the program once... 
+        //for (int iter = 0; iter < 3; ++iter) {
+        //    for (unsigned int v = 0; v < 1000; ++v) {
+        //        GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
+
+        //        if (1) {
+        //            GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
+        //            arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
+        //        }
+        //        if (1) {
+        //            arr1.add_host_buffer(); // immediately creates the data on the RAM
+        //            arr1.read_from_device(); // read_from_device does not wait
+        //        }
+        //        arr1.wait();
+
+        //        EXPECT_EQ(arr1[0], v);
+        //    }
+        //}
+        //for (int iter = 0; iter < 3; ++iter) {                
+        //    parallel::Std_For<unsigned int>(0, 1000, [&](unsigned int v) {
+        //        GL::GPU::Memory<unsigned int> arr1(1000 + (1000 * v), 1, false, true);
+
+        //        if (1) {
+        //            GL::GPU::Function kernel(std::string("copy_single") + opencl_impl::type_name<unsigned int>());
+        //            arr1.jobs_that_reference_me.push_back(kernel(arr1.length(), arr1, v));
+        //        }
+        //        if (1) {
+        //            arr1.add_host_buffer(); // immediately creates the data on the RAM
+        //            arr1.read_from_device(); // read_from_device does not wait
+        //        }
+        //        arr1.wait();
+
+        //        EXPECT_EQ(arr1[0], v);
+        //    });
+        //}        
 
 
 
