@@ -916,7 +916,7 @@ __forceinline void console_clear() {
 
 int main() {
     fnGpuProgramming();
-
+#if 0
     if (0) {
         using namespace GL;
         const int H = 60, W = 20;
@@ -1101,7 +1101,7 @@ int main() {
         // Demonstrate the creation, use, and destruction of a floating-point matrix with 100M items as part of a CPU-bound matrix multiplication
         GL::Array::constant(GL::ArrayTypes::FLOAT, 1, 10000).matrix_multiply(GL::Array::constant(GL::ArrayTypes::FLOAT, 1, 10000).transpose()).read();
     }
-
+#endif
 
 
 
