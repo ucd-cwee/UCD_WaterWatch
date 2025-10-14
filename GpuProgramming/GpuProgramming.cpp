@@ -3970,7 +3970,9 @@ void fnGpuProgramming() {
         if (1) {
             using namespace GL;
             using namespace GL::GPU;
-            const int game_w = 50, game_h = 50;
+
+            CONSOLE_SCREEN_BUFFER_INFO screen; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+            int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
 
             // Initialize the kernel array just once
             auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
@@ -3978,10 +3980,15 @@ void fnGpuProgramming() {
             }, 3);
 
             auto state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
-
-            float prev_avg2 = 0;
-            float prev_avg = 0;
             for (;;) {
+                GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+                int game_w2 = screen.dwSize.X / 2, game_h2 = screen.dwSize.Y - 3;
+                if (game_w2 != game_w || game_h != game_h2) {
+                    game_w = game_w2;
+                    game_h = game_h2;
+                    state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
+                }
+
                 GL::stopwatch sw;
 
                 // Convolve aligns the kernel ontop of each pixel, multiplies the neighboring pixels by the kernel, and sums the results. The edges are correctly handled using weighted-balancing on the kernel itself.
