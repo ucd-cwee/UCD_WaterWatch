@@ -634,7 +634,7 @@ public:
             const uint n = get_global_id(0);
             A[n] = (_type_)((float)(High - Low) * (float)((float)n / (float)Count)) + Low;
         };
-        kernel void wrap_around_type_(global _type_ * C, global _type_ * A, unsigned long Count) {
+        kernel void wrap_around_type_(global _type_ * C, global _type_ * A, uint Count) {
             const uint n = get_global_id(0);
             if (n > Count) {
                 C[n] = A[n % Count];
@@ -1002,6 +1002,10 @@ public:
 
 #include "dynamic_allocator.h"
 #include "../ScriptLanguageTesting/thread_object.h"
+#include "../ScriptLanguageTesting/atomic_allocator.h"
+#include "../ScriptLanguageTesting/atomic_maps.h"
+#include "../ScriptLanguageTesting/atomic_stack.h"
+#include <concurrent_unordered_map.h>
 
 namespace GL {
     template <typename T> class Lockable {
@@ -1052,6 +1056,173 @@ namespace GL {
         };
     };
 
+#if 1
+    template <typename T, unsigned int minAllocCount = (sizeof(T) << 8)>
+    class dynamic_allocator {
+    public:        
+        struct dynamic_block {
+            dynamic_block*
+                prev;
+            dynamic_block*
+                next;
+            unsigned int 
+                num;
+            unsigned int
+                original_allocation; // garbage value if is_base_block() returns false
+            bool 
+                is_free;
+            bool
+                is_available;
+            unsigned int
+                free_index;
+
+            bool is_base_block() const {
+                return (prev == nullptr);
+            };
+            bool is_split() const {
+                if (next || prev) return true;
+                else return false;
+            };
+        };
+        //cweeBTree< dynamic_block*, unsigned int, 8>
+            //free_tree;
+        GL::atomic_map<unsigned int, GL::atomic_vector<dynamic_block*>>
+            free;
+
+        __declspec(noinline) void try_combine(dynamic_block* lhs) {
+            if (lhs->is_free && lhs->next) {
+                if (lhs->next->is_available && lhs->next->is_free) {
+                    // we are free, and the next pointer is free
+                    lhs->next->is_available = false;
+                    lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
+                    if (lhs->next->next) {
+                        lhs->next->next->prev = lhs;
+                    }
+
+                    // lhs->next is no longer valid and should be removed from the list
+                    auto& list = free[lhs->next->num];
+                    list[lhs->next->free_index] = nullptr;
+
+                    lhs->next = lhs->next->next;
+
+                    if (!lhs->next && !lhs->prev) {
+                        lhs->num = lhs->original_allocation;
+                    }
+
+                    // try to combine again!
+                    try_combine(lhs);
+                }
+            }
+        };
+
+
+
+        unsigned int total_allocations = 0;
+        
+        T* Alloc(unsigned int N) {
+            if (N == 0) return nullptr;
+
+            dynamic_block* free_block = nullptr;
+            // try to get a free block
+            if (1) {
+                // auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
+                
+
+
+
+                auto iter = free.find_larger_or_equal(N);
+                while (iter != free.end()) {
+                    if (iter->first >= N) {
+                        GL::atomic_vector<dynamic_block*>& options = iter->second;
+                        for (auto& x : options) {
+                            if (x && x->is_available) {
+                                free_block = x;
+                                x = nullptr;
+                                break;
+                            }
+                        }
+                    }
+                    ++iter;
+                }
+            }
+            // otherwise make a block
+            if (!free_block) { // allocate a new buffer to fit the requested size
+                unsigned int alloc_count = CONST_MAX(minAllocCount, ((N > minAllocCount) ? (N + (N % minAllocCount)) : N) );
+                free_block = (dynamic_block*)Mem_Alloc(sizeof(dynamic_block) + sizeof(T) * alloc_count);
+                free_block->prev = nullptr;
+                free_block->next = nullptr;
+                free_block->num = alloc_count;
+                free_block->original_allocation = alloc_count;
+                free_block->is_available = true;
+                total_allocations += free_block->original_allocation;
+            }
+            // split the block if too large
+            if (free_block && (free_block->num > N)) {
+                // we got a buffer of size enough. But, if it is too large, we can share it with another, smaller allocation later.
+                long long free_block_size = sizeof(T) * (free_block->num - N);
+                long long remaining_N = ((free_block_size - (long long)sizeof(dynamic_block)) / (long long)sizeof(T));
+                if (remaining_N > 0) {
+                    dynamic_block* child_block = (dynamic_block*)(((::byte*)free_block) + sizeof(dynamic_block) + sizeof(T) * N);
+                    child_block->prev = free_block;
+                    child_block->next = free_block->next;
+                    child_block->num = remaining_N;
+                    child_block->is_free = true;
+                    child_block->is_available = true;
+                    free_block->next = child_block;
+                    if (child_block->next) child_block->next->prev = child_block;
+                    free_block->num = N;
+
+                    auto& list = free[child_block->num];
+                    unsigned int pos = 0;
+                    for (auto& x : list) if (!x) break; else ++pos;
+                    child_block->free_index = pos;
+                    list.grow_to_at_least(child_block->free_index + 16);
+                    list[child_block->free_index] = child_block;
+                }
+            }
+            // return the result
+            free_block->is_free = false;
+            return (T*)(((::byte*)free_block) + sizeof(dynamic_block));
+        };
+        __declspec(noinline) void Free(T* ptr) {
+            if (!ptr) return;
+            dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
+            free_block->is_free = true;
+            try_combine(free_block);
+            if (free_block->is_base_block() && !free_block->is_split() && ((total_allocations - free_block->original_allocation) > 0)) {
+                total_allocations -= free_block->original_allocation;
+                Mem_Free(free_block);
+            }
+            else {
+                auto& list = free[free_block->num];
+                unsigned int pos = 0;
+                for (auto& x : list) if (!x) break; else ++pos;
+                free_block->free_index = pos;
+                list.grow_to_at_least(free_block->free_index + 16);
+                list[free_block->free_index] = free_block;
+            }
+        };
+
+        __declspec(noinline) ~dynamic_allocator() {
+            std::vector< dynamic_block* > blocks;
+            for (auto& x : free) {
+                GL::atomic_vector<dynamic_block*>& options = x.second;
+                for (auto& y : options) {
+                    if (y && y->is_base_block()) {
+                        blocks.push_back(y);
+                    }
+                }          
+            }
+            for (auto& free_block : blocks) {
+                total_allocations -= free_block->original_allocation;
+                Mem_Free(free_block);
+            }
+            EXPECT_EQ(total_allocations, 0);
+        };
+    };
+
+
+#else
     // Thread-safe, dynamic-length allocator that re-uses pages of data based on the requested page size(s). 
     template <typename _type_, int baseBlockSize = 1024, int minBlockSize = 256>
     class parallel_dynamic_allocator {
@@ -1101,6 +1272,7 @@ namespace GL {
             }
         };
     };
+#endif
 
 };
 namespace GL {
@@ -1229,7 +1401,7 @@ namespace GL {
             //inline cl::CommandQueue get_cl_queue() const { return cl_queue; }
 
         };
-        static parallel_dynamic_allocator<char, 8 << 12, 8> shared_mem_allocator;
+        // static parallel_dynamic_allocator<char, 8 << 12, 8 << 2> shared_mem_allocator;
 
         class opencl {
         public:
@@ -1248,7 +1420,7 @@ namespace GL {
             bool external_host_buffer = false; // Memory object has been created with an externally supplied host buffer/pointer
             bool is_zero_copy = false; // if possible (device is CPU or iGPU), and if allowed by user, use zero-copy buffer: host+device buffers are fused into one
             T* host_buffer = nullptr; // host buffer
-            T* host_buffer_unaligned = nullptr; // unaligned host buffer (only required for zero-copy to align host_buffer)
+            std::unique_ptr<T[]> host_buffer_unaligned = nullptr; // unaligned host buffer (only required for zero-copy to align host_buffer)
             cl::Buffer device_buffer; // device buffer
             Program* device = nullptr; // pointer to linked Program            
 
@@ -1265,9 +1437,9 @@ namespace GL {
                     const ulong padding = allow_zero_copy && device->info.uses_ram ? 64ull : 0ull; // for CL_MEM_USE_HOST_PTR, 64 Bytes padding is required because device_buffer capacity in this case must be a multiple of 64 Bytes
                     const ulong alloc_size = N * (ulong)d + (alignment + padding) / sizeof(T);
                     const ulong alloc_char_size = alloc_size * sizeof(T) / sizeof(char);
-                    host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true); // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
-                    // host_buffer_unaligned = new T[N * (ulong)d + (alignment + padding) / sizeof(T)]; // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
-                    host_buffer = (T*)((((ulong)host_buffer_unaligned + alignment - 1ull) / alignment) * alignment); // align host_buffer by fine-tuning pointer to be a multiple of alignment
+                    // host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true); // over-allocate host_buffer_unaligned by (alignment+padding) Bytes
+                    host_buffer_unaligned = std::make_unique<T[]>(N * (ulong)d + (alignment + padding) / sizeof(T)); 
+                    host_buffer = (T*)((((ulong)host_buffer_unaligned.get() + alignment - 1ull) / alignment) * alignment); // align host_buffer by fine-tuning pointer to be a multiple of alignment
                     initialize_auxiliary_pointers();
                     host_buffer_exists = true;
                 }
@@ -1327,19 +1499,14 @@ namespace GL {
                 if (jobs_that_reference_me.size() > 0) {
                     cl::Event::waitForEvents({ &jobs_that_reference_me[0], &jobs_that_reference_me[0] + jobs_that_reference_me.size() });
                 }
-
-                if (host_buffer_exists && !external_host_buffer) {
-                    shared_mem_allocator.Free((char*)host_buffer_unaligned);
-                    host_buffer_unaligned = nullptr;
-                }
                 delete_buffers();
             };
 
             __declspec(noinline) void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
                 if (!host_buffer_exists && device_buffer_exists) {
                     const ulong alloc_char_size = N * (ulong)d * sizeof(T) / sizeof(char);
-                    host_buffer = host_buffer_unaligned = (T*)shared_mem_allocator.Alloc(alloc_char_size, true);
-                    // host_buffer = new T[N * (ulong)d];
+                    host_buffer_unaligned = std::make_unique<T[]>(N * (ulong)d); 
+                    host_buffer = host_buffer_unaligned.get();
                     initialize_auxiliary_pointers();
                     read_from_device();
                     host_buffer_exists = true;
@@ -1355,8 +1522,7 @@ namespace GL {
                 host_buffer_exists = false;
                 if (!external_host_buffer) {
                     host_buffer = nullptr;
-                    // if (host_buffer_unaligned) device.shared_mem_allocator.Free((char*)host_buffer_unaligned);
-                    // delete[] host_buffer_unaligned;
+                    host_buffer_unaligned = nullptr;
                 }
                 if (!device_buffer_exists) {
                     N = 0ull;
@@ -1377,10 +1543,8 @@ namespace GL {
                 delete_host_buffer();
             }
             inline void reset(const T value = (T)0) {
-                //if(device_buffer_exists) cl_queue.enqueueFillBuffer(device_buffer, value, 0ull, capacity()); // faster than "write_to_device();"
                 if (host_buffer_exists) std::fill(host_buffer, host_buffer + range(), value); // faster than "for(ulong i=0ull; i<range(); i++) host_buffer[i] = value;"
                 write_to_device(); // enqueueFillBuffer is broken for large buffers on Nvidia GPUs!
-                //if(device_buffer_exists) cl_queue.finish();
             }
             inline const ulong length() const { return N; }
             inline const uint dimensions() const { return d; }
@@ -1401,7 +1565,6 @@ namespace GL {
                     jobs_that_reference_me.clear();
                 }
             };
-
             inline void read_from_device() {
                 if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
                     cl::Event event_returned;
@@ -1410,7 +1573,7 @@ namespace GL {
                     , & event_returned);
                     jobs_that_reference_me.push_back(event_returned);
                 }
-            }
+            };
             inline void write_to_device() {
                 if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
                     cl::Event event_returned;
@@ -1419,10 +1582,10 @@ namespace GL {
                     , & event_returned);
                     jobs_that_reference_me.push_back(event_returned);
                 }
-            }
+            };
             inline const cl::Buffer& get_cl_buffer() const {
                 return device_buffer;
-            }
+            };
         };
 
         class Function {
@@ -3678,10 +3841,47 @@ __forceinline void console_clear() {
 }
 
 void fnGpuProgramming() {
+    while (1) {
+       GL::dynamic_allocator<int, 256> alloc;
+       for (int i = 2; i <= 256; i *= 2) {
+           int* p = alloc.Alloc(i);
+           for (int j = 0; j < i; ++j) {
+               p[j] = i;
+           }
+           alloc.Free(p);
+       }
+
+       for (int i = 0; i <= 1000000; i += 10000) {
+           std::shared_ptr<int[]> p = std::shared_ptr<int[]>(alloc.Alloc(i), [&alloc](int* p) {
+               alloc.Free(p);
+           });
+
+           for (int j = 0; j < i; ++j) 
+               p[j] = i;
+           
+           for (int j = 0; j < i; ++j)
+               EXPECT_EQ(p[j], i);
+       }
+
+       for (int i = 1000000; i >= 0; i -= 10000) {
+           std::shared_ptr<int[]> p = std::shared_ptr<int[]>(alloc.Alloc(i), [&alloc](int* p) {
+               alloc.Free(p);
+           });
+
+           for (int j = 0; j < i; ++j)
+               p[j] = i;
+
+           for (int j = 0; j < i; ++j)
+               EXPECT_EQ(p[j], i);
+       }
+
+    }
+
+
     if (1) {
-        // instantiate the program once... 
-        
-        if (1) {
+
+        //Conway's Game of Life.
+        if (0) {
             using namespace GL;
             using namespace GL::GPU;
             const int game_w = 100, game_h = 100;
@@ -3753,7 +3953,7 @@ void fnGpuProgramming() {
         }
 
         // Advertisement regression. Generally correct analysis.
-        if (0) {
+        if (1) {
             /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
             Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
             TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
@@ -3773,10 +3973,10 @@ void fnGpuProgramming() {
                 22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
             });
 
-            // TV_Ads = TV_Ads.grow_by_wrapping(1000000);
-            // Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
-            // Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
-            // Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
+            TV_Ads = TV_Ads.grow_by_wrapping(1000000);
+            Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
+            Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
+            Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
 
             auto Basic{
                 GL::GPU::gpu_array<float>::constant(1, Sales_Revenue.size(0))

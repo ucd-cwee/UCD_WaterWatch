@@ -15,14 +15,7 @@ to maintain a single distribution point for the source code.
 
 #pragma once
 #include "dynamic_allocator.h"
-
-/*
-===============================================================================
-
-	Balanced Search Tree
-
-===============================================================================
-*/
+#include "../ScriptLanguageTesting/atomic_allocator.h"
 
 template< class objType, class keyType >
 class cweeBTreeNode {
@@ -58,13 +51,12 @@ public:
 	objType* FindLargestSmallerEqual(keyType key) const;				// find an object with the largest key smaller equal the given key
 
 	cweeBTreeNode<objType, keyType>* GetRoot() const;											// returns the root node of the tree
-	int								GetNodeCount() const;										// returns the total number of nodes in the tree
 	cweeBTreeNode<objType, keyType>* GetNext(cweeBTreeNode<objType, keyType>* node) const;		// goes through all nodes of the tree
 	cweeBTreeNode<objType, keyType>* GetNextLeaf(cweeBTreeNode<objType, keyType>* node) const;	// goes through all leaf nodes of the tree
 
 private:
 	cweeBTreeNode<objType, keyType>* root;
-	cweeAlloc<cweeBTreeNode<objType, keyType>, 128>	nodeAllocator;
+	GL::atomic_allocator< cweeBTreeNode<objType, keyType>> nodeAllocator;
 
 	cweeBTreeNode<objType, keyType>* AllocNode();
 	void							FreeNode(cweeBTreeNode<objType, keyType>* node);
@@ -92,7 +84,6 @@ __forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::Init() {
 
 template< class objType, class keyType, int maxChildrenPerNode >
 __forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::Shutdown() {
-	nodeAllocator.Clear();
 	root = NULL;
 };
 
@@ -377,11 +368,6 @@ __forceinline objType* cweeBTree<objType, keyType, maxChildrenPerNode>::FindLarg
 template< class objType, class keyType, int maxChildrenPerNode >
 __forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::GetRoot() const {
 	return root;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline int cweeBTree<objType, keyType, maxChildrenPerNode>::GetNodeCount() const {
-	return nodeAllocator.GetAllocCount();
 };
 
 template< class objType, class keyType, int maxChildrenPerNode >

@@ -418,7 +418,10 @@ public:
 			type* ptr = block->GetMemory();
 			if constexpr (std::is_pod<type>::value) {
 				if (clearMemory) {
-					::memset((void*)ptr, 0, sizeof(type) * num);
+					for (int i = 0; i < num; ++i) {
+						new (ptr + i) type();
+					}
+					// ::memset((void*)ptr, 0, sizeof(type) * num);
 				}
 			}
 			else {
@@ -570,7 +573,7 @@ private:
 		}
 
 		// if the unused space at the end of this block is large enough to hold a block with at least one element
-		if (block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type, additional_buffer>) < CONST_MAX(minBlockSize, (int)sizeof(type))) {
+		if (((block->GetSize() - alignedBytes) - (int)sizeof(cweeDynamicBlock<type, additional_buffer>)) < CONST_MAX(minBlockSize, (int)sizeof(type))) {
 			return block;
 		}
 
@@ -578,7 +581,7 @@ private:
 
 		newBlock = (cweeDynamicBlock<type, additional_buffer>*) (((::byte*)block) + (int)sizeof(cweeDynamicBlock<type, additional_buffer>) + alignedBytes);
 		try {
-			newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type, additional_buffer>), false);
+			newBlock->SetSize(((block->GetSize() - alignedBytes) - (int)sizeof(cweeDynamicBlock<type, additional_buffer>)), false);
 		}
 		catch (...) {}
 		newBlock->next = block->next;
