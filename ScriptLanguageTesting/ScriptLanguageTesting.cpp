@@ -917,7 +917,7 @@ __forceinline void console_clear() {
 int main() {
     fnGpuProgramming();
 #if 1
-    // Conway's Game of Life.
+    // Conway's Game of Life, using the GPU.
     if (1) {
         using namespace GL;
 
@@ -996,15 +996,17 @@ int main() {
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
-            print((
-                a0.cast(ArrayTypes::CHAR) * '-'
-                +
-                state.cast(ArrayTypes::CHAR) * 'o'
-                +
-                a2.cast(ArrayTypes::CHAR) * '+'
-                +
-                a3.cast(ArrayTypes::CHAR) * '^'
-            ).to_string({}, true));
+            print((!state).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(25, 25)).ASCII().to_string({}, true));
+
+            //print((
+            //    a0.cast(ArrayTypes::CHAR) * '-'
+            //    +
+            //    state.cast(ArrayTypes::CHAR) * 'o'
+            //    +
+            //    a2.cast(ArrayTypes::CHAR) * '+'
+            //    +
+            //    a3.cast(ArrayTypes::CHAR) * '^'
+            //).to_string({}, true));
 
             state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.999f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
             state = state.min(1);
@@ -1073,7 +1075,6 @@ int main() {
             }
         }
     }
-
 #endif
 
     // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  

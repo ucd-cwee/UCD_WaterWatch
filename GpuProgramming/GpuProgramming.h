@@ -294,6 +294,7 @@ namespace GL {
         Number max() const;
         Number min() const;
         Array convolve(Array const& kernel) const;
+        Array ASCII() const;
     };
     class linear_regression {
     public:

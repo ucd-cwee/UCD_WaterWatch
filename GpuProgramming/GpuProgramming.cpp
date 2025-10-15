@@ -693,6 +693,13 @@ public:
             A[n] = (_type_)result;
         };
 
+        kernel void ASCII_type_(global char* A, global _type_* B, _type_ minValue, _type_ maxValue, global char* ramp, unsigned int ramp_length) {
+            // convert from the input to ASCII based on the intensity of the incoming values
+            const int n = (int)get_global_id(0);
+            unsigned int index = (unsigned int)floor((((float)B[n] - (float)minValue) / ((float)maxValue - (float)minValue)) * (float)ramp_length);
+            A[n] = ramp[index];
+        }
+
         );
         if constexpr (std::is_floating_point_v<T>) {
             out = out + R(
@@ -2751,6 +2758,23 @@ namespace GL {
                 return out * (1.0f / out.sum());
             };
 
+            gpu_array<char> ASCII() const {
+                auto thisMinV = this->min();
+                auto thisMaxV = this->max();
+                auto ramp = gpu_array<char>::from_vector(std::vector<char>{ 
+                    '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O', 
+                    '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|', 
+                    '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"', 
+                    '^', '`', '\'', '.', ' '
+                });
+
+                GL::GPU::Function kernel(std::string("ASCII") + opencl_impl::type_name<T>());
+                gpu_array<char> out(this->dim);
+                out.data->jobs_that_reference_me.push_back(kernel(out.size(), out.data, this->data, thisMinV, thisMaxV, ramp.data, ramp.size() ));
+
+                return out;
+            };
+
         private:
             static std::string resize(std::string&& rhs, unsigned int len, const char def = 0) {
                 rhs.resize(len, def);
@@ -3862,6 +3886,12 @@ namespace GL {
             return BuildArray(arr.convolve(get_array<typename typename std::decay_t<decltype(arr)>::type>(kernel._data)));
             });
     };
+    Array Array::ASCII() const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr.ASCII());
+        });
+    };
+
     // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
     Array linear_regression::solve_for_weights(Array const& measurements, Array const& features) {
         return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
@@ -3912,7 +3942,7 @@ namespace GL {
     Array linear_regression::build_features(Array&& current_best) {
         return std::move(current_best);
     };
-
+    
 };
 
 void clear() {
