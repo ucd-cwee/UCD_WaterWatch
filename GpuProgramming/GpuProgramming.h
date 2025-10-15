@@ -79,7 +79,7 @@ namespace GL {
     class Array {
     private:
         ArrayTypes _type;
-        std::shared_ptr<void> _data; // gpu_array<T>
+        std::shared_ptr<void> _data; // gpu_array<T>, type-erased
 
     public:
         Array(ArrayTypes _t, std::shared_ptr<void>&& _d) : _type(_t), _data{ std::move(_d) } {};
@@ -330,6 +330,7 @@ namespace GL {
         };
 
     };
+
 };
 
 void fnGpuProgramming();
