@@ -2759,19 +2759,20 @@ namespace GL {
             };
 
             gpu_array<char> ASCII() const {
-                auto thisMinV = this->min();
-                auto thisMaxV = this->max();
+                GL::GPU::Function kernel(std::string("ASCII") + opencl_impl::type_name<T>());
                 auto ramp = gpu_array<char>::from_vector(std::vector<char>{ 
                     '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O', 
                     '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|', 
                     '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"', 
                     '^', '`', '\'', '.', ' '
                 });
+                auto thisMinV = this->min();
+                auto thisMaxV = this->max();    
 
-                GL::GPU::Function kernel(std::string("ASCII") + opencl_impl::type_name<T>());
                 gpu_array<char> out(this->dim);
-                out.data->jobs_that_reference_me.push_back(kernel(out.size(), out.data, this->data, thisMinV, thisMaxV, ramp.data, ramp.size() ));
-
+                out.data->jobs_that_reference_me.push_back( kernel( 
+                    out.size(), out.data, this->data, thisMinV, thisMaxV, ramp.data, ramp.size() 
+                ) );
                 return out;
             };
 
