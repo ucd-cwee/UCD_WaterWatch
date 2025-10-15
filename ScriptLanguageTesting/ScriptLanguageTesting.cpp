@@ -921,8 +921,16 @@ int main() {
     if (1) {
         using namespace GL;
 
+        std::ios_base::sync_with_stdio(false);
+        std::cin.tie(NULL);
+
         CONSOLE_SCREEN_BUFFER_INFO screen; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
         int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
+
+        CONSOLE_CURSOR_INFO cursorInfo;
+        GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+        cursorInfo.bVisible = false;
+        SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
 
         // Initialize the kernel array just once
         auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
@@ -930,13 +938,29 @@ int main() {
         }, 3);
 
         auto state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
+        float avg_framerate = 0;
+        int avg_framerate_n = 0;
         for (;;) {
             GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
             int game_w2 = screen.dwSize.X / 2, game_h2 = screen.dwSize.Y - 3;
             if (game_w2 != game_w || game_h != game_h2) {
                 game_w = game_w2;
                 game_h = game_h2;
-                state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
+
+                auto new_state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
+                if (auto R = state.read()) {
+                    if (auto W = new_state.write()) {
+                        for (auto y_pos = 0; (y_pos < state.size(1)) && (y_pos < new_state.size(1)); ++y_pos) {
+                            for (auto x_pos = 0; (x_pos < state.size(0)) && (x_pos < new_state.size(0)); ++x_pos) {
+                                W.store(R(x_pos, y_pos), x_pos, y_pos);
+                            }
+                        }
+                    }
+                }                
+                state = new_state;
+
+                avg_framerate_n = 0;
+                avg_framerate = 0;
             }
 
             GL::stopwatch sw;
@@ -966,31 +990,30 @@ int main() {
             state *= C0.cast(ArrayTypes::UINT);
             state += C1.cast(ArrayTypes::UINT);
 
-            while (sw.stop() < 1.0 / 30.0) {
-                std::this_thread::yield();
-            }
-
-            console_clear();
+            // console_clear();
+            SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
             print((
                 a0.cast(ArrayTypes::CHAR) * '-'
                 +
-                state.cast(ArrayTypes::CHAR) * 'O'
+                state.cast(ArrayTypes::CHAR) * 'o'
                 +
                 a2.cast(ArrayTypes::CHAR) * '+'
                 +
-                a3.cast(ArrayTypes::CHAR) * '-'
-                ).to_string({}, true));
-            print("");
-            print(std::to_string(1.0 / sw.stop()) + " fps");
+                a3.cast(ArrayTypes::CHAR) * '^'
+            ).to_string({}, true));
 
             // add random chance for life to spawn nearby the existing life. 
-            state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
+            state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.997f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
+            state = state.min(1);
+
+            // add random chance for life to spawn anywhere. 
+            state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.9985f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
             state = state.min(1);
 
             // meanwhile, demonstrate performing a linear regression...
             // Advertisement regression. Generally correct analysis.
-            if (1) {
+            if (0) {
                 /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
                 Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
                 TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
@@ -1031,6 +1054,19 @@ int main() {
                 auto prediction = GL::linear_regression::predict(features, weights);
             }
 
+            print("");
+
+            avg_framerate_n++;
+            avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
+            avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
+
+            print(std::to_string(avg_framerate) + " fps");
+
+            // limit refresh to 60 fps
+            std::cout << std::flush;
+            while (sw.stop() < 1.0 / 60.0) {
+                std::this_thread::yield();
+            }
         }
 
     }

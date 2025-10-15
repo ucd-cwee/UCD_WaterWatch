@@ -2742,7 +2742,7 @@ namespace GL {
                     return out;
                 }
                 else {
-                    throw std::runtime_error("Convolution not supported for this number of dimensions");
+                    return gpu_array{};
                 }
             };
             static gpu_array<float> guassian_kernel(unsigned int X, unsigned int Y) {
