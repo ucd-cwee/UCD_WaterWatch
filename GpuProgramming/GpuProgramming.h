@@ -253,6 +253,8 @@ namespace GL {
         // increases the X and Y dimensions by 4. 
         Array quadruplesize() const;
 
+        Array TEST_IMAGE() const;
+
         std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const;
         friend std::ostream& operator<<(std::ostream& os, Array const& obj);
 

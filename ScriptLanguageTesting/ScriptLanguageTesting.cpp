@@ -932,6 +932,28 @@ int main() {
         int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
         float avg_framerate = 0; int avg_framerate_n = 0;
 
+
+
+
+
+
+        auto temp = Array::linear(GL::ArrayTypes::FLOAT, 0, 100, 10, 10, 1);
+        auto T = temp.TEST_IMAGE();
+        print(T);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         // Initialize the kernel array
         auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
             1, 1, 1, 

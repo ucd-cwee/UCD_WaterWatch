@@ -265,6 +265,7 @@ public:
         else if constexpr (std::is_same_v<T, unsigned long>) return "ulong";
         else if constexpr (std::is_same_v<T, float>) return "float";
         else if constexpr (std::is_same_v<T, double>) return "double";
+        else if constexpr (std::is_same_v<T, void>) return "";
         else static_assert("Not all numeric types are supported by GPU calculations.");
     }
 
@@ -747,7 +748,7 @@ public:
             }
         }
 
-        );
+        );        
         if constexpr (std::is_floating_point_v<T>) {
             out = out + R(
             global atomic_int __rand_global_counter = ATOMIC_VAR_INIT(123456789);
@@ -1033,12 +1034,13 @@ public:
 
             );
         }
+
 #undef R        
         return out.replace("_type_", GL::string(type_name<T>())).to_string();
     };
 
     static std::string create_kernels() {
-        return
+        std::string out =
             create_kernel<char>() + "\n" +
             create_kernel<unsigned char>() + "\n" +
             create_kernel<int>() + "\n" +
@@ -1046,6 +1048,21 @@ public:
             create_kernel<long>() + "\n" +
             create_kernel<unsigned long>() + "\n" +
             create_kernel<float>() + "\n";
+
+        // additional kernels for type-free stuff. 
+        out = out + R"(
+            kernel void sample_image(read_only image2d_t input, global float* B, uint lX, uint lY) {
+                const int n = (int)get_global_id(0);
+                const int Y = (int)floor((float)n / (float)lX);
+                const int X = (int)n - Y * (int)lX;
+                const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
+                float4 r = read_imagef(input, sampler, (int2)(X, Y));                
+                B[n] = r[0];
+            };
+        )";
+        
+
+        return out;
     };
 
     static Device& get_device() {
@@ -1791,8 +1808,8 @@ namespace GL {
             };
             cl::Image2D as_Image2D(unsigned int width, unsigned int height, image_channel_order order, image_channel_type type) const {
                 return cl::Image2D(device->info.cl_context, cl::ImageFormat(
-                    cl_channel_order{ (int)order },
-                    cl_channel_type{ (int)type }
+                    cl_channel_order{ (cl_channel_order)(int)order },
+                    cl_channel_type{ (cl_channel_type)(int)type }
                 ), this->device_buffer, width, height, 0, nullptr);
             };
 
@@ -1830,6 +1847,9 @@ namespace GL {
             }
             template<typename T> void link_parameter(const uint position, const T& constant) {
                 check_for_errors(cl_kernel.setArg(position, sizeof(T), (void*)&constant));
+            }
+            template<> void link_parameter<cl::Image2D>(const uint position, const cl::Image2D& constant) {
+                check_for_errors(cl_kernel.setArg(position, constant));
             }
             template<> void link_parameter<cl::Buffer>(const uint position, const cl::Buffer& memory) {
                 check_for_errors(cl_kernel.setArg(position, memory));
@@ -1896,8 +1916,6 @@ namespace GL {
                 append_events(out, parameters...);
                 return out;
             };
-
-
 
         };
 
@@ -2631,6 +2649,34 @@ namespace GL {
             gpu_array resample(gpu_array<unsigned int> const& sample_indices) const {
                 gpu_array out(sample_indices.dim);
                 gpu_array::work(out, out.size(), "resample", out.data, data, sample_indices.data);
+                return out;
+            };
+
+            __declspec(noinline) gpu_array<float> TEST_IMAGE() const {  
+
+
+
+
+
+                //cl::Image2D img;
+                //if constexpr (std::is_same_v<T, int>) {
+                //    img = F.data->as_Image2D(F.dim.X, F.dim.Y, image_channel_order::RGBA, image_channel_type::SIGNED_INT32);
+                //}
+
+
+
+                auto F = this->cast<float>();
+
+
+
+
+                cl::Image2D img = F.data->as_Image2D(F.dim.X, F.dim.Y, image_channel_order::R, image_channel_type::FLOAT);
+                GL::GPU::Function kernel("sample_image");
+
+                gpu_array<float> out(F.dim);                
+                cl::Event ev = kernel(F.size(), img, out.data, out.size(0), out.size(1));
+                out.data->jobs_that_reference_me.push_back(ev);
+                F.data->jobs_that_reference_me.push_back(ev);
                 return out;
             };
 
@@ -4053,6 +4099,13 @@ namespace GL {
             return BuildArray(arr.ASCII());
         });
     };
+
+    Array Array::TEST_IMAGE() const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr.TEST_IMAGE());
+        });
+    };
+
 
     // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
     Array linear_regression::solve_for_weights(Array const& measurements, Array const& features) {
