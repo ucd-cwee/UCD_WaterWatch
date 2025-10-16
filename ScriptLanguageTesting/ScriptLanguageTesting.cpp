@@ -938,10 +938,18 @@ int main() {
             1, 0, 1, 
             1, 1, 1
         },  3);
+        auto asciikernel = Array::guassian_kernel(3, 3);
+        auto asciiramp = Array::from_vector(GL::ArrayTypes::CHAR, std::vector<Number>{
+            '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
+            '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
+            '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"',
+            '^', '`', '\'', '.', ' '
+        });
 
         // Initialize the state of the world
         auto state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
         
+        int frame = 1;
         // Run the game of life
         for (;;) {
             GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
@@ -996,7 +1004,23 @@ int main() {
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
-            print((!state).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(25, 25)).ASCII().to_string({}, true));
+            // print(asciiramp.resample(((1 - state).cast(ArrayTypes::FLOAT).convolve(asciikernel) * asciiramp.size()).cast(ArrayTypes::UINT)).to_string({},true));
+
+
+
+
+            //int radius = std::max<int>(3, (frame++ % 25));
+            // print((state.max(0).min(1) - 1).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(radius, radius)).ASCII().to_string({}, true));
+
+            auto inv_state = (1 - state).cast(ArrayTypes::FLOAT);
+            auto blur_1 = inv_state.convolve(Array::guassian_kernel(3, 3));
+            auto blur_2 = blur_1.convolve(Array::guassian_kernel(7, 7));
+            auto blur_3 = blur_2.convolve(Array::guassian_kernel(11, 11));
+            auto blur_4 = blur_3.convolve(Array::guassian_kernel(25, 25));
+            auto state_to_display = 1.0 - (1.0 / (1.0 + blur_4 + blur_3 + blur_2 + blur_1 + inv_state));
+
+            print(state_to_display.ASCII().to_string({}, true));
+            // print(((1 - state).convolve(Array::guassian_kernel(5, 5)) + (1 - state).convolve(Array::guassian_kernel(3, 3) + (1 - state))).ASCII().to_string({}, true));
 
             //print((
             //    a0.cast(ArrayTypes::CHAR) * '-'

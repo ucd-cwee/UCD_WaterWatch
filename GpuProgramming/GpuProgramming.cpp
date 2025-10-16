@@ -688,16 +688,27 @@ public:
                 }
             }
             if (kernel_captured > 0) {
-                result = result * kTot / kernel_captured;
+                result *= (kTot / kernel_captured);
             }
             A[n] = (_type_)result;
+        };
+
+        kernel void reverse_type_(global _type_* A, global _type_* B, uint len) {
+            const int n = (int)get_global_id(0); 
+            A[n] = B[(len - 1) - n];
         };
 
         kernel void ASCII_type_(global char* A, global _type_* B, _type_ minValue, _type_ maxValue, global char* ramp, unsigned int ramp_length) {
             // convert from the input to ASCII based on the intensity of the incoming values
             const int n = (int)get_global_id(0);
-            unsigned int index = (unsigned int)floor((((float)B[n] - (float)minValue) / ((float)maxValue - (float)minValue)) * (float)ramp_length);
-            A[n] = ramp[index];
+            const float delta = (float)maxValue - (float)minValue;
+            if (delta > 0) {
+                unsigned int index = floor(((float)(B[n] - minValue) / delta) * (float)ramp_length);
+                A[n] = ramp[index];
+            }
+            else {
+                A[n] = ramp[0];
+            }
         }
 
         );
@@ -853,11 +864,12 @@ public:
                 const int n = (int)get_global_id(0);
                 const int Y = (int)floor((float)n / (float)lY);
                 const int X = (int)n - Y * (int)lY;
-
                 const _type_ x = ((_type_)X + 0.5) - ((_type_)lX / 2.0);
                 const _type_ y = ((_type_)Y + 0.5) - ((_type_)lY / 2.0);
-
-                A[n] = (1.0 / (2.0 * 3.141592653589793238462643383279502884197169399375105820974944)) * exp(-(x * x + y * y) / 2.0);
+                float SigmaX = fmax(0.5, ((((_type_)lX - 1.0) / 2.0) * 0.5));
+                float SigmaY = fmax(0.5, ((((_type_)lY - 1.0) / 2.0) * 0.5));
+                A[n] = exp(-(((x*x)/(2* SigmaX * SigmaX))+((y * y) / (2 * SigmaY * SigmaY)))) / (2.0 * 3.141592653589793238462643383279502884197169399375105820974944 * SigmaX * SigmaY);
+                // A[n] = (1.0 / (2.0 * 3.141592653589793238462643383279502884197169399375105820974944)) * exp(-(x*x + y*y) / 2.0);
             };
 
             );
@@ -2752,6 +2764,11 @@ namespace GL {
                     return gpu_array{};
                 }
             };
+            gpu_array reverse() const {
+                gpu_array out(this->dim);
+                gpu_array::work(out, this->size(), "reverse", out.data, data, (unsigned int)out.size());
+                return out;
+            };
             static gpu_array<float> guassian_kernel(unsigned int X, unsigned int Y) {
                 gpu_array<float> out(dimensions{ X, Y, 1 });
                 gpu_array<float>::work(out, out.size(), "guassian", out.data, out.size(0), out.size(1));
@@ -3728,6 +3745,12 @@ namespace GL {
     // Returns a matrix with all values equal to the provided value
     Array Array::guassian_kernel(unsigned int X, unsigned int Y) {
         return BuildArray(gpu_array<float>::guassian_kernel(X, Y));
+    };
+    // Returns a matrix with all values equal to the provided value
+    Array Array::reverse() const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr.reverse());
+        });
     };
 
     Array Array::from_vector(ArrayTypes T, const std::vector<Number>& parameters, unsigned int Y, unsigned int Z) {
