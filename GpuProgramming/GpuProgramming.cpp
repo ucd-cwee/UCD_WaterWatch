@@ -1056,7 +1056,7 @@ public:
                 const int Y = (int)floor((float)n / (float)lX);
                 const int X = (int)n - Y * (int)lX;
                 const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
-                float4 r = read_imagef(input, sampler, (int2)(X, Y));                
+                float4 r = read_imagef(input, sampler, (int2)(X, Y));  
                 B[n] = r[0];
             };
         )";
@@ -1608,23 +1608,7 @@ namespace GL {
             SNORM_INT16 = 0x10D1,
             UNORM_INT8 = 0x10D2,
             UNORM_INT16 = 0x10D3,
-            UNORM_SHORT_565 = 0x10D4,
-            UNORM_SHORT_555 = 0x10D5,
-            UNORM_INT_101010 = 0x10D6,
-            SIGNED_INT8 = 0x10D7,
-            SIGNED_INT16 = 0x10D8,
-            SIGNED_INT32 = 0x10D9,
-            UNSIGNED_INT8 = 0x10DA,
-            UNSIGNED_INT16 = 0x10DB,
-            UNSIGNED_INT32 = 0x10DC,
-            HALF_FLOAT = 0x10DD,
-            FLOAT = 0x10DE,
-            #ifdef CL_VERSION_1_2
-            UNORM_INT24 = 0x10DF,
-            #endif
-            #ifdef CL_VERSION_2_1
-            UNORM_INT_101010_2 = 0x10E0,
-            #endif
+            FLOAT = 0x10DE
         };
 
         template<typename T> class Memory {
@@ -2651,32 +2635,40 @@ namespace GL {
                 gpu_array::work(out, out.size(), "resample", out.data, data, sample_indices.data);
                 return out;
             };
+            // NOTE: assumes that the X-axis determines the number of channels, Y-axis determines the width, and Z-axis determines the height of the image
+            __declspec(noinline) gpu_array<float> TEST_IMAGE() const {       
+                image_channel_type typ;
+                if constexpr (std::is_same_v<T, float>) {
+                    typ = image_channel_type::FLOAT;
+                }
+                else {
+                    auto f = this->cast<float>();
+                    return f.TEST_IMAGE();
+                }
 
-            __declspec(noinline) gpu_array<float> TEST_IMAGE() const {  
+                image_channel_order ord;
+                if (this->dim.X >= 4) {
+                    ord = image_channel_order::RGBA;
+                } 
+                else if (this->dim.X >= 3) {
+                    ord = image_channel_order::RGB;
+                }
+                else if (this->dim.X >= 2) {
+                    ord = image_channel_order::RG;
+                }
+                else if (this->dim.X >= 1) {
+                    ord = image_channel_order::R;
+                }
+                else {
+                    return gpu_array<float>{};
+                }
 
-
-
-
-
-                //cl::Image2D img;
-                //if constexpr (std::is_same_v<T, int>) {
-                //    img = F.data->as_Image2D(F.dim.X, F.dim.Y, image_channel_order::RGBA, image_channel_type::SIGNED_INT32);
-                //}
-
-
-
-                auto F = this->cast<float>();
-
-
-
-
-                cl::Image2D img = F.data->as_Image2D(F.dim.X, F.dim.Y, image_channel_order::R, image_channel_type::FLOAT);
+                cl::Image2D img = this->data->as_Image2D(this->dim.Y, this->dim.Z, ord, typ);
                 GL::GPU::Function kernel("sample_image");
 
-                gpu_array<float> out(F.dim);                
-                cl::Event ev = kernel(F.size(), img, out.data, out.size(0), out.size(1));
+                gpu_array<float> out(dimensions{ this->dim.Y, this->dim.Z, 1 });
+                cl::Event ev = kernel(out.size(), img, out.data, out.size(0), out.size(1));
                 out.data->jobs_that_reference_me.push_back(ev);
-                F.data->jobs_that_reference_me.push_back(ev);
                 return out;
             };
 

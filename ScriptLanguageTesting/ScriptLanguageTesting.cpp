@@ -933,17 +933,17 @@ int main() {
         float avg_framerate = 0; int avg_framerate_n = 0;
 
 
+        // TEST IMAGE
+        if (1) {
+            int num_channels = 1; // RGB
+            int width = 10; //       10 pix wide
+            int height = 10; //      10 pix tall
 
+            auto raw_read = Array::linear(GL::ArrayTypes::FLOAT, 0, 100, num_channels, width, height);
+            auto T = raw_read.TEST_IMAGE();
+            print(T);
 
-
-
-        auto temp = Array::linear(GL::ArrayTypes::FLOAT, 0, 100, 10, 10, 1);
-        auto T = temp.TEST_IMAGE();
-        print(T);
-
-
-
-
+        }
 
 
 
