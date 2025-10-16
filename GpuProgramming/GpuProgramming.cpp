@@ -277,6 +277,47 @@ public:
             const uint n = get_global_id(0);
             A[n] = B[n];
         };
+        kernel void copy_resize_type_(global _type_* A, global _type_* B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
+            const uint n = get_global_id(0);
+            const uint Z = (uint)floor((float)n / ((float)(destlY) * (float)(destlX)));
+            const uint pos2 = n - Z * destlY * destlX;
+            const uint Y = (uint)floor((float)pos2 / (float)(destlX));
+            const uint X = pos2 - Y * destlX;
+            const uint srce_N = (Z * srcelX * srcelY) + (Y * srcelX) + X;
+
+            if (X >= 0 && X < srcelX) {
+                if (Y >= 0 && Y < srcelY) {
+                    if (Z >= 0 && Z < srcelZ) {
+                        A[n] = B[srce_N];
+                    }
+                    else {
+                        A[n] = 0;
+                    }
+                }
+                else {
+                    A[n] = 0;
+                }
+            }
+            else {
+                A[n] = 0;
+            }
+        };
+        kernel void copy_resize_stretch_type_(global _type_* A, global _type_* B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
+            const uint n = get_global_id(0);
+            const uint Z = (uint)floor((float)n / ((float)(destlY) * (float)(destlX)));
+            const uint pos2 = n - Z * destlY * destlX;
+            const uint Y = (uint)floor((float)pos2 / (float)(destlX));
+            const uint X = pos2 - Y * destlX;            
+            const float rel_X = (float)X / (float)destlX;
+            const float rel_Y = (float)Y / (float)destlY;
+            const float rel_Z = (float)Z / (float)destlZ;
+            const uint srceX = fmin(srcelX - 1, floor((rel_X * (float)srcelX) + 0.5));
+            const uint srceY = fmin(srcelY - 1, floor((rel_Y * (float)srcelY) + 0.5));
+            const uint srceZ = fmin(srcelZ - 1, floor((rel_Z * (float)srcelZ) + 0.5));
+            const uint srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
+            A[n] = B[srce_N];
+        };
+
         kernel void copy_single_type_(global _type_ * A, _type_ B) {
             const uint n = get_global_id(0);
             A[n] = B;
@@ -693,17 +734,12 @@ public:
             A[n] = (_type_)result;
         };
 
-        kernel void reverse_type_(global _type_* A, global _type_* B, uint len) {
-            const int n = (int)get_global_id(0); 
-            A[n] = B[(len - 1) - n];
-        };
-
         kernel void ASCII_type_(global char* A, global _type_* B, _type_ minValue, _type_ maxValue, global char* ramp, unsigned int ramp_length) {
             // convert from the input to ASCII based on the intensity of the incoming values
-            const int n = (int)get_global_id(0);
+            const uint n = (uint)get_global_id(0);
             const float delta = (float)maxValue - (float)minValue;
             if (delta > 0) {
-                unsigned int index = floor(((float)(B[n] - minValue) / delta) * (float)ramp_length);
+                const uint index = fmin(floor((((float)(B[n] - minValue) / delta) * (float)ramp_length) + 0.5), ramp_length - 1);
                 A[n] = ramp[index];
             }
             else {
@@ -2764,11 +2800,6 @@ namespace GL {
                     return gpu_array{};
                 }
             };
-            gpu_array reverse() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, this->size(), "reverse", out.data, data, (unsigned int)out.size());
-                return out;
-            };
             static gpu_array<float> guassian_kernel(unsigned int X, unsigned int Y) {
                 gpu_array<float> out(dimensions{ X, Y, 1 });
                 gpu_array<float>::work(out, out.size(), "guassian", out.data, out.size(0), out.size(1));
@@ -2777,12 +2808,17 @@ namespace GL {
 
             gpu_array<char> ASCII() const {
                 GL::GPU::Function kernel(std::string("ASCII") + opencl_impl::type_name<T>());
-                auto ramp = gpu_array<char>::from_vector(std::vector<char>{ 
-                    '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O', 
-                    '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|', 
-                    '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"', 
-                    '^', '`', '\'', '.', ' '
-                });
+                static gpu_array<char> ramp{ []() -> gpu_array<char> {
+                    std::vector<char> chars{
+                        '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
+                        '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
+                        '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"',
+                        '^', '`', '\'', '.', ' '
+                    };
+                    std::reverse(chars.begin(), chars.end());
+                    return gpu_array<char>::from_vector(chars);
+                }() };
+
                 auto thisMinV = this->min();
                 auto thisMaxV = this->max();    
 
@@ -2793,6 +2829,16 @@ namespace GL {
                 return out;
             };
 
+            gpu_array resize(unsigned int X, unsigned int Y, unsigned Z) const {
+                auto out = gpu_array(dimensions{ X, Y, Z });
+                gpu_array::work(out, out.size(), "copy_resize", out.data, data, X, Y, Z, this->size(0), this->size(1), this->size(2));
+                return out;
+            };
+            gpu_array resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
+                auto out = gpu_array(dimensions{ X, Y, Z });
+                gpu_array::work(out, out.size(), "copy_resize_stretch", out.data, data, X, Y, Z, this->size(0), this->size(1), this->size(2));
+                return out;
+            };
         private:
             static std::string resize(std::string&& rhs, unsigned int len, const char def = 0) {
                 rhs.resize(len, def);
@@ -3646,6 +3692,42 @@ namespace GL {
             return BuildArray(arr.min(rhs));
             });
     };
+    
+    Array Array::resize(unsigned int X, unsigned int Y, unsigned Z) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr.resize(X,Y,Z));
+        });
+    };
+    
+    Array Array::resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
+        return visit_array(_type, _data, [&](auto& arr) {
+            return BuildArray(arr.resize_stretch(X, Y, Z));
+        });
+    };
+
+    Array Array::halfsize(bool skip_blur) const {
+        if (skip_blur) {
+            return resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+        }
+        else {
+            return /*cast(ArrayTypes::FLOAT).*/convolve(Array::guassian_kernel(3, 3)).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2))/*.cast(this->_type)*/;
+        }
+    };
+    Array Array::quartersize(bool skip_blur) const {
+        if (skip_blur) {
+            return resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+        }
+        else {
+            return /*cast(ArrayTypes::FLOAT).*/convolve(Array::guassian_kernel(5, 5)).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2))/*.cast(this->_type)*/;
+        }
+    };
+    Array Array::doublesize() const {
+        return resize_stretch(size(0) * 2, size(1) * 2, size(2));
+    };
+    Array Array::quadruplesize() const {
+        return resize_stretch(size(0) * 4, size(1) * 4, size(2));
+    };
+
     std::string Array::to_string(std::vector<std::string> column_titles, bool doNotSkip) const {
         return visit_array(_type, _data, [&](auto& arr) {
             return arr.to_string(column_titles, doNotSkip);
@@ -3745,12 +3827,6 @@ namespace GL {
     // Returns a matrix with all values equal to the provided value
     Array Array::guassian_kernel(unsigned int X, unsigned int Y) {
         return BuildArray(gpu_array<float>::guassian_kernel(X, Y));
-    };
-    // Returns a matrix with all values equal to the provided value
-    Array Array::reverse() const {
-        return visit_array(_type, _data, [&](auto& arr) {
-            return BuildArray(arr.reverse());
-        });
     };
 
     Array Array::from_vector(ArrayTypes T, const std::vector<Number>& parameters, unsigned int Y, unsigned int Z) {

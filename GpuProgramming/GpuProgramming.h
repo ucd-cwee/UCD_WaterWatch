@@ -240,7 +240,18 @@ namespace GL {
         Array min(Array const& rhs) const;
         // returns the min of the two arrays (item-by-item, as an array)
         Array min(Number rhs) const;
-        Array reverse() const;
+        // resize the array, without stretching. Shrinking will sample less than the original, growing will fill with zero's. 
+        Array resize(unsigned int X, unsigned int Y, unsigned Z) const;
+        // resize the array with stretching. Shrinking will sample fewer cells, growing may sample cells repeatedly. 
+        Array resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const;
+        // blurs the array and then reduces the X and Y dimensions by 2. 
+        Array halfsize(bool skip_blur = false) const;
+        // blurs the array and then reduces the X and Y dimensions by 4. 
+        Array quartersize(bool skip_blur = false) const;
+        // increases the X and Y dimensions by 2. 
+        Array doublesize() const;
+        // increases the X and Y dimensions by 4. 
+        Array quadruplesize() const;
 
         std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const;
         friend std::ostream& operator<<(std::ostream& os, Array const& obj);

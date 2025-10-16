@@ -958,17 +958,7 @@ int main() {
                 game_w = game_w2;
                 game_h = game_h2;
 
-                auto new_state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
-                if (auto R = state.read()) {
-                    if (auto W = new_state.write()) {
-                        for (unsigned int y_pos = 0; (y_pos < state.size(1)) && (y_pos < new_state.size(1)); ++y_pos) {
-                            for (unsigned int x_pos = 0; (x_pos < state.size(0)) && (x_pos < new_state.size(0)); ++x_pos) {
-                                W.store(R(x_pos, y_pos), x_pos, y_pos);
-                            }
-                        }
-                    }
-                }
-                state = new_state;
+                state = state.resize_stretch(game_h, game_w, 1);
 
                 avg_framerate_n = 0;
                 avg_framerate = 0;
@@ -1004,40 +994,28 @@ int main() {
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
-            // print(asciiramp.resample(((1 - state).cast(ArrayTypes::FLOAT).convolve(asciikernel) * asciiramp.size()).cast(ArrayTypes::UINT)).to_string({},true));
-
-
-
-
-            //int radius = std::max<int>(3, (frame++ % 25));
-            // print((state.max(0).min(1) - 1).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(radius, radius)).ASCII().to_string({}, true));
-
-            auto inv_state = (1 - state).cast(ArrayTypes::FLOAT);
+#if 0
+            auto inv_state = state.cast(ArrayTypes::FLOAT);
             auto blur_1 = inv_state.convolve(Array::guassian_kernel(3, 3));
             auto blur_2 = blur_1.convolve(Array::guassian_kernel(7, 7));
             auto blur_3 = blur_2.convolve(Array::guassian_kernel(11, 11));
             auto blur_4 = blur_3.convolve(Array::guassian_kernel(25, 25));
-            auto state_to_display = 1.0 - (1.0 / (1.0 + blur_4 + blur_3 + blur_2 + blur_1 + inv_state));
-
+            auto blur_5 = blur_4.convolve(Array::guassian_kernel(53, 53));
+            auto state_to_display = 1.0 - (1.0 / (1.0 + ((blur_5 + blur_4 + blur_3 + blur_2 + blur_1 + inv_state) / 6.0)));
             print(state_to_display.ASCII().to_string({}, true));
-            // print(((1 - state).convolve(Array::guassian_kernel(5, 5)) + (1 - state).convolve(Array::guassian_kernel(3, 3) + (1 - state))).ASCII().to_string({}, true));
+#else
+            auto original = state.copy().resize(game_h / 3, game_w, 1);
+            auto correct_blur = state.convolve(Array::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
+            auto rough_blur = state.quartersize(false).quadruplesize().resize(game_h / 3, game_w, 1);
+            print(original.ASCII().join(0, correct_blur.ASCII().join(0, rough_blur.ASCII())).to_string({}, true));
+#endif
 
-            //print((
-            //    a0.cast(ArrayTypes::CHAR) * '-'
-            //    +
-            //    state.cast(ArrayTypes::CHAR) * 'o'
-            //    +
-            //    a2.cast(ArrayTypes::CHAR) * '+'
-            //    +
-            //    a3.cast(ArrayTypes::CHAR) * '^'
-            //).to_string({}, true));
-
-            state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.999f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
+            state += ((state > 0).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(7, 7)) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
             state = state.min(1);
 
             // add random chance for life to spawn anywhere. 
             if ((int)state.sum() <= (game_w * game_h) / 20) {
-                state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.999f).cast(ArrayTypes::UINT);
+                state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.99f).cast(ArrayTypes::UINT);
                 state = state.min(1);
             }
 
