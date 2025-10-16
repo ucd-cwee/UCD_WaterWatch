@@ -1558,6 +1558,58 @@ namespace GL {
             };
         };
 
+        enum image_channel_order {
+            R = 0x10B0,
+            A = 0x10B1,
+            RG = 0x10B2,
+            RA = 0x10B3,
+            RGB = 0x10B4,
+            RGBA = 0x10B5,
+            BGRA = 0x10B6,
+            ARGB = 0x10B7,
+            INTENSITY = 0x10B8,
+            LUMINANCE = 0x10B9,
+            #ifdef CL_VERSION_1_1
+            Rx = 0x10BA,
+            RGx = 0x10BB,
+            RGBx = 0x10BC,
+            #endif
+            #ifdef CL_VERSION_1_2
+            DEPTH = 0x10BD,
+            DEPTH_STENCIL = 0x10BE,
+            #endif
+            #ifdef CL_VERSION_2_0
+            sRGB = 0x10BF,
+            sRGBx = 0x10C0,
+            sRGBA = 0x10C1,
+            sBGRA = 0x10C2,
+            ABGR = 0x10C3,
+            #endif
+        };
+        enum image_channel_type {
+            SNORM_INT8 = 0x10D0,
+            SNORM_INT16 = 0x10D1,
+            UNORM_INT8 = 0x10D2,
+            UNORM_INT16 = 0x10D3,
+            UNORM_SHORT_565 = 0x10D4,
+            UNORM_SHORT_555 = 0x10D5,
+            UNORM_INT_101010 = 0x10D6,
+            SIGNED_INT8 = 0x10D7,
+            SIGNED_INT16 = 0x10D8,
+            SIGNED_INT32 = 0x10D9,
+            UNSIGNED_INT8 = 0x10DA,
+            UNSIGNED_INT16 = 0x10DB,
+            UNSIGNED_INT32 = 0x10DC,
+            HALF_FLOAT = 0x10DD,
+            FLOAT = 0x10DE,
+            #ifdef CL_VERSION_1_2
+            UNORM_INT24 = 0x10DF,
+            #endif
+            #ifdef CL_VERSION_2_1
+            UNORM_INT_101010_2 = 0x10E0,
+            #endif
+        };
+
         template<typename T> class Memory {
         private:
             ulong N = 0ull; // buffer length
@@ -1734,6 +1786,16 @@ namespace GL {
             inline const cl::Buffer& get_cl_buffer() const {
                 return device_buffer;
             };
+            inline const Device_Info& get_device_info() const {
+                return device->info;
+            };
+            cl::Image2D as_Image2D(unsigned int width, unsigned int height, image_channel_order order, image_channel_type type) const {
+                return cl::Image2D(device->info.cl_context, cl::ImageFormat(
+                    cl_channel_order{ (int)order },
+                    cl_channel_type{ (int)type }
+                ), this->device_buffer, width, height, 0, nullptr);
+            };
+
         };
 
         class Function {

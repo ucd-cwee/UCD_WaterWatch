@@ -4804,7 +4804,6 @@ public:
 };
 #endif // #if CL_HPP_TARGET_OPENCL_VERSION >= 120
 
-
 /*! \brief Class interface for 2D Image Memory objects.
  *
  *  See Memory for details about copy semantics, etc.
@@ -5034,7 +5033,6 @@ public:
     }
 
 };
-
 
 #if defined(CL_USE_DEPRECATED_OPENCL_1_1_APIS)
 /*! \brief Class interface for GL 2D Image Memory objects.
