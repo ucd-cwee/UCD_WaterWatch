@@ -86,11 +86,29 @@ namespace GL {
         Array() : _type(ArrayTypes::EMPTY), _data{ nullptr } {};
         Array(ArrayTypes type);
         Array(ArrayTypes type, unsigned int X, unsigned int Y = 1, unsigned int Z = 1);
-        Array(Array const&) = default;
-        Array(Array&&) = default;
-        Array& operator=(Array const&) = default;
-        Array& operator=(Array&&) = default;
-        ~Array() = default;
+        Array(Array const& rhs) : _type(rhs._type), _data{ rhs._data } {};
+        Array(Array&& rhs) noexcept : _type(rhs._type), _data{ rhs._data } {
+            rhs._data = nullptr;
+            rhs._type = ArrayTypes::EMPTY;
+        };
+        Array& operator=(Array const& rhs) {
+            _type = rhs._type;
+            _data = nullptr;
+            _data = rhs._data;
+            return *this;
+        };
+        Array& operator=(Array&& rhs) noexcept {
+            _type = rhs._type;
+            _data = nullptr;
+            _data = rhs._data;
+            rhs._data = nullptr;
+            rhs._type = ArrayTypes::EMPTY;
+            return *this;
+        };
+        ~Array() {
+            _type = ArrayTypes::EMPTY;
+            _data = nullptr;
+        };
 
         class reader {
         private:

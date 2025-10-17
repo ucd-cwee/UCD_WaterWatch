@@ -3934,7 +3934,7 @@ namespace GL {
     Array Array::min(Number rhs) const {
         return visit_array(_type, _data, [&](auto& arr) {
             return BuildArray(arr.min(rhs));
-            });
+        });
     };
     
     Array Array::resize(unsigned int X, unsigned int Y, unsigned Z) const {

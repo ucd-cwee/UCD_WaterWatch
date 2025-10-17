@@ -932,9 +932,8 @@ int main() {
         int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
         float avg_framerate = 0; int avg_framerate_n = 0;
 
-
         // TEST IMAGE
-        if (1) {
+        if (0) {
             int width = 10; //       10 pix wide
             int height = 10; //      10 pix tall
 
@@ -948,15 +947,6 @@ int main() {
             print(T);
 
         }
-
-
-
-
-
-
-
-
-
 
         // Initialize the kernel array
         auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
@@ -1033,16 +1023,22 @@ int main() {
             auto original = state.copy().resize(game_h / 3, game_w, 1);
             auto correct_blur = state.convolve(Array::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
             auto rough_blur = state.quartersize(false).quadruplesize().resize(game_h / 3, game_w, 1);
-            print(original.ASCII().join(0, correct_blur.ASCII().join(0, rough_blur.ASCII())).to_string({}, true));
+            print(original.ASCII().join(0, correct_blur.ASCII()).join(0, rough_blur.ASCII()).to_string({}, true));
 #endif
 
             state += ((state > 0).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(7, 7)) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
-            state = state.min(1);
+            if (1) {
+                auto temp = state.min(1);
+                state = temp;
+            }
 
             // add random chance for life to spawn anywhere. 
             if ((int)state.sum() <= (game_w * game_h) / 20) {
                 state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.99f).cast(ArrayTypes::UINT);
-                state = state.min(1);
+                if (1) {
+                    auto temp = state.min(1);
+                    state = temp;
+                }
             }
 
             // meanwhile, demonstrate performing a linear regression...
