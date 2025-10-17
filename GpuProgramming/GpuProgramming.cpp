@@ -4295,21 +4295,25 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
-#if 0
+#if 1
 // allocates some amount of memory from the GPU initially, and then shares it as subbuffers as necessary.
 template <unsigned int minAllocCount = 64>
 class dynamic_gpu_allocator {
     struct dynamic_block {
-
-
-
-
         dynamic_block*
             prev;
         dynamic_block*
             next;
-        long long
-            generated_epoch;
+        unsigned int
+            start_position;
+        unsigned int // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
+            length; 
+        cl_mem // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
+            sub_buffer;
+
+
+
+
         unsigned int
             num;
         unsigned int
