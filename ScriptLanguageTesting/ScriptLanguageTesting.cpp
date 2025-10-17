@@ -935,7 +935,7 @@ int main() {
 
         // TEST IMAGE
         if (1) {
-            int num_channels = 1; // RGB
+            int num_channels = 4; // RGB? Will fail and a new channel will be appended... 
             int width = 10; //       10 pix wide
             int height = 10; //      10 pix tall
 

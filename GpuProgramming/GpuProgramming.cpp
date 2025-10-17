@@ -20,6 +20,7 @@
 #include <set>
 #include <boost/math/distributions/students_t.hpp>
 #include "dynamic_allocator.h"
+#include "Enum.h"
 
 #pragma region "Convenience implementation of CPU parallel computing for the conditions where GPU parallel compute is not available or not convenient."
 namespace parallel {
@@ -1051,13 +1052,22 @@ public:
 
         // additional kernels for type-free stuff. 
         out = out + R"(
-            kernel void sample_image(read_only image2d_t input, global float* B, uint lX, uint lY) {
+            kernel void sample_image(read_only image2d_t input, global float* output, uint lX, uint lY, uint channels) {
                 const int n = (int)get_global_id(0);
                 const int Y = (int)floor((float)n / (float)lX);
                 const int X = (int)n - Y * (int)lX;
+
                 const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
-                float4 r = read_imagef(input, sampler, (int2)(X, Y));  
-                B[n] = r[0];
+                float4 r = read_imagef(input, sampler, (int2)(X, Y));                  
+                //float out = 0;
+                //for (uint i = 0; i < channels; ++i){
+                //    out += r[i];
+                //}
+                output[n] = r[1]; // out / (float)channels;
+
+                //const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
+                //float4 r = read_imagef(input, sampler, (int2)(X, Y));                  
+                //output[n] = r[0];
             };
         )";
         
@@ -1438,6 +1448,63 @@ namespace GL {
 };
 namespace GL {
     namespace GPU {
+        BETTER_ENUM(image_channel_order, int, \
+            R = 0x10B0, \
+            A = 0x10B1, \
+            RG = 0x10B2, \
+            RA = 0x10B3, \
+            RGB = 0x10B4, \
+            RGBA = 0x10B5, \
+            BGRA = 0x10B6, \
+            ARGB = 0x10B7, \
+            INTENSITY = 0x10B8, \
+            LUMINANCE = 0x10B9, \
+            Rx = 0x10BA, \
+            RGx = 0x10BB, \
+            RGBx = 0x10BC, \
+            DEPTH = 0x10BD, \
+            DEPTH_STENCIL = 0x10BE, \
+            sRGB = 0x10BF, \
+            sRGBx = 0x10C0, \
+            sRGBA = 0x10C1, \
+            sBGRA = 0x10C2, \
+            ABGR = 0x10C3 \
+        );
+        static int channels(image_channel_order ord) {
+            int num_channels;
+            switch (ord) {
+            case image_channel_order::R: num_channels = 1; break;
+            case image_channel_order::A: num_channels = 1; break;
+            case image_channel_order::RG: num_channels = 2; break;
+            case image_channel_order::RA: num_channels = 2; break;
+            case image_channel_order::RGB: num_channels = 3; break;
+            case image_channel_order::RGBA: num_channels = 4; break;
+            case image_channel_order::BGRA: num_channels = 4; break;
+            case image_channel_order::ARGB: num_channels = 4; break;
+            case image_channel_order::INTENSITY: num_channels = 1; break;
+            case image_channel_order::LUMINANCE: num_channels = 1; break;
+            case image_channel_order::Rx: num_channels = 2; break;
+            case image_channel_order::RGx: num_channels = 3; break;
+            case image_channel_order::RGBx: num_channels = 4; break;
+            case image_channel_order::DEPTH: num_channels = 2; break;
+            case image_channel_order::DEPTH_STENCIL: num_channels = 2; break;
+            case image_channel_order::sRGB: num_channels = 3; break;
+            case image_channel_order::sRGBx: num_channels = 4; break;
+            case image_channel_order::sRGBA: num_channels = 4; break;
+            case image_channel_order::sBGRA: num_channels = 4; break;
+            case image_channel_order::ABGR: num_channels = 4; break;
+            }
+            return num_channels;
+        }
+
+        BETTER_ENUM(image_channel_type, int, \
+            SNORM_INT8 = 0x10D0, \
+            SNORM_INT16 = 0x10D1, \
+            UNORM_INT8 = 0x10D2, \
+            UNORM_INT16 = 0x10D3, \
+            FLOAT = 0x10DE \
+        );
+
         // Compiles OpenCL code and makes it available through its assigned device.
         class Program {
         public:
@@ -1476,27 +1543,12 @@ namespace GL {
 
                     initialized = true;
                 }
-                ProgramImpl() = default;
+                ProgramImpl() = delete;
                 ProgramImpl(ProgramImpl const&) = delete;
                 ProgramImpl(ProgramImpl&&) = delete;
                 ProgramImpl& operator=(ProgramImpl const&) = delete;
                 ProgramImpl& operator=(ProgramImpl&&) = delete;
                 ~ProgramImpl() = default;
-
-                void try_initialize(Device_Info const& info, std::vector<std::string> const& opencl_code) {
-                    if (!initialized) {
-                        cl_program.get().obj = cl::Program(info.cl_context, make_kernel_code(info, combine(opencl_code)));
-                        const std::string build_options
-                            = "-cl-std=CL" + info.opencl_c_version + " -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable" + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
-                        int error
-                            = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
-                        if (error)
-                            print_warning(cl_program.get().obj.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
-
-                        initialized = true;
-                    }
-                }
-
             };
 
         private:
@@ -1529,35 +1581,88 @@ namespace GL {
                 initialized = false;
             parallel_dynamic_allocator<char> 
                 shared_mem_allocator;
+            std::map<image_channel_type, std::map<int, std::set< image_channel_order >>> 
+                image2d_channels;
 
-            Program(std::vector<std::string> const& opencl_c_code)
+            __declspec(noinline) Program(std::vector<std::string> const& opencl_c_code)
                 : info(select_device_with_most_flops(get_devices(false)))
                 , program(info, opencl_c_code)
                 , queue(info.cl_context, info.cl_device)
                 , initialized(true)
                 , shared_mem_allocator{}
-            {}
-            Program()
-                : info(select_device_with_most_flops(get_devices(false)))
-                , program()
-                , queue()
-                , initialized(false)
-                , shared_mem_allocator{}
-            {}
+            {
+                std::map<int, std::vector< image_channel_order >> options{
+                { 1, std::vector< image_channel_order >{
+                    image_channel_order::INTENSITY, 
+                    image_channel_order::LUMINANCE,
+                    image_channel_order::R,
+                    image_channel_order::A
+                } },
+                { 2, std::vector< image_channel_order >{
+                    image_channel_order::RG,
+                    image_channel_order::RA,
+                    image_channel_order::Rx,
+                    image_channel_order::DEPTH,
+                    image_channel_order::DEPTH_STENCIL
+                } },
+                { 3, std::vector< image_channel_order >{
+                    image_channel_order::RGB,
+                    image_channel_order::RGx,
+                    image_channel_order::sRGB,
+                } },
+                { 4, std::vector< image_channel_order >{
+                    image_channel_order::RGBA,
+                    image_channel_order::BGRA,
+                    image_channel_order::ARGB,
+                    image_channel_order::RGBx,
+                    image_channel_order::sRGBx,
+                    image_channel_order::sRGBA,
+                    image_channel_order::sBGRA,
+                    image_channel_order::ABGR
+                } }
+                };
+                
+                // allocate a buffer for testing
+                cl_int err;
+                cl::Buffer buf = cl::Buffer(
+                    get_cl_context(),
+                    CL_MEM_READ_WRITE | ((int)info.patch_intel_gpu_above_4gb << 23), // for Intel GPUs set flag CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1<<23)
+                    10 * 10 * 4 * sizeof(float), // device_buffer capacity must be a multiple of 64 Bytes for CL_MEM_USE_HOST_PTR
+                    nullptr,
+                    nullptr
+                );
+                // for each type
+                for (image_channel_type type : image_channel_type::_values()) {
+                    // for each order 
+                    for (auto& option : options) {
+                        int num_channel = option.first;
+                        for (image_channel_order& order : option.second) {
+                            cl::Image2D img;
+                            try {
+                                err = CL_SUCCESS;
+                                img = cl::Image2D(info.cl_context, cl::ImageFormat(
+                                    (cl_channel_order)(int)order,
+                                    (cl_channel_type)(int)type
+                                ), buf, 10, 10, 0, &err);
+                                if (err == CL_SUCCESS) {
+                                    image2d_channels[type][num_channel].insert(order);
+                                }
+                                img = nullptr;
+                            }
+                            catch (...) {
+                                img = nullptr;
+                            }
+                        }
+                    }
+                }
+                buf = nullptr;
+            }
+            Program() = delete;
             Program(Program const&) = delete;
             Program(Program&&) = delete;
             Program& operator=(Program const&) = delete;
             Program& operator=(Program&&) = delete;
             ~Program() = default;
-
-            template <typename F>
-            void try_initialize(F const& opencl_c_code) {
-                if (!initialized) {
-                    program.try_initialize(info, opencl_c_code());
-                    queue.get().obj = cl::CommandQueue(info.cl_context, info.cl_device);
-                    initialized = true;
-                }
-            };
 
             //inline void barrier(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
             //inline void finish_queue() { cl_queue.finish(); }
@@ -1575,40 +1680,109 @@ namespace GL {
             };
         };
 
-        enum image_channel_order {
-            R = 0x10B0,
-            A = 0x10B1,
-            RG = 0x10B2,
-            RA = 0x10B3,
-            RGB = 0x10B4,
-            RGBA = 0x10B5,
-            BGRA = 0x10B6,
-            ARGB = 0x10B7,
-            INTENSITY = 0x10B8,
-            LUMINANCE = 0x10B9,
-            #ifdef CL_VERSION_1_1
-            Rx = 0x10BA,
-            RGx = 0x10BB,
-            RGBx = 0x10BC,
-            #endif
-            #ifdef CL_VERSION_1_2
-            DEPTH = 0x10BD,
-            DEPTH_STENCIL = 0x10BE,
-            #endif
-            #ifdef CL_VERSION_2_0
-            sRGB = 0x10BF,
-            sRGBx = 0x10C0,
-            sRGBA = 0x10C1,
-            sBGRA = 0x10C2,
-            ABGR = 0x10C3,
-            #endif
-        };
-        enum image_channel_type {
-            SNORM_INT8 = 0x10D0,
-            SNORM_INT16 = 0x10D1,
-            UNORM_INT8 = 0x10D2,
-            UNORM_INT16 = 0x10D3,
-            FLOAT = 0x10DE
+        template<typename T> class Memory;
+        class Function {
+        public:
+            std::string
+                name = "";
+            const Program*
+                cl_program = nullptr;
+            cl::Kernel
+                cl_kernel;
+
+        public:
+            Function()
+                : name(""), cl_program(nullptr), cl_kernel()
+            {}
+            Function(const std::string& Name)
+                : name(Name), cl_program(&opencl::get_program()), cl_kernel(cl_program->program.cl_program.get().obj, name.c_str())
+            {}
+            Function(Function&&) = default;
+            Function& operator=(Function&&) = default;
+            Function(Function const&) = delete;
+            Function& operator=(Function const&) = delete;
+            ~Function() = default;
+
+
+        private:
+            void check_for_errors(const int error) const {
+                if (error == -48) print_error("There is no OpenCL kernel with name \"" + name + "(...)\" in the OpenCL C code! Check spelling!");
+                if (error<-48 && error>-53) print_error("Parameters for OpenCL kernel \"" + name + "(...)\" don't match between C++ and OpenCL C!");
+                if (error == -54) print_error("Workgrop size " + to_string(WORKGROUP_SIZE) + " for OpenCL kernel \"" + name + "(...)\" is invalid!");
+                if (error != 0) print_error("OpenCL kernel \"" + name + "(...)\" failed with error code " + to_string(error) + "!");
+            }
+            template<typename T> void link_parameter(const uint position, const T& constant) {
+                check_for_errors(cl_kernel.setArg(position, sizeof(T), (void*)&constant));
+            }
+            template<> void link_parameter<cl::Image2D>(const uint position, const cl::Image2D& constant) {
+                check_for_errors(cl_kernel.setArg(position, constant));
+            }
+            template<> void link_parameter<cl::Buffer>(const uint position, const cl::Buffer& memory) {
+                check_for_errors(cl_kernel.setArg(position, memory));
+            }
+            void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position) {
+                number_of_parameters = max(number_of_parameters, starting_position);
+            }
+            template<template<class> typename G, typename T, class... U> void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position, const G<T>& parameter, const U&... parameters) {
+                if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
+                    link_parameters(number_of_parameters, waitlist, starting_position, *parameter, parameters...);
+                }
+                else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
+                    waitlist.insert(parameter.jobs_that_reference_me.begin(), parameter.jobs_that_reference_me.end());
+
+                    link_parameter(starting_position, parameter.get_cl_buffer());
+                    link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
+                }
+                else {
+                    link_parameter(starting_position, parameter);
+                    link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
+                }
+            }
+            template<class T, class... U> void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
+                link_parameter(starting_position, parameter);
+                link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
+            }
+
+        public:
+            static void append_events(cl::Event const& _event) {}
+            template<template<class> typename G, typename T, class... U> static void append_events(cl::Event const& _event, const G<T>& parameter, const U&... parameters) {
+                if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
+                    append_events(_event, *parameter, parameters...);
+                }
+                else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
+                    const_cast<G<T>&>(parameter).jobs_that_reference_me.push_back(_event);
+                    append_events(_event, parameters...);
+                }
+                else {
+                    append_events(_event, parameters...);
+                }
+            }
+            template<class T, class... U> static void append_events(cl::Event const& _event, const T& parameter, const U&... parameters) {
+                append_events(_event, parameters...);
+            }
+
+        public:
+            template<class... T> cl::Event operator()(unsigned int N, const T&... parameters) {
+                unsigned int
+                    number_of_parameters = 0u;
+                std::set<cl::Event>
+                    waitlist_set;
+                std::vector<cl::Event>
+                    waitlist;
+
+                link_parameters(number_of_parameters, waitlist_set, 0u, parameters...); // expand variadic template to link kernel parameters
+                waitlist.insert(waitlist.end(), waitlist_set.begin(), waitlist_set.end());
+
+                cl::NDRange
+                    cl_range_global = cl::NDRange(((N + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
+                    cl_range_local = cl::NDRange(WORKGROUP_SIZE);
+
+                cl::Event out;
+                check_for_errors(cl_program->queue.get().obj.enqueueNDRangeKernel(cl_kernel, cl::NullRange, cl_range_global, cl_range_local, waitlist.size() > 0 ? std::pair<Event*, Event*>{ &waitlist[0], & waitlist[0] + waitlist.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }, & out));
+                append_events(out, parameters...);
+                return out;
+            };
+
         };
 
         template<typename T> class Memory {
@@ -1790,118 +1964,52 @@ namespace GL {
             inline const Device_Info& get_device_info() const {
                 return device->info;
             };
-            cl::Image2D as_Image2D(unsigned int width, unsigned int height, image_channel_order order, image_channel_type type) const {
+            
+            cl::Image2D as_Image2D(unsigned int width, unsigned int height, image_channel_order& order) const {
+                image_channel_type type;
+                if constexpr (std::is_same_v<T, char> || std::is_same_v<T, int>) type = image_channel_type::SNORM_INT8;                
+                else if constexpr (std::is_same_v<T, long>) type = image_channel_type::SNORM_INT16;
+                else if constexpr (std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int>) type = image_channel_type::UNORM_INT8;                
+                else if constexpr (std::is_same_v<T, unsigned long>) type = image_channel_type::UNORM_INT16;                
+                else type = image_channel_type::FLOAT;               
+
+                int num_channels = channels(order);
+                if (auto& available_channels = device->image2d_channels[type][num_channels]; available_channels.size() > 0) {
+                    if (available_channels.find(order) == available_channels.end()) {
+                        order = *available_channels.begin();
+                    }
+
+                    return cl::Image2D(device->info.cl_context, cl::ImageFormat(
+                        (cl_channel_order)(int)order,
+                        (cl_channel_type)(int)type
+                    ), device_buffer, width, height, 0, nullptr);
+                }
+                if (auto& available_channels = device->image2d_channels[type][num_channels + 1]; available_channels.size() > 0) {
+                    if (available_channels.find(order) == available_channels.end()) {
+                        order = *available_channels.begin();
+                    }
+
+                    // we need to add a channel by joining on the x-dimension
+                    GL::GPU::Function kernel(std::string("join_dim_0") + opencl_impl::type_name<T>());
+                    Memory first(width * height, 1, false, true, 0, true);
+                    Memory out(this->N + (width * height), 1, false, true, 0, true);
+                    int num_dim = this->N / (width * height);
+                    cl::Event ev = kernel(out.N, out, *this, num_dim, width, height, first, (unsigned int)1);
+                    ev.wait();
+
+                    return cl::Image2D(device->info.cl_context, cl::ImageFormat(
+                        (cl_channel_order)(int)order,
+                        (cl_channel_type)(int)type
+                    ), out.device_buffer, width, height, 0, nullptr);
+                }
                 return cl::Image2D(device->info.cl_context, cl::ImageFormat(
-                    cl_channel_order{ (cl_channel_order)(int)order },
-                    cl_channel_type{ (cl_channel_type)(int)type }
-                ), this->device_buffer, width, height, 0, nullptr);
+                    (cl_channel_order)(int)order,
+                    (cl_channel_type)(int)type
+                ), device_buffer, width, height, 0, nullptr);
             };
 
         };
 
-        class Function {
-        public:
-            std::string
-                name = "";
-            const Program*
-                cl_program = nullptr;
-            cl::Kernel
-                cl_kernel;
-
-        public:
-            Function()
-                : name(""), cl_program(nullptr), cl_kernel()
-            {}
-            Function(const std::string& Name)
-                : name(Name), cl_program(&opencl::get_program()), cl_kernel(cl_program->program.cl_program.get().obj, name.c_str())
-            {}
-            Function(Function&&) = default;
-            Function& operator=(Function&&) = default;
-            Function(Function const&) = delete;
-            Function& operator=(Function const&) = delete;
-            ~Function() = default;
-
-
-        private:
-            void check_for_errors(const int error) const {
-                if (error == -48) print_error("There is no OpenCL kernel with name \"" + name + "(...)\" in the OpenCL C code! Check spelling!");
-                if (error<-48 && error>-53) print_error("Parameters for OpenCL kernel \"" + name + "(...)\" don't match between C++ and OpenCL C!");
-                if (error == -54) print_error("Workgrop size " + to_string(WORKGROUP_SIZE) + " for OpenCL kernel \"" + name + "(...)\" is invalid!");
-                if (error != 0) print_error("OpenCL kernel \"" + name + "(...)\" failed with error code " + to_string(error) + "!");
-            }
-            template<typename T> void link_parameter(const uint position, const T& constant) {
-                check_for_errors(cl_kernel.setArg(position, sizeof(T), (void*)&constant));
-            }
-            template<> void link_parameter<cl::Image2D>(const uint position, const cl::Image2D& constant) {
-                check_for_errors(cl_kernel.setArg(position, constant));
-            }
-            template<> void link_parameter<cl::Buffer>(const uint position, const cl::Buffer& memory) {
-                check_for_errors(cl_kernel.setArg(position, memory));
-            }
-            void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position) {
-                number_of_parameters = max(number_of_parameters, starting_position);
-            }
-            template<template<class> typename G, typename T, class... U> void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position, const G<T>& parameter, const U&... parameters) {
-                if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
-                    link_parameters(number_of_parameters, waitlist, starting_position, *parameter, parameters...);
-                }
-                else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
-                    waitlist.insert(parameter.jobs_that_reference_me.begin(), parameter.jobs_that_reference_me.end());
-
-                    link_parameter(starting_position, parameter.get_cl_buffer());
-                    link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
-                }
-                else {
-                    link_parameter(starting_position, parameter);
-                    link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
-                }
-            }
-            template<class T, class... U> void link_parameters(unsigned int& number_of_parameters, std::set<cl::Event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
-                link_parameter(starting_position, parameter);
-                link_parameters(number_of_parameters, waitlist, starting_position + 1u, parameters...);
-            }
-
-        public:
-            static void append_events(cl::Event const& _event) {}
-            template<template<class> typename G, typename T, class... U> static void append_events(cl::Event const& _event, const G<T>& parameter, const U&... parameters) {
-                if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
-                    append_events(_event, *parameter, parameters...);
-                }
-                else if constexpr (std::is_same_v<G<T>, GL::GPU::Memory<T>>) {
-                    const_cast<G<T>&>(parameter).jobs_that_reference_me.push_back(_event);
-                    append_events(_event, parameters...);
-                }
-                else {
-                    append_events(_event, parameters...);
-                }
-            }
-            template<class T, class... U> static void append_events(cl::Event const& _event, const T& parameter, const U&... parameters) {
-                append_events(_event, parameters...);
-            }
-
-        public:
-            template<class... T> cl::Event operator()(unsigned int N, const T&... parameters) {
-                unsigned int
-                    number_of_parameters = 0u;
-                std::set<cl::Event>
-                    waitlist_set;
-                std::vector<cl::Event>
-                    waitlist;
-
-                link_parameters(number_of_parameters, waitlist_set, 0u, parameters...); // expand variadic template to link kernel parameters
-                waitlist.insert(waitlist.end(), waitlist_set.begin(), waitlist_set.end());
-
-                cl::NDRange
-                    cl_range_global = cl::NDRange(((N + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
-                    cl_range_local = cl::NDRange(WORKGROUP_SIZE);
-
-                cl::Event out;
-                check_for_errors(cl_program->queue.get().obj.enqueueNDRangeKernel(cl_kernel, cl::NullRange, cl_range_global, cl_range_local, waitlist.size() > 0 ? std::pair<Event*, Event*>{ &waitlist[0], & waitlist[0] + waitlist.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }, & out));
-                append_events(out, parameters...);
-                return out;
-            };
-
-        };
 
         struct dimensions {
             unsigned int X;
@@ -2189,8 +2297,6 @@ namespace GL {
             };
             // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
             static gpu_array linear(T low, T high, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
-                int num_dim = std::max<int>(1, ((int)(lenZ > 1) + (int)(lenY > 1) + (int)(lenX > 1)));
-
                 gpu_array out(dimensions{ lenX, lenY, lenZ });
                 gpu_array::work(out, out.size(), "linear_between", out.data, low, high, (unsigned int)out.size());
                 return out;
@@ -2637,37 +2743,23 @@ namespace GL {
             };
             // NOTE: assumes that the X-axis determines the number of channels, Y-axis determines the width, and Z-axis determines the height of the image
             __declspec(noinline) gpu_array<float> TEST_IMAGE() const {       
-                image_channel_type typ;
-                if constexpr (std::is_same_v<T, float>) {
-                    typ = image_channel_type::FLOAT;
-                }
-                else {
+                if constexpr (!std::is_same_v<T, float>) {
                     auto f = this->cast<float>();
                     return f.TEST_IMAGE();
                 }
 
                 image_channel_order ord;
-                if (this->dim.X >= 4) {
-                    ord = image_channel_order::RGBA;
-                } 
-                else if (this->dim.X >= 3) {
-                    ord = image_channel_order::RGB;
-                }
-                else if (this->dim.X >= 2) {
-                    ord = image_channel_order::RG;
-                }
-                else if (this->dim.X >= 1) {
-                    ord = image_channel_order::R;
-                }
-                else {
-                    return gpu_array<float>{};
-                }
+                if (this->dim.X >= 4) { ord = image_channel_order::RGBA; } 
+                else if (this->dim.X >= 3) { ord = image_channel_order::RGB; }
+                else if (this->dim.X >= 2) { ord = image_channel_order::RG; }
+                else if (this->dim.X >= 1) { ord = image_channel_order::INTENSITY; }
+                else { return gpu_array<float>{}; }
 
-                cl::Image2D img = this->data->as_Image2D(this->dim.Y, this->dim.Z, ord, typ);
+                cl::Image2D img = this->data->as_Image2D(this->dim.Y, this->dim.Z, ord);
                 GL::GPU::Function kernel("sample_image");
 
                 gpu_array<float> out(dimensions{ this->dim.Y, this->dim.Z, 1 });
-                cl::Event ev = kernel(out.size(), img, out.data, out.size(0), out.size(1));
+                cl::Event ev = kernel(out.size(), img, out.data, out.size(0), out.size(1), (unsigned int)channels(ord));
                 out.data->jobs_that_reference_me.push_back(ev);
                 return out;
             };

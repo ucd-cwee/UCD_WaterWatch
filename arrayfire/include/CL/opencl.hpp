@@ -4911,9 +4911,12 @@ public:
             nullptr,
             &error);
 
-        detail::errHandler(error, __CREATE_IMAGE_ERR);
+        
         if (err != nullptr) {
             *err = error;
+        }
+        else {
+            detail::errHandler(error, __CREATE_IMAGE_ERR);
         }
     }
 #endif //#if CL_HPP_TARGET_OPENCL_VERSION >= 200 || defined(CL_HPP_USE_CL_IMAGE2D_FROM_BUFFER_KHR)
