@@ -4897,11 +4897,23 @@ public:
         cl_int error;
 
         cl_image_desc desc = {0};
-        desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+        desc.image_type = CL_MEM_OBJECT_IMAGE2D; // Or CL_MEM_OBJECT_IMAGE1D_BUFFER etc.
         desc.image_width = width;
         desc.image_height = height;
-        desc.image_row_pitch = row_pitch;
-        desc.buffer = sourceBuffer();
+        desc.image_depth = 0; // For 2D image
+        desc.image_array_size = 0;
+        desc.image_row_pitch = row_pitch; // 0 == Let OpenCL determine
+        desc.image_slice_pitch = 0; // Let OpenCL determine
+        desc.num_mip_levels = 0;
+        desc.num_samples = 0;
+        desc.mem_object = sourceBuffer(); // Link to the existing buffer
+        // desc.buffer = sourceBuffer();
+
+        //desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+        //desc.image_width = width;
+        //desc.image_height = height;
+        //desc.image_row_pitch = row_pitch;
+        //desc.buffer = sourceBuffer();
 
         object_ = ::clCreateImage(
             context(),

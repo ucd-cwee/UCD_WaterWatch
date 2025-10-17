@@ -1052,18 +1052,51 @@ public:
 
         // additional kernels for type-free stuff. 
         out = out + R"(
+            kernel void buffer_to_image(write_only image2d_t output, global float* input, uint lX, uint lY, uint channels) {
+                const int n = (int)get_global_id(0);
+                const int COL = (int)floor((float)n / (float)lX);
+                const int ROW = (int)n - COL * (int)lX;
+                
+                float4 copy;
+                if (channels >= 1){ copy[0] = input[n]; }
+                if (channels >= 2){ copy[1] = input[n + (lX * lY)]; }
+                if (channels >= 3){ copy[2] = input[n + (lX * lY) * 2]; }
+                if (channels >= 4){ copy[3] = input[n + (lX * lY) * 3]; }
+
+                write_imagef(output, (int2)(ROW, COL), copy);
+            }
+            kernel void image_to_buffer(read_only image2d_t input, global float* output, uint lX, uint lY, uint lZ) {
+                const int n = (int)get_global_id(0);
+                const int DEPTH = (int)floor((float)n / (float)(lX * lY));
+                const int COL = (int)floor((float)(n - (DEPTH * (lX * lY))) / (float)lX);
+                const int ROW = (int)n - COL * (int)lX;
+ 
+                const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
+                float4 r = read_imagef(input, sampler, (float2)((float)ROW, (float)COL));
+
+                output[n] = r[DEPTH];
+            }
+
             kernel void sample_image(read_only image2d_t input, global float* output, uint lX, uint lY, uint channels) {
                 const int n = (int)get_global_id(0);
-                const int Y = (int)floor((float)n / (float)lX);
-                const int X = (int)n - Y * (int)lX;
+                const int COL = (int)floor((float)n / (float)lX);
+                const int ROW = (int)n - COL * (int)lX;
 
                 const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
-                float4 r = read_imagef(input, sampler, (int2)(X, Y));                  
-                //float out = 0;
-                //for (uint i = 0; i < channels; ++i){
-                //    out += r[i];
-                //}
-                output[n] = r[1]; // out / (float)channels;
+                float4 r = read_imagef(input, sampler, (float2)((float)ROW, (float)COL));     
+
+                if (COL <= 2){
+                    output[n] = r[0];
+                }
+                else if (COL <= 4){
+                    output[n] = r[1];
+                }
+                else if (COL <= 6){
+                    output[n] = r[2];
+                }
+                else {
+                    output[n] = r[3];
+                }
 
                 //const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
                 //float4 r = read_imagef(input, sampler, (int2)(X, Y));                  
@@ -1965,6 +1998,7 @@ namespace GL {
                 return device->info;
             };
             
+            // assumes X & Y are the rows and columns, and RGBA channels are assumed to be the Z coordinates. 
             cl::Image2D as_Image2D(unsigned int width, unsigned int height, image_channel_order& order) const {
                 image_channel_type type;
                 if constexpr (std::is_same_v<T, char> || std::is_same_v<T, int>) type = image_channel_type::SNORM_INT8;                
@@ -1974,33 +2008,51 @@ namespace GL {
                 else type = image_channel_type::FLOAT;               
 
                 int num_channels = channels(order);
+                int num_dim = this->N / (width * height);
                 if (auto& available_channels = device->image2d_channels[type][num_channels]; available_channels.size() > 0) {
                     if (available_channels.find(order) == available_channels.end()) {
                         order = *available_channels.begin();
                     }
 
-                    return cl::Image2D(device->info.cl_context, cl::ImageFormat(
+                    auto IMG = cl::Image2D(device->info.cl_context, cl::ImageFormat(
                         (cl_channel_order)(int)order,
                         (cl_channel_type)(int)type
-                    ), device_buffer, width, height, 0, nullptr);
+                    ), cl::Buffer(), width, height, 0, nullptr);
+
+                    GL::GPU::Function kernel("buffer_to_image");
+                    cl::Event ev = kernel(width * height, IMG, *this, width, height, (unsigned int)num_dim);
+                    ev.wait();
+
+                    return IMG;
                 }
                 if (auto& available_channels = device->image2d_channels[type][num_channels + 1]; available_channels.size() > 0) {
                     if (available_channels.find(order) == available_channels.end()) {
                         order = *available_channels.begin();
                     }
 
-                    // we need to add a channel by joining on the x-dimension
-                    GL::GPU::Function kernel(std::string("join_dim_0") + opencl_impl::type_name<T>());
-                    Memory first(width * height, 1, false, true, 0, true);
-                    Memory out(this->N + (width * height), 1, false, true, 0, true);
-                    int num_dim = this->N / (width * height);
-                    cl::Event ev = kernel(out.N, out, *this, num_dim, width, height, first, (unsigned int)1);
-                    ev.wait();
-
-                    return cl::Image2D(device->info.cl_context, cl::ImageFormat(
+                    auto IMG = cl::Image2D(device->info.cl_context, cl::ImageFormat(
                         (cl_channel_order)(int)order,
                         (cl_channel_type)(int)type
-                    ), out.device_buffer, width, height, 0, nullptr);
+                    ), cl::Buffer(), width, height, 0, nullptr);
+
+                    GL::GPU::Function kernel("buffer_to_image");
+                    cl::Event ev = kernel(width * height, IMG, *this, width, height, (unsigned int)num_dim);
+                    ev.wait();
+
+                    return IMG;
+
+                    //// we need to add a channel by joining on the z-dimension
+                    //GL::GPU::Function kernel(std::string("join_dim_2") + opencl_impl::type_name<T>());
+                    //Memory first(width * height, 1, false, true, 0, true);
+                    //Memory out(this->N + (width * height), 1, false, true, 0, true);
+                    //
+                    //cl::Event ev = kernel(out.N, out, *this, width, height, num_dim, first);
+                    //ev.wait();
+
+                    //return cl::Image2D(device->info.cl_context, cl::ImageFormat(
+                    //    (cl_channel_order)(int)order,
+                    //    (cl_channel_type)(int)type
+                    //), out.device_buffer, width, height, 0, nullptr);
                 }
                 return cl::Image2D(device->info.cl_context, cl::ImageFormat(
                     (cl_channel_order)(int)order,
@@ -2749,16 +2801,16 @@ namespace GL {
                 }
 
                 image_channel_order ord;
-                if (this->dim.X >= 4) { ord = image_channel_order::RGBA; } 
-                else if (this->dim.X >= 3) { ord = image_channel_order::RGB; }
-                else if (this->dim.X >= 2) { ord = image_channel_order::RG; }
-                else if (this->dim.X >= 1) { ord = image_channel_order::INTENSITY; }
+                if (this->dim.Z >= 4) { ord = image_channel_order::RGBA; } 
+                else if (this->dim.Z >= 3) { ord = image_channel_order::RGB; }
+                else if (this->dim.Z >= 2) { ord = image_channel_order::RG; }
+                else if (this->dim.Z >= 1) { ord = image_channel_order::R; }
                 else { return gpu_array<float>{}; }
 
-                cl::Image2D img = this->data->as_Image2D(this->dim.Y, this->dim.Z, ord);
+                cl::Image2D img = this->data->as_Image2D(this->dim.X, this->dim.Y, ord);
                 GL::GPU::Function kernel("sample_image");
 
-                gpu_array<float> out(dimensions{ this->dim.Y, this->dim.Z, 1 });
+                gpu_array<float> out(dimensions{ this->dim.X, this->dim.Y, 1 });
                 cl::Event ev = kernel(out.size(), img, out.data, out.size(0), out.size(1), (unsigned int)channels(ord));
                 out.data->jobs_that_reference_me.push_back(ev);
                 return out;

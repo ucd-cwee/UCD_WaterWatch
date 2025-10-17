@@ -935,12 +935,16 @@ int main() {
 
         // TEST IMAGE
         if (1) {
-            int num_channels = 4; // RGB? Will fail and a new channel will be appended... 
             int width = 10; //       10 pix wide
             int height = 10; //      10 pix tall
 
-            auto raw_read = Array::linear(GL::ArrayTypes::FLOAT, 0, 100, num_channels, width, height);
-            auto T = raw_read.TEST_IMAGE();
+            auto R = Array::linear(GL::ArrayTypes::FLOAT, 1, 2, width, height, 1);
+            auto G = Array::linear(GL::ArrayTypes::FLOAT, 3, 4, width, height, 1);
+            auto B = Array::linear(GL::ArrayTypes::FLOAT, 5, 6, width, height, 1);
+            //auto A = Array::linear(GL::ArrayTypes::FLOAT, 7, 8, width, height, 1);
+
+            auto RGBA = R/*.join(2, G).join(2, B)*/;//.join(2, A);
+            auto T = RGBA.TEST_IMAGE();
             print(T);
 
         }
