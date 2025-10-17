@@ -1883,6 +1883,8 @@ namespace GL {
                 allocate_host_buffer(allocate_host, allow_zero_copy); // allocate host_buffer first
                 allocate_device_buffer(allocate_device, allow_zero_copy); // allocate device_buffer second
                 reset(value);
+
+                jobs_that_reference_me.reserve(2);
             }
             Memory(const ulong N, const uint dimensions, T* const host_buffer, const bool allocate_device = true, const bool allow_zero_copy = true)
                 : device(&opencl::get_program())
@@ -1896,10 +1898,12 @@ namespace GL {
                 external_host_buffer = true;
                 allocate_device_buffer(allocate_device, allow_zero_copy);
                 write_to_device();
+
+                jobs_that_reference_me.reserve(2);
             }
             Memory() {} // default constructor
             Memory(Memory const&) = delete;
-            Memory(Memory&&) = delete;
+            Memory(Memory&&) = default;
             Memory& operator=(Memory const&) = delete;
             Memory& operator=(Memory&&) = delete;
             ~Memory() {
@@ -2078,34 +2082,34 @@ namespace GL {
         template<typename T> class gpu_array {
             template <typename G> friend class gpu_array;
         public:
-            std::shared_ptr<Memory<T>> data;
+            Memory<T> data;
             dimensions dim;
 
         public:
             using type = T;
             class reader {
-                Memory<T>* data;
+                Memory<T>& data;
                 dimensions dim;
 
             public:
-                reader(Memory<T>& copy, dimensions const& D) : data(&copy), dim(D) {
-                    data->add_host_buffer();
-                    data->read_from_device();
-                    data->wait();
+                reader(Memory<T>& copy, dimensions const& D) : data(copy), dim(D) {
+                    data.add_host_buffer();
+                    data.read_from_device();
+                    data.wait();
                 };
-                reader(reader const&) = default;
-                reader(reader&&) = default;
-                reader& operator=(reader const&) = default;
-                reader& operator=(reader&&) = default;
+                reader(reader const&) = delete;
+                reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
+                reader& operator=(reader const&) = delete;
+                reader& operator=(reader&&) = delete;
                 ~reader() = default;
                 operator bool() const {
-                    return data->length() > 0;
+                    return data.length() > 0;
                 };
                 T const& operator[](unsigned int X) const {
-                    return data->operator[](X);
+                    return data.operator[](X);
                 };
                 T const& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
-                    return data->operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);
+                    return data.operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);
                 };
             };
             class writer {
@@ -2120,23 +2124,14 @@ namespace GL {
                     data->wait();
                 };
                 writer(writer const&) = delete;
-                writer(writer&& rhs) : data(std::move(rhs.data)), dim(std::move(rhs.dim)), _cpu_only(rhs._cpu_only) {
+                writer(writer&& rhs) noexcept : data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
                     rhs.data = nullptr;
                 };
                 writer& operator=(writer const&) = delete;
-                writer& operator=(writer&& rhs) {
-                    if (data) { data->write_to_device(); }
-
-                    data = std::move(rhs.data);
-                    dim = std::move(rhs.dim);
-                    rhs.data = nullptr;
-
-                    return *this;
-                };
+                writer& operator=(writer&&) noexcept = delete;
                 ~writer() {
-                    if (data) {
+                    if (data)
                         data->write_to_device();
-                    }
                 };
                 operator bool() const {
                     return data->length() > 0;
@@ -2152,45 +2147,34 @@ namespace GL {
         public:
             template<class... P> static inline void work(gpu_array& destination, unsigned int count, const std::string& name, const P&... parameters) {
                 GL::GPU::Function kernel(name + opencl_impl::type_name<T>());
-                if (destination.data) {
-                    destination.data->jobs_that_reference_me.push_back(kernel(count, parameters...));
+                cl::Event ev = kernel(count, parameters...);
+                for (auto& x : destination.data.jobs_that_reference_me) {
+                    if (x == ev) return;
                 }
-                else {
-                    GL::GPU::Function::append_events(kernel(count, parameters...), parameters...);
-                }
+                destination.data.jobs_that_reference_me.emplace_back(ev);
             };
 
         public:
-            gpu_array() : data(nullptr), dim{ 0,0,0 } {}
+            gpu_array() : data(), dim{ 0,0,0 } {}
             explicit gpu_array(dimensions const& D, bool cpu_only = false)
-                : data(std::make_shared<Memory<T>>(D.count(), 1, cpu_only, !cpu_only)), dim{ D }
+                : data(D.count(), 1, cpu_only, !cpu_only), dim{ D }
             {};
             explicit gpu_array(unsigned int X, unsigned int Y = 1, unsigned int Z = 1)
-                : data(std::make_shared<Memory<T>>(X* Y* Z, 1, false, true)), dim{ X, Y, Z }
+                : data(X* Y* Z, 1, false, true), dim{ X, Y, Z }
             {}
             gpu_array(gpu_array const&) = delete;
-            gpu_array(gpu_array&& rhs) noexcept : data(std::move(rhs.data)), dim{ rhs.dim }
-            {
-                rhs.data = nullptr;
-            }
+            gpu_array(gpu_array&& rhs) noexcept : data(std::move(rhs.data)), dim(std::move(rhs.dim)) {};
             gpu_array& operator=(gpu_array const&) = delete;
-            gpu_array& operator=(gpu_array&& rhs) noexcept {
-                dim = rhs.dim;
-                data = std::move(rhs.data);
-                rhs.data = nullptr;
-                return *this;
-            };
-            ~gpu_array() {
-                data = nullptr;
-            };
+            gpu_array& operator=(gpu_array&& rhs) = delete;
+            ~gpu_array() = default;
 
 
         public:
             reader read() const {
-                return reader(*data, dim);
+                return reader(const_cast<Memory<T>&>(data), dim);
             };
             writer write(bool cpu_only = false) {
-                return writer(*data, dim, cpu_only);
+                return writer(const_cast<Memory<T>&>(data), dim, cpu_only);
             };
             unsigned int size() const {
                 return dim.count();
@@ -2619,7 +2603,7 @@ namespace GL {
                 return out;
             };
             // returns the min of the two arrays (item-by-item, as an array)
-            gpu_array min(T rhs) const {
+            __declspec(noinline) gpu_array min(T rhs) const {
                 gpu_array out(this->dim);
                 gpu_array::work(out, out.size(), "Min_single", data, rhs, out.data);
                 return out;
@@ -2807,12 +2791,12 @@ namespace GL {
                 else if (this->dim.Z >= 1) { ord = image_channel_order::R; }
                 else { return gpu_array<float>{}; }
 
-                cl::Image2D img = this->data->as_Image2D(this->dim.X, this->dim.Y, ord);
+                cl::Image2D img = this->data.as_Image2D(this->dim.X, this->dim.Y, ord);
                 GL::GPU::Function kernel("sample_image");
 
                 gpu_array<float> out(dimensions{ this->dim.X, this->dim.Y, 1 });
                 cl::Event ev = kernel(out.size(), img, out.data, out.size(0), out.size(1), (unsigned int)channels(ord));
-                out.data->jobs_that_reference_me.push_back(ev);
+                out.data.jobs_that_reference_me.push_back(ev);
                 return out;
             };
 
@@ -3067,7 +3051,7 @@ namespace GL {
                 auto thisMaxV = this->max();    
 
                 gpu_array<char> out(this->dim);
-                out.data->jobs_that_reference_me.push_back( kernel( 
+                out.data.jobs_that_reference_me.push_back( kernel( 
                     out.size(), out.data, this->data, thisMinV, thisMaxV, ramp.data, ramp.size() 
                 ) );
                 return out;
@@ -3307,10 +3291,6 @@ namespace GL {
                 return current_best.copy();
             };
             // build a collection of features for a linear regression while avoiding colinearity. 
-            __declspec(noinline) static matrix build_features(matrix&& current_best) {
-                return std::move(current_best);
-            };
-            // build a collection of features for a linear regression while avoiding colinearity. 
             template <typename T, typename... Ts> __declspec(noinline) static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
                 auto joined = current_best.join(1, candidate);
                 if (joined.is_colinear()) {
@@ -3320,20 +3300,6 @@ namespace GL {
                     return build_features(joined, further_candidates...);
                 }
             };
-
-            // build a collection of features for a linear regression while avoiding colinearity. 
-            __declspec(noinline) static matrix build_features_fast(matrix const& current_best) {
-                return current_best.copy();
-            };
-            // build a collection of features for a linear regression while avoiding colinearity. 
-            __declspec(noinline) static matrix build_features_fast(matrix&& current_best) {
-                return std::move(current_best);
-            };
-            // build a collection of features for a linear regression while avoiding colinearity. 
-            template <typename T, typename... Ts> __declspec(noinline) static matrix build_features_fast(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
-                return build_features_fast(current_best.join(1, candidate), further_candidates...);                
-            };
-
         };
     };
 }
@@ -3385,7 +3351,7 @@ namespace GL {
         return Array(TypeOf<T>(), std::static_pointer_cast<void>(std::make_shared<gpu_array<T>>(std::move(V))));
     };
     template <typename T> static auto& get_array(std::shared_ptr<void> const& rhs) {
-        return *std::static_pointer_cast<gpu_array<T>>(rhs);
+        return *static_cast<gpu_array<T>*>(rhs.get());
     };
     template <typename F> static auto visit_array(ArrayTypes _type, std::shared_ptr<void> const& _data, F const& func) {
         switch (_type) {
@@ -4329,9 +4295,256 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
+#if 0
+// allocates some amount of memory from the GPU initially, and then shares it as subbuffers as necessary.
+template <unsigned int minAllocCount = 64>
+class dynamic_gpu_allocator {
+    struct dynamic_block {
+
+
+
+
+        dynamic_block*
+            prev;
+        dynamic_block*
+            next;
+        long long
+            generated_epoch;
+        unsigned int
+            num;
+        unsigned int
+            original_allocation; // garbage value if is_base_block() returns false
+        bool
+            is_free;
+        bool
+            is_available;
+
+        bool is_base_block() const {
+            return (prev == nullptr);
+        };
+        dynamic_block* get_base_block() {
+            if (prev) return prev->get_base_block();
+            else return this;
+        };
+        bool is_split() const {
+            if (next || prev) return true;
+            else return false;
+        };
+    };
+    cweeBTree< dynamic_block, unsigned int, 8>
+        free_tree{};
+    unsigned int
+        total_allocations{ 0 };
+    __declspec(noinline) bool try_combine(dynamic_block* lhs) {
+        if (lhs) {
+            if (lhs->is_free && lhs->next) {
+                if (lhs->next->is_available && lhs->next->is_free) {
+                    // we are free, and the next pointer is free
+                    lhs->next->is_available = false;
+                    lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
+                    if (lhs->next->next) {
+                        lhs->next->next->prev = lhs;
+                    }
+
+                    // lhs->next is no longer valid and should be removed from the list
+                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->num);
+                    while (tree_node) {
+                        if (tree_node->object) {
+                            if (tree_node->key == lhs->next->num) {
+                                if (tree_node->object == lhs->next) {
+                                    free_tree.Remove(tree_node);
+                                    break;
+                                }
+                            }
+                        }
+                        tree_node = free_tree.GetNextLeaf(tree_node);
+                    }
+
+                    lhs->next = lhs->next->next;
+
+                    if (!lhs->next && !lhs->prev) {
+                        lhs->num = lhs->original_allocation;
+                    }
+
+                    // try to combine again!
+                    (void)try_combine(lhs);
+
+                    return true;
+                }
+            }
+            //if (lhs->is_free && lhs->prev) {
+            //    if (lhs->prev->is_available && lhs->prev->is_free) {
+            //        // we are free, and the prev pointer is free
+            //        return try_combine(lhs->prev);
+            //    }
+            //}
+        }
+        return false;
+    };
+
+    cl_mem 
+        buffer;
+    unsigned int
+        size;
+public:
+    dynamic_gpu_allocator(cl_mem original_buffer, size_t max_size) : buffer{ original_buffer }, size{ max_size } {};
+
+    cl_mem Alloc(unsigned int N) {
+        if (N == 0) return cl_mem{};
+
+        dynamic_block* free_block = nullptr;
+        // try to get a free block
+        if (1) {
+            auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
+            while (tree_node) {
+                if (tree_node->object) {
+                    if (tree_node->key >= N) {
+                        if (tree_node->object->is_available) {
+                            free_block = tree_node->object;
+                            free_block->get_base_block()->generated_epoch = GL::util::get_current_epoch();
+                            free_tree.Remove(tree_node);
+                            break;
+                        }
+                    }
+                }
+                tree_node = free_tree.GetNextLeaf(tree_node);
+            }
+        }
+
+        // otherwise make a block
+        if (!free_block) { // allocate a new buffer to fit the requested size
+
+
+
+            unsigned int alloc_count = CONST_MAX(minAllocCount, ((N > minAllocCount) ? (N + (N % minAllocCount)) : N));
+            free_block = (dynamic_block*)Mem_Alloc(sizeof(dynamic_block) + sizeof(T) * alloc_count);
+            if (!free_block) return nullptr;
+            free_block->prev = nullptr;
+            free_block->next = nullptr;
+            free_block->num = alloc_count;
+            free_block->original_allocation = alloc_count;
+            free_block->is_available = true;
+            free_block->generated_epoch = GL::util::get_current_epoch();
+            total_allocations += free_block->original_allocation;
+        }
+        // split the block if too large
+        if (free_block && (free_block->num > N)) {
+            // we got a buffer of size enough. But, if it is too large, we can share it with another, smaller allocation later.
+            long long free_block_size = sizeof(T) * (free_block->num - N);
+            long long remaining_N = ((free_block_size - (long long)sizeof(dynamic_block)) / (long long)sizeof(T));
+            if (remaining_N > 0) {
+                dynamic_block* child_block = (dynamic_block*)(((::byte*)free_block) + sizeof(dynamic_block) + sizeof(T) * N);
+                child_block->prev = free_block;
+                child_block->next = free_block->next;
+                child_block->num = remaining_N;
+                child_block->is_free = true;
+                child_block->is_available = true;
+                free_block->next = child_block;
+                if (child_block->next) child_block->next->prev = child_block;
+                free_block->num = N;
+
+                free_tree.Add(child_block, child_block->num);
+            }
+        }
+        // return the result
+        free_block->is_free = false;
+
+        T* out = (T*)(((::byte*)free_block) + sizeof(dynamic_block));
+
+        std::memset(out, 0, N * sizeof(T));
+
+        return out;
+    };
+    __declspec(noinline) void Free(cl_mem ptr) {
+        if (!ptr) return;
+
+        std::scoped_lock locked(mut);
+
+        dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
+        free_block->is_free = true;
+        try_combine(free_block);
+        if (free_block->is_base_block() && !free_block->is_split() && ((total_allocations - free_block->original_allocation) > 0)) {
+            long long curr_epoch = GL::util::get_current_epoch();
+
+            // has enough time passed to warrant this?
+            if ((curr_epoch - free_block->generated_epoch) > 1000) {
+                total_allocations -= free_block->original_allocation;
+                Mem_Free(free_block);
+            }
+            else {
+                free_block->generated_epoch = curr_epoch;
+                free_tree.Add(free_block, free_block->num);
+            }
+
+            // review the free tree and see if anyone is expired...
+            if (auto* tree_node = free_tree.GetRoot()) {
+                while (tree_node) {
+                    if (tree_node->object) {
+                        if (try_combine(tree_node->object)) break;
+                        if (!tree_node->object->is_split() && tree_node->object->is_base_block()) {
+                            if ((curr_epoch - tree_node->object->generated_epoch) > 10) {
+                                total_allocations -= tree_node->object->original_allocation;
+                                Mem_Free(tree_node->object);
+
+                                free_tree.Remove(tree_node);
+                                break;
+                            }
+                        }
+                    }
+                    tree_node = free_tree.GetNextLeaf(tree_node);
+                }
+            }
+        }
+        else {
+            free_tree.Add(free_block, free_block->num);
+        }
+    };
+
+    __declspec(noinline) ~dynamic_gpu_allocator() {
+        
+    };
+
+
+
+};
+#endif
+
+
+
 void fnGpuProgramming() {
+    auto max_mem_bytes = GL::GPU::opencl::get_program().info.memory * 1048576ull;
+    auto ctxt = GL::GPU::opencl::get_program().get_cl_context().get();
+    cl_int err;
+    cl_mem Cache = ::clCreateBuffer(GL::GPU::opencl::get_program().get_cl_context().get(), CL_MEM_READ_WRITE, max_mem_bytes / 4, nullptr, &err);
+    if (err != CL_SUCCESS) {
+        print(err);
+        return;
+    }
+
+    for (int i = 1; i < 1000000; ++i) {
+        auto alloc_size = sizeof(float) * i;
+
+        cl_buffer_region region;
+        region.origin = 0;
+        region.size = alloc_size;
+
+        //typedef struct cl_buffer_region {
+        //    size_t    origin;
+        //    size_t    size;
+        //} cl_buffer_region;
+
+        cl_mem sub_buffer = ::clCreateSubBuffer(Cache, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+        if (err != CL_SUCCESS) {
+            print(err);
+            return;
+        }
+        ::clReleaseMemObject(sub_buffer);
+    }
+    ::clReleaseMemObject(Cache);
+
     return;
 
+#if 0
     while (0) {
        GL::dynamic_allocator<int, 256> alloc;
        for (int i = 2; i <= 256; i *= 2) {
@@ -4647,13 +4860,6 @@ void fnGpuProgramming() {
         // Demonstrate the creation, use, and destruction of a floating-point matrix with 100M items as part of a CPU-bound matrix multiplication
         Array::constant(ArrayTypes::FLOAT, 1, 10000).matrix_multiply(Array::constant(ArrayTypes::FLOAT, 1, 10000).transpose()).read();
     }
-
-
-
-
-
-
-
 
     if (1) {
         auto arr = gpu_array<int>(100);
@@ -5096,7 +5302,7 @@ void fnGpuProgramming() {
         print("");
 
     }
-
+#endif
 }
 
 

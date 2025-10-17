@@ -3282,6 +3282,21 @@ public:
     friend bool operator<(Event const& lhs, Event const& rhs) {
         return lhs.get() < rhs.get();
     };
+    friend bool operator<=(Event const& lhs, Event const& rhs) {
+        return lhs.get() <= rhs.get();
+    };
+    friend bool operator>(Event const& lhs, Event const& rhs) {
+        return lhs.get() > rhs.get();
+    };
+    friend bool operator>=(Event const& lhs, Event const& rhs) {
+        return lhs.get() >= rhs.get();
+    };
+    friend bool operator==(const Event& lhs, const Event& rhs) {
+        return lhs.get() == rhs.get();
+    };
+    friend bool operator!=(const Event& lhs, const Event& rhs) {
+        return lhs.get() != rhs.get();
+    };
 
     /*! \brief Constructor from cl_event - takes ownership.
      * 

@@ -1028,18 +1028,18 @@ int main() {
 
             state += ((state > 0).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(7, 7)) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
             if (1) {
-                auto temp = state.min(1);
+                auto temp{ state.min(1) };
                 state = temp;
             }
 
             // add random chance for life to spawn anywhere. 
-            if ((int)state.sum() <= (game_w * game_h) / 20) {
-                state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.99f).cast(ArrayTypes::UINT);
-                if (1) {
-                    auto temp = state.min(1);
-                    state = temp;
-                }
-            }
+            //if ((int)state.sum() <= (game_w * game_h) / 20) {
+            //    state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.99f).cast(ArrayTypes::UINT);
+            //    if (1) {
+            //        auto temp{ state.min(1) };
+            //        state = temp;
+            //    }
+            //}
 
             // meanwhile, demonstrate performing a linear regression...
             // Advertisement regression. Generally correct analysis.
