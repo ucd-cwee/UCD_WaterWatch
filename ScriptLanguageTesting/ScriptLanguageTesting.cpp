@@ -933,7 +933,7 @@ int main() {
         float avg_framerate = 0; int avg_framerate_n = 0;
 
         // TEST IMAGE
-        if (0) {
+        if (1) {
             int width = 10; //       10 pix wide
             int height = 10; //      10 pix tall
 

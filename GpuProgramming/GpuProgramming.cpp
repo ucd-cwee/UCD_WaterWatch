@@ -1664,6 +1664,7 @@ namespace GL {
                     nullptr,
                     nullptr
                 );
+
                 // for each type
                 for (image_channel_type type : image_channel_type::_values()) {
                     // for each order 
@@ -1677,10 +1678,12 @@ namespace GL {
                                     (cl_channel_order)(int)order,
                                     (cl_channel_type)(int)type
                                 ), buf, 10, 10, 0, &err);
-                                if (err == CL_SUCCESS) {
-                                    image2d_channels[type][num_channel].insert(order);
+                                if (err != CL_SUCCESS) {
+                                    img = nullptr;
                                 }
-                                img = nullptr;
+                                else {
+                                    image2d_channels[type][num_channel].insert(order);
+                                }                                
                             }
                             catch (...) {
                                 img = nullptr;
@@ -4297,29 +4300,18 @@ __forceinline void console_clear() {
 
 #if 1
 // allocates some amount of memory from the GPU initially, and then shares it as subbuffers as necessary.
-template <unsigned int minAllocCount = 64>
 class dynamic_gpu_allocator {
     struct dynamic_block {
         dynamic_block*
             prev;
         dynamic_block*
             next;
-        unsigned int
+        unsigned long long
             start_position;
-        unsigned int // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
+        unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
             length; 
         cl_mem // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
             sub_buffer;
-
-
-
-
-        unsigned int
-            num;
-        unsigned int
-            original_allocation; // garbage value if is_base_block() returns false
-        bool
-            is_free;
         bool
             is_available;
 
@@ -4334,28 +4326,40 @@ class dynamic_gpu_allocator {
             if (next || prev) return true;
             else return false;
         };
+        bool is_free() const {
+            return sub_buffer == nullptr;
+        };
     };
-    cweeBTree< dynamic_block, unsigned int, 8>
+    GL::atomic_allocator< dynamic_block > 
+        block_alloc;
+    cweeBTree< dynamic_block, unsigned long long, 8>
         free_tree{};
-    unsigned int
+    unsigned long long
         total_allocations{ 0 };
-    __declspec(noinline) bool try_combine(dynamic_block* lhs) {
+    cl_mem 
+        buffer;
+    unsigned long long
+        size;
+
+    __declspec(noinline) void try_combine(dynamic_block* lhs) {
         if (lhs) {
-            if (lhs->is_free && lhs->next) {
-                if (lhs->next->is_available && lhs->next->is_free) {
+            if (lhs->is_free() && lhs->next) {
+                if (lhs->next->is_available && lhs->next->is_free()) {
                     // we are free, and the next pointer is free
                     lhs->next->is_available = false;
-                    lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
+                    lhs->length += lhs->next->length;
+
                     if (lhs->next->next) {
                         lhs->next->next->prev = lhs;
                     }
 
                     // lhs->next is no longer valid and should be removed from the list
-                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->num);
+                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
                     while (tree_node) {
                         if (tree_node->object) {
-                            if (tree_node->key == lhs->next->num) {
+                            if (tree_node->key == lhs->next->length) {
                                 if (tree_node->object == lhs->next) {
+                                    block_alloc.Free(tree_node->object);
                                     free_tree.Remove(tree_node);
                                     break;
                                 }
@@ -4366,35 +4370,53 @@ class dynamic_gpu_allocator {
 
                     lhs->next = lhs->next->next;
 
-                    if (!lhs->next && !lhs->prev) {
-                        lhs->num = lhs->original_allocation;
+                    // try to combine again!
+                    (void)try_combine(lhs);
+                }
+            }
+            if (lhs->is_free() && lhs->prev) {
+                if (lhs->prev->is_available && lhs->prev->is_free()) {
+                    // we are free, and the prev pointer is free
+                    lhs->prev->is_available = false;
+                    lhs->length += lhs->prev->length;
+                    lhs->start_position = lhs->prev->start_position;
+
+                    if (lhs->prev->prev) {
+                        lhs->prev->prev->next = lhs;
                     }
+
+                    // lhs->prev is no longer valid and should be removed from the list
+                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
+                    while (tree_node) {
+                        if (tree_node->object) {
+                            if (tree_node->key == lhs->prev->length) {
+                                if (tree_node->object == lhs->prev) {
+                                    block_alloc.Free(tree_node->object);
+                                    free_tree.Remove(tree_node);
+                                    break;
+                                }
+                            }
+                        }
+                        tree_node = free_tree.GetNextLeaf(tree_node);
+                    }
+
+                    lhs->prev = lhs->prev->prev;
 
                     // try to combine again!
                     (void)try_combine(lhs);
-
-                    return true;
                 }
             }
-            //if (lhs->is_free && lhs->prev) {
-            //    if (lhs->prev->is_available && lhs->prev->is_free) {
-            //        // we are free, and the prev pointer is free
-            //        return try_combine(lhs->prev);
-            //    }
-            //}
         }
-        return false;
     };
 
-    cl_mem 
-        buffer;
-    unsigned int
-        size;
 public:
-    dynamic_gpu_allocator(cl_mem original_buffer, size_t max_size) : buffer{ original_buffer }, size{ max_size } {};
+    dynamic_gpu_allocator(cl_mem original_buffer, unsigned long long max_size) 
+        : buffer{ original_buffer }
+        , size{ max_size } 
+    {};
 
-    cl_mem Alloc(unsigned int N) {
-        if (N == 0) return cl_mem{};
+    dynamic_block* Alloc(unsigned long long N) {
+        if (N == 0) return nullptr;
 
         dynamic_block* free_block = nullptr;
         // try to get a free block
@@ -4405,7 +4427,6 @@ public:
                     if (tree_node->key >= N) {
                         if (tree_node->object->is_available) {
                             free_block = tree_node->object;
-                            free_block->get_base_block()->generated_epoch = GL::util::get_current_epoch();
                             free_tree.Remove(tree_node);
                             break;
                         }
@@ -4415,97 +4436,60 @@ public:
             }
         }
 
-        // otherwise make a block
+        // if no free block was acquired, we are starting fresh
         if (!free_block) { // allocate a new buffer to fit the requested size
-
-
-
-            unsigned int alloc_count = CONST_MAX(minAllocCount, ((N > minAllocCount) ? (N + (N % minAllocCount)) : N));
-            free_block = (dynamic_block*)Mem_Alloc(sizeof(dynamic_block) + sizeof(T) * alloc_count);
+            free_block = block_alloc.Alloc();
             if (!free_block) return nullptr;
+
             free_block->prev = nullptr;
             free_block->next = nullptr;
-            free_block->num = alloc_count;
-            free_block->original_allocation = alloc_count;
-            free_block->is_available = true;
-            free_block->generated_epoch = GL::util::get_current_epoch();
-            total_allocations += free_block->original_allocation;
+            free_block->start_position = 0;
+            free_block->length = size;
+            free_block->sub_buffer = nullptr;
+            free_block->is_available = true;            
         }
+
         // split the block if too large
-        if (free_block && (free_block->num > N)) {
-            // we got a buffer of size enough. But, if it is too large, we can share it with another, smaller allocation later.
-            long long free_block_size = sizeof(T) * (free_block->num - N);
-            long long remaining_N = ((free_block_size - (long long)sizeof(dynamic_block)) / (long long)sizeof(T));
-            if (remaining_N > 0) {
-                dynamic_block* child_block = (dynamic_block*)(((::byte*)free_block) + sizeof(dynamic_block) + sizeof(T) * N);
-                child_block->prev = free_block;
-                child_block->next = free_block->next;
-                child_block->num = remaining_N;
-                child_block->is_free = true;
-                child_block->is_available = true;
-                free_block->next = child_block;
-                if (child_block->next) child_block->next->prev = child_block;
-                free_block->num = N;
+        if (free_block && (free_block->length > N)) {
+            dynamic_block* child_block = block_alloc.Alloc();
+            child_block->prev = free_block;
+            child_block->next = free_block->next;
+            child_block->start_position = free_block->start_position + N;
+            child_block->length = free_block->length - N;
+            child_block->sub_buffer = nullptr;
+            child_block->is_available = true;
+            free_block->next = child_block;
+            if (child_block->next) child_block->next->prev = child_block;
+            free_block->length = N;
 
-                free_tree.Add(child_block, child_block->num);
-            }
+            free_tree.Add(child_block, child_block->length);
         }
-        // return the result
-        free_block->is_free = false;
 
-        T* out = (T*)(((::byte*)free_block) + sizeof(dynamic_block));
-
-        std::memset(out, 0, N * sizeof(T));
-
-        return out;
-    };
-    __declspec(noinline) void Free(cl_mem ptr) {
-        if (!ptr) return;
-
-        std::scoped_lock locked(mut);
-
-        dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
-        free_block->is_free = true;
-        try_combine(free_block);
-        if (free_block->is_base_block() && !free_block->is_split() && ((total_allocations - free_block->original_allocation) > 0)) {
-            long long curr_epoch = GL::util::get_current_epoch();
-
-            // has enough time passed to warrant this?
-            if ((curr_epoch - free_block->generated_epoch) > 1000) {
-                total_allocations -= free_block->original_allocation;
-                Mem_Free(free_block);
-            }
-            else {
-                free_block->generated_epoch = curr_epoch;
-                free_tree.Add(free_block, free_block->num);
-            }
-
-            // review the free tree and see if anyone is expired...
-            if (auto* tree_node = free_tree.GetRoot()) {
-                while (tree_node) {
-                    if (tree_node->object) {
-                        if (try_combine(tree_node->object)) break;
-                        if (!tree_node->object->is_split() && tree_node->object->is_base_block()) {
-                            if ((curr_epoch - tree_node->object->generated_epoch) > 10) {
-                                total_allocations -= tree_node->object->original_allocation;
-                                Mem_Free(tree_node->object);
-
-                                free_tree.Remove(tree_node);
-                                break;
-                            }
-                        }
-                    }
-                    tree_node = free_tree.GetNextLeaf(tree_node);
-                }
-            }
-        }
+        // allocate the subbuffer
+        cl_buffer_region region;
+        region.origin = 0;
+        region.size = free_block->length;
+        cl_int err;
+        free_block->sub_buffer = ::clCreateSubBuffer(buffer, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+        if (err == CL_SUCCESS) return free_block;
         else {
-            free_tree.Add(free_block, free_block->num);
+            print(err);
+            return nullptr;
         }
+    };
+    __declspec(noinline) void Free(dynamic_block* free_block) {
+        if (!free_block) return;
+
+        ::clReleaseMemObject(free_block->sub_buffer);
+        free_block->sub_buffer = nullptr;
+
+        try_combine(free_block);
+
+        free_tree.Add(free_block, free_block->length);
     };
 
     __declspec(noinline) ~dynamic_gpu_allocator() {
-        
+        ::clReleaseMemObject(buffer);
     };
 
 
@@ -4516,35 +4500,118 @@ public:
 
 
 void fnGpuProgramming() {
-    auto max_mem_bytes = GL::GPU::opencl::get_program().info.memory * 1048576ull;
-    auto ctxt = GL::GPU::opencl::get_program().get_cl_context().get();
-    cl_int err;
-    cl_mem Cache = ::clCreateBuffer(GL::GPU::opencl::get_program().get_cl_context().get(), CL_MEM_READ_WRITE, max_mem_bytes / 4, nullptr, &err);
-    if (err != CL_SUCCESS) {
-        print(err);
-        return;
-    }
-
-    for (int i = 1; i < 1000000; ++i) {
-        auto alloc_size = sizeof(float) * i;
-
-        cl_buffer_region region;
-        region.origin = 0;
-        region.size = alloc_size;
-
-        //typedef struct cl_buffer_region {
-        //    size_t    origin;
-        //    size_t    size;
-        //} cl_buffer_region;
-
-        cl_mem sub_buffer = ::clCreateSubBuffer(Cache, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+    if (1) {
+        auto max_mem_bytes = GL::GPU::opencl::get_program().info.memory * 1048576ull;
+        auto ctxt = GL::GPU::opencl::get_program().get_cl_context().get();
+        cl_int err;
+        cl_mem Cache = ::clCreateBuffer(GL::GPU::opencl::get_program().get_cl_context().get(), CL_MEM_READ_WRITE, max_mem_bytes / 4, nullptr, &err);
         if (err != CL_SUCCESS) {
             print(err);
             return;
         }
-        ::clReleaseMemObject(sub_buffer);
+
+        for (int i = 1; i < 1000000; ++i) {
+            auto alloc_size = sizeof(float) * i;
+
+            cl_buffer_region region;
+            region.origin = 0;
+            region.size = alloc_size;
+
+            //typedef struct cl_buffer_region {
+            //    size_t    origin;
+            //    size_t    size;
+            //} cl_buffer_region;
+
+            cl_mem sub_buffer = ::clCreateSubBuffer(Cache, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+            if (err != CL_SUCCESS) {
+                print(err);
+                return;
+            }
+            ::clReleaseMemObject(sub_buffer);
+        }
+        ::clReleaseMemObject(Cache);
     }
-    ::clReleaseMemObject(Cache);
+    ::Sleep(1000);
+    if (1) {
+        unsigned long long max_mem_bytes = (unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull;
+        auto ctxt = GL::GPU::opencl::get_program().get_cl_context().get();
+        cl_int err;
+        float ratio = 4;
+        for (; ratio >= 1.0f; ratio -= 0.1f) {
+            SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+            print(ratio);
+
+            dynamic_gpu_allocator alloc(::clCreateBuffer(GL::GPU::opencl::get_program().get_cl_context().get(), CL_MEM_READ_WRITE, (unsigned long long)((double)max_mem_bytes / (double)ratio), nullptr, &err), (unsigned long long)((double)max_mem_bytes / (double)ratio));
+            float avg_framerate = 0; int avg_framerate_n = 0;
+            for (int j = 0; j < 100; ++j) {
+                GL::stopwatch sw;
+
+                for (int i = 1; i <= 1000000; i += 1000) {
+                    auto alloc_size = sizeof(float) * i;
+
+                    auto* block = alloc.Alloc(alloc_size);
+                    if (!block) {
+                        std::cout << "ERR AT " << ratio << std::endl;
+                        throw std::runtime_error("ERR");
+                    }
+                    EXPECT_NE(block->sub_buffer, nullptr);
+                    alloc.Free(block);
+                }
+                auto alloc_1 = alloc.Alloc(sizeof(float) * 4096 * 1080 * 4);
+                if (!alloc_1) {
+                    std::cout << "ERR AT " << ratio << std::endl;
+                    throw std::runtime_error("ERR");
+                }
+                auto alloc_2 = alloc.Alloc(sizeof(float) * 4096 * 1080 * 4);
+                if (!alloc_2) {
+                    std::cout << "ERR AT " << ratio << std::endl;
+                    throw std::runtime_error("ERR");
+                }
+                auto alloc_3 = alloc.Alloc(sizeof(float) * 4096 * 1080 * 4);
+                if (!alloc_3) {
+                    std::cout << "ERR AT " << ratio << std::endl;
+                    throw std::runtime_error("ERR");
+                }
+                auto alloc_4 = alloc.Alloc(sizeof(float) * 4096 * 1080 * 4);
+                if (!alloc_4) {
+                    std::cout << "ERR AT " << ratio << std::endl;
+                    throw std::runtime_error("ERR");
+                }
+
+                alloc.Free(alloc_1);
+                alloc.Free(alloc_2);
+                alloc.Free(alloc_3);
+                alloc.Free(alloc_4);
+
+                for (int i = 1; i <= 1000000; i += 1000) {
+                    auto alloc_size = sizeof(float) * i;
+
+                    auto* block = alloc.Alloc(alloc_size);
+                    if (!block) {
+                        std::cout << "ERR AT " << ratio << std::endl;
+                        throw std::runtime_error("ERR");
+                    }
+                    EXPECT_NE(block->sub_buffer, nullptr);
+                    alloc.Free(block);
+                }
+
+                avg_framerate_n++;
+                avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
+                avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
+
+                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+                print(std::to_string(avg_framerate) + " fps");
+                std::cout << std::flush;
+                while (sw.stop() < 1.0 / 60.0) {
+                    std::this_thread::yield();
+                }
+            }
+        }
+    }
+
+
+
+
 
     return;
 
