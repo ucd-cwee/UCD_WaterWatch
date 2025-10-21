@@ -4351,6 +4351,7 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
+// GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_gpu_allocator {
     struct dynamic_block {
         dynamic_block*
@@ -4674,18 +4675,19 @@ public:
         };
 
     };
-
+    typedef typename std::shared_ptr<dynamic_gpu_allocator::dynamic_block> shared_ptr;
     unique_ptr make_unique(unsigned int N) {
         return unique_ptr(this->Alloc(N), this);
     };
 
-    std::shared_ptr<dynamic_gpu_allocator::dynamic_block> make_shared(unsigned int N) {
-        return std::shared_ptr<dynamic_gpu_allocator::dynamic_block>(this->Alloc(N), [this](dynamic_gpu_allocator::dynamic_block* p) {
+    shared_ptr make_shared(unsigned int N) {
+        return shared_ptr(this->Alloc(N), [this](dynamic_gpu_allocator::dynamic_block* p) {
             this->Free(p);
         });
     };
 
 };
+// CPU memory manager. Small number of actual memory allocations, most are pointer offsets.
 class dynamic_cpu_allocator {
     struct dynamic_block {
         dynamic_block*
@@ -4952,30 +4954,30 @@ public:
         };
 
     };
+    typedef typename std::shared_ptr<dynamic_cpu_allocator::dynamic_block> shared_ptr;
 
     unique_ptr make_unique(unsigned int N) {
         return unique_ptr(this->Alloc(N), this);
     };
 
-    std::shared_ptr<dynamic_cpu_allocator::dynamic_block> make_shared(unsigned int N) {
-        return std::shared_ptr<dynamic_cpu_allocator::dynamic_block>(this->Alloc(N), [this](dynamic_cpu_allocator::dynamic_block* p) {
+    shared_ptr make_shared(unsigned int N) {
+        return shared_ptr(this->Alloc(N), [this](dynamic_cpu_allocator::dynamic_block* p) {
             this->Free(p);
         });
     };
 
 };
-
+// linear array of bytes that manages a pointer to GPU and CPU memory. 
 class mem_matrix {
 private:
     static auto& program() { return GL::GPU::opencl::get_program(); };
     static dynamic_cpu_allocator& cpu_allocator() { static dynamic_cpu_allocator out{}; return out; };
     static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out{}; return out; };
 
-    // vector of events which does not shrink -- attempting to re-use the vector whenever possible. 
+    // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
     class event_list {
     public:
-        // std::vector< cl_event > items;
-        dynamic_cpu_allocator::unique_ptr items;
+        dynamic_cpu_allocator::unique_ptr items; // leverages the CPU allocator for speed of allocation
         size_t len;
         size_t reservation;
 
@@ -5269,28 +5271,28 @@ public:
 
 };
 
+
+
 void fnGpuProgramming() {
     if (1) {
         float avg_framerate = 0; int avg_framerate_n = 0;
-
-        
         for (;;) {
             GL::stopwatch sw;
             if (1) {
                 // basically 'free' to allocate the cpu side when utilizing the global cached approach
-                auto mem2 = mem_matrix(sizeof(float) * 100, true, true);
+                auto mem = mem_matrix(sizeof(float) * 100, true, true);
                 mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<float>()), 100ull,
-                    mem2, 0.0f, 100.0f, 100u
+                    mem, 0.0f, 100.0f, 100u
                 );
-                mem2.wait_for_events();
+                mem.wait_for_events();
             }
             if (1) {
                 // large 4K image with 4 floating-point HDR values, very fast to allocate and get access to
-                auto mem1 = mem_matrix(sizeof(float) * 3840 * 2160 * 4, true, true);
+                auto mem = mem_matrix(sizeof(float) * 3440 * 1440 * 4, true, true);
                 mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<float>()), 3840 * 2160 * 4, 
-                    mem1, 10.05f
+                    mem, 10.05f
                 );
-                mem1.wait_for_events();
+                mem.wait_for_events();
             }
 
             if (1) {
@@ -5301,9 +5303,9 @@ void fnGpuProgramming() {
                 SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
                 print(std::to_string(avg_framerate) + " fps     ");
                 std::cout << std::flush;
-                //while (sw.stop() < 1.0 / 60.0) {
-                    // std::this_thread::yield();
-                //}
+                while (sw.stop() < 1.0 / 60.0) {
+                    std::this_thread::yield();
+                }
             }
         }
         for (;;) {
