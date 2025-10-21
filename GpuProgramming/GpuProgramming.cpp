@@ -4357,6 +4357,8 @@ class dynamic_gpu_allocator {
             prev;
         dynamic_block*
             next;
+        long long
+            generated_epoch;
         unsigned long long
             start_position;
         unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
@@ -4395,68 +4397,96 @@ class dynamic_gpu_allocator {
 
     __declspec(noinline) void try_combine(dynamic_block* lhs) {
         if (lhs) {
-            if (lhs->is_free && lhs->next) {
-                if (lhs->next->is_available && lhs->next->is_free) {
-                    // we are free, and the next pointer is free
-                    lhs->next->is_available = false;
-                    lhs->length += lhs->next->length;
+            if (lhs->is_free) {
+                if (lhs->sub_buffer) {
+                    // has enough time passed to warrant this?
+                    long long curr_epoch = GL::util::get_current_epoch();
+                    if ((curr_epoch - lhs->generated_epoch) < 1000) return;                    
+                }                
+                if (lhs->next) {
+                    if (lhs->next->is_available && lhs->next->is_free) {
+                        // we are free, and the next pointer is free
+                        if (lhs->sub_buffer) {
+                            ::clReleaseMemObject(lhs->sub_buffer);
+                            lhs->sub_buffer = nullptr;
+                        }
+                        if (lhs->next->sub_buffer) {
+                            ::clReleaseMemObject(lhs->next->sub_buffer);
+                            lhs->next->sub_buffer = nullptr;
+                        }
 
-                    if (lhs->next->next) {
-                        lhs->next->next->prev = lhs;
-                    }
 
-                    // lhs->next is no longer valid and should be removed from the list
-                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
-                    while (tree_node) {
-                        if (tree_node->object) {
-                            if (tree_node->key == lhs->next->length) {
-                                if (tree_node->object == lhs->next) {
-                                    block_alloc.Free(tree_node->object);
-                                    free_tree.Remove(tree_node);
-                                    break;
+                        lhs->next->is_available = false;
+                        lhs->length += lhs->next->length;
+
+                        if (lhs->next->next) {
+                            lhs->next->next->prev = lhs;
+                        }
+
+                        // lhs->next is no longer valid and should be removed from the list
+                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
+                        while (tree_node) {
+                            if (tree_node->object) {
+                                if (tree_node->key == lhs->next->length) {
+                                    if (tree_node->object == lhs->next) {
+                                        block_alloc.Free(tree_node->object);
+                                        free_tree.Remove(tree_node);
+                                        break;
+                                    }
                                 }
                             }
+                            tree_node = free_tree.GetNextLeaf(tree_node);
                         }
-                        tree_node = free_tree.GetNextLeaf(tree_node);
+
+                        lhs->next = lhs->next->next;
+
+                        // try to combine again!
+                        (void)try_combine(lhs);
                     }
-
-                    lhs->next = lhs->next->next;
-
-                    // try to combine again!
-                    (void)try_combine(lhs);
                 }
-            }
-            if (lhs->is_free && lhs->prev) {
-                if (lhs->prev->is_available && lhs->prev->is_free) {
-                    // we are free, and the prev pointer is free
-                    lhs->prev->is_available = false;
-                    lhs->length += lhs->prev->length;
-                    lhs->start_position = lhs->prev->start_position;
+                if (lhs->prev) {
+                    if (lhs->prev->is_available && lhs->prev->is_free) {
+                        // we are free, and the prev pointer is free
 
-                    if (lhs->prev->prev) {
-                        lhs->prev->prev->next = lhs;
-                    }
+                        if (lhs->sub_buffer) {
+                            ::clReleaseMemObject(lhs->sub_buffer);
+                            lhs->sub_buffer = nullptr;
+                        }
+                        if (lhs->prev->sub_buffer) {
+                            ::clReleaseMemObject(lhs->prev->sub_buffer);
+                            lhs->prev->sub_buffer = nullptr;
+                        }
 
-                    // lhs->prev is no longer valid and should be removed from the list
-                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
-                    while (tree_node) {
-                        if (tree_node->object) {
-                            if (tree_node->key == lhs->prev->length) {
-                                if (tree_node->object == lhs->prev) {
-                                    block_alloc.Free(tree_node->object);
-                                    free_tree.Remove(tree_node);
-                                    break;
+
+                        lhs->prev->is_available = false;
+                        lhs->length += lhs->prev->length;
+                        lhs->start_position = lhs->prev->start_position;
+
+                        if (lhs->prev->prev) {
+                            lhs->prev->prev->next = lhs;
+                        }
+
+                        // lhs->prev is no longer valid and should be removed from the list
+                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
+                        while (tree_node) {
+                            if (tree_node->object) {
+                                if (tree_node->key == lhs->prev->length) {
+                                    if (tree_node->object == lhs->prev) {
+                                        block_alloc.Free(tree_node->object);
+                                        free_tree.Remove(tree_node);
+                                        break;
+                                    }
                                 }
                             }
+                            tree_node = free_tree.GetNextLeaf(tree_node);
                         }
-                        tree_node = free_tree.GetNextLeaf(tree_node);
+
+                        lhs->prev = lhs->prev->prev;
+
+                        // try to combine again!
+                        (void)try_combine(lhs);
                     }
-
-                    lhs->prev = lhs->prev->prev;
-
-                    // try to combine again!
-                    (void)try_combine(lhs);
-                }
+                }                
             }
         }
     };
@@ -4475,11 +4505,11 @@ public:
 
 private:
     dynamic_block* Alloc(unsigned long long N) {
-        cl_int err;
+        cl_int err = CL_SUCCESS;
+        dynamic_block* free_block = nullptr;
 
         if (N == 0) return nullptr;
-
-        dynamic_block* free_block = nullptr;
+        
         // try to get a free block
         if (1) {
             auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
@@ -4488,6 +4518,7 @@ private:
                     if (tree_node->key >= N) {
                         if (tree_node->object->is_available) {
                             free_block = tree_node->object;
+                            free_block->generated_epoch = GL::util::get_current_epoch();
                             free_tree.Remove(tree_node);
                             break;
                         }
@@ -4517,10 +4548,15 @@ private:
             free_block->sub_buffer = nullptr;
             free_block->is_free = true;
             free_block->is_available = true;
+            free_block->generated_epoch = GL::util::get_current_epoch();
         }
 
         // split the block if too large
         if (free_block && (free_block->length > N)) {
+            if (free_block->sub_buffer) {
+                ::clReleaseMemObject(free_block->sub_buffer);
+                free_block->sub_buffer = nullptr;
+            }
             dynamic_block* child_block = block_alloc.Alloc();
             child_block->parent_buffer = free_block->parent_buffer;
             child_block->prev = free_block;
@@ -4538,11 +4574,15 @@ private:
         }
 
         // allocate the subbuffer
-        cl_buffer_region region;
-        region.origin = free_block->start_position;
-        region.size = free_block->length;
-        free_block->sub_buffer = ::clCreateSubBuffer(free_block->parent_buffer, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
-        free_block->is_free = false;
+        if (free_block && !free_block->sub_buffer) {
+            cl_buffer_region region;
+            region.origin = free_block->start_position;
+            region.size = free_block->length;
+            free_block->sub_buffer = ::clCreateSubBuffer(free_block->parent_buffer, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+            free_block->generated_epoch = GL::util::get_current_epoch();
+        }
+        if (free_block) free_block->is_free = false;
+
         if (err == CL_SUCCESS) return free_block;
         else {
             print(err);
@@ -4553,9 +4593,9 @@ private:
     __declspec(noinline) void Free(dynamic_block* free_block) {
         if (!free_block) return;
 
-        ::clReleaseMemObject(free_block->sub_buffer);
+        // ::clReleaseMemObject(free_block->sub_buffer);
+        // free_block->sub_buffer = nullptr;
 
-        free_block->sub_buffer = nullptr;
         free_block->is_free = true;
 
         try_combine(free_block);
@@ -4565,6 +4605,16 @@ private:
 
 public:
     __declspec(noinline) ~dynamic_gpu_allocator() {
+        if (auto* n = free_tree.GetRoot()) {
+            while (n) {
+                if (n->object) {
+                    if (n->object->sub_buffer) {
+                        ::clReleaseMemObject(n->object->sub_buffer);
+                    }
+                }
+                n = free_tree.GetNextLeaf(n);
+            }
+        }
         for (auto& buf : allocations) ::clReleaseMemObject(buf);
     };
 
@@ -4582,13 +4632,13 @@ public:
             rhs.parent = nullptr;
         };
         unique_ptr& operator=(unique_ptr const&) = delete;
-        unique_ptr& operator=(std::nullptr_t) {
+        __declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
             if (data && parent) { parent->Free(data); }
             data = nullptr;
             parent = nullptr;
             return *this;
         };
-        unique_ptr& operator=(unique_ptr&& rhs) noexcept {
+        __declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
             if (data && parent) { parent->Free(data); }
             data = rhs.data;
             parent = rhs.parent;
@@ -4968,7 +5018,7 @@ private:
         void reserve(size_t n) {
             if (reservation < n) {
                 if (reservation > 0) {
-                    clear();                    
+                    clear();
                 }
                 reservation = n;
                 len = 0;
@@ -4996,7 +5046,6 @@ private:
             clear();
         };
     };
-
     dynamic_gpu_allocator::unique_ptr 
         gpu_memory;
     dynamic_cpu_allocator::unique_ptr
@@ -5009,12 +5058,12 @@ private:
 public:
     __declspec(noinline) void reset(char v = 0) {
         if (cpu_memory) {
-            std::memset(cpu_memory->sub_buffer, v, cpu_memory->length);
+            // std::memset(cpu_memory->sub_buffer, v, cpu_memory->length);
         }
         if (gpu_memory) {
             // To-Do
         }
-    }
+    };
     // immediate
     void add_event(cl_event ev, bool copy = false) const {
         if (copy) ::clRetainEvent(ev);
@@ -5025,7 +5074,7 @@ public:
             events.clear();
             events.push_back(ev);
         }
-    }
+    };
     // immediate
     void wait_for_events() {
         events.clear(); // waits for events in addition to clearing
@@ -5115,20 +5164,22 @@ public:
         : len_bytes{ bytes }
         , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique(bytes) : nullptr }
         , gpu_memory{ allocate_gpu ? gpu_allocator().make_unique(bytes) : nullptr }
-        , events{}
-    {
-        reset(0);
+        , events{} 
+    { 
+        reset(0); 
     };
     mem_matrix(mem_matrix const&) = delete;
     mem_matrix(mem_matrix &&) = delete;
     mem_matrix& operator=(mem_matrix const&) = delete;
     mem_matrix& operator=(mem_matrix&&) = delete;
-    ~mem_matrix() {
+    __declspec(noinline) ~mem_matrix() {
         wait_for_events();
+        cpu_memory = nullptr;
+        gpu_memory = nullptr;
+        len_bytes = 0;
     };
 
-    template <typename T = void>
-    T* cpu_data() {
+    template <typename T = void> T* cpu_data() {
         ensure_host_mem_exists();
         return reinterpret_cast<T*>(cpu_memory->sub_buffer);
     };
@@ -5146,32 +5197,27 @@ private:
             out = true;
         }
         return out || append_events(ev, parameters...);
-    }
-
+    };
     static void check_for_errors(const int error) {
         if (error == -48) print_error("There is no OpenCL kernel in the OpenCL C code! Check spelling!");
         if (error<-48 && error>-53) print_error("Parameters for OpenCL kernel don't match between C++ and OpenCL C!");
         if (error == -54) print_error("Workgrop size " + to_string(WORKGROUP_SIZE) + " for OpenCL kernel is invalid!");
         if (error != 0) print_error("OpenCL kernel failed with error code " + to_string(error) + "!");
-    }
+    };
     template<typename T> static void link_parameter(cl_kernel const& cl_kernel, const uint position, const T& constant) {
         check_for_errors(::clSetKernelArg(cl_kernel, position, sizeof(T), (void*)&constant));
-    }
+    };
     static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position) { }
-    template<class T, class... U> 
-    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
+    template<class T, class... U>  __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<T, mem_matrix>) {
             link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
-
-            // check_for_errors(::clSetKernelArgSVMPointer(cl_kernel, starting_position, (void*)parameter.gpu_memory->sub_buffer));
-            // link_parameter(cl_kernel, starting_position, parameter);            
             for (size_t i = 0; i < parameter.events.size(); ++i) waitlist.insert(parameter.events[i]);
         }
         else {
             link_parameter(cl_kernel, starting_position, parameter);
         }
         link_parameters(cl_kernel, waitlist, starting_position + 1u, parameters...);
-    }
+    };
 
 public:
     // for a given name and count (with optional params, including either "mem_matrix const&" or POD-types) it will queue a GPU kernel for completion. 
@@ -5227,6 +5273,7 @@ void fnGpuProgramming() {
     if (1) {
         float avg_framerate = 0; int avg_framerate_n = 0;
 
+        
         for (;;) {
             GL::stopwatch sw;
             if (1) {
