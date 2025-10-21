@@ -192,17 +192,17 @@ namespace GL {
         stopwatch() : t0(clock::ns()), t1(0) {};
         // resets the timer to start "now"
         long long reset() {
-            InterlockedExchange64(reinterpret_cast<volatile long long*>(&t0), clock::ns());
+            t0 = clock::ns();
             return t0;
         };
         // stops the timer and returns the time passed since in seconds
         long double stop() {
-            InterlockedExchange64(reinterpret_cast<volatile long long*>(&t1), clock::ns());
+            t1 = clock::ns();
             return static_cast<long double>(t1 - t0) / 1000000000.0;
         };
         // does not stop the timer, but does return the time passed since in seconds
         long double check() const {
-            if (t1 < t0) InterlockedExchange64(reinterpret_cast<volatile long long*>(&const_cast<stopwatch*>(this)->t1), clock::ns()); // const_cast<stopwatch*>(this)->t1 = clock::ns();
+            if (t1 < t0) const_cast<stopwatch*>(this)->t1 = clock::ns(); // const_cast<stopwatch*>(this)->t1 = clock::ns();
             return static_cast<long double>(t1 - t0) / 1000000000.0;
         };
 
@@ -1630,28 +1630,41 @@ namespace GL {
 
             class kernel_list {
             public:
-                std::unordered_map<GL::string, cl_kernel> functions;
+                cweeBTree<struct _cl_kernel, size_t, 10> functions;
 
-                void clear() {
-                    for (auto& x : functions)
-                        ::clReleaseKernel(x.second);
-                    functions.clear();
-                };
-                void push_back(GL::string const& name, cl_kernel&& new_kernel) {
-                    if (functions[name]) {
-                        ::clReleaseKernel(functions[name]);
+                void push_back(GL::string const& name, cl_kernel new_kernel) {
+                    if (auto* node = functions.NodeFind(name.hash())) {
+                        ::clReleaseKernel(node->object);
+                        node->object = new_kernel;
                     }
-                    functions[name] = std::move(new_kernel);
+                    else {
+                        functions.Add(new_kernel, name.hash());
+                    }
                 };
-                cl_kernel& operator[](GL::string const& n) {
-                    return functions[n];
+                cl_kernel operator[](GL::string const& name) const {
+                    if (auto* node = functions.NodeFind(name.hash())) {
+                        return node->object;
+                    }
+                    else {
+                        return nullptr;
+                    }
                 }
-                const cl_kernel& operator[](GL::string const& n) const {
-                    return functions.at(n);
-                }
+
+                kernel_list() {
+                    functions.Init();
+                };
                 ~kernel_list() {
-                    clear();
+                    if (auto* n = functions.GetRoot()) {
+                        while (n) {
+                            if (n->object) {
+                                ::clReleaseKernel(n->object);
+                            }
+                            n = functions.GetNextLeaf(n);
+                        }
+                    }
+                    functions.Shutdown();
                 };
+
             };
 
             kernel_list functions;
@@ -4354,6 +4367,8 @@ class dynamic_gpu_allocator {
             parent_buffer;
         bool
             is_available;
+        bool
+            is_free;
 
         bool is_base_block() const {
             return (prev == nullptr);
@@ -4365,9 +4380,6 @@ class dynamic_gpu_allocator {
         bool is_split() const {
             if (next || prev) return true;
             else return false;
-        };
-        bool is_free() const {
-            return sub_buffer == nullptr;
         };
     };
     GL::atomic_allocator< dynamic_block > 
@@ -4383,8 +4395,8 @@ class dynamic_gpu_allocator {
 
     __declspec(noinline) void try_combine(dynamic_block* lhs) {
         if (lhs) {
-            if (lhs->is_free() && lhs->next) {
-                if (lhs->next->is_available && lhs->next->is_free()) {
+            if (lhs->is_free && lhs->next) {
+                if (lhs->next->is_available && lhs->next->is_free) {
                     // we are free, and the next pointer is free
                     lhs->next->is_available = false;
                     lhs->length += lhs->next->length;
@@ -4414,8 +4426,8 @@ class dynamic_gpu_allocator {
                     (void)try_combine(lhs);
                 }
             }
-            if (lhs->is_free() && lhs->prev) {
-                if (lhs->prev->is_available && lhs->prev->is_free()) {
+            if (lhs->is_free && lhs->prev) {
+                if (lhs->prev->is_available && lhs->prev->is_free) {
                     // we are free, and the prev pointer is free
                     lhs->prev->is_available = false;
                     lhs->length += lhs->prev->length;
@@ -4457,8 +4469,8 @@ public:
         , max_single_size{ max_single_alloc_size }
         , allocations{}
     {
-        if (max_single_size == 0) 
-            max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;    
+        if (max_single_size == 0)
+            max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;
     };
 
 private:
@@ -4487,7 +4499,7 @@ private:
 
         // if no free block was acquired, we are starting fresh
         if (!free_block) { // allocate a new buffer
-            auto& prog = GL::GPU::opencl::get_program();            
+            auto& prog = GL::GPU::opencl::get_program();
             cl_mem buf = ::clCreateBuffer(prog.get_cl_context().get(),
                 CL_MEM_READ_WRITE | ((int)prog.info.patch_intel_gpu_above_4gb << 23)
                 , max_single_size, nullptr, &err);
@@ -4503,7 +4515,8 @@ private:
             free_block->start_position = 0;
             free_block->length = max_single_size;
             free_block->sub_buffer = nullptr;
-            free_block->is_available = true;      
+            free_block->is_free = true;
+            free_block->is_available = true;
         }
 
         // split the block if too large
@@ -4513,8 +4526,9 @@ private:
             child_block->prev = free_block;
             child_block->next = free_block->next;
             child_block->start_position = free_block->start_position + N;
-            child_block->length = (((free_block->length - N) +(WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE; // free_block->length - N;
+            child_block->length = (((free_block->length - N) + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE; // free_block->length - N;
             child_block->sub_buffer = nullptr;
+            child_block->is_free = true;
             child_block->is_available = true;
             free_block->next = child_block;
             if (child_block->next) child_block->next->prev = child_block;
@@ -4528,6 +4542,7 @@ private:
         region.origin = free_block->start_position;
         region.size = free_block->length;
         free_block->sub_buffer = ::clCreateSubBuffer(free_block->parent_buffer, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+        free_block->is_free = false;
         if (err == CL_SUCCESS) return free_block;
         else {
             print(err);
@@ -4541,6 +4556,7 @@ private:
         ::clReleaseMemObject(free_block->sub_buffer);
 
         free_block->sub_buffer = nullptr;
+        free_block->is_free = true;
 
         try_combine(free_block);
 
@@ -4894,7 +4910,7 @@ public:
     std::shared_ptr<dynamic_cpu_allocator::dynamic_block> make_shared(unsigned int N) {
         return std::shared_ptr<dynamic_cpu_allocator::dynamic_block>(this->Alloc(N), [this](dynamic_cpu_allocator::dynamic_block* p) {
             this->Free(p);
-            });
+        });
     };
 
 };
@@ -4916,11 +4932,9 @@ private:
         void clear() {
             if (len == 0) return;
 
-            std::pair <cl_event*, cl_event*> events{ nullptr, nullptr };
-            events = { &operator[](0), &operator[](0) + len };
-            ::clWaitForEvents((cl_int)(events.second - events.first), (cl_event*)events.first);
-
-            for (cl_event* item = events.first; item != events.second; ++item) {
+            ::clWaitForEvents((cl_int)len, &operator[](0));
+            unsigned long long L = 0;
+            for (cl_event* item = &operator[](0); L < len; ++item, ++L) {
                 if (item) {
                     ::clReleaseEvent(*item);
                 }
@@ -5143,8 +5157,7 @@ private:
     template<typename T> static void link_parameter(cl_kernel const& cl_kernel, const uint position, const T& constant) {
         check_for_errors(::clSetKernelArg(cl_kernel, position, sizeof(T), (void*)&constant));
     }
-    static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position) {
-    }
+    static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position) { }
     template<class T, class... U> 
     __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<T, mem_matrix>) {
@@ -5169,7 +5182,7 @@ public:
             waitlist;
         auto& prog
             = mem_matrix::program();
-        auto& kernel 
+        auto kernel 
             = prog.functions[name];
         cl_int
             err;
@@ -5179,6 +5192,7 @@ public:
         if (!kernel) {
             prog.functions.push_back(name, ::clCreateKernel(prog.program.cl_program.get().obj.get(), name.c_str().data(), &err));
             check_for_errors(err);
+            kernel = prog.functions[name];
         }
         link_parameters(kernel, waitlist_set, 0u, parameters...); // expand variadic template to link kernel parameters
         for (auto& x : waitlist_set) {
@@ -5191,25 +5205,20 @@ public:
             cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
             cl_range_local = cl::NDRange(WORKGROUP_SIZE);
 
-        std::pair <cl_event*, cl_event*> events{ nullptr, nullptr };
-        if (waitlist.size() > 0) {
-            events = { &waitlist[0], &waitlist[0] + waitlist.size() };
-        };
-
         cl_event tmp;
         err = ::clEnqueueNDRangeKernel(
             prog.queue.get().obj.get(), kernel, (cl_uint)cl_range_global.dimensions(),
             nullptr, (const size_t*)cl_range_global,
             cl_range_local.dimensions() != 0 ? (const size_t*)cl_range_local : nullptr,
-            (cl_int)(events.second - events.first),
-            (cl_event*)events.first,
+            (cl_int)waitlist.size(),
+            (cl_event*)((waitlist.size() > 0) ? &waitlist[0] : nullptr),
             &tmp);
 
         check_for_errors(err);
         if (!append_events(tmp, parameters...)) {
-            ::clWaitForEvents(1, &tmp);
-            ::clReleaseEvent(tmp);
+            ::clWaitForEvents(1, &tmp); // makes a copy
         }
+        ::clReleaseEvent(tmp);
     };
 
 };
@@ -5217,20 +5226,20 @@ public:
 void fnGpuProgramming() {
     if (1) {
         float avg_framerate = 0; int avg_framerate_n = 0;
-        // large 4K image with 4 floating-point HDR values, very fast to allocate and get access to
-        auto mem1 = mem_matrix(sizeof(float) * 3840 * 2160 * 4, true, true);
 
         for (;;) {
             GL::stopwatch sw;
             if (1) {
-                // basically 'free' to allocate the cpu side when utilizing the global cached approach                
+                // basically 'free' to allocate the cpu side when utilizing the global cached approach
                 auto mem2 = mem_matrix(sizeof(float) * 100, true, true);
-
-                mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<float>()), 100ull, 
+                mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<float>()), 100ull,
                     mem2, 0.0f, 100.0f, 100u
                 );
                 mem2.wait_for_events();
-
+            }
+            if (1) {
+                // large 4K image with 4 floating-point HDR values, very fast to allocate and get access to
+                auto mem1 = mem_matrix(sizeof(float) * 3840 * 2160 * 4, true, true);
                 mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<float>()), 3840 * 2160 * 4, 
                     mem1, 10.05f
                 );
@@ -5243,11 +5252,11 @@ void fnGpuProgramming() {
                 avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
 
                 SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
-                print(std::to_string(avg_framerate) + " fps");
+                print(std::to_string(avg_framerate) + " fps     ");
                 std::cout << std::flush;
-                while (sw.stop() < 1.0 / 60.0) {
-                    std::this_thread::yield();
-                }
+                //while (sw.stop() < 1.0 / 60.0) {
+                    // std::this_thread::yield();
+                //}
             }
         }
         for (;;) {
