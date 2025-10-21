@@ -4351,8 +4351,12 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
+
+
+
 // GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_gpu_allocator {
+public:
     struct dynamic_block {
         dynamic_block*
             prev;
@@ -4385,6 +4389,7 @@ class dynamic_gpu_allocator {
             else return false;
         };
     };
+private:
     GL::atomic_allocator< dynamic_block > 
         block_alloc;
     cweeBTree< dynamic_block, unsigned long long, 8>
@@ -4689,6 +4694,7 @@ public:
 };
 // CPU memory manager. Small number of actual memory allocations, most are pointer offsets.
 class dynamic_cpu_allocator {
+public:
     struct dynamic_block {
         dynamic_block*
             prev;
@@ -4720,6 +4726,7 @@ class dynamic_cpu_allocator {
             return sub_buffer == nullptr;
         };
     };
+private:
     GL::atomic_allocator< dynamic_block >
         block_alloc;
     cweeBTree< dynamic_block, unsigned long long, 8>
@@ -4967,13 +4974,34 @@ public:
     };
 
 };
-// linear array of bytes that manages a pointer to GPU and CPU memory. 
+
+template <typename T> class matrix;
+// linear array of bytes that manages a pointer to GPU and CPU memory, as well as GPU events (queued GPU jobs). 
 class mem_matrix {
+    template <typename G> friend class matrix;
 private:
     static auto& program() { return GL::GPU::opencl::get_program(); };
     static dynamic_cpu_allocator& cpu_allocator() { static dynamic_cpu_allocator out{}; return out; };
     static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out{}; return out; };
+public:
+    template <typename T, typename... P > static std::shared_ptr<T> cpu_make_shared(typename P const&... params) {
+        dynamic_cpu_allocator::unique_ptr temp
+            = cpu_allocator().make_unique(sizeof(T));
+        T* p = static_cast<T*>(temp->sub_buffer);        
+        new (p) T(params...); // initialize the T
+        return std::shared_ptr<T>(p, [copy = std::move(temp)](T* d) { 
+            // unload the T
+            static_cast<T*>(copy->sub_buffer)->~T();
+        });
+    };
+    template <typename T> static std::shared_ptr<T[]> cpu_make_shared_array(unsigned long long N) {
+        dynamic_cpu_allocator::unique_ptr temp
+            = cpu_allocator().make_unique(sizeof(T) * N);
+        T* p = static_cast<T*>(temp->sub_buffer);
+        return std::shared_ptr<T[]>(p, [copy = std::move(temp)](T* d) { volatile int i = 0; ++i; EXPECT_EQ(i, 1); });
+    };
 
+private:
     // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
     class event_list {
     public:
@@ -5041,14 +5069,30 @@ private:
             , reservation{ 0 }
         {};
         event_list(event_list const&) = delete;
-        event_list(event_list &&) = delete;
+        event_list(event_list&& rhs) 
+            : items{ std::move(rhs.items) }
+            , len{ std::move(rhs.len) }
+            , reservation{ std::move(rhs.reservation) }
+        {
+            rhs.items = nullptr;
+            rhs.len = 0;
+            rhs.reservation = 0;
+        };
         event_list& operator=(event_list const&) = delete;
-        event_list& operator=(event_list&&) = delete;
+        event_list& operator=(event_list&& rhs) {
+            this->items = std::move(rhs.items);
+            this->len = std::move(rhs.len);
+            this->reservation = std::move(rhs.reservation);
+            rhs.items = nullptr;
+            rhs.len = 0;
+            rhs.reservation = 0;
+            return *this;
+        };
         ~event_list() {
             clear();
         };
     };
-    dynamic_gpu_allocator::unique_ptr 
+    dynamic_gpu_allocator::unique_ptr
         gpu_memory;
     dynamic_cpu_allocator::unique_ptr
         cpu_memory;        
@@ -5067,7 +5111,14 @@ public:
         }
     };
     // immediate
-    void add_event(cl_event ev, bool copy = false) const {
+    bool add_event(cl_event ev, bool copy = false) const {
+        // ensure we are not double-adding the event.
+        for (int i = 0; i < events.size(); ++i) {
+            if (events[i] == ev) {
+                return false;
+            }
+        }
+
         if (copy) ::clRetainEvent(ev);
         if ((events.size() + 1) < events.capacity()) {
             events.push_back(ev);
@@ -5076,6 +5127,7 @@ public:
             events.clear();
             events.push_back(ev);
         }
+        return true;
     };
     // immediate
     void wait_for_events() {
@@ -5087,7 +5139,7 @@ public:
             if (gpu_memory && cpu_memory) {
                 auto q = program().queue.get().obj.get();
                 std::pair <cl_event*, cl_event*> event_list{ nullptr, nullptr };
-                if (events.size() > 0) event_list = { &events[0], &events[0] + events.size() };
+                if (events.size() > 0) event_list = { &events.operator[](0), &events.operator[](0) + events.size() };
 
                 cl_event tmp;
                 cl_int err =
@@ -5122,7 +5174,7 @@ public:
             if (gpu_memory && cpu_memory) {
                 auto q = program().queue.get().obj.get();
                 std::pair <cl_event*, cl_event*> event_list{ nullptr, nullptr };
-                if (events.size() > 0) event_list = { &events[0], &events[0] + events.size() };
+                if (events.size() > 0) event_list = { &events.operator[](0), &events.operator[](0) + events.size() };
 
                 cl_event tmp;
                 cl_int err =
@@ -5166,16 +5218,42 @@ public:
         : len_bytes{ bytes }
         , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique(bytes) : nullptr }
         , gpu_memory{ allocate_gpu ? gpu_allocator().make_unique(bytes) : nullptr }
-        , events{} 
+        , events{ /*cpu_make_shared< event_list>()*/ }
     { 
-        reset(0); 
+        reset(0);
     };
+    mem_matrix() 
+        : len_bytes{ 0 }
+        , cpu_memory{ nullptr }
+        , gpu_memory{ nullptr }
+        , events{ /*nullptr*/ }
+    {};
     mem_matrix(mem_matrix const&) = delete;
-    mem_matrix(mem_matrix &&) = delete;
+    mem_matrix(mem_matrix&& rhs) noexcept
+        : len_bytes{ std::move(rhs.len_bytes) }
+        , cpu_memory{ std::move(rhs.cpu_memory) }
+        , gpu_memory{ std::move(rhs.gpu_memory) }
+        , events{ std::move(rhs.events) }
+    {
+        rhs.len_bytes = 0;
+        rhs.cpu_memory = nullptr;
+        rhs.gpu_memory = nullptr;
+        rhs.events.clear();
+    };
     mem_matrix& operator=(mem_matrix const&) = delete;
-    mem_matrix& operator=(mem_matrix&&) = delete;
-    __declspec(noinline) ~mem_matrix() {
-        wait_for_events();
+    mem_matrix& operator=(mem_matrix&& rhs) noexcept {
+        len_bytes = std::move(rhs.len_bytes);
+        cpu_memory = std::move(rhs.cpu_memory);
+        gpu_memory = std::move(rhs.gpu_memory);
+        events = std::move(rhs.events);
+        rhs.len_bytes = 0;
+        rhs.cpu_memory = nullptr;
+        rhs.gpu_memory = nullptr;
+        rhs.events.clear();
+        return *this;
+    };
+    ~mem_matrix() {
+        events.clear();
         cpu_memory = nullptr;
         gpu_memory = nullptr;
         len_bytes = 0;
@@ -5195,8 +5273,7 @@ private:
     template<class T, class... U> static bool append_events(cl_event ev, const T& parameter, const U&... parameters) {
         bool out = false;
         if constexpr (std::is_same_v<T, mem_matrix>) {
-            parameter.add_event(ev, true);
-            out = true;
+            out = out || parameter.add_event(ev, true);
         }
         return out || append_events(ev, parameters...);
     };
@@ -5213,7 +5290,9 @@ private:
     template<class T, class... U>  __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<T, mem_matrix>) {
             link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
-            for (size_t i = 0; i < parameter.events.size(); ++i) waitlist.insert(parameter.events[i]);
+            for (size_t i = 0; i < parameter.events.size(); ++i) {
+                waitlist.insert(parameter.events.operator[](i));
+            }
         }
         else {
             link_parameter(cl_kernel, starting_position, parameter);
@@ -5245,7 +5324,7 @@ public:
         link_parameters(kernel, waitlist_set, 0u, parameters...); // expand variadic template to link kernel parameters
         for (auto& x : waitlist_set) {
             // all of these are "copies"
-            ::clRetainEvent(x);
+            // ::clRetainEvent(x);
             waitlist.push_back(x);
         }        
 
@@ -5263,17 +5342,343 @@ public:
             &tmp);
 
         check_for_errors(err);
-        if (!append_events(tmp, parameters...)) {
-            ::clWaitForEvents(1, &tmp); // makes a copy
+        if (!append_events(tmp, parameters...)) { // makes copies for each reference to a mem_matrix
+            // if no references, we wait for the job to finish
+            ::clWaitForEvents(1, &tmp); 
         }
+        // remove this reference to the job. 
         ::clReleaseEvent(tmp);
     };
 
+#if 0 // mostly works, but ran into GPU-error CL_MISALIGNED_SUB_BUFFER_OFFSET. SubBuffer must be properly aligned. Solution is to defer slicing to the read (for CPU) and to the kernel (for the GPU). This would requiring passing the array dimensions and offsets to the kernel (just like ArrayFire did...)
+    // This limits the slice offset. 
+    mem_matrix slice(unsigned long long offset, unsigned long long length) const {
+        mem_matrix out; {
+            out.len_bytes = length;
+            {
+                out.cpu_memory = std::shared_ptr<dynamic_cpu_allocator::dynamic_block>(new dynamic_cpu_allocator::dynamic_block(), [copy = this->cpu_memory](dynamic_cpu_allocator::dynamic_block* p) {                    
+                    delete p;
+                });
+
+                *out.cpu_memory = *this->cpu_memory;
+                out.cpu_memory->sub_buffer = (void*)((::byte*)out.cpu_memory->sub_buffer + offset);
+                out.cpu_memory->start_position += offset;
+                out.cpu_memory->length = length;
+            }
+            {
+                out.gpu_memory = std::shared_ptr<dynamic_gpu_allocator::dynamic_block>(new dynamic_gpu_allocator::dynamic_block(), [copy = this->gpu_memory](dynamic_gpu_allocator::dynamic_block* p) {
+                    ::clReleaseMemObject(p->sub_buffer);
+                    delete p;
+                });
+
+                *out.gpu_memory = *this->gpu_memory;
+                out.gpu_memory->start_position += offset;
+                out.gpu_memory->length = length;
+
+                cl_buffer_region region;
+                region.origin = out.gpu_memory->start_position;
+                region.size = length;
+                cl_int err;
+                out.gpu_memory->sub_buffer = ::clCreateSubBuffer(out.gpu_memory->parent_buffer, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+                check_for_errors(err);
+            }
+            {
+                out.events = this->events;
+            }
+        }
+        return out;
+    };
+#endif
+
+};
+
+template <typename T>
+class matrix {
+private:
+    mem_matrix mem;
+    GL::dimensions dim;
+    template <typename G> friend class matrix;
+
+public:
+    // normal constructor
+    matrix(GL::dimensions d)
+        : dim{ d }
+        , mem(sizeof(T)* d.X* d.Y* d.Z, false, true)
+    {};
+    // normal constructor
+    matrix(unsigned int X, unsigned int Y, unsigned int Z, bool cpu_only = false) 
+        : dim{ X, Y, Z }
+        , mem(sizeof(T) * X * Y * Z, cpu_only, !cpu_only)
+    {};
+    // empty constructor
+    matrix() 
+        : dim{ 0, 0, 0 }
+        , mem()
+    {}
+    // copy another, existing matrix into this. Does not take or share ownership.
+    matrix(matrix const& rhs) 
+        : dim{ rhs.dim }
+        , mem(sizeof(T) * rhs.dim.count(), (bool)rhs.mem.cpu_memory, (bool)rhs.mem.gpu_memory)
+    {
+        mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()), 
+            dim.count(),
+            mem, rhs.mem
+        );
+    };
+    matrix& operator=(matrix const& rhs) {
+        dim = rhs.dim;
+        mem_matrix mem2(sizeof(T) * rhs.dim.count(), false, true);
+        mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()), 
+            rhs.dim.count(),
+            mem2, rhs.mem
+        );
+        mem = std::move(mem2);
+        return *this;
+    };
+    // move another, temporary matrix into this, taking ownership of data.
+    matrix(matrix && rhs) noexcept = default;
+    matrix& operator=(matrix && rhs) noexcept = default;
+    ~matrix() = default;
+    // x*y*z
+    unsigned int size() const {
+        return dim.count();
+    };
+    // returns x, y, or z, depending on the requested dimension.
+    unsigned int size(unsigned int d) const {
+        switch (d) {
+        case 0: return dim.X;
+        case 1: return dim.Y;
+        case 2: return dim.Z;
+        default: return 0;
+        }
+    };
+
+    matrix& operator=(T rhs) {
+        mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs
+        );
+        return *this;
+    };
+    matrix& operator+=(T rhs) {
+        mem_matrix::queue_gpu_work(GL::string("add_single_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs
+        );
+        return *this;
+    };
+    matrix& operator-=(T rhs) {
+        mem_matrix::queue_gpu_work(GL::string("sub_single_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs
+        );
+        return *this;
+    };
+    matrix& operator*=(T rhs) {
+        mem_matrix::queue_gpu_work(GL::string("mult_single_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs
+        );
+        return *this;
+    };
+    matrix& operator/=(T rhs) {
+        mem_matrix::queue_gpu_work(GL::string("divide_single_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs
+        );
+        return *this;
+    };
+    matrix& operator+=(matrix const& rhs) {
+        mem_matrix::queue_gpu_work(GL::string("add_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs.mem
+        );
+        return *this;
+    };
+    matrix& operator-=(matrix const& rhs) {
+        mem_matrix::queue_gpu_work(GL::string("sub_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs.mem
+        );
+        return *this;
+    };
+    matrix& operator*=(matrix const& rhs) {
+        mem_matrix::queue_gpu_work(GL::string("mult_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs.mem
+        );
+        return *this;
+    };
+    matrix& operator/=(matrix const& rhs) {
+        mem_matrix::queue_gpu_work(GL::string("divide_inplace") + GL::string(opencl_impl::type_name<T>()),
+            dim.count(),
+            mem, rhs.mem
+        );
+        return *this;
+    };
+
+    friend matrix operator+(matrix const& lhs, matrix const& rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("add") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs.mem, out.mem
+        );
+        return out;
+    };
+    friend matrix operator-(matrix const& lhs, matrix const& rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("sub") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs.mem, out.mem
+        );
+        return out;
+    };
+    friend matrix operator*(matrix const& lhs, matrix const& rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("mult") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs.mem, out.mem
+        );
+        return out;
+    };
+    friend matrix operator/(matrix const& lhs, matrix const& rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("divide") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs.mem, out.mem
+        );
+        return out;
+    };
+    friend matrix operator+(matrix const& lhs, T rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("add_single") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator-(matrix const& lhs, T rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("sub_single") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator*(matrix const& lhs, T rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("mult_single") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator/(matrix const& lhs, T rhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("divide_single") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator+(T rhs, matrix const& lhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("add_single") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator-(T rhs, matrix const& lhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("sub_single_inv") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator*(T rhs, matrix const& lhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("mult_single") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+    friend matrix operator/(T rhs, matrix const& lhs) {
+        auto out = matrix(lhs.dim);
+        mem_matrix::queue_gpu_work(GL::string("divide_single_inv") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            lhs.mem, rhs, out.mem
+        );
+        return out;
+    };
+
+    // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
+    template<typename G> matrix<G> cast() const {
+        if constexpr (std::is_same_v<G, T>) {
+            return *this; // makes an implicit copy
+        }
+        else {
+            static GL::string CastFunc{ GL::string("from_") + opencl_impl::type_name<T>() }; // from_int
+            auto out = matrix<G>(this->dim);
+            mem_matrix::queue_gpu_work(CastFunc + GL::string(opencl_impl::type_name<G>()),
+                out.size(),
+                out.mem, mem
+            );
+            return out;
+        }
+    };
+
+
+
+    T& operator[](unsigned int n) {
+        mem.ensure_host_mem_exists();
+        mem.read_from_device();
+        return mem.cpu_data<T>()[n];
+    };
 };
 
 
 
+
+
+
 void fnGpuProgramming() {
+    if (1) {
+        float avg_framerate = 0; int avg_framerate_n = 0;
+        for (;;) {
+            GL::stopwatch sw;
+
+            matrix<float> m1(10, 10, 10); // builds this on the GPU...
+            m1 = 0.0f;
+            m1 += 5.0f;
+            m1 *= 2.0f;
+            m1 /= 10.0f; 
+            // m1 should be equal to 1.0f, approximately. 
+
+            matrix<float> m2; 
+            m2 = std::move(m1); // moves ownership to m2. No "copy" is performed. Nearly "free"
+
+            print(m2[0]);
+
+
+
+
+            if (1) {
+                avg_framerate_n++;
+                avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
+                avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
+
+                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+                print(std::to_string(avg_framerate) + " fps     ");
+                std::cout << std::flush;
+                //while (sw.stop() < 1.0 / 60.0) {
+                //    std::this_thread::yield();
+                //}
+            }
+        }
+    }
     if (1) {
         float avg_framerate = 0; int avg_framerate_n = 0;
         for (;;) {
@@ -5284,7 +5689,26 @@ void fnGpuProgramming() {
                 mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<float>()), 100ull,
                     mem, 0.0f, 100.0f, 100u
                 );
+                // mem.read_from_device();
                 mem.wait_for_events();
+
+
+                //if (1) {
+                //    auto sliced = mem.slice(0, sizeof(float) * 10);
+                //    if (auto* p = sliced.cpu_data<float>()) {
+                //        for (int i = 0; i < 10; ++i) {
+                //            print(p[i]);
+                //        }
+                //    }
+                //}
+                //if (1) {
+                //    auto sliced = mem.slice(10, sizeof(float) * 10);
+                //    if (auto* p = sliced.cpu_data<float>()) {
+                //        for (int i = 0; i < 10; ++i) {
+                //            print(p[i]);
+                //        }
+                //    }
+                //}
             }
             if (1) {
                 // large 4K image with 4 floating-point HDR values, very fast to allocate and get access to
@@ -5292,8 +5716,11 @@ void fnGpuProgramming() {
                 mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<float>()), 3840 * 2160 * 4, 
                     mem, 10.05f
                 );
+                // mem.read_from_device();
                 mem.wait_for_events();
             }
+
+
 
             if (1) {
                 avg_framerate_n++;
