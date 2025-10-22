@@ -310,9 +310,9 @@ public:
             const uint pos2 = n - Z * destlY * destlX;
             const uint Y = (uint)floor((float)pos2 / (float)(destlX));
             const uint X = pos2 - Y * destlX;            
-            const float rel_X = (float)X / (float)destlX;
-            const float rel_Y = (float)Y / (float)destlY;
-            const float rel_Z = (float)Z / (float)destlZ;
+            const float rel_X = (float)X / (float)(destlX);
+            const float rel_Y = (float)Y / (float)(destlY);
+            const float rel_Z = (float)Z / (float)(destlZ);
             const uint srceX = fmin(srcelX - 1, floor((rel_X * (float)srcelX) + 0.5));
             const uint srceY = fmin(srcelY - 1, floor((rel_Y * (float)srcelY) + 0.5));
             const uint srceZ = fmin(srcelZ - 1, floor((rel_Z * (float)srcelZ) + 0.5));
@@ -5023,6 +5023,7 @@ private:
     // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
     class event_list {
     public:
+#if 0
         dynamic_cpu_allocator::unique_ptr items; // leverages the CPU allocator for speed of allocation
         long long len;
         long long reservation;
@@ -5125,6 +5126,67 @@ private:
         ~event_list() {
             clear();
         };
+#else
+        std::vector<cl_event> items;
+
+        void clear() {
+            if (items.size() == 0) return; 
+
+            ::clWaitForEvents((cl_int)items.size(), &items[0]);
+
+            for (auto& x : items) {
+                ::clReleaseEvent(x);
+            }
+
+            items.clear();
+        };
+        void push_back(cl_event rhs) {
+            if (!rhs) return;
+            if (items.capacity() == 0) reserve(16);
+
+            if (items.size() < items.capacity()) {
+                items.push_back(rhs);
+            }
+            else {
+                clear();
+                items.push_back(rhs);
+            }
+        };
+        size_t size() const { return items.size(); };
+        size_t capacity() const { return items.capacity(); };
+        void reserve(size_t n) {
+            if (items.capacity() < n) {
+                clear();
+                items.reserve(n);
+            }
+        };
+        cl_event& operator[](size_t n) {
+            return items[n];
+        }
+        const cl_event& operator[](size_t n) const {
+            return items[n];
+        }
+
+        event_list()
+            : items{}
+        {};
+        event_list(event_list const&) = delete;
+        event_list(event_list&& rhs) noexcept
+            : items{ std::move(rhs.items) }
+        {
+            rhs.items.clear();
+        };
+        event_list& operator=(event_list const&) = delete;
+        event_list& operator=(event_list&& rhs) noexcept {
+            this->clear();
+            this->items = std::move(rhs.items);
+            rhs.clear();
+            return *this;
+        };
+        ~event_list() {
+            clear();
+        };
+#endif
     };
     dynamic_gpu_allocator::unique_ptr
         gpu_memory;
@@ -5312,8 +5374,14 @@ public:
             = mem_matrix::program();
         auto kernel 
             = prog.functions[name];
-        cl_int
-            err;
+        cl_int err 
+            = 0;
+        cl_event tmp
+            = nullptr;
+        cl::NDRange
+            cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
+            cl_range_local = cl::NDRange(WORKGROUP_SIZE);
+
         waitlist_set.clear();
         waitlist.clear();
 
@@ -5331,11 +5399,6 @@ public:
             }
         }        
 
-        cl::NDRange
-            cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
-            cl_range_local = cl::NDRange(WORKGROUP_SIZE);
-
-        cl_event tmp;
         err = ::clEnqueueNDRangeKernel(
             prog.queue.get().obj.get(), kernel, (cl_uint)cl_range_global.dimensions(),
             nullptr, (const size_t*)cl_range_global,
@@ -5441,9 +5504,15 @@ public:
         mem = std::move(mem2);
         return *this;
     };
+#if 0
     // move another, temporary matrix into this, taking ownership of data.
-    matrix(matrix && rhs) noexcept = default;
-    matrix& operator=(matrix&& rhs) noexcept {
+    matrix(matrix&& rhs) noexcept = default; /*: dim{ rhs.dim }, mem(sizeof(T)* rhs.dim.count(), false, true) {
+        mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
+            rhs.dim.count(),
+            mem, rhs.mem
+        );
+    };*/
+    matrix& operator=(matrix&& rhs) noexcept = default; /* {
         dim = rhs.dim;
         mem_matrix mem2(sizeof(T) * rhs.dim.count(), false, true);
         mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
@@ -5452,12 +5521,11 @@ public:
         );
         mem = std::move(mem2);
         return *this;
-
-
         //mem = std::move(rhs.mem);
         //dim = std::move(rhs.dim);
         //return *this;
-    };
+    };*/
+#endif
     ~matrix() = default;
     // x*y*z
     unsigned int size() const {
@@ -6697,6 +6765,48 @@ public:
         );
         return out;
     };
+    template <bool skip_blur = false> decltype(auto) halfsize() const {
+        if constexpr (skip_blur) {
+            return resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+        }
+        else {
+            static std::vector<float> kernel{
+                1.0f/3.0f, 
+                1.0f/3.0f, 
+                1.0f/3.0f
+            };
+            auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 3, y = 1
+            auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 3            
+            return cast<float>().convolve(kernel1).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+
+            // return cast<float>().convolve(guassian_kernel(3, 3)).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+        }
+    };
+    template <bool skip_blur = false> decltype(auto) quartersize() const {
+        if constexpr (skip_blur) {
+            return resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+        }
+        else {
+            static std::vector<float> kernel{
+                1.0f/5.0f,	
+                1.0f/5.0f,	
+                1.0f/5.0f,	
+                1.0f/5.0f,	
+                1.0f/5.0f
+            };
+            auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 5, y = 1
+            auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 5            
+            return cast<float>().convolve(kernel1).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), size(1), size(2)).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+
+            // return cast<float>().convolve(guassian_kernel(5, 5)).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+        }
+    };
+    matrix doublesize() const {
+        return resize_stretch(size(0) * 2, size(1) * 2, size(2));
+    };
+    matrix quadruplesize() const {
+        return resize_stretch(size(0) * 4, size(1) * 4, size(2));
+    };
 
 private:
     static std::string resize(std::string&& rhs, unsigned int len, const char def = 0) {
@@ -6913,8 +7023,8 @@ void fnGpuProgramming() {
                 game_w = game_w2;
                 game_h = game_h2;
 
-                auto s1 = state.resize_stretch(game_h, game_w, 1);
-                state = std::move(s1);
+                // auto s1 =;
+                state = state.resize_stretch(game_h, game_w, 1); // std::move(s1); // performing the "move" is causing the crash...
 
                 avg_framerate_n = 0;
                 avg_framerate = 0;
@@ -6952,7 +7062,7 @@ void fnGpuProgramming() {
 
             // print(state.ASCII().to_string({}, true));
 #if 1
-#if 1
+#if 0
             auto statef = state.cast<float>();
             auto blur_1 = statef.convolve(matrix<float>::guassian_kernel(3, 3));
             auto blur_2 = blur_1.convolve(matrix<float>::guassian_kernel(7, 7));
@@ -6961,10 +7071,10 @@ void fnGpuProgramming() {
             auto blur_5 = blur_4.convolve(matrix<float>::guassian_kernel(53, 53));
             print((statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true));
 #else
-            auto original = state.resize(game_h / 3, game_w, 1);
-            auto correct_blur = state.convolve(Array::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
-            auto rough_blur = state.quartersize(false).quadruplesize().resize(game_h / 3, game_w, 1);
-            print(original.ASCII().join(0, correct_blur.ASCII()).join(0, rough_blur.ASCII()).to_string({}, true));
+            auto A = state.resize(game_h / 3, game_w, 1);
+            auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
+            auto C = state.halfsize<false>().doublesize().resize(game_h / 3, game_w, 1);
+            print(A.ASCII().join(0, B.ASCII()).join(0, C.ASCII()).to_string({}, true));
 #endif
 #endif
             state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel(7, 7)) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
@@ -6978,6 +7088,11 @@ void fnGpuProgramming() {
 
             print(std::to_string(avg_framerate) + " fps     ");
             std::cout << std::flush;
+
+            //while (sw.stop() < 1.0 / 4.0) {
+            //    std::this_thread::yield();
+            //}
+
         }
     }
 #endif
