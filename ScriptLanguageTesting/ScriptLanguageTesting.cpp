@@ -1010,20 +1010,22 @@ int main() {
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
+            print(state.ASCII().to_string({}, true));
 #if 0
-            auto inv_state = state.cast(ArrayTypes::FLOAT);
-            auto blur_1 = inv_state.convolve(Array::guassian_kernel(3, 3));
+#if 1
+            auto statef = state.cast(ArrayTypes::FLOAT);
+            auto blur_1 = statef.convolve(Array::guassian_kernel(3, 3));
             auto blur_2 = blur_1.convolve(Array::guassian_kernel(7, 7));
             auto blur_3 = blur_2.convolve(Array::guassian_kernel(11, 11));
             auto blur_4 = blur_3.convolve(Array::guassian_kernel(25, 25));
             auto blur_5 = blur_4.convolve(Array::guassian_kernel(53, 53));
-            auto state_to_display = 1.0 - (1.0 / (1.0 + ((blur_5 + blur_4 + blur_3 + blur_2 + blur_1 + inv_state) / 6.0)));
-            print(state_to_display.ASCII().to_string({}, true));
+            print((statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true));
 #else
             auto original = state.copy().resize(game_h / 3, game_w, 1);
             auto correct_blur = state.convolve(Array::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
             auto rough_blur = state.quartersize(false).quadruplesize().resize(game_h / 3, game_w, 1);
             print(original.ASCII().join(0, correct_blur.ASCII()).join(0, rough_blur.ASCII()).to_string({}, true));
+#endif
 #endif
 
             state += ((state > 0).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(7, 7)) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
@@ -1094,9 +1096,6 @@ int main() {
 
             // limit refresh to 60 fps
             std::cout << std::flush;
-            while (sw.stop() < 1.0 / 60.0) {
-                std::this_thread::yield();
-            }
         }
     }
 #endif

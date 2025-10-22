@@ -5101,7 +5101,7 @@ private:
             , reservation{ 0 }
         {};
         event_list(event_list const&) = delete;
-        event_list(event_list&& rhs) 
+        event_list(event_list&& rhs) noexcept
             : items{ std::move(rhs.items) }
             , len{ std::move(rhs.len) }
             , reservation{ std::move(rhs.reservation) }
@@ -5111,7 +5111,9 @@ private:
             rhs.reservation = 0;
         };
         event_list& operator=(event_list const&) = delete;
-        event_list& operator=(event_list&& rhs) {
+        event_list& operator=(event_list&& rhs) noexcept {
+            this->clear();
+
             this->items = std::move(rhs.items);
             this->len = std::move(rhs.len);
             this->reservation = std::move(rhs.reservation);
@@ -5238,6 +5240,8 @@ public:
     };
     mem_matrix& operator=(mem_matrix const&) = delete;
     mem_matrix& operator=(mem_matrix&& rhs) noexcept {
+        events.clear();
+
         len_bytes = std::move(rhs.len_bytes);
         cpu_memory = std::move(rhs.cpu_memory);
         gpu_memory = std::move(rhs.gpu_memory);
@@ -5439,7 +5443,21 @@ public:
     };
     // move another, temporary matrix into this, taking ownership of data.
     matrix(matrix && rhs) noexcept = default;
-    matrix& operator=(matrix && rhs) noexcept = default;
+    matrix& operator=(matrix&& rhs) noexcept {
+        dim = rhs.dim;
+        mem_matrix mem2(sizeof(T) * rhs.dim.count(), false, true);
+        mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
+            rhs.dim.count(),
+            mem2, rhs.mem
+        );
+        mem = std::move(mem2);
+        return *this;
+
+
+        //mem = std::move(rhs.mem);
+        //dim = std::move(rhs.dim);
+        //return *this;
+    };
     ~matrix() = default;
     // x*y*z
     unsigned int size() const {
@@ -5832,7 +5850,7 @@ public:
         return out;
     };
     // round to nearest whole number
-    decltype(auto) round() const {
+    matrix round() const {
         if constexpr (std::is_floating_point_v<T>) {
             matrix out(this->dim);
             mem_matrix::queue_gpu_work(GL::string("round") + GL::string(opencl_impl::type_name<T>()),
@@ -5846,7 +5864,7 @@ public:
         }
     };
     // round to higher integer
-    decltype(auto) ceil() const {
+    matrix ceil() const {
         if constexpr (std::is_floating_point_v<T>) {
             matrix out(this->dim);
             mem_matrix::queue_gpu_work(GL::string("ceil") + GL::string(opencl_impl::type_name<T>()),
@@ -5860,7 +5878,7 @@ public:
         }
     };
     // round to lower integer
-    decltype(auto) floor() const {
+    matrix floor() const {
         if constexpr (std::is_floating_point_v<T>) {
             matrix out(this->dim);
             mem_matrix::queue_gpu_work(GL::string("flr") + GL::string(opencl_impl::type_name<T>()),
@@ -6601,13 +6619,13 @@ public:
         }
     };
 
-    matrix convolve(matrix const& kernel) const {
+    matrix convolve(matrix const& K) const {
         if (this->dim.num_dimensions() == 2) {
             matrix out(this->dim);
-            float kernel_tot = kernel.sum();
+            float kernel_tot = K.sum();
             mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
                 this->size(),
-                out.mem, mem, kernel.mem, this->size(0), this->size(1), kernel.size(0), kernel.size(1), kernel_tot
+                out.mem, mem, K.mem, this->size(0), this->size(1), K.size(0), K.size(1), kernel_tot
             );
             return out;
         }
@@ -6644,12 +6662,23 @@ public:
         auto thisMinV = this->min();
         auto thisMaxV = this->max();
 
-        matrix<char> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, thisMinV, thisMaxV, ramp.mem, ramp.size()
-        );
-        return out;
+        //if (thisMaxV <= thisMinV) {
+        //    return matrix<char>(this->dim);
+        //}
+        //else {
+            //matrix<float> r1 = matrix<T>((*this) - thisMinV).cast<float>();
+            //r1 *= ((float)ramp.size() / (float)(thisMaxV - thisMinV));
+            //matrix<unsigned int> r2 = r1.cast<unsigned int>().max(ramp.size() - 1);
+            //return ramp.resample(r2);
+            // return ramp.resample(((float)ramp.size() * ((*this - thisMinV).cast<float>() / (float)(thisMaxV - thisMinV))).cast<unsigned int>());
+
+            matrix<char> out(this->dim);
+            mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
+                out.size(),
+                out.mem, mem, thisMinV, thisMaxV, ramp.mem, ramp.size()
+            );
+            return out;
+        //}
     };
 
     matrix resize(unsigned int X, unsigned int Y, unsigned Z) const {
@@ -6852,7 +6881,7 @@ public:
 
 void fnGpuProgramming() {
 #if 1
-    // Conway's Game of Life, using the GPU.
+    // Conway's Game of Life, using the GPU. 2-3 times faster than previous approach. 
     if (1) {
         using namespace GL;
 
@@ -6868,18 +6897,11 @@ void fnGpuProgramming() {
         float avg_framerate = 0; int avg_framerate_n = 0;
 
         // Initialize the kernel array
-        auto kernel = matrix<unsigned int>::from_vector(std::vector<unsigned int>{
+        auto kernel = matrix<unsigned int>::from_vector({
             1, 1, 1,
             1, 0, 1,
             1, 1, 1
         }, 3);
-        auto asciikernel = matrix<float>::guassian_kernel(3, 3);
-        auto asciiramp = matrix<char>::from_vector(std::vector<char>{
-            '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
-            '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
-            '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"',
-            '^', '`', '\'', '.', ' '
-        });
         auto state = (matrix<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
 
         int frame = 1;
@@ -6891,7 +6913,8 @@ void fnGpuProgramming() {
                 game_w = game_w2;
                 game_h = game_h2;
 
-                state = state.resize_stretch(game_h, game_w, 1);
+                auto s1 = state.resize_stretch(game_h, game_w, 1);
+                state = std::move(s1);
 
                 avg_framerate_n = 0;
                 avg_framerate = 0;
@@ -6926,6 +6949,8 @@ void fnGpuProgramming() {
 
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+
+            // print(state.ASCII().to_string({}, true));
 #if 1
 #if 1
             auto statef = state.cast<float>();
@@ -6958,7 +6983,7 @@ void fnGpuProgramming() {
 #endif
 
 
-    if (1) {
+    if (0) {
         float avg_framerate = 0; int avg_framerate_n = 0;
         for (;;) {
             GL::stopwatch sw;
@@ -7016,7 +7041,7 @@ void fnGpuProgramming() {
     }
 
 
-    if (1) {
+    if (0) {
         float avg_framerate = 0; int avg_framerate_n = 0;
         for (;;) {
             GL::stopwatch sw;
@@ -7210,7 +7235,7 @@ void fnGpuProgramming() {
                     a3.cast(ArrayTypes::CHAR) * '-'
                 ).to_string({}, true));
                 print("");
-                print(std::to_string(1.0 / sw.stop()) + " fps");
+                print(std::to_string(1.0 / sw.stop()) + " fps    ");
 
                 // add random chance for life to spawn nearby the existing life. 
                 state += ((nHood > 0).cast(ArrayTypes::FLOAT) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
@@ -7218,7 +7243,7 @@ void fnGpuProgramming() {
             }
 
         }
-
+#if 0
         // Advertisement regression. Generally correct analysis.
         if (1) {
             /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
@@ -7278,10 +7303,10 @@ void fnGpuProgramming() {
             print("");
 
         }
-
+#endif
 
     }
-
+#if 0
     // using namespace GL;
     using namespace GL;
 
@@ -7876,6 +7901,7 @@ void fnGpuProgramming() {
         print("");
 
     }
+#endif
 #endif
 }
 
