@@ -275,11 +275,11 @@ public:
         GL::string out;
 #define R(...) GL::string(" "#__VA_ARGS__" ")
         out = out + R(
-        kernel void copy_type_(global _type_ * A, global _type_ * B) {
+            kernel void copy_type_(global _type_ * A, global _type_ * B) {
             const uint n = get_global_id(0);
             A[n] = B[n];
         };
-        kernel void copy_resize_type_(global _type_* A, global _type_* B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
+        kernel void copy_resize_type_(global _type_ * A, global _type_ * B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
             const uint n = get_global_id(0);
             const uint Z = (uint)floor((float)n / ((float)(destlY) * (float)(destlX)));
             const uint pos2 = n - Z * destlY * destlX;
@@ -304,20 +304,59 @@ public:
                 A[n] = 0;
             }
         };
-        kernel void copy_resize_stretch_type_(global _type_* A, global _type_* B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
+        kernel void copy_resize_stretch_type_(global _type_ * A, global _type_ * B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
             const uint n = get_global_id(0);
             const uint Z = (uint)floor((float)n / ((float)(destlY) * (float)(destlX)));
             const uint pos2 = n - Z * destlY * destlX;
             const uint Y = (uint)floor((float)pos2 / (float)(destlX));
-            const uint X = pos2 - Y * destlX;            
+            const uint X = pos2 - Y * destlX;
             const float rel_X = (float)X / (float)(destlX);
             const float rel_Y = (float)Y / (float)(destlY);
             const float rel_Z = (float)Z / (float)(destlZ);
-            const uint srceX = fmin(srcelX - 1, floor((rel_X * (float)srcelX) + 0.5));
-            const uint srceY = fmin(srcelY - 1, floor((rel_Y * (float)srcelY) + 0.5));
-            const uint srceZ = fmin(srcelZ - 1, floor((rel_Z * (float)srcelZ) + 0.5));
-            const uint srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
+            uint srceX = fmin(srcelX - 1, floor((rel_X * (float)srcelX) + 0.5));
+            uint srceY = fmin(srcelY - 1, floor((rel_Y * (float)srcelY) + 0.5));
+            uint srceZ = fmin(srcelZ - 1, floor((rel_Z * (float)srcelZ) + 0.5));
+            uint srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
             A[n] = B[srce_N];
+
+            // need to try and model off of the weighted mean approach, similar to: https://en.wikipedia.org/wiki/Bilinear_interpolation
+            // search for: "bilinear interp formula using weighted mean with 3-d matrix"
+
+            //float tot_dist = 0;
+            //float result = 0;
+
+            // Works, but the above approach results in nearest-neighbor snapping. 
+            //for (uint Zt = 0; Zt <= 1; ++Zt) {
+            //    for (uint Yt = 0; Yt <= 1; ++Yt) {
+            //        for (uint Xt = 0; Xt <= 1; ++Xt) {
+            //            float srceXf = (float)srcelX * rel_X;
+            //            float srceYf = (float)srcelY * rel_Y;
+            //            float srceZf = (float)srcelZ * rel_Z;
+            //            float area = 1;
+
+            //            srceX = fmin(srcelX - 1, floor(srceXf + Xt));
+            //            srceY = fmin(srcelY - 1, floor(srceYf + Yt));
+            //            srceZ = fmin(srcelZ - 1, floor(srceZf + Zt));
+
+            //            float areaX = fmin(srcelX - 1, floor(srceXf + (1 - Xt)));
+            //            float areaY = fmin(srcelY - 1, floor(srceYf + (1 - Yt)));
+            //            float areaZ = fmin(srcelZ - 1, floor(srceZf + (1 - Zt)));
+
+            //            srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
+
+            //            float lenX = fmax((float)areaX - srceXf, srceXf - (float)areaX);
+            //            float lenY = fmax((float)areaY - srceYf, srceYf - (float)areaY);
+            //            float lenZ = fmax((float)areaZ - srceZf, srceZf - (float)areaZ);
+            //            if (lenX > 0) { area *= lenX; }
+            //            if (lenY > 0) { area *= lenY; }
+            //            if (lenZ > 0) { area *= lenZ; }
+
+            //            result += (float)(B[srce_N]) * area;
+            //            tot_dist += area;
+            //        }
+            //    }
+            //}
+            // A[n] = (_type_)(result / tot_dist); //  (result / tot_dist);
         };
 
         kernel void copy_single_type_(global _type_ * A, _type_ B) {
@@ -4710,7 +4749,8 @@ public:
     };
 
 };
-// CPU memory manager. Small number of actual memory allocations, most are pointer offsets.
+
+// CPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_cpu_allocator {
 public:
     struct dynamic_block {
@@ -4718,6 +4758,8 @@ public:
             prev;
         dynamic_block*
             next;
+        long long
+            generated_epoch;
         unsigned long long
             start_position;
         unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
@@ -4728,6 +4770,8 @@ public:
             parent_buffer;
         bool
             is_available;
+        bool
+            is_free;
 
         bool is_base_block() const {
             return (prev == nullptr);
@@ -4739,9 +4783,6 @@ public:
         bool is_split() const {
             if (next || prev) return true;
             else return false;
-        };
-        bool is_free() const {
-            return sub_buffer == nullptr;
         };
     };
 private:
@@ -4758,67 +4799,91 @@ private:
 
     __declspec(noinline) void try_combine(dynamic_block* lhs) {
         if (lhs) {
-            if (lhs->is_free() && lhs->next) {
-                if (lhs->next->is_available && lhs->next->is_free()) {
-                    // we are free, and the next pointer is free
-                    lhs->next->is_available = false;
-                    lhs->length += lhs->next->length;
-
-                    if (lhs->next->next) {
-                        lhs->next->next->prev = lhs;
-                    }
-
-                    // lhs->next is no longer valid and should be removed from the list
-                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
-                    while (tree_node) {
-                        if (tree_node->object) {
-                            if (tree_node->key == lhs->next->length) {
-                                if (tree_node->object == lhs->next) {
-                                    block_alloc.Free(tree_node->object);
-                                    free_tree.Remove(tree_node);
-                                    break;
-                                }
-                            }
-                        }
-                        tree_node = free_tree.GetNextLeaf(tree_node);
-                    }
-
-                    lhs->next = lhs->next->next;
-
-                    // try to combine again!
-                    (void)try_combine(lhs);
+            if (lhs->is_free) {
+                if (lhs->sub_buffer) {
+                    // has enough time passed to warrant this?
+                    long long curr_epoch = GL::util::get_current_epoch();
+                    if ((curr_epoch - lhs->generated_epoch) < 1000) return;
                 }
-            }
-            if (lhs->is_free() && lhs->prev) {
-                if (lhs->prev->is_available && lhs->prev->is_free()) {
-                    // we are free, and the prev pointer is free
-                    lhs->prev->is_available = false;
-                    lhs->length += lhs->prev->length;
-                    lhs->start_position = lhs->prev->start_position;
+                if (lhs->next) {
+                    if (lhs->next->is_available && lhs->next->is_free) {
+                        // we are free, and the next pointer is free
+                        if (lhs->sub_buffer) {
+                            lhs->sub_buffer = nullptr;
+                        }
+                        if (lhs->next->sub_buffer) {
+                            lhs->next->sub_buffer = nullptr;
+                        }
 
-                    if (lhs->prev->prev) {
-                        lhs->prev->prev->next = lhs;
-                    }
 
-                    // lhs->prev is no longer valid and should be removed from the list
-                    auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
-                    while (tree_node) {
-                        if (tree_node->object) {
-                            if (tree_node->key == lhs->prev->length) {
-                                if (tree_node->object == lhs->prev) {
-                                    block_alloc.Free(tree_node->object);
-                                    free_tree.Remove(tree_node);
-                                    break;
+                        lhs->next->is_available = false;
+                        lhs->length += lhs->next->length;
+
+                        if (lhs->next->next) {
+                            lhs->next->next->prev = lhs;
+                        }
+
+                        // lhs->next is no longer valid and should be removed from the list
+                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
+                        while (tree_node) {
+                            if (tree_node->object) {
+                                if (tree_node->key == lhs->next->length) {
+                                    if (tree_node->object == lhs->next) {
+                                        block_alloc.Free(tree_node->object);
+                                        free_tree.Remove(tree_node);
+                                        break;
+                                    }
                                 }
                             }
+                            tree_node = free_tree.GetNextLeaf(tree_node);
                         }
-                        tree_node = free_tree.GetNextLeaf(tree_node);
+
+                        lhs->next = lhs->next->next;
+
+                        // try to combine again!
+                        (void)try_combine(lhs);
                     }
+                }
+                if (lhs->prev) {
+                    if (lhs->prev->is_available && lhs->prev->is_free) {
+                        // we are free, and the prev pointer is free
 
-                    lhs->prev = lhs->prev->prev;
+                        if (lhs->sub_buffer) {
+                            lhs->sub_buffer = nullptr;
+                        }
+                        if (lhs->prev->sub_buffer) {
+                            lhs->prev->sub_buffer = nullptr;
+                        }
 
-                    // try to combine again!
-                    (void)try_combine(lhs);
+
+                        lhs->prev->is_available = false;
+                        lhs->length += lhs->prev->length;
+                        lhs->start_position = lhs->prev->start_position;
+
+                        if (lhs->prev->prev) {
+                            lhs->prev->prev->next = lhs;
+                        }
+
+                        // lhs->prev is no longer valid and should be removed from the list
+                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
+                        while (tree_node) {
+                            if (tree_node->object) {
+                                if (tree_node->key == lhs->prev->length) {
+                                    if (tree_node->object == lhs->prev) {
+                                        block_alloc.Free(tree_node->object);
+                                        free_tree.Remove(tree_node);
+                                        break;
+                                    }
+                                }
+                            }
+                            tree_node = free_tree.GetNextLeaf(tree_node);
+                        }
+
+                        lhs->prev = lhs->prev->prev;
+
+                        // try to combine again!
+                        (void)try_combine(lhs);
+                    }
                 }
             }
         }
@@ -4838,12 +4903,13 @@ public:
 
 private:
     dynamic_block* Alloc(unsigned long long N) {
-        const ulong alignment = 64ull;
-        const ulong alloc_size = N + alignment;
-
         if (N == 0) return nullptr;
 
+        // N must be aligned with WORKGROUP_SIZE
+        // N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+
         dynamic_block* free_block = nullptr;
+
         // try to get a free block
         if (1) {
             auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
@@ -4852,6 +4918,7 @@ private:
                     if (tree_node->key >= N) {
                         if (tree_node->object->is_available) {
                             free_block = tree_node->object;
+                            free_block->generated_epoch = GL::util::get_current_epoch();
                             free_tree.Remove(tree_node);
                             break;
                         }
@@ -4875,18 +4942,24 @@ private:
             free_block->start_position = 0;
             free_block->length = max_single_size;
             free_block->sub_buffer = nullptr;
+            free_block->is_free = true;
             free_block->is_available = true;
+            free_block->generated_epoch = GL::util::get_current_epoch();
         }
 
         // split the block if too large
         if (free_block && (free_block->length > N)) {
+            if (free_block->sub_buffer) {
+                free_block->sub_buffer = nullptr;
+            }
             dynamic_block* child_block = block_alloc.Alloc();
             child_block->parent_buffer = free_block->parent_buffer;
             child_block->prev = free_block;
             child_block->next = free_block->next;
             child_block->start_position = free_block->start_position + N;
-            child_block->length = free_block->length - N;
+            child_block->length = free_block->length - N; // free_block->length - N;
             child_block->sub_buffer = nullptr;
+            child_block->is_free = true;
             child_block->is_available = true;
             free_block->next = child_block;
             if (child_block->next) child_block->next->prev = child_block;
@@ -4896,17 +4969,21 @@ private:
         }
 
         // allocate the subbuffer
-        if (free_block) {
+        if (free_block && !free_block->sub_buffer) {
+            cl_buffer_region region;
+            region.origin = free_block->start_position;
+            region.size = free_block->length;
             free_block->sub_buffer = (void*)((::byte*)free_block->parent_buffer + free_block->start_position);
+            free_block->generated_epoch = GL::util::get_current_epoch();
         }
-
+        if (free_block) free_block->is_free = false;
         return free_block;
     };
     // must be explicitely free'd before the dynamic_cpu_allocator goes out of scope, otherwise memory leak. 
     __declspec(noinline) void Free(dynamic_block* free_block) {
         if (!free_block) return;
 
-        free_block->sub_buffer = nullptr;
+        free_block->is_free = true;
 
         try_combine(free_block);
 
@@ -4933,17 +5010,13 @@ public:
         };
         unique_ptr& operator=(unique_ptr const&) = delete;
         __declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
-            if (data && parent) { 
-                parent->Free(data); 
-            }
+            if (data && parent) { parent->Free(data); }
             data = nullptr;
             parent = nullptr;
             return *this;
         };
         __declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
-            if (data && parent) {
-                parent->Free(data); 
-            }
+            if (data && parent) { parent->Free(data); }
             data = rhs.data;
             parent = rhs.parent;
             rhs.data = nullptr;
@@ -4954,10 +5027,8 @@ public:
             return data;
         };
 
-        __declspec(noinline) ~unique_ptr() {
-            if (data && parent) { 
-                parent->Free(data); 
-            }
+        ~unique_ptr() {
+            if (data && parent) { parent->Free(data); }
         };
 
         const dynamic_cpu_allocator::dynamic_block* operator->() const {
@@ -4981,14 +5052,14 @@ public:
 
     };
     typedef typename std::shared_ptr<dynamic_cpu_allocator::dynamic_block> shared_ptr;
-
     unique_ptr make_unique(unsigned int N) {
         return unique_ptr(this->Alloc(N), this);
     };
+
     shared_ptr make_shared(unsigned int N) {
         return shared_ptr(this->Alloc(N), [this](dynamic_cpu_allocator::dynamic_block* p) {
             this->Free(p);
-        });
+            });
     };
 
 };
@@ -5001,851 +5072,11 @@ private:
     static auto& program() { return GL::GPU::opencl::get_program(); };
     static dynamic_cpu_allocator& cpu_allocator() { static dynamic_cpu_allocator out{}; return out; };
     static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out{}; return out; };
-public:
-
-#if 0
-    // ...doesn't quite work yet...
-    template <typename _type_> class vector {
-    private:
-        dynamic_cpu_allocator::unique_ptr actual_data;
-
-    public:
-        __declspec(noinline) _type_* vectorArrayNew(size_t N) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-            _type_* ptr = nullptr;
-            
-            actual_data = cpu_allocator().make_unique((((sizeof(_type_) * N) + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE);
-            ptr = (_type_*)actual_data->sub_buffer;
-            if (ptr) {
-                if constexpr (!isPod) {
-                    for (size_t i = 0; i < N; i++) {
-                        new (&ptr[i]) _type_;
-                    }
-                }
-                else {
-                    std::memset(ptr, 0, sizeof(_type_) * N);
-                }
-            }
-            return ptr;
-        };
-        __declspec(noinline) _type_* vectorArrayDelete(_type_* ptr, size_t N) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-            if constexpr (isPod) {
-                for (size_t i = 0; i < N; i++) {
-                    ((_type_*)ptr)[i].~_type_();
-                }
-            }
-            actual_data = nullptr;
-            return nullptr;
-        };
-        __declspec(noinline) _type_* vectorArrayResize(_type_* voldptr, size_t oldNum, size_t newNum) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-
-            auto new_data = cpu_allocator().make_unique((((sizeof(_type_) * newNum) + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE);
-            _type_* newptr = (_type_*)new_data->sub_buffer;
-            if (newptr) {
-                if constexpr (!isPod) {
-                    for (size_t i = 0; i < newNum; i++) {
-                        new (&newptr[i]) _type_;
-                        if (i < oldNum) newptr[i] = std::move(voldptr[i]);
-                    }
-                }
-                else {
-                    std::memset(newptr, 0, sizeof(_type_) * newNum);
-                    for (size_t i = 0; i < newNum; i++) {
-                        if (i < oldNum) newptr[i] = std::move(voldptr[i]);
-                    }
-                }
-            }
-            voldptr = vectorArrayDelete(voldptr, oldNum);
-            actual_data = std::move(new_data);
-            return newptr;
-        };
-
-        typedef int		cmp_t(const _type_*, const _type_*);
-        typedef _type_	new_t();
-
-        constexpr vector()
-            : granularity(16), list(nullptr), _size(0), num(0) {};
-        constexpr vector(int newgranularity)
-            : granularity(newgranularity), list(nullptr), _size(0), num(0) {};
-        vector(const vector& other)
-            : granularity(16), list(nullptr), _size(0), num(0) {
-            *this = other;
-        };
-        vector(vector&& other) noexcept
-            : granularity(other.granularity), list(other.list), actual_data(std::move(other.actual_data)), _size(other._size), num(other.num) {
-            other.actual_data = nullptr;
-            other.list = nullptr;
-            other._size = 0;
-            other.num = 0;
-        };
-        vector(const std::vector<_type_>& input)
-            : granularity(16), list(nullptr), _size(0), num(0)
-        {
-            granularity = input.size() + 16;
-            Clear();
-            for (auto& x : input) {
-                Append(x);
-            }
-        };
-
-        template< typename _othertype_, typename = std::enable_if_t<!std::is_same_v<_othertype_, std::decay_t<_type_>>> >
-        vector(const std::vector<_othertype_>& input)
-            : granularity(16), list(nullptr), _size(0), num(0)
-        {
-            granularity = input.size() + 16;
-            Clear();
-            for (auto& x : input) {
-                Append((_type_)x);
-            }
-        };
-
-        ~vector() {
-            Clear();
-        };
-        __declspec(noinline) vector<_type_>& operator=(const vector<_type_>& other) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-
-            int	i;
-
-            Clear();
-
-            num = other.num;
-            _size = other._size;
-            granularity = other.granularity;
-
-            if (_size) {
-                list = vectorArrayNew((size_t)_size);
-                if (list && other.list) {
-                    //#pragma loop(hint_parallel(8))
-                    for (i = 0; i < num; i++) {
-                        list[i] = other.list[i];
-                    }
-                }
-
-            }
-
-            return *this;
-        };
-
-        bool								operator==(const _type_& other) {
-            int sze = Num();
-            bool passed = true;
-            for (int i = 0; passed && i < sze; i++) {
-                passed = (other == list[i]);
-            }
-            return passed;
-        };
-        friend bool							operator==(const  vector<_type_>& a, const  vector<_type_>& other) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-            if (a.Num() != other.Num()) return false;
-            if (a.Num() == 0) return true;
-
-            int n = a.Num();
-            for (int i = 0; i < n; i++) {
-                if (!(a[i] == other[i]))
-                    return false;
-            }
-            return true;
-        };
-        friend bool							operator!=(const  vector<_type_>& a, const  vector<_type_>& b) {
-            return !(a == b);
-        };
-
-        void			Clear() {
-            if (list)
-                list = vectorArrayDelete(list, _size);            
-            num = 0;
-            _size = 0;
-        };											// clear the list
-        int				Num() const {
-            return num;
-        };										// returns number of elements in list
-        int				NumRef() const {
-            return num;
-        };
-        vector<_type_>& Reverse() {
-            int n = Num();
-            for (int i = 0; i < n; i++) { Append(list[i]); } // copies all of the data in the list to the end of the list
-            for (int i = 0; i < n; i++) { RemoveIndexFast(i); }
-            return *this;
-        };
-        int				NumAllocated() const { return _size; };
-        void			SetGranularity(int newgranularity) {
-            int newsize;
-
-            assert(newgranularity > 0);
-            granularity = ::Max(4, newgranularity);
-
-            if (list) {
-                // resize it to the closest level of granularity
-                newsize = num + granularity - 1;
-                newsize -= newsize % granularity;
-                if (newsize != _size) {
-                    Resize(newsize);
-                }
-            }
-        };				// set new granularity
-        int				GetGranularity() const {
-            return granularity;
-        };								// get the current granularity
-
-        size_t			Allocated() const {
-            return _size * sizeof(_type_);
-        };									// returns total size of allocated memory
-        size_t			Size() const {
-            return sizeof(vector< _type_ >) + Allocated();
-        };										// returns total size of allocated memory including size of list _type_
-        size_t			MemoryUsed() const {
-            return num * sizeof(*list);
-        };									// returns size of the used elements in the list
-
-        template< typename _othertype_, typename = std::enable_if_t<!std::is_same_v<_othertype_, std::decay_t<_type_>>> >
-        operator vector<_othertype_>() const {
-            vector<_othertype_> out; out.SetGranularity(num + 16);
-
-            for (int i = 0; i < num; i++)
-                out.Append((_othertype_)list[i]);
-
-            return out;
-        };
-        template< typename _othertype_, typename = std::enable_if_t<!std::is_same_v<_othertype_, std::decay_t<_type_>>> >
-        operator vector<_othertype_>() {
-            vector<_othertype_> out; out.SetGranularity(num + 16);
-
-            for (int i = 0; i < num; i++)
-                out.Append((_othertype_)list[i]);
-
-            return out;
-        };
-
-        operator std::vector<_type_>() {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-            std::vector<_type_> out;
-            out.reserve(num);
-            for (int i = 0; i < num; ++i) {
-                out.push_back(this->operator[](i));
-            }
-            return out;
-        };
-        operator std::vector<_type_>() const {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-            std::vector<_type_> out;
-            out.reserve(num);
-            for (int i = 0; i < num; ++i) {
-                out.push_back(this->operator[](i));
-            }
-            return out;
-        };
-
-        template< typename _othertype_, typename = std::enable_if_t<!std::is_same_v<_othertype_, std::decay_t<_type_>>> >
-        explicit operator std::vector<_othertype_>() const {
-            std::vector<_othertype_> out; out.reserve(num + 16);
-
-            for (int i = 0; i < num; i++) {
-                out.push_back((_othertype_)list[i]);
-            }
-            return out;
-        };
-        template< typename _othertype_, typename = std::enable_if_t<!std::is_same_v<_othertype_, std::decay_t<_type_>>> >
-        explicit operator std::vector<_othertype_>() {
-            std::vector<_othertype_> out; out.reserve(num + 16);
-
-            for (int i = 0; i < num; i++)
-                out.push_back((_othertype_)list[i]);
-
-            return out;
-        };
-
-
-        vector<_type_>& operator=(const std::vector<_type_>& input) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-
-            Clear();
-            SetGranularity(input.size() + 16);
-            for (auto x : input) {
-                Append(x);
-            }
-            return *this;
-        };
-
-        const _type_& operator[](int index) const {
-            if (index < 0 || index >= num) {
-                print(std::string("Bad Index: ") + std::to_string(index) + std::string(" / ") + std::to_string(num));
-                throw(std::runtime_error(std::string("Bad Index: ") + std::to_string(index) + std::string(" / ") + std::to_string(num)));
-            }
-            return list[index];
-        };
-        _type_& operator[](int index) {
-            if (index < 0 || index >= num) {
-                print(std::string("Bad Index: ") + std::to_string(index) + std::string(" / ") + std::to_string(num));
-                throw(std::runtime_error(std::string("Bad Index: ") + std::to_string(index) + std::string(" / ") + std::to_string(num)));
-            }
-            return list[index];
-        };
-        void			Condense() {
-            if (list) {
-                if (num) {
-                    Resize(num);
-                }
-                else {
-                    Clear();
-                }
-            }
-        };											// resizes list to exactly the number of elements it contains
-        void			ClearedResize(int newsize) {
-            Clear();
-            Resize(newsize);
-            AssureSize(newsize);
-        };
-        void			Resize(int newsize) {
-            assert(newsize >= 0);
-
-            // free up the list if no data is being reserved
-            if (newsize <= 0) {
-                Clear();
-                return;
-            }
-
-            if (newsize == _size) {
-                // not changing the size, so just exit
-                return;
-            }
-
-            list = vectorArrayResize(list, (size_t)_size, (size_t)newsize);
-            _size = newsize;
-            if (_size < num) {
-                num = _size;
-            }
-        };								// resizes list to the given number of elements
-        void			Resize(int newsize, int newgranularity) {
-            assert(newsize >= 0);
-
-            assert(newgranularity > 0);
-            granularity = newgranularity;
-
-            // free up the list if no data is being reserved
-            if (newsize <= 0) {
-                Clear();
-                return;
-            }
-
-            list = vectorArrayResize(list, (size_t)_size, (size_t)newsize);
-            _size = newsize;
-            if (_size < num) {
-                num = _size;
-            }
-        };			// resizes list and sets new granularity
-        void			SetNum(int newnum) {
-            assert(newnum >= 0);
-            if (!_size || newnum > _size) {
-                Resize(newnum);
-            }
-            num = newnum;
-        };								// set number of elements in list and resize to exactly this number if needed
-        void			AssureSize(int newSize) {
-            int newNum = newSize;
-
-            if (newSize > _size) {
-
-                if (granularity == 0) {	// this is a hack to fix our memset classes
-                    granularity = 16;
-                }
-
-                newSize += granularity - 1;
-                newSize -= newSize % granularity;
-                Resize(newSize);
-            }
-
-            num = newNum;
-        };							// assure list has given number of elements, but leave them uninitialized
-        void			Reserve(int newSize) {
-            int newNum = newSize;
-
-            if (newSize > _size) {
-
-                if (granularity == 0) {	// this is a hack to fix our memset classes
-                    granularity = 16;
-                }
-
-                newSize += granularity - 1;
-                newSize -= newSize % granularity;
-                Resize(newSize);
-            }
-        };							// assure list has given number of elements, but leave them uninitialized
-
-        void			AssureSize(int newSize, const _type_& initValue) {
-            int newNum = newSize;
-
-            if (newSize > _size) {
-
-                if (granularity == 0) {	// this is a hack to fix our memset classes
-                    granularity = 16;
-                }
-
-                newSize += granularity - 1;
-                newSize -= newSize % granularity;
-                num = _size;
-                Resize(newSize);
-
-                //#pragma loop(hint_parallel(8))
-                for (int i = num; i < newSize; i++) {
-                    list[i] = initValue;
-                }
-            }
-
-            num = newNum;
-        };	// assure list has given number of elements and initialize any new elements
-        void			AssureSizeAlloc(int newSize, new_t* allocator) {
-            int newNum = newSize;
-
-            if (newSize > _size) {
-
-                if (granularity == 0) {	// this is a hack to fix our memset classes
-                    granularity = 16;
-                }
-
-                newSize += granularity - 1;
-                newSize -= newSize % granularity;
-                num = _size;
-                Resize(newSize);
-
-                for (int i = num; i < newSize; i++) {
-                    list[i] = (*allocator)();
-                }
-            }
-
-            num = newNum;
-        };	// assure the pointer list has the given number of elements and allocate any new elements
-
-        _type_* Ptr() {
-            return list;
-        };												// returns a pointer to the list
-        const _type_* Ptr() const {
-            return list;
-        };										// returns a pointer to the list
-        _type_& Alloc() {
-            if (!list) {
-                Resize(granularity);
-            }
-
-            EnsureCapacity();
-
-            return list[num++]; // error handeling from MVS19 suggests to change this from list[num++] to &list[num++]
-        };											// returns reference to a new data element at the end of the list
-        _type_& Alloc(_type_&& initValue) {
-            if (!list) {
-                Resize(granularity);
-            }
-
-            EnsureCapacity();
-
-            _type_& out = list[num++];
-            out = std::forward<_type_>(initValue);
-
-            return out; // error handeling from MVS19 suggests to change this from list[num++] to &list[num++]
-        };											// returns reference to a new data element at the end of the list
-        int				Append(const _type_& obj) {
-            if (!list) {
-                Resize(granularity);
-            }
-
-            EnsureCapacity();
-
-            list[num] = obj;
-            num++;
-
-            return num - 1;
-        };						// append element
-        int				Append(_type_&& obj) {
-            if (!list) {
-                Resize(granularity);
-            }
-
-            EnsureCapacity();
-
-            list[num] = std::move(obj);
-            num++;
-
-            return num - 1;
-        };						// append element
-        int				Append(const vector& other) {
-            if (!list) {
-                if (granularity == 0) {	// this is a hack to fix our memset classes
-                    granularity = 16;
-                }
-                Resize(granularity);
-            }
-
-            int n = other.Num();
-            for (int i = 0; i < n; i++) {
-                Append(other[i]);
-            }
-
-            return Num();
-        };						// append list
-        int				AddUnique(const _type_& obj) {
-            int index;
-
-            index = FindIndex(obj);
-            if (index < 0) {
-                index = Append(obj);
-            }
-
-            return index;
-        };					// add unique element
-        void			EnsureCapacity() {
-            if (num == _size) {
-                int newsize;
-
-                if (granularity == 0) {	// this is a hack to fix our memset classes
-                    granularity = 16;
-                }
-                if ((_size + 1) >= (granularity * 4)) granularity = granularity * 4;
-                newsize = _size + granularity;
-                Resize(newsize - newsize % granularity);
-            }
-        };
-        int				Insert(const _type_& obj, int index = 0) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-
-            if (!list) {
-                Resize(granularity);
-            }
-
-            EnsureCapacity();
-
-            if (index < 0) {
-                index = 0;
-            }
-            else if (index > num) {
-                index = num;
-            }
-
-#ifdef useMemMoveForThreadedList
-            if constexpr (isPod) {
-                try {
-                    if (num > index) {
-                        ::memmove((void*)&list[index + 1], (void*)&list[index], sizeof(_type_) * (num - index));
-                    }
-                    ::memcpy((void*)&list[index], (void*)&obj, sizeof(_type_));
-                    num++;
-                    return index;
-                }
-                catch (...) {
-                    for (int i = num; i > index; --i) {
-                        list[i] = list[i - 1];
-                    }
-                    num++;
-                    list[index] = obj;
-                    return index;
-                }
-            }
-            else {
-                for (int i = num; i > index; --i) {
-                    list[i] = list[i - 1];
-                }
-                num++;
-                list[index] = obj;
-                return index;
-            }
-#else
-            for (int i = num; i > index; --i) {
-                list[i] = list[i - 1];
-            }
-            num++;
-            list[index] = obj;
-            return index;
-#endif
-        };		// insert the element at the given index
-        int				Emplace(const _type_& obj, int index = 0) {
-            if (!list) {
-                Resize(granularity);
-            }
-
-            EnsureCapacity();
-
-            if (index < 0) {
-                index = 0;
-            }
-            else if (index >= num) {
-                // grow to fit 	
-                while (index >= num) {
-                    this->Append(_type_());
-                }
-            }
-            list[index] = obj;
-
-            return index;
-        };		// insert the element at the given index
-
-        int				FindIndex(const _type_& obj) const {
-            int i;
-
-            for (i = 0; i < num; i++) {
-                if (list[i] == obj) {
-                    return i;
-                }
-            }
-
-            // Not found
-            return -1;
-        };				// find the index for the given element
-        _type_* Find(_type_ const& obj) const {
-            int i;
-
-            i = FindIndex(obj);
-            if (i >= 0) {
-                return &list[i];
-            }
-
-            return nullptr;
-        };					// find pointer to the given element
-        int				FindNull() const {
-            int i;
-
-            for (i = 0; i < num; i++) {
-                if (list[i] == nullptr) {
-                    return i;
-                }
-            }
-
-            // Not found
-            return -1;
-        };									// find the index for the first nullptr pointer in the list
-        int				IndexOf(const _type_* obj) const {
-            int index;
-
-            index = obj - list;
-
-            assert(index >= 0);
-            assert(index < num);
-
-            return index;
-        };					// returns the index for the pointer to an element in the list
-        bool			RemoveIndex(int index) {
-            constexpr bool isPod = std::is_pod<_type_>::value;
-
-            int i;
-
-            //assert(list != nullptr);
-            //assert(index >= 0);
-            //assert(index < num);
-
-            if ((index < 0) || (index >= num)) {
-                return false;
-            }
-
-            num--;
-
-#ifdef useMemMoveForThreadedList
-            if constexpr (isPod) {
-                if (index < num) {
-                    ::memmove((void*)&list[index], (void*)&list[index + 1], sizeof(_type_) * (num - index));
-                }
-            }
-            else {
-                for (i = index; i < num; i++) {
-                    list[i] = list[i + 1];
-                }
-            }
-#else
-            for (i = index; i < num; i++) {
-                list[i] = list[i + 1];
-            }
-#endif
-            return true;
-        };							// remove the element at the given index
-        void			RemoveIndexes(const vector<int>& indexes) {
-            if (indexes.Num() <= 0) return; // nothing to remove.
-            std::vector<int> temp = indexes;
-            std::sort(temp.begin(), temp.end());
-            temp.push_back(-1);
-
-            num -= indexes.Num();
-            if (num <= 0) Clear();
-
-            int removalProgress = 1;
-            int currentRemoveIndex = temp[0];
-            int copyIndex = currentRemoveIndex + 1;
-            int nextRemoveIndex = temp[removalProgress];
-            int sizeRemove = indexes.Num();
-            for (int i = currentRemoveIndex; i < num;) {
-                if (nextRemoveIndex > copyIndex || nextRemoveIndex == -1) {
-                    list[i] = list[copyIndex];
-                    copyIndex++;
-                }
-                else { // the next copy location is actually a removal location
-                    copyIndex++;
-                    removalProgress++;
-                    nextRemoveIndex = temp[removalProgress];
-                    continue;
-                }
-                i++;
-            }
-        };	// remove the elements at the given indexes
-        // removes the element at the given index and places the last element into its spot - DOES NOT PRESERVE LIST ORDER
-        bool			RemoveIndexFast(int index) {
-
-            if ((index < 0) || (index >= num)) {
-                return false;
-            }
-
-            num--;
-            if (index != num) {
-                list[index] = list[num];
-            }
-
-            return true;
-        };
-        // remove the element
-        bool			Remove(const _type_& obj) {
-            int index;
-
-            index = FindIndex(obj);
-            if (index >= 0) {
-                return RemoveIndex(index);
-            }
-
-            return false;
-        };
-        bool			RemoveFast(const _type_& obj) {
-            int index;
-
-            index = FindIndex(obj);
-            if (index >= 0) {
-                return RemoveIndexFast(index);
-            }
-
-            return false;
-        };
-        // swap the contents of the lists
-        void			Swap(vector& other) {
-            vector other2 = *this;
-            *this = other;
-            other = other2;
-        };
-        // delete the contents of the list
-        void			DeleteContents() {
-            int i;
-
-            for (i = 0; i < num; i++) {
-                delete list[i];
-                list[i] = nullptr;
-            }
-
-            Clear();
-        };
-
-        vector<_type_>& Sort() {
-            if (num >= 2) {
-                auto* first = &list[0];
-                auto* last = first + num;
-                std::sort(first, last);
-            }
-            return *this;
-        };
-
-        vector<_type_>& Sort(std::function<bool(_type_ const&, _type_ const&)> func) {
-            if (num >= 2) {
-                auto* first = &list[0];
-                auto* last = first + num;
-                std::sort(first, last, func);
-            }
-            return *this;
-        };
-
-        /*
-        Lambda-based select function that provides the pointers to underlying data that meets the required lambda function
-
-        vector<int> obj;
-        obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-        vector<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
-        for (auto& z : ptrsWithValuesGreaterThanFive){
-            std::cout << *z << std::endl;
-        }
-        */
-        vector<const _type_*> Select(std::function<bool(const _type_&)> predicate) const {
-            vector<const _type_*> out;
-            for (int i = 0; i < num; ++i) {
-                if (predicate(list[i])) {
-                    out.Append(&list[i]);
-                }
-            }
-            return out;
-        };
-
-        /*
-        Lambda-based select function that provides the pointers to underlying data that meets the required lambda function
-
-        vector<int> obj;
-        obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-        vector<int*> ptrsWithValuesGreaterThanFive = obj.Select([](int x){ return (x > 5); });
-        for (auto& z : ptrsWithValuesGreaterThanFive){
-            std::cout << *z << std::endl;
-            *z = -1; // modifies the original list
-        }
-        */
-        vector<_type_*> Select(std::function<bool(const _type_&)> predicate) {
-            vector<_type_*> out;
-            for (int i = 0; i < num; ++i) {
-                if (predicate(list[i])) {
-                    out.Append(&list[i]);
-                }
-            }
-            return out;
-        };
-
-        /*
-        Lambda-based select function that provides the indexes to underlying data that meets the required lambda function
-
-        vector<int> obj;
-        obj = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-        vector<int> indexesWithValuesGreaterThanFive = obj.SelectIndexes([](int x){ return (x > 5); });
-        for (auto& z : indexesWithValuesGreaterThanFive){
-            std::cout << obj[z] << std::endl;
-        }
-        */
-        vector<int> SelectIndexes(std::function<bool(const _type_&)> predicate) const {
-            vector<int> out;
-            for (int i = 0; i < num; ++i) {
-                if (predicate(list[i])) {
-                    out.Append(i);
-                }
-            }
-            return out;
-        };
-
-        size_t size() const {
-            if (actual_data) return num;
-            else return 0;
-        }
-        void clear() { Clear(); }
-        size_t capacity() const { return _size; }
-        void reserve(size_t n) { Reserve(n); }
-        void push_back(_type_&& rhs) {
-            this->Append(std::move(rhs));
-        };
-        void push_back(_type_ const& rhs) {
-            this->Append(rhs);
-        };
-
-    private:
-        int				granularity;
-        _type_* list;
-        int				_size;
-        mutable int		num;
-
-
-    };
-#endif
 
 private:
     // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
     class event_list {
     public:
-#if 1
         dynamic_cpu_allocator::unique_ptr items; // leverages the CPU allocator for speed of allocation
         long long len;
         long long reservation;
@@ -5868,10 +5099,7 @@ private:
 
             ::clWaitForEvents((cl_int)len, &operator[](0));
             for (long long L = 0; L < len; ++L) {
-                auto& rhs = operator[](L);
-                if (rhs) {
-                    ::clReleaseEvent(rhs);
-                }
+                ::clReleaseEvent(operator[](L));                
             }
             // ::memset(items->sub_buffer, 0, sizeof(cl_event) * reservation);
             len = 0;
@@ -5906,15 +5134,11 @@ private:
             }
         };
         __declspec(noinline) cl_event& operator[](size_t n) {
-            static cl_event dummy;
-            if ((n * sizeof(cl_event)) > items->length) return dummy;            
-            if (n >= len) return dummy;            
+            if (((n * sizeof(cl_event)) > items->length) || (n >= len)) throw std::runtime_error("Bad Index");
             return reinterpret_cast<cl_event*>(items->sub_buffer)[n];
         }
         __declspec(noinline) const cl_event& operator[](size_t n) const {
-            static cl_event dummy;
-            if ((n * sizeof(cl_event)) > items->length) return dummy;            
-            if (n >= len) return dummy;            
+            if (((n * sizeof(cl_event)) > items->length) || (n >= len)) throw std::runtime_error("Bad Index");
             return reinterpret_cast<const cl_event*>(items->sub_buffer)[n];
         }
 
@@ -5951,79 +5175,6 @@ private:
             len = 0;
             reservation = 0;
         };
-#else
-        vector<cl_event> items;
-
-        void clear() {
-            if (items.size() > 0) {
-                bool do_work = false;
-                for (int i = items.size() - 1; i >= 0; --i) {
-                    if (items[i]) {
-                        do_work = true;
-                        break;
-                    }
-                }
-                if (!do_work) {
-                    items.clear(); 
-                    return;
-                }
-                
-                cl_int err = ::clWaitForEvents((cl_int)items.size(), &items[0]);
-                if (err != CL_SUCCESS) {
-                    check_for_errors(err);
-                }
-                size_t sz = items.size();
-                for (size_t i = 0; i < sz; ++i) if (items[i]) ::clReleaseEvent(items[i]);
-                items.clear();
-            }
-        };
-        void push_back(cl_event rhs) {
-            if (!rhs) return;
-            if (items.capacity() == 0) reserve(16);
-
-            if (items.size() < items.capacity()) {
-                items.push_back(rhs);
-            }
-            else {
-                clear();
-                items.push_back(rhs);
-            }
-        };
-        size_t size() const { return items.size(); };
-        size_t capacity() const { return items.capacity(); };
-        void reserve(size_t n) {
-            if (items.capacity() < n) {
-                clear();
-                items.reserve(n);
-            }
-        };
-        cl_event& operator[](size_t n) {
-            return items[n];
-        }
-        const cl_event& operator[](size_t n) const {
-            return items[n];
-        }
-
-        event_list()
-            : items{}
-        {};
-        event_list(event_list const&) = delete;
-        event_list(event_list&& rhs) noexcept
-            : items{ std::move(rhs.items) }
-        {
-            rhs.items.clear();            
-        };
-        event_list& operator=(event_list const&) = delete;
-        event_list& operator=(event_list&& rhs) noexcept {
-            this->clear();
-            this->items = std::move(rhs.items);
-            rhs.clear();
-            return *this;
-        };
-        ~event_list() {
-            clear();
-        };
-#endif
     };
     dynamic_gpu_allocator::unique_ptr
         gpu_memory;
@@ -6205,9 +5356,9 @@ private:
 public:
     // for a given name and count (with optional params, including either "mem_matrix const&" or POD-types) it will queue a GPU kernel for completion. 
     template<class... T> static void queue_gpu_work(GL::string const& name, unsigned long long count, const T&... parameters) {
-        static std::set<cl_event>
+        /*static*/ std::set<cl_event>
             waitlist_set;
-        static std::vector<cl_event>
+        /*static*/ std::vector<cl_event>
             waitlist;
         auto& prog
             = mem_matrix::program();
@@ -6221,8 +5372,8 @@ public:
             cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
             cl_range_local = cl::NDRange(WORKGROUP_SIZE);
 
-        waitlist_set.clear();
-        waitlist.clear();
+        // waitlist_set.clear();
+        // waitlist.clear();
 
         if (!kernel) {
             prog.functions.push_back(name, ::clCreateKernel(prog.program.cl_program.get().obj.get(), name.c_str().data(), &err));
@@ -7614,9 +6765,9 @@ public:
         }
         else {
             static std::vector<float> kernel{
-                1.0f/3.0f, 
-                1.0f/3.0f, 
-                1.0f/3.0f
+                (1.0f - (0.341f * 2.0f)) / 2.0f,
+                0.341f * 2.0f,
+                (1.0f - (0.341f * 2.0f)) / 2.0f
             };
             auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 3, y = 1
             auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 3            
@@ -7631,11 +6782,11 @@ public:
         }
         else {
             static std::vector<float> kernel{
-                1.0f/5.0f,	
-                1.0f/5.0f,	
-                1.0f/5.0f,	
-                1.0f/5.0f,	
-                1.0f/5.0f
+                (0.136f / 2.0f),
+                (0.341f / 2.0f) + (.186f / 2.0f),
+                0.341f,	
+                (0.341f / 2.0f) + (.186f / 2.0f),
+                (0.136f / 2.0f)
             };
             auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 5, y = 1
             auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 5            
@@ -7932,7 +7083,7 @@ void fnGpuProgramming() {
             print(std::to_string(avg_framerate) + " fps     ");
             std::cout << std::flush;
 
-            //while (sw.stop() < 1.0 / 4.0) {
+            //while (sw.stop() < 1.0 / 60.0) {
             //    std::this_thread::yield();
             //}
 
