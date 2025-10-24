@@ -279,6 +279,130 @@ public:
             const uint n = get_global_id(0);
             A[n] = B[n];
         };
+        kernel void subsample_1D_type_(global _type_* destination, global _type_* Source, global float* Indexes) {
+            // assumes that positions are floating-point indices, e.g. 2.5 means halfway between index 2 and 3
+            const uint n = get_global_id(0);
+            const float I = Indexes[n];
+            const float lhs = floor(I);
+            const float rhs = floor(I + 1);
+            const float result = ((float)(Source[(uint)lhs]) * (rhs - I)) + ((float)(Source[(uint)rhs]) * (I - lhs));
+            destination[n] = (_type_)result;
+        };
+        kernel void binomial_search_smallest_gre_type_(global uint* destination, global _type_* Source, global _type_* Find, uint srcelX) {
+            const uint n = get_global_id(0);
+            // assumes goal is to locate the index of Find[n] in the sorted list of Source(0,srcelX] that is greater than or equal to Find[n]
+            const _type_ time = Find[n];
+
+            // use binary search to find the index for the given time
+            long len = (long)srcelX;
+            long mid = len;
+            long offset = 0;
+            long res = 0;
+            _type_* sample = 0;
+            while (mid > 0) {
+                mid = len >> 1;
+                // OPTIMIZED ORDERING
+                sample = &Source[offset + mid];
+                if (time >= *sample)
+                {
+                    offset += mid;
+                    len -= mid;
+                    res = 1;
+                    if (time == *sample) {
+                        destination[n] = (uint)(offset);
+                        return;
+                    }
+                }
+                else
+                {
+                    len -= mid;
+                    res = 0;
+                }
+            }
+            destination[n] = (uint)(offset + res);
+        };
+        kernel void subsample_pat_type_(global _type_* destination, global _type_* SourceY, global _type_* SourceX, global _type_* FindX, uint srcelX) {
+            const uint n = get_global_id(0);
+            // assumes goal is to locate the index of Find[n] in the sorted list of Source(0,srcelX] that is greater than or equal to Find[n]
+            const _type_ time = FindX[n];
+            uint index_1 = 0;
+
+            // use binary search to find the index for the given time
+            long len = (long)srcelX;
+            long mid = len;
+            long offset = 0;
+            long res = 0;
+            _type_* sample = 0;
+            while (mid > 0) {
+                mid = len >> 1;
+                // OPTIMIZED ORDERING
+                sample = &SourceX[offset + mid];
+                if (time >= *sample)
+                {
+                    offset += mid;
+                    len -= mid;
+                    res = 1;
+                    if (time == *sample) {
+                        destination[n] = SourceY[(uint)offset];
+                        return;
+                    }
+                }
+                else
+                {
+                    len -= mid;
+                    res = 0;
+                }
+            }
+            index_1 = (uint)(offset + res);
+
+            if (index_1 <= 0) {
+                // the value we requested exists before our dataset... return the earliest value
+                destination[n] = SourceY[0];
+            }
+            else if (index_1 >= (srcelX - 1)) {
+                // the value we requested exists after our dataset... return the latest value
+                destination[n] = SourceY[srcelX - 1];
+            }
+            else {
+                uint index_0 = index_1 - 1;
+                uint index_2 = index_1 + 1;
+                uint index_3 = index_1 + 2;
+                float s = (float)(time - SourceX[index_0]) / (float)(SourceX[index_1] - SourceX[index_0]);
+                if (index_1 == 1) {
+                    // we are between indices 0 and 1... do a linear interp.
+                    destination[n] = (_type_)(((float)SourceY[index_0] * (1.0f - s)) + ((float)SourceY[index_1] * s));
+                }
+                else if (index_1 == (srcelX - 2)) {
+                    // we are between the final two indices ... do a linear interp.
+                    destination[n] = (_type_)(((float)SourceY[index_0] * (1.0f - s)) + ((float)SourceY[index_1] * s));
+                }
+                else {
+                    // we should have enough data to do our analysis.
+                    float4 bvals = (float4)(
+                        ((2.0f - s) * s - 1.0f) * s * 0.5f,				// -0.5f s * s * s + s * s - 0.5f * s
+                        (((3.0f * s - 5.0f) * s) * s + 2.0f) * 0.5f,		// 1.5f * s * s * s - 2.5f * s * s + 1.0f
+                        ((-3.0f * s + 4.0f) * s + 1.0f) * s * 0.5f,		// -1.5f * s * s * s - 2.0f * s * s + 0.5f s
+                        ((s - 1.0f) * s * s) * 0.5f						// 0.5f * s * s * s - 0.5f * s * s
+                    );
+                    destination[n] = (_type_)(
+                        (bvals[0] * (float)SourceY[index_0]) +
+                        (bvals[1] * (float)SourceY[index_1]) +
+                        (bvals[2] * (float)SourceY[index_2]) +
+                        (bvals[3] * (float)SourceY[index_3])
+                    );
+                }
+            }
+        };
+
+        //kernel void subsample_2D_type_(global _type_* destination, global _type_* Source, global float2* Indexes) {
+        //    // assumes that Indexes positions are 2-D floating-point indices, e.g. [2.5, 2.5] means halfway between index 2 and 3 in both the x and y axis
+        //    const uint n = get_global_id(0);
+        //    const float I = Indexes[n];
+        //    const float lhs = floor(I);
+        //    const float rhs = floor(I + 1);
+        //    const float result = ((float)(Source[(uint)lhs](*(rhs - I)) + ((float)(Source[(uint)rhs]) * (I - lhs));
+        //    destination[n] = (_type_)result;
+        //};
         kernel void copy_resize_type_(global _type_ * A, global _type_ * B, uint destlX, uint destlY, uint destlZ, uint srcelX, uint srcelY, uint srcelZ) {
             const uint n = get_global_id(0);
             const uint Z = (uint)floor((float)n / ((float)(destlY) * (float)(destlX)));
@@ -310,83 +434,50 @@ public:
             const uint pos2 = n - Z * destlY * destlX;
             const uint Y = (uint)floor((float)pos2 / (float)(destlX));
             const uint X = pos2 - Y * destlX;
-            const float rel_X = (float)X / (float)(destlX);
-            const float rel_Y = (float)Y / (float)(destlY);
-            const float rel_Z = (float)Z / (float)(destlZ);
-            uint srceX = fmin(srcelX - 1, floor((rel_X * (float)srcelX) + 0.5));
-            uint srceY = fmin(srcelY - 1, floor((rel_Y * (float)srcelY) + 0.5));
-            uint srceZ = fmin(srcelZ - 1, floor((rel_Z * (float)srcelZ) + 0.5));
-            uint srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
-            A[n] = B[srce_N];
 
-            // need to try and model off of the weighted mean approach, similar to: https://en.wikipedia.org/wiki/Bilinear_interpolation
-            // search for: "bilinear interp formula using weighted mean with 3-d matrix"
+            if ((srcelX < destlX || srcelY < destlY) && (destlZ == 1) && (srcelZ == 1)) {
+                // desination is expanding the source image. Destination should bilinear blend from the available samples.
+                float4 p = (float4)((float)X * (float)srcelX / (float)destlX, (float)Y * (float)srcelY / (float)destlY, 1, 0);
+                float4 p1 = (float4)(floor(p[0]), floor(p[1]), 0, 0);
+                float4 p2 = (float4)(floor(p[0] + 1), floor(p[1]), 0, 0);
+                float4 p3 = (float4)(floor(p[0]), floor(p[1] + 1), 0, 0);
+                float4 p4 = (float4)(floor(p[0] + 1), floor(p[1] + 1), 0, 0);
 
-            //if (srceZ >= srcelZ) { A[n] = 0; }
-            //else {
-            //    float _x = (float)srcelX * rel_X;
-            //    float _y = (float)srcelY * rel_Y;
-            //    float _x1 = floor(_x);
-            //    float _x2 = floor(_x + 1.0f);
-            //    float _y1 = floor(_y);
-            //    float _y2 = floor(_y + 1.0f);
+                // p1-p4
+                // p2-p3
+                // p3-p2
+                // p4-p1
 
-            //    uint n1 = (srceZ * srcelX * srcelY) + (uint)(_y2 * srcelX) + (uint)_x1;
-            //    uint n2 = (srceZ * srcelX * srcelY) + (uint)(_y2 * srcelX) + (uint)_x2;
-            //    uint n3 = (srceZ * srcelX * srcelY) + (uint)(_y1 * srcelX) + (uint)_x1;
-            //    uint n4 = (srceZ * srcelX * srcelY) + (uint)(_y1 * srcelX) + (uint)_x2;
+                float a1 = fabs((p1[0] - p[0]) * (p1[1] - p[1]) * (p1[2] - p[2]));
+                float a2 = fabs((p2[0] - p[0]) * (p2[1] - p[1]) * (p2[2] - p[2]));
+                float a3 = fabs((p3[0] - p[0]) * (p3[1] - p[1]) * (p3[2] - p[2]));
+                float a4 = fabs((p4[0] - p[0]) * (p4[1] - p[1]) * (p4[2] - p[2]));
 
-            //    float w11 = fabs(_x2 - _x) * fabs(_y2 - _y);
-            //    float w12 = fabs(_x2 - _x) * fabs(_y - _y1);
-            //    float w21 = fabs(_x - _x1) * fabs(_y2 - _y);
-            //    float w22 = fabs(_x - _x1) * fabs(_y - _y1);
+                //a1 = distance(p1, p);
+                //a2 = distance(p2, p);
+                //a3 = distance(p3, p);
+                //a4 = distance(p4, p);
 
-            //    //A[n] = (_type_)((float)(B[n1] + B[n2] + B[n3] + B[n4]) / 4.0f);
+                p1[3] = (float)(B[((uint)p1[1] * srcelX) + (uint)p1[0]]);
+                p2[3] = (float)(B[((uint)p2[1] * srcelX) + (uint)p2[0]]);
+                p3[3] = (float)(B[((uint)p3[1] * srcelX) + (uint)p3[0]]);
+                p4[3] = (float)(B[((uint)p4[1] * srcelX) + (uint)p4[0]]);
 
+                p[3] += p1[3] * a4;
+                p[3] += p2[3] * a3;
+                p[3] += p3[3] * a2;
+                p[3] += p4[3] * a1;
 
-            //    // A[n] = (_type_)(((float)(B[n1])*w11) + ((float)(B[n2]) * w12) + ((float)(B[n3]) * w21) + ((float)(B[n4]) * w22));
-            //}
-            
-
-
-
-
-
-            //float tot_dist = 0;
-            //float result = 0;
-
-            // Works, but the above approach results in nearest-neighbor snapping. 
-            //for (uint Zt = 0; Zt <= 1; ++Zt) {
-            //    for (uint Yt = 0; Yt <= 1; ++Yt) {
-            //        for (uint Xt = 0; Xt <= 1; ++Xt) {
-            //            float srceXf = (float)srcelX * rel_X;
-            //            float srceYf = (float)srcelY * rel_Y;
-            //            float srceZf = (float)srcelZ * rel_Z;
-            //            float area = 1;
-
-            //            srceX = fmin(srcelX - 1, floor(srceXf + Xt));
-            //            srceY = fmin(srcelY - 1, floor(srceYf + Yt));
-            //            srceZ = fmin(srcelZ - 1, floor(srceZf + Zt));
-
-            //            float areaX = fmin(srcelX - 1, floor(srceXf + (1 - Xt)));
-            //            float areaY = fmin(srcelY - 1, floor(srceYf + (1 - Yt)));
-            //            float areaZ = fmin(srcelZ - 1, floor(srceZf + (1 - Zt)));
-
-            //            srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
-
-            //            float lenX = fmax((float)areaX - srceXf, srceXf - (float)areaX);
-            //            float lenY = fmax((float)areaY - srceYf, srceYf - (float)areaY);
-            //            float lenZ = fmax((float)areaZ - srceZf, srceZf - (float)areaZ);
-            //            if (lenX > 0) { area *= lenX; }
-            //            if (lenY > 0) { area *= lenY; }
-            //            if (lenZ > 0) { area *= lenZ; }
-
-            //            result += (float)(B[srce_N]) * area;
-            //            tot_dist += area;
-            //        }
-            //    }
-            //}
-            // A[n] = (_type_)(result / tot_dist); //  (result / tot_dist);
+                A[n] = (_type_)(p[3]);
+            }
+            else {
+                // desintation is shrinking the source image. Assume the user already performed a blur and simply drop pixels.
+                uint srceX = fmin(srcelX - 1, floor(((float)X * (float)srcelX / (float)(destlX)) + 0.5));
+                uint srceY = fmin(srcelY - 1, floor(((float)Y * (float)srcelY / (float)(destlY)) + 0.5));
+                uint srceZ = fmin(srcelZ - 1, floor(((float)Z * (float)srcelZ / (float)(destlX)) + 0.5));
+                uint srce_N = (srceZ * srcelX * srcelY) + (srceY * srcelX) + srceX;
+                A[n] = B[srce_N];
+            }
         };
 
         kernel void copy_single_type_(global _type_ * A, _type_ B) {
@@ -810,8 +901,14 @@ public:
             const uint n = (uint)get_global_id(0);
             const float delta = (float)maxValue - (float)minValue;
             if (delta > 0) {
-                const uint index = fmin(floor((((float)(B[n] - minValue) / delta) * (float)ramp_length) + 0.5), ramp_length - 1);
-                A[n] = ramp[index];
+                if (n % 2 == 0) {
+                    const uint index = fmin(floor(((((float)(B[n] - minValue) /*+ 0.5f*/) / delta) * (float)ramp_length) + 0.5), ramp_length - 1);
+                    A[n] = ramp[index];
+                }
+                else {
+                    const uint index = fmin(floor((((float)(B[n] - minValue) / delta) * (float)ramp_length) + 0.5), ramp_length - 1);
+                    A[n] = ramp[index];
+                }
             }
             else {
                 A[n] = ramp[0];
@@ -3178,9 +3275,9 @@ namespace GL {
                 GL::GPU::Function kernel(std::string("ASCII") + opencl_impl::type_name<T>());
                 static gpu_array<char> ramp{ []() -> gpu_array<char> {
                     std::vector<char> chars{
-                        '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
-                        '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
-                        '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"',
+                        '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
+                        '0', 'Q', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
+                        '(', ')', '1', '{', '}', '[', ']', '?', '*', '+', '~', '<', '>', 'L', 'i', '!', 'l', 'I', '-', '_', ';', ':', ',', '\"',
                         '^', '`', '\'', '.', ' '
                     };
                     std::reverse(chars.begin(), chars.end());
@@ -6740,15 +6837,15 @@ public:
     };
 
     matrix<char> ASCII() const {
-        static std::vector<char> chars = []() { 
-            std::vector<char> D{
-                '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
-                '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
-                '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"',
-                '^', '`', '\'', '.', ' '
+        static std::vector<char> chars = []() {
+            std::vector<char> chars{
+                'Q', '&', '@', '$', 'B', 'M', 'W', '8', 'h', 'k', '%', '#', '0', 'O', 'b', 'd', 'p', 'q', 'w', 'm', 'Z',
+                'C', 'U', 'X', 'I', 'a', 'o', 'z', 'c', 'f', 'Y', 'v', 'u', 'n', 'x', 'r', 'L', 'J', 'j', 't', '|',
+                '[', ']', '(', ')', '/', '\\', '1', '{', '}', 'i', 'l', '<', '>', '?', '*', '+', '~', '!',
+                '\"', '^', ';', ':', '_', '-', ',', '\'', '.', '`', ' '
             };
-            std::reverse(D.begin(), D.end());
-            return D;
+            std::reverse(chars.begin(), chars.end());
+            return chars;
         }();
         auto ramp = matrix<char>::from_vector(chars);
         auto thisMinV = this->min();
@@ -6786,6 +6883,31 @@ public:
         mem_matrix::queue_gpu_work(GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
+        );
+        return out;
+    };
+    matrix subsample_1D(matrix<float> const& FloatingPointIndexes) const {
+        matrix out(FloatingPointIndexes.dim);
+        mem_matrix::queue_gpu_work(GL::string("subsample_1D") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, this->mem, FloatingPointIndexes.mem
+        );
+        return out;
+    };
+    matrix<unsigned int> binomial_search_smallest_gre(matrix const& find) const {
+        matrix<unsigned int> out(find.dim);
+        mem_matrix::queue_gpu_work(GL::string("binomial_search_smallest_gre") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, this->mem, find.mem, this->dim.X
+        );
+        return out;
+    };
+    // assumes *this is the sample X-coordinates. X and Y are the components of a pattern that will be sub-sampled using a catmulrom spline.
+    matrix subsample_pat(matrix const& X, matrix const& Y) const {
+        matrix out(this->dim);
+        mem_matrix::queue_gpu_work(GL::string("subsample_pat") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, Y.mem, X.mem, this->mem, X.dim.X
         );
         return out;
     };
@@ -7015,6 +7137,50 @@ public:
 
 void fnGpuProgramming() {
 #if 1
+    // 1-D pattern sampling
+    if (1) {
+        matrix<float> x_pos = matrix<float>::linear(0, 1000000, 1000000, 1, 1);
+        matrix<float> y_pos = matrix<float>::random_between(0, 1, 1000000, 1, 1);
+        matrix<float> sample_x = matrix<float>::random_between(0, 1000000, 1000000, 1, 1);
+        matrix<float> sample_y = sample_x.subsample_pat(x_pos, y_pos);
+
+
+
+
+        //if (auto r = sample_y.read(), r2 = sample_x.read(); r && r2) {
+        //    for (int i = 0; i < sample_y.size(0); ++i) {
+        //        print(std::to_string(r2[i]) + ", " + std::to_string(r[i]));
+        //    }
+        //}
+
+
+
+        //auto x_pos = matrix<float>::from_vector({ 0.0f, 1000.0f, 2000.0f, 3000.0f, 4000.0f, 5000.0f, 6000.0f, 7000.0f });
+        //matrix<float> y_pos = x_pos;
+        //auto sample_x = matrix<float>::from_vector({ -50, 0, 50, 500, 1000, 1500, 2000, 2500, 6500, 7000, 7500 });
+        //auto sample_y = sample_x.subsample_pat(x_pos, y_pos);
+
+        //if (auto r = sample_y.read()) {
+        //    for (int i = 0; i < sample_y.size(0); ++i) {
+        //        print(r[i]);
+        //    }
+        //}
+
+
+
+
+
+        //auto y_pos = x_pos.pown(2);
+
+        //auto linear_interp = input.subsample_1D(matrix<float>::from_vector({ 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5 }));
+        //if (auto r = linear_interp.read()) {
+        //    for (int i = 0; i < linear_interp.size(0); ++i) {
+        //        print(r[i]);
+        //    }
+        //}
+
+    }
+
     // Conway's Game of Life, using the GPU. 2-3 times faster than previous approach. 
     if (1) {
         using namespace GL;
@@ -7047,8 +7213,7 @@ void fnGpuProgramming() {
                 game_w = game_w2;
                 game_h = game_h2;
 
-                // auto s1 =;
-                state = state.resize_stretch(game_h, game_w, 1); // std::move(s1); // performing the "move" is causing the crash...
+                state = state.resize(game_h, game_w, 1);
 
                 avg_framerate_n = 0;
                 avg_framerate = 0;
@@ -7095,10 +7260,94 @@ void fnGpuProgramming() {
             auto blur_5 = blur_4.convolve(matrix<float>::guassian_kernel(53, 53));
             print((statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true));
 #else
-            auto A = state.resize(game_h / 3, game_w, 1);
-            auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
-            auto C = state.halfsize<false>().doublesize().resize(game_h / 3, game_w, 1);
-            print(A.ASCII().join(0, B.ASCII()).join(0, C.ASCII()).to_string({}, true));
+            //// column position (0 to game_w)
+            //auto col_pos = (matrix<float>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) / (float)game_h2).floor().cast<unsigned int>();
+
+            //// row position (0 to game_h)
+            //auto row_pos = (matrix<unsigned int>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) % game_h2);            
+            //// UV coordinates for the screen
+            //auto screen_U = col_pos.cast<float>() / (float)game_w2;
+            //auto screen_V = row_pos.cast<float>() / (float)game_h2;
+
+
+
+
+
+            class MatrixImage {
+            public:
+                std::vector<matrix<float>> mip_maps;
+                MatrixImage() : mip_maps() {};
+                MatrixImage(matrix<float> const& srce) : mip_maps(calculate_mip_maps(srce)) {};
+                MatrixImage(MatrixImage const&) = default;
+                MatrixImage(MatrixImage &&) = default;
+                MatrixImage& operator=(MatrixImage const&) = default;
+                MatrixImage& operator=(MatrixImage&&) = default;
+                ~MatrixImage() = default;
+                
+                matrix<float> debug_display() const {
+                    matrix<float> out = mip_maps[0];
+                    for (int i = 1; i < mip_maps.size(); ++i) {
+                        out = out.join(1, mip_maps[i].resize(mip_maps[0].size(0), mip_maps[i].size(1) + 16, 1));
+                    }
+                    return out;
+                }
+                matrix<float> sum() const {
+                    matrix<float> out = mip_maps[0];
+                    for (int i = 1; i < mip_maps.size(); ++i) {
+                        out += mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1);
+                    }
+                    return out;
+                }
+
+            private:
+                static std::vector<matrix<float>> calculate_mip_maps(matrix<float> const& srce) {
+                    std::vector<matrix<float>> out;
+                    const matrix<float>* current = &srce;
+                    out.push_back(*current);
+                    auto kernel = matrix<float>::guassian_kernel(3, 3);
+                    while ((current->size(0) > 1) && (current->size(1) > 1)) {
+                        //auto blurred = current->convolve(kernel);
+                        //out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+                        out.push_back(current->halfsize<false>()); // faster but less accurate
+                        current = &out[out.size()-1];
+                    }
+                    return out;
+                };
+
+            };
+            
+            MatrixImage img(state.cast<float>());
+            //img.debug_display();
+            print(img.sum().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
+
+
+
+
+
+
+
+
+            //auto texture_y = (screen_U * (float)I5.size(1)).cast<unsigned int>().min(I5.size(1) - 1);
+            //auto texture_x = (screen_V * (float)I5.size(0)).cast<unsigned int>().min(I5.size(0) - 1);
+            //auto texture_N = ((texture_y * I5.size(0)) + texture_x).min((I5.size(1) * I5.size(0)) - 1);
+            //auto scaled = I5.resample(texture_N);
+
+            
+
+
+
+
+
+
+
+
+
+
+            //auto A = state.resize(game_h2 / 3, game_w2, 1);
+            //auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h2 / 3, game_w2, 1);
+            //auto C = state.halfsize<false>().doublesize().resize(game_h2 / 3, game_w2, 1);
+            //auto print_me = A.ASCII().join(0, B.ASCII()).join(0, C.ASCII());
+            //print(print_me.to_string({}, true));
 #endif
 #endif
             state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel(7, 7)) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
