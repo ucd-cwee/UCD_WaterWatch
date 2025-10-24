@@ -322,6 +322,36 @@ public:
             // need to try and model off of the weighted mean approach, similar to: https://en.wikipedia.org/wiki/Bilinear_interpolation
             // search for: "bilinear interp formula using weighted mean with 3-d matrix"
 
+            //if (srceZ >= srcelZ) { A[n] = 0; }
+            //else {
+            //    float _x = (float)srcelX * rel_X;
+            //    float _y = (float)srcelY * rel_Y;
+            //    float _x1 = floor(_x);
+            //    float _x2 = floor(_x + 1.0f);
+            //    float _y1 = floor(_y);
+            //    float _y2 = floor(_y + 1.0f);
+
+            //    uint n1 = (srceZ * srcelX * srcelY) + (uint)(_y2 * srcelX) + (uint)_x1;
+            //    uint n2 = (srceZ * srcelX * srcelY) + (uint)(_y2 * srcelX) + (uint)_x2;
+            //    uint n3 = (srceZ * srcelX * srcelY) + (uint)(_y1 * srcelX) + (uint)_x1;
+            //    uint n4 = (srceZ * srcelX * srcelY) + (uint)(_y1 * srcelX) + (uint)_x2;
+
+            //    float w11 = fabs(_x2 - _x) * fabs(_y2 - _y);
+            //    float w12 = fabs(_x2 - _x) * fabs(_y - _y1);
+            //    float w21 = fabs(_x - _x1) * fabs(_y2 - _y);
+            //    float w22 = fabs(_x - _x1) * fabs(_y - _y1);
+
+            //    //A[n] = (_type_)((float)(B[n1] + B[n2] + B[n3] + B[n4]) / 4.0f);
+
+
+            //    // A[n] = (_type_)(((float)(B[n1])*w11) + ((float)(B[n2]) * w12) + ((float)(B[n3]) * w21) + ((float)(B[n4]) * w22));
+            //}
+            
+
+
+
+
+
             //float tot_dist = 0;
             //float result = 0;
 
@@ -6771,7 +6801,7 @@ public:
             };
             auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 3, y = 1
             auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 3            
-            return cast<float>().convolve(kernel1).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+            return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
 
             // return cast<float>().convolve(guassian_kernel(3, 3)).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
         }
@@ -6790,7 +6820,7 @@ public:
             };
             auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 5, y = 1
             auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 5            
-            return cast<float>().convolve(kernel1).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), size(1), size(2)).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+            return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
 
             // return cast<float>().convolve(guassian_kernel(5, 5)).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
         }
