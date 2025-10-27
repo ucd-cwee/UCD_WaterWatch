@@ -1,531 +1,649 @@
-/*
-WaterWatch, Energy Demand Management System for Water Systems. For further information on WaterWatch, please see https://cwee.ucdavis.edu/waterwatch.
-
-Copyright (c) 2019 - 2023 by Robert Good, Erin Musabandesu, and David Linz. (Email: rtgood@ucdavis.edu). All rights reserved.
-
-Created: RTG	/	2023
-History: RTG	/	2023		1. Initial Release.
-
-Copyright / Usage Details: You are allowed to include the source code in any product (commercial, shareware, freeware or otherwise)
-when your product is released in binary form. You are allowed to modify the source code in any way you want
-except you cannot modify the copyright details at the top of each module. If you want to distribute source
-code with your application, then you are only allowed to distribute versions released by the author. This is
-to maintain a single distribution point for the source code.
-*/
-
 #pragma once
 #include "dynamic_allocator.h"
 #include "../ScriptLanguageTesting/atomic_allocator.h"
 
-template< class objType, class keyType >
-class cweeBTreeNode {
+
+template< class objType, class keyType, int maxChildrenPerNode >
+class bTree {
 public:
-	keyType							key;			// key used for sorting
-	objType* object;			// if != NULL pointer to object stored in leaf node
-	cweeBTreeNode* parent;			// parent node
-	cweeBTreeNode* next;			// next sibling
-	cweeBTreeNode* prev;			// prev sibling
-	int								numChildren;	// number of children
-	cweeBTreeNode* firstChild;		// first child
-	cweeBTreeNode* lastChild;		// last child
-};
+	struct bTreeNode {
+		keyType	// key used for sorting						
+			key;			
+		objType // if != nullptr pointer to object stored in leaf node
+			*object;		
+		bTreeNode // parent node
+			*parent;		
+		bTreeNode // next sibling
+			*next;			
+		bTreeNode // prev sibling
+			*prev;			
+		int	// number of children							
+			numChildren;	
+		bTreeNode // first child
+			*firstChild;	
+		bTreeNode // last child
+			*lastChild;		
+	};
 
-template< class objType, class keyType, int maxChildrenPerNode >
-class cweeBTree {
 public:
-	cweeBTree();
-	~cweeBTree();
-
-	void							Init();
-	void							Shutdown();
-
-	cweeBTreeNode<objType, keyType>* Add(objType* object, keyType key);						// add an object to the tree
-	void							Remove(cweeBTreeNode<objType, keyType>* node);				// remove an object node from the tree
-
-	cweeBTreeNode<objType, keyType>* NodeFind(keyType key) const;								// find an object using the given key
-	cweeBTreeNode<objType, keyType>* NodeFindSmallestLargerEqual(keyType key) const;			// find an object with the smallest key larger equal the given key
-	cweeBTreeNode<objType, keyType>* NodeFindLargestSmallerEqual(keyType key) const;			// find an object with the largest key smaller equal the given key
-
-	objType* Find(keyType key) const;									// find an object using the given key
-	objType* FindSmallestLargerEqual(keyType key) const;				// find an object with the smallest key larger equal the given key
-	objType* FindLargestSmallerEqual(keyType key) const;				// find an object with the largest key smaller equal the given key
-
-	cweeBTreeNode<objType, keyType>* GetRoot() const;											// returns the root node of the tree
-	cweeBTreeNode<objType, keyType>* GetNext(cweeBTreeNode<objType, keyType>* node) const;		// goes through all nodes of the tree
-	cweeBTreeNode<objType, keyType>* GetNextLeaf(cweeBTreeNode<objType, keyType>* node) const;	// goes through all leaf nodes of the tree
-
-private:
-	cweeBTreeNode<objType, keyType>* root;
-	GL::atomic_allocator< cweeBTreeNode<objType, keyType>> nodeAllocator;
-
-	cweeBTreeNode<objType, keyType>* AllocNode();
-	void							FreeNode(cweeBTreeNode<objType, keyType>* node);
-	void							SplitNode(cweeBTreeNode<objType, keyType>* node);
-	cweeBTreeNode<objType, keyType>* MergeNodes(cweeBTreeNode<objType, keyType>* node1, cweeBTreeNode<objType, keyType>* node2);
-
-	void							CheckTree_r(cweeBTreeNode<objType, keyType>* node, int& numNodes) const;
-	void							CheckTree() const;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTree<objType, keyType, maxChildrenPerNode>::cweeBTree() {
-	root = NULL;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTree<objType, keyType, maxChildrenPerNode>::~cweeBTree() {
-	Shutdown();
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::Init() {
-	root = AllocNode();
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::Shutdown() {
-	root = NULL;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::Add(objType* object, keyType key) {
-	cweeBTreeNode<objType, keyType>* node, * child, * newNode;
-
-	if (root == NULL) {
+	bTree() {
 		root = AllocNode();
-	}
+	};
+	~bTree() {
+		root = nullptr;
+	};
 
-	if (root->numChildren >= maxChildrenPerNode) {
+	// add an object to the tree
+	bTreeNode* Add(objType* object, keyType key) {
+		bTreeNode
+			*node, 
+			*child, 
+			*newNode;
+
+		if (root == nullptr) root = AllocNode();
+		
+
+		if (root->numChildren >= maxChildrenPerNode) {
+			newNode = AllocNode();
+			newNode->key = root->key;
+			newNode->firstChild = root;
+			newNode->lastChild = root;
+			newNode->numChildren = 1;
+			root->parent = newNode;
+			SplitNode(root);
+			root = newNode;
+		}
+
 		newNode = AllocNode();
-		newNode->key = root->key;
-		newNode->firstChild = root;
-		newNode->lastChild = root;
-		newNode->numChildren = 1;
-		root->parent = newNode;
-		SplitNode(root);
-		root = newNode;
-	}
+		newNode->key = key;
+		newNode->object = object;
 
-	newNode = AllocNode();
-	newNode->key = key;
-	newNode->object = object;
+		for (node = root; node->firstChild != nullptr; node = child) {
+			if (key > node->key) node->key = key;
+			
+			// find the first child with a key larger equal to the key of the new node
+			for (child = node->firstChild; child->next; child = child->next) 
+				if (key <= child->key) 
+					break;		
 
-	for (node = root; node->firstChild != NULL; node = child) {
-
-		if (key > node->key) {
-			node->key = key;
-		}
-
-		// find the first child with a key larger equal to the key of the new node
-		for (child = node->firstChild; child->next; child = child->next) {
-			if (key <= child->key) {
-				break;
-			}
-		}
-
-		if (child->object) {
-
-			if (key <= child->key) {
-				// insert new node before child
-				if (child->prev) {
-					child->prev->next = newNode;
+			if (child->object) {
+				if (key <= child->key) {
+					// insert new node before child
+					if (child->prev) child->prev->next = newNode;					
+					else node->firstChild = newNode;					
+					newNode->prev = child->prev;
+					newNode->next = child;
+					child->prev = newNode;
 				}
 				else {
-					node->firstChild = newNode;
+					// insert new node after child
+					if (child->next) child->next->prev = newNode;					
+					else node->lastChild = newNode;					
+					newNode->prev = child;
+					newNode->next = child->next;
+					child->next = newNode;
 				}
-				newNode->prev = child->prev;
-				newNode->next = child;
-				child->prev = newNode;
+
+				newNode->parent = node;
+				node->numChildren++;
+
+				return newNode;
 			}
-			else {
-				// insert new node after child
-				if (child->next) {
-					child->next->prev = newNode;
-				}
+
+			// make sure the child has room to store another node
+			if (child->numChildren >= maxChildrenPerNode) {
+				SplitNode(child);
+				if (key <= child->prev->key) child = child->prev;				
+			}
+		}
+
+		// we only end up here if the root node is empty
+		newNode->parent = root;
+		root->key = key;
+		root->firstChild = newNode;
+		root->lastChild = newNode;
+		root->numChildren++;
+
+		return newNode;
+	};	
+	// remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+	void Remove(bTreeNode* node) {
+		bTreeNode* parent;
+
+		// unlink the node from it's parent
+		if (node->prev) node->prev->next = node->next;		
+		else node->parent->firstChild = node->next;		
+		if (node->next) node->next->prev = node->prev;		
+		else node->parent->lastChild = node->prev;		
+		node->parent->numChildren--;
+
+		// make sure there are no parent nodes with a single child
+		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
+			if (parent->next) parent = MergeNodes(parent, parent->next);			
+			else if (parent->prev) parent = MergeNodes(parent->prev, parent);
+			
+			// a parent may not use a key higher than the key of its last child
+			if (parent->key > parent->lastChild->key) parent->key = parent->lastChild->key;
+			
+			if (parent->numChildren > maxChildrenPerNode) {
+				SplitNode(parent);
+				break;
+			}
+		}
+		// a parent may not use a key higher than the key of it's last child
+		for (; (parent != nullptr) && (parent->lastChild != nullptr); parent = parent->parent)		
+			if (parent->key > parent->lastChild->key) 
+				parent->key = parent->lastChild->key;			
+		
+		// actually free the node
+		FreeNode(node);
+
+		// remove the root node if it has a single internal node as child
+		if ((root->numChildren == 1) && (root->firstChild->object == nullptr)) {
+			bTreeNode* oldRoot = root;
+			root->firstChild->parent = nullptr;
+			root = root->firstChild;
+			FreeNode(oldRoot);
+		}
+	};				
+	// find an object using the given key
+	bTreeNode* NodeFind(keyType key) const {
+		for (bTreeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+			while (node->next) {
+				if (node->key >= key) break;				
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key == key) return node;				
+				else return nullptr;				
+			}
+		}
+		return nullptr;
+	};								
+	// find an object with the smallest key larger equal the given key
+	bTreeNode* NodeFindSmallestLargerEqual(keyType key) const {
+		if (root == nullptr) return nullptr;
+		for (bTreeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+			while (node->next) {
+				if (node->key >= key) break;				
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key >= key) return node;				
+				else return nullptr;				
+			}
+		}
+		return nullptr;
+	};;			
+	// find an object with the largest key smaller equal the given key
+	bTreeNode* NodeFindLargestSmallerEqual(keyType key) const {
+		bTreeNode
+			*node, 
+			*smaller;
+
+		if (root == nullptr) return nullptr;
+		for (node = root->firstChild, smaller = nullptr; node != nullptr; node = node->firstChild) {
+			while (node->next) {
+				if (node->key >= key) break;				
+				smaller = node;
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key <= key) return node;				
+				else if (smaller == nullptr) return nullptr;				
 				else {
-					node->lastChild = newNode;
-				}
-				newNode->prev = child;
-				newNode->next = child->next;
-				child->next = newNode;
-			}
-
-			newNode->parent = node;
-			node->numChildren++;
-
-#ifdef BTREE_CHECK
-			CheckTree();
-#endif
-
-			return newNode;
-		}
-
-		// make sure the child has room to store another node
-		if (child->numChildren >= maxChildrenPerNode) {
-			SplitNode(child);
-			if (key <= child->prev->key) {
-				child = child->prev;
-			}
-		}
-	}
-
-	// we only end up here if the root node is empty
-	newNode->parent = root;
-	root->key = key;
-	root->firstChild = newNode;
-	root->lastChild = newNode;
-	root->numChildren++;
-
-#ifdef BTREE_CHECK
-	CheckTree();
-#endif
-
-	return newNode;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::Remove(cweeBTreeNode<objType, keyType>* node) {
-	cweeBTreeNode<objType, keyType>* parent;
-
-	// unlink the node from it's parent
-	if (node->prev) {
-		node->prev->next = node->next;
-	}
-	else {
-		node->parent->firstChild = node->next;
-	}
-	if (node->next) {
-		node->next->prev = node->prev;
-	}
-	else {
-		node->parent->lastChild = node->prev;
-	}
-	node->parent->numChildren--;
-
-
-
-	// make sure there are no parent nodes with a single child
-	for (parent = node->parent; parent != root && parent->numChildren <= 1; parent = parent->parent) {
-
-		if (parent->next) {
-			parent = MergeNodes(parent, parent->next);
-		}
-		else if (parent->prev) {
-			parent = MergeNodes(parent->prev, parent);
-		}
-
-		// a parent may not use a key higher than the key of it's last child
-		if (parent->key > parent->lastChild->key) {
-			parent->key = parent->lastChild->key;
-		}
-
-		if (parent->numChildren > maxChildrenPerNode) {
-			SplitNode(parent);
-			break;
-		}
-	}
-	for (; parent != NULL && parent->lastChild != NULL; parent = parent->parent) {
-		// a parent may not use a key higher than the key of it's last child
-		if (parent->key > parent->lastChild->key) {
-			parent->key = parent->lastChild->key;
-		}
-	}
-
-	// free the node
-	FreeNode(node);
-
-	// remove the root node if it has a single internal node as child
-	if (root->numChildren == 1 && root->firstChild->object == NULL) {
-		cweeBTreeNode<objType, keyType>* oldRoot = root;
-		root->firstChild->parent = NULL;
-		root = root->firstChild;
-		FreeNode(oldRoot);
-	}
-
-#ifdef BTREE_CHECK
-	CheckTree();
-#endif
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::NodeFind(keyType key) const {
-	cweeBTreeNode<objType, keyType>* node;
-
-	for (node = root->firstChild; node != NULL; node = node->firstChild) {
-		while (node->next) {
-			if (node->key >= key) {
-				break;
-			}
-			node = node->next;
-		}
-		if (node->object) {
-			if (node->key == key) {
-				return node;
-			}
-			else {
-				return NULL;
-			}
-		}
-	}
-	return NULL;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::NodeFindSmallestLargerEqual(keyType key) const {
-	cweeBTreeNode<objType, keyType>* node;
-
-	if (root == NULL) {
-		return NULL;
-	}
-
-	for (node = root->firstChild; node != NULL; node = node->firstChild) {
-		while (node->next) {
-			if (node->key >= key) {
-				break;
-			}
-			node = node->next;
-		}
-		if (node->object) {
-			if (node->key >= key) {
-				return node;
-			}
-			else {
-				return NULL;
-			}
-		}
-	}
-	return NULL;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::NodeFindLargestSmallerEqual(keyType key) const {
-	cweeBTreeNode<objType, keyType>* node;
-
-	if (root == NULL) {
-		return NULL;
-	}
-
-	cweeBTreeNode<objType, keyType>* smaller = NULL;
-	for (node = root->firstChild; node != NULL; node = node->firstChild) {
-		while (node->next) {
-			if (node->key >= key) {
-				break;
-			}
-			smaller = node;
-			node = node->next;
-		}
-		if (node->object) {
-			if (node->key <= key) {
-				return node;
-			}
-			else if (smaller == NULL) {
-				return NULL;
-			}
-			else {
-				node = smaller;
-				if (node->object) {
-					return node;
+					node = smaller;
+					if (node->object) return node;					
 				}
 			}
 		}
-	}
-	return NULL;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline objType* cweeBTree<objType, keyType, maxChildrenPerNode>::Find(keyType key) const {
-	cweeBTreeNode<objType, keyType>* node = NodeFind(key);
-	if (node == NULL) {
-		return NULL;
-	}
-	else {
-		return node->object;
-	}
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline objType* cweeBTree<objType, keyType, maxChildrenPerNode>::FindSmallestLargerEqual(keyType key) const {
-	cweeBTreeNode<objType, keyType>* node = NodeFindSmallestLargerEqual(key);
-	if (node == NULL) {
-		return NULL;
-	}
-	else {
-		return node->object;
-	}
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline objType* cweeBTree<objType, keyType, maxChildrenPerNode>::FindLargestSmallerEqual(keyType key) const {
-	cweeBTreeNode<objType, keyType>* node = NodeFindLargestSmallerEqual(key);
-	if (node == NULL) {
-		return NULL;
-	}
-	else {
-		return node->object;
-	}
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::GetRoot() const {
-	return root;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::GetNext(cweeBTreeNode<objType, keyType>* node) const {
-	if (node->firstChild) {
-		return node->firstChild;
-	}
-	else {
-		while (node && node->next == NULL) {
-			node = node->parent;
+		return nullptr;
+	};	
+	// find an object using the given key
+	objType* Find(keyType key) const {
+		if (bTreeNode* node = NodeFind(key)) return node->object;		
+		else return nullptr;		
+	};									
+	// find an object with the smallest key larger equal the given key
+	objType* FindSmallestLargerEqual(keyType key) const {
+		if (bTreeNode* node = NodeFindSmallestLargerEqual(key)) return node->object;		
+		else return nullptr;
+	};		
+	// find an object with the largest key smaller equal the given key
+	objType* FindLargestSmallerEqual(keyType key) const {
+		if (bTreeNode* node = NodeFindLargestSmallerEqual(key)) return node->object;		
+		else return nullptr;		
+	};		
+	// returns the root node of the tree
+	bTreeNode*  GetRoot() const {
+		return root;
+	}; 
+	// goes through all nodes of the tree
+	static bTreeNode*  GetNext(bTreeNode* node) {
+		if (node->firstChild) return node->firstChild;		
+		else {
+			while (node && (node->next == nullptr)) node = node->parent;			
+			return node;
 		}
-		return node;
-	}
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::GetNextLeaf(cweeBTreeNode<objType, keyType>* node) const {
-	if (node->firstChild) {
-		while (node->firstChild) {
-			node = node->firstChild;
-		}
-		return node;
-	}
-	else {
-		while (node && node->next == NULL) {
-			node = node->parent;
-		}
-		if (node) {
-			node = node->next;
-			while (node->firstChild) {
-				node = node->firstChild;
-			}
+	};	
+	// goes through all leaf nodes of the tree
+	static bTreeNode*  GetNextLeaf(bTreeNode* node) {
+		if (node->firstChild) {
+			while (node->firstChild) node = node->firstChild;			
 			return node;
 		}
 		else {
-			return NULL;
+			while (node && (node->next == nullptr)) node = node->parent;			
+			if (node) {
+				node = node->next;
+				while (node->firstChild) node = node->firstChild;				
+				return node;
+			}
+			else return nullptr;			
 		}
-	}
-};
+	};
 
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::AllocNode() {
-	cweeBTreeNode<objType, keyType>* node = nodeAllocator.Alloc();
-	node->key = 0;
-	node->parent = NULL;
-	node->next = NULL;
-	node->prev = NULL;
-	node->numChildren = 0;
-	node->firstChild = NULL;
-	node->lastChild = NULL;
-	node->object = NULL;
-	return node;
-};
+private:
+	bTreeNode* root;
+	GL::atomic_allocator< bTreeNode > nodeAllocator;
 
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::FreeNode(cweeBTreeNode<objType, keyType>* node) {
-	nodeAllocator.Free(node);
-};
+	bTreeNode* 
+		AllocNode() {
+		bTreeNode* node = nodeAllocator.Alloc();
+		node->key = 0;
+		node->parent = nullptr;
+		node->next = nullptr;
+		node->prev = nullptr;
+		node->numChildren = 0;
+		node->firstChild = nullptr;
+		node->lastChild = nullptr;
+		node->object = nullptr;
+		return node;
+	};
+	void							
+		FreeNode(bTreeNode* node) {
+		nodeAllocator.Free(node);
+	};
+	void							
+		SplitNode(bTreeNode* node) {
+		int i;
+		bTreeNode* child, * newNode;
 
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::SplitNode(cweeBTreeNode<objType, keyType>* node) {
-	int i;
-	cweeBTreeNode<objType, keyType>* child, * newNode;
+		// allocate a new node
+		newNode = AllocNode();
+		newNode->parent = node->parent;
 
-	// allocate a new node
-	newNode = AllocNode();
-	newNode->parent = node->parent;
-
-	// divide the children over the two nodes
-	child = node->firstChild;
-	child->parent = newNode;
-	for (i = 3; i < node->numChildren; i += 2) {
-		child = child->next;
+		// divide the children over the two nodes
+		child = node->firstChild;
 		child->parent = newNode;
-	}
-
-	newNode->key = child->key;
-	newNode->numChildren = node->numChildren / 2;
-	newNode->firstChild = node->firstChild;
-	newNode->lastChild = child;
-
-	node->numChildren -= newNode->numChildren;
-	node->firstChild = child->next;
-
-	child->next->prev = NULL;
-	child->next = NULL;
-
-	if (node->prev) {
-		node->prev->next = newNode;
-	}
-	else {
-		node->parent->firstChild = newNode;
-	}
-	newNode->prev = node->prev;
-	newNode->next = node;
-	node->prev = newNode;
-
-	node->parent->numChildren++;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline cweeBTreeNode<objType, keyType>* cweeBTree<objType, keyType, maxChildrenPerNode>::MergeNodes(cweeBTreeNode<objType, keyType>* node1, cweeBTreeNode<objType, keyType>* node2) {
-	cweeBTreeNode<objType, keyType>* child;
-
-	for (child = node1->firstChild; child->next; child = child->next) {
-		child->parent = node2;
-	}
-	child->parent = node2;
-	child->next = node2->firstChild;
-	node2->firstChild->prev = child;
-	node2->firstChild = node1->firstChild;
-	node2->numChildren += node1->numChildren;
-
-	// unlink the first node from the parent
-	if (node1->prev) {
-		node1->prev->next = node2;
-	}
-	else {
-		node1->parent->firstChild = node2;
-	}
-	node2->prev = node1->prev;
-	node2->parent->numChildren--;
-
-	FreeNode(node1);
-
-	return node2;
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::CheckTree_r(cweeBTreeNode<objType, keyType>* node, int& numNodes) const {
-	int numChildren;
-	cweeBTreeNode<objType, keyType>* child;
-
-	numNodes++;
-
-	// the root node may have zero children and leaf nodes always have zero children, all other nodes should have at least 2 and at most maxChildrenPerNode children
-	// the key of a node may never be larger than the key of it's last child
-
-	numChildren = 0;
-	for (child = node->firstChild; child; child = child->next) {
-		numChildren++;
-		// recurse down the tree
-		CheckTree_r(child, numNodes);
-	}
-};
-
-template< class objType, class keyType, int maxChildrenPerNode >
-__forceinline void cweeBTree<objType, keyType, maxChildrenPerNode>::CheckTree() const {
-	int numNodes = 0;
-	cweeBTreeNode<objType, keyType>* node, * lastNode;
-
-	CheckTree_r(root, numNodes);
-
-	// all the leaf nodes should be ordered
-	lastNode = GetNextLeaf(GetRoot());
-	if (lastNode) {
-		for (node = GetNextLeaf(lastNode); node; lastNode = node, node = GetNextLeaf(node)) {
-
+		for (i = 3; i < node->numChildren; i += 2) {
+			child = child->next;
+			child->parent = newNode;
 		}
-	}
+
+		newNode->key = child->key;
+		newNode->numChildren = node->numChildren / 2;
+		newNode->firstChild = node->firstChild;
+		newNode->lastChild = child;
+
+		node->numChildren -= newNode->numChildren;
+		node->firstChild = child->next;
+
+		child->next->prev = nullptr;
+		child->next = nullptr;
+
+		if (node->prev) {
+			node->prev->next = newNode;
+		}
+		else {
+			node->parent->firstChild = newNode;
+		}
+		newNode->prev = node->prev;
+		newNode->next = node;
+		node->prev = newNode;
+
+		node->parent->numChildren++;
+	};;
+	bTreeNode* 
+		MergeNodes(bTreeNode* node1, bTreeNode* node2) {
+		bTreeNode* child;
+
+		for (child = node1->firstChild; child->next; child = child->next) {
+			child->parent = node2;
+		}
+		child->parent = node2;
+		child->next = node2->firstChild;
+		node2->firstChild->prev = child;
+		node2->firstChild = node1->firstChild;
+		node2->numChildren += node1->numChildren;
+
+		// unlink the first node from the parent
+		if (node1->prev) {
+			node1->prev->next = node2;
+		}
+		else {
+			node1->parent->firstChild = node2;
+		}
+		node2->prev = node1->prev;
+		node2->parent->numChildren--;
+
+		FreeNode(node1);
+
+		return node2;
+	};
+
+};
+
+//template< class objType, class keyType, int maxChildrenPerNode >
+class atomic_tree {
+public:
+	using objType = int;
+	using keyType = int;
+	static constexpr int maxChildrenPerNode = 10;
+
+	class atomic_treeNode {
+	public:
+		keyType	// key used for sorting						
+			key;
+		objType // if != nullptr pointer to object stored in leaf node
+			*object;
+		atomic_treeNode // parent node
+			*parent;
+		atomic_treeNode // next sibling
+			*next;
+		atomic_treeNode // prev sibling
+			*prev;
+		int	// number of children							
+			numChildren;
+		atomic_treeNode // first child
+			*firstChild;
+		atomic_treeNode // last child
+			*lastChild;
+		std::recursive_mutex
+			mutex;
+	};
+
+public:
+	atomic_tree() {
+		root = AllocNode();
+	};
+	~atomic_tree() {
+		root = nullptr;
+	};
+
+	// add an object to the tree
+	atomic_treeNode* Add(objType* object, keyType key) {
+		atomic_treeNode
+			*node = nullptr,
+			*child,
+			*newNode;
+
+		if (!root) {
+			newNode = AllocNode();
+			if (!root.compare_exchange_weak(node, newNode)) {
+				FreeNode(newNode);
+				newNode = nullptr;
+			}
+		}
+		std::scoped_lock root_lock(root.load()->mutex);
+
+		// continue from here...
+
+		if (root->numChildren >= maxChildrenPerNode) {
+			newNode = AllocNode();
+			newNode->key = root->key;
+			newNode->firstChild = root;
+			newNode->lastChild = root;
+			newNode->numChildren = 1;
+			root->parent = newNode;
+			SplitNode(root);
+			root = newNode;
+		}
+
+		newNode = AllocNode();
+		newNode->key = key;
+		newNode->object = object;
+
+		for (node = root; node->firstChild != nullptr; node = child) {
+			if (key > node->key) node->key = key;
+
+			// find the first child with a key larger equal to the key of the new node
+			for (child = node->firstChild; child->next; child = child->next)
+				if (key <= child->key)
+					break;
+
+			if (child->object) {
+				if (key <= child->key) {
+					// insert new node before child
+					if (child->prev) child->prev->next = newNode;
+					else node->firstChild = newNode;
+					newNode->prev = child->prev;
+					newNode->next = child;
+					child->prev = newNode;
+				}
+				else {
+					// insert new node after child
+					if (child->next) child->next->prev = newNode;
+					else node->lastChild = newNode;
+					newNode->prev = child;
+					newNode->next = child->next;
+					child->next = newNode;
+				}
+
+				newNode->parent = node;
+				node->numChildren++;
+
+				return newNode;
+			}
+
+			// make sure the child has room to store another node
+			if (child->numChildren >= maxChildrenPerNode) {
+				SplitNode(child);
+				if (key <= child->prev->key) child = child->prev;
+			}
+		}
+
+		// we only end up here if the root node is empty
+		newNode->parent = root;
+		root->key = key;
+		root->firstChild = newNode;
+		root->lastChild = newNode;
+		root->numChildren++;
+
+		return newNode;
+	};
+	// remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+	void Remove(atomic_treeNode* node) {
+		atomic_treeNode* parent;
+
+		// unlink the node from it's parent
+		if (node->prev) node->prev->next = node->next;
+		else node->parent->firstChild = node->next;
+		if (node->next) node->next->prev = node->prev;
+		else node->parent->lastChild = node->prev;
+		node->parent->numChildren--;
+
+		// make sure there are no parent nodes with a single child
+		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
+			if (parent->next) parent = MergeNodes(parent, parent->next);
+			else if (parent->prev) parent = MergeNodes(parent->prev, parent);
+
+			// a parent may not use a key higher than the key of its last child
+			if (parent->key > parent->lastChild->key) parent->key = parent->lastChild->key;
+
+			if (parent->numChildren > maxChildrenPerNode) {
+				SplitNode(parent);
+				break;
+			}
+		}
+		// a parent may not use a key higher than the key of it's last child
+		for (; (parent != nullptr) && (parent->lastChild != nullptr); parent = parent->parent)
+			if (parent->key > parent->lastChild->key)
+				parent->key = parent->lastChild->key;
+
+		// actually free the node
+		FreeNode(node);
+
+		// remove the root node if it has a single internal node as child
+		if ((root->numChildren == 1) && (root->firstChild->object == nullptr)) {
+			atomic_treeNode* oldRoot = root;
+			root->firstChild->parent = nullptr;
+			root = root->firstChild;
+			FreeNode(oldRoot);
+		}
+	};
+	// find an object using the given key
+	atomic_treeNode* NodeFind(keyType key) const {
+		for (atomic_treeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+			while (node->next) {
+				if (node->key >= key) break;
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key == key) return node;
+				else return nullptr;
+			}
+		}
+		return nullptr;
+	};
+	// find an object with the smallest key larger equal the given key
+	atomic_treeNode* NodeFindSmallestLargerEqual(keyType key) const {
+		if (root == nullptr) return nullptr;
+		for (atomic_treeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+			while (node->next) {
+				if (node->key >= key) break;
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key >= key) return node;
+				else return nullptr;
+			}
+		}
+		return nullptr;
+	};;
+	// find an object with the smallest key larger equal the given key
+	objType* FindSmallestLargerEqual(keyType key) const {
+		if (atomic_treeNode* node = NodeFindSmallestLargerEqual(key)) return node->object;
+		else return nullptr;
+	};
+	// returns the root node of the tree
+	atomic_treeNode* GetRoot() const {
+		return root;
+	};
+	// goes through all nodes of the tree
+	static atomic_treeNode* GetNext(atomic_treeNode* node) {
+		if (node->firstChild) return node->firstChild;
+		else {
+			while (node && (node->next == nullptr)) node = node->parent;
+			return node;
+		}
+	};
+	// goes through all leaf nodes of the tree
+	static atomic_treeNode* GetNextLeaf(atomic_treeNode* node) {
+		if (node->firstChild) {
+			while (node->firstChild) node = node->firstChild;
+			return node;
+		}
+		else {
+			while (node && (node->next == nullptr)) node = node->parent;
+			if (node) {
+				node = node->next;
+				while (node->firstChild) node = node->firstChild;
+				return node;
+			}
+			else return nullptr;
+		}
+	};
+
+private:
+	std::atomic<atomic_treeNode*> // will be recovered by the nodeAllocator on destruction. 
+		root;
+	GL::atomic_allocator< atomic_treeNode > // will automatically recover memory if unreleased
+		nodeAllocator; 
+
+	atomic_treeNode*
+		AllocNode() {
+		atomic_treeNode* node = nodeAllocator.Alloc();
+		node->key = 0;
+		node->parent = nullptr;
+		node->next = nullptr;
+		node->prev = nullptr;
+		node->numChildren = 0;
+		node->firstChild = nullptr;
+		node->lastChild = nullptr;
+		node->object = nullptr;		
+		return node;
+	};
+	void
+		FreeNode(atomic_treeNode* node) {
+		nodeAllocator.Free(node);
+	};
+	void
+		SplitNode(atomic_treeNode* node) {
+		int i;
+		atomic_treeNode* child, * newNode;
+
+		// allocate a new node
+		newNode = AllocNode();
+		newNode->parent = node->parent;
+
+		// divide the children over the two nodes
+		child = node->firstChild;
+		child->parent = newNode;
+		for (i = 3; i < node->numChildren; i += 2) {
+			child = child->next;
+			child->parent = newNode;
+		}
+
+		newNode->key = child->key;
+		newNode->numChildren = node->numChildren / 2;
+		newNode->firstChild = node->firstChild;
+		newNode->lastChild = child;
+
+		node->numChildren -= newNode->numChildren;
+		node->firstChild = child->next;
+
+		child->next->prev = nullptr;
+		child->next = nullptr;
+
+		if (node->prev) {
+			node->prev->next = newNode;
+		}
+		else {
+			node->parent->firstChild = newNode;
+		}
+		newNode->prev = node->prev;
+		newNode->next = node;
+		node->prev = newNode;
+
+		node->parent->numChildren++;
+	};;
+	atomic_treeNode*
+		MergeNodes(atomic_treeNode* node1, atomic_treeNode* node2) {
+		atomic_treeNode* child;
+
+		for (child = node1->firstChild; child->next; child = child->next) {
+			child->parent = node2;
+		}
+		child->parent = node2;
+		child->next = node2->firstChild;
+		node2->firstChild->prev = child;
+		node2->firstChild = node1->firstChild;
+		node2->numChildren += node1->numChildren;
+
+		// unlink the first node from the parent
+		if (node1->prev) {
+			node1->prev->next = node2;
+		}
+		else {
+			node1->parent->firstChild = node2;
+		}
+		node2->prev = node1->prev;
+		node2->parent->numChildren--;
+
+		FreeNode(node1);
+
+		return node2;
+	};
+
 };

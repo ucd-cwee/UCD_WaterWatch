@@ -275,10 +275,16 @@ public:
         GL::string out;
 #define R(...) GL::string(" "#__VA_ARGS__" ")
         out = out + R(
-            kernel void copy_type_(global _type_ * A, global _type_ * B) {
+        kernel void copy_type_(global _type_ * A, global _type_ * B) {
             const uint n = get_global_id(0);
             A[n] = B[n];
         };
+
+        kernel void copy_slice_type_(global _type_* A, global _type_* B, uint offset) {
+            const uint n = get_global_id(0);
+            A[n] = B[n + offset];
+        };
+
         kernel void subsample_1D_type_(global _type_* destination, global _type_* Source, global float* Indexes) {
             // assumes that positions are floating-point indices, e.g. 2.5 means halfway between index 2 and 3
             const uint n = get_global_id(0);
@@ -1384,7 +1390,7 @@ namespace GL {
                 else return false;
             };
         };
-        cweeBTree< dynamic_block, unsigned int, 8>
+        bTree< dynamic_block, unsigned int, 8>
             free_tree{};
         unsigned int 
             total_allocations{ 0 };
@@ -1811,7 +1817,7 @@ namespace GL {
 
             class kernel_list {
             public:
-                cweeBTree<struct _cl_kernel, size_t, 10> functions;
+                bTree<struct _cl_kernel, size_t, 10> functions;
 
                 void push_back(GL::string const& name, cl_kernel new_kernel) {
                     if (auto* node = functions.NodeFind(name.hash())) {
@@ -1831,9 +1837,7 @@ namespace GL {
                     }
                 }
 
-                kernel_list() {
-                    functions.Init();
-                };
+                kernel_list() {};
                 ~kernel_list() {
                     if (auto* n = functions.GetRoot()) {
                         while (n) {
@@ -1843,7 +1847,6 @@ namespace GL {
                             n = functions.GetNextLeaf(n);
                         }
                     }
-                    functions.Shutdown();
                 };
 
             };
@@ -4573,7 +4576,7 @@ public:
 private:
     GL::atomic_allocator< dynamic_block > 
         block_alloc;
-    cweeBTree< dynamic_block, unsigned long long, 8>
+    bTree< dynamic_block, unsigned long long, 8>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4915,7 +4918,7 @@ public:
 private:
     GL::atomic_allocator< dynamic_block >
         block_alloc;
-    cweeBTree< dynamic_block, unsigned long long, 8>
+    bTree< dynamic_block, unsigned long long, 8>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4927,11 +4930,13 @@ private:
     __declspec(noinline) void try_combine(dynamic_block* lhs) {
         if (lhs) {
             if (lhs->is_free) {
+                // if the block is still valid and alive, we should give it the opportunity to be re-used if recent enough
                 if (lhs->sub_buffer) {
-                    // has enough time passed to warrant this?
                     long long curr_epoch = GL::util::get_current_epoch();
-                    if ((curr_epoch - lhs->generated_epoch) < 1000) return;
+                    // 1 second limit to extended lifetime
+                    if ((curr_epoch - lhs->generated_epoch) < 1000) return; 
                 }
+                // try to combine with split children (if any exists)
                 if (lhs->next) {
                     if (lhs->next->is_available && lhs->next->is_free) {
                         // we are free, and the next pointer is free
@@ -4971,6 +4976,7 @@ private:
                         (void)try_combine(lhs);
                     }
                 }
+                // try to combine with parent (if one exists)
                 if (lhs->prev) {
                     if (lhs->prev->is_available && lhs->prev->is_free) {
                         // we are free, and the prev pointer is free
@@ -5032,9 +5038,6 @@ private:
     dynamic_block* Alloc(unsigned long long N) {
         if (N == 0) return nullptr;
 
-        // N must be aligned with WORKGROUP_SIZE
-        // N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-
         dynamic_block* free_block = nullptr;
 
         // try to get a free block
@@ -5084,7 +5087,7 @@ private:
             child_block->prev = free_block;
             child_block->next = free_block->next;
             child_block->start_position = free_block->start_position + N;
-            child_block->length = free_block->length - N; // free_block->length - N;
+            child_block->length = free_block->length - N;
             child_block->sub_buffer = nullptr;
             child_block->is_free = true;
             child_block->is_available = true;
@@ -5210,19 +5213,6 @@ private:
 
         void clear() {
             if (len == 0) return;
-
-            //// review the list and ensure all good values
-            //for (int l = len - 1; l >= 0; --l) {
-            //    if (!operator[](l)) {
-            //        // move the last event to here
-            //        operator[](l) = operator[](len - 1);
-            //        operator[](len - 1) = nullptr;
-            //        // reduce len
-            //        len = len - 1;
-            //    }
-            //}
-
-            //if (len == 0) return;
 
             ::clWaitForEvents((cl_int)len, &operator[](0));
             for (long long L = 0; L < len; ++L) {
@@ -5467,8 +5457,19 @@ private:
         check_for_errors(::clSetKernelArg(cl_kernel, position, sizeof(T), (void*)&constant));
     };
     static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position) { }
-    template<class T, class... U>  __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const T& parameter, const U&... parameters) {
-        if constexpr (std::is_same_v<T, mem_matrix>) {
+    template<template<class> typename G, typename T, class... U> 
+    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const G<T>& parameter, const U&... parameters) {
+        if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
+            check_for_errors(::clSetKernelArgSVMPointer(cl_kernel, starting_position, parameter.get()));
+        }
+        else {
+            link_parameter(cl_kernel, starting_position, parameter);
+        }
+        link_parameters(cl_kernel, waitlist, starting_position + 1u, parameters...);
+    };
+    template<class G, class... U>  
+    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const G& parameter, const U&... parameters) {
+        if constexpr (std::is_same_v<G, mem_matrix>) {
             link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
             for (size_t i = 0; i < parameter.events.size(); ++i) {
                 waitlist.insert(parameter.events.operator[](i));
@@ -5483,9 +5484,9 @@ private:
 public:
     // for a given name and count (with optional params, including either "mem_matrix const&" or POD-types) it will queue a GPU kernel for completion. 
     template<class... T> static void queue_gpu_work(GL::string const& name, unsigned long long count, const T&... parameters) {
-        /*static*/ std::set<cl_event>
+        static std::set<cl_event>
             waitlist_set;
-        /*static*/ std::vector<cl_event>
+        static std::vector<cl_event>
             waitlist;
         auto& prog
             = mem_matrix::program();
@@ -5499,8 +5500,8 @@ public:
             cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
             cl_range_local = cl::NDRange(WORKGROUP_SIZE);
 
-        // waitlist_set.clear();
-        // waitlist.clear();
+        waitlist_set.clear();
+        waitlist.clear();
 
         if (!kernel) {
             prog.functions.push_back(name, ::clCreateKernel(prog.program.cl_program.get().obj.get(), name.c_str().data(), &err));
@@ -5581,6 +5582,8 @@ public:
 #endif
 
 };
+
+
 
 template <typename T>
 class matrix {
@@ -6691,10 +6694,9 @@ public:
             if (auto W = out.write()) {
                 if (R_lhs && R_rhs && W) {
                     auto N = out.dim.count();
-                    for (unsigned int n = 0; n < N; ++n) {
-                        if (n >= N) continue;
-
-                        // parallel::Std_For<unsigned int>(0, out.size(), [&](unsigned int n) {
+                    // for (unsigned int n = 0; n < N; ++n) {
+                    // if (n >= N) continue;
+                    parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {  
                         T v = (T)0;
                         const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
                         const unsigned int destination_X = n - (final_num_rows * destination_Y);
@@ -6702,7 +6704,7 @@ public:
                             v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
                         }
                         W[n] = v;
-                    } // );
+                    });
                 }
             }
             return out;
@@ -7128,6 +7130,64 @@ public:
         return os;
     };
 
+public:
+    std::vector<T> copy(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const {
+        std::vector<T> out;
+        length = std::min<size_t>(length, this->size() - offset);
+        if (length > 1000000) {
+            // copy the whole thing "normally"
+            if (auto r = this->read()) {
+                out.resize(length);
+                for (size_t i = 0; i < length; ++i) {
+                    out[i] = r[offset + i];
+                }
+            }
+        }
+        else if (length > 0) {
+            // copy the requested slice
+            size_t alignment = WORKGROUP_SIZE;
+            std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
+                (T*)::clSVMAlloc(this->mem.program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                    sizeof(T) * (((length + (alignment - 1)) / alignment) * alignment)
+                    , alignment),
+                [](T* p) {
+                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                }
+            );
+            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                length,
+                slice, this->mem, (unsigned int)offset
+            );
+            this->mem.events.clear();
+
+            out.resize(length);
+            for (size_t i = 0; i < length; ++i) {
+                out[i] = slice[i];
+            }
+        }
+        return out;
+    };
+    T operator[](unsigned int n) const {
+        size_t alignment = WORKGROUP_SIZE;
+        std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
+            (T*)::clSVMAlloc(this->mem.program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                sizeof(T) * (((1 + (alignment - 1)) / alignment) * alignment)
+                , alignment),
+            [](T* p) {
+                ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+            }
+        );
+        mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+            1,
+            slice, this->mem, n
+        );
+        this->mem.events.clear();
+        return slice[0];
+    };
+    T operator()(unsigned int x, unsigned int y = 0, unsigned int z = 0) const {
+        return operator[](x + (y * dim.X) + (z * dim.Y * dim.X));
+    };
+
 };
 
 
@@ -7141,10 +7201,17 @@ void fnGpuProgramming() {
     if (1) {
         matrix<float> x_pos = matrix<float>::linear(0, 1000000, 1000000, 1, 1);
         matrix<float> y_pos = matrix<float>::random_between(0, 1, 1000000, 1, 1);
+        
         matrix<float> sample_x = matrix<float>::random_between(0, 1000000, 1000000, 1, 1);
         matrix<float> sample_y = sample_x.subsample_pat(x_pos, y_pos);
 
+        print(sample_y[0]);
 
+        auto sliced = x_pos.copy(0, 10); // get a copy of the matrix with an offset and length param
+        for (auto& x : sliced) print(x);
+
+        // test std_for with the matrix_multiply ... should end up doing 10000 multiplications. 
+        matrix<float>::constant(1, 10000).matrix_multiply(matrix<float>::constant(1, 10000).transpose()).read();
 
 
         //if (auto r = sample_y.read(), r2 = sample_x.read(); r && r2) {
@@ -7269,8 +7336,11 @@ void fnGpuProgramming() {
             //auto screen_U = col_pos.cast<float>() / (float)game_w2;
             //auto screen_V = row_pos.cast<float>() / (float)game_h2;
 
-
-
+            //matrix<float>::test_vector(100);
+            //matrix<float>::test_vector(1000);
+            //matrix<float>::test_vector(10000);
+            //matrix<float>::test_vector(100000);
+            //matrix<float>::test_vector(1000000);
 
 
             class MatrixImage {
@@ -7290,14 +7360,14 @@ void fnGpuProgramming() {
                         out = out.join(1, mip_maps[i].resize(mip_maps[0].size(0), mip_maps[i].size(1) + 16, 1));
                     }
                     return out;
-                }
+                };
                 matrix<float> sum() const {
                     matrix<float> out = mip_maps[0];
                     for (int i = 1; i < mip_maps.size(); ++i) {
                         out += mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1);
                     }
                     return out;
-                }
+                };
 
             private:
                 static std::vector<matrix<float>> calculate_mip_maps(matrix<float> const& srce) {
@@ -7306,9 +7376,9 @@ void fnGpuProgramming() {
                     out.push_back(*current);
                     auto kernel = matrix<float>::guassian_kernel(3, 3);
                     while ((current->size(0) > 1) && (current->size(1) > 1)) {
-                        //auto blurred = current->convolve(kernel);
-                        //out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
-                        out.push_back(current->halfsize<false>()); // faster but less accurate
+                        auto blurred = current->convolve(kernel);
+                        out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+                        // out.push_back(current->halfsize<false>()); // faster but less accurate
                         current = &out[out.size()-1];
                     }
                     return out;
