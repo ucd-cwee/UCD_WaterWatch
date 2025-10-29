@@ -1456,7 +1456,7 @@ namespace GL {
                 kernel_list() {};
                 ~kernel_list() {
                     functions.ForEach([](auto* n) {
-                        ::clReleaseKernel(n->object);
+                        ::clReleaseKernel(n->data.leaf.object);
                     });
                 };
 
@@ -3155,8 +3155,8 @@ private:
         // try to get a free block
         (void)free_tree.RemoveIf(N, [&](auto* tree_node) {
             if (tree_node->key >= N) {
-                if (tree_node->object->is_available) {
-                    free_block = tree_node->object;                    
+                if (tree_node->data.leaf.object->is_available) {
+                    free_block = tree_node->data.leaf.object;
                     return true;
                 }
             }
@@ -5367,6 +5367,7 @@ void fnGpuProgramming() {
             print(std::to_string(2000000.0 / sw.stop()) + " ops / sec [2 par]");
         }
         if (1) {
+            // note that this map is not 
             GL::atomic_map<int, int*> tree;
             GL::stopwatch sw;
             for (size_t i = 0; i < 1000000; ++i) {
