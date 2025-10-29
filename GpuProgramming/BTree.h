@@ -1,7 +1,7 @@
 #pragma once
 #include "dynamic_allocator.h"
 #include "../ScriptLanguageTesting/atomic_allocator.h"
-
+#include <variant>
 
 template< class objType, class keyType, int maxChildrenPerNode >
 class bTree {
@@ -24,6 +24,12 @@ public:
 		bTreeNode // last child
 			*lastChild;		
 	};
+
+protected:
+	bTreeNode*
+		root;
+	GL::atomic_allocator< bTreeNode >
+		nodeAllocator;
 
 public:
 	bTree() {
@@ -244,11 +250,7 @@ public:
 	};
 
 private:
-	bTreeNode* root;
-	GL::atomic_allocator< bTreeNode > nodeAllocator;
-
-	bTreeNode* 
-		AllocNode() {
+	bTreeNode* AllocNode() {
 		bTreeNode* node = nodeAllocator.Alloc();
 		node->key = 0;
 		node->parent = nullptr;
@@ -260,12 +262,10 @@ private:
 		node->object = nullptr;
 		return node;
 	};
-	void							
-		FreeNode(bTreeNode* node) {
+	void FreeNode(bTreeNode* node) {
 		nodeAllocator.Free(node);
 	};
-	void							
-		SplitNode(bTreeNode* node) {
+	void SplitNode(bTreeNode* node) {
 		int i;
 		bTreeNode* child, * newNode;
 
@@ -304,8 +304,7 @@ private:
 
 		node->parent->numChildren++;
 	};;
-	bTreeNode* 
-		MergeNodes(bTreeNode* node1, bTreeNode* node2) {
+	bTreeNode* MergeNodes(bTreeNode* node1, bTreeNode* node2) {
 		bTreeNode* child;
 
 		for (child = node1->firstChild; child->next; child = child->next) {
@@ -334,17 +333,10 @@ private:
 
 };
 
-//template< class objType, class keyType, int maxChildrenPerNode >
+template< class objType, class keyType, int maxChildrenPerNode >
 class atomic_tree {
 public:
-	using objType = int;
-	using keyType = int;
-	static constexpr int maxChildrenPerNode = 10;
-
-	class atomic_treeNode {
-	public:
-		keyType	// key used for sorting						
-			key;
+	struct atomic_treeNode {
 		objType // if != nullptr pointer to object stored in leaf node
 			*object;
 		atomic_treeNode // parent node
@@ -353,69 +345,78 @@ public:
 			*next;
 		atomic_treeNode // prev sibling
 			*prev;
-		int	// number of children							
-			numChildren;
 		atomic_treeNode // first child
 			*firstChild;
 		atomic_treeNode // last child
 			*lastChild;
-		std::recursive_mutex
-			mutex;
+		const keyType // key used for sorting						
+			key;
+		int	// number of children							
+			numChildren;
+		bool
+			is_leaf;
 	};
+
+private:
+	atomic_treeNode* // will be recovered by the nodeAllocator on destruction. 
+		root;
+	GL::atomic_allocator< atomic_treeNode > // will automatically recover memory if unreleased
+		nodeAllocator;
+	mutable std::shared_mutex
+		mutex;
 
 public:
-	atomic_tree() {
-		root = AllocNode();
-	};
-	~atomic_tree() {
-		root = nullptr;
-	};
+	atomic_tree() 
+		: root{ nullptr }
+		, nodeAllocator() 
+	{};
+	atomic_tree(atomic_tree const&) = delete;
+	atomic_tree(atomic_tree &&) = delete;
+	atomic_tree& operator=(atomic_tree const&) = delete;
+	atomic_tree& operator=(atomic_tree&&) = delete;
+	~atomic_tree() = default;
 
-	// add an object to the tree
-	atomic_treeNode* Add(objType* object, keyType key) {
+	void // add an object to the tree
+		Add(objType* object, keyType key) {
 		atomic_treeNode
-			*node = nullptr,
-			*child,
-			*newNode;
+			* node = nullptr,
+			* child = nullptr,
+			* newNode;
+
+		std::scoped_lock 
+			locked(mutex);
 
 		if (!root) {
-			newNode = AllocNode();
-			if (!root.compare_exchange_weak(node, newNode)) {
-				FreeNode(newNode);
-				newNode = nullptr;
-			}
+			root = AllocNode(key);
 		}
-		std::scoped_lock root_lock(root.load()->mutex);
-
-		// continue from here...
 
 		if (root->numChildren >= maxChildrenPerNode) {
-			newNode = AllocNode();
-			newNode->key = root->key;
+			newNode = AllocNode(root->key);
 			newNode->firstChild = root;
 			newNode->lastChild = root;
 			newNode->numChildren = 1;
 			root->parent = newNode;
-			SplitNode(root);
+			SplitNode(root); // to-do
 			root = newNode;
 		}
 
-		newNode = AllocNode();
-		newNode->key = key;
+		newNode = AllocNode(key);
 		newNode->object = object;
+		newNode->is_leaf = true;
 
-		for (node = root; node->firstChild != nullptr; node = child) {
-			if (key > node->key) node->key = key;
-
+		for (node = root; node->firstChild; node = child) {
+			// since a parent key may not be smaller than the largest child key...
+			if (key > node->key) const_cast<keyType&>(node->key) = key;
+			
 			// find the first child with a key larger equal to the key of the new node
-			for (child = node->firstChild; child->next; child = child->next)
+			for (child = node->firstChild; child->next; child = child->next) 
 				if (key <= child->key)
-					break;
+					break;			
 
-			if (child->object) {
+			if (child->is_leaf) {
 				if (key <= child->key) {
 					// insert new node before child
-					if (child->prev) child->prev->next = newNode;
+					if (child->prev) child->prev->next = newNode;					
 					else node->firstChild = newNode;
 					newNode->prev = child->prev;
 					newNode->next = child;
@@ -433,7 +434,7 @@ public:
 				newNode->parent = node;
 				node->numChildren++;
 
-				return newNode;
+				return;
 			}
 
 			// make sure the child has room to store another node
@@ -445,101 +446,172 @@ public:
 
 		// we only end up here if the root node is empty
 		newNode->parent = root;
-		root->key = key;
+		// const_cast<keyType&>(root->key) = key;
 		root->firstChild = newNode;
 		root->lastChild = newNode;
 		root->numChildren++;
+	};	
+	void // remove an object node from the tree if the key is found. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+		Remove(keyType key) {
+		std::scoped_lock 
+			locked(mutex);
 
-		return newNode;
-	};
-	// remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
-	void Remove(atomic_treeNode* node) {
-		atomic_treeNode* parent;
+		NodeRemove(NodeFind(key));
+	};	
+	bool // remove an object node from the tree if the key and object match. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+		Remove(objType* object, keyType key) {
+		std::scoped_lock 
+			locked(mutex);
 
-		// unlink the node from it's parent
-		if (node->prev) node->prev->next = node->next;
-		else node->parent->firstChild = node->next;
-		if (node->next) node->next->prev = node->prev;
-		else node->parent->lastChild = node->prev;
-		node->parent->numChildren--;
-
-		// make sure there are no parent nodes with a single child
-		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
-			if (parent->next) parent = MergeNodes(parent, parent->next);
-			else if (parent->prev) parent = MergeNodes(parent->prev, parent);
-
-			// a parent may not use a key higher than the key of its last child
-			if (parent->key > parent->lastChild->key) parent->key = parent->lastChild->key;
-
-			if (parent->numChildren > maxChildrenPerNode) {
-				SplitNode(parent);
-				break;
+		if (atomic_treeNode* node = NodeFindSmallestLargerEqual(key)) {
+			while (node) {
+				if (node->key == key) {
+					if (node->is_leaf && (node->object == object)) {
+						NodeRemove(node);
+						return true;
+					}
+					else {
+						node = GetNextLeaf(node);
+					}
+				}
+				else {
+					return false;
+				}
 			}
 		}
-		// a parent may not use a key higher than the key of it's last child
-		for (; (parent != nullptr) && (parent->lastChild != nullptr); parent = parent->parent)
-			if (parent->key > parent->lastChild->key)
-				parent->key = parent->lastChild->key;
-
-		// actually free the node
-		FreeNode(node);
-
-		// remove the root node if it has a single internal node as child
-		if ((root->numChildren == 1) && (root->firstChild->object == nullptr)) {
-			atomic_treeNode* oldRoot = root;
-			root->firstChild->parent = nullptr;
-			root = root->firstChild;
-			FreeNode(oldRoot);
-		}
+		return false;
 	};
-	// find an object using the given key
-	atomic_treeNode* NodeFind(keyType key) const {
-		for (atomic_treeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
-			while (node->next) {
-				if (node->key >= key) break;
-				node = node->next;
+	template <class Lambda> bool // removes an object if the Lambda function returns true. 
+		RemoveIf(keyType search_start, Lambda const& F) {
+		std::scoped_lock 
+			locked(mutex);
+		if (auto tree_node = NodeFindSmallestLargerEqual(search_start)) {
+			while (tree_node) {
+				if (tree_node->is_leaf) {
+					if (F(tree_node)) {
+						NodeRemove(tree_node);
+						return true;
+					}
+				}
+				tree_node = GetNextLeaf(tree_node);
 			}
-			if (node->object) {
-				if (node->key == key) return node;
-				else return nullptr;
-			}
+		}
+		return false;
+	};
+	objType* // Returns the pointer to the underlying object if found at the provided key.
+		At(keyType key) const {
+		std::shared_lock locked(mutex);
+		if (auto* node = NodeFind(key)) {
+			return node->object;
 		}
 		return nullptr;
 	};
-	// find an object with the smallest key larger equal the given key
-	atomic_treeNode* NodeFindSmallestLargerEqual(keyType key) const {
+	template <class Lambda> void // Iterates over each Leaf node and calls the lambda function.
+		ForEach(Lambda const& F) const {
+		std::shared_lock locked(mutex);
+		if (auto* n = GetRoot()) {
+			while (n) {
+				if (n->is_leaf) {
+					F(n);
+				}
+				n = GetNextLeaf(n);
+			}
+		}
+	};
+
+private:	
+	void // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+		NodeRemove(atomic_treeNode* node) {
+		atomic_treeNode
+			*parent;
+
+		if (node) {
+			// unlink the node from it's parent
+			if (node->prev) node->prev->next = node->next;
+			else node->parent->firstChild = node->next;
+			if (node->next) node->next->prev = node->prev;
+			else node->parent->lastChild = node->prev;
+			node->parent->numChildren--;
+
+			// make sure there are no parent nodes with a single child
+			for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
+				if (parent->next) parent = MergeNodes(parent, parent->next);
+				else if (parent->prev) parent = MergeNodes(parent->prev, parent);
+
+				// a parent may not use a key higher than the key of its last child
+				if (parent->key > parent->lastChild->key) const_cast<keyType&>(parent->key) = parent->lastChild->key;
+
+				if (parent->numChildren > maxChildrenPerNode) {
+					SplitNode(parent);
+					break;
+				}
+			}
+			// a parent may not use a key higher than the key of it's last child
+			for (; (parent != nullptr) && (parent->lastChild != nullptr); parent = parent->parent)
+				if (parent->key > parent->lastChild->key) const_cast<keyType&>(parent->key) = parent->lastChild->key;
+
+			// actually free the node
+			FreeNode(node);
+
+			// remove the root node if it has a single internal node as child
+			if ((root->numChildren == 1) && (!root->firstChild->is_leaf)) {
+				atomic_treeNode* oldRoot = root;
+				root->firstChild->parent = nullptr;
+				root = root->firstChild;
+				FreeNode(oldRoot);
+			}
+		}
+	};	
+	atomic_treeNode* // find an object using the given key
+		NodeFind(keyType key) const {
+		if (root) {
+			for (atomic_treeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+				while (node->next) {
+					if (node->key >= key) break;
+					node = node->next;
+				}
+				if (node->is_leaf) {
+					if (node->key == key) return node;
+					else return nullptr;
+				}
+			}
+		}
+		return nullptr;
+	};	
+	atomic_treeNode* // find an object with the smallest key larger equal the given key
+		NodeFindSmallestLargerEqual(keyType key) const {
 		if (root == nullptr) return nullptr;
 		for (atomic_treeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
 			while (node->next) {
 				if (node->key >= key) break;
 				node = node->next;
 			}
-			if (node->object) {
+			if (node->is_leaf) {
 				if (node->key >= key) return node;
 				else return nullptr;
 			}
 		}
 		return nullptr;
-	};;
-	// find an object with the smallest key larger equal the given key
-	objType* FindSmallestLargerEqual(keyType key) const {
+	};;	
+	objType* // find an object with the smallest key larger equal the given key
+		FindSmallestLargerEqual(keyType key) const {
 		if (atomic_treeNode* node = NodeFindSmallestLargerEqual(key)) return node->object;
 		else return nullptr;
-	};
-	// returns the root node of the tree
-	atomic_treeNode* GetRoot() const {
+	};	
+	atomic_treeNode* // returns the root node of the tree
+		GetRoot() const {
 		return root;
-	};
-	// goes through all nodes of the tree
-	static atomic_treeNode* GetNext(atomic_treeNode* node) {
+	};	
+	static atomic_treeNode* // goes through all nodes of the tree
+		GetNext(atomic_treeNode* node) {
 		if (node->firstChild) return node->firstChild;
 		else {
 			while (node && (node->next == nullptr)) node = node->parent;
 			return node;
 		}
-	};
-	// goes through all leaf nodes of the tree
-	static atomic_treeNode* GetNextLeaf(atomic_treeNode* node) {
+	};	
+	static atomic_treeNode* // goes through all leaf nodes of the tree
+		GetNextLeaf(atomic_treeNode* node) {
 		if (node->firstChild) {
 			while (node->firstChild) node = node->firstChild;
 			return node;
@@ -556,46 +628,36 @@ public:
 	};
 
 private:
-	std::atomic<atomic_treeNode*> // will be recovered by the nodeAllocator on destruction. 
-		root;
-	GL::atomic_allocator< atomic_treeNode > // will automatically recover memory if unreleased
-		nodeAllocator; 
-
-	atomic_treeNode*
-		AllocNode() {
-		atomic_treeNode* node = nodeAllocator.Alloc();
-		node->key = 0;
-		node->parent = nullptr;
-		node->next = nullptr;
-		node->prev = nullptr;
-		node->numChildren = 0;
-		node->firstChild = nullptr;
-		node->lastChild = nullptr;
-		node->object = nullptr;		
-		return node;
+	atomic_treeNode* 
+		AllocNode(keyType key) {
+		return nodeAllocator.Alloc(atomic_treeNode{
+			nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, key, 0, false
+		});
 	};
-	void
+	void 
 		FreeNode(atomic_treeNode* node) {
 		nodeAllocator.Free(node);
 	};
-	void
+	void 
 		SplitNode(atomic_treeNode* node) {
 		int i;
-		atomic_treeNode* child, * newNode;
+		atomic_treeNode
+			*child, 
+			*newNode;
 
 		// allocate a new node
-		newNode = AllocNode();
+		newNode = AllocNode(keyType{}); // wrong key -- guessing
 		newNode->parent = node->parent;
 
 		// divide the children over the two nodes
-		child = node->firstChild;
+		child = node->firstChild;		
 		child->parent = newNode;
-		for (i = 3; i < node->numChildren; i += 2) {
+		for (i = 3; child && (i < node->numChildren); i += 2) {
 			child = child->next;
 			child->parent = newNode;
 		}
-
-		newNode->key = child->key;
+		
+		const_cast<keyType&>(newNode->key) = child->key;
 		newNode->numChildren = node->numChildren / 2;
 		newNode->firstChild = node->firstChild;
 		newNode->lastChild = child;
@@ -606,25 +668,21 @@ private:
 		child->next->prev = nullptr;
 		child->next = nullptr;
 
-		if (node->prev) {
-			node->prev->next = newNode;
-		}
-		else {
-			node->parent->firstChild = newNode;
-		}
+		if (node->prev) node->prev->next = newNode;		
+		else node->parent->firstChild = newNode;	
+
 		newNode->prev = node->prev;
 		newNode->next = node;
 		node->prev = newNode;
 
 		node->parent->numChildren++;
 	};;
-	atomic_treeNode*
+	atomic_treeNode* 
 		MergeNodes(atomic_treeNode* node1, atomic_treeNode* node2) {
-		atomic_treeNode* child;
+		atomic_treeNode
+			*child;
 
-		for (child = node1->firstChild; child->next; child = child->next) {
-			child->parent = node2;
-		}
+		for (child = node1->firstChild; child->next; child = child->next) child->parent = node2;		
 		child->parent = node2;
 		child->next = node2->firstChild;
 		node2->firstChild->prev = child;
@@ -632,12 +690,9 @@ private:
 		node2->numChildren += node1->numChildren;
 
 		// unlink the first node from the parent
-		if (node1->prev) {
-			node1->prev->next = node2;
-		}
-		else {
-			node1->parent->firstChild = node2;
-		}
+		if (node1->prev) node1->prev->next = node2;		
+		else node1->parent->firstChild = node2;
+		
 		node2->prev = node1->prev;
 		node2->parent->numChildren--;
 

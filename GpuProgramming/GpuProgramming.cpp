@@ -1358,384 +1358,9 @@ namespace GL {
         };
     };
 
-    template <typename T, unsigned int minAllocCount = (sizeof(T) << 8), unsigned int padding_bytes = 0>
-    class dynamic_allocator {         
-        struct dynamic_block {
-            dynamic_block*
-                prev;
-            dynamic_block*
-                next;
-            long long
-                generated_epoch;
-            unsigned int 
-                num;
-            unsigned int
-                original_allocation; // garbage value if is_base_block() returns false
-            bool 
-                is_free;
-            bool
-                is_available;           
-            char 
-                Padding[padding_bytes];
-
-            bool is_base_block() const {
-                return (prev == nullptr);
-            };
-            dynamic_block* get_base_block() {
-                if (prev) return prev->get_base_block();
-                else return this;
-            };
-            bool is_split() const {
-                if (next || prev) return true;
-                else return false;
-            };
-        };
-        bTree< dynamic_block, unsigned int, 8>
-            free_tree{};
-        unsigned int 
-            total_allocations{ 0 };
-        __declspec(noinline) bool try_combine(dynamic_block* lhs) {
-            if (lhs) {
-                if (lhs->is_free && lhs->next) {
-                    if (lhs->next->is_available && lhs->next->is_free) {
-                        // we are free, and the next pointer is free
-                        lhs->next->is_available = false;
-                        lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
-                        if (lhs->next->next) {
-                            lhs->next->next->prev = lhs;
-                        }
-
-                        // lhs->next is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->num);
-                        while (tree_node) {
-                            if (tree_node->object) {
-                                if (tree_node->key == lhs->next->num) {
-                                    if (tree_node->object == lhs->next) {
-                                        free_tree.Remove(tree_node);
-                                        break;
-                                    }
-                                }
-                            }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
-                        }
-
-                        lhs->next = lhs->next->next;
-
-                        if (!lhs->next && !lhs->prev) {
-                            lhs->num = lhs->original_allocation;
-                        }
-
-                        // try to combine again!
-                        (void)try_combine(lhs);
-
-                        return true;
-                    }
-                }
-                //if (lhs->is_free && lhs->prev) {
-                //    if (lhs->prev->is_available && lhs->prev->is_free) {
-                //        // we are free, and the prev pointer is free
-                //        return try_combine(lhs->prev);
-                //    }
-                //}
-            }
-            return false;
-        };
-        std::mutex 
-            mut;
-
-    public:
-        T* Alloc(unsigned int N) {
-            if (N == 0) return nullptr;
-
-            std::scoped_lock locked(mut);
-
-            dynamic_block* free_block = nullptr;
-            // try to get a free block
-            if (1) {
-                auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
-                while (tree_node) {
-                    if (tree_node->object) {
-                        if (tree_node->key >= N) {
-                            if (tree_node->object->is_available) {
-                                free_block = tree_node->object;
-                                free_block->get_base_block()->generated_epoch = GL::util::get_current_epoch();
-                                free_tree.Remove(tree_node);
-                                break;
-                            }
-                        }
-                    }
-                    tree_node = free_tree.GetNextLeaf(tree_node);
-                }                
-            }
-            // otherwise make a block
-            if (!free_block) { // allocate a new buffer to fit the requested size
-                unsigned int alloc_count = CONST_MAX(minAllocCount, ((N > minAllocCount) ? (N + (N % minAllocCount)) : N) );
-                free_block = (dynamic_block*)Mem_Alloc(sizeof(dynamic_block) + sizeof(T) * alloc_count);
-                if (!free_block) return nullptr;
-                free_block->prev = nullptr;
-                free_block->next = nullptr;
-                free_block->num = alloc_count;
-                free_block->original_allocation = alloc_count;
-                free_block->is_available = true;
-                free_block->generated_epoch = GL::util::get_current_epoch();
-                total_allocations += free_block->original_allocation;
-            }
-            // split the block if too large
-            if (free_block && (free_block->num > N)) {
-                // we got a buffer of size enough. But, if it is too large, we can share it with another, smaller allocation later.
-                long long free_block_size = sizeof(T) * (free_block->num - N);
-                long long remaining_N = ((free_block_size - (long long)sizeof(dynamic_block)) / (long long)sizeof(T));
-                if (remaining_N > 0) {
-                    dynamic_block* child_block = (dynamic_block*)(((::byte*)free_block) + sizeof(dynamic_block) + sizeof(T) * N);
-                    child_block->prev = free_block;
-                    child_block->next = free_block->next;
-                    child_block->num = remaining_N;
-                    child_block->is_free = true;
-                    child_block->is_available = true;
-                    free_block->next = child_block;
-                    if (child_block->next) child_block->next->prev = child_block;
-                    free_block->num = N;
-
-                    free_tree.Add(child_block, child_block->num);
-                }
-            }
-            // return the result
-            free_block->is_free = false;
-
-            T* out = (T*)(((::byte*)free_block) + sizeof(dynamic_block));
-            
-            std::memset(out, 0, N * sizeof(T));
-
-            return out;
-        };
-        __declspec(noinline) void Free(T* ptr) {
-            if (!ptr) return;
-
-            std::scoped_lock locked(mut);
-
-            dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
-            free_block->is_free = true;
-            try_combine(free_block);
-            if (free_block->is_base_block() && !free_block->is_split() && ((total_allocations - free_block->original_allocation) > 0)) {
-                long long curr_epoch = GL::util::get_current_epoch();
-
-                // has enough time passed to warrant this?
-                if ((curr_epoch - free_block->generated_epoch) > 1000) {
-                    total_allocations -= free_block->original_allocation;
-                    Mem_Free(free_block);
-                }
-                else {
-                    free_block->generated_epoch = curr_epoch;
-                    free_tree.Add(free_block, free_block->num);
-                }
-
-                // review the free tree and see if anyone is expired...
-                if (auto* tree_node = free_tree.GetRoot()) {
-                    while (tree_node) {
-                        if (tree_node->object) {
-                            if (try_combine(tree_node->object)) break;
-                            if (!tree_node->object->is_split() && tree_node->object->is_base_block()) {
-                                if ((curr_epoch - tree_node->object->generated_epoch) > 10) {
-                                    total_allocations -= tree_node->object->original_allocation;
-                                    Mem_Free(tree_node->object);
-
-                                    free_tree.Remove(tree_node);
-                                    break;
-                                }
-                            }                        
-                        }
-                        tree_node = free_tree.GetNextLeaf(tree_node);
-                    }
-                }
-            }
-            else {
-                free_tree.Add(free_block, free_block->num);
-            }
-        };
-        __declspec(noinline) ~dynamic_allocator() {
-            std::vector< dynamic_block* > blocks;
-            if (auto* tree_node = free_tree.GetRoot()) {
-                while (tree_node) {
-                    if (tree_node->object) {
-                        if (tree_node->object->is_base_block()) {
-                            blocks.push_back(tree_node->object);
-                        }
-                    }
-                    tree_node = free_tree.GetNextLeaf(tree_node);
-                }
-            }
-            for (auto& free_block : blocks) {
-                total_allocations -= free_block->original_allocation;
-                Mem_Free(free_block);
-            }
-            EXPECT_EQ(total_allocations, 0);
-        };
-        static char* get_padded_content(T* ptr) {
-            if (!ptr) return nullptr;
-            dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
-            return &free_block->Padding[0];
-        };
-
-        class unique_ptr {
-            T* data;
-            dynamic_allocator* parent;
-
-        public:
-            explicit unique_ptr(T* d, dynamic_allocator* p) : data{ d }, parent{ p } {};
-            unique_ptr() : data{ nullptr }, parent{ nullptr } {};
-            unique_ptr(nullptr_t) : data{ nullptr }, parent{ nullptr } {};
-            unique_ptr(unique_ptr const&) = delete;
-            unique_ptr(unique_ptr && rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
-                rhs.data = nullptr;
-                rhs.parent = nullptr;
-            };
-            unique_ptr& operator=(unique_ptr const&) = delete;
-            unique_ptr& operator=(nullptr_t) {
-                if (data && parent) { parent->Free(data); }
-                data = nullptr;
-                parent = nullptr;
-                return *this;
-            };
-            unique_ptr& operator=(unique_ptr&& rhs) noexcept {
-                if (data && parent) { parent->Free(data); }
-                data = rhs.data;
-                parent = rhs.parent;
-                rhs.data = nullptr;
-                rhs.parent = nullptr;
-                return *this;
-            };
-            ~unique_ptr() {
-                if (data && parent) { parent->Free(data); }
-            };
-
-            operator bool() const {
-                return data;
-            };
-            const T* operator->() const {
-                return data;
-            };
-            T* operator->() {
-                return data;
-            };
-            const T& operator*() const {
-                return *data;
-            };
-            T& operator*() {
-                return *data;
-            };
-            const T* get() const {
-                return data;
-            };
-            T* get() {
-                return data;
-            };
-
-            T& operator[](unsigned int N) {
-                return data[N];
-            };
-            const T& operator[](unsigned int N) const {
-                return data[N];
-            };
-
-        };
-
-        unique_ptr make_unique(unsigned int N) {
-            return unique_ptr(this->Alloc(N), this);
-        };
-        std::shared_ptr<T[]> make_shared(unsigned int N) {
-            return std::shared_ptr<T[]>(this->Alloc(N), [this](T* p) {
-                this->Free(p);
-            });
-        };
-
-    };
-
-    // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use. Optimized for heavy multithreading. 
-    template <typename _type_, size_t minAllocCount = (sizeof(_type_) << 8)>
-    class parallel_dynamic_allocator {
-    private:
-        thread_object_no_default<dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>>
-            TLS;
-
-    public:
-        parallel_dynamic_allocator() = default;
-        ~parallel_dynamic_allocator() = default;
-
-        _type_* Alloc(unsigned int N) {
-            const auto threadID = GL::util::get_thread_id();
-            _type_* out = TLS->Alloc(N);
-            auto& thread_id = reinterpret_cast<size_t&>(*dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>::get_padded_content(out));
-            thread_id = threadID;
-            return out;
-        };
-        __declspec(noinline) void Free(_type_* t) {
-            if (t) {
-                auto& thread_id = reinterpret_cast<size_t&>(*dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>::get_padded_content(t));
-                TLS[thread_id].Free(t);
-            }
-        };
-
-    };
 };
 namespace GL {
     namespace GPU {
-        BETTER_ENUM(image_channel_order, int, \
-            R = 0x10B0, \
-            A = 0x10B1, \
-            RG = 0x10B2, \
-            RA = 0x10B3, \
-            RGB = 0x10B4, \
-            RGBA = 0x10B5, \
-            BGRA = 0x10B6, \
-            ARGB = 0x10B7, \
-            INTENSITY = 0x10B8, \
-            LUMINANCE = 0x10B9, \
-            Rx = 0x10BA, \
-            RGx = 0x10BB, \
-            RGBx = 0x10BC, \
-            DEPTH = 0x10BD, \
-            DEPTH_STENCIL = 0x10BE, \
-            sRGB = 0x10BF, \
-            sRGBx = 0x10C0, \
-            sRGBA = 0x10C1, \
-            sBGRA = 0x10C2, \
-            ABGR = 0x10C3 \
-        );
-        static int channels(image_channel_order ord) {
-            int num_channels;
-            switch (ord) {
-            case image_channel_order::R: num_channels = 1; break;
-            case image_channel_order::A: num_channels = 1; break;
-            case image_channel_order::RG: num_channels = 2; break;
-            case image_channel_order::RA: num_channels = 2; break;
-            case image_channel_order::RGB: num_channels = 3; break;
-            case image_channel_order::RGBA: num_channels = 4; break;
-            case image_channel_order::BGRA: num_channels = 4; break;
-            case image_channel_order::ARGB: num_channels = 4; break;
-            case image_channel_order::INTENSITY: num_channels = 1; break;
-            case image_channel_order::LUMINANCE: num_channels = 1; break;
-            case image_channel_order::Rx: num_channels = 2; break;
-            case image_channel_order::RGx: num_channels = 3; break;
-            case image_channel_order::RGBx: num_channels = 4; break;
-            case image_channel_order::DEPTH: num_channels = 2; break;
-            case image_channel_order::DEPTH_STENCIL: num_channels = 2; break;
-            case image_channel_order::sRGB: num_channels = 3; break;
-            case image_channel_order::sRGBx: num_channels = 4; break;
-            case image_channel_order::sRGBA: num_channels = 4; break;
-            case image_channel_order::sBGRA: num_channels = 4; break;
-            case image_channel_order::ABGR: num_channels = 4; break;
-            }
-            return num_channels;
-        }
-
-        BETTER_ENUM(image_channel_type, int, \
-            SNORM_INT8 = 0x10D0, \
-            SNORM_INT16 = 0x10D1, \
-            UNORM_INT8 = 0x10D2, \
-            UNORM_INT16 = 0x10D3, \
-            FLOAT = 0x10DE \
-        );
-
         // Compiles OpenCL code and makes it available through its assigned device.
         class Program {
         public:
@@ -1810,126 +1435,42 @@ namespace GL {
                 queue;
             bool 
                 initialized = false;
-            parallel_dynamic_allocator<char> 
-                shared_mem_allocator;
-            std::map<image_channel_type, std::map<int, std::set< image_channel_order >>> 
-                image2d_channels;
 
+#if 1
             class kernel_list {
             public:
-                bTree<struct _cl_kernel, size_t, 10> functions;
+                atomic_tree<struct _cl_kernel, size_t, 10> functions;
 
                 void push_back(GL::string const& name, cl_kernel new_kernel) {
-                    if (auto* node = functions.NodeFind(name.hash())) {
-                        ::clReleaseKernel(node->object);
-                        node->object = new_kernel;
+                    if (auto* obj = functions.At(name.hash())) {
+                        ::clReleaseKernel(new_kernel);
                     }
                     else {
                         functions.Add(new_kernel, name.hash());
                     }
                 };
                 cl_kernel operator[](GL::string const& name) const {
-                    if (auto* node = functions.NodeFind(name.hash())) {
-                        return node->object;
-                    }
-                    else {
-                        return nullptr;
-                    }
+                    return functions.At(name.hash());
                 }
 
                 kernel_list() {};
                 ~kernel_list() {
-                    if (auto* n = functions.GetRoot()) {
-                        while (n) {
-                            if (n->object) {
-                                ::clReleaseKernel(n->object);
-                            }
-                            n = functions.GetNextLeaf(n);
-                        }
-                    }
+                    functions.ForEach([](auto* n) {
+                        ::clReleaseKernel(n->object);
+                    });
                 };
 
             };
 
             kernel_list functions;
-
+#endif
 
             __declspec(noinline) Program(std::vector<std::string> const& opencl_c_code)
                 : info(select_device_with_most_flops(get_devices(false)))
                 , program(info, opencl_c_code)
                 , queue(info.cl_context, info.cl_device)
                 , initialized(true)
-                , shared_mem_allocator{}
-            {
-                std::map<int, std::vector< image_channel_order >> options{
-                { 1, std::vector< image_channel_order >{
-                    image_channel_order::INTENSITY, 
-                    image_channel_order::LUMINANCE,
-                    image_channel_order::R,
-                    image_channel_order::A
-                } },
-                { 2, std::vector< image_channel_order >{
-                    image_channel_order::RG,
-                    image_channel_order::RA,
-                    image_channel_order::Rx,
-                    image_channel_order::DEPTH,
-                    image_channel_order::DEPTH_STENCIL
-                } },
-                { 3, std::vector< image_channel_order >{
-                    image_channel_order::RGB,
-                    image_channel_order::RGx,
-                    image_channel_order::sRGB,
-                } },
-                { 4, std::vector< image_channel_order >{
-                    image_channel_order::RGBA,
-                    image_channel_order::BGRA,
-                    image_channel_order::ARGB,
-                    image_channel_order::RGBx,
-                    image_channel_order::sRGBx,
-                    image_channel_order::sRGBA,
-                    image_channel_order::sBGRA,
-                    image_channel_order::ABGR
-                } }
-                };
-                
-                // allocate a buffer for testing
-                cl_int err;
-                cl::Buffer buf = cl::Buffer(
-                    get_cl_context(),
-                    CL_MEM_READ_WRITE | ((int)info.patch_intel_gpu_above_4gb << 23), // for Intel GPUs set flag CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1<<23)
-                    10 * 10 * 4 * sizeof(float), // device_buffer capacity must be a multiple of 64 Bytes for CL_MEM_USE_HOST_PTR
-                    nullptr,
-                    nullptr
-                );
-
-                // for each type
-                for (image_channel_type type : image_channel_type::_values()) {
-                    // for each order 
-                    for (auto& option : options) {
-                        int num_channel = option.first;
-                        for (image_channel_order& order : option.second) {
-                            cl::Image2D img;
-                            try {
-                                err = CL_SUCCESS;
-                                img = cl::Image2D(info.cl_context, cl::ImageFormat(
-                                    (cl_channel_order)(int)order,
-                                    (cl_channel_type)(int)type
-                                ), buf, 10, 10, 0, &err);
-                                if (err != CL_SUCCESS) {
-                                    img = nullptr;
-                                }
-                                else {
-                                    image2d_channels[type][num_channel].insert(order);
-                                }                                
-                            }
-                            catch (...) {
-                                img = nullptr;
-                            }
-                        }
-                    }
-                }
-                buf = nullptr;
-            }
+            {}
             Program() = delete;
             Program(Program const&) = delete;
             Program(Program&&) = delete;
@@ -2058,255 +1599,6 @@ namespace GL {
 
         };
 
-        template<typename T> class Memory {
-        private:
-            ulong N = 0ull; // buffer length
-            uint d = 1u; // buffer dimensions
-            bool host_buffer_exists = false;
-            bool device_buffer_exists = false;
-            bool external_host_buffer = false; // Memory object has been created with an externally supplied host buffer/pointer
-            bool is_zero_copy = false; // if possible (device is CPU or iGPU), and if allowed by user, use zero-copy buffer: host+device buffers are fused into one
-            T* host_buffer = nullptr; // host buffer
-            T* /*std::unique_ptr<T[]>*/ host_buffer_unaligned = nullptr; // unaligned host buffer (only required for zero-copy to align host_buffer)
-            cl::Buffer device_buffer; // device buffer
-            Program* device = nullptr; // pointer to linked Program            
-
-        private:
-            void initialize_auxiliary_pointers() {
-                /********/ x = s0 = host_buffer; /******/ if (d > 0x4u) s4 = host_buffer + N * 0x4ull; if (d > 0x8u) s8 = host_buffer + N * 0x8ull; if (d > 0xCu) sC = host_buffer + N * 0xCull;
-                if (d > 0x1u) y = s1 = host_buffer + N; /****/ if (d > 0x5u) s5 = host_buffer + N * 0x5ull; if (d > 0x9u) s9 = host_buffer + N * 0x9ull; if (d > 0xDu) sD = host_buffer + N * 0xDull;
-                if (d > 0x2u) z = s2 = host_buffer + N * 0x2ull; if (d > 0x6u) s6 = host_buffer + N * 0x6ull; if (d > 0xAu) sA = host_buffer + N * 0xAull; if (d > 0xEu) sE = host_buffer + N * 0xEull;
-                if (d > 0x3u) w = s3 = host_buffer + N * 0x3ull; if (d > 0x7u) s7 = host_buffer + N * 0x7ull; if (d > 0xBu) sB = host_buffer + N * 0xBull; if (d > 0xFu) sF = host_buffer + N * 0xFull;
-            }
-            inline void allocate_host_buffer(const bool allocate_host, const bool allow_zero_copy) {
-                if (allocate_host) {
-                    const ulong alignment = allow_zero_copy && device->info.uses_ram ? 4096ull : 64ull; // host_buffer must be aligned to 4096 Bytes for CL_MEM_USE_HOST_PTR, and to 64 Bytes for optimal enqueueReadBuffer performance on modern CPUs
-                    const ulong padding = allow_zero_copy && device->info.uses_ram ? 64ull : 0ull; // for CL_MEM_USE_HOST_PTR, 64 Bytes padding is required because device_buffer capacity in this case must be a multiple of 64 Bytes
-                    const ulong alloc_size = N * (ulong)d + ((alignment + padding) / sizeof(T));
-                    const ulong alloc_char_size = (alloc_size + 1) * sizeof(T) / sizeof(char);
-                    // host_buffer_unaligned = std::make_unique<T[]>(alloc_size);
-                    host_buffer_unaligned = (T*)device->shared_mem_allocator.Alloc(alloc_char_size);
-                    host_buffer = (T*)((((ulong)host_buffer_unaligned/*.get()*/ + alignment - 1ull) / alignment) * alignment); // align host_buffer by fine-tuning pointer to be a multiple of alignment
-                    initialize_auxiliary_pointers();
-                    host_buffer_exists = true;
-                }
-            }
-            inline void allocate_device_buffer(const bool allocate_device, const bool allow_zero_copy) {
-                if (allocate_device) {
-                    device->info.memory_used += (uint)(capacity() / 1048576ull); // track device memory usage
-                    if (device->info.memory_used > device->info.memory) print_error("Program \"" + device->info.name + "\" does not have enough memory. Allocating another " + to_string((uint)(capacity() / 1048576ull)) + " MB would use a total of " + to_string(device->info.memory_used) + " MB / " + to_string(device->info.memory) + " MB.");
-                    int error = 0;
-                    is_zero_copy = allow_zero_copy && host_buffer_exists && device->info.uses_ram && (!external_host_buffer || ((ulong)host_buffer % 4096ull == 0ull && capacity() % 64ull == 0ull));
-                    device_buffer = cl::Buffer( // if(is_zero_copy) { don't allocate extra memory on CPUs/iGPUs } else { allocate VRAM on GPUs }
-                        device->get_cl_context(),
-                        CL_MEM_READ_WRITE | ((int)is_zero_copy * CL_MEM_USE_HOST_PTR) | ((int)device->info.patch_intel_gpu_above_4gb << 23), // for Intel GPUs set flag CL_MEM_ALLOW_UNRESTRICTED_SIZE_INTEL = (1<<23)
-                        is_zero_copy ? ((capacity() + 63ull) / 64ull) * 64ull : capacity(), // device_buffer capacity must be a multiple of 64 Bytes for CL_MEM_USE_HOST_PTR
-                        is_zero_copy ? (void*)host_buffer : nullptr,
-                        &error
-                    );
-                    if (error == -61) print_error("Memory size is too large at " + to_string((uint)(capacity() / 1048576ull)) + " MB. Program \"" + device->info.name + "\" accepts a maximum buffer size of " + to_string(device->info.max_global_buffer) + " MB.");
-                    else if (error) print_error("Program buffer allocation failed with error code " + to_string(error) + ".");
-                    device_buffer_exists = true;
-                }
-            }
-        public:
-            std::vector<cl::Event> jobs_that_reference_me;
-
-            T* x = nullptr, * y = nullptr, * z = nullptr, * w = nullptr; // host buffer auxiliary pointers for multi-dimensional array access (array of structures)
-            T* s0 = nullptr, * s1 = nullptr, * s2 = nullptr, * s3 = nullptr, * s4 = nullptr, * s5 = nullptr, * s6 = nullptr, * s7 = nullptr, * s8 = nullptr, * s9 = nullptr, * sA = nullptr, * sB = nullptr, * sC = nullptr, * sD = nullptr, * sE = nullptr, * sF = nullptr;
-            Memory(const ulong N, const uint dimensions = 1u, const bool allocate_host = true, const bool allocate_device = true, const T value = (T)0, const bool allow_zero_copy = true)
-                : device(&opencl::get_program())
-            {
-                if (N * (ulong)dimensions == 0ull) print_error("Memory size must be larger than 0.");
-                this->N = N;
-                this->d = dimensions;
-                allocate_host_buffer(allocate_host, allow_zero_copy); // allocate host_buffer first
-                allocate_device_buffer(allocate_device, allow_zero_copy); // allocate device_buffer second
-                reset(value);
-
-                jobs_that_reference_me.reserve(2);
-            }
-            Memory(const ulong N, const uint dimensions, T* const host_buffer, const bool allocate_device = true, const bool allow_zero_copy = true)
-                : device(&opencl::get_program())
-            {
-                if (N * (ulong)dimensions == 0ull) print_error("Memory size must be larger than 0.");
-                this->N = N;
-                this->d = dimensions;
-                this->host_buffer = host_buffer;
-                initialize_auxiliary_pointers();
-                host_buffer_exists = true;
-                external_host_buffer = true;
-                allocate_device_buffer(allocate_device, allow_zero_copy);
-                write_to_device();
-
-                jobs_that_reference_me.reserve(2);
-            }
-            Memory() {} // default constructor
-            Memory(Memory const&) = delete;
-            Memory(Memory&&) = default;
-            Memory& operator=(Memory const&) = delete;
-            Memory& operator=(Memory&&) = delete;
-            ~Memory() {
-                if (jobs_that_reference_me.size() > 0) {
-                    cl::Event::waitForEvents({ &jobs_that_reference_me[0], &jobs_that_reference_me[0] + jobs_that_reference_me.size() });
-                }
-                delete_buffers();
-            };
-
-            inline void add_host_buffer() { // makes only sense if there is no host buffer yet but an existing device buffer
-                if (!host_buffer_exists && device_buffer_exists) {
-                    const ulong alloc_char_size = (N + 1) * (ulong)d * sizeof(T) / sizeof(char);
-                    host_buffer_unaligned = (T*)device->shared_mem_allocator.Alloc(alloc_char_size); // std::make_unique<T[]>(N * (ulong)d); //  
-                    host_buffer = host_buffer_unaligned/*.get()*/;
-                    initialize_auxiliary_pointers();
-                    read_from_device();
-                    host_buffer_exists = true;
-                }
-            }
-            inline void add_device_buffer(const bool allow_zero_copy = true) { // makes only sense if there is no device buffer yet but an existing host buffer
-                if (!device_buffer_exists && host_buffer_exists) {
-                    allocate_device_buffer(true, allow_zero_copy);
-                    write_to_device();
-                }
-            }
-            inline void delete_host_buffer() {
-                host_buffer_exists = false;
-                if (!external_host_buffer) {
-                    host_buffer = nullptr;
-                    // host_buffer_unaligned = nullptr;
-                    device->shared_mem_allocator.Free((char*)host_buffer_unaligned);
-                }
-                if (!device_buffer_exists) {
-                    N = 0ull;
-                    d = 1u;
-                }
-            }
-            inline void delete_device_buffer() {
-                if (device_buffer_exists) device->info.memory_used -= (uint)(capacity() / 1048576ull); // track device memory usage
-                device_buffer_exists = false;
-                device_buffer = nullptr;
-                if (!host_buffer_exists) {
-                    N = 0ull;
-                    d = 1u;
-                }
-            }
-            inline void delete_buffers() {
-                delete_device_buffer();
-                delete_host_buffer();
-            }
-            inline void reset(const T value = (T)0) {
-                if (host_buffer_exists) std::fill(host_buffer, host_buffer + range(), value); // faster than "for(ulong i=0ull; i<range(); i++) host_buffer[i] = value;"
-                write_to_device(); // enqueueFillBuffer is broken for large buffers on Nvidia GPUs!
-            }
-            inline const ulong length() const { return N; }
-            inline const uint dimensions() const { return d; }
-            inline const ulong range() const { return N * (ulong)d; }
-            inline const ulong capacity() const { return N * (ulong)d * sizeof(T); } // returns capacity of the buffer in Bytes
-            inline T* const data() { return host_buffer; }
-            inline const T* const data() const { return host_buffer; }
-            inline T* const operator()() { return host_buffer; }
-            inline const T* const operator()() const { return host_buffer; }
-            inline T& operator[](const ulong i) { return host_buffer[i]; }
-            inline const T& operator[](const ulong i) const { return host_buffer[i]; }
-            inline const T operator()(const ulong i) const { return host_buffer[i]; }
-            inline const T operator()(const ulong i, const uint dimension) const { return host_buffer[i + (ulong)dimension * N]; } // array of structures
-
-            void wait() {
-                if (jobs_that_reference_me.size() > 0) {
-                    cl::Event::waitForEvents(std::pair<Event*, Event*>{ &jobs_that_reference_me[0], & jobs_that_reference_me[0] + jobs_that_reference_me.size() });
-                    jobs_that_reference_me.clear();
-                }
-            };
-            inline void read_from_device() {
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    cl::Event event_returned;
-                    device->queue.get().obj.enqueueReadBuffer(device_buffer, false, 0ull, capacity(), (void*)host_buffer,
-                        jobs_that_reference_me.size() > 0 ? std::pair<Event*, Event*>{ &jobs_that_reference_me[0], & jobs_that_reference_me[0] + jobs_that_reference_me.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }
-                    , & event_returned);
-                    jobs_that_reference_me.push_back(event_returned);
-                }
-            };
-            inline void write_to_device() {
-                if (host_buffer_exists && device_buffer_exists && !is_zero_copy) {
-                    cl::Event event_returned;
-                    device->queue.get().obj.enqueueWriteBuffer(device_buffer, false, 0ull, capacity(), (void*)host_buffer,
-                        jobs_that_reference_me.size() > 0 ? std::pair<Event*, Event*>{ &jobs_that_reference_me[0], & jobs_that_reference_me[0] + jobs_that_reference_me.size() } : std::pair<Event*, Event*>{ nullptr, nullptr }
-                    , & event_returned);
-                    jobs_that_reference_me.push_back(event_returned);
-                }
-            };
-            inline const cl::Buffer& get_cl_buffer() const {
-                return device_buffer;
-            };
-            inline const Device_Info& get_device_info() const {
-                return device->info;
-            };
-            
-            // assumes X & Y are the rows and columns, and RGBA channels are assumed to be the Z coordinates. 
-            cl::Image2D as_Image2D(unsigned int width, unsigned int height, image_channel_order& order) const {
-                image_channel_type type;
-                if constexpr (std::is_same_v<T, char> || std::is_same_v<T, int>) type = image_channel_type::SNORM_INT8;                
-                else if constexpr (std::is_same_v<T, long>) type = image_channel_type::SNORM_INT16;
-                else if constexpr (std::is_same_v<T, unsigned char> || std::is_same_v<T, unsigned int>) type = image_channel_type::UNORM_INT8;                
-                else if constexpr (std::is_same_v<T, unsigned long>) type = image_channel_type::UNORM_INT16;                
-                else type = image_channel_type::FLOAT;               
-
-                int num_channels = channels(order);
-                int num_dim = this->N / (width * height);
-                if (auto& available_channels = device->image2d_channels[type][num_channels]; available_channels.size() > 0) {
-                    if (available_channels.find(order) == available_channels.end()) {
-                        order = *available_channels.begin();
-                    }
-
-                    auto IMG = cl::Image2D(device->info.cl_context, cl::ImageFormat(
-                        (cl_channel_order)(int)order,
-                        (cl_channel_type)(int)type
-                    ), cl::Buffer(), width, height, 0, nullptr);
-
-                    GL::GPU::Function kernel("buffer_to_image");
-                    cl::Event ev = kernel(width * height, IMG, *this, width, height, (unsigned int)num_dim);
-                    ev.wait();
-
-                    return IMG;
-                }
-                if (auto& available_channels = device->image2d_channels[type][num_channels + 1]; available_channels.size() > 0) {
-                    if (available_channels.find(order) == available_channels.end()) {
-                        order = *available_channels.begin();
-                    }
-
-                    auto IMG = cl::Image2D(device->info.cl_context, cl::ImageFormat(
-                        (cl_channel_order)(int)order,
-                        (cl_channel_type)(int)type
-                    ), cl::Buffer(), width, height, 0, nullptr);
-
-                    GL::GPU::Function kernel("buffer_to_image");
-                    cl::Event ev = kernel(width * height, IMG, *this, width, height, (unsigned int)num_dim);
-                    ev.wait();
-
-                    return IMG;
-
-                    //// we need to add a channel by joining on the z-dimension
-                    //GL::GPU::Function kernel(std::string("join_dim_2") + opencl_impl::type_name<T>());
-                    //Memory first(width * height, 1, false, true, 0, true);
-                    //Memory out(this->N + (width * height), 1, false, true, 0, true);
-                    //
-                    //cl::Event ev = kernel(out.N, out, *this, width, height, num_dim, first);
-                    //ev.wait();
-
-                    //return cl::Image2D(device->info.cl_context, cl::ImageFormat(
-                    //    (cl_channel_order)(int)order,
-                    //    (cl_channel_type)(int)type
-                    //), out.device_buffer, width, height, 0, nullptr);
-                }
-                return cl::Image2D(device->info.cl_context, cl::ImageFormat(
-                    (cl_channel_order)(int)order,
-                    (cl_channel_type)(int)type
-                ), device_buffer, width, height, 0, nullptr);
-            };
-
-        };
-
-
         struct dimensions {
             unsigned int X;
             unsigned int Y;
@@ -2319,1169 +1611,7 @@ namespace GL {
             };
         };
 
-        template<typename T> class gpu_array {
-            template <typename G> friend class gpu_array;
-        public:
-            Memory<T> data;
-            dimensions dim;
-
-        public:
-            using type = T;
-            class reader {
-                Memory<T>& data;
-                dimensions dim;
-
-            public:
-                reader(Memory<T>& copy, dimensions const& D) : data(copy), dim(D) {
-                    data.add_host_buffer();
-                    data.read_from_device();
-                    data.wait();
-                };
-                reader(reader const&) = delete;
-                reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
-                reader& operator=(reader const&) = delete;
-                reader& operator=(reader&&) = delete;
-                ~reader() = default;
-                operator bool() const {
-                    return data.length() > 0;
-                };
-                T const& operator[](unsigned int X) const {
-                    return data.operator[](X);
-                };
-                T const& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
-                    return data.operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);
-                };
-            };
-            class writer {
-                Memory<T>* data;
-                dimensions dim;
-                bool _cpu_only = false;
-
-            public:
-                writer(Memory<T>& copy, dimensions const& D, bool cpu_only = false) : data(&copy), dim(D), _cpu_only(cpu_only) {
-                    data->add_host_buffer();
-                    data->read_from_device();
-                    data->wait();
-                };
-                writer(writer const&) = delete;
-                writer(writer&& rhs) noexcept : data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
-                    rhs.data = nullptr;
-                };
-                writer& operator=(writer const&) = delete;
-                writer& operator=(writer&&) noexcept = delete;
-                ~writer() {
-                    if (data)
-                        data->write_to_device();
-                };
-                operator bool() const {
-                    return data->length() > 0;
-                };
-                T& operator[](unsigned int X) const {
-                    return data->operator[](X);
-                };
-                T& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
-                    return data->operator[]((Z* dim.X* dim.Y) + (Y * dim.X) + X);
-                };
-            };
-
-        public:
-            template<class... P> static inline void work(gpu_array& destination, unsigned int count, const std::string& name, const P&... parameters) {
-                GL::GPU::Function kernel(name + opencl_impl::type_name<T>());
-                cl::Event ev = kernel(count, parameters...);
-                for (auto& x : destination.data.jobs_that_reference_me) {
-                    if (x == ev) return;
-                }
-                destination.data.jobs_that_reference_me.emplace_back(ev);
-            };
-
-        public:
-            gpu_array() : data(), dim{ 0,0,0 } {}
-            explicit gpu_array(dimensions const& D, bool cpu_only = false)
-                : data(D.count(), 1, cpu_only, !cpu_only), dim{ D }
-            {};
-            explicit gpu_array(unsigned int X, unsigned int Y = 1, unsigned int Z = 1)
-                : data(X* Y* Z, 1, false, true), dim{ X, Y, Z }
-            {}
-            gpu_array(gpu_array const&) = delete;
-            gpu_array(gpu_array&& rhs) noexcept : data(std::move(rhs.data)), dim(std::move(rhs.dim)) {};
-            gpu_array& operator=(gpu_array const&) = delete;
-            gpu_array& operator=(gpu_array&& rhs) = delete;
-            ~gpu_array() = default;
-
-
-        public:
-            reader read() const {
-                return reader(const_cast<Memory<T>&>(data), dim);
-            };
-            writer write(bool cpu_only = false) {
-                return writer(const_cast<Memory<T>&>(data), dim, cpu_only);
-            };
-            unsigned int size() const {
-                return dim.count();
-            }
-            unsigned int size(unsigned int D) const {
-                if (D == 0) return dim.X;
-                if (D == 1) return dim.Y;
-                if (D == 2) return dim.Z;
-                else throw std::runtime_error("Array does not support more than 3 dimensions yet");
-            }
-
-            gpu_array& operator=(T rhs) {
-                gpu_array::work(*this, this->size(), "copy_single", data, rhs);
-                return *this;
-            };
-            gpu_array& operator+=(T rhs) {
-                gpu_array::work(*this, this->size(), "add_single_inplace", data, rhs);
-                return *this;
-            };
-            gpu_array& operator-=(T rhs) {
-                gpu_array::work(*this, this->size(), "sub_single_inplace", data, rhs);
-                return *this;
-            };
-            gpu_array& operator*=(T rhs) {
-                gpu_array::work(*this, this->size(), "mult_single_inplace", data, rhs);
-                return *this;
-            };
-            gpu_array& operator/=(T rhs) {
-                gpu_array::work(*this, this->size(), "divide_single_inplace", data, rhs);
-                return *this;
-            };
-            gpu_array& operator+=(gpu_array const& rhs) {
-                gpu_array::work(*this, this->size(), "add_inplace", data, rhs.data);
-                return *this;
-            };
-            gpu_array& operator-=(gpu_array const& rhs) {
-                gpu_array::work(*this, this->size(), "sub_inplace", data, rhs.data);
-                return *this;
-            };
-            gpu_array& operator*=(gpu_array const& rhs) {
-                gpu_array::work(*this, this->size(), "mult_inplace", data, rhs.data);
-                return *this;
-            };
-            gpu_array& operator/=(gpu_array const& rhs) {
-                gpu_array::work(*this, this->size(), "divide_inplace", data, rhs.data);
-                return *this;
-            };
-
-            friend gpu_array operator+(gpu_array const& lhs, gpu_array const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "add", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array operator-(gpu_array const& lhs, gpu_array const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "sub", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array operator*(gpu_array const& lhs, gpu_array const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "mult", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array operator/(gpu_array const& lhs, gpu_array const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "divide", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array operator+(gpu_array const& lhs, T const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "add_single", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator-(gpu_array const& lhs, T const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "sub_single", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator*(gpu_array const& lhs, T const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "mult_single", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator/(gpu_array const& lhs, T const& rhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "divide_single", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator+(T const& rhs, gpu_array const& lhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "add_single", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator-(T const& rhs, gpu_array const& lhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "sub_single_inv", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator*(T const& rhs, gpu_array const& lhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "mult_single", lhs.data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array operator/(T const& rhs, gpu_array const& lhs) {
-                auto out = gpu_array(lhs.dim);
-                gpu_array::work(out, out.size(), "divide_single_inv", lhs.data, rhs, out.data);
-                return out;
-            };
-            gpu_array copy() const {
-                auto out = gpu_array(dim);
-                gpu_array::work(out, out.size(), "copy", out.data, data);
-                return out;
-            };
-            // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
-            template<typename G> gpu_array<G> cast() const {
-                if constexpr (std::is_same_v<G, T>) {
-                    return copy();
-                }
-                else {
-                    static std::string CastFunc{ std::string("from_") + opencl_impl::type_name<T>() }; // from_int
-                    auto out = gpu_array<G>(this->dim);
-                    gpu_array<G>::work(out, out.dim.count(), CastFunc, out.data, data);
-                    return out;
-                }
-            };
-
-            // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
-            static gpu_array random(unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
-                if constexpr (std::is_floating_point_v<T>) {
-                    gpu_array out(dimensions{ X, Y, Z });
-                    gpu_array::work(out, out.size(), "Rand", out.data);
-                    return out;
-                }
-                else {
-                    return (gpu_array<float>::random(X, Y, Z) * (float)std::numeric_limits<T>::max()).cast<T>();
-                }
-            };
-            // returns a random number in the range of (lower, upper]
-            static gpu_array random_between(T lower, T upper, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
-                if constexpr (std::is_floating_point_v<T>) {
-                    gpu_array out(dimensions{ X, Y, Z });
-                    gpu_array::work(out, out.size(), "Rand", out.data);
-                    out *= (upper - lower);
-                    out += lower;
-                    return out;
-                }
-                else {
-                    return gpu_array<float>::random_between((float)lower, (float)upper, X, Y, Z).cast<T>();
-                }
-            };
-            // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
-            static gpu_array identity(unsigned int width) {
-                gpu_array out(dimensions{ width, width, 1 });
-                gpu_array::work(out, out.size(), "identity", out.data, (unsigned int)width);
-                return out;
-            };
-            // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
-            static gpu_array linear(T low, T high, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
-                gpu_array out(dimensions{ lenX, lenY, lenZ });
-                gpu_array::work(out, out.size(), "linear_between", out.data, low, high, (unsigned int)out.size());
-                return out;
-            };
-            // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
-            template <typename P> static gpu_array from_vector(const P& parameters) {
-                unsigned int count = 0;
-                for (auto& x : parameters) {
-                    ++count;
-                }
-                gpu_array out(dimensions{ count, 1, 1 });
-                count = 0;
-                if (auto W = out.write()) {
-                    for (auto& x : parameters) {
-                        W[count++] = static_cast<T>(x);
-                    }
-                }
-                return out;
-            };
-            // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
-            template <typename P> static gpu_array from_vector(const P& parameters, unsigned int LenX) {
-                unsigned int count = 0;
-                for (auto& x : parameters) {
-                    ++count;
-                }
-                gpu_array out(dimensions{ LenX, count / LenX, 1 });
-                count = 0;
-                if (auto W = out.write()) {
-                    for (auto& x : parameters) {
-                        W[count++] = static_cast<T>(x);
-                    }
-                }
-                return out;
-            };
-            // Returns a matrix with all values equal to the provided value
-            static gpu_array constant(T value, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
-                gpu_array out(dimensions{ lenX, lenY, lenZ });
-                gpu_array::work(out, out.size(), "copy_single", out.data, value);
-                return out;
-            };
-
-            // specialization of POW for integer powers
-            gpu_array pown(gpu_array<int> const& rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "power_n", data, rhs.data, out.data);
-                return out;
-            };
-            // power of 
-            gpu_array pow(gpu_array const& rhs) const {
-                if constexpr (std::is_same_v<T, int>) return pown(rhs);
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "power", data, rhs.data, out.data);
-                return out;
-            };
-            // specialization of POW for integer powers
-            gpu_array pown(int rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "power_n_single", data, rhs, out.data);
-                return out;
-            };
-            // power of 
-            gpu_array pow(T rhs) const {
-                if constexpr (std::is_same_v<T, int>) return pown(rhs);
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "power_single", data, rhs, out.data);
-                return out;
-            };
-            // sqrt
-            gpu_array<float> sqrt() const {
-                gpu_array<float> out(this->dim);
-                gpu_array<float>::work(out, out.size(), "square_root", data, out.data);
-                return out;
-            };
-            // round to nearest whole number
-            gpu_array round() const {
-                if constexpr (std::is_floating_point_v<T>) {
-                    gpu_array out(this->dim);
-                    gpu_array::work(out, out.size(), "round", data, out.data);
-                    return out;
-                }
-                else {
-                    return copy();
-                }
-            };
-            // round to higher integer
-            gpu_array ceil() const {
-                if constexpr (std::is_floating_point_v<T>) {
-                    gpu_array out(this->dim);
-                    gpu_array::work(out, out.size(), "ceil", data, out.data);
-                    return out;
-                }
-                else {
-                    return copy();
-                }
-            };
-            // round to lower integer
-            gpu_array floor() const {
-                if constexpr (std::is_floating_point_v<T>) {
-                    gpu_array out(this->dim);
-                    gpu_array::work(out, out.size(), "flr", data, out.data);
-                    return out;
-                }
-                else {
-                    return copy();
-                }
-            };
-            // return (this * multiply) + add;
-            gpu_array fma(gpu_array const& multiply, gpu_array const& add) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "mult_add", data, multiply.data, add.data, out.data);
-                return out;
-            };
-            // absolute value
-            gpu_array abs() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "absolute", data, out.data);
-                return out;
-            };
-
-            gpu_array cos() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Cos", data, out.data);
-                return out;
-            };
-            gpu_array sin() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Sin", data, out.data);
-                return out;
-            };
-            gpu_array tan() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Tan", data, out.data);
-                return out;
-            };
-            gpu_array acos() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "aCos", data, out.data);
-                return out;
-            };
-            gpu_array asin() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "aSin", data, out.data);
-                return out;
-            };
-            gpu_array atan() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "aTan", data, out.data);
-                return out;
-            };
-            gpu_array cosh() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Cosh", data, out.data);
-                return out;
-            };
-            gpu_array sinh() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Sinh", data, out.data);
-                return out;
-            };
-            gpu_array tanh() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Tanh", data, out.data);
-                return out;
-            };
-            gpu_array acosh() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "aCosh", data, out.data);
-                return out;
-            };
-            gpu_array asinh() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "aSinh", data, out.data);
-                return out;
-            };
-            gpu_array atanh() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "aTanh", data, out.data);
-                return out;
-            };
-            // e^x
-            gpu_array exp() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Exp", data, out.data);
-                return out;
-            };
-            // 2^x
-            gpu_array exp2() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Exp2", data, out.data);
-                return out;
-            };
-            // 10^x
-            gpu_array exp10() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Exp10", data, out.data);
-                return out;
-            };
-            // e^x-1
-            gpu_array expm1() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Expm1", data, out.data);
-                return out;
-            };
-            // log gamma function
-            gpu_array lgamma() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Lgamma", data, out.data);
-                return out;
-            };
-            // ln(x)
-            gpu_array log() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Log", data, out.data);
-                return out;
-            };
-            // log_2(x)
-            gpu_array log2() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Log2", data, out.data);
-                return out;
-            };
-            // log_10(x)
-            gpu_array log10() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Log10", data, out.data);
-                return out;
-            };
-            // ln(1+x)
-            gpu_array log1p() const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Log1p", data, out.data);
-                return out;
-            };
-            // return this % rhs
-            gpu_array mod(T rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Mod_single", data, rhs, out.data);
-                return out;
-            };
-            // return this % rhs
-            gpu_array mod(gpu_array const& rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Mod", data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array operator%(gpu_array const& lhs, gpu_array const& rhs) {
-                return lhs.mod(rhs);
-            };
-            friend gpu_array operator%(gpu_array const& lhs, T rhs) {
-                return lhs.mod(rhs);
-            };
-            // returns the max of the two arrays (item-by-item, as an array)
-            gpu_array max(gpu_array const& rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Max", data, rhs.data, out.data);
-                return out;
-            };
-            // returns the max of the two arrays (item-by-item, as an array)
-            gpu_array max(T rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Max_single", data, rhs, out.data);
-                return out;
-            };
-            // returns the min of the two arrays (item-by-item, as an array)
-            gpu_array min(gpu_array const& rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Min", data, rhs.data, out.data);
-                return out;
-            };
-            // returns the min of the two arrays (item-by-item, as an array)
-            __declspec(noinline) gpu_array min(T rhs) const {
-                gpu_array out(this->dim);
-                gpu_array::work(out, out.size(), "Min_single", data, rhs, out.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator!() const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_not", out.data, data);
-                return out;
-            };
-            gpu_array<unsigned int> operator==(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_eq_single", data, rhs, out.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator!=(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_neq_single", data, rhs, out.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator<(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_ls_single", data, rhs, out.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator<=(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_lse_single", data, rhs, out.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator>(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_gr_single", data, rhs, out.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator>=(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_gre_single", data, rhs, out.data);
-                return out;
-            };
-            friend gpu_array<unsigned int> operator==(gpu_array const& lhs, gpu_array const& rhs) {
-                gpu_array<unsigned int> out(lhs.dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_eq", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array<unsigned int> operator!=(gpu_array const& lhs, gpu_array const& rhs) {
-                gpu_array<unsigned int> out(lhs.dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_neq", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array<unsigned int> operator<(gpu_array const& lhs, gpu_array const& rhs) {
-                gpu_array<unsigned int> out(lhs.dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_ls", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array<unsigned int> operator<=(gpu_array const& lhs, gpu_array const& rhs) {
-                gpu_array<unsigned int> out(lhs.dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_lse", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array<unsigned int> operator>(gpu_array const& lhs, gpu_array const& rhs) {
-                gpu_array<unsigned int> out(lhs.dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_gr", lhs.data, rhs.data, out.data);
-                return out;
-            };
-            friend gpu_array<unsigned int> operator>=(gpu_array const& lhs, gpu_array const& rhs) {
-                gpu_array<unsigned int> out(lhs.dim);   
-                gpu_array<unsigned int>::work(out, out.size(), "item_gre", lhs.data, rhs.data, out.data);
-                return out;
-            };
-
-            gpu_array<unsigned int> operator&&(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_AND_single", out.data, data, rhs);
-                return out;
-            };
-            gpu_array<unsigned int> operator&&(gpu_array const& rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_AND", out.data, data, rhs.data);
-                return out;
-            };
-            gpu_array<unsigned int> operator||(T rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_OR_single", out.data, data, rhs);
-                return out;
-            };
-            gpu_array<unsigned int> operator||(gpu_array const& rhs) const {
-                gpu_array<unsigned int> out(this->dim);
-                gpu_array<unsigned int>::work(out, out.size(), "item_OR", out.data, data, rhs.data);
-                return out;
-            };
-            // joins two matrices along one of the dimensions.
-            gpu_array join(unsigned int jdim, gpu_array const& first) const {
-                // All dimensions except join dimension must be equal
-                for (unsigned int I = 0; I < 3; ++I) {
-                    if (I == jdim) continue;
-                    if (this->size(I) != first.size(I)) {
-                        return gpu_array();
-                    }
-                }
-
-                // Compute output dims
-                unsigned int
-                    NewX = this->size(0) + first.size(0) * (jdim == 0),
-                    NewY = this->size(1) + first.size(1) * (jdim == 1),
-                    NewZ = this->size(2) + first.size(2) * (jdim == 2);
-
-                gpu_array out(dimensions{ NewX, NewY, NewZ });
-                if (jdim == 0) {
-                    gpu_array::work(out, out.size(), "join_dim_0", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.X);
-                }
-                else if (jdim == 1) {
-                    gpu_array::work(out, out.size(), "join_dim_1", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data, (unsigned int)first.dim.Y);
-                }
-                else {
-                    gpu_array::work(out, out.size(), "join_dim_2", out.data, this->data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.data);
-                }
-
-                return out;
-            };
-            // transpose a 2-D matrix along its diagonal. Does not support transposition of 3-D matrices. 
-            gpu_array transpose() const {
-                // matrix must be 2-D
-                if (this->dim.num_dimensions() == 0) return gpu_array();
-                else if (this->dim.num_dimensions() > 2) return gpu_array();
-
-                gpu_array out(dimensions{ this->dim.Y, this->dim.X, 1 });
-                gpu_array::work(out, out.size(), "Transpose", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y);
-                return out;
-            };
-            // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
-            gpu_array make_square() const {
-                unsigned int len = std::max<unsigned int>(dim.X, dim.Y);
-
-                gpu_array out(dimensions{ len, len, 1 });
-                gpu_array::work(out, out.size(), "make_square", out.data, data, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len);
-
-                return out;
-            }
-            // extracts the diagonal of a 2-D matrix as a 1-D array
-            gpu_array diagonal() const {
-                if (this->dim.num_dimensions() == 0) return gpu_array();
-                else if (this->dim.num_dimensions() == 1) return this->copy();
-                else if (this->dim.num_dimensions() > 2) return gpu_array();
-                gpu_array out(dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
-                gpu_array::work(out, this->size(), "diagonal", out.data, data, dim.X);
-                return out;
-            };
-            // extract a row from this 2-D matrix as a 1-D array
-            gpu_array row(unsigned int rowN) const {
-                gpu_array out(dimensions{ dim.Y, dim.Z, 1 });
-                gpu_array::work(out, out.size(), "row_of", out.data, data, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z);
-                return out;
-            };
-            // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
-            gpu_array grow_by_wrapping(unsigned int new_length) const {
-                if (this->dim.num_dimensions() == 1) {
-                    gpu_array out(dimensions{ new_length, 1, 1 });
-                    gpu_array::work(out, out.size(), "wrap_around", out.data, data, (unsigned int)this->size());
-                    return out;
-                }
-                else {
-                    // ??
-                    throw std::runtime_error("Cannot grow a matrix by wrapping -- yet. Depends on how we want to grow it? Y-axis growth is off, but X-axis growth makes sense with wrapping");
-                }
-            };
-            // create a new array by sampling this array at the provided indices. E.g. This = [5,4,3,2,1,0]
-            // Indices = [5,5,5,5,5,5,5,4,4,4,4,4,4,3,3,3,3,3,2,2,2,2,1,1,1,0,0]
-            // Result = [0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,5,5]
-            gpu_array resample(gpu_array<unsigned int> const& sample_indices) const {
-                gpu_array out(sample_indices.dim);
-                gpu_array::work(out, out.size(), "resample", out.data, data, sample_indices.data);
-                return out;
-            };
-            // NOTE: assumes that the X-axis determines the number of channels, Y-axis determines the width, and Z-axis determines the height of the image
-            __declspec(noinline) gpu_array<float> TEST_IMAGE() const {       
-                if constexpr (!std::is_same_v<T, float>) {
-                    auto f = this->cast<float>();
-                    return f.TEST_IMAGE();
-                }
-
-                image_channel_order ord;
-                if (this->dim.Z >= 4) { ord = image_channel_order::RGBA; } 
-                else if (this->dim.Z >= 3) { ord = image_channel_order::RGB; }
-                else if (this->dim.Z >= 2) { ord = image_channel_order::RG; }
-                else if (this->dim.Z >= 1) { ord = image_channel_order::R; }
-                else { return gpu_array<float>{}; }
-
-                cl::Image2D img = this->data.as_Image2D(this->dim.X, this->dim.Y, ord);
-                GL::GPU::Function kernel("sample_image");
-
-                gpu_array<float> out(dimensions{ this->dim.X, this->dim.Y, 1 });
-                cl::Event ev = kernel(out.size(), img, out.data, out.size(0), out.size(1), (unsigned int)channels(ord));
-                out.data.jobs_that_reference_me.push_back(ev);
-                return out;
-            };
-
-            // calculate the determinant for a square matrix. Performed on the CPU, and minimizes exchanges with the GPU. 
-            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-            float determinant() const {
-                if (this->dim.X != this->dim.Y) {
-                    return 1;
-                }
-                unsigned int dimension = this->dim.X;
-
-                if (dimension == 0) {
-                    return 1;
-                }
-                else if (dimension == 1) {
-                    auto R = this->read();
-                    return R(0);
-                }
-                else if (dimension == 2) {
-                    auto R = this->read();
-                    return R(0, 0) * R(1, 1) - R(0, 1) * R(1, 0);
-                }
-                else {
-                    float result = 0;
-                    int sign = 1;
-
-                    if (auto R = this->read()) {
-                        gpu_array subVect(dimensions{ dimension - 1, dimension - 1, 1 }, true);
-                        for (unsigned int i = 0; i < dimension; ++i) {
-                            if (auto W = subVect.write(true)) {
-                                // build a sub-matrix
-                                for (unsigned int m = 1; m < dimension; m++) {
-                                    unsigned int z = 0;
-                                    for (unsigned int n = 0; n < dimension; n++) {
-                                        if (n != i) {
-                                            W(m - 1, z) = R(m, n);
-                                            z++;
-                                        }
-                                    }
-                                }
-                            }
-                            //recursive call
-                            result += sign * R(0, i) * subVect.determinant();
-                            sign = -sign;
-                        }
-                    }
-                    return result;
-                }
-            }
-
-            // cofactor of a square matrix, essential for calculating the inverse
-            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-            gpu_array cofactor() const {
-                if (this->dim.X != this->dim.Y) {
-                    return make_square().cofactor();
-                }
-                unsigned int dimension = this->dim.X;
-                gpu_array solution(dimensions{ dimension, dimension, 1 });
-                if (auto W1 = solution.write()) {
-                    gpu_array subVect(dimensions{ dimension - 1, dimension - 1, 1 }, true);
-                    if (auto R = this->read()) {
-                        for (unsigned int i = 0; i < dimension; i++) {
-                            for (unsigned int j = 0; j < dimension; j++) {
-                                int p = 0;
-                                if (auto W = subVect.write(true)) {
-                                    for (unsigned int x = 0; x < dimension; x++) {
-                                        if (x == i) continue;
-                                        int q = 0;
-
-                                        for (unsigned int y = 0; y < dimension; y++) {
-                                            if (y == j) continue;
-                                            W(p, q) = R(x, y);
-                                            q++;
-                                        }
-                                        p++;
-                                    }
-                                }
-                                W1(i, j) = (T)(std::pow<long double>(-1.0l, (long double)(i + j)) * (long double)subVect.determinant());
-                            }
-                        }
-                    }
-                }
-                return solution;
-            };
-
-            // transpose of the cofactor of a square matrix
-            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-            gpu_array adjoint() const {
-                return cofactor().transpose();
-            };
-
-            // solve for the inverse of the matrix. Does not support solving for the inverse of a 3-D matrix. 
-            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-            gpu_array inverse() const {
-                return adjoint() / std::abs(determinant());
-            };
-
-            // performs a cross-multiplication of two rectangular matrices. This is not accelerated by the GPU, and is CPU-bound. Uses CPU multithreading to (attempt) to speed-up this bottleneck. 
-            // the number of columns in this matrix must equal the number of rows in the RHS matrix. 
-            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-            gpu_array matrix_multiply(gpu_array const& rhs) const {
-                if (this->dim.Y == rhs.dim.X) {
-                    // only useful for dim-2 matrices. 
-                    unsigned int final_num_rows = this->dim.X;
-                    unsigned int final_num_cols = rhs.dim.Y;
-
-                    gpu_array out(dimensions{ final_num_rows, final_num_cols, 1 });
-                    auto R_lhs = this->read();
-                    auto R_rhs = rhs.read();
-                    if (auto W = out.write()) {
-                        if (R_lhs && R_rhs && W) {
-                            auto N = out.dim.count();
-                            for (unsigned int n = 0; n < N; ++n) {
-                                if (n >= N) continue;
-
-                                // parallel::Std_For<unsigned int>(0, out.size(), [&](unsigned int n) {
-                                T v = (T)0;
-                                const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
-                                const unsigned int destination_X = n - (final_num_rows * destination_Y);
-                                for (unsigned int index = 0; index < this->dim.Y; ++index) {
-                                    v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
-                                }
-                                W[n] = v;
-                            } // );
-                        }
-                    }
-                    return out;
-                }
-                else if (this->dim.Y > rhs.dim.X) {
-                    return matrix_multiply(rhs.copy().join(0, gpu_array(dimensions{ this->dim.Y - rhs.dim.X, rhs.dim.Y, rhs.dim.Z }) = 1));
-                }
-                else /*if (this->LenY < rhs.LenX)*/ {
-                    // To-Do: need to set final column in joining array to 1?
-                    return this->copy().join(1, gpu_array(dimensions{ this->dim.X, rhs.dim.X - this->dim.Y, this->dim.Z }) = 0).matrix_multiply(rhs);
-                }
-            };
-
-            // test to see if there is any colinearity in the feature set. If so, it is impossible to solve for the linear regression. One or multiple features must be removed until it is no longer invalid.
-            template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-            bool is_colinear() const {
-                return std::abs(this->transpose().matrix_multiply(*this).determinant()) == 0;
-            };
-
-            template<bool use_cpu = false>
-            T sum() const {
-                if constexpr (use_cpu) {
-                    auto N = this->size();
-                    T out = (T)0;
-                    if (auto R = this->read()) {
-                        for (unsigned int n = 0; n < N; ++n) {
-                            out += R(n);
-                        }
-                    }
-                    return out;
-                }
-                else {
-                    if (this->size() > 1000) {
-                        T out = (T)0;
-                        if (1) {
-                            gpu_array Temp(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                            gpu_array::work(Temp, this->size(), "reduce_sum", data, Temp.data, (unsigned int)this->size());
-                            auto N = Temp.size();
-                            if (auto R = Temp.read()) {
-                                for (unsigned int n = 0; n < N; ++n) {
-                                    out += R(n);
-                                }
-                            }
-                        }
-                        return out;
-                    }
-                    else {
-                        auto N = this->size();
-                        T out = (T)0;
-                        if (auto R = this->read()) {
-                            for (unsigned int n = 0; n < N; ++n) {
-                                out += R(n);
-                            }
-                        }
-                        return out;
-                    }
-                }
-            };
-            T avg() const {
-                return (T)((long double)sum() / (long double)this->size());
-            };
-            T max() const {
-                if (this->size() > 1000) {
-                    gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                    gpu_array::work(out, this->size(), "reduce_max", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::lowest());
-                    return out.max();
-                }
-                else {
-                    auto N = this->size();
-                    T out = std::numeric_limits<T>::lowest();
-                    if (auto R = this->read()) {
-                        for (unsigned int n = 0; n < N; ++n) {
-                            out = std::max(out, R(n));
-                        }
-                    }
-                    return out;
-                }
-            };
-            T min() const {
-                if (this->size() > 1000) {
-                    gpu_array out(dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                    gpu_array::work(out, this->size(), "reduce_min", data, out.data, (unsigned int)this->size(), std::numeric_limits<T>::max());
-                    return out.min();
-                }
-                else {
-                    auto N = this->size();
-                    T out = std::numeric_limits<T>::max();
-                    if (auto R = this->read()) {
-                        for (unsigned int n = 0; n < N; ++n) {
-                            out = std::min(out, R(n));
-                        }
-                    }
-                    return out;
-                }
-            };
-
-            gpu_array convolve(gpu_array const& kernel) const {
-                if (this->dim.num_dimensions() == 2) {
-                    gpu_array out(this->dim);
-                    float kernel_tot = kernel.sum();
-                    gpu_array::work(out, this->size(), "convolve", out.data, data, kernel.data, this->size(0), this->size(1), kernel.size(0), kernel.size(1), kernel_tot);
-                    return out;
-                }
-                else {
-                    return gpu_array{};
-                }
-            };
-            static gpu_array<float> guassian_kernel(unsigned int X, unsigned int Y) {
-                gpu_array<float> out(dimensions{ X, Y, 1 });
-                gpu_array<float>::work(out, out.size(), "guassian", out.data, out.size(0), out.size(1));
-                return out * (1.0f / out.sum());
-            };
-
-            gpu_array<char> ASCII() const {
-                GL::GPU::Function kernel(std::string("ASCII") + opencl_impl::type_name<T>());
-                static gpu_array<char> ramp{ []() -> gpu_array<char> {
-                    std::vector<char> chars{
-                        '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
-                        '0', 'Q', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
-                        '(', ')', '1', '{', '}', '[', ']', '?', '*', '+', '~', '<', '>', 'L', 'i', '!', 'l', 'I', '-', '_', ';', ':', ',', '\"',
-                        '^', '`', '\'', '.', ' '
-                    };
-                    std::reverse(chars.begin(), chars.end());
-                    return gpu_array<char>::from_vector(chars);
-                }() };
-
-                auto thisMinV = this->min();
-                auto thisMaxV = this->max();    
-
-                gpu_array<char> out(this->dim);
-                out.data.jobs_that_reference_me.push_back( kernel( 
-                    out.size(), out.data, this->data, thisMinV, thisMaxV, ramp.data, ramp.size() 
-                ) );
-                return out;
-            };
-
-            gpu_array resize(unsigned int X, unsigned int Y, unsigned Z) const {
-                auto out = gpu_array(dimensions{ X, Y, Z });
-                gpu_array::work(out, out.size(), "copy_resize", out.data, data, X, Y, Z, this->size(0), this->size(1), this->size(2));
-                return out;
-            };
-            gpu_array resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
-                auto out = gpu_array(dimensions{ X, Y, Z });
-                gpu_array::work(out, out.size(), "copy_resize_stretch", out.data, data, X, Y, Z, this->size(0), this->size(1), this->size(2));
-                return out;
-            };
-        private:
-            static std::string resize(std::string&& rhs, unsigned int len, const char def = 0) {
-                rhs.resize(len, def);
-                return std::move(rhs);
-            };
-            std::string to_string_impl(reader const& R, unsigned int x) const {
-                if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
-                    auto c = R(x);
-                    if ((c >= 32) && (c <= 126))
-                        return std::string(1, c);
-                    else
-                        return " ";
-                }
-                else {
-                    return std::to_string(R(x));
-                }
-            };
-            std::string to_string_impl(reader const& R, unsigned int x, unsigned int y) const {
-                if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
-                    auto c = R(x, y);
-                    if ((c >= 32) && (c <= 126))
-                        return std::string(1, c);
-                    else
-                        return " ";
-                }
-                else {
-                    return std::to_string(R(x, y));
-                }
-            };
-            std::string to_string_impl(reader const& R, unsigned int x, unsigned int y, unsigned int z) const {
-                if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
-                    auto c = R(x, y, z);
-                    if ((c >= 32) && (c <= 126))
-                        return std::string(1, c);
-                    else
-                        return " ";
-                }
-                else {
-                    return std::to_string(R(x, y, z));
-                }
-            };
-            std::vector<unsigned int> evaluate_column_sizes(reader const& R, std::vector<std::string> column_titles = {}) const {
-                std::vector<unsigned int> out;
-                out.resize(this->dim.Y);
-
-                for (unsigned int i = 0; i < out.size(); ++i) {
-                    if (i < column_titles.size())
-                        out[i] = (unsigned int)column_titles[i].size();
-                    else
-                        out[i] = 0u;
-                }
-
-                // only tests the first and last 10 rows of each column
-                for (unsigned int ColN = 0; ColN < this->dim.Y; ++ColN) {
-                    for (unsigned int RowN = 0; RowN < this->dim.X && (RowN < 10); ++RowN) {
-                        out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
-                    }
-                    if (this->dim.X > 10) {
-                        for (unsigned int RowN = this->dim.X - 10; RowN < this->dim.X; ++RowN) {
-                            out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
-                        }
-                    }
-                }
-
-                return out;
-            };
-
-        public:
-            // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
-            std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
-                reader R = this->read();
-                std::string column_spacer = " ";
-                std::string out;
-                if (this->dim.num_dimensions() == 0) return out;
-                else if (this->dim.num_dimensions() == 1) {
-                    auto col_sizes = evaluate_column_sizes(R, column_titles);
-
-                    unsigned int n = 0;
-                    for (; (n < this->size()) && (n < 1); ++n) {
-                        out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                    }
-                    if (!doNotSkip && (this->size() >= 21)) {
-                        for (; (n < this->size()) && (n < 10); ++n) {
-                            out += "\n";
-                            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                        }
-                        out += "\n...";
-                        for (n = this->size() - 10; n < this->size(); ++n) {
-                            out += "\n";
-                            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                        }
-                    }
-                    else {
-                        for (; n < this->size(); ++n) {
-                            out += "\n";
-                            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                        }
-                    }
-                    if (column_titles.size() > 0) {
-                        out = resize(std::string(column_titles[0]), col_sizes[0], ' ') + "\n" + out;
-                    }
-                }
-                else if (this->dim.num_dimensions() == 2) {
-                    auto col_sizes = evaluate_column_sizes(R, column_titles);
-
-                    unsigned int n = 0;
-                    for (; (n < this->dim.X) && (n < 1); ++n) {
-                        unsigned int y = 0;
-                        for (; (y < this->dim.Y) && (y < 1); ++y) {
-                            out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                        }
-                        for (; y < this->dim.Y; ++y) {
-                            out += column_spacer;
-                            out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                        }
-                    }
-                    if (!doNotSkip && (this->dim.X >= 21)) {
-                        for (; (n < this->dim.X) && (n < 10); ++n) {
-                            out += "\n";
-                            unsigned int y = 0;
-                            for (; (y < this->dim.Y) && (y < 1); ++y) {
-                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                            }
-                            for (; y < this->dim.Y; ++y) {
-                                out += column_spacer;
-                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                            }
-                        }
-                        out += "\n...";
-                        for (n = this->dim.X - 10; n < this->dim.X; ++n) {
-                            out += "\n";
-                            unsigned int y = 0;
-                            for (; (y < this->dim.Y) && (y < 1); ++y) {
-                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                            }
-                            for (; y < this->dim.Y; ++y) {
-                                out += column_spacer;
-                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                            }
-                        }
-                    }
-                    else {
-                        for (; n < this->dim.X; ++n) {
-                            out += "\n";
-                            unsigned int y = 0;
-                            for (; (y < this->dim.Y) && (y < 1); ++y) {
-                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                            }
-                            for (; y < this->dim.Y; ++y) {
-                                out += column_spacer;
-                                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                            }
-                        }
-                    }
-
-                    if (column_titles.size() > 0) {
-                        std::string temp = column_titles[0];
-                        for (unsigned int i = 1; i < column_titles.size(); ++i) {
-                            temp += column_spacer;
-                            temp += resize(std::string(column_titles[i]), col_sizes[i], ' ');
-                        }
-                        out = temp + "\n" + out;
-                    }
-                }
-                else if (this->dim.num_dimensions() == 3) {
-                    out = "3 dims";
-                }
-                return out;
-            };
-            friend std::ostream& operator<<(std::ostream& os, gpu_array const& obj) {
-                os << obj.to_string();
-                return os;
-            };
-
-        };
+#if 0
         namespace linear_regressions {
             using matrix = gpu_array<float>;
             // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
@@ -3541,11 +1671,13 @@ namespace GL {
                 }
             };
         };
+#endif
     };
 }
 
 
 #pragma region PUBLIC GPU-ACCELERATED, TYPE-ERASUED ARRAY
+#if 0
 namespace GL {
     using namespace GPU;
 
@@ -4501,6 +2633,7 @@ namespace GL {
     };
     
 };
+#endif
 
 void clear() {
     COORD topLeft = { 0, 0 };
@@ -4577,7 +2710,7 @@ private:
     GL::atomic_allocator< dynamic_block > 
         block_alloc;
     bTree< dynamic_block, unsigned long long, 8>
-        free_tree;
+        free_tree; // gpu interface is single-threaded, so may as well utilize the single-threaded bTree
     unsigned long long
         total_allocations;
     unsigned long long
@@ -4918,7 +3051,7 @@ public:
 private:
     GL::atomic_allocator< dynamic_block >
         block_alloc;
-    bTree< dynamic_block, unsigned long long, 8>
+    atomic_tree< dynamic_block, unsigned long long, 8>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4956,21 +3089,11 @@ private:
                         }
 
                         // lhs->next is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
-                        while (tree_node) {
-                            if (tree_node->object) {
-                                if (tree_node->key == lhs->next->length) {
-                                    if (tree_node->object == lhs->next) {
-                                        block_alloc.Free(tree_node->object);
-                                        free_tree.Remove(tree_node);
-                                        break;
-                                    }
-                                }
-                            }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
+                        auto* next_next = lhs->next->next;
+                        if (free_tree.Remove(lhs->next, lhs->next->length)) {
+                            block_alloc.Free(lhs->next);
                         }
-
-                        lhs->next = lhs->next->next;
+                        lhs->next = next_next;
 
                         // try to combine again!
                         (void)try_combine(lhs);
@@ -4997,22 +3120,11 @@ private:
                             lhs->prev->prev->next = lhs;
                         }
 
-                        // lhs->prev is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
-                        while (tree_node) {
-                            if (tree_node->object) {
-                                if (tree_node->key == lhs->prev->length) {
-                                    if (tree_node->object == lhs->prev) {
-                                        block_alloc.Free(tree_node->object);
-                                        free_tree.Remove(tree_node);
-                                        break;
-                                    }
-                                }
-                            }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
+                        auto* prev_prev = lhs->prev->prev;
+                        if (free_tree.Remove(lhs->prev, lhs->prev->length)) {
+                            block_alloc.Free(lhs->prev);
                         }
-
-                        lhs->prev = lhs->prev->prev;
+                        lhs->prev = prev_prev;
 
                         // try to combine again!
                         (void)try_combine(lhs);
@@ -5041,30 +3153,22 @@ private:
         dynamic_block* free_block = nullptr;
 
         // try to get a free block
-        if (1) {
-            auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
-            while (tree_node) {
-                if (tree_node->object) {
-                    if (tree_node->key >= N) {
-                        if (tree_node->object->is_available) {
-                            free_block = tree_node->object;
-                            free_block->generated_epoch = GL::util::get_current_epoch();
-                            free_tree.Remove(tree_node);
-                            break;
-                        }
-                    }
+        (void)free_tree.RemoveIf(N, [&](auto* tree_node) {
+            if (tree_node->key >= N) {
+                if (tree_node->object->is_available) {
+                    free_block = tree_node->object;                    
+                    return true;
                 }
-                tree_node = free_tree.GetNextLeaf(tree_node);
             }
-        }
+            return false;
+        });        
 
         // if no free block was acquired, we are starting fresh
         if (!free_block) { // allocate a new buffer
             void* buf = Mem_Alloc(max_single_size);
-            if (!buf) {
-                return nullptr;
-            }
+            if (!buf) return nullptr;            
             free_block = block_alloc.Alloc();
+            if (!free_block) return nullptr;
             free_block->parent_buffer = buf;
             allocations.push_back(buf);
             free_block->prev = nullptr;
@@ -5074,14 +3178,11 @@ private:
             free_block->sub_buffer = nullptr;
             free_block->is_free = true;
             free_block->is_available = true;
-            free_block->generated_epoch = GL::util::get_current_epoch();
         }
-
+        
         // split the block if too large
-        if (free_block && (free_block->length > N)) {
-            if (free_block->sub_buffer) {
-                free_block->sub_buffer = nullptr;
-            }
+        if ((free_block->length > N)) {
+            if (free_block->sub_buffer) free_block->sub_buffer = nullptr;            
             dynamic_block* child_block = block_alloc.Alloc();
             child_block->parent_buffer = free_block->parent_buffer;
             child_block->prev = free_block;
@@ -5094,19 +3195,19 @@ private:
             free_block->next = child_block;
             if (child_block->next) child_block->next->prev = child_block;
             free_block->length = N;
-
             free_tree.Add(child_block, child_block->length);
         }
 
         // allocate the subbuffer
-        if (free_block && !free_block->sub_buffer) {
+        if (!free_block->sub_buffer) {
             cl_buffer_region region;
             region.origin = free_block->start_position;
             region.size = free_block->length;
             free_block->sub_buffer = (void*)((::byte*)free_block->parent_buffer + free_block->start_position);
-            free_block->generated_epoch = GL::util::get_current_epoch();
         }
-        if (free_block) free_block->is_free = false;
+
+        free_block->generated_epoch = GL::util::get_current_epoch();
+        free_block->is_free = false;
         return free_block;
     };
     // must be explicitely free'd before the dynamic_cpu_allocator goes out of scope, otherwise memory leak. 
@@ -5589,12 +3690,12 @@ template <typename T>
 class matrix {
 private:
     mem_matrix mem;
-    GL::dimensions dim;
+    GL::GPU::dimensions dim;
     template <typename G> friend class matrix;
 
 public:
     // normal constructor
-    matrix(GL::dimensions d)
+    matrix(GL::GPU::dimensions d)
         : dim{ d }
         , mem(sizeof(T)* d.X* d.Y* d.Z, false, true)
     {};
@@ -5667,10 +3768,10 @@ public:
 
     class reader {
         T* data;
-        GL::dimensions dim;
+        GL::GPU::dimensions dim;
 
     public:
-        reader(matrix<T>& copy, GL::dimensions const& D) : data{ nullptr }, dim(D) {
+        reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
             copy.mem.ensure_host_mem_exists();
             copy.mem.read_from_device();
             data = copy.mem.cpu_data<T>();
@@ -5693,11 +3794,11 @@ public:
     class writer {
         T* cpu_data;
         matrix<T>* data;
-        GL::dimensions dim;
+        GL::GPU::dimensions dim;
         bool _cpu_only;
 
     public:
-        writer(matrix<T>& copy, GL::dimensions const& D, bool cpu_only = false) : cpu_data{ nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
+        writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only = false) : cpu_data{ nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
             data->mem.ensure_host_mem_exists();
             data->mem.read_from_device();
             cpu_data = data->mem.cpu_data<T>();
@@ -5706,7 +3807,7 @@ public:
         writer(writer&& rhs) noexcept : cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
             rhs.data = nullptr;
             rhs.cpu_data = nullptr;
-            rhs.dim = GL::dimensions{ 0,0,0 };
+            rhs.dim = GL::GPU::dimensions{ 0,0,0 };
             rhs._cpu_only = false;
         };
         writer& operator=(writer const&) = delete;
@@ -5927,7 +4028,7 @@ public:
     // returns a random number in the range of (lower, upper]
     static matrix random_between(T lower, T upper, unsigned int X, unsigned int Y = 1, unsigned int Z = 1) {
         if constexpr (std::is_floating_point_v<T>) {
-            matrix out(GL::dimensions{ X, Y, Z });
+            matrix out(GL::GPU::dimensions{ X, Y, Z });
             mem_matrix::queue_gpu_work(GL::string("Rand") + GL::string(opencl_impl::type_name<T>()),
                 out.size(),
                 out.mem
@@ -5942,7 +4043,7 @@ public:
     };
     // Returns a square 2-d matrix whose values are 1.0 along the diagonal, and 0.0 elsewhere.
     static matrix identity(unsigned int width) {
-        matrix out(GL::dimensions{ width, width, 1 });
+        matrix out(GL::GPU::dimensions{ width, width, 1 });
         mem_matrix::queue_gpu_work(GL::string("identity") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, width
@@ -5951,7 +4052,7 @@ public:
     };
     // Returns a matrix with all values linearly increasing from the low value to the high value based on their index. 
     static matrix linear(T low, T high, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
-        matrix out(GL::dimensions{ lenX, lenY, lenZ });
+        matrix out(GL::GPU::dimensions{ lenX, lenY, lenZ });
         mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, low, high, out.size()
@@ -5960,7 +4061,7 @@ public:
     };
     // Returns a matrix with all values equal to the provided value
     static matrix constant(T value, unsigned int lenX, unsigned int lenY = 1, unsigned int lenZ = 1) {
-        matrix out(GL::dimensions{ lenX, lenY, lenZ });
+        matrix out(GL::GPU::dimensions{ lenX, lenY, lenZ });
         mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, value
@@ -5970,7 +4071,7 @@ public:
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
     static matrix from_vector(const std::vector<T>& parameters) {
         unsigned int count = parameters.size();
-        matrix out(GL::dimensions{ count, 1, 1 });
+        matrix out(GL::GPU::dimensions{ count, 1, 1 });
         count = 0;
         if (auto W = out.write()) {
             //std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));
@@ -5983,7 +4084,7 @@ public:
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
     static matrix from_vector(const std::vector<T>& parameters, unsigned int LenX) {
         unsigned int count = parameters.size();
-        matrix out(GL::dimensions{ LenX, count / LenX, 1 });
+        matrix out(GL::GPU::dimensions{ LenX, count / LenX, 1 });
         count = 0;
         if (auto W = out.write()) {
             //std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));
@@ -6492,7 +4593,7 @@ public:
             NewY = this->size(1) + first.size(1) * (jdim == 1),
             NewZ = this->size(2) + first.size(2) * (jdim == 2);
 
-        matrix out(GL::dimensions{ NewX, NewY, NewZ });
+        matrix out(GL::GPU::dimensions{ NewX, NewY, NewZ });
         if (jdim == 0) {
             mem_matrix::queue_gpu_work(GL::string("join_dim_0") + GL::string(opencl_impl::type_name<T>()),
                 out.size(),
@@ -6520,7 +4621,7 @@ public:
         if (this->dim.num_dimensions() == 0) return matrix();
         else if (this->dim.num_dimensions() > 2) return matrix();
 
-        matrix out(GL::dimensions{ this->dim.Y, this->dim.X, 1 });
+        matrix out(GL::GPU::dimensions{ this->dim.Y, this->dim.X, 1 });
         mem_matrix::queue_gpu_work(GL::string("Transpose") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y
@@ -6531,7 +4632,7 @@ public:
     matrix make_square() const {
         unsigned int len = std::max<unsigned int>(dim.X, dim.Y);
 
-        matrix out(GL::dimensions{ len, len, 1 });
+        matrix out(GL::GPU::dimensions{ len, len, 1 });
         mem_matrix::queue_gpu_work(GL::string("make_square") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len
@@ -6543,7 +4644,7 @@ public:
         if (this->dim.num_dimensions() == 0) return matrix();
         else if (this->dim.num_dimensions() == 1) return this->copy();
         else if (this->dim.num_dimensions() > 2) return matrix();
-        matrix out(GL::dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
+        matrix out(GL::GPU::dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
         mem_matrix::queue_gpu_work(GL::string("diagonal") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, dim.X
@@ -6552,7 +4653,7 @@ public:
     };
     // extract a row from this 2-D matrix as a 1-D array
     matrix row(unsigned int rowN) const {
-        matrix out(GL::dimensions{ dim.Y, dim.Z, 1 });
+        matrix out(GL::GPU::dimensions{ dim.Y, dim.Z, 1 });
         mem_matrix::queue_gpu_work(GL::string("row_of") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z
@@ -6562,7 +4663,7 @@ public:
     // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
     matrix grow_by_wrapping(unsigned int new_length) const {
         if (this->dim.num_dimensions() == 1) {
-            matrix out(GL::dimensions{ new_length, 1, 1 });
+            matrix out(GL::GPU::dimensions{ new_length, 1, 1 });
             mem_matrix::queue_gpu_work(GL::string("wrap_around") + GL::string(opencl_impl::type_name<T>()),
                 out.size(),
                 out.mem, mem, (unsigned int)this->size()
@@ -6639,7 +4740,7 @@ public:
             return make_square().cofactor();
         }
         unsigned int dimension = this->dim.X;
-        matrix solution(GL::dimensions{ dimension, dimension, 1 });
+        matrix solution(GL::GPU::dimensions{ dimension, dimension, 1 });
         if (auto W1 = solution.write()) {
             matrix subVect(dimension - 1, dimension - 1, 1, true);
             if (auto R = this->read()) {
@@ -6688,7 +4789,7 @@ public:
             unsigned int final_num_rows = this->dim.X;
             unsigned int final_num_cols = rhs.dim.Y;
 
-            matrix out(GL::dimensions{ final_num_rows, final_num_cols, 1 });
+            matrix out(GL::GPU::dimensions{ final_num_rows, final_num_cols, 1 });
             auto R_lhs = this->read();
             auto R_rhs = rhs.read();
             if (auto W = out.write()) {
@@ -6710,11 +4811,11 @@ public:
             return out;
         }
         else if (this->dim.Y > rhs.dim.X) {
-            return matrix_multiply(matrix(rhs).join(0, matrix(GL::dimensions{ this->dim.Y - rhs.dim.X, rhs.dim.Y, rhs.dim.Z }) = 1));
+            return matrix_multiply(matrix(rhs).join(0, matrix(GL::GPU::dimensions{ this->dim.Y - rhs.dim.X, rhs.dim.Y, rhs.dim.Z }) = 1));
         }
         else /*if (this->LenY < rhs.LenX)*/ {
             // To-Do: need to set final column in joining array to 1?
-            return matrix(*this).join(1, matrix(GL::dimensions{ this->dim.X, rhs.dim.X - this->dim.Y, this->dim.Z }) = 0).matrix_multiply(rhs);
+            return matrix(*this).join(1, matrix(GL::GPU::dimensions{ this->dim.X, rhs.dim.X - this->dim.Y, this->dim.Z }) = 0).matrix_multiply(rhs);
         }
     };
 
@@ -6740,7 +4841,7 @@ public:
             if (this->size() > 1000) {
                 T out = (T)0;
                 if (1) {
-                    matrix Temp(GL::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+                    matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
                     mem_matrix::queue_gpu_work(GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()),
                         this->size(),
                         mem, Temp.mem, (unsigned int)this->size()
@@ -6771,7 +4872,7 @@ public:
     };
     T max() const {
         if (this->size() > 1000) {
-            matrix out(GL::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+            matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
             mem_matrix::queue_gpu_work(GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()),
                 this->size(),
                 mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::lowest()
@@ -6791,7 +4892,7 @@ public:
     };
     T min() const {
         if (this->size() > 1000) {
-            matrix out(GL::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+            matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
             mem_matrix::queue_gpu_work(GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()),
                 this->size(),
                 mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::max()
@@ -6873,7 +4974,7 @@ public:
     };
 
     matrix resize(unsigned int X, unsigned int Y, unsigned Z) const {
-        auto out = matrix(GL::dimensions{ X, Y, Z });
+        auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
         mem_matrix::queue_gpu_work(GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
@@ -6881,7 +4982,7 @@ public:
         return out;
     };
     matrix resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
-        auto out = matrix(GL::dimensions{ X, Y, Z });
+        auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
         mem_matrix::queue_gpu_work(GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
             out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
@@ -7197,6 +5298,100 @@ public:
 
 void fnGpuProgramming() {
 #if 1
+    for (;;) {
+        if (1) {            
+            atomic_tree<int, int, 10> tree;
+            GL::stopwatch sw;
+            parallel::Std_For<size_t>(0, 1000000, [&](size_t i) {
+                tree.Add((int*)reinterpret_cast<void*>(i), i);
+                std::this_thread::yield();
+                (void)tree.At(i);
+                std::this_thread::yield();
+                tree.Remove(i);
+            });
+            parallel::Std_For<size_t>(0, 1000000, [&](size_t i) {
+                tree.Add((int*)reinterpret_cast<void*>(i), i);
+                std::this_thread::yield();
+                if (i % 2 == 0) {
+                    (void)tree.At(i);
+                }
+                else {
+                    tree.Remove(i);
+                }
+            });
+            print(std::to_string(2000000.0 / sw.stop()) + " ops / sec [1 par]");
+        }
+        if (1) {            
+            atomic_tree<int, int, 10> tree;
+            GL::stopwatch sw;
+            for (size_t i = 0; i < 1000000; ++i) {
+                tree.Add((int*)reinterpret_cast<void*>(i), i);
+                std::this_thread::yield();
+                (void)tree.At(i);
+                std::this_thread::yield();
+                tree.Remove(i);
+            };
+            for (size_t i = 0; i < 1000000; ++i) {
+                tree.Add((int*)reinterpret_cast<void*>(i), i);
+                std::this_thread::yield();
+                if (i % 2 == 0) {
+                    (void)tree.At(i);
+                }
+                else {
+                    tree.Remove(i);
+                }
+            };
+            print(std::to_string(2000000.0 / sw.stop()) + " ops / sec [1 seq]");
+        }
+        std::this_thread::yield();
+        if (1) {
+            GL::atomic_map<int, int*> tree;
+            GL::stopwatch sw;
+            parallel::Std_For<size_t>(0, 1000000, [&](size_t i) {
+                tree.insert_fast(i, (int*)reinterpret_cast<void*>(i));
+                std::this_thread::yield();
+                (void)tree.at(i);
+                std::this_thread::yield();
+                tree.erase(i);
+            });
+            parallel::Std_For<size_t>(0, 1000000, [&](size_t i) {
+                tree.insert_fast(i, (int*)reinterpret_cast<void*>(i));
+                std::this_thread::yield();
+                if (i % 2 == 0) {
+                    (void)tree.at(i);
+                }
+                else {
+                    tree.erase(i);
+                }
+            });
+            print(std::to_string(2000000.0 / sw.stop()) + " ops / sec [2 par]");
+        }
+        if (1) {
+            GL::atomic_map<int, int*> tree;
+            GL::stopwatch sw;
+            for (size_t i = 0; i < 1000000; ++i) {
+                tree.insert_fast(i, (int*)reinterpret_cast<void*>(i));
+                std::this_thread::yield();
+                (void)tree.at(i);
+                std::this_thread::yield();
+                tree.erase(i);
+            };
+            for (size_t i = 0; i < 1000000; ++i) {
+                tree.insert_fast(i, (int*)reinterpret_cast<void*>(i));
+                std::this_thread::yield();
+                if (i % 2 == 0) {
+                    (void)tree.at(i);
+                }
+                else {
+                    tree.erase(i);
+                }
+            };
+            print(std::to_string(2000000.0 / sw.stop()) + " ops / sec [2 seq]");
+        }
+    }
+
+
+
     // 1-D pattern sampling
     if (1) {
         matrix<float> x_pos = matrix<float>::linear(0, 1000000, 1000000, 1, 1);

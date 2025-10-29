@@ -64,6 +64,7 @@ namespace GL {
             else return (double)data.V1;
         };
     };
+#if 0
     enum class ArrayTypes {
         EMPTY
         , CHAR
@@ -363,7 +364,7 @@ namespace GL {
         };
 
     };
-
+#endif
 };
 
 void fnGpuProgramming();

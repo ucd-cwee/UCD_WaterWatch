@@ -916,7 +916,7 @@ __forceinline void console_clear() {
 
 int main() {
     fnGpuProgramming();
-#if 1
+#if 0
     // Conway's Game of Life, using the GPU.
     if (1) {
         using namespace GL;
