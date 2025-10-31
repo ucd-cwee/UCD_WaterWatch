@@ -169,7 +169,7 @@ namespace GL {
         };
 
     public:
-        GuardType ProtectCurrentEpoch() const {
+        [[nodiscard]] GuardType ProtectCurrentEpoch() const {
             return TLS::EpochGuard(
                 const_cast<atomic_epoch_allocator*>(this),
                 const_cast<TLS*>(&*_TLS),

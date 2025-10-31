@@ -332,3 +332,294 @@ private:
 	};
 
 };
+
+#if 0
+// template<class objType, class keyType, int degree>
+class tree {
+public:
+	using objType = int;
+	using keyType = int;
+	static constexpr int degree = 10;
+
+	class treeNode {
+	public:
+		keyType // local copy of the keys
+			keys[degree - 1];
+		std::atomic<treeNode*> // pointers to children nodes
+			ptrs[degree];
+		int // number of keys
+			count;
+		bool // true if leaf node
+			is_leaf;
+		std::atomic<int> // != 0 if being accessed
+			marked;
+		std::mutex // lock for node (delete)
+			nodeLock;
+	};
+	GL::atomic_epoch_allocator< treeNode, GL::atomic_allocator<treeNode> >
+		nodeAllocator;
+
+	void queue_for_deletion(const treeNode* p) {
+		nodeAllocator.Free(const_cast<treeNode*>(p));
+	};
+	treeNode*
+		root;
+
+	// takes a root node, moves the left-most items to a new child, moves the right-most items to a new child, and makes a new root
+	void SplitRootNode() {
+		const treeNode
+			* currRoot = root;
+		treeNode
+			* newRoot = nullptr,
+			* sib1 = nullptr,
+			* sib2 = nullptr;
+		int
+			siz = 0;
+		auto delayed_node_deletion
+			= nodeAllocator.ProtectCurrentEpoch();
+
+		// create the sibling nodes
+		sib1 = nodeAllocator.Alloc();
+		sib1->is_leaf = currRoot->is_leaf;
+		sib2 = nodeAllocator.Alloc();
+		sib2->is_leaf = currRoot->is_leaf;
+
+		// set size based on degree
+		siz = (degree - 1) / 2;
+
+		// copy the first (degree-1)/2 keys of current root to sibling 1
+		for (int j = 0; j < siz; j++)
+			sib1->keys[j] = currRoot->keys[j];
+
+		// copy the last (degree-1)/2 keys of current root to sibling 2
+		for (int j = 0; j < siz; j++)
+			sib2->keys[j] = currRoot->keys[j + siz + 1];
+
+		// copy the first degree/2 ptrs of current root over to sibling 1
+		if (!currRoot->is_leaf)
+			for (int j = 0; j < degree / 2; j++)
+				sib1->ptrs[j] = currRoot->ptrs[j].load();
+
+		// copy the last degree/2 ptrs of current root over to sibling 2
+		if (!currRoot->is_leaf)
+			for (int j = 0; j < degree / 2; j++)
+				sib2->ptrs[j] = currRoot->ptrs[j + degree / 2].load();
+
+		// set sibling sizes
+		sib1->count = siz;
+		sib2->count = siz;
+
+		// create and populate new root
+		newRoot = nodeAllocator.Alloc();
+		newRoot->is_leaf = false;
+		newRoot->ptrs[0] = sib1;
+		newRoot->ptrs[1] = sib2;
+		newRoot->keys[0] = currRoot->keys[siz];
+		newRoot->count = 1;
+
+		// perform the CAS
+		if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&root), newRoot, const_cast<treeNode*>(currRoot)) != currRoot) {
+			queue_for_deletion(newRoot);
+			queue_for_deletion(sib1);
+			queue_for_deletion(sib2);
+			// we failed the split. Hopefully the caller learns this the hard way and tries again.
+		}
+		else {
+			// we successfully performed the split. The old root should be queued for deletion.
+			queue_for_deletion(currRoot);
+		}
+	};
+	treeNode* CloneNode(const treeNode* to_clone) {
+		auto delayed_node_deletion
+			= nodeAllocator.ProtectCurrentEpoch();
+
+		treeNode* out = nodeAllocator.Alloc();
+		out->count = to_clone->count;
+		out->is_leaf = to_clone->is_leaf;
+		for (int i = 0; i < out->count; ++i) out->keys[i] = to_clone->keys[i];
+		for (int i = 0; i <= out->count; ++i) out->ptrs[i] = to_clone->ptrs[i].load();
+		return out;
+	};
+
+	// note, user must queue for deletion the newParent (returned), sib1, and sib2 if the CAS fails.
+	treeNode* SplitChildNode(const treeNode* parent, const treeNode* child, treeNode*& sib1, treeNode*& sib2) {
+		auto delayed_node_deletion
+			= nodeAllocator.ProtectCurrentEpoch();
+
+		treeNode
+			* newParent;
+		int
+			siz,
+			idx;
+
+		newParent = CloneNode(parent);
+
+		// create new sibling nodes 
+		sib1 = nodeAllocator.Alloc();
+		sib1->is_leaf = child->is_leaf;
+
+		sib2 = nodeAllocator.Alloc();
+		sib2->is_leaf = child->is_leaf;
+
+		// set size based on degree 
+		siz = (degree - 1) / 2;
+
+		// copy the first (degree-1)/2 keys of child to sibling 1 
+		for (int j = 0; j < siz; j++)
+			sib1->keys[j] = child->keys[j];
+
+		// copy the last (degree-1)/2 keys of child to sibling 2 
+		for (int j = 0; j < siz; j++)
+			sib2->keys[j] = child->keys[j + siz + 1];
+
+		// copy the first degree/2 ptrs of child over to sibling 1 
+		if (!child->is_leaf)
+			for (int j = 0; j < degree / 2; j++)
+				sib1->ptrs[j] = child->ptrs[j].load();
+
+		// set sibling size 
+		sib1->count = siz;
+
+		// copy the last degree/2 ptrs of child over to sibling 2 
+		if (!child->is_leaf)
+			for (int j = 0; j < degree / 2; j++)
+				sib2->ptrs[j] = child->ptrs[j + degree / 2].load();
+
+		// set sibling size 
+		sib2->count = siz;
+
+		// find where new key is going in new parent 
+		idx = 0;
+		while ((idx < newParent->count) && (newParent->keys[idx] < child->keys[siz]))
+			idx++;
+
+		// slide new parent child ptrs over to make room for new child 
+		for (int j = newParent->count; j >= idx + 1; j--)
+			newParent->ptrs[j + 1] = newParent->ptrs[j].load();
+
+		// slide new parent child keys over to make room for new key 
+		for (int j = newParent->count - 1; j >= idx; j--)
+			newParent->keys[j + 1] = newParent->keys[j];
+
+		// add new siblings to new parent 
+		newParent->ptrs[idx] = sib1;
+		newParent->ptrs[idx + 1] = sib2;
+
+		// copy middle key of child to new parent 
+		newParent->keys[idx] = child->keys[siz];
+
+		// increment count of keys in new parent 
+		newParent->count += 1;
+
+		return newParent;
+	};
+
+	// see https://oasis.library.unlv.edu/cgi/viewcontent.cgi?article=4733&context=thesesdissertations
+	void insert(keyType key) {
+		treeNode
+			* currPtr = nullptr,
+			* prevPtr = nullptr,
+			* newRoot = nullptr,
+			* currChild = nullptr,
+			* newCurrChild = nullptr,
+			* newCurrPtr = nullptr,
+			* newLeafPtr = nullptr,
+			* sib1 = nullptr,
+			* sib2 = nullptr;
+		int
+			currIndex = 0,
+			prevIdx = 0;
+		bool
+			insertDone = false;
+		auto delayed_node_deletion
+			= nodeAllocator.ProtectCurrentEpoch();
+
+		while (!insertDone) {
+			// if root is NULL, create new root
+			if (root == nullptr) {
+				newRoot = nodeAllocator.Alloc();
+				currPtr = nullptr;
+				if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&root), newRoot, nullptr) != nullptr) {
+					queue_for_deletion(newRoot);
+					newRoot = nullptr;
+				}
+				continue; // try again from the top
+			}
+
+			// if root is full, tree grows in height.
+			if (root->count == (degree - 1)) {
+				SplitRootNode();
+				continue; // try again from the top
+			}
+
+			// traverse downward to find applicable leaf node, split full nodes along the way
+			currPtr = root;
+			prevPtr = nullptr;
+			prevIdx = -1;
+			while (currPtr && !currPtr->is_leaf) {
+				// find/set currIndex for appropriate child based on key
+				while ((currIndex < currPtr->count) && (key > currPtr->keys[currIndex])) {
+					currIndex++;
+				}
+				currChild = currPtr->ptrs[currIndex].load();
+
+				if (currChild->count == (degree - 1)) { // must split child node (figure 25)
+					// set flags for impacted nodes to indicate updates in process 
+					set  currPtr->markedand currChild->marked;
+
+					// split child node (figure 26) 
+					// creates new current and child nodes 
+					newCurrPtr = splitChildNode(currPtr, currChild, sib1, sib2);
+
+					// attempt to cut-in split node into previous level (figure 27) // if at root, must update at root 
+					if (prevPtr == NULL) {// at root?
+						CAS in new  newCurrNode  into root
+							// fail => delete nodes newCurrPtr, newChild, //  sb1, and sb2 // continue from top (while insert not done)
+							// success => enqueue old nodes for deletion
+					}
+					else { // not at root
+						// note, if marked, abandon changes, continue from top
+						if (prevPtr->marked) {
+							CAS in new  newCurrPtr  into  prevPtr[prexIdx] // fail => delete newCurrPtr and newChild // continue from top // success => enqueue related nodes for deletion
+						}
+					}
+					... re - find currIndex for appropriate child based on key...
+
+
+				}
+				// move down tree to next level, track previous level 
+				prevPtr = currPtr;
+				prevIdx = currIndex;
+				set  currNode  to appropriate child based on currIndex;
+			} // end while
+
+			// attempt to cut-in split node into previous level (figure 29) // if at root, must update at root 
+			if (prevPtr == NULL) { // at root? 
+				CAS in  newLeafPtr  into  root
+					fail = > delete  newLeafPtr
+					continue from top(while insert not done)
+					success = > set  insertDone = true
+			}
+			else {
+				// note, if marked, abandon changes, continue from top
+				if  prevPtr->marked
+					not CAS in newLeafPtr into prevPtr at prevIdx
+					// fail => delete newLeafPtr 
+					//     continue from top (while insert not done) 
+					// success => enqueue released nodes for deletion set insertDone=true
+
+					set insertDone = true
+			}
+
+
+
+
+		}  // end while not insertDone
+	} // end insert
+
+
+
+
+
+};
+#endif
