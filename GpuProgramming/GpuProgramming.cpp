@@ -7194,7 +7194,7 @@ void fnGpuProgramming() {
 #if 1
     if (1) {
         GL::atomic_allocator<int> alloc;
-        aTree<int, int, 10> tree;
+        aTree/*<int, int, 10>*/ tree;
         for (int i = 10; i < 1000; i += 10) {
             tree.Add(alloc.Alloc(i), i);
         }
@@ -7207,17 +7207,26 @@ void fnGpuProgramming() {
             //    p = nullptr;
             //}
         }
-        if (auto* node = tree.GetRoot()) {
-            while (node = tree.GetNextLeaf(node)) {
-                EXPECT_NE(nullptr, node->object);
+        if (1) {
+            decltype(tree)::history_stack history;
+            if (auto* node = tree.GetRoot()) {
+                while (node = tree.GetNextLeaf(node, history)) {
+                    EXPECT_NE(nullptr, node->object);
+                    print(node->key);
+                }
             }
         }
         for (int i = 10; i < 1000; i += 10) {
-            tree.Remove(tree.NodeFind(i));
+            auto* node = tree.NodeFind(i);
+            EXPECT_NE(nullptr, node);
+            tree.Remove(node);
         }
-        if (auto* node = tree.GetRoot()) {
-            while (node = tree.GetNextLeaf(node)) {
-                EXPECT_NE(nullptr, node->object);
+        if (1) {
+            decltype(tree)::history_stack history;
+            if (auto* node = tree.GetRoot()) {
+                while (node = tree.GetNextLeaf(node, history)) {
+                    EXPECT_NE(nullptr, node->object);
+                }
             }
         }
 

@@ -348,13 +348,8 @@ public:
 		objType // if != nullptr pointer to object stored in leaf node
 			* object;
 
-		aTreeNode // parent node
-			* parent;
-		short
-			parent_index;
-
 		aTreeNode* // next sibling
-			next() const {
+			next(aTreeNode* parent, short parent_index) const {
 			if (parent) {
 				if ((parent_index + 1) < parent->numChildren) {
 					return parent->children[parent_index + 1];
@@ -363,7 +358,7 @@ public:
 			return nullptr;
 		};
 		aTreeNode* // prev sibling
-			prev() const {
+			prev(aTreeNode* parent, short parent_index) const {
 			if (parent) {
 				if (parent_index > 0) {
 					return parent->children[parent_index - 1];
@@ -371,34 +366,28 @@ public:
 			}
 			return nullptr;
 		};	
-		void 
-			update_children_indices() {
-			for (short i = 0; i < numChildren; ++i) children[i]->parent_index = i;			
-		};		
-		void // assumes there is room
+		void // assumes there is room. Inserting should invalidate any and all search histories
 			insert_child(aTreeNode* node) {
 			short i = 0;
 			for (i = numChildren - 1; i >= 0; --i) {
 				if (children[i]->key > node->key) {
 					children[i + 1] = children[i];
-					children[i + 1]->parent_index = i + 1;
+					//children[i + 1]->parent_index = i + 1;
 				}
 				else {
-					node->parent = this;
+					//node->parent = this;
 					children[i + 1] = node;
-					children[i + 1]->parent_index = i + 1;
+					//children[i + 1]->parent_index = i + 1;
 					++numChildren;
 					return;
 				}
 			}
 			// failed to do insert for some reason
-			node->parent = this;
 			children[0] = node;
-			children[0]->parent_index = 0;
 			++numChildren;
 			return;
 		};
-		void // assumes the node exists in the list of children
+		void // assumes the node exists in the list of children. Removing should invalidate any and all search histories
 			remove_child(aTreeNode* node) {
 			short i = 0;
 			for (i = 0; i < numChildren; ++i) {
@@ -417,11 +406,9 @@ public:
 			if (node) throw std::runtime_error("Could not locate requested node");
 			--numChildren;
 			for (i = numChildren; i <= maxChildrenPerNode; ++i) children[i] = nullptr;
-			update_children_indices();
 		};
 
-
-		int	// number of children							
+		int	// number of children
 			numChildren;
 		aTreeNode
 			*children[maxChildrenPerNode + 1];
@@ -435,56 +422,46 @@ public:
 			parent_index;
 	};
 	using history_stack = std::deque< search_history >;
+
 public:
 	// goes through all leaf nodes of the tree
-	static aTreeNode* GetNextLeaf(aTreeNode* node/*, history_stack& history*/) {
-		//if (node->numChildren > 0) {
-		//	while (node->numChildren > 0) { 
-		//		history.push_back({ node, 0 });
-		//		node = node->children[0]; 
-		//	}
-		//	return node;
-		//}
-		//else {
-		//	// no 'next' means that we are at the end of this segment of children and need to jump to the parent 
-		//	while (node && !node->next()) {
-		//		auto& most_recent_parent = history.back();
-		//		node = most_recent_parent.parent;
-		//		history.pop_back();
-		//	}
-
-
-		//	while (node && !node->next()) {
-		//		
-		//	}
-		//	if (node) {
-		//		node = node->next();
-		//		while (node->numChildren > 0) { node = node->children[0]; }
-		//		return node;
-		//	}
-		//	else return nullptr;
-		//}
-
-
-
-
-
-
-
-
-
-		if (node->numChildren > 0) {
-			while (node->numChildren > 0) { node = node->children[0]; }
-			return node;
-		}
-		else {
-			while (node && !node->next()) node = node->parent;
-			if (node) {
-				node = node->next();
-				while (node->numChildren > 0) { node = node->children[0]; }
+	__declspec(noinline) static aTreeNode* GetNextLeaf(aTreeNode* node, history_stack& history) {
+		while (true) {
+			if (node->numChildren > 0) {
+				while (node->numChildren > 0) {
+					history.push_back({ node, 0 });
+					node = node->children[0];
+				}
 				return node;
 			}
-			else return nullptr;
+			else {
+				// if there is no history, then we are calling this on the root with no children
+
+				if (history.empty()) return nullptr;
+				if (!node) return nullptr;
+
+				if (node->next(history.back().parent, history.back().parent_index)) {
+					node = node->next(history.back().parent, history.back().parent_index);
+					history.back().parent_index++;
+					while (node->numChildren > 0) {
+						history.push_back({ node, 0 });
+						node = node->children[0];
+					}
+					return node;
+				}
+				else {
+					// continue from parent
+					if (history.empty()) return nullptr;
+					
+					while (!history.empty() && !node->next(history.back().parent, history.back().parent_index)) {
+						node = history.back().parent;
+						history.pop_back();
+					}
+					if (history.empty()) return nullptr;
+					node = node->next(history.back().parent, history.back().parent_index);
+					history.back().parent_index++;
+				}
+			}
 		}
 	};
 
@@ -504,9 +481,8 @@ public:
 			*newNode,
 			*rootCopy
 			;
-		bool complete = false;
 		bool need_retry = false;
-		while (!complete) {
+		while (true) {
 			node = child = newNode = nullptr;
 			rootCopy = root;
 			need_retry = false;
@@ -523,10 +499,11 @@ public:
 				newNode->key = rootCopy->key;
 				newNode->children[0] = rootCopy;
 				newNode->numChildren = 1;
-				rootCopy->parent_index = 0;				
-				rootCopy->parent = newNode;
-				SplitNode(rootCopy);
+				//rootCopy->parent_index = 0;				
+				//rootCopy->parent = newNode;
 				root = newNode;
+				SplitNode(rootCopy);
+				
 				continue;
 			}
 
@@ -534,15 +511,19 @@ public:
 			newNode->key = key;
 			newNode->object = object;
 
+			history_stack history;
 			for (node = rootCopy; node->numChildren > 0; node = child) {
 				if (key > node->key) node->key = key; // race condition
 
 				// find the first child with a key larger equal to the key of the new node
-				for (child = node->children[0]; child->next(); child = child->next())
+				history.push_back({ node, 0 });
+				for (child = node->children[0]; 
+					child->next(history.back().parent, history.back().parent_index); 
+					child = child->next(history.back().parent, history.back().parent_index), history.back().parent_index++)
 					if (key <= child->key) break;
 
 				if (child->object) {
-					newNode->parent = node;
+					//newNode->parent = node;
 					node->insert_child(newNode);
 					return newNode;
 				}
@@ -557,60 +538,102 @@ public:
 
 			if (!need_retry) {
 				// we only end up here if the root node is empty
-				newNode->parent = rootCopy;
+				//newNode->parent = rootCopy;
 				rootCopy->key = key;
 				rootCopy->children[0] = newNode;
 				rootCopy->numChildren = 1;
 				return newNode;
 			}
 		}
-		// return newNode;
 	};
 	// remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
-	void Remove(aTreeNode* node) {
+	__declspec(noinline) void Remove(aTreeNode* node) {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-		aTreeNode* parent;
-
-		// unlink the node from it's parent
-		node->parent->remove_child(node);
+		if (!node || !root || (root->numChildren <= 0)) return;
 
 		// make sure there are no parent nodes with a single child
-		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
-			if (parent->next()) parent = MergeNodes(parent, parent->next());
-			else if (parent->prev()) parent = MergeNodes(parent->prev(), parent);
+		bool retry = false;
+		while (true) {
+			retry = false;	
 
-			// a parent may not use a key higher than the key of its last child
-			if (parent->key > parent->children[parent->numChildren - 1]->key) 
-				parent->key = parent->children[parent->numChildren - 1]->key;
-
-			if (parent->numChildren > maxChildrenPerNode) {
-				SplitNode(parent);
-				break;
+			bool found = false;
+			// step 1, find the node
+			history_stack history;
+			history.push_back({ root, 0 });
+			aTreeNode* Node;
+			for (Node = root->children[0]; Node && (Node->numChildren > 0);
+				history.push_back({ Node, 0 }), 
+				Node = Node->children[0]				
+			) {
+				while (Node->next(history.back().parent, history.back().parent_index) && (Node->key < node->key)) {
+					Node = Node->next(history.back().parent, history.back().parent_index);
+					history.back().parent_index++;
+				}
 			}
-		}
-		// a parent may not use a key higher than the key of it's last child
-		for (; parent && parent->children[parent->numChildren - 1]; parent = parent->parent)
-			if (parent->key > parent->children[parent->numChildren - 1]->key)
-				parent->key = parent->children[parent->numChildren - 1]->key;
+			while (Node->next(history.back().parent, history.back().parent_index) && Node != node) {
+				if (Node == node) {
+					break;
+				}
+				Node = Node->next(history.back().parent, history.back().parent_index);
+				history.back().parent_index++;
+			}	
 
-		// actually free the node
-		FreeNode(node);
+			// unlink the node from it's parent
+			history.back().parent->remove_child(node);
 
-		// remove the root node if it has a single internal node as child
-		if ((root->numChildren == 1) && (root->children[0]->object == nullptr)) {
-			aTreeNode* oldRoot = root;
-			root->children[0]->parent = nullptr;
-			root = root->children[0];
-			FreeNode(oldRoot);
+			// the idea is to merge parents when, after removing this node, a parent would have been empty.
+			while (!history.empty() && (history.back().parent != root) && (history.back().parent->numChildren <= 0)) {
+				// this parent is going to be erased.
+				aTreeNode* parent = history.back().parent;
+				short parent_index = history.back().parent_index;
+				history.pop_back();
+
+				history.back().parent->remove_child(parent);
+
+				parent = history.back().parent;
+				if (parent->numChildren > 0) {
+					// a parent may not use a key higher than the key of its last child
+					if (parent->key > parent->children[parent->numChildren - 1]->key)
+						parent->key = parent->children[parent->numChildren - 1]->key;
+				}
+			}
+
+			while (!history.empty() && history.back().parent->numChildren > 0) {
+				aTreeNode* parent = history.back().parent;
+				short parent_index = history.back().parent_index;
+				history.pop_back();
+				if (parent->numChildren > 0) {
+					if (parent->key > parent->children[parent->numChildren - 1]->key)
+						parent->key = parent->children[parent->numChildren - 1]->key;
+				}
+			}
+
+			// actually free the node
+			FreeNode(node);
+
+			// remove the root node if it has a single internal node as child
+			if ((root->numChildren == 1) && (root->children[0]->object == nullptr)) {
+				aTreeNode* oldRoot = root;
+				//root->children[0]->parent = nullptr;
+				root = root->children[0];
+				FreeNode(oldRoot);
+			}
+
+			if (!retry) return;
 		}
 	};
 	// find an object using the given key
 	__declspec(noinline) aTreeNode* NodeFind(keyType key) const {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-		for (aTreeNode* node = root->children[0]; node; node = node->children[0]) {
-			while (node->next()) {
+		if (root == nullptr) return nullptr;
+
+		history_stack history;
+		history.push_back({ root, 0 });
+		for (aTreeNode* node = root->children[0]; node; history.push_back({ node, 0 }), node = node->children[0]) {
+			while (node->next(history.back().parent, history.back().parent_index)) {
 				if (node->key >= key) break;
-				node = node->next();
+				node = node->next(history.back().parent, history.back().parent_index);
+				history.back().parent_index++;
 			}
 			if (node->object) {
 				if (node->key == key) return node;
@@ -623,10 +646,14 @@ public:
 	aTreeNode* NodeFindSmallestLargerEqual(keyType key) const {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 		if (root == nullptr) return nullptr;
-		for (aTreeNode* node = root->children[0]; node; node = node->children[0]) {
-			while (node->next()) {
+
+		history_stack history;
+		history.push_back({ root, 0 });
+		for (aTreeNode* node = root->children[0]; node; history.push_back({ node, 0 }), node = node->children[0]) {
+			while (node->next(history.back().parent, history.back().parent_index)) {
 				if (node->key >= key) break;
-				node = node->next();
+				node = node->next(history.back().parent, history.back().parent_index);
+				history.back().parent_index++;
 			}
 			if (node->object) {
 				if (node->key >= key) return node;
@@ -641,13 +668,16 @@ public:
 		aTreeNode
 			* node,
 			* smaller;
-
 		if (root == nullptr) return nullptr;
-		for (node = root->children[0], smaller = nullptr; node; node = node->children[0]) {
-			while (node->next()) {
+
+		history_stack history;
+		history.push_back({ root, 0 });
+		for (node = root->children[0], smaller = nullptr; node; history.push_back({ node, 0 }), node = node->children[0]) {
+			while (node->next(history.back().parent, history.back().parent_index)) {
 				if (node->key >= key) break;
 				smaller = node;
-				node = node->next();
+				node = node->next(history.back().parent, history.back().parent_index);
+				history.back().parent_index++;
 			}
 			if (node->object) {
 				if (node->key <= key) return node;
@@ -691,24 +721,14 @@ private:
 	aTreeNode* AllocNode() {
 		aTreeNode* node = nodeAllocator.Alloc();
 		node->key = 0;
-		node->parent = nullptr;
+		//node->parent = nullptr;
 		for (short i = 0; i <= maxChildrenPerNode; ++i) node->children[i] = nullptr;
 		node->numChildren = 0;
-		node->parent_index = 0;
+		//node->parent_index = 0;
 		node->object = nullptr;
 		node->marked = 0;
 		return node;
 	};
-	//aTreeNode* CopyNode(aTreeNode* to_copy) {
-	//	aTreeNode* node = nodeAllocator.Alloc();
-	//	node->key = to_copy->key;
-	//	node->parent = to_copy->parent;
-	//	node->numChildren = to_copy->numChildren;
-	//	node->parent_index = to_copy->parent_index;
-	//	node->object = to_copy->object;
-	//	node->marked = 0;
-	//	return node;
-	//};
 	void FreeNode(aTreeNode* node) {
 		nodeAllocator.Free(node);
 	};
@@ -718,39 +738,44 @@ private:
 
 		int i;
 		aTreeNode* child, * newNode;
+		bool found = false;
+
+		// step 1, find the node
+		history_stack history;
+		history.push_back({ root, 0 });
+		for (aTreeNode* Node = root->children[0]; Node;
+			history.push_back({ Node, 0 }),
+			Node = Node->children[0]
+			) {
+			if (Node == node) { found = true; break; }
+			while (Node->next(history.back().parent, history.back().parent_index)) {
+				if (Node == node) { found = true; break; }
+				Node = Node->next(history.back().parent, history.back().parent_index);
+				history.back().parent_index++;
+			}
+			if (Node == node) { found = true; break; }
+		}
+		if (!found) {
+			return;
+		}
 
 		// allocate a new node
 		newNode = AllocNode();
-
-
-
-		newNode->parent = node->parent;
+		//newNode->parent = node->parent;
 
 		// divide the children over the two nodes
 		int sz = node->numChildren / 2;
 		for (int i = 0; i < sz; ++i) {
 			newNode->children[i] = node->children[0];		
 			node->remove_child(node->children[0]);
-			newNode->children[i]->parent_index = i;
-			newNode->children[i]->parent = newNode;
+			//newNode->children[i]->parent_index = i;
+			//newNode->children[i]->parent = newNode;
 			newNode->key = newNode->children[i]->key;
 			newNode->numChildren++;
 		}
-		node->parent->insert_child(newNode);
-	};
-	aTreeNode*
-		MergeNodes(aTreeNode* node1, aTreeNode* node2) {
-		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 
-		aTreeNode* child;
-		for (int i = node1->numChildren - 1; i >= 0; --i) {
-			child = node1->children[i];
-			node2->insert_child(child);
-			node1->remove_child(child);
-		}
-		node1->parent->remove_child(node1);
-		FreeNode(node1);
-		return node2;
+		history.back().parent->insert_child(newNode);
+		// node->parent->insert_child(newNode);
 	};
 
 };
