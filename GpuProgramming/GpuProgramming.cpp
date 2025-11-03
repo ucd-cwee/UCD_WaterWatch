@@ -7192,6 +7192,38 @@ public:
 
 void fnGpuProgramming() {
 #if 1
+    if (1) {
+        GL::atomic_allocator<int> alloc;
+        aTree<int, int, 10> tree;
+        for (int i = 10; i < 1000; i += 10) {
+            tree.Add(alloc.Alloc(i), i);
+        }
+        for (int i = 10; i < 1000; i += 10) {
+            EXPECT_NE(tree.NodeFind(i), nullptr);
+            //if (auto* p = tree.NodeFind(i); p == nullptr) {
+            //    p = tree.NodeFind(i);
+            //}
+            //else {
+            //    p = nullptr;
+            //}
+        }
+        if (auto* node = tree.GetRoot()) {
+            while (node = tree.GetNextLeaf(node)) {
+                EXPECT_NE(nullptr, node->object);
+            }
+        }
+        for (int i = 10; i < 1000; i += 10) {
+            tree.Remove(tree.NodeFind(i));
+        }
+        if (auto* node = tree.GetRoot()) {
+            while (node = tree.GetNextLeaf(node)) {
+                EXPECT_NE(nullptr, node->object);
+            }
+        }
+
+    }
+
+
     // 1-D pattern sampling
     if (1) {
         matrix<float> x_pos = matrix<float>::linear(0, 1000000, 1000000, 1, 1);
