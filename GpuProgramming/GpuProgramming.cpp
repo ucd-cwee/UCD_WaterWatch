@@ -7194,25 +7194,22 @@ void fnGpuProgramming() {
 #if 1
     if (1) {
         GL::atomic_allocator<int> alloc;
-        aTree/*<int, int, 10>*/ tree;
+        aTree<int, int, 10> tree;
         for (int i = 10; i < 1000; i += 10) {
+            if (i == 560) {
+                std::cout << "";
+            }
             tree.Add(alloc.Alloc(i), i);
         }
         for (int i = 10; i < 1000; i += 10) {
             EXPECT_NE(tree.NodeFind(i), nullptr);
-            //if (auto* p = tree.NodeFind(i); p == nullptr) {
-            //    p = tree.NodeFind(i);
-            //}
-            //else {
-            //    p = nullptr;
-            //}
         }
         if (1) {
             decltype(tree)::history_stack history;
             if (auto* node = tree.GetRoot()) {
                 while (node = tree.GetNextLeaf(node, history)) {
                     EXPECT_NE(nullptr, node->object);
-                    print(node->key);
+                    // print(node->key);
                 }
             }
         }
@@ -7231,7 +7228,24 @@ void fnGpuProgramming() {
         }
 
     }
+    if (1) {
+        GL::atomic_allocator<int> alloc;
+        aTree<int, int, 100> tree;
+        parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+            tree.Add(alloc.Alloc(i), i);
+        });
+        if (1) {
+            decltype(tree)::history_stack history;
+            if (auto* node = tree.GetRoot()) {
+                while (node = tree.GetNextLeaf(node, history)) {
+                    EXPECT_NE(nullptr, node->object);
+                    print(node->key);
+                }
+            }
+        }
 
+
+    }
 
     // 1-D pattern sampling
     if (1) {

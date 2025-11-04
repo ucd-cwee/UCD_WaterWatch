@@ -335,12 +335,12 @@ private:
 };
 
 
-// template< class objType, class keyType, int maxChildrenPerNode >
+template< class objType, class keyType, int maxChildrenPerNode >
 class aTree {
 public:
-	using objType = int;
-	using keyType = int;
-	static constexpr int maxChildrenPerNode = 10;
+	//using objType = int;
+	//using keyType = int;
+	//static constexpr int maxChildrenPerNode = 10;
 
 	struct aTreeNode {
 		keyType	// key used for sorting						
@@ -426,7 +426,8 @@ public:
 		short 
 			parent_index;
 	};
-	using history_stack = std::deque< search_history >;
+	using history_stack 
+		= std::deque< search_history >;
 
 public:
 	// goes through all leaf nodes of the tree
@@ -475,11 +476,16 @@ public:
 		: nodeAllocator()
 		, root{ AllocNode() } 
 	{};
-	aTree(aTree const&) = delete;
-	aTree(aTree &&) noexcept = delete;
-	aTree& operator=(aTree const&) = delete;
-	aTree& operator=(aTree&&) noexcept = delete;
-	~aTree() = default;
+	aTree(aTree const&) 
+		= delete;
+	aTree(aTree &&) noexcept 
+		= delete;
+	aTree& operator=(aTree const&) 
+		= delete;
+	aTree& operator=(aTree&&) noexcept 
+		= delete;
+	~aTree() 
+		= default;
 
 	// add an object to the tree
 	__declspec(noinline) aTreeNode* 
@@ -489,7 +495,12 @@ public:
 			*node,
 			*child,
 			*newNode,
-			*rootCopy;
+			*rootCopy, 
+			*copiedNode,
+			*copiedRoot,
+			*parent_to_swap_at,
+			*newChild
+			;
 
 		bool need_retry = false;
 		while (true) {
@@ -530,15 +541,20 @@ public:
 				// find the first child with a key larger equal to the key of the new node
 				history.push_back({ node, 0 });
 				for (child = node->children[0]; 
-					child->next(history.back().parent, history.back().parent_index); 
+					child && child->next(history.back().parent, history.back().parent_index); 
 					child = child->next(history.back().parent, history.back().parent_index), history.back().parent_index++)
 					if (key <= child->key) break;
 
 				// check for conflict with existing operation
 				//if (node->marked > 0) { need_retry = true; FreeNode(newNode); break; }
 
+				if (!child) {
+					need_retry = true;
+					break;
+				}
+
 				if (child->object) {
-					auto* copiedNode = CopyNode(node);
+					copiedNode = CopyNode(node);
 					copiedNode->insert_child(newNode);
 					if (history.size() <= 1) {
 						// performing insert at root. 
@@ -559,7 +575,7 @@ public:
 					else {
 						history.pop_back();
 						auto parent_index_to_swap_at = history.back().parent_index;
-						auto* parent_to_swap_at = history.back().parent;
+						parent_to_swap_at = history.back().parent;
 
 						if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&parent_to_swap_at->children[parent_index_to_swap_at]), copiedNode, node) == node) {
 							// successful swap
@@ -578,17 +594,82 @@ public:
 
 				// make sure the child has room to store another node. If not, expand and start all over.
 				if (child->numChildren >= maxChildrenPerNode) {
-					SplitNode(child); // reevaluate this
-					FreeNode(newNode);
-					need_retry = true;
-					break;
+					copiedNode = CopyNode(node);
+					newChild = CopyNode(child);
+					copiedNode->children[history.back().parent_index] = newChild;
+					aTreeNode* additionalNewNode{ nullptr };
+					SplitNode(newChild, copiedNode, additionalNewNode);
+
+					// new we have to swap-in the copiedNode into the parent of node
+					if (history.size() <= 1) {
+						// root -> child // this indicates that the "node" was the root... this means we simply have to swap the copiedNode into the root.
+						if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&root), copiedNode, rootCopy) == rootCopy) {
+							// success							
+							FreeNode(newNode);
+							FreeNode(child);
+							FreeNode(rootCopy);
+							need_retry = true;
+							break;
+						}
+						else {
+							// failure
+							FreeNode(newNode);
+							FreeNode(copiedNode);
+							FreeNode(newChild);
+							need_retry = true;
+							break;
+						}
+					}
+					else if (history.size() <= 2) {
+						history.pop_back();
+						copiedRoot = CopyNode(history.back().parent);
+						copiedRoot->children[history.back().parent_index] = copiedNode;
+						// root -> child // this indicates that the "node" was the root... this means we simply have to swap the copiedNode into the root.
+						if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&root), copiedRoot, history.back().parent) == history.back().parent) {
+							// success
+							FreeNode(newNode);
+							FreeNode(child);
+							FreeNode(rootCopy);
+							need_retry = true;
+							break;
+						}
+						else {
+							// failure
+							FreeNode(copiedRoot);
+							FreeNode(newNode);
+							FreeNode(copiedNode);
+							FreeNode(newChild);
+							need_retry = true;
+							break;
+						}
+					}					
+					else {
+						history.pop_back();
+						auto prev_node = history.back().parent->children[history.back().parent_index];
+						// root -> node -> ... node  -> child // this indicates that the parent of node is not the root. This means we can swap-into the selected index
+						if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&history.back().parent->children[history.back().parent_index]), copiedNode, prev_node) == prev_node) {
+							// success
+							FreeNode(prev_node);
+							FreeNode(newNode);
+							FreeNode(child);
+							need_retry = true;
+							break;
+						}
+						else {
+							// failure
+							FreeNode(newNode);
+							FreeNode(copiedNode);
+							FreeNode(newChild);
+							need_retry = true;
+							break;
+						}
+					}
 				}
 			}
 
 			if (!need_retry) {
 				// InterlockedIncrement(reinterpret_cast<volatile long*>(&rootCopy->marked));
-
-				auto* copiedRoot = CopyNode(rootCopy);
+				copiedRoot = CopyNode(rootCopy);
 				copiedRoot->key = key;
 				copiedRoot->children[0] = newNode;
 				copiedRoot->numChildren = 1;
@@ -871,36 +952,14 @@ private:
 		FreeNode(aTreeNode* node) {
 		nodeAllocator.Free(node);
 	};
-	void // splits a typical child node. This has not yet been converted to be atomic. 
-		SplitNode(aTreeNode* node) {
+	__declspec(noinline) void // splits a typical child node. This has not yet been converted to be atomic. 
+		SplitNode(aTreeNode* node, aTreeNode* parent, aTreeNode*& newNode) {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 
 		int i;
-		aTreeNode* child, * newNode;
-		bool found = false;
-
-		// step 1, find the node
-		history_stack history;
-		history.push_back({ root, 0 });
-		for (aTreeNode* Node = root->children[0]; Node;
-			history.push_back({ Node, 0 }),
-			Node = Node->children[0]
-			) {
-			if (Node == node) { found = true; break; }
-			while (Node->next(history.back().parent, history.back().parent_index)) {
-				if (Node == node) { found = true; break; }
-				Node = Node->next(history.back().parent, history.back().parent_index);
-				history.back().parent_index++;
-			}
-			if (Node == node) { found = true; break; }
-		}
-		if (!found) {
-			return;
-		}
 
 		// allocate a new node
 		newNode = AllocNode();
-		//newNode->parent = node->parent;
 
 		// divide the children over the two nodes
 		int sz = node->numChildren / 2;
@@ -911,10 +970,9 @@ private:
 			newNode->numChildren++;
 		}
 
-		history.back().parent->insert_child(newNode);
-		// node->parent->insert_child(newNode);
+		parent->insert_child(newNode);
 	};
-	void // splits the root node exlusively
+	__declspec(noinline) void // splits the root node exlusively
 		SplitRoot() {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 
@@ -963,5 +1021,4 @@ private:
 			FreeNode(rootCopy);
 		}
 	};
-
 };
