@@ -56,6 +56,19 @@ namespace GL {
             return InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(Destination), Exchange, Comperand) == Comperand;
         };
 
+        template<class T>
+        static bool CAS(THead<T>& Head, T* Comperand, T* Exchange) {
+            THead<T> Old, New; // Get an atomic copy of head and call it old.
+            if (1) { // race loop
+                New.m_n64 = (Old.m_n64 = Head.m_n64);       
+                if (Old.Node() != Comperand) return false;
+                New.Node(Exchange);
+                if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
+                    return true;
+            } // race, try again
+            return false; 
+        };
+
         // pop pNode from head of list.
         template<class T> __declspec(noinline) T* Pop(THead<T>& Head) {
             THead<T> Old, New; // Get an atomic copy of head and call it old.

@@ -7194,22 +7194,20 @@ void fnGpuProgramming() {
 #if 1
     if (1) {
         GL::atomic_allocator<int> alloc;
-        aTree<int, int, 10> tree;
+        cTree<int, int, 256> tree;
         for (int i = 10; i < 1000; i += 10) {
-            if (i == 560) {
-                std::cout << "";
-            }
             tree.Add(alloc.Alloc(i), i);
         }
         for (int i = 10; i < 1000; i += 10) {
-            EXPECT_NE(tree.NodeFind(i), nullptr);
+            auto* node = tree.NodeFind(i);
+            EXPECT_NE(node, nullptr);
+            EXPECT_EQ(node->key, i);
         }
         if (1) {
-            decltype(tree)::history_stack history;
-            if (auto* node = tree.GetRoot()) {
-                while (node = tree.GetNextLeaf(node, history)) {
+            if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                while (node = tree.GetNextLeaf(node, locker)) {
                     EXPECT_NE(nullptr, node->object);
-                    // print(node->key);
+                    print(node->key);
                 }
             }
         }
@@ -7219,30 +7217,85 @@ void fnGpuProgramming() {
             tree.Remove(node);
         }
         if (1) {
-            decltype(tree)::history_stack history;
-            if (auto* node = tree.GetRoot()) {
-                while (node = tree.GetNextLeaf(node, history)) {
-                    EXPECT_NE(nullptr, node->object);
-                }
-            }
-        }
-
-    }
-    if (1) {
-        GL::atomic_allocator<int> alloc;
-        aTree<int, int, 100> tree;
-        parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-            tree.Add(alloc.Alloc(i), i);
-        });
-        if (1) {
-            decltype(tree)::history_stack history;
-            if (auto* node = tree.GetRoot()) {
-                while (node = tree.GetNextLeaf(node, history)) {
+            if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                while (node = tree.GetNextLeaf(node, locker)) {
                     EXPECT_NE(nullptr, node->object);
                     print(node->key);
                 }
             }
         }
+        auto iterable = matrix<float>::random_between(10, 1000, 100).cast<int>().copy();
+        for (auto& i : iterable) {
+            tree.Add(alloc.Alloc(i), i);
+        }
+        for (auto i : iterable) {
+            auto* node = tree.NodeFind(i);
+            EXPECT_NE(node, nullptr);
+            EXPECT_EQ(node->key, i);
+        }
+        if (1) {
+            if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                while (node = tree.GetNextLeaf(node, locker)) {
+                    EXPECT_NE(nullptr, node->object);
+                    print(node->key);
+                }
+            }
+        }
+
+
+
+
+    }
+    if (1) {
+        GL::atomic_allocator<int> alloc;
+        cTree<int, int, 32> tree;
+        parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+            tree.Add(alloc.Alloc(i), i);
+        });
+        for (int i = 0; i < 100000; i += 1) {
+            auto* node = tree.NodeFind(i);
+            EXPECT_NE(nullptr, node);
+            EXPECT_EQ(node->key, i);
+        }
+        parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+            auto* node = tree.NodeFind(i);
+            EXPECT_NE(nullptr, node);
+            EXPECT_EQ(node->key, i);
+        });
+        parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+            tree.Remove(tree.NodeFind(i));
+        });
+        parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+            tree.Add(alloc.Alloc(i), i);
+            if (i % 2 == 0) {
+                tree.Remove(tree.NodeFind(i));
+            }
+        });
+
+
+
+        if (1) {
+            if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                while (node = tree.GetNextLeaf(node, locker)) {
+                    EXPECT_NE(nullptr, node->object);
+                    print(node->key);
+                }
+            }
+        }
+
+
+
+
+
+        //if (1) {
+        //    decltype(tree)::history_stack history;
+        //    if (auto* node = tree.GetRoot()) {
+        //        while (node = tree.GetNextLeaf(node, history)) {
+        //            EXPECT_NE(nullptr, node->object);
+        //            print(node->key);
+        //        }
+        //    }
+        //}
 
 
     }
