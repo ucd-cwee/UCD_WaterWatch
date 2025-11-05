@@ -382,6 +382,9 @@ private:
 		void pop_front() {
 			locks.pop_front();
 		};
+		size_t size() const {
+			return locks.size();
+		};
 	};
 	
 	class // shared lock manager. Allows push'ing or pop'ing shared mutex locks. 
@@ -398,6 +401,9 @@ private:
 		};
 		void pop_front() {
 			locks.pop_front();
+		};
+		size_t size() const {
+			return locks.size();
 		};
 	};
 
@@ -449,7 +455,7 @@ public:
 		newNode->object = object;
 
 		locking.push_back(root->mut);
-		for (node = root; node->firstChild != nullptr; node = child, locking.push_back(child->mut)) {			
+		for (node = root; node->firstChild; node = child, locking.push_back(child->mut)) {
 			if (node == root) locking.pop_front();
 
 			if (key > node->key) node->key = key;
@@ -459,7 +465,10 @@ public:
 				if (key <= child->key)
 					break;
 
+			// we are inside of a branch of leafs -- we will do the insert.
 			if (child->object) {
+				while (locking.size() > 1) locking.pop_front(); // only holds the lock on the parent for this child & newNode
+
 				if (key <= child->key) {
 					// insert new node before child
 					if (child->prev) child->prev->next = newNode;
@@ -482,9 +491,7 @@ public:
 
 				return newNode;
 			}
-
-			// make sure the child has room to store another node
-			if (child->numChildren >= maxChildrenPerNode) {
+			else if (child->numChildren >= maxChildrenPerNode) {
 				SplitNode(child);
 				if (key <= child->prev->key) child = child->prev;
 			}
@@ -500,7 +507,7 @@ public:
 		return newNode;
 	};
 	
-	void // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+	bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
 		Remove(cTreeNode* node) {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 
@@ -513,7 +520,7 @@ public:
 		locker locking;
 		if (1) {
 			locking.push_back(mut); // get the global tree lock
-			if (!root || !root->firstChild) return;
+			if (!root || !root->firstChild) return false;
 			locking.push_back(root->mut);
 			locking.pop_front(); // release the global tree lock
 			locking.push_back(root->firstChild->mut);
@@ -524,11 +531,11 @@ public:
 				}
 				if (Node->object) {
 					if (Node == node) break; // found
-					else return; // doesn't exist
+					else return false; // doesn't exist
 				}
 
-				if (!Node) return; // doesn't exist
-				if (!Node->firstChild) return; // doesn't exist
+				if (!Node) return false; // doesn't exist
+				if (!Node->firstChild) return false; // doesn't exist
 
 				locking.push_back(Node->firstChild->mut);
 
@@ -544,12 +551,14 @@ public:
 		node->parent->numChildren--;
 
 		// make sure there are no parent nodes with a single child
-		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
+		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent, locking.pop_back()) {
 			if (parent->next) parent = MergeNodes(parent, parent->next);
 			else if (parent->prev) parent = MergeNodes(parent->prev, parent);
 
 			// a parent may not use a key higher than the key of its last child
-			if (parent->key > parent->lastChild->key) parent->key = parent->lastChild->key;
+			if ((parent->numChildren > 0) && parent->lastChild)
+				if (parent->key > parent->lastChild->key) 
+					parent->key = parent->lastChild->key;
 
 			if (parent->numChildren > maxChildrenPerNode) {
 				SplitNode(parent);
@@ -557,9 +566,12 @@ public:
 			}
 		}
 		// a parent may not use a key higher than the key of it's last child
-		for (; (parent != nullptr) && (parent->lastChild != nullptr); parent = parent->parent)
+		for (; parent && parent->lastChild; parent = parent->parent) {
 			if (parent->key > parent->lastChild->key)
 				parent->key = parent->lastChild->key;
+			if (locking.size() > 1)
+				locking.pop_back();
+		}
 
 		// actually free the node
 		FreeNode(node);
@@ -571,16 +583,19 @@ public:
 			root = root->firstChild;
 			FreeNode(oldRoot);
 		}
+
+		return true;
 	};
 	
 	__declspec(noinline) cTreeNode* // find an object using the given key
 		NodeFind(keyType key) {
-		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-
+		auto guarded{ 
+			nodeAllocator.ProtectCurrentEpoch() };
 		cTreeNode
 			*node;
+		slocker 
+			locking;
 
-		slocker locking;
 		locking.push_back(mut);
 		if (!root || !root->firstChild) return nullptr;
 		locking.push_back(root->mut);		
@@ -607,9 +622,10 @@ public:
 		return nullptr;
 	};
 	
-
 	cTreeNode* // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key) {
+		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
+
 		cTreeNode
 			* node;
 
@@ -642,6 +658,8 @@ public:
 
 	cTreeNode* // find an object with the largest key smaller equal the given key
 		NodeFindLargestSmallerEqual(keyType key) {
+		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
+
 		cTreeNode
 			* node,
 			* smaller;
