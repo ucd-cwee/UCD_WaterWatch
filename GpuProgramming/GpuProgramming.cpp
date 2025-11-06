@@ -7303,7 +7303,7 @@ void fnGpuProgramming() {
                     EXPECT_NE(nullptr, node);
                     if (!node) {
                         //print(i);
-                        // tree.NodeFind(i);
+                        tree.NodeFind(i);
                     }
                     else {
                         EXPECT_EQ(node->key, i);

@@ -334,7 +334,7 @@ private:
 
 };
 
-// version of a b-tree that uses fine-grained locks to make it thread-safe. Survives single-threaded and multi-threaded tests. 
+// version of a b-tree that uses fine-grained locks to make it thread-safe. Survives single-threaded and multi-threaded tests without crashing, BUT does seem to "drop" inputs when performed asynchronously. 
 template< class objType, class keyType, int maxChildrenPerNode >
 class cTree {
 public:
@@ -445,95 +445,103 @@ public:
 
 	cTreeNode* // add an object to the tree
 		Add(objType* object, keyType key) {
-		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-
 		cTreeNode
 			*node,
 			*child,
 			*newNode;
+		auto 
+			guarded = nodeAllocator.ProtectCurrentEpoch();
+		while (true) {
+			locker
+				locking;
 
-		locker locking;
-		locking.push_back(mut);
+			locking.push_back(mut);
 
-		if (root == nullptr) root = AllocNode();
+			if (root == nullptr) {
+				root = AllocNode();
+				continue;
+			}
 
-		if (root->numChildren >= maxChildrenPerNode) {
+			locking.push_back(root->mut);
+
+			if (root->numChildren >= maxChildrenPerNode) {
+				newNode = AllocNode();
+				newNode->key = root->key;
+				newNode->firstChild = root;
+				newNode->lastChild = root;
+				newNode->numChildren = 1;
+				root->parent = newNode;
+				SplitNode(root);
+				root = newNode;
+				continue;
+			}
+
 			newNode = AllocNode();
-			newNode->key = root->key;
-			newNode->firstChild = root;
-			newNode->lastChild = root;
-			newNode->numChildren = 1;
-			root->parent = newNode;
-			SplitNode(root);
-			root = newNode;
-		}
+			newNode->key = key;
+			newNode->object = object;
 
-		newNode = AllocNode();
-		newNode->key = key;
-		newNode->object = object;
+			for (node = root; node->firstChild; node = child, locking.push_back(child->mut)) {
+				if (node == root) locking.pop_front();
 
-		locking.push_back(root->mut);
-		for (node = root; node->firstChild; node = child, locking.push_back(child->mut)) {
-			if (node == root) locking.pop_front();
+				if (key > node->key) node->key = key;
 
-			if (key > node->key) node->key = key;
+				// find the first child with a key larger equal to the key of the new node
+				for (child = node->firstChild; child->next; child = child->next)
+					if (key <= child->key)
+						break;
 
-			// find the first child with a key larger equal to the key of the new node
-			for (child = node->firstChild; child->next; child = child->next)
-				if (key <= child->key)
-					break;
+				// we are inside of a branch of leafs -- we will do the insert.
+				if (child->object) {
+					//while (locking.size() > 1) locking.pop_front(); // only holds the lock on the parent for this child & newNode
 
-			// we are inside of a branch of leafs -- we will do the insert.
-			if (child->object) {
-				while (locking.size() > 1) locking.pop_front(); // only holds the lock on the parent for this child & newNode
+					if (key <= child->key) {
+						// insert new node before child
+						if (child->prev) child->prev->next = newNode;
+						else node->firstChild = newNode;
+						newNode->prev = child->prev;
+						newNode->next = child;
+						child->prev = newNode;
+					}
+					else {
+						// insert new node after child
+						if (child->next) child->next->prev = newNode;
+						else node->lastChild = newNode;
+						newNode->prev = child;
+						newNode->next = child->next;
+						child->next = newNode;
+					}
 
-				if (key <= child->key) {
-					// insert new node before child
-					if (child->prev) child->prev->next = newNode;
-					else node->firstChild = newNode;
-					newNode->prev = child->prev;
-					newNode->next = child;
-					child->prev = newNode;
+					newNode->parent = node;
+					node->numChildren++;
+
+					return newNode;
 				}
-				else {
-					// insert new node after child
-					if (child->next) child->next->prev = newNode;
-					else node->lastChild = newNode;
-					newNode->prev = child;
-					newNode->next = child->next;
-					child->next = newNode;
+				else if (child->numChildren >= maxChildrenPerNode) {
+					SplitNode(child);
+					if (key <= child->prev->key) child = child->prev;
 				}
-
-				newNode->parent = node;
-				node->numChildren++;
-
-				return newNode;
 			}
-			else if (child->numChildren >= maxChildrenPerNode) {
-				SplitNode(child);
-				if (key <= child->prev->key) child = child->prev;
-			}
+
+			// we only end up here if the root node is empty
+			newNode->parent = root;
+			root->key = key;
+			root->firstChild = newNode;
+			root->lastChild = newNode;
+			root->numChildren++;
+
+			return newNode;
 		}
-
-		// we only end up here if the root node is empty
-		newNode->parent = root;
-		root->key = key;
-		root->firstChild = newNode;
-		root->lastChild = newNode;
-		root->numChildren++;
-
-		return newNode;
 	};	
 	bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
 		Remove(cTreeNode* node, locker const& Locking = locker()) {
-		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-		locker&
-			locking = const_cast<locker&>(Locking);
-
 		cTreeNode
 			*Node,
 			*parent,
 			*oldRoot;
+		auto 
+			guarded = nodeAllocator.ProtectCurrentEpoch();
+		locker&
+			locking = const_cast<locker&>(Locking);
 
 		// acquire all relevant locks before we perform the deletion
 		if (locking.size() == 0) {			
@@ -613,7 +621,7 @@ public:
 		auto guarded{
 			nodeAllocator.ProtectCurrentEpoch() };
 		cTreeNode
-			* node;
+			*node;
 		slocker
 			locking;
 
@@ -648,7 +656,7 @@ public:
 			}
 
 			locking.push_back(node->firstChild->mut);
-			locking.pop_front();
+			//locking.pop_front();
 
 			node = node->firstChild;
 		}
@@ -692,12 +700,13 @@ public:
 	};
 	cTreeNode* // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key) {
-		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-
+		auto 
+			guarded = nodeAllocator.ProtectCurrentEpoch();
 		cTreeNode
-			* node;
+			*node;
+		slocker 
+			locking;
 
-		slocker locking;
 		locking.push_back(mut);
 		if (!root || !root->firstChild) return nullptr;
 		locking.push_back(root->mut);
@@ -725,13 +734,14 @@ public:
 	};
 	cTreeNode* // find an object with the largest key smaller equal the given key
 		NodeFindLargestSmallerEqual(keyType key) {
-		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-
 		cTreeNode
-			* node,
-			* smaller;
+			*node,
+			*smaller;
+		auto 
+			guarded = nodeAllocator.ProtectCurrentEpoch();
+		slocker 
+			locking;
 
-		slocker locking;
 		locking.push_back(mut);
 		if (!root || !root->firstChild) return nullptr;
 		locking.push_back(root->mut);
@@ -863,7 +873,8 @@ private:
 	};
 	void
 		SplitNode(cTreeNode* node) {
-		int i;
+		int 
+			i;
 		cTreeNode
 			* child, 
 			* newNode;
