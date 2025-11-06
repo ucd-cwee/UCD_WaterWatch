@@ -361,7 +361,7 @@ public:
 
 private:
 	std::shared_mutex
-		mut; // global tree lock. SHould only be held temporarily if at all possible. 
+		mut; // global tree lock. Should only be held temporarily if at all possible. 
 	cTreeNode*
 		root; 
 	GL::atomic_epoch_allocator< cTreeNode, GL::atomic_allocator<cTreeNode> >
@@ -372,18 +372,26 @@ private:
 	public:
 		std::deque<std::shared_ptr<std::scoped_lock<std::shared_mutex>>>
 			locks;
-
-		void push_back(std::shared_mutex& source) {
+	public:
+		void // store a shared lock
+			push_back(std::shared_mutex& source) {
 			locks.push_back(std::make_shared<std::scoped_lock<std::shared_mutex>>(source));
 		};
-		void pop_back() {
+		void // remove the youngest lock
+			pop_back() {
 			locks.pop_back();
 		};
-		void pop_front() {
+		void // remove the oldest lock
+			pop_front() {
 			locks.pop_front();
 		};
-		size_t size() const {
+		size_t // count of locks
+			size() const {
 			return locks.size();
+		};
+		void // clear all locks
+			clear() {
+			locks.clear();
 		};
 	};
 	
@@ -393,17 +401,26 @@ private:
 		std::deque<std::shared_ptr<std::shared_lock<std::shared_mutex>>>
 			locks;
 
-		void push_back(std::shared_mutex& source) {
+	public:
+		void // store a shared lock
+			push_back(std::shared_mutex& source) {
 			locks.push_back(std::make_shared<std::shared_lock<std::shared_mutex>>(source));
 		};
-		void pop_back() {
+		void // remove the youngest lock
+			pop_back() {
 			locks.pop_back();
 		};
-		void pop_front() {
+		void // remove the oldest lock
+			pop_front() {
 			locks.pop_front();
 		};
-		size_t size() const {
+		size_t // count of locks
+			size() const {
 			return locks.size();
+		};
+		void // clear all locks
+			clear() {
+			locks.clear();
 		};
 	};
 
@@ -412,8 +429,8 @@ public:
 		: nodeAllocator()
 		, root{ nullptr } 
 		, mut()
-	{
-		root = AllocNode();
+	{ 
+		root = AllocNode(); 
 	};
 	cTree(cTree const&)
 		= delete;
@@ -423,7 +440,8 @@ public:
 		= delete;
 	cTree& operator=(cTree&&) noexcept
 		= delete;
-	~cTree() = default;
+	~cTree() 
+		= default;
 
 	cTreeNode* // add an object to the tree
 		Add(objType* object, keyType key) {
@@ -505,11 +523,12 @@ public:
 		root->numChildren++;
 
 		return newNode;
-	};
-	
+	};	
 	bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
-		Remove(cTreeNode* node) {
+		Remove(cTreeNode* node, locker const& Locking = locker()) {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
+		locker&
+			locking = const_cast<locker&>(Locking);
 
 		cTreeNode
 			*Node,
@@ -517,12 +536,11 @@ public:
 			*oldRoot;
 
 		// acquire all relevant locks before we perform the deletion
-		locker locking;
-		if (1) {
+		if (locking.size() == 0) {			
 			locking.push_back(mut); // get the global tree lock
 			if (!root || !root->firstChild) return false;
 			locking.push_back(root->mut);
-			locking.pop_front(); // release the global tree lock
+			// locking.pop_front(); // release the global tree lock
 			locking.push_back(root->firstChild->mut);
 			for (Node = root->firstChild; Node != nullptr; ) {
 				while (Node->next) {
@@ -530,7 +548,7 @@ public:
 					Node = Node->next;
 				}
 				if (Node->object) {
-					if (Node == node) break; // found
+					if (Node->object == node->object) break; // found
 					else return false; // doesn't exist
 				}
 
@@ -540,7 +558,7 @@ public:
 				locking.push_back(Node->firstChild->mut);
 
 				Node = Node->firstChild;
-			}
+			}			
 		}
 
 		// unlink the node from it's parent
@@ -551,7 +569,7 @@ public:
 		node->parent->numChildren--;
 
 		// make sure there are no parent nodes with a single child
-		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent, locking.pop_back()) {
+		for (parent = node->parent; (parent != root) && (parent->numChildren <= 1); parent = parent->parent/*, locking.pop_back()*/) {
 			if (parent->next) parent = MergeNodes(parent, parent->next);
 			else if (parent->prev) parent = MergeNodes(parent->prev, parent);
 
@@ -569,36 +587,42 @@ public:
 		for (; parent && parent->lastChild; parent = parent->parent) {
 			if (parent->key > parent->lastChild->key)
 				parent->key = parent->lastChild->key;
-			if (locking.size() > 1)
-				locking.pop_back();
+			/*if (locking.size() > 2) locking.pop_back();*/
 		}
 
 		// actually free the node
 		FreeNode(node);
 
-		// remove the root node if it has a single internal node as child
+		while (locking.size() > 2) locking.pop_back();
+
+		// remove the root node if it has a single internal node as child		
 		if ((root->numChildren == 1) && (root->firstChild->object == nullptr)) {
 			oldRoot = root;
+
+			locking.push_back(root->firstChild->mut);
+
 			root->firstChild->parent = nullptr;
 			root = root->firstChild;
 			FreeNode(oldRoot);
 		}
 
 		return true;
-	};
-	
-	__declspec(noinline) cTreeNode* // find an object using the given key
+	};	
+	cTreeNode* // find an object using the given key
 		NodeFind(keyType key) {
-		auto guarded{ 
+		auto guarded{
 			nodeAllocator.ProtectCurrentEpoch() };
 		cTreeNode
-			*node;
-		slocker 
+			* node;
+		slocker
 			locking;
 
 		locking.push_back(mut);
-		if (!root || !root->firstChild) return nullptr;
-		locking.push_back(root->mut);		
+		if (!root || !root->firstChild) {
+			node = nullptr;
+			return node;
+		}
+		locking.push_back(root->mut);
 		locking.pop_front();
 		locking.push_back(root->firstChild->mut);
 		for (node = root->firstChild; node; ) {
@@ -608,20 +632,64 @@ public:
 			}
 			if (node->object) {
 				if (node->key == key) return node;
-				else return nullptr;
+				else {
+					node = nullptr;
+					return node;
+				}
 			}
 
-			if (!node) return nullptr;
-			if (!node->firstChild) return nullptr;
+			if (!node) {
+				node = nullptr;
+				return node;
+			}
+			if (!node->firstChild) {
+				node = nullptr;
+				return node;
+			}
 
 			locking.push_back(node->firstChild->mut);
 			locking.pop_front();
 
-			node = node->firstChild;			
+			node = node->firstChild;
 		}
-		return nullptr;
+		return node;
+		
+	};	
+	std::pair<cTreeNode*, locker> // find an object using the given key
+		NodeFind_ForRemoval(keyType key) {	
+		auto guarded{
+			nodeAllocator.ProtectCurrentEpoch() };
+		std::pair<cTreeNode*, locker>
+			out;
+		cTreeNode*&
+			node = out.first;
+		locker&
+			locking = out.second;
+
+		locking.push_back(mut);
+		if (!root || !root->firstChild) return out;
+		locking.push_back(root->mut);
+		// locking.pop_front();
+		locking.push_back(root->firstChild->mut);
+		for (node = root->firstChild; node; ) {
+			while (node->next) {
+				if (node->key >= key) break;
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key == key) return out;
+				else return out;
+			}
+
+			if (!node) return out;
+			if (!node->firstChild) return out;
+
+			locking.push_back(node->firstChild->mut);
+
+			node = node->firstChild;
+		}
+		return out;		
 	};
-	
 	cTreeNode* // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key) {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
@@ -655,7 +723,6 @@ public:
 		}
 		return nullptr;
 	};
-
 	cTreeNode* // find an object with the largest key smaller equal the given key
 		NodeFindLargestSmallerEqual(keyType key) {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
@@ -696,7 +763,6 @@ public:
 		}
 		return nullptr;
 	};
-
 	objType* // find an object using the given key
 		Find(keyType key) {
 		cTreeNode
@@ -704,8 +770,7 @@ public:
 
 		if (node = NodeFind(key)) return node->object;
 		else return nullptr;
-	};
-	
+	};	
 	objType* // find an object with the smallest key larger equal the given key
 		FindSmallestLargerEqual(keyType key) {
 		cTreeNode
@@ -713,8 +778,7 @@ public:
 
 		if (node = NodeFindSmallestLargerEqual(key)) return node->object;
 		else return nullptr;
-	};
-	
+	};	
 	objType* // find an object with the largest key smaller equal the given key
 		FindLargestSmallerEqual(keyType key) {
 		cTreeNode
@@ -722,8 +786,7 @@ public:
 
 		if (node = NodeFindLargestSmallerEqual(key)) return node->object;
 		else return nullptr;
-	};
-	
+	};	
 	std::pair<cTreeNode*, slocker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 		GetRoot() {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
@@ -734,8 +797,7 @@ public:
 		out.second.push_back(root->mut);
 		out.second.pop_front();
 		return out;
-	};
-	
+	};	
 	static cTreeNode* // goes through all nodes of the tree		
 		GetNext(cTreeNode* node, slocker& locking) {
 		if (node->firstChild) {
@@ -751,8 +813,7 @@ public:
 			return node;
 		}
 
-	};
-	
+	};	
 	static cTreeNode* // goes through all leaf nodes of the tree		
 		GetNextLeaf(cTreeNode* node, slocker& locking) {
 		if (node->firstChild) {			
@@ -778,9 +839,6 @@ public:
 			else return nullptr;
 		}
 	};
-
-
-
 
 private:
 	cTreeNode*
