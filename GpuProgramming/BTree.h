@@ -370,16 +370,24 @@ private:
 	class // exclusive lock manager. Allows push'ing or pop'ing scoped mutex locks. 
 		locker {
 	public:
-		std::deque<std::shared_ptr<std::scoped_lock<std::shared_mutex>>>
+		std::deque<std::shared_ptr<void>>
 			locks;
 	public:
 		void // store a shared lock
 			push_back(std::shared_mutex& source) {
-			locks.push_back(std::make_shared<std::scoped_lock<std::shared_mutex>>(source));
+			locks.push_back(std::static_pointer_cast<void>(std::make_shared<std::scoped_lock<std::shared_mutex>>(source)));
+		};
+		void // store a shared lock
+			push_back_shared(std::shared_mutex& source) {
+			locks.push_back(std::static_pointer_cast<void>(std::make_shared<std::shared_lock<std::shared_mutex>>(source)));
 		};
 		void // store a shared lock
 			push_pop(std::shared_mutex& source) {
-			locks.back() = std::make_shared<std::scoped_lock<std::shared_mutex>>(source);
+			locks.back() = std::static_pointer_cast<void>(std::make_shared<std::scoped_lock<std::shared_mutex>>(source));
+		};
+		void // store a shared lock
+			push_pop_shared(std::shared_mutex& source) {
+			locks.back() = std::static_pointer_cast<void>(std::make_shared<std::shared_lock<std::shared_mutex>>(source));
 		};
 		void // remove the youngest lock
 			pop_back() {
@@ -398,39 +406,6 @@ private:
 			locks.clear();
 		};
 	};	
-	class // shared lock manager. Allows push'ing or pop'ing shared mutex locks. 
-		slocker {
-	public:
-		std::deque<std::shared_ptr<std::shared_lock<std::shared_mutex>>>
-			locks;
-
-	public:
-		void // store a shared lock
-			push_back(std::shared_mutex& source) {
-			locks.push_back(std::make_shared<std::shared_lock<std::shared_mutex>>(source));
-		};
-		void // store a shared lock
-			push_pop(std::shared_mutex& source) {
-			locks.back() = std::make_shared<std::shared_lock<std::shared_mutex>>(source);
-		};
-		void // remove the youngest lock
-			pop_back() {
-			locks.pop_back();
-		};
-		void // remove the oldest lock
-			pop_front() {
-			locks.pop_front();
-		};
-
-		size_t // count of locks
-			size() const {
-			return locks.size();
-		};
-		void // clear all locks
-			clear() {
-			locks.clear();
-		};
-	};
 
 public:
 	cTree() 
@@ -459,9 +434,11 @@ public:
 			*newNode;
 		auto 
 			guarded = nodeAllocator.ProtectCurrentEpoch();
+		locker
+			locking;
+
 		while (true) {
-			locker
-				locking;
+			if (locking.size() > 0) locking.clear();
 
 			locking.push_back(mut);
 
@@ -629,21 +606,21 @@ public:
 			nodeAllocator.ProtectCurrentEpoch() };
 		cTreeNode
 			*node;
-		slocker
+		locker
 			locking;
 
-		locking.push_back(mut);
+		locking.push_back_shared(mut);
 		if (!root || !root->firstChild) {
 			node = nullptr;
 			return node;
 		}
-		locking.push_back(root->mut);
+		locking.push_back_shared(root->mut);
 		locking.pop_front();
-		locking.push_back(root->firstChild->mut);
+		locking.push_back_shared(root->firstChild->mut);
 		for (node = root->firstChild; node; ) {
 			while (node->next) {
 				if (node->key >= key) break;
-				locking.push_pop(node->next->mut);
+				locking.push_pop_shared(node->next->mut);
 				node = node->next;
 			}
 			if (locking.size() >= 3) locking.pop_front();
@@ -655,7 +632,7 @@ public:
 			if (!node) return nullptr;			
 			if (!node->firstChild) return nullptr;			
 
-			locking.push_back(node->firstChild->mut);	
+			locking.push_back_shared(node->firstChild->mut);
 			node = node->firstChild;
 		}
 		return nullptr;		
@@ -701,19 +678,21 @@ public:
 			guarded = nodeAllocator.ProtectCurrentEpoch();
 		cTreeNode
 			*node;
-		slocker 
+		locker 
 			locking;
 
-		locking.push_back(mut);
+		locking.push_back_shared(mut);
 		if (!root || !root->firstChild) return nullptr;
-		locking.push_back(root->mut);
+		locking.push_back_shared(root->mut);
 		locking.pop_front();
-		locking.push_back(root->firstChild->mut);
+		locking.push_back_shared(root->firstChild->mut);
 		for (node = root->firstChild; node; ) {
 			while (node->next) {
 				if (node->key >= key) break;
+				locking.push_pop_shared(node->next->mut);
 				node = node->next;
 			}
+			if (locking.size() >= 3) locking.pop_front();
 			if (node->object) {
 				if (node->key >= key) return node;
 				else return nullptr;
@@ -722,8 +701,7 @@ public:
 			if (!node) return nullptr;
 			if (!node->firstChild) return nullptr;
 
-			locking.push_back(node->firstChild->mut);
-			locking.pop_front();
+			locking.push_back_shared(node->firstChild->mut);
 
 			node = node->firstChild;
 		}
@@ -736,14 +714,14 @@ public:
 			*smaller;
 		auto 
 			guarded = nodeAllocator.ProtectCurrentEpoch();
-		slocker 
+		locker 
 			locking;
 
 		locking.push_back(mut);
 		if (!root || !root->firstChild) return nullptr;
-		locking.push_back(root->mut);
+		locking.push_back_shared(root->mut);
 		locking.pop_front();
-		locking.push_back(root->firstChild->mut);
+		locking.push_back_shared(root->firstChild->mut);
 
 		for (node = root->firstChild, smaller = nullptr; node != nullptr; ) {
 			while (node->next) {
@@ -763,7 +741,7 @@ public:
 			if (!node) return nullptr;
 			if (!node->firstChild) return nullptr;
 
-			locking.push_back(node->firstChild->mut);
+			locking.push_back_shared(node->firstChild->mut);
 			// locking.pop_front();
 
 			node = node->firstChild;
@@ -794,11 +772,11 @@ public:
 		if (node = NodeFindLargestSmallerEqual(key)) return node->object;
 		else return nullptr;
 	};	
-	std::pair<cTreeNode*, slocker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+	std::pair<cTreeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 		GetRoot() {
 		auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 
-		std::pair<cTreeNode*, slocker> out;
+		std::pair<cTreeNode*, locker> out;
 		out.second.push_back(mut);
 		out.first = root;
 		out.second.push_back(root->mut);
@@ -806,15 +784,15 @@ public:
 		return out;
 	};	
 	static cTreeNode* // goes through all nodes of the tree		
-		GetNext(cTreeNode* node, slocker& locking) {
+		GetNext(cTreeNode* node, locker& locking) {
 		if (node->firstChild) {
-			locking.push_back(node->firstChild->mut);
+			locking.push_back_shared(node->firstChild->mut);
 			// locking.pop_front();
 			return node->firstChild;
 		}
 		else {
 			while (node && (node->next == nullptr)) {	
-				locking.pop_back();
+				locking.pop_back_shared();
 				node = node->parent;
 			}
 			return node;
@@ -822,10 +800,10 @@ public:
 
 	};	
 	static cTreeNode* // goes through all leaf nodes of the tree		
-		GetNextLeaf(cTreeNode* node, slocker& locking) {
+		GetNextLeaf(cTreeNode* node, locker& locking) {
 		if (node->firstChild) {			
 			while (node->firstChild) {
-				locking.push_back(node->firstChild->mut);
+				locking.push_back_shared(node->firstChild->mut);
 				node = node->firstChild;
 			}
 			return node;
@@ -838,7 +816,7 @@ public:
 			if (node) {
 				node = node->next;
 				while (node->firstChild) {
-					locking.push_back(node->firstChild->mut);
+					locking.push_back_shared(node->firstChild->mut);
 					node = node->firstChild;
 				}
 				return node;
