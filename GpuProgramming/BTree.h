@@ -492,8 +492,7 @@ public:
 
 				// we are inside of a branch of leafs -- we will do the insert.
 				if (child->object) {
-					//while (locking.size() > 1) locking.pop_front(); // only holds the lock on the parent for this child & newNode
-
+					while (locking.size() > 1) locking.pop_front(); // only holds the lock on the parent for this child & newNode
 					if (key <= child->key) {
 						// insert new node before child
 						if (child->prev) child->prev->next = newNode;
