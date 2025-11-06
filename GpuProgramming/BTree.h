@@ -377,6 +377,10 @@ private:
 			push_back(std::shared_mutex& source) {
 			locks.push_back(std::make_shared<std::scoped_lock<std::shared_mutex>>(source));
 		};
+		void // store a shared lock
+			push_pop(std::shared_mutex& source) {
+			locks.back() = std::make_shared<std::scoped_lock<std::shared_mutex>>(source);
+		};
 		void // remove the youngest lock
 			pop_back() {
 			locks.pop_back();
@@ -393,8 +397,7 @@ private:
 			clear() {
 			locks.clear();
 		};
-	};
-	
+	};	
 	class // shared lock manager. Allows push'ing or pop'ing shared mutex locks. 
 		slocker {
 	public:
@@ -406,6 +409,10 @@ private:
 			push_back(std::shared_mutex& source) {
 			locks.push_back(std::make_shared<std::shared_lock<std::shared_mutex>>(source));
 		};
+		void // store a shared lock
+			push_pop(std::shared_mutex& source) {
+			locks.back() = std::make_shared<std::shared_lock<std::shared_mutex>>(source);
+		};
 		void // remove the youngest lock
 			pop_back() {
 			locks.pop_back();
@@ -414,6 +421,7 @@ private:
 			pop_front() {
 			locks.pop_front();
 		};
+
 		size_t // count of locks
 			size() const {
 			return locks.size();
@@ -635,32 +643,22 @@ public:
 		for (node = root->firstChild; node; ) {
 			while (node->next) {
 				if (node->key >= key) break;
+				locking.push_pop(node->next->mut);
 				node = node->next;
 			}
+			if (locking.size() >= 3) locking.pop_front();
+
 			if (node->object) {
 				if (node->key == key) return node;
-				else {
-					node = nullptr;
-					return node;
-				}
+				else return nullptr;				
 			}
+			if (!node) return nullptr;			
+			if (!node->firstChild) return nullptr;			
 
-			if (!node) {
-				node = nullptr;
-				return node;
-			}
-			if (!node->firstChild) {
-				node = nullptr;
-				return node;
-			}
-
-			locking.push_back(node->firstChild->mut);
-			//locking.pop_front();
-
+			locking.push_back(node->firstChild->mut);	
 			node = node->firstChild;
 		}
-		return node;
-		
+		return nullptr;		
 	};	
 	std::pair<cTreeNode*, locker> // find an object using the given key
 		NodeFind_ForRemoval(keyType key) {	
