@@ -4917,9 +4917,9 @@ public:
         };
     };
 private:
-    GL::atomic_allocator< dynamic_block >
+    GL::atomic_parallel_allocator< dynamic_block >
         block_alloc;
-    bTree< dynamic_block, unsigned long long, 8>
+    parallel_course_bTree< dynamic_block, unsigned long long, 10>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4957,20 +4957,21 @@ private:
                         }
 
                         // lhs->next is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
-                        while (tree_node) {
-                            if (tree_node->object) {
-                                if (tree_node->key == lhs->next->length) {
-                                    if (tree_node->object == lhs->next) {
-                                        block_alloc.Free(tree_node->object);
-                                        free_tree.Remove(tree_node);
-                                        break;
+                        if (1) {
+                            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->next->length);
+                            while (tree_node) {
+                                if (tree_node->object) {
+                                    if (tree_node->key == lhs->next->length) {
+                                        if (tree_node->object == lhs->next) {
+                                            block_alloc.Free(tree_node->object);
+                                            free_tree.Remove(tree_node, locker);
+                                            break;
+                                        }
                                     }
                                 }
+                                tree_node = free_tree.GetNextLeaf(tree_node, locker);
                             }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
                         }
-
                         lhs->next = lhs->next->next;
 
                         // try to combine again!
@@ -4999,18 +5000,20 @@ private:
                         }
 
                         // lhs->prev is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
-                        while (tree_node) {
-                            if (tree_node->object) {
-                                if (tree_node->key == lhs->prev->length) {
-                                    if (tree_node->object == lhs->prev) {
-                                        block_alloc.Free(tree_node->object);
-                                        free_tree.Remove(tree_node);
-                                        break;
+                        if (1) {
+                            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->prev->length);
+                            while (tree_node) {
+                                if (tree_node->object) {
+                                    if (tree_node->key == lhs->prev->length) {
+                                        if (tree_node->object == lhs->prev) {
+                                            block_alloc.Free(tree_node->object);
+                                            free_tree.Remove(tree_node, locker);
+                                            break;
+                                        }
                                     }
                                 }
+                                tree_node = free_tree.GetNextLeaf(tree_node, locker);
                             }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
                         }
 
                         lhs->prev = lhs->prev->prev;
@@ -5042,20 +5045,21 @@ private:
         dynamic_block* free_block = nullptr;
 
         // try to get a free block
-        if (1) {
-            auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
+        if (auto [tree_node_parallel, locker_shared] = free_tree.NodeFindSmallestLargerEqual(N); tree_node_parallel) {
+            locker_shared.clear();
+            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(N);
             while (tree_node) {
                 if (tree_node->object) {
                     if (tree_node->key >= N) {
                         if (tree_node->object->is_available) {
                             free_block = tree_node->object;
                             free_block->generated_epoch = GL::util::get_current_epoch();
-                            free_tree.Remove(tree_node);
+                            free_tree.Remove(tree_node, locker);
                             break;
                         }
                     }
                 }
-                tree_node = free_tree.GetNextLeaf(tree_node);
+                tree_node = free_tree.GetNextLeaf(tree_node, locker);
             }
         }
 
@@ -7192,132 +7196,143 @@ public:
 
 void fnGpuProgramming() {
 #if 1
-    while (1) {
-        if (1) {
-            GL::atomic_allocator<int> alloc;
-            cTree<int, int, 10> tree;
-            for (int i = 10; i < 1000; i += 10) {
-                EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-            }
-            for (int i = 10; i < 1000; i += 10) {
-                auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                EXPECT_NE(node, nullptr);
-                EXPECT_EQ(node->key, i);
-            }
+    if (0) {
+        long long avg_framerate_n = 0;
+        double avg_framerate = 0;
+        while (1) {
+            GL::stopwatch sw;
+
             if (1) {
-                if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                    while (node = tree.GetNextLeaf(node, locker)) {
-                        EXPECT_NE(nullptr, node->object);
-                        // print(node->key);
-                    }
+                GL::atomic_allocator<int> alloc;
+                parallel_course_bTree<int, int, 10> tree;
+                for (int i = 10; i < 1000; i += 10) {
+                    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
                 }
-            }
-            for (int i = 10; i < 1000; i += 10) {
-                auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                EXPECT_NE(nullptr, node);
-                EXPECT_EQ(true, tree.Remove(node, locker));
-            }
-            if (1) {
-                if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                    while (node = tree.GetNextLeaf(node, locker)) {
-                        EXPECT_NE(nullptr, node->object);
-                        print(node->key);
-                    }
-                }
-            }
-            auto iterable = matrix<float>::random_between(10, 1000, 100).cast<int>().copy();
-            for (auto& i : iterable) {
-                EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-            }
-            for (auto i : iterable) {
-                auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                EXPECT_NE(node, nullptr);
-                EXPECT_EQ(node->key, i);
-            }
-            if (1) {
-                if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                    while (node = tree.GetNextLeaf(node, locker)) {
-                        EXPECT_NE(nullptr, node->object);
-                        //print(node->key);
-                    }
-                }
-            }
-
-
-
-
-        }
-        if (1) {
-            GL::atomic_allocator<int> alloc;
-            cTree<int, int, 32> tree;
-            parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-            });
-            for (int i = 0; i < 100000; i += 1) {
-                auto* node = tree.NodeFind(i); // shared access
-                EXPECT_NE(nullptr, node);
-                if (!node) {
-                    //print(i);
-                    // tree.NodeFind(i);
-                }
-                else {
-                    EXPECT_EQ(node->key, i);
-                }                
-            }
-            parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                auto* node = tree.NodeFind(i);
-                EXPECT_NE(nullptr, node);
-                if (!node) {
-                    //print(i);
-                    // tree.NodeFind(i);
-                }
-                else {
+                for (int i = 10; i < 1000; i += 10) {
+                    auto [node, locker] = tree.NodeFind(i);
+                    EXPECT_NE(node, nullptr);
                     EXPECT_EQ(node->key, i);
                 }
-            });
-            parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                EXPECT_NE(nullptr, node);
-                if (!node) {
-                    //print(i);
-                    // tree.NodeFind(i);
+                if (1) {
+                    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                        while (node = tree.GetNextLeaf(node, locker)) {
+                            EXPECT_NE(nullptr, node->object);
+                            // print(node->key);
+                        }
+                    }
                 }
-                else {
-                    EXPECT_EQ(true, tree.Remove(node, locker));
-                }
-            });
-            parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-                if (i % 2 == 0) {
+                for (int i = 10; i < 1000; i += 10) {
                     auto [node, locker] = tree.NodeFind_ForRemoval(i);
                     EXPECT_NE(nullptr, node);
-                    if (!node) {                        
-                        // tree.NodeFind(i);
-                    }
-                    else {
-                        EXPECT_EQ(true, tree.Remove(node, locker));
+                    EXPECT_EQ(true, tree.Remove(node, locker));
+                }
+                if (1) {
+                    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                        while (node = tree.GetNextLeaf(node, locker)) {
+                            EXPECT_NE(nullptr, node->object);
+                            print(node->key);
+                        }
                     }
                 }
-                else {
-                    auto* node = tree.NodeFind(i);
+                //auto iterable = matrix<float>::random_between(10, 1000, 100).cast<int>().copy();
+                //for (auto& i : iterable) {
+                //    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
+                //}
+                //for (auto i : iterable) {
+                //    auto [node, locker] = tree.NodeFind_ForRemoval(i);
+                //    EXPECT_NE(node, nullptr);
+                //    EXPECT_EQ(node->key, i);
+                //}
+                //if (1) {
+                //    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                //        while (node = tree.GetNextLeaf(node, locker)) {
+                //            EXPECT_NE(nullptr, node->object);
+                //            //print(node->key);
+                //        }
+                //    }
+                //}
+
+            }
+            if (1) {
+                GL::atomic_allocator<int> alloc;
+                parallel_course_bTree<int, int, 10> tree;
+                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+                    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
+                    });
+                for (int i = 0; i < 100000; i += 1) {
+                    auto [node, locker] = tree.NodeFind(i); // shared access
                     EXPECT_NE(nullptr, node);
                     if (!node) {
                         //print(i);
-                        tree.NodeFind(i);
+                        // tree.NodeFind(i);
                     }
                     else {
                         EXPECT_EQ(node->key, i);
                     }
                 }
-            });
-            if (1) {
-                if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                    while (node = tree.GetNextLeaf(node, locker)) {
-                        EXPECT_NE(nullptr, node->object);
-                        //print(node->key);
+                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+                    auto [node, locker] = tree.NodeFind(i);
+                    EXPECT_NE(nullptr, node);
+                    if (!node) {
+                        //print(i);
+                        // tree.NodeFind(i);
+                    }
+                    else {
+                        EXPECT_EQ(node->key, i);
+                    }
+                    });
+                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+                    auto [node, locker] = tree.NodeFind_ForRemoval(i);
+                    EXPECT_NE(nullptr, node);
+                    if (!node) {
+                        //print(i);
+                        // tree.NodeFind(i);
+                    }
+                    else {
+                        EXPECT_EQ(true, tree.Remove(node, locker));
+                    }
+                    });
+                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
+                    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
+                    if (i % 2 == 0) {
+                        auto [node, locker] = tree.NodeFind_ForRemoval(i);
+                        EXPECT_NE(nullptr, node);
+                        if (!node) {
+                            // tree.NodeFind(i);
+                        }
+                        else {
+                            EXPECT_EQ(true, tree.Remove(node, locker));
+                        }
+                    }
+                    else {
+                        auto [node, locker] = tree.NodeFind(i);
+                        EXPECT_NE(nullptr, node);
+                        if (!node) {
+                            //print(i);
+                            tree.NodeFind(i);
+                        }
+                        else {
+                            EXPECT_EQ(node->key, i);
+                        }
+                    }
+                    });
+                if (1) {
+                    int prev_key = -1;
+                    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
+                        while (node = tree.GetNextLeaf(node, locker)) {
+                            EXPECT_NE(nullptr, node->object);
+                            EXPECT_EQ(true, node->key > prev_key);
+                            prev_key = node->key;
+                        }
                     }
                 }
             }
+
+            avg_framerate_n++;
+            avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
+            avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
+
+            print(std::to_string(avg_framerate) + " iter per second");
         }
     }
     // 1-D pattern sampling
