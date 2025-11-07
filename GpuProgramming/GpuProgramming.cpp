@@ -7196,7 +7196,7 @@ public:
 
 void fnGpuProgramming() {
 #if 1
-    if (0) {
+    if (1) {
         long long avg_framerate_n = 0;
         double avg_framerate = 0;
         while (1) {
@@ -7204,7 +7204,7 @@ void fnGpuProgramming() {
 
             if (1) {
                 GL::atomic_allocator<int> alloc;
-                parallel_course_bTree<int, int, 10> tree;
+                parallel_binomial_search_tree<int, int, 10> tree; // parallel_course_bTree
                 for (int i = 10; i < 1000; i += 10) {
                     EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
                 }
@@ -7230,7 +7230,7 @@ void fnGpuProgramming() {
                     if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
                         while (node = tree.GetNextLeaf(node, locker)) {
                             EXPECT_NE(nullptr, node->object);
-                            print(node->key);
+                            // print(node->key);
                         }
                     }
                 }
@@ -7255,7 +7255,7 @@ void fnGpuProgramming() {
             }
             if (1) {
                 GL::atomic_allocator<int> alloc;
-                parallel_course_bTree<int, int, 10> tree;
+                parallel_binomial_search_tree<int, int, 10> tree; // parallel_course_bTree
                 parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
                     EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
                     });
@@ -7291,7 +7291,7 @@ void fnGpuProgramming() {
                     else {
                         EXPECT_EQ(true, tree.Remove(node, locker));
                     }
-                    });
+                });
                 parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
                     EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
                     if (i % 2 == 0) {
@@ -7315,7 +7315,7 @@ void fnGpuProgramming() {
                             EXPECT_EQ(node->key, i);
                         }
                     }
-                    });
+                });
                 if (1) {
                     int prev_key = -1;
                     if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
