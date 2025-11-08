@@ -133,6 +133,15 @@ namespace parallel {
                 try {
                     if (!e) ToDo(x);
                 }
+                catch (std::runtime_error& err) {
+                    std::cout << err.what() << std::endl;
+                    if (!e) {
+                        auto ptr = new std::exception_ptr(std::current_exception());
+                        if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+                            delete ptr;
+                        }
+                    }
+                }
                 catch (...) {
                     if (!e) {
                         auto ptr = new std::exception_ptr(std::current_exception());
@@ -4919,7 +4928,7 @@ public:
 private:
     GL::atomic_parallel_allocator< dynamic_block >
         block_alloc;
-    parallel_course_bTree< dynamic_block, unsigned long long, 10>
+    parallel_binomial_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4960,10 +4969,10 @@ private:
                         if (1) {
                             auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->next->length);
                             while (tree_node) {
-                                if (tree_node->object) {
+                                if (tree_node->object()) {
                                     if (tree_node->key == lhs->next->length) {
-                                        if (tree_node->object == lhs->next) {
-                                            block_alloc.Free(tree_node->object);
+                                        if (tree_node->object() == lhs->next) {
+                                            block_alloc.Free(tree_node->object());
                                             free_tree.Remove(tree_node, locker);
                                             break;
                                         }
@@ -5003,10 +5012,10 @@ private:
                         if (1) {
                             auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->prev->length);
                             while (tree_node) {
-                                if (tree_node->object) {
+                                if (tree_node->object()) {
                                     if (tree_node->key == lhs->prev->length) {
-                                        if (tree_node->object == lhs->prev) {
-                                            block_alloc.Free(tree_node->object);
+                                        if (tree_node->object() == lhs->prev) {
+                                            block_alloc.Free(tree_node->object());
                                             free_tree.Remove(tree_node, locker);
                                             break;
                                         }
@@ -5049,10 +5058,10 @@ private:
             locker_shared.clear();
             auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(N);
             while (tree_node) {
-                if (tree_node->object) {
+                if (tree_node->object()) {
                     if (tree_node->key >= N) {
-                        if (tree_node->object->is_available) {
-                            free_block = tree_node->object;
+                        if (tree_node->object()->is_available) {
+                            free_block = tree_node->object();
                             free_block->generated_epoch = GL::util::get_current_epoch();
                             free_tree.Remove(tree_node, locker);
                             break;
@@ -7196,7 +7205,7 @@ public:
 
 void fnGpuProgramming() {
 #if 1
-    if (1) {
+    if (0) {
         long long avg_framerate_n = 0;
         double avg_framerate = 0;
         while (1) {
@@ -7216,7 +7225,7 @@ void fnGpuProgramming() {
                 if (1) {
                     if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
                         while (node = tree.GetNextLeaf(node, locker)) {
-                            EXPECT_NE(nullptr, node->object);
+                            EXPECT_NE(nullptr, node->object());
                             // print(node->key);
                         }
                     }
@@ -7229,7 +7238,7 @@ void fnGpuProgramming() {
                 if (1) {
                     if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
                         while (node = tree.GetNextLeaf(node, locker)) {
-                            EXPECT_NE(nullptr, node->object);
+                            EXPECT_NE(nullptr, node->object());
                             // print(node->key);
                         }
                     }
@@ -7320,7 +7329,7 @@ void fnGpuProgramming() {
                     int prev_key = -1;
                     if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
                         while (node = tree.GetNextLeaf(node, locker)) {
-                            EXPECT_NE(nullptr, node->object);
+                            EXPECT_NE(nullptr, node->object());
                             EXPECT_EQ(true, node->key > prev_key);
                             prev_key = node->key;
                         }
