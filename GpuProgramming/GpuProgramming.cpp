@@ -1654,7 +1654,7 @@ namespace GL {
         std::shared_ptr<T[]> make_shared(unsigned int N) {
             return std::shared_ptr<T[]>(this->Alloc(N), [this](T* p) {
                 this->Free(p);
-                });
+            });
         };
 
     };
@@ -4545,9 +4545,6 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
-
-
-
 // GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_gpu_allocator {
 public:
@@ -4586,7 +4583,7 @@ public:
 private:
     GL::atomic_allocator< dynamic_block >
         block_alloc;
-    bTree< dynamic_block, unsigned long long, 8>
+    binary_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4626,10 +4623,10 @@ private:
                         // lhs->next is no longer valid and should be removed from the list
                         auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
                         while (tree_node) {
-                            if (tree_node->object) {
+                            if (tree_node->object()) {
                                 if (tree_node->key == lhs->next->length) {
-                                    if (tree_node->object == lhs->next) {
-                                        block_alloc.Free(tree_node->object);
+                                    if (tree_node->object() == lhs->next) {
+                                        block_alloc.Free(tree_node->object());
                                         free_tree.Remove(tree_node);
                                         break;
                                     }
@@ -4669,10 +4666,10 @@ private:
                         // lhs->prev is no longer valid and should be removed from the list
                         auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
                         while (tree_node) {
-                            if (tree_node->object) {
+                            if (tree_node->object()) {
                                 if (tree_node->key == lhs->prev->length) {
-                                    if (tree_node->object == lhs->prev) {
-                                        block_alloc.Free(tree_node->object);
+                                    if (tree_node->object() == lhs->prev) {
+                                        block_alloc.Free(tree_node->object());
                                         free_tree.Remove(tree_node);
                                         break;
                                     }
@@ -4707,8 +4704,8 @@ private:
     dynamic_block* Alloc(unsigned long long N) {
         if (N == 0) return nullptr;
 
-        // N must be aligned with WORKGROUP_SIZE
-        N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+        //// N must be aligned with WORKGROUP_SIZE
+        //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
 
         cl_int err = CL_SUCCESS;
         dynamic_block* free_block = nullptr;
@@ -4717,10 +4714,10 @@ private:
         if (1) {
             auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
             while (tree_node) {
-                if (tree_node->object) {
+                if (tree_node->object()) {
                     if (tree_node->key >= N) {
-                        if (tree_node->object->is_available) {
-                            free_block = tree_node->object;
+                        if (tree_node->object()->is_available) {
+                            free_block = tree_node->object();
                             free_block->generated_epoch = GL::util::get_current_epoch();
                             free_tree.Remove(tree_node);
                             break;
@@ -4810,9 +4807,9 @@ public:
     __declspec(noinline) ~dynamic_gpu_allocator() {
         if (auto* n = free_tree.GetRoot()) {
             while (n) {
-                if (n->object) {
-                    if (n->object->sub_buffer) {
-                        ::clReleaseMemObject(n->object->sub_buffer);
+                if (n->object()) {
+                    if (n->object()->sub_buffer) {
+                        ::clReleaseMemObject(n->object()->sub_buffer);
                     }
                 }
                 n = free_tree.GetNextLeaf(n);
@@ -4878,6 +4875,7 @@ public:
 
     };
     typedef typename std::shared_ptr<dynamic_gpu_allocator::dynamic_block> shared_ptr;
+
     unique_ptr make_unique(unsigned int N) {
         return unique_ptr(this->Alloc(N), this);
     };
@@ -4885,7 +4883,7 @@ public:
     shared_ptr make_shared(unsigned int N) {
         return shared_ptr(this->Alloc(N), [this](dynamic_gpu_allocator::dynamic_block* p) {
             this->Free(p);
-            });
+        });
     };
 
 };
@@ -4928,7 +4926,7 @@ public:
 private:
     GL::atomic_parallel_allocator< dynamic_block >
         block_alloc;
-    parallel_binomial_search_tree< dynamic_block, unsigned long long, 10>
+    parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
     unsigned long long
         total_allocations;
@@ -5196,6 +5194,7 @@ public:
 
     };
     typedef typename std::shared_ptr<dynamic_cpu_allocator::dynamic_block> shared_ptr;
+
     unique_ptr make_unique(unsigned int N) {
         return unique_ptr(this->Alloc(N), this);
     };
@@ -5203,12 +5202,16 @@ public:
     shared_ptr make_shared(unsigned int N) {
         return shared_ptr(this->Alloc(N), [this](dynamic_cpu_allocator::dynamic_block* p) {
             this->Free(p);
-            });
+        });
     };
-
 };
 
 template <typename T> class matrix;
+class mem_matrix;
+struct static_mem_matrix {
+    mem_matrix* ptr;
+};
+
 // linear array of bytes that manages a pointer to GPU and CPU memory, as well as GPU events (queued GPU jobs). 
 class mem_matrix {
     template <typename G> friend class matrix;
@@ -5459,6 +5462,11 @@ private:
                 ++count;
             }
         }
+        else if constexpr (std::is_same_v<T, std::unique_ptr<mem_matrix>>) {
+            if (parameter->add_event(ev, true)) {
+                ++count;
+            }
+        }
         append_events(count, ev, parameters...);
     };
     static void check_for_errors(const int error) {
@@ -5488,6 +5496,15 @@ private:
             for (size_t i = 0; i < parameter.events.size(); ++i) {
                 waitlist.insert(parameter.events.operator[](i));
             }
+        }
+        else if constexpr (std::is_same_v<G, std::unique_ptr<mem_matrix>>) {
+            link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
+            for (size_t i = 0; i < parameter->events.size(); ++i) {
+                waitlist.insert(parameter->events.operator[](i));
+            }
+        }
+        else if constexpr (std::is_same_v<G, static_mem_matrix>) {
+            link_parameter(cl_kernel, starting_position, parameter.ptr->gpu_memory->sub_buffer);
         }
         else {
             link_parameter(cl_kernel, starting_position, parameter);
@@ -5597,24 +5614,46 @@ public:
 
 };
 
-
 template <typename T>
 class matrix {
 private:
-    mem_matrix mem;
+    // N must be aligned with WORKGROUP_SIZE
+    static unsigned int WorkgroupAdjustment(unsigned int N) {        
+        return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+    }
+
+    std::unique_ptr<mem_matrix> mem;
     GL::GPU::dimensions dim;
     template <typename G> friend class matrix;
 
 public:
+    class matrix_kernel {
+    public:
+        matrix
+            mat;
+        T
+            sum;
+
+        matrix_kernel() = default;
+        matrix_kernel(matrix&& rhs) 
+            : mat{ std::move(rhs) }
+            , sum{}
+        {
+            sum = mat.sum();
+        };
+        ~matrix_kernel() = default;
+    };
+
+
     // normal constructor
     matrix(GL::GPU::dimensions d)
         : dim{ d }
-        , mem(sizeof(T)* d.X* d.Y* d.Z, false, true)
+        , mem(std::make_unique< mem_matrix>(sizeof(T) * WorkgroupAdjustment(d.X * d.Y * d.Z), false, true))
     {};
     // normal constructor
     matrix(unsigned int X, unsigned int Y, unsigned int Z, bool cpu_only = false)
         : dim{ X, Y, Z }
-        , mem(sizeof(T)* X* Y* Z, cpu_only, !cpu_only)
+        , mem(std::make_unique< mem_matrix>(sizeof(T)* WorkgroupAdjustment(X* Y* Z), cpu_only, !cpu_only))
     {};
     // empty constructor
     matrix()
@@ -5624,7 +5663,7 @@ public:
     // copy another, existing matrix into this. Does not take or share ownership.
     matrix(matrix const& rhs)
         : dim{ rhs.dim }
-        , mem(sizeof(T)* rhs.dim.count(), (bool)rhs.mem.cpu_memory, (bool)rhs.mem.gpu_memory)
+        , mem(std::make_unique< mem_matrix>(sizeof(T)* WorkgroupAdjustment(rhs.dim.count()), (bool)rhs.mem->cpu_memory, (bool)rhs.mem->gpu_memory))
     {
         mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
             dim.count(),
@@ -5633,7 +5672,7 @@ public:
     };
     matrix& operator=(matrix const& rhs) {
         dim = rhs.dim;
-        mem_matrix mem2(sizeof(T) * rhs.dim.count(), false, true);
+        auto mem2 = std::make_unique< mem_matrix>(sizeof(T) * WorkgroupAdjustment(rhs.dim.count()), false, true);
         mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
             rhs.dim.count(),
             mem2, rhs.mem
@@ -5641,28 +5680,9 @@ public:
         mem = std::move(mem2);
         return *this;
     };
-#if 0
     // move another, temporary matrix into this, taking ownership of data.
-    matrix(matrix&& rhs) noexcept = default; /*: dim{ rhs.dim }, mem(sizeof(T)* rhs.dim.count(), false, true) {
-        mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
-            rhs.dim.count(),
-            mem, rhs.mem
-        );
-    };*/
-    matrix& operator=(matrix&& rhs) noexcept = default; /* {
-        dim = rhs.dim;
-        mem_matrix mem2(sizeof(T) * rhs.dim.count(), false, true);
-        mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
-            rhs.dim.count(),
-            mem2, rhs.mem
-        );
-        mem = std::move(mem2);
-        return *this;
-        //mem = std::move(rhs.mem);
-        //dim = std::move(rhs.dim);
-        //return *this;
-    };*/
-#endif
+    matrix(matrix&& rhs) noexcept = default; 
+    matrix& operator=(matrix&& rhs) noexcept = default;
     ~matrix() = default;
     // x*y*z
     unsigned int size() const {
@@ -5678,15 +5698,33 @@ public:
         }
     };
 
+    // Copies data into CPU-GPU shared memory for quick access or reading. 
     class reader {
-        T* data;
+        std::shared_ptr<T[]> data;
         GL::GPU::dimensions dim;
 
     public:
-        reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
-            copy.mem.ensure_host_mem_exists();
-            copy.mem.read_from_device();
-            data = copy.mem.cpu_data<T>();
+        __declspec(noinline) reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
+            if (copy.mem->gpu_memory) {
+                data = std::shared_ptr<T[]>(
+                    (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                        sizeof(T) * WorkgroupAdjustment(dim.count())
+                        , WORKGROUP_SIZE),
+                    [](T* p) {
+                        ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                    }
+                );
+                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                    dim.count(),
+                    data, copy.mem, (unsigned int)0
+                );
+                copy.mem->events.clear();
+            }
+            else {
+                copy.mem->ensure_host_mem_exists();
+                copy.mem->read_from_device();
+                data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
+            }
         };
         reader(reader const&) = delete;
         reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
@@ -5694,7 +5732,7 @@ public:
         reader& operator=(reader&&) = delete;
         ~reader() = default;
         operator bool() const {
-            return data;
+            return data.get() ? true : false;
         };
         T const& operator[](unsigned int X) const {
             return data[X];
@@ -5703,20 +5741,40 @@ public:
             return data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
         };
     };
+    // Copies data into CPU-GPU shared memory for quick access or reading. If requested, may also only work on the CPU side. 
     class writer {
+        std::shared_ptr<T[]> gpu_cpu_data;
         T* cpu_data;
         matrix<T>* data;
         GL::GPU::dimensions dim;
         bool _cpu_only;
 
     public:
-        writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only = false) : cpu_data{ nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
-            data->mem.ensure_host_mem_exists();
-            data->mem.read_from_device();
-            cpu_data = data->mem.cpu_data<T>();
+        writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only = false) : gpu_cpu_data{ nullptr }, cpu_data { nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
+            if (_cpu_only) {
+                data->mem->ensure_host_mem_exists();
+                data->mem->read_from_device();
+                cpu_data = data->mem->cpu_data<T>();
+            }
+            else {
+                gpu_cpu_data = std::shared_ptr<T[]>(
+                    (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                        sizeof(T) * WorkgroupAdjustment(dim.count())
+                        , WORKGROUP_SIZE),
+                    [](T* p) {
+                        ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                    }
+                );
+                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                    dim.count(),
+                    gpu_cpu_data, copy.mem, (unsigned int)0
+                );
+                copy.mem->events.clear();
+            }
         };
         writer(writer const&) = delete;
-        writer(writer&& rhs) noexcept : cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
+        writer(writer&& rhs) noexcept : gpu_cpu_data{ rhs.gpu_cpu_data }, cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
+            rhs.gpu_cpu_data = nullptr;
             rhs.data = nullptr;
             rhs.cpu_data = nullptr;
             rhs.dim = GL::GPU::dimensions{ 0,0,0 };
@@ -5725,17 +5783,40 @@ public:
         writer& operator=(writer const&) = delete;
         writer& operator=(writer&&) noexcept = delete;
         ~writer() {
-            if (data)
-                data->mem.write_to_device();
+            if (data) {
+                if (_cpu_only && cpu_data) data->mem->write_to_device();
+                else {
+                    mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                        dim.count(),
+                        data->mem, gpu_cpu_data, (unsigned int)0
+                    );
+                    data->mem->events.clear();
+                }
+            }
         };
         operator bool() const {
-            return cpu_data;
+            if (_cpu_only) {
+                return cpu_data;
+            }
+            else {
+                return gpu_cpu_data.get() ? true : false;
+            }
         };
         T& operator[](unsigned int X) const {
-            return cpu_data[X];
+            if (_cpu_only) {
+                return cpu_data[X];
+            }
+            else {
+                return gpu_cpu_data[X];
+            }
         };
         T& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
-            return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+            if (_cpu_only) {
+                return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+            }
+            else {
+                return gpu_cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+            }
         };
     };
 
@@ -5985,12 +6066,8 @@ public:
         unsigned int count = parameters.size();
         matrix out(GL::GPU::dimensions{ count, 1, 1 });
         count = 0;
-        if (auto W = out.write()) {
-            //std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));
-            for (auto& x : parameters) {
-                W[count++] = x;
-            }
-        }
+        if (auto W = out.write()) 
+            std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));        
         return out;
     };
     // For floating-point values, returns 0-1. For all others, returns the range from 0 to the max value. 
@@ -5998,12 +6075,8 @@ public:
         unsigned int count = parameters.size();
         matrix out(GL::GPU::dimensions{ LenX, count / LenX, 1 });
         count = 0;
-        if (auto W = out.write()) {
-            //std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));
-            for (auto& x : parameters) {
-                W[count++] = x;
-            }
-        }
+        if (auto W = out.write()) 
+            std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));        
         return out;
     };
 
@@ -6554,7 +6627,7 @@ public:
     // extracts the diagonal of a 2-D matrix as a 1-D array
     matrix diagonal() const {
         if (this->dim.num_dimensions() == 0) return matrix();
-        else if (this->dim.num_dimensions() == 1) return this->copy();
+        else if (this->dim.num_dimensions() == 1) return *this;
         else if (this->dim.num_dimensions() > 2) return matrix();
         matrix out(GL::GPU::dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
         mem_matrix::queue_gpu_work(GL::string("diagonal") + GL::string(opencl_impl::type_name<T>()),
@@ -6653,7 +6726,7 @@ public:
         }
         unsigned int dimension = this->dim.X;
         matrix solution(GL::GPU::dimensions{ dimension, dimension, 1 });
-        if (auto W1 = solution.write()) {
+        if (auto W1 = solution.write()) { // creates a shared space on the CPU/GPU, does the work there, and copies it over to the GPU once completed on the CPU side.
             matrix subVect(dimension - 1, dimension - 1, 1, true);
             if (auto R = this->read()) {
                 for (unsigned int i = 0; i < dimension; i++) {
@@ -6717,7 +6790,7 @@ public:
                             v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
                         }
                         W[n] = v;
-                        });
+                    });
                 }
             }
             return out;
@@ -6849,6 +6922,16 @@ public:
         else
             out *= 1.0f / V;
         return out;
+        
+    };
+    template <unsigned int X, unsigned int Y>
+    static matrix<float>& guassian_kernel() {
+        static matrix<float> out{ [](){
+            auto out = guassian_kernel(X, Y);
+            out.mem->wait_for_events();
+            return out;
+        }() };
+        return out;
     };
 
     matrix<char> ASCII() const {
@@ -6862,24 +6945,15 @@ public:
             std::reverse(chars.begin(), chars.end());
             return chars;
         }();
-        auto ramp = matrix<char>::from_vector(chars);
+        static auto ramp{ matrix<char>::from_vector(chars) };
+        ramp.mem->wait_for_events();
         auto thisMinV = this->min();
         auto thisMaxV = this->max();
-
-        //if (thisMaxV <= thisMinV) {
-        //    return matrix<char>(this->dim);
-        //}
-        //else {
-            //matrix<float> r1 = matrix<T>((*this) - thisMinV).cast<float>();
-            //r1 *= ((float)ramp.size() / (float)(thisMaxV - thisMinV));
-            //matrix<unsigned int> r2 = r1.cast<unsigned int>().max(ramp.size() - 1);
-            //return ramp.resample(r2);
-            // return ramp.resample(((float)ramp.size() * ((*this - thisMinV).cast<float>() / (float)(thisMaxV - thisMinV))).cast<unsigned int>());
 
         matrix<char> out(this->dim);
         mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem, mem, thisMinV, thisMaxV, ramp.mem, ramp.size()
+            out.mem, mem, thisMinV, thisMaxV, static_mem_matrix{ ramp.mem.get() }, ramp.size()
         );
         return out;
         //}
@@ -6937,9 +7011,13 @@ public:
                 (1.0f - (0.341f * 2.0f)) / 2.0f
             };
             auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 3, y = 1
-            auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 3            
-            return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
-
+            auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 3
+            if constexpr (std::is_same_v<float, T>) {
+                return convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+            }
+            else {
+                return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+            }
             // return cast<float>().convolve(guassian_kernel(3, 3)).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
         }
     };
@@ -6970,9 +7048,11 @@ public:
     };
 
 private:
-    static std::string resize(std::string&& rhs, unsigned int len, const char def = 0) {
-        rhs.resize(len, def);
-        return std::move(rhs);
+    static std::string&& resize(std::string&& rhs, unsigned int len, const char def = 0) {
+        if (rhs.length() != len) {
+            rhs.resize(len, def);
+        }
+        return std::forward<std::string>(rhs);
     };
     std::string to_string_impl(reader const& R, unsigned int x) const {
         if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
@@ -7042,6 +7122,11 @@ public:
         reader R = this->read();
         std::string column_spacer = " ";
         std::string out;
+
+        if constexpr (std::is_same_v<char, T>) {
+            out.reserve((dim.X + 1) * ((dim.Y * 2) + 1) * 2);
+        }
+
         if (this->dim.num_dimensions() == 0) return out;
         else if (this->dim.num_dimensions() == 1) {
             auto col_sizes = evaluate_column_sizes(R, column_titles);
@@ -7147,35 +7232,10 @@ public:
     std::vector<T> copy(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const {
         std::vector<T> out;
         length = std::min<size_t>(length, this->size() - offset);
-        if (length > 1000000) {
-            // copy the whole thing "normally"
-            if (auto r = this->read()) {
-                out.resize(length);
-                for (size_t i = 0; i < length; ++i) {
-                    out[i] = r[offset + i];
-                }
-            }
-        }
-        else if (length > 0) {
-            // copy the requested slice
-            size_t alignment = WORKGROUP_SIZE;
-            std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
-                (T*)::clSVMAlloc(this->mem.program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                    sizeof(T) * (((length + (alignment - 1)) / alignment) * alignment)
-                    , alignment),
-                [](T* p) {
-                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-                }
-            );
-            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                length,
-                slice, this->mem, (unsigned int)offset
-            );
-            this->mem.events.clear();
-
+        if (auto r = this->read()) {
             out.resize(length);
             for (size_t i = 0; i < length; ++i) {
-                out[i] = slice[i];
+                out[i] = r[offset + i];
             }
         }
         return out;
@@ -7183,7 +7243,7 @@ public:
     T operator[](unsigned int n) const {
         size_t alignment = WORKGROUP_SIZE;
         std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
-            (T*)::clSVMAlloc(this->mem.program().get_cl_context().get(), CL_MEM_READ_WRITE,
+            (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
                 sizeof(T) * (((1 + (alignment - 1)) / alignment) * alignment)
                 , alignment),
             [](T* p) {
@@ -7194,14 +7254,75 @@ public:
             1,
             slice, this->mem, n
         );
-        this->mem.events.clear();
+        this->mem->events.clear();
         return slice[0];
     };
     T operator()(unsigned int x, unsigned int y = 0, unsigned int z = 0) const {
         return operator[](x + (y * dim.X) + (z * dim.Y * dim.X));
     };
 
+    class linear_regressions {
+    public:
+        // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
+        __declspec(noinline) static matrix solve_for_weights(matrix const& measurements, matrix const& features) {
+            return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
+        };
+        // solve for the linearized prediction.
+        __declspec(noinline) static matrix predict(matrix const& features, matrix const& weights) {
+            return features.matrix_multiply(weights);
+        };
+        // returns the standard error of the linear regression.
+        __declspec(noinline) static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
+            auto prediction = predict(features, weights);
+            return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+        };
+        // returns the population standard deviation.
+        __declspec(noinline) static matrix standard_deviation(
+            matrix const& measurements,
+            matrix const& features,
+            matrix const& weights
+        ) {
+            return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
+        };
+        // evaluate for the students-t test
+        __declspec(noinline) static matrix t_statistic(matrix const& weights, matrix const& std_err) {
+            return weights / std_err;
+        };
+        // evaluate for the p-value
+        __declspec(noinline) static matrix p_value(matrix const& features, matrix const& t_stat) {
+            boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
+            matrix out(GL::GPU::dimensions{ t_stat.size(0), 1, 1 });
+            unsigned int N = out.size();
+            if (auto R = t_stat.read()) {
+                if (auto W = out.write()) {
+                    for (unsigned int i = 0; i < N; ++i) {
+                        W[i] = (1.0f - (float)boost::math::cdf(dist, R[i])) + boost::math::cdf(dist, -R[i]);
+                        if ((W[i] > 1.0f) || (W[i] < 0.0f))
+                            W[i] = (1.0f - (float)boost::math::cdf(dist, -R[i])) + boost::math::cdf(dist, R[i]);
+                    }
+                }
+            }
+            return out;
+        };
+
+        // build a collection of features for a linear regression while avoiding colinearity. 
+        __declspec(noinline) static matrix build_features(matrix const& current_best) {
+            return current_best;
+        };
+        // build a collection of features for a linear regression while avoiding colinearity. 
+        template <typename T, typename... Ts> __declspec(noinline) static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
+            auto joined = current_best.join(1, candidate);
+            if (joined.is_colinear()) {
+                return build_features(current_best, further_candidates...);
+            }
+            else {
+                return build_features(joined, further_candidates...);
+            }
+        };
+    };
+
 };
+
 
 void fnGpuProgramming() {
 #if 1
@@ -7213,7 +7334,7 @@ void fnGpuProgramming() {
 
             if (1) {
                 GL::atomic_allocator<int> alloc;
-                parallel_binomial_search_tree<int, int, 10> tree; // parallel_course_bTree
+                parallel_binary_search_tree<int, int, 10> tree;
                 for (int i = 10; i < 1000; i += 10) {
                     EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
                 }
@@ -7243,28 +7364,10 @@ void fnGpuProgramming() {
                         }
                     }
                 }
-                //auto iterable = matrix<float>::random_between(10, 1000, 100).cast<int>().copy();
-                //for (auto& i : iterable) {
-                //    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-                //}
-                //for (auto i : iterable) {
-                //    auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                //    EXPECT_NE(node, nullptr);
-                //    EXPECT_EQ(node->key, i);
-                //}
-                //if (1) {
-                //    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                //        while (node = tree.GetNextLeaf(node, locker)) {
-                //            EXPECT_NE(nullptr, node->object);
-                //            //print(node->key);
-                //        }
-                //    }
-                //}
-
             }
             if (1) {
                 GL::atomic_allocator<int> alloc;
-                parallel_binomial_search_tree<int, int, 10> tree; // parallel_course_bTree
+                parallel_binary_search_tree<int, int, 10> tree;
                 parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
                     EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
                     });
@@ -7344,7 +7447,79 @@ void fnGpuProgramming() {
             print(std::to_string(avg_framerate) + " iter per second");
         }
     }
+
+#if 1
+    // Advertisement regression. Generally correct analysis.
+    if (1) {
+        /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
+        Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
+        TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
+        Radio	    0.107001228	    0.008489563	    12.60385655	    4.6021E-27	    0.090258612	    0.123743844
+        Newspaper	0.000335658	    0.005788056	    0.057991479	    0.953814495	    -0.011079206	0.011750522
+        */
+        auto TV_Ads = matrix<float>::from_vector(std::vector<float>{
+            230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
+        });
+        auto Radio_Ads = matrix<float>::from_vector(std::vector<float>{
+            37.8, 39.3, 45.9, 41.3, 10.8, 48.9, 32.8, 19.6, 2.1, 2.6, 5.8, 24.0, 35.1, 7.6, 32.9, 47.7, 36.6, 39.6, 20.5, 23.9, 27.7, 5.1, 15.9, 16.9, 12.6, 3.5, 29.3, 16.7, 27.1, 16.0, 28.3, 17.4, 1.5, 20.0, 1.4, 4.1, 43.8, 49.4, 26.7, 37.7, 22.3, 33.4, 27.7, 8.4, 25.7, 22.5, 9.9, 41.5, 15.8, 11.7, 3.1, 9.6, 41.7, 46.2, 28.8, 49.4, 28.1, 19.2, 49.6, 29.5, 2.0, 42.7, 15.5, 29.6, 42.8, 9.3, 24.6, 14.5, 27.5, 43.9, 30.6, 14.3, 33.0, 5.7, 24.6, 43.7, 1.6, 28.5, 29.9, 7.7, 26.7, 4.1, 20.3, 44.5, 43.0, 18.4, 27.5, 40.6, 25.5, 47.8, 4.9, 1.5, 33.5, 36.5, 14.0, 31.6, 3.5, 21.0, 42.3, 41.7, 4.3, 36.3, 10.1, 17.2, 34.3, 46.4, 11.0, .3, .4, 26.9, 8.2, 38.0, 15.4, 20.6, 46.8, 35.0, 14.3, .8, 36.9, 16.0, 26.8, 21.7, 2.4, 34.6, 32.3, 11.8, 38.9, .0, 49.0, 12.0, 39.6, 2.9, 27.2, 33.5, 38.6, 47.0, 39.0, 28.9, 25.9, 43.9, 17.0, 35.4, 33.2, 5.7, 14.8, 1.9, 7.3, 49.0, 40.3, 25.8, 13.9, 8.4, 23.3, 39.7, 21.1, 11.6, 43.5, 1.3, 36.9, 18.4, 18.1, 35.8, 18.1, 36.8, 14.7, 3.4, 37.6, 5.2, 23.6, 10.6, 11.6, 20.9, 20.1, 7.1, 3.4, 48.9, 30.2, 7.8, 2.3, 10.0, 2.6, 5.4, 5.7, 43.0, 21.3, 45.1, 2.1, 28.7, 13.9, 12.1, 41.1, 10.8, 4.1, 42.0, 35.6, 3.7, 4.9, 9.3, 42.0, 8.6
+        });
+        auto Newspaper_Ads = matrix<float>::from_vector(std::vector<float>{
+            69.2, 45.1, 69.3, 58.5, 58.4, 75.0, 23.5, 11.6, 1.0, 21.2, 24.2, 4.0, 65.9, 7.2, 46.0, 52.9, 114.0, 55.8, 18.3, 19.1, 53.4, 23.5, 49.6, 26.2, 18.3, 19.5, 12.6, 22.9, 22.9, 40.8, 43.2, 38.6, 30.0, .3, 7.4, 8.5, 5.0, 45.7, 35.1, 32.0, 31.6, 38.7, 1.8, 26.4, 43.3, 31.5, 35.7, 18.5, 49.9, 36.8, 34.6, 3.6, 39.6, 58.7, 15.9, 60.0, 41.4, 16.6, 37.7, 9.3, 21.4, 54.7, 27.3, 8.4, 28.9, .9, 2.2, 10.2, 11.0, 27.2, 38.7, 31.7, 19.3, 31.3, 13.1, 89.4, 20.7, 14.2, 9.4, 23.1, 22.3, 36.9, 32.5, 35.6, 33.8, 65.7, 16.0, 63.2, 73.4, 51.4, 9.3, 33.0, 59.0, 72.3, 10.9, 52.9, 5.9, 22.0, 51.2, 45.9, 49.8, 100.9, 21.4, 17.9, 5.3, 59.0, 29.7, 23.2, 25.6, 5.5, 56.5, 23.2, 2.4, 10.7, 34.5, 52.7, 25.6, 14.8, 79.2, 22.3, 46.2, 50.4, 15.6, 12.4, 74.2, 25.9, 50.6, 9.2, 3.2, 43.1, 8.7, 43.0, 2.1, 45.1, 65.6, 8.5, 9.3, 59.7, 20.5, 1.7, 12.9, 75.6, 37.9, 34.4, 38.9, 9.0, 8.7, 44.3, 11.9, 20.6, 37.0, 48.7, 14.2, 37.7, 9.5, 5.7, 50.5, 24.3, 45.2, 34.6, 30.7, 49.3, 25.6, 7.4, 5.4, 84.8, 21.6, 19.4, 57.6, 6.4, 18.4, 47.4, 17.0, 12.8, 13.1, 41.8, 20.3, 35.2, 23.7, 17.6, 8.3, 27.4, 29.7, 71.8, 30.0, 19.6, 26.6, 18.2, 3.7, 23.4, 5.8, 6.0, 31.6, 3.6, 6.0, 13.8, 8.1, 6.4, 66.2, 8.7
+        });
+        auto Sales_Revenue = matrix<float>::from_vector(std::vector<float>{
+            22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
+        });
+
+        //TV_Ads = TV_Ads.grow_by_wrapping(1000000);
+        //Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
+        //Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
+        //Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
+
+        auto Basic{
+            matrix<float>::constant(1, Sales_Revenue.size(0))
+        };
+
+        auto features = matrix<float>::linear_regressions::build_features( // does not double-check or remove colinearity
+            Basic, TV_Ads, Radio_Ads, Newspaper_Ads
+        );
+        print(features);
+
+        auto weights = matrix<float>::linear_regressions::solve_for_weights(Sales_Revenue, features);
+        print(weights);
+        
+
+
+
+
+
+        auto std_err = matrix<float>::linear_regressions::standard_error(Sales_Revenue, features, weights);
+        auto std_dev = matrix<float>::linear_regressions::standard_deviation(Sales_Revenue, features, weights);
+        auto t_stat = matrix<float>::linear_regressions::t_statistic(weights, std_err);
+        auto p_value = matrix<float>::linear_regressions::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = matrix<float>::linear_regressions::predict(features, weights);
+
+        print("");
+        print(
+            weights.join(1,
+                std_err).join(1,
+                    t_stat).join(1,
+                        p_value).join(1,
+                            lower_95).join(1,
+                                upper_95)
+            .to_string({ "Coefficients", "Standard Error", "t Stat"/*, "P-value", "Lower 95%", "Upper 95%"*/ })
+        );
+        print("");
+
+        //print(Sales_Revenue.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        //print("");
+
+    }
+#endif
+
     // 1-D pattern sampling
+#if 0
     if (1) {
         matrix<float> x_pos = matrix<float>::linear(0, 1000000, 1000000, 1, 1);
         matrix<float> y_pos = matrix<float>::random_between(0, 1, 1000000, 1, 1);
@@ -7394,6 +7569,7 @@ void fnGpuProgramming() {
         //}
 
     }
+#endif
 
     // Conway's Game of Life, using the GPU. 2-3 times faster than previous approach. 
     if (1) {
@@ -7509,9 +7685,11 @@ void fnGpuProgramming() {
                     return out;
                 };
                 matrix<float> sum() const {
+                    std::vector<matrix<float>> mips;
                     matrix<float> out = mip_maps[0];
                     for (int i = 1; i < mip_maps.size(); ++i) {
-                        out += mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1);
+                        mips.emplace_back(mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1));
+                        out += mips[mips.size()-1];
                     }
                     return out;
                 };
@@ -7521,11 +7699,11 @@ void fnGpuProgramming() {
                     std::vector<matrix<float>> out;
                     const matrix<float>* current = &srce;
                     out.push_back(*current);
-                    auto kernel = matrix<float>::guassian_kernel(3, 3);
+                    auto& kernel = matrix<float>::guassian_kernel<3,3>();
                     while ((current->size(0) > 1) && (current->size(1) > 1)) {
-                        //auto blurred = current->convolve(kernel);
-                        //out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
-                        out.push_back(current->halfsize<false>()); // faster but less accurate
+                        auto blurred = current->convolve(kernel);
+                        out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+                        // out.push_back(current->halfsize<false>()); // faster but less accurate
                         current = &out[out.size() - 1];
                     }
                     return out;
@@ -7567,7 +7745,7 @@ void fnGpuProgramming() {
             //print(print_me.to_string({}, true));
 #endif
 #endif
-            state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel(7, 7)) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
+            state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel<7,7>()) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
             state = state.min(1);
 
             print("");
@@ -7645,102 +7823,6 @@ void fnGpuProgramming() {
         }
     }
 
-
-    if (0) {
-        float avg_framerate = 0; int avg_framerate_n = 0;
-        for (;;) {
-            GL::stopwatch sw;
-            if (1) {
-                // basically 'free' to allocate the cpu side when utilizing the global cached approach
-                auto mem = mem_matrix(sizeof(float) * 100, true, true);
-                mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<float>()), 100ull,
-                    mem, 0.0f, 100.0f, 100u
-                );
-                // mem.read_from_device();
-                mem.wait_for_events();
-
-
-                //if (1) {
-                //    auto sliced = mem.slice(0, sizeof(float) * 10);
-                //    if (auto* p = sliced.cpu_data<float>()) {
-                //        for (int i = 0; i < 10; ++i) {
-                //            print(p[i]);
-                //        }
-                //    }
-                //}
-                //if (1) {
-                //    auto sliced = mem.slice(10, sizeof(float) * 10);
-                //    if (auto* p = sliced.cpu_data<float>()) {
-                //        for (int i = 0; i < 10; ++i) {
-                //            print(p[i]);
-                //        }
-                //    }
-                //}
-            }
-            if (1) {
-                // large 4K image with 4 floating-point HDR values, very fast to allocate and get access to
-                auto mem = mem_matrix(sizeof(float) * 3440 * 1440 * 4, true, true);
-                mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<float>()), 3840 * 2160 * 4,
-                    mem, 10.05f
-                );
-                // mem.read_from_device();
-                mem.wait_for_events();
-            }
-
-
-
-            if (1) {
-                avg_framerate_n++;
-                avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
-                avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
-
-                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
-                print(std::to_string(avg_framerate) + " fps     ");
-                std::cout << std::flush;
-                while (sw.stop() < 1.0 / 60.0) {
-                    std::this_thread::yield();
-                }
-            }
-        }
-        for (;;) {
-            dynamic_gpu_allocator alloc;
-            for (int j = 0; j < 100; ++j) {
-                GL::stopwatch sw;
-
-                for (int i = 1; i <= 1000000; i += 1000) {
-                    auto alloc_size = sizeof(float) * i;
-
-                    auto block = alloc.make_unique(alloc_size);
-                    EXPECT_NE(block->sub_buffer, nullptr);
-                }
-                auto alloc_1 = alloc.make_unique(sizeof(float) * 4096 * 1080 * 4);
-                auto alloc_2 = alloc.make_unique(sizeof(float) * 4096 * 1080 * 4);
-                auto alloc_3 = alloc.make_unique(sizeof(float) * 4096 * 1080 * 4);
-                auto alloc_4 = alloc.make_unique(sizeof(float) * 4096 * 1080 * 4);
-                alloc_1 = nullptr;
-                alloc_2 = nullptr;
-                alloc_3 = nullptr;
-                alloc_4 = nullptr;
-
-                for (int i = 1; i <= 1000000; i += 1000) {
-                    auto alloc_size = sizeof(float) * i;
-                    auto block = alloc.make_unique(alloc_size);
-                    EXPECT_NE(block->sub_buffer, nullptr);
-                }
-
-                avg_framerate_n++;
-                avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
-                avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
-
-                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
-                print(std::to_string(avg_framerate) + " fps");
-                std::cout << std::flush;
-                while (sw.stop() < 1.0 / 60.0) {
-                    std::this_thread::yield();
-                }
-            }
-        }
-    }
 
 
 

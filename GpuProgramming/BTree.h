@@ -1702,19 +1702,19 @@ private:
 // Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
 // Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
 template< class objType, class keyType, int maxChildrenPerNode >
-class parallel_binomial_search_tree {
+class parallel_binary_search_tree {
 public:
 	using lock_type = std::shared_mutex;
-	struct parallel_binomial_search_treeNode {
+	struct parallel_binary_search_treeNode {
 		keyType	// key used for sorting						
 			key;
-		parallel_binomial_search_treeNode // parent node
+		parallel_binary_search_treeNode // parent node
 			* parent;
 		int	// number of children							
 			numChildren;
 		int
 			parent_index;
-		void* // std::variant< objType*, std::array<parallel_binomial_search_treeNode*, maxChildrenPerNode>* >		
+		void* // std::variant< objType*, std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>* >		
 			data;
 		bool
 			is_leaf;
@@ -1723,12 +1723,12 @@ public:
 			if (numChildren > 0 || !is_leaf) return nullptr;
 			return static_cast<objType*>(data);
 		};
-		parallel_binomial_search_treeNode** 
+		parallel_binary_search_treeNode** 
 			children() {
-			return &static_cast<std::array<parallel_binomial_search_treeNode*, maxChildrenPerNode>*>(data)->operator[](0);
+			return &static_cast<std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>*>(data)->operator[](0);
 		};
 
-		parallel_binomial_search_treeNode* // next sibling
+		parallel_binary_search_treeNode* // next sibling
 			next() {
 			if (parent && (parent->numChildren > (parent_index + 1))) {
 				return parent->children()[parent_index + 1];
@@ -1737,7 +1737,7 @@ public:
 				return nullptr;
 			}
 		};
-		parallel_binomial_search_treeNode* // prev sibling
+		parallel_binary_search_treeNode* // prev sibling
 			prev() {
 			if (parent && (parent_index >= 1)) {
 				return parent->children()[parent_index - 1];
@@ -1746,18 +1746,18 @@ public:
 				return nullptr;
 			}
 		};
-		parallel_binomial_search_treeNode* // first child
+		parallel_binary_search_treeNode* // first child
 			firstChild() {
 			if (numChildren == 0) return nullptr;
 			return children()[0];
 		};
-		parallel_binomial_search_treeNode* // last child
+		parallel_binary_search_treeNode* // last child
 			lastChild() {
 			if (numChildren == 0) return nullptr;
 			return children()[numChildren - 1];
 		};
 		void 
-			add_child(parallel_binomial_search_treeNode* p) {
+			add_child(parallel_binary_search_treeNode* p) {
 			p->parent = this;
 			p->parent_index = numChildren;
 			children()[numChildren] = p;
@@ -1765,10 +1765,10 @@ public:
 			if (this->key < p->key) this->key = p->key;
 		}
 		__declspec(noinline) void 
-			add_child_at(parallel_binomial_search_treeNode* p, int i) {
+			add_child_at(parallel_binary_search_treeNode* p, int i) {
 			if (i >= numChildren) add_child(p);
 			else {
-				parallel_binomial_search_treeNode** 
+				parallel_binary_search_treeNode** 
 					ch = children();
 				int 
 					j;
@@ -1785,7 +1785,7 @@ public:
 				}
 				ch[i] = p;
 #else
-				std::memmove(&ch[i + 1], &ch[i], sizeof(parallel_binomial_search_treeNode*) * (numChildren - i));
+				std::memmove(&ch[i + 1], &ch[i], sizeof(parallel_binary_search_treeNode*) * (numChildren - i));
 				ch[i] = p;
 				ch = &ch[i];
 				for (j = i + 1; j <= numChildren; ++j) {
@@ -1796,7 +1796,7 @@ public:
 				++numChildren;
 			}
 		}
-		parallel_binomial_search_treeNode* 
+		parallel_binary_search_treeNode* 
 			pop_front_child() {
 			if (numChildren <= 0) {
 				return nullptr;
@@ -1827,15 +1827,15 @@ public:
 				numChildren -= n;
 			}
 		}
-		parallel_binomial_search_treeNode* 
+		parallel_binary_search_treeNode* 
 			pop_child(int i) {
 			if (numChildren <= 0) {
 				return nullptr;
 			}
 			else {
-				parallel_binomial_search_treeNode**
+				parallel_binary_search_treeNode**
 					ch = children();
-				parallel_binomial_search_treeNode* 
+				parallel_binary_search_treeNode* 
 					out = ch[i];
 			    int 
 					j = numChildren - 1;
@@ -1849,7 +1849,7 @@ public:
 				--numChildren;
 				if (numChildren > 0) this->key = ch[numChildren - 1]->key;
 #else
-				std::memmove(&ch[i], &ch[i+1], sizeof(parallel_binomial_search_treeNode*) * ((numChildren - i) - 1));				
+				std::memmove(&ch[i], &ch[i+1], sizeof(parallel_binary_search_treeNode*) * ((numChildren - i) - 1));				
 				if (numChildren > 1) this->key = ch[numChildren - 2]->key;
 				ch[j] = nullptr;
 				ch = &ch[i];
@@ -1862,7 +1862,7 @@ public:
 				return out;
 			}
 		}
-		parallel_binomial_search_treeNode* 
+		parallel_binary_search_treeNode* 
 			pop_back_child() {
 			if (numChildren <= 0) {
 				return nullptr;
@@ -1875,51 +1875,61 @@ public:
 				return out;
 			}
 		};
-		parallel_binomial_search_treeNode* 
+		parallel_binary_search_treeNode* 
 			binomial_search_smallest_greater_equal_to(keyType K) {
-#if 1
-			parallel_binomial_search_treeNode* child = this->firstChild();
+#if 0
+			parallel_binary_search_treeNode* child = this->firstChild();
 			for (; child->next(); child = child->next()) {
 				if (K <= child->key)
 					break;
 			}
 			return child;
 #else
-			int
-				len,
-				mid,
-				offset;
-			bool
-				res;
-			parallel_binomial_search_treeNode
-				* sample;
-			if (numChildren == 0) 
-				return nullptr;
-			if (numChildren == 1) 
-				return children()[0];
+			//if (K >= children()[numChildren - 1]->key) {
+			//	// it will be one of the final children
+			//	for (int i = numChildren - 2; i >= 0; --i) {
+			//		if (children()[i]->key < K) return children()[i + 1];
+			//	}
+			//	// worst-case we searched them all...
+			//	return children()[0];
+			//}
+			//else {
+				int
+					len,
+					mid,
+					offset;
+				bool
+					res;
+				parallel_binary_search_treeNode
+					* sample;
+				if (numChildren == 0)
+					return nullptr;
+				if (numChildren == 1)
+					return children()[0];
 
-			len = numChildren;
-			mid = len; 
-			offset = 0; 
-			res = false; 
-			
-			while (mid > 0) {
-				mid = len >> 1;
-				sample = children()[offset + mid];
-				if (K >= sample->key)  {
-					offset += mid; 
-					len -= mid; 
-					res = true; 
-					if (K == sample->key) return sample;					
+				len = numChildren;
+				mid = len;
+				offset = 0;
+				res = false;
+
+				while (mid > 0) {
+					mid = len >> 1;
+					sample = children()[offset + mid];
+					if (K >= sample->key) {
+						offset += mid;
+						len -= mid;
+						res = true;
+						if (K == sample->key) return sample;
+					}
+					else {
+						len -= mid;
+						res = false;
+					}
 				}
-				else {
-					len -= mid; 
-					res = false;
-				}
-			}
-			mid = offset + (int)res;
-			if (mid == numChildren) return children()[offset];
-			else return children()[mid];
+				mid = offset + (int)res;
+				if (mid == numChildren) return children()[offset];
+				else return children()[mid];
+			//}
 #endif
 		};
 
@@ -1928,11 +1938,11 @@ public:
 private:
 	lock_type
 		mut; // global tree lock. Should only be held temporarily if at all possible. 
-	parallel_binomial_search_treeNode*
+	parallel_binary_search_treeNode*
 		root;
-	GL::atomic_parallel_allocator< parallel_binomial_search_treeNode, 256, true >
+	GL::atomic_parallel_allocator< parallel_binary_search_treeNode, 256, true >
 		nodeAllocator;
-	GL::atomic_allocator< std::array<parallel_binomial_search_treeNode*, maxChildrenPerNode>, 32, true >
+	GL::atomic_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true >
 		nodeChildrenAllocator;
 	long
 		count;
@@ -2053,7 +2063,7 @@ private:
 
 
 public:
-	parallel_binomial_search_tree()
+	parallel_binary_search_tree()
 		: nodeAllocator()
 		, root{ nullptr }
 		, mut()
@@ -2061,20 +2071,20 @@ public:
 	{
 		root = AllocNode(false);
 	};
-	parallel_binomial_search_tree(parallel_binomial_search_tree const&)
+	parallel_binary_search_tree(parallel_binary_search_tree const&)
 		= delete;
-	parallel_binomial_search_tree(parallel_binomial_search_tree&&) noexcept
+	parallel_binary_search_tree(parallel_binary_search_tree&&) noexcept
 		= delete;
-	parallel_binomial_search_tree& operator=(parallel_binomial_search_tree const&)
+	parallel_binary_search_tree& operator=(parallel_binary_search_tree const&)
 		= delete;
-	parallel_binomial_search_tree& operator=(parallel_binomial_search_tree&&) noexcept
+	parallel_binary_search_tree& operator=(parallel_binary_search_tree&&) noexcept
 		= delete;
-	~parallel_binomial_search_tree()
+	~parallel_binary_search_tree()
 		= default;
 
-	__declspec(noinline) parallel_binomial_search_treeNode* // add an object to the tree
-		Add(objType* object, keyType key) {
-		parallel_binomial_search_treeNode
+	__declspec(noinline) parallel_binary_search_treeNode* // add an object to the tree
+		Add(objType* object, keyType key, locker const& Locking = locker()) {
+		parallel_binary_search_treeNode
 			* node,
 			* child,
 			* newNode;
@@ -2087,7 +2097,7 @@ public:
 		newNode->data
 			= object;
 
-		locking.push_back(mut); // locked
+		if (locking.size() == 0) locking.push_back(mut); // locked
 
 		if (root == nullptr) root = AllocNode(false); // start fresh
 
@@ -2134,8 +2144,8 @@ public:
 
 	};
 	__declspec(noinline) bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
-		Remove(parallel_binomial_search_treeNode* node, locker const& Locking = locker()) {
-		parallel_binomial_search_treeNode
+		Remove(parallel_binary_search_treeNode* node, locker const& Locking = locker()) {
+		parallel_binary_search_treeNode
 			* Node,
 			* parent,
 			* oldRoot;
@@ -2199,13 +2209,13 @@ public:
 
 		return true;
 	};
-	std::pair<parallel_binomial_search_treeNode*, locker> // find an object using the given key
+	std::pair<parallel_binary_search_treeNode*, locker> // find an object using the given key
 		NodeFind(keyType key, bool for_removal = false) {
-		parallel_binomial_search_treeNode
+		parallel_binary_search_treeNode
 			* nxt;
-		std::pair<parallel_binomial_search_treeNode*, locker>
+		std::pair<parallel_binary_search_treeNode*, locker>
 			out;
-		parallel_binomial_search_treeNode*&
+		parallel_binary_search_treeNode*&
 			node = out.first;
 		locker&
 			locking = out.second;
@@ -2238,19 +2248,19 @@ public:
 		locking.clear();
 		return out;
 	};
-	std::pair<parallel_binomial_search_treeNode*, locker> // find an object using the given key
+	std::pair<parallel_binary_search_treeNode*, locker> // find an object using the given key
 		NodeFind_ForRemoval(keyType key) {
 		return NodeFind(key, true);
 	};
 
 
-	std::pair<parallel_binomial_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
+	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {
-		parallel_binomial_search_treeNode
+		parallel_binary_search_treeNode
 			* nxt;
-		std::pair<parallel_binomial_search_treeNode*, locker>
+		std::pair<parallel_binary_search_treeNode*, locker>
 			out;
-		parallel_binomial_search_treeNode*&
+		parallel_binary_search_treeNode*&
 			node = out.first;
 		locker&
 			locking = out.second;
@@ -2282,20 +2292,20 @@ public:
 		locking.clear();
 		return out;
 	};
-	std::pair<parallel_binomial_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
+	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual_ForRemoval(keyType key) {
 		return NodeFindSmallestLargerEqual(key, true);
 	}
 
 
 #if 0
-	std::pair<parallel_binomial_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
+	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
 		NodeFindLargestSmallerEqual(keyType key) {
-		parallel_binomial_search_treeNode
+		parallel_binary_search_treeNode
 			* smaller;
-		std::pair<parallel_binomial_search_treeNode*, locker>
+		std::pair<parallel_binary_search_treeNode*, locker>
 			out;
-		parallel_binomial_search_treeNode*&
+		parallel_binary_search_treeNode*&
 			node = out.first;
 		locker&
 			locking = out.second;
@@ -2339,18 +2349,18 @@ public:
 		return out;
 	};
 #endif
-	std::pair<parallel_binomial_search_treeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+	std::pair<parallel_binary_search_treeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 		GetRoot() {
 		// auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
 
-		std::pair<parallel_binomial_search_treeNode*, locker> out;
+		std::pair<parallel_binary_search_treeNode*, locker> out;
 		out.second.push_back(mut);
 		out.first = root;
 		return out;
 	};
 #if 0
-	static parallel_binomial_search_treeNode* // goes through all nodes of the tree		
-		GetNext(parallel_binomial_search_treeNode* node, locker& locking) {
+	static parallel_binary_search_treeNode* // goes through all nodes of the tree		
+		GetNext(parallel_binary_search_treeNode* node, locker& locking) {
 		if (node->firstChild) {
 			return node->firstChild;
 		}
@@ -2363,11 +2373,11 @@ public:
 
 	};
 #endif
-	static parallel_binomial_search_treeNode* // goes through all leaf nodes of the tree		
-		GetNextLeaf(parallel_binomial_search_treeNode* node, locker& locking) {
+	static parallel_binary_search_treeNode* // goes through all leaf nodes of the tree		
+		GetNextLeaf(parallel_binary_search_treeNode* node, locker& locking) {
 		if (!node) return nullptr;
 
-		parallel_binomial_search_treeNode*
+		parallel_binary_search_treeNode*
 			nxt;
 		if (nxt = node->firstChild()) {
 			while (nxt) {				
@@ -2400,9 +2410,9 @@ public:
 	};
 
 private:
-	parallel_binomial_search_treeNode*
+	parallel_binary_search_treeNode*
 		AllocNode(bool is_leaf) {
-		parallel_binomial_search_treeNode
+		parallel_binary_search_treeNode
 			* node;
 
 		node = nodeAllocator.Alloc();
@@ -2424,19 +2434,19 @@ private:
 		return node;
 	};
 	__declspec(noinline) void
-		FreeNode(parallel_binomial_search_treeNode* node) {
+		FreeNode(parallel_binary_search_treeNode* node) {
 		if (node) {
 			if (!node->is_leaf) {
-				nodeChildrenAllocator.Free(static_cast<std::array<parallel_binomial_search_treeNode*, maxChildrenPerNode>*>(node->data));
+				nodeChildrenAllocator.Free(static_cast<std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>*>(node->data));
 			}		
 			nodeAllocator.Free(node);
 		}
 	};
 	void // will split node by creating a neighbor next to it in the parent node and sharing half its children
-		SplitNode(parallel_binomial_search_treeNode* node) {
+		SplitNode(parallel_binary_search_treeNode* node) {
 		int
 			i, j;
-		parallel_binomial_search_treeNode
+		parallel_binary_search_treeNode
 			* child,
 			* newNode;
 
@@ -2463,13 +2473,720 @@ private:
 		node->parent->add_child_at(newNode, newNode->parent_index);
 		node->key = node->children()[node->numChildren - 1]->key;
 	};;
-	parallel_binomial_search_treeNode* // node1 will be deleted and its children appended to node2
-		MergeNodes(parallel_binomial_search_treeNode* node1, parallel_binomial_search_treeNode* node2) {		
+	parallel_binary_search_treeNode* // node1 will be deleted and its children appended to node2
+		MergeNodes(parallel_binary_search_treeNode* node1, parallel_binary_search_treeNode* node2) {		
 		for (int i = 0; i < node1->numChildren; ++i) 
 			node2->add_child_at(node1->children()[i], i);
 		(void)node1->parent->pop_child(node1->parent_index);
 		FreeNode(node1);
 		return node2;
 	};
+
+};
+
+// Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
+// Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
+template< class objType, class keyType, int maxChildrenPerNode >
+class binary_search_tree {
+public:
+	struct binary_search_treeNode {
+		keyType	// key used for sorting						
+			key;
+		binary_search_treeNode // parent node
+			* parent;
+		int	// number of children							
+			numChildren;
+		int
+			parent_index;
+		void* // std::variant< objType*, std::array<binary_search_treeNode*, maxChildrenPerNode>* >		
+			data;
+		bool
+			is_leaf;
+		objType*
+			object() {
+			if (numChildren > 0 || !is_leaf) return nullptr;
+			return static_cast<objType*>(data);
+		};
+		binary_search_treeNode**
+			children() {
+			return &static_cast<std::array<binary_search_treeNode*, maxChildrenPerNode>*>(data)->operator[](0);
+		};
+
+		binary_search_treeNode* // next sibling
+			next() {
+			if (parent && (parent->numChildren > (parent_index + 1))) {
+				return parent->children()[parent_index + 1];
+			}
+			else {
+				return nullptr;
+			}
+		};
+		binary_search_treeNode* // prev sibling
+			prev() {
+			if (parent && (parent_index >= 1)) {
+				return parent->children()[parent_index - 1];
+			}
+			else {
+				return nullptr;
+			}
+		};
+		binary_search_treeNode* // first child
+			firstChild() {
+			if (numChildren == 0) return nullptr;
+			return children()[0];
+		};
+		binary_search_treeNode* // last child
+			lastChild() {
+			if (numChildren == 0) return nullptr;
+			return children()[numChildren - 1];
+		};
+		void
+			add_child(binary_search_treeNode* p) {
+			p->parent = this;
+			p->parent_index = numChildren;
+			children()[numChildren] = p;
+			++numChildren;
+			if (this->key < p->key) this->key = p->key;
+		}
+		__declspec(noinline) void
+			add_child_at(binary_search_treeNode* p, int i) {
+			if (i >= numChildren) add_child(p);
+			else {
+				binary_search_treeNode**
+					ch = children();
+				int
+					j;
+
+				if (this->key < p->key) this->key = p->key;
+				p->parent = this;
+				p->parent_index = i;
+				// shift everything forward
+
+#if 0
+				for (j = numChildren; j > i; --j) {
+					ch[j] = ch[j - 1];
+					ch[j]->parent_index = j;
+				}
+				ch[i] = p;
+#else
+				std::memmove(&ch[i + 1], &ch[i], sizeof(binary_search_treeNode*) * (numChildren - i));
+				ch[i] = p;
+				ch = &ch[i];
+				for (j = i + 1; j <= numChildren; ++j) {
+					++ch;
+					(*ch)->parent_index = j;
+				}
+#endif
+				++numChildren;
+			}
+		}
+		binary_search_treeNode*
+			pop_front_child() {
+			if (numChildren <= 0) {
+				return nullptr;
+			}
+			else {
+				auto* out = children()[0];
+				int i = 0;
+				for (i = 0; i < (numChildren - 1); ++i) {
+					children()[i] = children()[i + 1];
+					children()[i]->parent_index = i;
+				}
+				children()[i] = nullptr;
+				--numChildren;
+				return out;
+			}
+		}
+		void
+			pop_front_children(int n) {
+			if (numChildren >= n) {
+				int i = 0;
+				for (i = 0; i < (numChildren - n); ++i) {
+					children()[i] = children()[i + n];
+					children()[i]->parent_index = i;
+				}
+				for (; i < maxChildrenPerNode; ++i) {
+					children()[i] = nullptr;
+				}
+				numChildren -= n;
+			}
+		}
+		binary_search_treeNode*
+			pop_child(int i) {
+			if (numChildren <= 0) {
+				return nullptr;
+			}
+			else {
+				binary_search_treeNode**
+					ch = children();
+				binary_search_treeNode*
+					out = ch[i];
+				int
+					j = numChildren - 1;
+
+#if 0
+				for (; i < (numChildren - 1); ++i) {
+					ch[i] = ch[i + 1];
+					ch[i]->parent_index = i;
+				}
+				ch[i] = nullptr;
+				--numChildren;
+				if (numChildren > 0) this->key = ch[numChildren - 1]->key;
+#else
+				std::memmove(&ch[i], &ch[i + 1], sizeof(binary_search_treeNode*) * ((numChildren - i) - 1));
+				if (numChildren > 1) this->key = ch[numChildren - 2]->key;
+				ch[j] = nullptr;
+				ch = &ch[i];
+				for (; i < j; ++i) {
+					(*ch)->parent_index = i;
+					++ch;
+				}
+				--numChildren;
+#endif
+				return out;
+			}
+		}
+		binary_search_treeNode*
+			pop_back_child() {
+			if (numChildren <= 0) {
+				return nullptr;
+			}
+			else {
+				auto* out = children()[numChildren - 1];
+				children()[numChildren - 1] = nullptr;
+				--numChildren;
+				if (numChildren > 0) this->key = children()[numChildren - 1]->key;
+				return out;
+			}
+		};
+		binary_search_treeNode*
+			binomial_search_smallest_greater_equal_to(keyType K) {
+#if 0
+			binary_search_treeNode* child = this->firstChild();
+			for (; child->next(); child = child->next()) {
+				if (K <= child->key)
+					break;
+			}
+			return child;
+#else
+			//if (K >= children()[numChildren - 1]->key) {
+			//	// it will be one of the final children
+			//	for (int i = numChildren - 2; i >= 0; --i) {
+			//		if (children()[i]->key < K) return children()[i + 1];
+			//	}
+			//	// worst-case we searched them all...
+			//	return children()[0];
+			//}
+			//else {
+				int
+					len,
+					mid,
+					offset;
+				bool
+					res;
+				binary_search_treeNode
+					* sample;
+				if (numChildren == 0)
+					return nullptr;
+				if (numChildren == 1)
+					return children()[0];
+
+				len = numChildren;
+				mid = len;
+				offset = 0;
+				res = false;
+
+				while (mid > 0) {
+					mid = len >> 1;
+					sample = children()[offset + mid];
+					if (K >= sample->key) {
+						offset += mid;
+						len -= mid;
+						res = true;
+						if (K == sample->key) return sample;
+					}
+					else {
+						len -= mid;
+						res = false;
+					}
+				}
+				mid = offset + (int)res;
+				if (mid == numChildren) return children()[offset];
+				else return children()[mid];
+			//}
+#endif
+		};
+
+	};
+
+private:
+	binary_search_treeNode*
+		root;
+	GL::atomic_parallel_allocator< binary_search_treeNode, 256, true >
+		nodeAllocator;
+	GL::atomic_allocator< std::array<binary_search_treeNode*, maxChildrenPerNode>, 32, true >
+		nodeChildrenAllocator;
+	long
+		count;
+
+public:
+	binary_search_tree()
+		: nodeAllocator()
+		, root{ nullptr }
+		, count{ 0 }
+	{
+		root = AllocNode(false);
+	};
+	binary_search_tree(binary_search_tree const&)
+		= delete;
+	binary_search_tree(binary_search_tree&&) noexcept
+		= delete;
+	binary_search_tree& operator=(binary_search_tree const&)
+		= delete;
+	binary_search_tree& operator=(binary_search_tree&&) noexcept
+		= delete;
+	~binary_search_tree()
+		= default;
+
+	__declspec(noinline) binary_search_treeNode* // add an object to the tree
+		Add(objType* object, keyType key) {
+		binary_search_treeNode
+			* node,
+			* child,
+			* newNode;
+		newNode
+			= AllocNode(true);
+		newNode->key
+			= key;
+		newNode->data
+			= object;
+
+		if (root == nullptr) root = AllocNode(false); // start fresh
+
+		if (root->numChildren >= maxChildrenPerNode) { // make a new root and split
+			node = AllocNode(false);
+			node->key = root->key;
+			node->add_child(root);
+			SplitNode(root);
+			root = node;
+			node = nullptr;
+		}
+
+		for (node = root; node->numChildren > 0; node = child) {
+			if (key > node->key) node->key = key; // in prep for the insertion
+
+			// find the first child with a key larger equal to the key of the new node
+			child = node->binomial_search_smallest_greater_equal_to(key);
+
+			// we are inside of a branch of leafs -- we will do the insert.
+			if (child->object()) {
+				if (key <= child->key) {
+					// insert new node before child
+					node->add_child_at(newNode, child->parent_index);
+				}
+				else {
+					// insert new node after child
+					node->add_child_at(newNode, child->parent_index + 1);
+				}
+
+				++count;
+				return newNode;
+			}
+			else if (child->numChildren >= maxChildrenPerNode) {
+				SplitNode(child);
+				if (key <= child->prev()->key) child = child->prev();
+			}
+		}
+
+		// we only end up here if the root node is empty
+		root->add_child(newNode);
+
+		++count;
+		return newNode;
+
+	};
+	__declspec(noinline) bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+		Remove(binary_search_treeNode* node) {
+		binary_search_treeNode
+			* Node,
+			* parent,
+			* oldRoot;
+
+		// unlink the node from it's parent
+		parent = node->parent;
+		parent->pop_child(node->parent_index);
+
+		// make sure there are no parent nodes with a single child
+		for (; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
+			while (true) {
+				if (Node = parent->next()) {
+					if ((parent->numChildren + Node->numChildren) > maxChildrenPerNode) {
+						SplitNode(Node);
+						continue;
+					}
+					parent = MergeNodes(parent, Node);
+					break;
+				}
+				else if (Node = parent->prev()) {
+					if ((parent->numChildren + Node->numChildren) > maxChildrenPerNode) {
+						SplitNode(Node);
+						continue;
+					}
+					parent = MergeNodes(Node, parent);
+					break;
+				}
+			}
+
+			if (parent->numChildren > maxChildrenPerNode) {
+				SplitNode(parent);
+				break;
+			}
+		}
+
+		// a parent may not use a key higher than the key of it's last child. Work backwards and make sure this is true. 
+		for (; parent && (parent->numChildren > 0); parent = parent->parent)
+			if (Node = parent->children()[parent->numChildren - 1])
+				if (parent->key > Node->key)
+					parent->key = Node->key;
+
+		// actually free the node
+		--count;
+		FreeNode(node);
+
+		// remove the root node if it has a single internal node as child		
+		if ((root->numChildren == 1) && !root->firstChild()->object()) {
+			oldRoot = root;
+
+			root = oldRoot->firstChild();
+			root->parent = nullptr;
+			root->parent_index = 0;
+
+			FreeNode(oldRoot);
+		}
+
+		return true;
+	};
+	binary_search_treeNode* // find an object using the given key
+		NodeFind(keyType key, bool for_removal = false) {
+		binary_search_treeNode
+			* nxt;
+		binary_search_treeNode*
+			node;
+
+		if (!root || (root->numChildren <= 0)) return nullptr;		
+
+		for (node = root; node; ) {
+			node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
+			if (node->object()) {
+				if (node->key == key) return node;
+				else return nullptr;				
+			}
+			if (!node || (node->numChildren <= 0)) return nullptr;			
+		}
+		return nullptr;
+	};
+
+	binary_search_treeNode* // find an object with the smallest key larger equal the given key
+		NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {
+		binary_search_treeNode
+			* nxt;
+		binary_search_treeNode*
+			node;
+
+		if (!root || (root->numChildren <= 0)) return nullptr;	
+		for (node = root; node; ) {
+			node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
+			if (node->object()) {
+				if (node->key >= key) return node;
+				else return nullptr;				
+			}
+			if (!node || (node->numChildren <= 0)) return nullptr;			
+		}
+		return nullptr;
+	};
+
+#if 0
+	std::pair<binary_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
+		NodeFindLargestSmallerEqual(keyType key) {
+		binary_search_treeNode
+			* smaller;
+		std::pair<binary_search_treeNode*, locker>
+			out;
+		binary_search_treeNode*&
+			node = out.first;
+		locker&
+			locking = out.second;
+
+		locking.push_back(mut);
+		if (!root || !root->firstChild) {
+			node = nullptr;
+			locking.clear();
+			return out;
+		}
+
+		for (node = root->firstChild, smaller = nullptr; node != nullptr; ) {
+			while (node->next) {
+				if (node->key >= key) break;
+				smaller = node;
+				node = node->next;
+			}
+			if (node->object) {
+				if (node->key <= key) return node;
+				else if (smaller == nullptr) {
+					node = nullptr;
+					locking.clear();
+					return out;
+				}
+				else {
+					node = smaller;
+					if (node->object) return out;
+				}
+			}
+
+			if (!node || !node->firstChild) {
+				node = nullptr;
+				locking.clear();
+				return out;
+			}
+
+			node = node->firstChild;
+		}
+		node = nullptr;
+		locking.clear();
+		return out;
+	};
+#endif
+	binary_search_treeNode* // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+		GetRoot() {
+		return root;
+	};
+#if 0
+	static binary_search_treeNode* // goes through all nodes of the tree		
+		GetNext(binary_search_treeNode* node, locker& locking) {
+		if (node->firstChild) {
+			return node->firstChild;
+		}
+		else {
+			while (node && (node->next == nullptr)) {
+				node = node->parent;
+			}
+			return node;
+		}
+
+	};
+#endif
+	static binary_search_treeNode* // goes through all leaf nodes of the tree		
+		GetNextLeaf(binary_search_treeNode* node) {
+		if (!node) return nullptr;
+
+		binary_search_treeNode*
+			nxt;
+		if (nxt = node->firstChild()) {
+			while (nxt) {
+				node = nxt;
+				nxt = node->firstChild();
+			}
+			return node;
+		}
+		else {
+			while (node && (node->next() == nullptr)) {
+				nxt = node->parent;
+				node = nxt;
+			}
+			if (node) {
+				nxt = node->next();
+				node = nxt;
+				nxt = node->firstChild();
+				while (nxt) {
+					node = nxt;
+					nxt = node->firstChild();
+				}
+				return node;
+			}
+			else return nullptr;
+		}
+	};
+	size_t 
+		size() const {
+		return (size_t)count;
+	};
+
+private:
+	binary_search_treeNode*
+		AllocNode(bool is_leaf) {
+		binary_search_treeNode
+			* node;
+
+		node = nodeAllocator.Alloc();
+		if (is_leaf) {
+			node->is_leaf = true;
+			node->data = nullptr;
+		}
+		else {
+			node->is_leaf = false;
+			node->data = nodeChildrenAllocator.Alloc();
+			for (int i = 0; i < maxChildrenPerNode; ++i) node->children()[i] = nullptr;
+		}
+
+		node->key = 0;
+		node->parent = nullptr;
+		node->parent_index = 0;
+		node->numChildren = 0;
+
+		return node;
+	};
+	__declspec(noinline) void
+		FreeNode(binary_search_treeNode* node) {
+		if (node) {
+			if (!node->is_leaf) {
+				nodeChildrenAllocator.Free(static_cast<std::array<binary_search_treeNode*, maxChildrenPerNode>*>(node->data));
+			}
+			nodeAllocator.Free(node);
+		}
+	};
+	void // will split node by creating a neighbor next to it in the parent node and sharing half its children
+		SplitNode(binary_search_treeNode* node) {
+		int
+			i, j;
+		binary_search_treeNode
+			* child,
+			* newNode;
+
+		// allocate a new node
+		newNode = AllocNode(false);
+		newNode->parent = node->parent;
+
+		// divide the children over the two nodes
+		child = node->firstChild();
+		newNode->children()[0] = child;
+		for (j = 1, i = 3; i < node->numChildren; i += 2, j++) {
+			child = child->next();
+			newNode->children()[j] = child;
+		}
+		newNode->key = child->key;
+		newNode->numChildren = node->numChildren / 2;
+		for (i = 0; i < newNode->numChildren; ++i) {
+			newNode->children()[i]->parent = newNode;
+			newNode->children()[i]->parent_index = i;
+		}
+
+		newNode->parent_index = node->parent_index;
+		node->pop_front_children(newNode->numChildren);
+		node->parent->add_child_at(newNode, newNode->parent_index);
+		node->key = node->children()[node->numChildren - 1]->key;
+	};;
+	binary_search_treeNode* // node1 will be deleted and its children appended to node2
+		MergeNodes(binary_search_treeNode* node1, binary_search_treeNode* node2) {
+		for (int i = 0; i < node1->numChildren; ++i)
+			node2->add_child_at(node1->children()[i], i);
+		(void)node1->parent->pop_child(node1->parent_index);
+		FreeNode(node1);
+		return node2;
+	};
+
+};
+
+// Allows for multiple objects with the same key to be present in the map
+template <typename keyType, typename objType>
+class binary_multimap {
+public:
+	using value_type = std::pair<const keyType, objType>;
+private:
+	GL::atomic_epoch_allocator< value_type, GL::atomic_allocator< value_type, 128, false> > 
+		value_allocator;
+	mutable parallel_binary_search_tree<std::pair<keyType, objType>, keyType, 20>
+		tree;
+
+public:
+	// adds a new object into the provided key. 
+	void insert(keyType const& k, objType const& o) {
+		auto* value_ptr = value_allocator.Alloc(value_type{ k, o });
+		tree.Add(value_ptr, k);
+	};
+	// returns the first object at the requested key
+	objType& operator[](keyType const& k) {
+		auto guard{ value_allocator.ProtectCurrentEpoch() };
+		while (true) {
+			// try parallel first
+			if (1) {
+				auto [node, locker] = tree.NodeFind(k, false);
+				if (node) {
+					if (auto* o = node->object()) {
+						return o->second;
+					}
+				}
+			}
+			// if failed, try single-threaded
+			if (1) {
+				auto [node, locker] = tree.NodeFind(k, true);
+				if (node) {
+					if (auto* o = node->object()) {
+						return o->second;
+					}
+				}
+				// if failed, do insert
+				if (node = tree.Add(value_allocator.Alloc(value_type{ k, {} }), k, locker)) {
+					if (auto* o = node->object()) {
+						return o->second;
+					}
+				}
+			}
+		}
+	};
+	// returns the first object at the requested key
+	const objType& at(keyType const& k) const {
+		auto guard{ value_allocator.ProtectCurrentEpoch() };
+		auto [node, locker] = tree.NodeFind(k, false);
+		if (node) {
+			if (auto* o = node->object()) {
+				return o->second;
+			}
+		}
+		throw std::out_of_range("Could not find key");		
+	};
+	// returns the first object at the requested key
+	objType& at(keyType const& k) {
+		auto guard{ value_allocator.ProtectCurrentEpoch() };
+		auto [node, locker] = tree.NodeFind(k, false);
+		if (node) {
+			if (auto* o = node->object()) {
+				return o->second;
+			}
+		}
+		throw std::out_of_range("Could not find key");
+	};
+	// erases the first item with the key
+	bool erase(keyType const& k) {
+		auto guard{ value_allocator.ProtectCurrentEpoch() };
+		auto [node, locker] = tree.NodeFind(k, true);
+		if (node && node->object()) {
+			value_allocator.Free(node->object());
+			tree.Remove(node, locker);			
+			return true;
+		}
+		return false;
+	};
+	// erases the item whose key and object matches the provided pair
+	bool erase(value_type const& k) {
+		auto guard{ value_allocator.ProtectCurrentEpoch() };
+		auto [node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(k.first);
+		while (node && node->object()) {
+			if (node->key == k.first) {
+				if (node->object()->second == k.second) {
+					value_allocator.Free(node->object());
+					tree.Remove(node, locker);
+					return true;
+				}
+				else {
+					node = tree.GetNextLeaf(node, locker);
+				}
+			}
+			else {
+				return false;
+			}
+		}
+		return false;
+	};
+
 
 };
