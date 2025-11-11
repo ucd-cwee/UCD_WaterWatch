@@ -5615,6 +5615,25 @@ public:
 };
 
 template <typename T>
+class matrix_kernel {
+public:
+    std::unique_ptr<matrix<T>>
+        mat;
+    T
+        sum;
+
+    matrix_kernel() = default;
+    matrix_kernel(matrix<T>&& rhs)
+        : mat{ std::make_unique<matrix<T>>(std::move(rhs)) }
+        , sum{}
+    {
+        sum = mat->sum();
+    };
+    ~matrix_kernel() = default;
+};
+
+
+template <typename T>
 class matrix {
 private:
     // N must be aligned with WORKGROUP_SIZE
@@ -5627,24 +5646,6 @@ private:
     template <typename G> friend class matrix;
 
 public:
-    class matrix_kernel {
-    public:
-        matrix
-            mat;
-        T
-            sum;
-
-        matrix_kernel() = default;
-        matrix_kernel(matrix&& rhs) 
-            : mat{ std::move(rhs) }
-            , sum{}
-        {
-            sum = mat.sum();
-        };
-        ~matrix_kernel() = default;
-    };
-
-
     // normal constructor
     matrix(GL::GPU::dimensions d)
         : dim{ d }
@@ -5684,6 +5685,7 @@ public:
     matrix(matrix&& rhs) noexcept = default; 
     matrix& operator=(matrix&& rhs) noexcept = default;
     ~matrix() = default;
+
     // x*y*z
     unsigned int size() const {
         return dim.count();
@@ -6896,13 +6898,13 @@ public:
         }
     };
 
-    matrix convolve(matrix const& K) const {
+    matrix convolve(matrix_kernel<T> const& K) const {
         if (this->dim.num_dimensions() == 2) {
             matrix out(this->dim);
-            float kernel_tot = K.sum();
+            float kernel_tot = K.sum;
             mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
                 this->size(),
-                out.mem, mem, K.mem, this->size(0), this->size(1), K.size(0), K.size(1), kernel_tot
+                out.mem, mem, K.mat->mem, this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
             );
             return out;
         }
@@ -6910,7 +6912,7 @@ public:
             return matrix();
         }
     };
-    static matrix<float> guassian_kernel(unsigned int X, unsigned int Y) {
+    static matrix_kernel<float> guassian_kernel(unsigned int X, unsigned int Y) {
         matrix<float> out(X, Y, 1);
         mem_matrix::queue_gpu_work(GL::string("guassian") + GL::string(opencl_impl::type_name<float>()),
             out.size(),
@@ -6921,15 +6923,13 @@ public:
             out = 1.0f;
         else
             out *= 1.0f / V;
-        return out;
-        
+        out.mem->wait_for_events();
+        return matrix_kernel<float>(std::move(out));
     };
     template <unsigned int X, unsigned int Y>
-    static matrix<float>& guassian_kernel() {
-        static matrix<float> out{ [](){
-            auto out = guassian_kernel(X, Y);
-            out.mem->wait_for_events();
-            return out;
+    static matrix_kernel<float>& guassian_kernel() {
+        static matrix_kernel<float> out{ [](){
+            return guassian_kernel(X, Y);
         }() };
         return out;
     };
@@ -7010,15 +7010,14 @@ public:
                 0.341f * 2.0f,
                 (1.0f - (0.341f * 2.0f)) / 2.0f
             };
-            auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 3, y = 1
-            auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 3
+            matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
+            matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
             if constexpr (std::is_same_v<float, T>) {
                 return convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
             else {
                 return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
-            // return cast<float>().convolve(guassian_kernel(3, 3)).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
         }
     };
     template <bool skip_blur = false> decltype(auto) quartersize() const {
@@ -7033,11 +7032,9 @@ public:
                 (0.341f / 2.0f) + (.186f / 2.0f),
                 (0.136f / 2.0f)
             };
-            auto kernel1 = matrix<float>::from_vector(kernel, kernel.size()); // x = 5, y = 1
-            auto kernel2 = matrix<float>::from_vector(kernel, 1); // x = 1, y = 5            
-            return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
-
-            // return cast<float>().convolve(guassian_kernel(5, 5)).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+            matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 5, y = 1
+            matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 5     
+            return cast<float>().convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
         }
     };
     matrix doublesize() const {
@@ -7587,11 +7584,11 @@ void fnGpuProgramming() {
         float avg_framerate = 0; int avg_framerate_n = 0;
 
         // Initialize the kernel array
-        auto kernel = matrix<unsigned int>::from_vector({
+        matrix_kernel<unsigned int> kernel(matrix<unsigned int>::from_vector({
             1, 1, 1,
             1, 0, 1,
             1, 1, 1
-            }, 3);
+        }, 3));
         auto state = (matrix<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
 
         int frame = 1;
