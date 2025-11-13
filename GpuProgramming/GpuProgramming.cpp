@@ -5324,43 +5324,57 @@ private:
 
 public:
     template <typename T>
-    static auto make_unique(unsigned int N) {
-        struct helper {
-            struct array_delete { // default deleter for unique_ptr to array of unknown size
-                constexpr array_delete() noexcept = default;
-                array_delete(const array_delete&) noexcept {}
-                __declspec(noinline) void operator()(T* p) const noexcept { // delete a pointer
-                    static_assert(0 < sizeof(T), "can't delete an incomplete type");
-                    auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
-                    auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
-                    unsigned int N = (alloced->length - sizeof(dynamic_cpu_allocator::dynamic_block*)) / sizeof(T);
-                    if constexpr (!std::is_pod_v<T>) {
-                        for (unsigned int i = 0; i < N; ++i)
-                            (&p[i])->~T();
-                    }
-                    cpu_allocator().Free(alloced);
+    struct helper {
+        struct array_delete { // default deleter for unique_ptr to array of unknown size
+            constexpr array_delete() noexcept = default;
+            array_delete(const array_delete&) noexcept {}
+            __declspec(noinline) void operator()(T* p) const noexcept { // delete a pointer
+                static_assert(0 < sizeof(T), "can't delete an incomplete type");
+                auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
+                auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
+                unsigned int N = (alloced->length - sizeof(dynamic_cpu_allocator::dynamic_block*)) / sizeof(T);
+                if constexpr (!std::is_pod_v<T>) {
+                    for (unsigned int i = 0; i < N; ++i)
+                        (&p[i])->~T();
                 }
-            };
-            __declspec(noinline) static T* create(unsigned int N) {
-                //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-                auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
-
-                *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
-                T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
-                if constexpr (std::is_pod_v<T>) {
-                    // best-case scenario!
-                    std::memset(out, 0, (sizeof(T) * N));
-                }
-                else {
-                    // need to actually initialize the array...
-                    for (unsigned int i = 0; i < N; ++i) {
-                        new (&out[i]) T;
-                    }
-                }
-                return out;
-            };
+                cpu_allocator().Free(alloced);
+            }
         };
-        return std::unique_ptr<T[], helper::array_delete>(helper::create(N));
+        __declspec(noinline) static T* create(unsigned int N) {
+            //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
+
+            *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
+            if constexpr (std::is_pod_v<T>) {
+                // best-case scenario!
+                std::memset(out, 0, (sizeof(T) * N));
+            }
+            else {
+                // need to actually initialize the array...
+                for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;                
+            }
+            return out;
+        };
+        template <typename... U> __declspec(noinline) static T* create_single(U&&... args) {
+            unsigned int N = 1;
+            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
+
+            *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
+            new (&out[0]) T(std::move(args)...);
+            return out;
+        };
+    };
+
+    template <typename T>
+    static auto make_unique(unsigned int N) {
+        return std::unique_ptr<T[], helper<T>::array_delete>(helper<T>::create(N));
+    };
+
+    template <typename T, typename... U>
+    static auto make_unique_single(U&&... args) {
+        return std::unique_ptr<T, helper<T>::array_delete>(helper<T>::create_single(std::move(args)...));
     };
 
     template <typename T>
@@ -5537,6 +5551,11 @@ private:
                 ++count;
             }
         }
+        else if constexpr (std::is_same_v<T, std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>>) {
+            if (parameter->add_event(ev, true)) {
+                ++count;
+            }
+        }
         append_events(count, ev, parameters...);
     };
     static void check_for_errors(const int error) {
@@ -5568,6 +5587,12 @@ private:
             }
         }
         else if constexpr (std::is_same_v<G, std::unique_ptr<mem_matrix>>) {
+            link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
+            for (size_t i = 0; i < parameter->events.size(); ++i) {
+                waitlist.insert(parameter->events.operator[](i));
+            }
+        }
+        else if constexpr (std::is_same_v<G, std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>>) {
             link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
             for (size_t i = 0; i < parameter->events.size(); ++i) {
                 waitlist.insert(parameter->events.operator[](i));
@@ -5675,9 +5700,9 @@ private:
     static auto& mem_free_helper() {
         class wrap {
         public:
-            std::unique_ptr<mem_matrix> mem;
+            std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> mem;
             wrap() = default;
-            wrap(std::unique_ptr<mem_matrix>&& rhs) : mem{ std::move(rhs) } {};
+            wrap(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&& rhs) : mem{ std::move(rhs) } {};
             wrap(wrap const&) = delete;
             wrap(wrap&&) = default;
             wrap& operator=(wrap const&) = delete;
@@ -5687,9 +5712,8 @@ private:
         static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false>> allocator{};
         return allocator;
     }
-
-
-    std::unique_ptr<mem_matrix> 
+    
+    std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> 
         mem;
     GL::GPU::dimensions 
         dim;
@@ -5699,12 +5723,12 @@ public:
     // normal constructor
     matrix(GL::GPU::dimensions d)
         : dim{ d }
-        , mem(std::make_unique< mem_matrix>(sizeof(T) * WorkgroupAdjustment(d.X * d.Y * d.Z), false, true))
+        , mem(mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(d.X * d.Y * d.Z), false, true))
     {};
     // normal constructor
     matrix(unsigned int X, unsigned int Y, unsigned int Z, bool cpu_only = false)
         : dim{ X, Y, Z }
-        , mem(std::make_unique< mem_matrix>(sizeof(T)* WorkgroupAdjustment(X* Y* Z), cpu_only, !cpu_only))
+        , mem(mem_matrix::make_unique_single< mem_matrix>(sizeof(T)* WorkgroupAdjustment(X* Y* Z), cpu_only, !cpu_only))
     {};
     // empty constructor
     matrix()
@@ -5714,7 +5738,7 @@ public:
     // copy another, existing matrix into this. Does not take or share ownership.
     matrix(matrix const& rhs)
         : dim{ rhs.dim }
-        , mem(std::make_unique< mem_matrix>(sizeof(T)* WorkgroupAdjustment(rhs.dim.count()), (bool)rhs.mem->cpu_memory, (bool)rhs.mem->gpu_memory))
+        , mem(mem_matrix::make_unique_single< mem_matrix>(sizeof(T)* WorkgroupAdjustment(rhs.dim.count()), (bool)rhs.mem->cpu_memory, (bool)rhs.mem->gpu_memory))
     {
         mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
             dim.count(),
@@ -5725,7 +5749,7 @@ public:
     matrix(matrix&& rhs) noexcept = default;
     matrix& operator=(matrix const& rhs) {
         dim = rhs.dim;
-        auto mem2 = std::make_unique< mem_matrix>(sizeof(T) * WorkgroupAdjustment(rhs.dim.count()), false, true);
+        auto mem2 = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(rhs.dim.count()), false, true);
         mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
             rhs.dim.count(),
             mem2, rhs.mem
@@ -7454,6 +7478,8 @@ public:
 
 };
 
+
+
 void fnGpuProgramming() {
 #if 1
     // pre-warm the heap      
@@ -7836,7 +7862,7 @@ void fnGpuProgramming() {
     }
 #endif
 
-    // Conway's Game of Life, using the GPU. 2-3 times faster than previous approach. 
+    // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
     if (1) {
         using namespace GL;
 
@@ -8005,7 +8031,7 @@ void fnGpuProgramming() {
             std::cout << std::flush;
 
             //while (sw.stop() < 1.0 / 60.0) {
-            //    std::this_thread::yield();
+                // std::this_thread::yield();
             //}
 
         }
