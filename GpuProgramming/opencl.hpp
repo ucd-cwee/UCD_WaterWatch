@@ -107,12 +107,21 @@ struct Device_Info {
 	bool patch_nvidia_fp16 = false; // Nvidia Pascal and newer GPUs with driver>=520.00 don't report cl_khr_fp16, but do support basic FP16 arithmetic
 	bool patch_legacy_gpu_fma = false; // some old GPUs have terrible fma performance, so replace with a*b+c
 	bool image_support = false;
-	
+	bool svm_coarse_grain_system = false;
+	bool svm_fine_grain_system = false;
+	bool svm_fine_grain_buffer = false;
+	bool svm_memory_allowed = false;
+
 	inline Device_Info(const cl::Device& cl_device, const cl::Context& cl_context, const uint id) {
 		this->cl_device = cl_device; // see https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/clGetDeviceInfo.html
 		this->cl_context = cl_context;
 		this->id = id;
-		image_support = cl_device.getInfo<CL_DEVICE_IMAGE_SUPPORT>();
+		image_support = cl_device.getInfo<CL_DEVICE_IMAGE_SUPPORT>();		
+		svm_coarse_grain_system = cl_device.getInfo<CL_DEVICE_SVM_CAPABILITIES>() & CL_DEVICE_SVM_COARSE_GRAIN_BUFFER;
+		svm_fine_grain_buffer = cl_device.getInfo<CL_DEVICE_SVM_CAPABILITIES>() & CL_DEVICE_SVM_FINE_GRAIN_BUFFER;
+		svm_fine_grain_system = cl_device.getInfo<CL_DEVICE_SVM_CAPABILITIES>() & CL_DEVICE_SVM_FINE_GRAIN_SYSTEM;
+		svm_memory_allowed = svm_fine_grain_buffer && svm_fine_grain_system;
+		// To-Do. Fine-grained buffer allows use of clSVMAlloc without clEnqueueMapBuffer and clEnqueueUnmapMemObject. Coarse-grained requires their use before the SVM is acceptable. 
 		name = trim(cl_device.getInfo<CL_DEVICE_NAME>()); // device name
 		vendor = trim(cl_device.getInfo<CL_DEVICE_VENDOR>()); // device vendor
 		driver_version = trim(cl_device.getInfo<CL_DRIVER_VERSION>()); // device driver version

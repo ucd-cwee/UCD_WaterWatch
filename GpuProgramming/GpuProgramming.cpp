@@ -4545,7 +4545,7 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
-// GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
+// single-threaded GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_gpu_allocator {
 public:
     struct dynamic_block {
@@ -4583,7 +4583,7 @@ public:
 private:
     GL::atomic_allocator< dynamic_block >
         block_alloc;
-    binary_search_tree< dynamic_block, unsigned long long, 10>
+    parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
     unsigned long long
         total_allocations;
@@ -4621,18 +4621,18 @@ private:
                         }
 
                         // lhs->next is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
+                        auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual(lhs->next->length);
                         while (tree_node) {
                             if (tree_node->object()) {
                                 if (tree_node->key == lhs->next->length) {
                                     if (tree_node->object() == lhs->next) {
                                         block_alloc.Free(tree_node->object());
-                                        free_tree.Remove(tree_node);
+                                        free_tree.Remove(tree_node, locker);
                                         break;
                                     }
                                 }
                             }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
+                            tree_node = free_tree.GetNextLeaf(tree_node, locker);
                         }
 
                         lhs->next = lhs->next->next;
@@ -4664,18 +4664,18 @@ private:
                         }
 
                         // lhs->prev is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
+                        auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual(lhs->prev->length);
                         while (tree_node) {
                             if (tree_node->object()) {
                                 if (tree_node->key == lhs->prev->length) {
                                     if (tree_node->object() == lhs->prev) {
                                         block_alloc.Free(tree_node->object());
-                                        free_tree.Remove(tree_node);
+                                        free_tree.Remove(tree_node, locker);
                                         break;
                                     }
                                 }
                             }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
+                            tree_node = free_tree.GetNextLeaf(tree_node, locker);
                         }
 
                         lhs->prev = lhs->prev->prev;
@@ -4712,19 +4712,19 @@ private:
 
         // try to get a free block
         if (1) {
-            auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
+            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual(N);
             while (tree_node) {
                 if (tree_node->object()) {
                     if (tree_node->key >= N) {
                         if (tree_node->object()->is_available) {
                             free_block = tree_node->object();
                             free_block->generated_epoch = GL::util::get_current_epoch();
-                            free_tree.Remove(tree_node);
+                            free_tree.Remove(tree_node, locker);
                             break;
                         }
                     }
                 }
-                tree_node = free_tree.GetNextLeaf(tree_node);
+                tree_node = free_tree.GetNextLeaf(tree_node, locker);
             }
         }
 
@@ -4805,14 +4805,14 @@ private:
 
 public:
     __declspec(noinline) ~dynamic_gpu_allocator() {
-        if (auto* n = free_tree.GetRoot()) {
+        if (auto [n, locker] = free_tree.GetRoot(); n) {
             while (n) {
                 if (n->object()) {
                     if (n->object()->sub_buffer) {
                         ::clReleaseMemObject(n->object()->sub_buffer);
                     }
                 }
-                n = free_tree.GetNextLeaf(n);
+                n = free_tree.GetNextLeaf(n, locker);
             }
         }
         for (auto& buf : allocations) ::clReleaseMemObject(buf);
@@ -4888,7 +4888,7 @@ public:
 
 };
 
-// CPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
+// multi-threaded CPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_cpu_allocator {
 public:
     struct dynamic_block {
@@ -5422,7 +5422,6 @@ public:
     void wait_for_events() {
         events.clear(); // waits for events in addition to clearing
     };
-    // queues event
     void read_from_device() {
         if (gpu_memory && cpu_memory) {
             events.clear();
@@ -5439,7 +5438,6 @@ public:
             ::clReleaseEvent(ev);
         }
     };
-    // queues event
     void write_to_device() {
         if (gpu_memory && cpu_memory) {
             events.clear();
@@ -5521,6 +5519,9 @@ public:
     cl_mem gpu_data() {
         ensure_device_mem_exists();
         return gpu_memory->sub_buffer;
+    };
+    static auto& get_program() {
+        return program();
     };
 
 private:
@@ -5665,16 +5666,33 @@ struct static_matrix_kernel {
     matrix_kernel<T>* ptr;
 };
 
-template <typename T>
-class matrix {
+template <typename T> class matrix {
 private:
     // N must be aligned with WORKGROUP_SIZE
     static unsigned int WorkgroupAdjustment(unsigned int N) {        
         return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
     }
+    static auto& mem_free_helper() {
+        class wrap {
+        public:
+            std::unique_ptr<mem_matrix> mem;
+            wrap() = default;
+            wrap(std::unique_ptr<mem_matrix>&& rhs) : mem{ std::move(rhs) } {};
+            wrap(wrap const&) = delete;
+            wrap(wrap&&) = default;
+            wrap& operator=(wrap const&) = delete;
+            wrap& operator=(wrap&&) = default;
+            ~wrap() = default;
+        };
+        static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false>> allocator{};
+        return allocator;
+    }
 
-    std::unique_ptr<mem_matrix> mem;
-    GL::GPU::dimensions dim;
+
+    std::unique_ptr<mem_matrix> 
+        mem;
+    GL::GPU::dimensions 
+        dim;
     template <typename G> friend class matrix;
 
 public:
@@ -5703,6 +5721,8 @@ public:
             mem, rhs.mem
         );
     };
+    // move another, temporary matrix into this, taking ownership of data.
+    matrix(matrix&& rhs) noexcept = default;
     matrix& operator=(matrix const& rhs) {
         dim = rhs.dim;
         auto mem2 = std::make_unique< mem_matrix>(sizeof(T) * WorkgroupAdjustment(rhs.dim.count()), false, true);
@@ -5710,13 +5730,32 @@ public:
             rhs.dim.count(),
             mem2, rhs.mem
         );
+        if (mem) {
+            auto* p = mem_free_helper().Alloc(std::move(mem));
+            auto guard{ mem_free_helper().ProtectCurrentEpoch() };
+            mem_free_helper().Free(p);
+        }
         mem = std::move(mem2);
         return *this;
     };
-    // move another, temporary matrix into this, taking ownership of data.
-    matrix(matrix&& rhs) noexcept = default; 
-    matrix& operator=(matrix&& rhs) noexcept = default;
-    ~matrix() = default;
+    matrix& operator=(matrix&& rhs) noexcept {
+        if (mem) {
+            auto* p = mem_free_helper().Alloc(std::move(mem));
+            auto guard{ mem_free_helper().ProtectCurrentEpoch() };
+            mem_free_helper().Free(p);
+        }
+        dim = rhs.dim;
+        mem = std::move(rhs.mem);
+        rhs.mem = nullptr;
+        return *this;
+    };
+    ~matrix() {
+        if (mem) {
+            auto* p = mem_free_helper().Alloc(std::move(mem));
+            auto guard{ mem_free_helper().ProtectCurrentEpoch() };
+            mem_free_helper().Free(p);
+        }
+    };
 
     // x*y*z
     unsigned int size() const {
@@ -5740,19 +5779,26 @@ public:
     public:
         __declspec(noinline) reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
             if (copy.mem->gpu_memory) {
-                data = std::shared_ptr<T[]>(
-                    (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                        sizeof(T) * WorkgroupAdjustment(dim.count())
-                        , WORKGROUP_SIZE),
-                    [](T* p) {
-                        ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-                    }
-                );
-                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                    dim.count(),
-                    data, copy.mem, (unsigned int)0
-                );
-                copy.mem->events.clear();
+                if (mem_matrix::get_program().info.svm_memory_allowed) {
+                    data = std::shared_ptr<T[]>(
+                        (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                            sizeof(T) * WorkgroupAdjustment(dim.count())
+                            , WORKGROUP_SIZE),
+                        [](T* p) {
+                            ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                        }
+                    );
+                    mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                        dim.count(),
+                        data, copy.mem, (unsigned int)0
+                    );
+                    copy.mem->events.clear();
+                }
+                else {
+                    copy.mem->ensure_host_mem_exists();
+                    copy.mem->read_from_device();
+                    data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
+                }
             }
             else {
                 copy.mem->ensure_host_mem_exists();
@@ -5795,19 +5841,26 @@ public:
                 cpu_data = data->mem->cpu_data<T>();
             }
             else {
-                gpu_cpu_data = std::shared_ptr<T[]>(
-                    (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                        sizeof(T) * WorkgroupAdjustment(dim.count())
-                        , WORKGROUP_SIZE),
-                    [](T* p) {
-                        ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-                    }
-                );
-                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                    dim.count(),
-                    gpu_cpu_data, copy.mem, (unsigned int)0
-                );
-                copy.mem->events.clear();
+                if (mem_matrix::get_program().info.svm_memory_allowed) {
+                    gpu_cpu_data = std::shared_ptr<T[]>(
+                        (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                            sizeof(T) * WorkgroupAdjustment(dim.count())
+                            , WORKGROUP_SIZE),
+                        [](T* p) {
+                            ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                        }
+                    );
+                    mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                        dim.count(),
+                        gpu_cpu_data, copy.mem, (unsigned int)0
+                    );
+                    copy.mem->events.clear();
+                }
+                else {
+                    data->mem->ensure_host_mem_exists();
+                    data->mem->read_from_device();
+                    cpu_data = data->mem->cpu_data<T>();
+                }
             }
         };
         writer(writer const&) = delete;
@@ -5824,11 +5877,18 @@ public:
             if (data) {
                 if (_cpu_only && cpu_data) data->mem->write_to_device();
                 else {
-                    mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                        dim.count(),
-                        data->mem, gpu_cpu_data, (unsigned int)0
-                    );
-                    data->mem->events.clear();
+                    if (mem_matrix::get_program().info.svm_memory_allowed) {
+                        mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                            dim.count(),
+                            data->mem, gpu_cpu_data, (unsigned int)0
+                        );
+                        data->mem->events.clear();
+                    }
+                    else {
+                        data->mem->write_to_device();
+                    }
+                    
+
                 }
             }
         };
@@ -5837,15 +5897,26 @@ public:
                 return cpu_data;
             }
             else {
-                return gpu_cpu_data.get() ? true : false;
+                if (mem_matrix::get_program().info.svm_memory_allowed) {
+                    return gpu_cpu_data.get() ? true : false;
+                }
+                else {
+                    return cpu_data;
+                }
+                
             }
         };
         T& operator[](unsigned int X) const {
             if (_cpu_only) {
                 return cpu_data[X];
             }
-            else {
-                return gpu_cpu_data[X];
+            else {                
+                if (mem_matrix::get_program().info.svm_memory_allowed) {
+                    return gpu_cpu_data[X];
+                }
+                else {
+                    return cpu_data[X];
+                }
             }
         };
         T& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
@@ -5853,7 +5924,12 @@ public:
                 return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
             }
             else {
-                return gpu_cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+                if (mem_matrix::get_program().info.svm_memory_allowed) {
+                    return gpu_cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+                }
+                else {
+                    return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+                }                
             }
         };
     };
@@ -6861,22 +6937,13 @@ public:
             return out;
         }
         else {
-            if (this->size() > 1000) {
-                T out = (T)0;
-                if (1) {
-                    matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                    mem_matrix::queue_gpu_work(GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()),
-                        this->size(),
-                        mem, Temp.mem, (unsigned int)this->size()
-                    );
-                    auto N = Temp.size();
-                    if (auto R = Temp.read()) {
-                        for (unsigned int n = 0; n < N; ++n) {
-                            out += R(n);
-                        }
-                    }
-                }
-                return out;
+            if (this->size() > 512) {
+                matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+                mem_matrix::queue_gpu_work(GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()),
+                    this->size(),
+                    mem, Temp.mem, (unsigned int)this->size()
+                );
+                return Temp.sum<use_cpu>();                
             }
             else {
                 auto N = this->size();
@@ -6894,7 +6961,7 @@ public:
         return (T)((long double)sum() / (long double)this->size());
     };
     T max() const {
-        if (this->size() > 1000) {
+        if (this->size() > 512) {
             matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
             mem_matrix::queue_gpu_work(GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()),
                 this->size(),
@@ -6914,7 +6981,7 @@ public:
         }
     };
     T min() const {
-        if (this->size() > 1000) {
+        if (this->size() > 512) {
             matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
             mem_matrix::queue_gpu_work(GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()),
                 this->size(),
@@ -7286,19 +7353,34 @@ public:
         }
         else {
             size_t alignment = WORKGROUP_SIZE;
-            std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
-                (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                    sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
-                    , alignment),
-                [](T* p) {
-                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+            std::shared_ptr<T[]> slice;
+            if (!mem_matrix::get_program().info.svm_memory_allowed) {
+                matrix<T> copier(GL::GPU::dimensions{ (unsigned int)length, 1u, 1u });
+                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                    length,
+                    copier.mem, this->mem, offset
+                );
+                slice = std::shared_ptr<T[]>(new T[length], [](T* p) { delete[] p; });
+                if (auto r = copier.read()) {
+                    for (int i = 0; i < length; ++i)
+                        slice[i] = r[i];
                 }
-            );
-            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                length,
-                slice, this->mem, offset
-            );
-            this->mem->events.clear();
+            }
+            else {
+                slice = std::shared_ptr<T[]>(
+                    (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                        sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
+                        , alignment),
+                    [](T* p) {
+                        ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                    }
+                );
+                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                    length,
+                    slice, this->mem, offset
+                );
+                this->mem->events.clear();
+            }
             return slice;
         }
     };
@@ -7371,7 +7453,6 @@ public:
     };
 
 };
-
 
 void fnGpuProgramming() {
 #if 1
@@ -7504,7 +7585,7 @@ void fnGpuProgramming() {
         }
     }
     // comparison of the pooled memory vs unpooled for multi-threaded situation
-    if (1) {
+    if (0) {
         long long avg_framerate1_n = 0;
         double avg_framerate1 = 0;
         long long avg_framerate2_n = 0;
@@ -7689,7 +7770,7 @@ void fnGpuProgramming() {
                         p_value).join(1,
                             lower_95).join(1,
                                 upper_95)
-            .to_string({ "Coefficients", "Standard Error", "t Stat"/*, "P-value", "Lower 95%", "Upper 95%"*/ })
+            .to_string({ "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
         );
         print("");
 
@@ -7796,7 +7877,7 @@ void fnGpuProgramming() {
             GL::stopwatch sw;
 
             // Convolve aligns the kernel ontop of each pixel, multiplies the neighboring pixels by the kernel, and sums the results. The edges are correctly handled using weighted-balancing on the kernel itself.
-            auto nHood = state.convolve(kernel);
+            auto nHood = state.convolve(static_matrix_kernel<unsigned int>{ &kernel });
 
             // Generate conditions for life
             // state == 1 && nHood < 2 ->> state = 0
@@ -7885,8 +7966,8 @@ void fnGpuProgramming() {
                     out.push_back(*current);
                     auto kernel = matrix<float>::guassian_kernel<3,3>();
                     while ((current->size(0) > 1) && (current->size(1) > 1)) {
-                        //auto blurred = current->convolve(kernel);
-                        //out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+                        // auto blurred = current->convolve(kernel);
+                        // out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
                         out.push_back(current->halfsize<false>()); // faster but less accurate
                         current = &out[out.size() - 1];
                     }
@@ -7911,8 +7992,8 @@ void fnGpuProgramming() {
             //print(print_me.to_string({}, true));
 #endif
 #endif
-            state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel<7,7>()) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
-            state = state.min(1);
+            // state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel<7,7>()) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
+            // state = state.min(1);
 
             print("");
 
