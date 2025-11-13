@@ -5045,7 +5045,7 @@ public:
             max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;
     };
 
-private:
+public:
     dynamic_block* Alloc(unsigned long long N) {
         if (N == 0) return nullptr;
 
@@ -5224,9 +5224,12 @@ private:
     // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
     class event_list {
     public:
-        dynamic_cpu_allocator::unique_ptr items; // leverages the CPU allocator for speed of allocation
-        long long len;
-        long long reservation;
+        dynamic_cpu_allocator::unique_ptr 
+            items; // leverages the CPU allocator for speed of allocation
+        long long 
+            len;
+        long long 
+            reservation;
 
         void clear() {
             if (len == 0) return;
@@ -5320,14 +5323,82 @@ private:
         events;
 
 public:
-    __declspec(noinline) void reset(char v = 0) {
-        if (cpu_memory) {
-            // std::memset(cpu_memory->sub_buffer, v, cpu_memory->length);
-        }
-        if (gpu_memory) {
-            // To-Do
-        }
+    template <typename T>
+    static auto make_unique(unsigned int N) {
+        struct helper {
+            struct array_delete { // default deleter for unique_ptr to array of unknown size
+                constexpr array_delete() noexcept = default;
+                array_delete(const array_delete&) noexcept {}
+                __declspec(noinline) void operator()(T* p) const noexcept { // delete a pointer
+                    static_assert(0 < sizeof(T), "can't delete an incomplete type");
+                    auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
+                    auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
+                    unsigned int N = (alloced->length - sizeof(dynamic_cpu_allocator::dynamic_block*)) / sizeof(T);
+                    if constexpr (!std::is_pod_v<T>) {
+                        for (unsigned int i = 0; i < N; ++i)
+                            (&p[i])->~T();
+                    }
+                    cpu_allocator().Free(alloced);
+                }
+            };
+            __declspec(noinline) static T* create(unsigned int N) {
+                //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+                auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
+
+                *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
+                T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
+                if constexpr (std::is_pod_v<T>) {
+                    // best-case scenario!
+                    std::memset(out, 0, (sizeof(T) * N));
+                }
+                else {
+                    // need to actually initialize the array...
+                    for (unsigned int i = 0; i < N; ++i) {
+                        new (&out[i]) T;
+                    }
+                }
+                return out;
+            };
+        };
+        return std::unique_ptr<T[], helper::array_delete>(helper::create(N));
     };
+
+    template <typename T>
+    static auto make_shared(unsigned int N) {
+        struct helper {
+            __declspec(noinline) static void destroy(T* p) noexcept { // delete a pointer
+                static_assert(0 < sizeof(T), "can't delete an incomplete type");
+                auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
+                auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
+                unsigned int N = (alloced->length - sizeof(dynamic_cpu_allocator::dynamic_block*)) / sizeof(T);
+                if constexpr (!std::is_pod_v<T>) {
+                    for (unsigned int i = 0; i < N; ++i)
+                        (&p[i])->~T();
+                }
+                cpu_allocator().Free(alloced);
+            };
+            __declspec(noinline) static T* create(unsigned int N) {
+                //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
+                auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
+
+                *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
+                T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
+                if constexpr (std::is_pod_v<T>) {
+                    // best-case scenario!
+                    std::memset(out, 0, (sizeof(T) * N));
+                }
+                else {
+                    // need to actually initialize the array...
+                    for (unsigned int i = 0; i < N; ++i) {
+                        new (&out[i]) T;
+                    }
+                }
+                return out;
+            };
+        };
+        return std::shared_ptr<T[]>(helper::create(N), &helper::destroy);
+    };
+
     // immediate
     bool add_event(cl_event ev, bool copy = false) const {
         // ensure we are not double-adding the event.
@@ -5402,15 +5473,13 @@ public:
         : len_bytes{ bytes }
         , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique(bytes) : nullptr }
         , gpu_memory{ allocate_gpu ? gpu_allocator().make_unique(bytes) : nullptr }
-        , events{ /*cpu_make_shared< event_list>()*/ }
-    {
-        reset(0);
-    };
+        , events{}
+    {};
     mem_matrix()
         : len_bytes{ 0 }
         , cpu_memory{ nullptr }
         , gpu_memory{ nullptr }
-        , events{ /*nullptr*/ }
+        , events{}
     {};
     mem_matrix(mem_matrix const&) = delete;
     mem_matrix(mem_matrix&& rhs) noexcept
@@ -5571,47 +5640,6 @@ public:
         // remove this reference to the job. 
         ::clReleaseEvent(tmp);
     };
-
-#if 0 // mostly works, but ran into GPU-error CL_MISALIGNED_SUB_BUFFER_OFFSET. SubBuffer must be properly aligned. Solution is to defer slicing to the read (for CPU) and to the kernel (for the GPU). This would requiring passing the array dimensions and offsets to the kernel (just like ArrayFire did...)
-    // This limits the slice offset. 
-    mem_matrix slice(unsigned long long offset, unsigned long long length) const {
-        mem_matrix out; {
-            out.len_bytes = length;
-            {
-                out.cpu_memory = std::shared_ptr<dynamic_cpu_allocator::dynamic_block>(new dynamic_cpu_allocator::dynamic_block(), [copy = this->cpu_memory](dynamic_cpu_allocator::dynamic_block* p) {
-                    delete p;
-                });
-
-                *out.cpu_memory = *this->cpu_memory;
-                out.cpu_memory->sub_buffer = (void*)((::byte*)out.cpu_memory->sub_buffer + offset);
-                out.cpu_memory->start_position += offset;
-                out.cpu_memory->length = length;
-            }
-            {
-                out.gpu_memory = std::shared_ptr<dynamic_gpu_allocator::dynamic_block>(new dynamic_gpu_allocator::dynamic_block(), [copy = this->gpu_memory](dynamic_gpu_allocator::dynamic_block* p) {
-                    ::clReleaseMemObject(p->sub_buffer);
-                    delete p;
-                });
-
-                *out.gpu_memory = *this->gpu_memory;
-                out.gpu_memory->start_position += offset;
-                out.gpu_memory->length = length;
-
-                cl_buffer_region region;
-                region.origin = out.gpu_memory->start_position;
-                region.size = length;
-                cl_int err;
-                out.gpu_memory->sub_buffer = ::clCreateSubBuffer(out.gpu_memory->parent_buffer, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
-                check_for_errors(err);
-            }
-            {
-                out.events = this->events;
-            }
-        }
-        return out;
-    };
-#endif
-
 };
 
 template <typename T>
@@ -5632,6 +5660,10 @@ public:
     ~matrix_kernel() = default;
 };
 
+template <typename T>
+struct static_matrix_kernel {
+    matrix_kernel<T>* ptr;
+};
 
 template <typename T>
 class matrix {
@@ -5741,6 +5773,10 @@ public:
         };
         T const& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
             return data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+        };
+
+        std::shared_ptr<T[]> get() const {
+            return data;
         };
     };
     // Copies data into CPU-GPU shared memory for quick access or reading. If requested, may also only work on the CPU side. 
@@ -6912,6 +6948,23 @@ public:
             return matrix();
         }
     };
+    matrix convolve(static_matrix_kernel<T> const& K) const {
+        if (this->dim.num_dimensions() == 2) {
+            matrix out(this->dim);
+            float kernel_tot = K.ptr->sum;
+
+            // K.ptr->mat->mem
+
+            mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
+                this->size(),
+                out.mem, this->mem, static_mem_matrix{ &(*K.ptr->mat->mem) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
+            );
+            return out;
+        }
+        else {
+            return matrix();
+        }
+    };
     static matrix_kernel<float> guassian_kernel(unsigned int X, unsigned int Y) {
         matrix<float> out(X, Y, 1);
         mem_matrix::queue_gpu_work(GL::string("guassian") + GL::string(opencl_impl::type_name<float>()),
@@ -6927,11 +6980,11 @@ public:
         return matrix_kernel<float>(std::move(out));
     };
     template <unsigned int X, unsigned int Y>
-    static matrix_kernel<float>& guassian_kernel() {
+    static static_matrix_kernel<float> guassian_kernel() {
         static matrix_kernel<float> out{ [](){
             return guassian_kernel(X, Y);
         }() };
-        return out;
+        return static_matrix_kernel<float>{ &out };
     };
 
     matrix<char> ASCII() const {
@@ -7010,13 +7063,13 @@ public:
                 0.341f * 2.0f,
                 (1.0f - (0.341f * 2.0f)) / 2.0f
             };
-            matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
-            matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
+            static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
+            static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
             if constexpr (std::is_same_v<float, T>) {
-                return convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+                return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
             else {
-                return cast<float>().convolve(kernel1)./*resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), size(1), size(2)).*/convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+                return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
         }
     };
@@ -7226,33 +7279,32 @@ public:
     };
 
 public:
-    std::vector<T> copy(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const {
-        std::vector<T> out;
+    std::shared_ptr<T[]> slice(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const {
         length = std::min<size_t>(length, this->size() - offset);
-        if (auto r = this->read()) {
-            out.resize(length);
-            for (size_t i = 0; i < length; ++i) {
-                out[i] = r[offset + i];
-            }
+        if ((offset == 0) && (length == this->size())) {
+            return read().get();
         }
-        return out;
+        else {
+            size_t alignment = WORKGROUP_SIZE;
+            std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
+                (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                    sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
+                    , alignment),
+                [](T* p) {
+                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                }
+            );
+            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                length,
+                slice, this->mem, offset
+            );
+            this->mem->events.clear();
+            return slice;
+        }
     };
     T operator[](unsigned int n) const {
-        size_t alignment = WORKGROUP_SIZE;
-        std::shared_ptr<T[]> slice = std::shared_ptr<T[]>(
-            (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                sizeof(T) * (((1 + (alignment - 1)) / alignment) * alignment)
-                , alignment),
-            [](T* p) {
-                ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-            }
-        );
-        mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-            1,
-            slice, this->mem, n
-        );
-        this->mem->events.clear();
-        return slice[0];
+        auto ptr = slice(n, 1);
+        return ptr[0];
     };
     T operator()(unsigned int x, unsigned int y = 0, unsigned int z = 0) const {
         return operator[](x + (y * dim.X) + (z * dim.Y * dim.X));
@@ -7323,125 +7375,257 @@ public:
 
 void fnGpuProgramming() {
 #if 1
+    // pre-warm the heap      
+    (void)mem_matrix::make_unique<int>(1); // initializes the CPU memory pool
+
+    // comparison of the pooled memory vs unpooled for single-threaded situation
     if (0) {
-        long long avg_framerate_n = 0;
-        double avg_framerate = 0;
+        long long avg_framerate1_n = 0;
+        double avg_framerate1 = 0;
+        long long avg_framerate2_n = 0;
+        double avg_framerate2 = 0;
+
         while (1) {
             GL::stopwatch sw;
 
-            if (1) {
-                GL::atomic_allocator<int> alloc;
-                parallel_binary_search_tree<int, int, 10> tree;
-                for (int i = 10; i < 1000; i += 10) {
-                    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-                }
-                for (int i = 10; i < 1000; i += 10) {
-                    auto [node, locker] = tree.NodeFind(i);
-                    EXPECT_NE(node, nullptr);
-                    EXPECT_EQ(node->key, i);
-                }
+            for (int j = 10; j <= 1000000; j *= 10) {
                 if (1) {
-                    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                        while (node = tree.GetNextLeaf(node, locker)) {
-                            EXPECT_NE(nullptr, node->object());
-                            // print(node->key);
-                        }
+                    auto ptr = mem_matrix::make_unique<int>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
                     }
                 }
-                for (int i = 10; i < 1000; i += 10) {
-                    auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                    EXPECT_NE(nullptr, node);
-                    EXPECT_EQ(true, tree.Remove(node, locker));
+                if (1) {
+                    auto ptr = mem_matrix::make_unique<std::string>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
                 }
                 if (1) {
-                    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                        while (node = tree.GetNextLeaf(node, locker)) {
-                            EXPECT_NE(nullptr, node->object());
-                            // print(node->key);
-                        }
+                    auto ptr = mem_matrix::make_shared<int>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
+                    }
+                }
+                if (1) {
+                    auto ptr = mem_matrix::make_shared<std::string>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
                     }
                 }
             }
-            if (1) {
-                GL::atomic_allocator<int> alloc;
-                parallel_binary_search_tree<int, int, 10> tree;
-                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-                    });
-                for (int i = 0; i < 100000; i += 1) {
-                    auto [node, locker] = tree.NodeFind(i); // shared access
-                    EXPECT_NE(nullptr, node);
-                    if (!node) {
-                        //print(i);
-                        // tree.NodeFind(i);
-                    }
-                    else {
-                        EXPECT_EQ(node->key, i);
-                    }
-                }
-                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                    auto [node, locker] = tree.NodeFind(i);
-                    EXPECT_NE(nullptr, node);
-                    if (!node) {
-                        //print(i);
-                        // tree.NodeFind(i);
-                    }
-                    else {
-                        EXPECT_EQ(node->key, i);
-                    }
-                    });
-                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                    auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                    EXPECT_NE(nullptr, node);
-                    if (!node) {
-                        //print(i);
-                        // tree.NodeFind(i);
-                    }
-                    else {
-                        EXPECT_EQ(true, tree.Remove(node, locker));
-                    }
-                });
-                parallel::Std_For<size_t>(0, 100000, [&](size_t i) {
-                    EXPECT_NE(nullptr, tree.Add(alloc.Alloc(i), i));
-                    if (i % 2 == 0) {
-                        auto [node, locker] = tree.NodeFind_ForRemoval(i);
-                        EXPECT_NE(nullptr, node);
-                        if (!node) {
-                            // tree.NodeFind(i);
-                        }
-                        else {
-                            EXPECT_EQ(true, tree.Remove(node, locker));
-                        }
-                    }
-                    else {
-                        auto [node, locker] = tree.NodeFind(i);
-                        EXPECT_NE(nullptr, node);
-                        if (!node) {
-                            //print(i);
-                            tree.NodeFind(i);
-                        }
-                        else {
-                            EXPECT_EQ(node->key, i);
-                        }
-                    }
-                });
+            avg_framerate1_n++;
+            avg_framerate1 -= (float)((float)avg_framerate1 / (float)avg_framerate1_n);
+            avg_framerate1 += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate1_n);
+
+            sw.reset();
+
+            for (int j = 10; j <= 1000000; j *= 10) {
                 if (1) {
-                    int prev_key = -1;
-                    if (auto [node, locker] = tree.GetRoot(); node != nullptr) {
-                        while (node = tree.GetNextLeaf(node, locker)) {
-                            EXPECT_NE(nullptr, node->object());
-                            EXPECT_EQ(true, node->key > prev_key);
-                            prev_key = node->key;
-                        }
+                    auto ptr = std::make_unique<int[]>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
                     }
                 }
+                if (1) {
+                    auto ptr = std::make_unique<std::string[]>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
+                }
+                if (1) {
+                    auto ptr = std::shared_ptr<int[]>(new int[j], [](int* p) { delete[] p; });
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = 0;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
+                    }
+                }
+                if (1) {
+                    auto ptr = std::shared_ptr<std::string[]>(new std::string[j], [](std::string* p) { delete[] p; });
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
+                }
+
             }
+            avg_framerate2_n++;
+            avg_framerate2 -= (float)((float)avg_framerate2 / (float)avg_framerate2_n);
+            avg_framerate2 += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate2_n);
 
-            avg_framerate_n++;
-            avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
-            avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
+            print(std::to_string(avg_framerate1) + " iter per second @ pooled");
+            print(std::to_string(avg_framerate2) + " iter per second @ unpooled");
+        }
+    }
+    // comparison of the pooled memory vs unpooled for multi-threaded situation
+    if (1) {
+        long long avg_framerate1_n = 0;
+        double avg_framerate1 = 0;
+        long long avg_framerate2_n = 0;
+        double avg_framerate2 = 0;
 
-            print(std::to_string(avg_framerate) + " iter per second");
+        std::vector<unsigned int> options;
+        for (int j = 1000; j <= 100000; j += 1050) { options.push_back(j); };
+        while (1) {
+            GL::stopwatch sw;           
+            parallel::Std_For<int>(0, options.size(), [&options](int k) { int j = options[k];
+                if (1) {
+                    auto ptr = mem_matrix::make_unique<int>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
+                    }
+                }
+                if (1) {
+                    auto ptr = mem_matrix::make_unique<std::string>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
+                }
+                if (1) {
+                    auto ptr = mem_matrix::make_shared<int>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
+                    }
+                }
+                if (1) {
+                    auto ptr = mem_matrix::make_shared<std::string>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
+                }
+            });
+            avg_framerate1_n++;
+            avg_framerate1 -= (float)((float)avg_framerate1 / (float)avg_framerate1_n);
+            avg_framerate1 += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate1_n);
+
+            sw.reset();
+
+            parallel::Std_For<int>(0, options.size(), [&options](int k) { int j = options[k];
+                if (1) {
+                    auto ptr = std::make_unique<int[]>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
+                    }
+                }
+                if (1) {
+                    auto ptr = std::make_unique<std::string[]>(j);
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
+                }
+                if (1) {
+                    auto ptr = std::shared_ptr<int[]>(new int[j], [](int* p) { delete[] p; });
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = 0;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = i;
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i], i);
+                    }
+                }
+                if (1) {
+                    auto ptr = std::shared_ptr<std::string[]>(new std::string[j], [](std::string* p) { delete[] p; });
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_EQ(ptr[i].length(), 0);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        ptr[i] = std::to_string(i);
+                    }
+                    for (int i = 0; i < j; ++i) {
+                        EXPECT_NE(ptr[i].length(), 0);
+                    }
+                }
+            });
+            avg_framerate2_n++;
+            avg_framerate2 -= (float)((float)avg_framerate2 / (float)avg_framerate2_n);
+            avg_framerate2 += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate2_n);
+
+            print(std::to_string(avg_framerate1) + " iter per second @ pooled");
+            print(std::to_string(avg_framerate2) + " iter per second @ unpooled");
         }
     }
 
@@ -7516,7 +7700,7 @@ void fnGpuProgramming() {
 #endif
 
     // 1-D pattern sampling
-#if 0
+#if 1
     if (1) {
         matrix<float> x_pos = matrix<float>::linear(0, 1000000, 1000000, 1, 1);
         matrix<float> y_pos = matrix<float>::random_between(0, 1, 1000000, 1, 1);
@@ -7524,10 +7708,13 @@ void fnGpuProgramming() {
         matrix<float> sample_x = matrix<float>::random_between(0, 1000000, 1000000, 1, 1);
         matrix<float> sample_y = sample_x.subsample_pat(x_pos, y_pos);
 
-        print(sample_y[0]);
+        print(sample_y.operator[](0));
 
-        auto sliced = x_pos.copy(0, 10); // get a copy of the matrix with an offset and length param
-        for (auto& x : sliced) print(x);
+        if (auto sliced = x_pos.slice(0, 10)) { // get a copy of the matrix with an offset and length param
+            for (int i = 0; i < 10; ++i) {
+                print(sliced[i]);
+            }
+        }
 
         // test std_for with the matrix_multiply ... should end up doing 10000 multiplications. 
         matrix<float>::constant(1, 10000).matrix_multiply(matrix<float>::constant(1, 10000).transpose()).read();
@@ -7696,11 +7883,11 @@ void fnGpuProgramming() {
                     std::vector<matrix<float>> out;
                     const matrix<float>* current = &srce;
                     out.push_back(*current);
-                    auto& kernel = matrix<float>::guassian_kernel<3,3>();
+                    auto kernel = matrix<float>::guassian_kernel<3,3>();
                     while ((current->size(0) > 1) && (current->size(1) > 1)) {
-                        auto blurred = current->convolve(kernel);
-                        out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
-                        // out.push_back(current->halfsize<false>()); // faster but less accurate
+                        //auto blurred = current->convolve(kernel);
+                        //out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+                        out.push_back(current->halfsize<false>()); // faster but less accurate
                         current = &out[out.size() - 1];
                     }
                     return out;
@@ -7712,28 +7899,10 @@ void fnGpuProgramming() {
             //img.debug_display();
             print(img.sum().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
 
-
-
-
-
-
-
-
             //auto texture_y = (screen_U * (float)I5.size(1)).cast<unsigned int>().min(I5.size(1) - 1);
             //auto texture_x = (screen_V * (float)I5.size(0)).cast<unsigned int>().min(I5.size(0) - 1);
             //auto texture_N = ((texture_y * I5.size(0)) + texture_x).min((I5.size(1) * I5.size(0)) - 1);
             //auto scaled = I5.resample(texture_N);
-
-
-
-
-
-
-
-
-
-
-
 
             //auto A = state.resize(game_h2 / 3, game_w2, 1);
             //auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h2 / 3, game_w2, 1);
