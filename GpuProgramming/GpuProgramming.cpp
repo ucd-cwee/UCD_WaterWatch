@@ -5709,10 +5709,18 @@ private:
             wrap& operator=(wrap&&) = default;
             ~wrap() = default;
         };
-        static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false>> allocator{};
+        static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>> allocator{};
         return allocator;
     }
-    
+    static void mem_free(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem) {
+        if (mem) {
+            auto* p = mem_free_helper().Alloc(std::move(mem));
+            mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
+            mem_free_helper().Free(p);
+        }
+        mem = nullptr;
+    };
+
     std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> 
         mem;
     GL::GPU::dimensions 
@@ -5754,31 +5762,19 @@ public:
             rhs.dim.count(),
             mem2, rhs.mem
         );
-        if (mem) {
-            auto* p = mem_free_helper().Alloc(std::move(mem));
-            auto guard{ mem_free_helper().ProtectCurrentEpoch() };
-            mem_free_helper().Free(p);
-        }
+        mem_free(mem);
         mem = std::move(mem2);
         return *this;
     };
     matrix& operator=(matrix&& rhs) noexcept {
-        if (mem) {
-            auto* p = mem_free_helper().Alloc(std::move(mem));
-            auto guard{ mem_free_helper().ProtectCurrentEpoch() };
-            mem_free_helper().Free(p);
-        }
+        mem_free(mem);
         dim = rhs.dim;
         mem = std::move(rhs.mem);
         rhs.mem = nullptr;
         return *this;
     };
     ~matrix() {
-        if (mem) {
-            auto* p = mem_free_helper().Alloc(std::move(mem));
-            auto guard{ mem_free_helper().ProtectCurrentEpoch() };
-            mem_free_helper().Free(p);
-        }
+        mem_free(mem);
     };
 
     // x*y*z
@@ -7478,8 +7474,6 @@ public:
 
 };
 
-
-
 void fnGpuProgramming() {
 #if 1
     // pre-warm the heap      
@@ -7758,10 +7752,10 @@ void fnGpuProgramming() {
             22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
         });
 
-        //TV_Ads = TV_Ads.grow_by_wrapping(1000000);
-        //Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
-        //Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
-        //Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
+        TV_Ads = TV_Ads.grow_by_wrapping(1000000);
+        Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
+        Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
+        Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
 
         auto Basic{
             matrix<float>::constant(1, Sales_Revenue.size(0))
@@ -7804,6 +7798,77 @@ void fnGpuProgramming() {
         //print("");
 
     }
+
+    // Custom weather regression. Generally correct analysis.
+    if (1) {
+        /*          Coefficients	Standard Error	t Stat	        P-value	    Lower 95%	    Upper 95%
+        Intercept	93.67835922	    0.121802957	    769.0975786	    0	        93.43959502	    93.91712343
+        dawn	    -14.4227875	    0.153113204	    -94.19688942	0	        -14.72292761	-14.12264739
+        dusk	    -10.26652003	0.162912373	    -63.01866368	0	        -10.58586896	-9.947171106
+        winter	    -10.2061204	    0.131022469	    -77.89595536	0	        -10.46295715	-9.949283644
+        */
+
+        auto measured = matrix<float>::random_between(2, 4, 24 * 365);
+        auto random_noise = matrix<float>::random_between(2, 4, 24 * 365);
+        auto hours = matrix<float>::constant(0, 24 * 365);
+        auto months = matrix<float>::constant(0, 24 * 365);
+
+        std::array<float, 24> hourly{
+            59, 58, 59, 60, 61, 62,
+            64, 69, 72, 76, 79, 81,
+            82, 80, 78, 76, 75, 74,
+            70, 68, 66, 64, 62, 60
+        };
+        std::array<float, 12> monthly{
+            0, -2, 6, 10, 14, 20,
+            19, 18, 16, 12, 8, 4
+        };
+        if (auto W = measured.write()) for (unsigned int day = 0; day < 365; ++day) for (unsigned int hr = 0; hr < 24; ++hr) W[(day * 24) + hr] += (monthly[day / 31] + hourly[hr]);
+        if (auto W = hours.write()) for (unsigned int day = 0; day < 365; ++day) for (unsigned int hr = 0; hr < 24; ++hr) W[(day * 24) + hr] = hr;
+        if (auto W = months.write()) for (unsigned int day = 0; day < 365; ++day) for (unsigned int hr = 0; hr < 24; ++hr) W[(day * 24) + hr] = day / 31;
+
+        auto dawn = (hours < 6).cast<float>();
+        auto dusk = (hours > 18).cast<float>();
+        auto midday = (!((hours > 18) + (hours < 6))).cast<float>();
+        auto winter = ((months >= 10) + (months <= 4)).cast<float>();
+        auto summer = (!winter).cast<float>();
+        auto Basic{ matrix<float>::constant(1, winter.size(0)) };
+        auto features = matrix<float>::linear_regressions::build_features( // double-checks and removes colinearity
+            Basic, dawn, dusk, midday, winter, summer
+        );
+
+        auto weights = matrix<float>::linear_regressions::solve_for_weights(measured, features);
+        auto std_err = matrix<float>::linear_regressions::standard_error(measured, features, weights);
+        auto std_dev = matrix<float>::linear_regressions::standard_deviation(measured, features, weights);
+        auto t_stat = matrix<float>::linear_regressions::t_statistic(weights, std_err);
+        auto p_value = matrix<float>::linear_regressions::p_value(features, t_stat);
+        auto lower_95 = weights - (1.96 * std_err);
+        auto upper_95 = weights + (1.96 * std_err);
+        auto prediction = matrix<float>::linear_regressions::predict(features, weights);
+
+        print("");
+        print(
+            weights.join(1,
+                std_err).join(1,
+                    t_stat).join(1,
+                        p_value).join(1,
+                            lower_95).join(1,
+                                upper_95).to_string(
+                                    { "Coefficients", "Standard Error", "t Stat", "P-value", "Lower 95%", "Upper 95%" })
+        );
+        print("");
+
+        print(measured.join(1, prediction).to_string({ "Measured", "Predicted" }));
+        print("");
+
+
+
+
+
+
+
+    }
+
 #endif
 
     // 1-D pattern sampling
@@ -8037,68 +8102,6 @@ void fnGpuProgramming() {
         }
     }
 #endif
-
-
-    if (0) {
-        float avg_framerate = 0; int avg_framerate_n = 0;
-        for (;;) {
-            GL::stopwatch sw;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            auto m1 = matrix<float>::constant(0, 10, 10, 10); // builds this on the GPU...
-            m1 += 5.0f;
-            m1 *= 2.0f;
-            m1 /= 10.0f;
-            // m1 should be equal to 1.0f, approximately. 
-
-            matrix<float> m2 = std::move(m1);
-
-            // see if this causes a memory leak...
-            (void)m2.mod(50.0);
-            (void)m2.abs();
-            (void)m2.acos();
-            (void)m2.ceil();
-            (void)m2.floor();
-            auto m3 = m2 && m2;
-
-
-
-
-
-
-            if (1) {
-                avg_framerate_n++;
-                avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
-                avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
-
-                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
-                print(std::to_string(avg_framerate) + " fps     ");
-                std::cout << std::flush;
-                //while (sw.stop() < 1.0 / 60.0) {
-                //    std::this_thread::yield();
-                //}
-            }
-        }
-    }
-
-
-
-
 
 
     return;

@@ -8,7 +8,7 @@
 // Atomic Allocators
 namespace GL {
     // Thread-safe, lock-free, good-performance page-based allocator with LIFO functionality for memory re-use. Lower memory footprint than atomic_parallel_allocator.
-    template <typename T, size_t BlockSize = 128, bool skipInitialization = false>
+    template <typename T, size_t BlockSize = 128, bool skipInitialization = false, bool support_count = false>
     class atomic_allocator {
     private:
         struct element_t {
@@ -74,6 +74,8 @@ namespace GL {
         };
 
     public:
+        static constexpr bool callable_size = support_count;
+
         atomic_allocator() : blocks{}, free{} { free.m_n64 = 0; };
         ~atomic_allocator() { ReleaseBlocks(); };
 
@@ -84,6 +86,8 @@ namespace GL {
 
         // Acquire a new element from the free list and construct it.
         template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
+            if constexpr (support_count) InterlockedIncrement(reinterpret_cast<volatile long*>(&count));
+
             element_t* element{ nullptr };
             while (1) {
                 if (element = aba_problem::Pop(free)) {
@@ -120,9 +124,19 @@ namespace GL {
             }
             t->initialized = false;
             aba_problem::Stack_Push(free, t);
+            if constexpr (support_count) InterlockedDecrement(reinterpret_cast<volatile long*>(&count));
         };
         template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
             return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
+        };
+
+        size_t size() const {
+            if constexpr (callable_size) {
+                return count;
+            }
+            else {
+                static_assert("Not compiled to be able to call size() with this allocator.");
+            }
         };
 
     private:
@@ -130,10 +144,12 @@ namespace GL {
             blocks;
         aba_problem::THead<element_t>
             free;
+        long
+            count;
     };
 
     // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use. Optimized for heavy multithreading. 
-    template <typename _type_, size_t num_items = 128, bool skipInitialization = false>
+    template <typename _type_, size_t num_items = 128, bool skipInitialization = false, bool support_count = false>
     class atomic_parallel_allocator {
     private:
         struct innerType {
@@ -144,8 +160,12 @@ namespace GL {
         };
         thread_object_no_default<atomic_allocator<innerType, num_items, skipInitialization>>
             TLS;
+        long
+            count;
 
     public:
+        static constexpr bool callable_size = support_count;
+
         atomic_parallel_allocator() = default;
         ~atomic_parallel_allocator() = default;
 
@@ -156,6 +176,8 @@ namespace GL {
         };
 
         template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
+            if constexpr (support_count) InterlockedIncrement(reinterpret_cast<volatile long*>(&count));
+
             innerType* out;
             const auto threadID = GL::util::get_thread_id();
             if constexpr (sizeof...(a) > 0) {
@@ -170,9 +192,19 @@ namespace GL {
         __declspec(noinline) void Free(const _type_* t) {
             innerType* impl = static_cast<innerType*>(static_cast<void*>(const_cast<_type_*>(t)));
             TLS[impl->threadID].Free(impl);
+            if constexpr (support_count) InterlockedDecrement(reinterpret_cast<volatile long*>(&count));
         };
         template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
             return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
         };
+        size_t size() const {
+            if constexpr (callable_size) {
+                return count;
+            }
+            else {
+                static_assert("Not compiled to be able to call size() with this allocator.");
+            }
+        };
+
     };
 };

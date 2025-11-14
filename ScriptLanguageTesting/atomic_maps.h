@@ -14,7 +14,7 @@
 namespace GL {
     // Thread-safe, lock-free, okay-performance allocator that delays destruction until likely safe to do so. 
     // uses the real clock of the OS to time when enough periods have passed that a free'd pointer is likely forgotten. 
-    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_>>
+    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_, 128, false, false>>
     class atomic_epoch_allocator {
     private:
         struct DeleteType {
@@ -119,6 +119,8 @@ namespace GL {
             _lastGC;
 
     public:
+        static constexpr bool callable_size = AllocatorType::callable_size;
+
         // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
         void RunGC() {
             static constexpr long long duration_ms{ 2 };
@@ -196,6 +198,14 @@ namespace GL {
             }
         };
 
+        size_t size() const {
+            if constexpr (callable_size) {
+                return _alloc.size();
+            }
+            else {
+                static_assert("Not compiled to be able to call size() with this allocator.");
+            }
+        }
     };
 
 };
