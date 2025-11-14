@@ -7378,7 +7378,7 @@ public:
                 matrix<T> copier(GL::GPU::dimensions{ (unsigned int)length, 1u, 1u });
                 mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                     length,
-                    copier.mem, this->mem, offset
+                    copier.mem, this->mem, (unsigned int)offset
                 );
                 slice = std::shared_ptr<T[]>(new T[length], [](T* p) { delete[] p; });
                 if (auto r = copier.read()) {
@@ -7397,7 +7397,7 @@ public:
                 );
                 mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                     length,
-                    slice, this->mem, offset
+                    slice, this->mem, (unsigned int)offset
                 );
                 this->mem->events.clear();
             }
@@ -8146,6 +8146,11 @@ void fnGpuProgramming() {
             //img.debug_display();
             print(img.sum().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
 
+            //MatrixImage img2(img.sum());
+            //print(img2.debug_display().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
+            
+            
+            
             //auto texture_y = (screen_U * (float)I5.size(1)).cast<unsigned int>().min(I5.size(1) - 1);
             //auto texture_x = (screen_V * (float)I5.size(0)).cast<unsigned int>().min(I5.size(0) - 1);
             //auto texture_N = ((texture_y * I5.size(0)) + texture_x).min((I5.size(1) * I5.size(0)) - 1);

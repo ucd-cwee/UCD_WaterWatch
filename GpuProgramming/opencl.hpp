@@ -120,7 +120,7 @@ struct Device_Info {
 		svm_coarse_grain_system = cl_device.getInfo<CL_DEVICE_SVM_CAPABILITIES>() & CL_DEVICE_SVM_COARSE_GRAIN_BUFFER;
 		svm_fine_grain_buffer = cl_device.getInfo<CL_DEVICE_SVM_CAPABILITIES>() & CL_DEVICE_SVM_FINE_GRAIN_BUFFER;
 		svm_fine_grain_system = cl_device.getInfo<CL_DEVICE_SVM_CAPABILITIES>() & CL_DEVICE_SVM_FINE_GRAIN_SYSTEM;
-		svm_memory_allowed = svm_fine_grain_buffer && svm_fine_grain_system;
+		svm_memory_allowed = svm_fine_grain_buffer&& svm_fine_grain_system;
 		// To-Do. Fine-grained buffer allows use of clSVMAlloc without clEnqueueMapBuffer and clEnqueueUnmapMemObject. Coarse-grained requires their use before the SVM is acceptable. 
 		name = trim(cl_device.getInfo<CL_DEVICE_NAME>()); // device name
 		vendor = trim(cl_device.getInfo<CL_DEVICE_VENDOR>()); // device vendor
