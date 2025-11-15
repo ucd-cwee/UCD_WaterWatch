@@ -5797,53 +5797,17 @@ public:
         GL::GPU::dimensions dim;
 
     public:
-        __declspec(noinline) reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
-            if (copy.mem->gpu_memory) {
-                if (mem_matrix::get_program().info.svm_memory_allowed) {
-                    data = std::shared_ptr<T[]>(
-                        (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                            sizeof(T) * WorkgroupAdjustment(dim.count())
-                            , WORKGROUP_SIZE),
-                        [](T* p) {
-                            ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-                        }
-                    );
-                    mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                        dim.count(),
-                        data, copy.mem, (unsigned int)0
-                    );
-                    copy.mem->events.clear();
-                }
-                else {
-                    copy.mem->ensure_host_mem_exists();
-                    copy.mem->read_from_device();
-                    data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
-                }
-            }
-            else {
-                copy.mem->ensure_host_mem_exists();
-                copy.mem->read_from_device();
-                data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
-            }
-        };
+        reader(matrix<T>& copy, GL::GPU::dimensions const& D);
         reader(reader const&) = delete;
-        reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
+        reader(reader&& rhs) noexcept;
         reader& operator=(reader const&) = delete;
         reader& operator=(reader&&) = delete;
         ~reader() = default;
-        operator bool() const {
-            return data.get() ? true : false;
-        };
-        T const& operator[](unsigned int X) const {
-            return data[X];
-        };
-        T const& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
-            return data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
-        };
+        operator bool() const;
+        T const& operator[](unsigned int X) const;
+        T const& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const;
 
-        std::shared_ptr<T[]> get() const {
-            return data;
-        };
+        std::shared_ptr<T[]> get() const;
     };
     // Copies data into CPU-GPU shared memory for quick access or reading. If requested, may also only work on the CPU side. 
     class writer {
@@ -5854,112 +5818,19 @@ public:
         bool _cpu_only;
 
     public:
-        writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only = false) : gpu_cpu_data{ nullptr }, cpu_data { nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
-            if (_cpu_only) {
-                data->mem->ensure_host_mem_exists();
-                data->mem->read_from_device();
-                cpu_data = data->mem->cpu_data<T>();
-            }
-            else {
-                if (mem_matrix::get_program().info.svm_memory_allowed) {
-                    gpu_cpu_data = std::shared_ptr<T[]>(
-                        (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                            sizeof(T) * WorkgroupAdjustment(dim.count())
-                            , WORKGROUP_SIZE),
-                        [](T* p) {
-                            ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-                        }
-                    );
-                    mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                        dim.count(),
-                        gpu_cpu_data, copy.mem, (unsigned int)0
-                    );
-                    copy.mem->events.clear();
-                }
-                else {
-                    data->mem->ensure_host_mem_exists();
-                    data->mem->read_from_device();
-                    cpu_data = data->mem->cpu_data<T>();
-                }
-            }
-        };
+        writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only = false);
         writer(writer const&) = delete;
-        writer(writer&& rhs) noexcept : gpu_cpu_data{ rhs.gpu_cpu_data }, cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
-            rhs.gpu_cpu_data = nullptr;
-            rhs.data = nullptr;
-            rhs.cpu_data = nullptr;
-            rhs.dim = GL::GPU::dimensions{ 0,0,0 };
-            rhs._cpu_only = false;
-        };
+        writer(writer&& rhs) noexcept;
         writer& operator=(writer const&) = delete;
         writer& operator=(writer&&) noexcept = delete;
-        ~writer() {
-            if (data) {
-                if (_cpu_only && cpu_data) data->mem->write_to_device();
-                else {
-                    if (mem_matrix::get_program().info.svm_memory_allowed) {
-                        mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                            dim.count(),
-                            data->mem, gpu_cpu_data, (unsigned int)0
-                        );
-                        data->mem->events.clear();
-                    }
-                    else {
-                        data->mem->write_to_device();
-                    }
-                    
-
-                }
-            }
-        };
-        operator bool() const {
-            if (_cpu_only) {
-                return cpu_data;
-            }
-            else {
-                if (mem_matrix::get_program().info.svm_memory_allowed) {
-                    return gpu_cpu_data.get() ? true : false;
-                }
-                else {
-                    return cpu_data;
-                }
-                
-            }
-        };
-        T& operator[](unsigned int X) const {
-            if (_cpu_only) {
-                return cpu_data[X];
-            }
-            else {                
-                if (mem_matrix::get_program().info.svm_memory_allowed) {
-                    return gpu_cpu_data[X];
-                }
-                else {
-                    return cpu_data[X];
-                }
-            }
-        };
-        T& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const {
-            if (_cpu_only) {
-                return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
-            }
-            else {
-                if (mem_matrix::get_program().info.svm_memory_allowed) {
-                    return gpu_cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
-                }
-                else {
-                    return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
-                }                
-            }
-        };
+        ~writer();
+        operator bool() const;
+        T& operator[](unsigned int X) const;
+        T& operator()(unsigned int X, unsigned int Y = 0, unsigned int Z = 0) const;
     };
 
-    reader read() const {
-        return reader(const_cast<matrix<T>&>(*this), dim);
-    };
-    writer write(bool cpu_only = false) {
-        return writer(const_cast<matrix<T>&>(*this), dim, cpu_only);
-    };
+    reader read() const;
+    writer write(bool cpu_only = false);
 
     matrix& operator=(T rhs) {
         mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<T>()),
@@ -6560,512 +6431,66 @@ public:
         );
         return out;
     };
-    matrix<unsigned int> operator!() const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_not") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator==(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_eq_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            mem, rhs, out.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator!=(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_neq_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            mem, rhs, out.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator<(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_ls_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            mem, rhs, out.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator<=(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_lse_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            mem, rhs, out.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator>(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_gr_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            mem, rhs, out.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator>=(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_gre_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            mem, rhs, out.mem
-        );
-        return out;
-    };
-    friend matrix<unsigned int> operator==(matrix const& lhs, matrix const& rhs) {
-        matrix<unsigned int> out(lhs.dim);
-        mem_matrix::queue_gpu_work(GL::string("item_eq") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            lhs.mem, rhs.mem, out.mem
-        );
-        return out;
-    };
-    friend matrix<unsigned int> operator!=(matrix const& lhs, matrix const& rhs) {
-        matrix<unsigned int> out(lhs.dim);
-        mem_matrix::queue_gpu_work(GL::string("item_neq") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            lhs.mem, rhs.mem, out.mem
-        );
-        return out;
-    };
-    friend matrix<unsigned int> operator<(matrix const& lhs, matrix const& rhs) {
-        matrix<unsigned int> out(lhs.dim);
-        mem_matrix::queue_gpu_work(GL::string("item_ls") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            lhs.mem, rhs.mem, out.mem
-        );
-        return out;
-    };
-    friend matrix<unsigned int> operator<=(matrix const& lhs, matrix const& rhs) {
-        matrix<unsigned int> out(lhs.dim);
-        mem_matrix::queue_gpu_work(GL::string("item_lse") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            lhs.mem, rhs.mem, out.mem
-        );
-        return out;
-    };
-    friend matrix<unsigned int> operator>(matrix const& lhs, matrix const& rhs) {
-        matrix<unsigned int> out(lhs.dim);
-        mem_matrix::queue_gpu_work(GL::string("item_gr") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            lhs.mem, rhs.mem, out.mem
-        );
-        return out;
-    };
-    friend matrix<unsigned int> operator>=(matrix const& lhs, matrix const& rhs) {
-        matrix<unsigned int> out(lhs.dim);
-        mem_matrix::queue_gpu_work(GL::string("item_gre") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            lhs.mem, rhs.mem, out.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator&&(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_AND_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, rhs
-        );
-        return out;
-    };
-    matrix<unsigned int> operator&&(matrix const& rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_AND") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, rhs.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> operator||(T rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_OR_single") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, rhs
-        );
-        return out;
-    };
-    matrix<unsigned int> operator||(matrix const& rhs) const {
-        matrix<unsigned int> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("item_OR") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, rhs.mem
-        );
-        return out;
-    };
+    matrix<unsigned int> operator!() const;
+    matrix<unsigned int> operator==(T rhs) const;
+    matrix<unsigned int> operator!=(T rhs) const;
+    matrix<unsigned int> operator<(T rhs) const;
+    matrix<unsigned int> operator<=(T rhs) const;
+    matrix<unsigned int> operator>(T rhs) const;
+    matrix<unsigned int> operator>=(T rhs) const;
+    //friend matrix<unsigned int> operator==(matrix const& lhs, matrix const& rhs);
+    //friend matrix<unsigned int> operator!=(matrix const& lhs, matrix const& rhs);
+    //friend matrix<unsigned int> operator<(matrix const& lhs, matrix const& rhs);
+    //friend matrix<unsigned int> operator<=(matrix const& lhs, matrix const& rhs);
+    //friend matrix<unsigned int> operator>(matrix const& lhs, matrix const& rhs);
+    //friend matrix<unsigned int> operator>=(matrix const& lhs, matrix const& rhs);
+    matrix<unsigned int> operator&&(T rhs) const;
+    matrix<unsigned int> operator&&(matrix const& rhs) const;
+    matrix<unsigned int> operator||(T rhs) const;
+    matrix<unsigned int> operator||(matrix const& rhs) const;
     // joins two matrices along one of the dimensions.
-    matrix join(unsigned int jdim, matrix const& first) const {
-        // All dimensions except join dimension must be equal
-        for (unsigned int I = 0; I < 3; ++I) {
-            if (I == jdim) continue;
-            if (this->size(I) != first.size(I)) {
-                return matrix();
-            }
-        }
-
-        // Compute output dims
-        unsigned int
-            NewX = this->size(0) + first.size(0) * (jdim == 0),
-            NewY = this->size(1) + first.size(1) * (jdim == 1),
-            NewZ = this->size(2) + first.size(2) * (jdim == 2);
-
-        matrix out(GL::GPU::dimensions{ NewX, NewY, NewZ });
-        if (jdim == 0) {
-            mem_matrix::queue_gpu_work(GL::string("join_dim_0") + GL::string(opencl_impl::type_name<T>()),
-                out.size(),
-                out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem, (unsigned int)first.dim.X
-            );
-        }
-        else if (jdim == 1) {
-            mem_matrix::queue_gpu_work(GL::string("join_dim_1") + GL::string(opencl_impl::type_name<T>()),
-                out.size(),
-                out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem, (unsigned int)first.dim.Y
-            );
-        }
-        else {
-            mem_matrix::queue_gpu_work(GL::string("join_dim_2") + GL::string(opencl_impl::type_name<T>()),
-                out.size(),
-                out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem
-            );
-        }
-
-        return out;
-    };
+    matrix join(unsigned int jdim, matrix const& first) const;
     // transpose a 2-D matrix along its diagonal. Does not support transposition of 3-D matrices. 
-    matrix transpose() const {
-        // matrix must be 2-D
-        if (this->dim.num_dimensions() == 0) return matrix();
-        else if (this->dim.num_dimensions() > 2) return matrix();
-
-        matrix out(GL::GPU::dimensions{ this->dim.Y, this->dim.X, 1 });
-        mem_matrix::queue_gpu_work(GL::string("Transpose") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y
-        );
-        return out;
-    };
+    matrix transpose() const;
     // pad a matrix with zeros to make its X and Y components square. Used for calculating the inverse. 
-    matrix make_square() const {
-        unsigned int len = std::max<unsigned int>(dim.X, dim.Y);
-
-        matrix out(GL::GPU::dimensions{ len, len, 1 });
-        mem_matrix::queue_gpu_work(GL::string("make_square") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len
-        );
-        return out;
-    }
+    matrix make_square() const;
     // extracts the diagonal of a 2-D matrix as a 1-D array
-    matrix diagonal() const {
-        if (this->dim.num_dimensions() == 0) return matrix();
-        else if (this->dim.num_dimensions() == 1) return *this;
-        else if (this->dim.num_dimensions() > 2) return matrix();
-        matrix out(GL::GPU::dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
-        mem_matrix::queue_gpu_work(GL::string("diagonal") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, dim.X
-        );
-        return out;
-    };
+    matrix diagonal() const;
     // extract a row from this 2-D matrix as a 1-D array
-    matrix row(unsigned int rowN) const {
-        matrix out(GL::GPU::dimensions{ dim.Y, dim.Z, 1 });
-        mem_matrix::queue_gpu_work(GL::string("row_of") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z
-        );
-        return out;
-    };
+    matrix row(unsigned int rowN) const;
     // grow a matrix by wrapping the new values around to the start. Only works for a 1-D vector. 
-    matrix grow_by_wrapping(unsigned int new_length) const {
-        if (this->dim.num_dimensions() == 1) {
-            matrix out(GL::GPU::dimensions{ new_length, 1, 1 });
-            mem_matrix::queue_gpu_work(GL::string("wrap_around") + GL::string(opencl_impl::type_name<T>()),
-                out.size(),
-                out.mem, mem, (unsigned int)this->size()
-            );
-            return out;
-        }
-        else {
-            // ??
-            throw std::runtime_error("Cannot grow a matrix by wrapping -- yet. Depends on how we want to grow it? Y-axis growth is off, but X-axis growth makes sense with wrapping");
-        }
-    };
+    matrix grow_by_wrapping(unsigned int new_length) const;
     // create a new array by sampling this array at the provided indices. E.g. This = [5,4,3,2,1,0]
     // Indices = [5,5,5,5,5,5,5,4,4,4,4,4,4,3,3,3,3,3,2,2,2,2,1,1,1,0,0]
     // Result = [0,0,0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,5,5]
-    matrix resample(matrix<unsigned int> const& sample_indices) const {
-        matrix out(sample_indices.dim);
-        mem_matrix::queue_gpu_work(GL::string("resample") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, sample_indices.mem
-        );
-        return out;
-    };
+    matrix resample(matrix<unsigned int> const& sample_indices) const;
     // calculate the determinant for a square matrix. Performed on the CPU, and minimizes exchanges with the GPU. 
-    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-    float determinant() const {
-        if (this->dim.X != this->dim.Y) {
-            return 1;
-        }
-        unsigned int dimension = this->dim.X;
-
-        if (dimension == 0) {
-            return 1;
-        }
-        else if (dimension == 1) {
-            auto R = this->read();
-            return R(0);
-        }
-        else if (dimension == 2) {
-            auto R = this->read();
-            return R(0, 0) * R(1, 1) - R(0, 1) * R(1, 0);
-        }
-        else {
-            float result = 0;
-            int sign = 1;
-
-            if (auto R = this->read()) {
-                matrix subVect(dimension - 1, dimension - 1, 1, true);
-                for (unsigned int i = 0; i < dimension; ++i) {
-                    if (auto W = subVect.write(true)) {
-                        // build a sub-matrix
-                        for (unsigned int m = 1; m < dimension; m++) {
-                            unsigned int z = 0;
-                            for (unsigned int n = 0; n < dimension; n++) {
-                                if (n != i) {
-                                    W(m - 1, z) = R(m, n);
-                                    z++;
-                                }
-                            }
-                        }
-                    }
-                    //recursive call
-                    result += sign * R(0, i) * subVect.determinant();
-                    sign = -sign;
-                }
-            }
-            return result;
-        }
-    }
+    float determinant() const;
 
     // cofactor of a square matrix, essential for calculating the inverse
-    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-    matrix cofactor() const {
-        if (this->dim.X != this->dim.Y) {
-            return make_square().cofactor();
-        }
-        unsigned int dimension = this->dim.X;
-        matrix solution(GL::GPU::dimensions{ dimension, dimension, 1 });
-        if (auto W1 = solution.write()) { // creates a shared space on the CPU/GPU, does the work there, and copies it over to the GPU once completed on the CPU side.
-            matrix subVect(dimension - 1, dimension - 1, 1, true);
-            if (auto R = this->read()) {
-                for (unsigned int i = 0; i < dimension; i++) {
-                    for (unsigned int j = 0; j < dimension; j++) {
-                        int p = 0;
-                        if (auto W = subVect.write(true)) {
-                            for (unsigned int x = 0; x < dimension; x++) {
-                                if (x == i) continue;
-                                int q = 0;
-
-                                for (unsigned int y = 0; y < dimension; y++) {
-                                    if (y == j) continue;
-                                    W(p, q) = R(x, y);
-                                    q++;
-                                }
-                                p++;
-                            }
-                        }
-                        W1(i, j) = (T)(std::pow<long double>(-1.0l, (long double)(i + j)) * (long double)subVect.determinant());
-                    }
-                }
-            }
-        }
-        return solution;
-    };
+    matrix<float> cofactor() const;
 
     // transpose of the cofactor of a square matrix
-    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-    matrix adjoint() const {
-        return cofactor().transpose();
-    };
+    matrix<float> adjoint() const;
 
     // solve for the inverse of the matrix. Does not support solving for the inverse of a 3-D matrix. 
-    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-    matrix inverse() const {
-        return adjoint() / std::abs(determinant());
-    };
+    matrix<float> inverse() const;
 
     // performs a cross-multiplication of two rectangular matrices. This is not accelerated by the GPU, and is CPU-bound. Uses CPU multithreading to (attempt) to speed-up this bottleneck. 
     // the number of columns in this matrix must equal the number of rows in the RHS matrix. 
-    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-    matrix matrix_multiply(matrix const& rhs) const {
-        if (this->dim.Y == rhs.dim.X) {
-            // only useful for dim-2 matrices. 
-            unsigned int final_num_rows = this->dim.X;
-            unsigned int final_num_cols = rhs.dim.Y;
-
-            matrix out(GL::GPU::dimensions{ final_num_rows, final_num_cols, 1 });
-            auto R_lhs = this->read();
-            auto R_rhs = rhs.read();
-            if (auto W = out.write()) {
-                if (R_lhs && R_rhs && W) {
-                    auto N = out.dim.count();
-                    // for (unsigned int n = 0; n < N; ++n) {
-                    // if (n >= N) continue;
-                    parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
-                        T v = (T)0;
-                        const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
-                        const unsigned int destination_X = n - (final_num_rows * destination_Y);
-                        for (unsigned int index = 0; index < this->dim.Y; ++index) {
-                            v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
-                        }
-                        W[n] = v;
-                    });
-                }
-            }
-            return out;
-        }
-        else if (this->dim.Y > rhs.dim.X) {
-            return matrix_multiply(matrix(rhs).join(0, matrix(GL::GPU::dimensions{ this->dim.Y - rhs.dim.X, rhs.dim.Y, rhs.dim.Z }) = 1));
-        }
-        else /*if (this->LenY < rhs.LenX)*/ {
-            // To-Do: need to set final column in joining array to 1?
-            return matrix(*this).join(1, matrix(GL::GPU::dimensions{ this->dim.X, rhs.dim.X - this->dim.Y, this->dim.Z }) = 0).matrix_multiply(rhs);
-        }
-    };
+    matrix<float> matrix_multiply(matrix const& rhs) const;
 
     // test to see if there is any colinearity in the feature set. If so, it is impossible to solve for the linear regression. One or multiple features must be removed until it is no longer invalid.
-    template<typename = std::enable_if_t<std::is_floating_point_v<T>>>
-    bool is_colinear() const {
-        return std::abs(this->transpose().matrix_multiply(*this).determinant()) == 0;
-    };
+    bool is_colinear() const;
 
-    template<bool use_cpu = false>
-    T sum() const {
-        if constexpr (use_cpu) {
-            auto N = this->size();
-            T out = (T)0;
-            if (auto R = this->read()) {
-                for (unsigned int n = 0; n < N; ++n) {
-                    out += R(n);
-                }
-            }
-            return out;
-        }
-        else {
-            if (this->size() > 512) {
-                matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                mem_matrix::queue_gpu_work(GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()),
-                    this->size(),
-                    mem, Temp.mem, (unsigned int)this->size()
-                );
-                return Temp.sum<use_cpu>();                
-            }
-            else {
-                auto N = this->size();
-                T out = (T)0;
-                if (auto R = this->read()) {
-                    for (unsigned int n = 0; n < N; ++n) {
-                        out += R(n);
-                    }
-                }
-                return out;
-            }
-        }
-    };
-    T avg() const {
-        return (T)((long double)sum() / (long double)this->size());
-    };
-    T max() const {
-        if (this->size() > 512) {
-            matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-            mem_matrix::queue_gpu_work(GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()),
-                this->size(),
-                mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::lowest()
-            );
-            return out.max();
-        }
-        else {
-            auto N = this->size();
-            T out = std::numeric_limits<T>::lowest();
-            if (auto R = this->read()) {
-                for (unsigned int n = 0; n < N; ++n) {
-                    out = std::max(out, R(n));
-                }
-            }
-            return out;
-        }
-    };
-    T min() const {
-        if (this->size() > 512) {
-            matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-            mem_matrix::queue_gpu_work(GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()),
-                this->size(),
-                mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::max()
-            );
-            return out.min();
-        }
-        else {
-            auto N = this->size();
-            T out = std::numeric_limits<T>::max();
-            if (auto R = this->read()) {
-                for (unsigned int n = 0; n < N; ++n) {
-                    out = std::min(out, R(n));
-                }
-            }
-            return out;
-        }
-    };
+    T sum() const;
+    T avg() const;
+    T max() const;
+    T min() const;
 
-    matrix convolve(matrix_kernel<T> const& K) const {
-        if (this->dim.num_dimensions() == 2) {
-            matrix out(this->dim);
-            float kernel_tot = K.sum;
-            mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
-                this->size(),
-                out.mem, mem, K.mat->mem, this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
-            );
-            return out;
-        }
-        else {
-            return matrix();
-        }
-    };
-    matrix convolve(static_matrix_kernel<T> const& K) const {
-        if (this->dim.num_dimensions() == 2) {
-            matrix out(this->dim);
-            float kernel_tot = K.ptr->sum;
-
-            // K.ptr->mat->mem
-
-            mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
-                this->size(),
-                out.mem, this->mem, static_mem_matrix{ &(*K.ptr->mat->mem) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
-            );
-            return out;
-        }
-        else {
-            return matrix();
-        }
-    };
-    static matrix_kernel<float> guassian_kernel(unsigned int X, unsigned int Y) {
-        matrix<float> out(X, Y, 1);
-        mem_matrix::queue_gpu_work(GL::string("guassian") + GL::string(opencl_impl::type_name<float>()),
-            out.size(),
-            out.mem, out.size(0), out.size(1)
-        );
-        float V = out.sum();
-        if (V == 0)
-            out = 1.0f;
-        else
-            out *= 1.0f / V;
-        out.mem->wait_for_events();
-        return matrix_kernel<float>(std::move(out));
-    };
+    matrix convolve(matrix_kernel<T> const& K) const;
+    matrix convolve(static_matrix_kernel<T> const& K) const;
+    static matrix_kernel<float> guassian_kernel(unsigned int X, unsigned int Y);
     template <unsigned int X, unsigned int Y>
     static static_matrix_kernel<float> guassian_kernel() {
         static matrix_kernel<float> out{ [](){
@@ -7074,392 +6499,51 @@ public:
         return static_matrix_kernel<float>{ &out };
     };
 
-    matrix<char> ASCII() const {
-        static std::vector<char> chars = []() {
-            std::vector<char> chars{
-                'Q', '&', '@', '$', 'B', 'M', 'W', '8', 'h', 'k', '%', '#', '0', 'O', 'b', 'd', 'p', 'q', 'w', 'm', 'Z',
-                'C', 'U', 'X', 'I', 'a', 'o', 'z', 'c', 'f', 'Y', 'v', 'u', 'n', 'x', 'r', 'L', 'J', 'j', 't', '|',
-                '[', ']', '(', ')', '/', '\\', '1', '{', '}', 'i', 'l', '<', '>', '?', '*', '+', '~', '!',
-                '\"', '^', ';', ':', '_', '-', ',', '\'', '.', '`', ' '
-            };
-            std::reverse(chars.begin(), chars.end());
-            return chars;
-        }();
-        static auto ramp{ matrix<char>::from_vector(chars) };
-        ramp.mem->wait_for_events();
-        auto thisMinV = this->min();
-        auto thisMaxV = this->max();
-
-        matrix<char> out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, thisMinV, thisMaxV, static_mem_matrix{ ramp.mem.get() }, ramp.size()
-        );
-        return out;
-        //}
-    };
-
-    matrix resize(unsigned int X, unsigned int Y, unsigned Z) const {
-        auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
-        mem_matrix::queue_gpu_work(GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
-        );
-        return out;
-    };
-    matrix resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
-        auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
-        mem_matrix::queue_gpu_work(GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
-        );
-        return out;
-    };
-    matrix subsample_1D(matrix<float> const& FloatingPointIndexes) const {
-        matrix out(FloatingPointIndexes.dim);
-        mem_matrix::queue_gpu_work(GL::string("subsample_1D") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, this->mem, FloatingPointIndexes.mem
-        );
-        return out;
-    };
-    matrix<unsigned int> binomial_search_smallest_gre(matrix const& find) const {
-        matrix<unsigned int> out(find.dim);
-        mem_matrix::queue_gpu_work(GL::string("binomial_search_smallest_gre") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, this->mem, find.mem, this->dim.X
-        );
-        return out;
-    };
+    matrix<char> ASCII() const;
+    matrix resize(unsigned int X, unsigned int Y, unsigned Z) const;
+    matrix resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const;
+    matrix subsample_1D(matrix<float> const& FloatingPointIndexes) const;
+    matrix<unsigned int> binomial_search_smallest_gre(matrix const& find) const;
     // assumes *this is the sample X-coordinates. X and Y are the components of a pattern that will be sub-sampled using a catmulrom spline.
-    matrix subsample_pat(matrix const& X, matrix const& Y) const {
-        matrix out(this->dim);
-        mem_matrix::queue_gpu_work(GL::string("subsample_pat") + GL::string(opencl_impl::type_name<T>()),
-            out.size(),
-            out.mem, Y.mem, X.mem, this->mem, X.dim.X
-        );
-        return out;
-    };
-    template <bool skip_blur = false> decltype(auto) halfsize() const {
-        if constexpr (skip_blur) {
-            return resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
-        }
-        else {
-            static std::vector<float> kernel{
-                (1.0f - (0.341f * 2.0f)) / 2.0f,
-                0.341f * 2.0f,
-                (1.0f - (0.341f * 2.0f)) / 2.0f
-            };
-            static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
-            static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
-            if constexpr (std::is_same_v<float, T>) {
-                return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
-            }
-            else {
-                return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
-            }
-        }
-    };
-    template <bool skip_blur = false> decltype(auto) quartersize() const {
-        if constexpr (skip_blur) {
-            return resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
-        }
-        else {
-            static std::vector<float> kernel{
-                (0.136f / 2.0f),
-                (0.341f / 2.0f) + (.186f / 2.0f),
-                0.341f,
-                (0.341f / 2.0f) + (.186f / 2.0f),
-                (0.136f / 2.0f)
-            };
-            matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 5, y = 1
-            matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 5     
-            return cast<float>().convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
-        }
-    };
-    matrix doublesize() const {
-        return resize_stretch(size(0) * 2, size(1) * 2, size(2));
-    };
-    matrix quadruplesize() const {
-        return resize_stretch(size(0) * 4, size(1) * 4, size(2));
-    };
+    matrix subsample_pat(matrix const& X, matrix const& Y) const;
+    matrix<float> halfsize() const;
+    matrix<float> quartersize() const;
+    matrix doublesize() const;
+    matrix quadruplesize() const;
 
 private:
-    static std::string&& resize(std::string&& rhs, unsigned int len, const char def = 0) {
-        if (rhs.length() != len) {
-            rhs.resize(len, def);
-        }
-        return std::forward<std::string>(rhs);
-    };
-    std::string to_string_impl(reader const& R, unsigned int x) const {
-        if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
-            auto c = R(x);
-            if ((c >= 32) && (c <= 126))
-                return std::string(1, c);
-            else
-                return " ";
-        }
-        else {
-            return std::to_string(R(x));
-        }
-    };
-    std::string to_string_impl(reader const& R, unsigned int x, unsigned int y) const {
-        if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
-            auto c = R(x, y);
-            if ((c >= 32) && (c <= 126))
-                return std::string(1, c);
-            else
-                return " ";
-        }
-        else {
-            return std::to_string(R(x, y));
-        }
-    };
-    std::string to_string_impl(reader const& R, unsigned int x, unsigned int y, unsigned int z) const {
-        if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
-            auto c = R(x, y, z);
-            if ((c >= 32) && (c <= 126))
-                return std::string(1, c);
-            else
-                return " ";
-        }
-        else {
-            return std::to_string(R(x, y, z));
-        }
-    };
-    std::vector<unsigned int> evaluate_column_sizes(reader const& R, std::vector<std::string> column_titles = {}) const {
-        std::vector<unsigned int> out;
-        out.resize(this->dim.Y);
-
-        for (unsigned int i = 0; i < out.size(); ++i) {
-            if (i < column_titles.size())
-                out[i] = (unsigned int)column_titles[i].size();
-            else
-                out[i] = 0u;
-        }
-
-        // only tests the first and last 10 rows of each column
-        for (unsigned int ColN = 0; ColN < this->dim.Y; ++ColN) {
-            for (unsigned int RowN = 0; RowN < this->dim.X && (RowN < 10); ++RowN) {
-                out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
-            }
-            if (this->dim.X > 10) {
-                for (unsigned int RowN = this->dim.X - 10; RowN < this->dim.X; ++RowN) {
-                    out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
-                }
-            }
-        }
-
-        return out;
-    };
+    static std::string&& resize(std::string&& rhs, unsigned int len, const char def = 0);
+    std::string to_string_impl(reader const& R, unsigned int x) const;
+    std::string to_string_impl(reader const& R, unsigned int x, unsigned int y) const;
+    std::string to_string_impl(reader const& R, unsigned int x, unsigned int y, unsigned int z) const;
+    std::vector<unsigned int> evaluate_column_sizes(reader const& R, std::vector<std::string> column_titles = {}) const;
 
 public:
     // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
-    std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const {
-        reader R = this->read();
-        std::string column_spacer = " ";
-        std::string out;
-
-        if constexpr (std::is_same_v<char, T>) {
-            out.reserve((dim.X + 1) * ((dim.Y * 2) + 1) * 2);
-        }
-
-        if (this->dim.num_dimensions() == 0) return out;
-        else if (this->dim.num_dimensions() == 1) {
-            auto col_sizes = evaluate_column_sizes(R, column_titles);
-
-            unsigned int n = 0;
-            for (; (n < this->size()) && (n < 1); ++n) {
-                out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-            }
-            if (!doNotSkip && (this->size() >= 21)) {
-                for (; (n < this->size()) && (n < 10); ++n) {
-                    out += "\n";
-                    out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                }
-                out += "\n...";
-                for (n = this->size() - 10; n < this->size(); ++n) {
-                    out += "\n";
-                    out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                }
-            }
-            else {
-                for (; n < this->size(); ++n) {
-                    out += "\n";
-                    out += resize(to_string_impl(R, n), col_sizes[0], ' ');
-                }
-            }
-            if (column_titles.size() > 0) {
-                out = resize(std::string(column_titles[0]), col_sizes[0], ' ') + "\n" + out;
-            }
-        }
-        else if (this->dim.num_dimensions() == 2) {
-            auto col_sizes = evaluate_column_sizes(R, column_titles);
-
-            unsigned int n = 0;
-            for (; (n < this->dim.X) && (n < 1); ++n) {
-                unsigned int y = 0;
-                for (; (y < this->dim.Y) && (y < 1); ++y) {
-                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                }
-                for (; y < this->dim.Y; ++y) {
-                    out += column_spacer;
-                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                }
-            }
-            if (!doNotSkip && (this->dim.X >= 21)) {
-                for (; (n < this->dim.X) && (n < 10); ++n) {
-                    out += "\n";
-                    unsigned int y = 0;
-                    for (; (y < this->dim.Y) && (y < 1); ++y) {
-                        out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                    for (; y < this->dim.Y; ++y) {
-                        out += column_spacer;
-                        out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                }
-                out += "\n...";
-                for (n = this->dim.X - 10; n < this->dim.X; ++n) {
-                    out += "\n";
-                    unsigned int y = 0;
-                    for (; (y < this->dim.Y) && (y < 1); ++y) {
-                        out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                    for (; y < this->dim.Y; ++y) {
-                        out += column_spacer;
-                        out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                }
-            }
-            else {
-                for (; n < this->dim.X; ++n) {
-                    out += "\n";
-                    unsigned int y = 0;
-                    for (; (y < this->dim.Y) && (y < 1); ++y) {
-                        out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                    for (; y < this->dim.Y; ++y) {
-                        out += column_spacer;
-                        out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
-                    }
-                }
-            }
-
-            if (column_titles.size() > 0) {
-                std::string temp = column_titles[0];
-                for (unsigned int i = 1; i < column_titles.size(); ++i) {
-                    temp += column_spacer;
-                    temp += resize(std::string(column_titles[i]), col_sizes[i], ' ');
-                }
-                out = temp + "\n" + out;
-            }
-        }
-        else if (this->dim.num_dimensions() == 3) {
-            out = "3 dims";
-        }
-        return out;
-    };
-    friend std::ostream& operator<<(std::ostream& os, matrix const& obj) {
-        os << obj.to_string();
-        return os;
-    };
+    std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const;
+    /*friend std::ostream& operator<<(std::ostream& os, matrix const& obj);*/
 
 public:
-    std::shared_ptr<T[]> slice(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const {
-        length = std::min<size_t>(length, this->size() - offset);
-        if ((offset == 0) && (length == this->size())) {
-            return read().get();
-        }
-        else {
-            size_t alignment = WORKGROUP_SIZE;
-            std::shared_ptr<T[]> slice;
-            if (!mem_matrix::get_program().info.svm_memory_allowed) {
-                matrix<T> copier(GL::GPU::dimensions{ (unsigned int)length, 1u, 1u });
-                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                    length,
-                    copier.mem, this->mem, (unsigned int)offset
-                );
-                slice = std::shared_ptr<T[]>(new T[length], [](T* p) { delete[] p; });
-                if (auto r = copier.read()) {
-                    for (int i = 0; i < length; ++i)
-                        slice[i] = r[i];
-                }
-            }
-            else {
-                slice = std::shared_ptr<T[]>(
-                    (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                        sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
-                        , alignment),
-                    [](T* p) {
-                        ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
-                    }
-                );
-                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
-                    length,
-                    slice, this->mem, (unsigned int)offset
-                );
-                this->mem->events.clear();
-            }
-            return slice;
-        }
-    };
-    T operator[](unsigned int n) const {
-        auto ptr = slice(n, 1);
-        return ptr[0];
-    };
-    T operator()(unsigned int x, unsigned int y = 0, unsigned int z = 0) const {
-        return operator[](x + (y * dim.X) + (z * dim.Y * dim.X));
-    };
+    std::shared_ptr<T[]> slice(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const;
+    T operator[](unsigned int n) const;
+    T operator()(unsigned int x, unsigned int y = 0, unsigned int z = 0) const;
 
     class linear_regressions {
     public:
         // solve for the weights to be used when performing linearized predictions, as determined by a basic linear regression.
-        __declspec(noinline) static matrix solve_for_weights(matrix const& measurements, matrix const& features) {
-            return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
-        };
+        __declspec(noinline) static matrix solve_for_weights(matrix const& measurements, matrix const& features);
         // solve for the linearized prediction.
-        __declspec(noinline) static matrix predict(matrix const& features, matrix const& weights) {
-            return features.matrix_multiply(weights);
-        };
+        __declspec(noinline) static matrix predict(matrix const& features, matrix const& weights);
         // returns the standard error of the linear regression.
-        __declspec(noinline) static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
-            auto prediction = predict(features, weights);
-            return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
-        };
+        __declspec(noinline) static matrix standard_error(matrix const& measurements, matrix const& features, matrix const& weights);
         // returns the population standard deviation.
-        __declspec(noinline) static matrix standard_deviation(
-            matrix const& measurements,
-            matrix const& features,
-            matrix const& weights
-        ) {
-            return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
-        };
+        __declspec(noinline) static matrix standard_deviation(matrix const& measurements, matrix const& features, matrix const& weights);
         // evaluate for the students-t test
-        __declspec(noinline) static matrix t_statistic(matrix const& weights, matrix const& std_err) {
-            return weights / std_err;
-        };
+        __declspec(noinline) static matrix t_statistic(matrix const& weights, matrix const& std_err);
         // evaluate for the p-value
-        __declspec(noinline) static matrix p_value(matrix const& features, matrix const& t_stat) {
-            boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
-            matrix out(GL::GPU::dimensions{ t_stat.size(0), 1, 1 });
-            unsigned int N = out.size();
-            if (auto R = t_stat.read()) {
-                if (auto W = out.write()) {
-                    for (unsigned int i = 0; i < N; ++i) {
-                        W[i] = (1.0f - (float)boost::math::cdf(dist, R[i])) + boost::math::cdf(dist, -R[i]);
-                        if ((W[i] > 1.0f) || (W[i] < 0.0f))
-                            W[i] = (1.0f - (float)boost::math::cdf(dist, -R[i])) + boost::math::cdf(dist, R[i]);
-                    }
-                }
-            }
-            return out;
-        };
-
+        __declspec(noinline) static matrix p_value(matrix const& features, matrix const& t_stat);
         // build a collection of features for a linear regression while avoiding colinearity. 
-        __declspec(noinline) static matrix build_features(matrix const& current_best) {
-            return current_best;
-        };
+        __declspec(noinline) static matrix build_features(matrix const& current_best);
         // build a collection of features for a linear regression while avoiding colinearity. 
         template <typename T, typename... Ts> __declspec(noinline) static matrix build_features(matrix const& current_best, T const& candidate, const Ts&... further_candidates) {
             auto joined = current_best.join(1, candidate);
@@ -7474,12 +6558,1003 @@ public:
         // note: 
         // R2 = 1 - Residual SS / Total SS    (general formula for R2)
         // Adjusted R2 = R2 - (1-R2 )*(k-1)/(n-k) = .8025 - .1975*2/2 = 0.6050.
-
-
-
     };
-
 };
+template<typename T> static matrix<unsigned int> operator==(matrix<T> const& lhs, matrix<T> const& rhs);
+template<typename T> static matrix<unsigned int> operator!=(matrix<T> const& lhs, matrix<T> const& rhs);
+template<typename T> static matrix<unsigned int> operator<(matrix<T> const& lhs, matrix<T> const& rhs);
+template<typename T> static matrix<unsigned int> operator<=(matrix<T> const& lhs, matrix<T> const& rhs);
+template<typename T> static matrix<unsigned int> operator>(matrix<T> const& lhs, matrix<T> const& rhs);
+template<typename T> static matrix<unsigned int> operator>=(matrix<T> const& lhs, matrix<T> const& rhs);
+template <typename T> static std::ostream& operator<<(std::ostream& os, matrix<T> const& obj);
+
+
+
+
+
+
+
+
+
+
+template <typename T> matrix<T>::reader::reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
+    if (copy.mem->gpu_memory) {
+        if (mem_matrix::get_program().info.svm_memory_allowed) {
+            data = std::shared_ptr<T[]>(
+                (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                    sizeof(T) * WorkgroupAdjustment(dim.count())
+                    , WORKGROUP_SIZE),
+                [](T* p) {
+                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                }
+            );
+            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                dim.count(),
+                data, copy.mem, (unsigned int)0
+            );
+            copy.mem->events.clear();
+        }
+        else {
+            copy.mem->ensure_host_mem_exists();
+            copy.mem->read_from_device();
+            data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
+        }
+    }
+    else {
+        copy.mem->ensure_host_mem_exists();
+        copy.mem->read_from_device();
+        data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
+    }
+};
+template <typename T> matrix<T>::reader::reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
+template <typename T> matrix<T>::reader::operator bool() const {
+    return data.get() ? true : false;
+};
+template <typename T> T const& matrix<T>::reader::operator[](unsigned int X) const {
+    return data[X];
+};
+template <typename T> T const& matrix<T>::reader::operator()(unsigned int X, unsigned int Y, unsigned int Z) const {
+    return data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+};
+template <typename T> std::shared_ptr<T[]> matrix<T>::reader::get() const {
+    return data;
+};
+template <typename T> matrix<T>::writer::writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only) : gpu_cpu_data{ nullptr }, cpu_data{ nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
+    if (_cpu_only) {
+        data->mem->ensure_host_mem_exists();
+        data->mem->read_from_device();
+        cpu_data = data->mem->cpu_data<T>();
+    }
+    else {
+        if (mem_matrix::get_program().info.svm_memory_allowed) {
+            gpu_cpu_data = std::shared_ptr<T[]>(
+                (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                    sizeof(T) * WorkgroupAdjustment(dim.count())
+                    , WORKGROUP_SIZE),
+                [](T* p) {
+                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                }
+            );
+            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                dim.count(),
+                gpu_cpu_data, copy.mem, (unsigned int)0
+            );
+            copy.mem->events.clear();
+        }
+        else {
+            data->mem->ensure_host_mem_exists();
+            data->mem->read_from_device();
+            cpu_data = data->mem->cpu_data<T>();
+        }
+    }
+};
+template <typename T> matrix<T>::writer::writer(writer&& rhs) noexcept : gpu_cpu_data{ rhs.gpu_cpu_data }, cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
+    rhs.gpu_cpu_data = nullptr;
+    rhs.data = nullptr;
+    rhs.cpu_data = nullptr;
+    rhs.dim = GL::GPU::dimensions{ 0,0,0 };
+    rhs._cpu_only = false;
+};
+template <typename T> matrix<T>::writer::~writer() {
+    if (data) {
+        if (_cpu_only && cpu_data) data->mem->write_to_device();
+        else {
+            if (mem_matrix::get_program().info.svm_memory_allowed) {
+                mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                    dim.count(),
+                    data->mem, gpu_cpu_data, (unsigned int)0
+                );
+                data->mem->events.clear();
+            }
+            else {
+                data->mem->write_to_device();
+            }
+
+
+        }
+    }
+};
+template <typename T> matrix<T>::writer::operator bool() const {
+    if (_cpu_only) {
+        return cpu_data;
+    }
+    else {
+        if (mem_matrix::get_program().info.svm_memory_allowed) {
+            return gpu_cpu_data.get() ? true : false;
+        }
+        else {
+            return cpu_data;
+        }
+
+    }
+};
+template <typename T> T& matrix<T>::writer::operator[](unsigned int X) const {
+    if (_cpu_only) {
+        return cpu_data[X];
+    }
+    else {
+        if (mem_matrix::get_program().info.svm_memory_allowed) {
+            return gpu_cpu_data[X];
+        }
+        else {
+            return cpu_data[X];
+        }
+    }
+};
+template <typename T> T& matrix<T>::writer::operator()(unsigned int X, unsigned int Y, unsigned int Z) const {
+    if (_cpu_only) {
+        return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+    }
+    else {
+        if (mem_matrix::get_program().info.svm_memory_allowed) {
+            return gpu_cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+        }
+        else {
+            return cpu_data[(Z * dim.X * dim.Y) + (Y * dim.X) + X];
+        }
+    }
+};
+
+template <typename T>  typename matrix<T>::reader  matrix<T>::read() const {
+    return reader(const_cast<matrix<T>&>(*this), dim);
+};
+template <typename T>  typename matrix<T>::writer  matrix<T>::write(bool cpu_only) {
+    return writer(const_cast<matrix<T>&>(*this), dim, cpu_only);
+};
+
+
+
+
+
+template<typename T> matrix<unsigned int> matrix<T>::operator!() const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_not") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator==(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_eq_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        mem, rhs, out.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator!=(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_neq_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        mem, rhs, out.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator<(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_ls_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        mem, rhs, out.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator<=(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_lse_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        mem, rhs, out.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator>(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_gr_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        mem, rhs, out.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator>=(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_gre_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        mem, rhs, out.mem
+    );
+    return out;
+};
+template<typename T> static matrix<unsigned int> operator==(matrix<T> const& lhs, matrix<T> const& rhs) {
+    matrix<unsigned int> out(lhs.dim);
+    mem_matrix::queue_gpu_work(GL::string("item_eq") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        lhs.mem, rhs.mem, out.mem
+    );
+    return out;
+};
+template<typename T> static matrix<unsigned int> operator!=(matrix<T> const& lhs, matrix<T> const& rhs) {
+    matrix<unsigned int> out(lhs.dim);
+    mem_matrix::queue_gpu_work(GL::string("item_neq") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        lhs.mem, rhs.mem, out.mem
+    );
+    return out;
+};
+template<typename T> static matrix<unsigned int> operator<(matrix<T> const& lhs, matrix<T> const& rhs) {
+    matrix<unsigned int> out(lhs.dim);
+    mem_matrix::queue_gpu_work(GL::string("item_ls") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        lhs.mem, rhs.mem, out.mem
+    );
+    return out;
+};
+template<typename T> static matrix<unsigned int> operator<=(matrix<T> const& lhs, matrix<T> const& rhs) {
+    matrix<unsigned int> out(lhs.dim);
+    mem_matrix::queue_gpu_work(GL::string("item_lse") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        lhs.mem, rhs.mem, out.mem
+    );
+    return out;
+};
+template<typename T> static matrix<unsigned int> operator>(matrix<T> const& lhs, matrix<T> const& rhs) {
+    matrix<unsigned int> out(lhs.dim);
+    mem_matrix::queue_gpu_work(GL::string("item_gr") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        lhs.mem, rhs.mem, out.mem
+    );
+    return out;
+};
+template<typename T> static matrix<unsigned int> operator>=(matrix<T> const& lhs, matrix<T> const& rhs) {
+    matrix<unsigned int> out(lhs.dim);
+    mem_matrix::queue_gpu_work(GL::string("item_gre") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        lhs.mem, rhs.mem, out.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator&&(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_AND_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, rhs
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator&&(matrix const& rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_AND") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, rhs.mem
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator||(T rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_OR_single") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, rhs
+    );
+    return out;
+};
+template<typename T> matrix<unsigned int> matrix<T>::operator||(matrix const& rhs) const {
+    matrix<unsigned int> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("item_OR") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, rhs.mem
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::join(unsigned int jdim, matrix const& first) const {
+    // All dimensions except join dimension must be equal
+    for (unsigned int I = 0; I < 3; ++I) {
+        if (I == jdim) continue;
+        if (this->size(I) != first.size(I)) {
+            return matrix();
+        }
+    }
+
+    // Compute output dims
+    unsigned int
+        NewX = this->size(0) + first.size(0) * (jdim == 0),
+        NewY = this->size(1) + first.size(1) * (jdim == 1),
+        NewZ = this->size(2) + first.size(2) * (jdim == 2);
+
+    matrix out(GL::GPU::dimensions{ NewX, NewY, NewZ });
+    if (jdim == 0) {
+        mem_matrix::queue_gpu_work(GL::string("join_dim_0") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem, (unsigned int)first.dim.X
+        );
+    }
+    else if (jdim == 1) {
+        mem_matrix::queue_gpu_work(GL::string("join_dim_1") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem, (unsigned int)first.dim.Y
+        );
+    }
+    else {
+        mem_matrix::queue_gpu_work(GL::string("join_dim_2") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem
+        );
+    }
+
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::transpose() const {
+    // matrix must be 2-D
+    if (this->dim.num_dimensions() == 0) return matrix();
+    else if (this->dim.num_dimensions() > 2) return matrix();
+
+    matrix out(GL::GPU::dimensions{ this->dim.Y, this->dim.X, 1 });
+    mem_matrix::queue_gpu_work(GL::string("Transpose") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::make_square() const {
+    unsigned int len = std::max<unsigned int>(dim.X, dim.Y);
+
+    matrix out(GL::GPU::dimensions{ len, len, 1 });
+    mem_matrix::queue_gpu_work(GL::string("make_square") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len
+    );
+    return out;
+}
+template <typename T> matrix<T> matrix<T>::diagonal() const {
+    if (this->dim.num_dimensions() == 0) return matrix();
+    else if (this->dim.num_dimensions() == 1) return *this;
+    else if (this->dim.num_dimensions() > 2) return matrix();
+    matrix out(GL::GPU::dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
+    mem_matrix::queue_gpu_work(GL::string("diagonal") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, dim.X
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::row(unsigned int rowN) const {
+    matrix out(GL::GPU::dimensions{ dim.Y, dim.Z, 1 });
+    mem_matrix::queue_gpu_work(GL::string("row_of") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::grow_by_wrapping(unsigned int new_length) const {
+    if (this->dim.num_dimensions() == 1) {
+        matrix out(GL::GPU::dimensions{ new_length, 1, 1 });
+        mem_matrix::queue_gpu_work(GL::string("wrap_around") + GL::string(opencl_impl::type_name<T>()),
+            out.size(),
+            out.mem, mem, (unsigned int)this->size()
+        );
+        return out;
+    }
+    else {
+        // ??
+        throw std::runtime_error("Cannot grow a matrix by wrapping -- yet. Depends on how we want to grow it? Y-axis growth is off, but X-axis growth makes sense with wrapping");
+    }
+};
+template <typename T> matrix<T> matrix<T>::resample(matrix<unsigned int> const& sample_indices) const {
+    matrix out(sample_indices.dim);
+    mem_matrix::queue_gpu_work(GL::string("resample") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, sample_indices.mem
+    );
+    return out;
+};
+template <typename T> float matrix<T>::determinant() const {
+    if constexpr (!std::is_same_v<float, T>) return {};
+    if (this->dim.X != this->dim.Y) {
+        return 1;
+    }
+    unsigned int dimension = this->dim.X;
+
+    if (dimension == 0) {
+        return 1;
+    }
+    else if (dimension == 1) {
+        auto R = this->read();
+        return R(0);
+    }
+    else if (dimension == 2) {
+        auto R = this->read();
+        return R(0, 0) * R(1, 1) - R(0, 1) * R(1, 0);
+    }
+    else {
+        float result = 0;
+        int sign = 1;
+
+        if (auto R = this->read()) {
+            matrix subVect(dimension - 1, dimension - 1, 1, true);
+            for (unsigned int i = 0; i < dimension; ++i) {
+                if (auto W = subVect.write(true)) {
+                    // build a sub-matrix
+                    for (unsigned int m = 1; m < dimension; m++) {
+                        unsigned int z = 0;
+                        for (unsigned int n = 0; n < dimension; n++) {
+                            if (n != i) {
+                                W(m - 1, z) = R(m, n);
+                                z++;
+                            }
+                        }
+                    }
+                }
+                //recursive call
+                result += sign * R(0, i) * subVect.determinant();
+                sign = -sign;
+            }
+        }
+        return result;
+    }
+}
+template <typename T> matrix<float> matrix<T>::cofactor() const {
+    if constexpr (!std::is_same_v<float, T>) return {};
+    if (this->dim.X != this->dim.Y) {
+        return make_square().cofactor();
+    }
+    unsigned int dimension = this->dim.X;
+    matrix solution(GL::GPU::dimensions{ dimension, dimension, 1 });
+    if (auto W1 = solution.write()) { // creates a shared space on the CPU/GPU, does the work there, and copies it over to the GPU once completed on the CPU side.
+        matrix subVect(dimension - 1, dimension - 1, 1, true);
+        if (auto R = this->read()) {
+            for (unsigned int i = 0; i < dimension; i++) {
+                for (unsigned int j = 0; j < dimension; j++) {
+                    int p = 0;
+                    if (auto W = subVect.write(true)) {
+                        for (unsigned int x = 0; x < dimension; x++) {
+                            if (x == i) continue;
+                            int q = 0;
+
+                            for (unsigned int y = 0; y < dimension; y++) {
+                                if (y == j) continue;
+                                W(p, q) = R(x, y);
+                                q++;
+                            }
+                            p++;
+                        }
+                    }
+                    W1(i, j) = (T)(std::pow<long double>(-1.0l, (long double)(i + j)) * (long double)subVect.determinant());
+                }
+            }
+        }
+    }
+    return solution;
+};
+template <typename T> matrix<float> matrix<T>::adjoint() const {
+    if constexpr (!std::is_same_v<float, T>) return {};
+    return cofactor().transpose();
+};
+template <typename T> matrix<float> matrix<T>::inverse() const {
+    if constexpr (!std::is_same_v<float, T>) return {};
+    return adjoint() / std::abs(determinant());
+};
+template <typename T> matrix<float> matrix<T>::matrix_multiply(matrix const& rhs) const {
+    if constexpr (!std::is_same_v<float, T>) return {};
+    if (this->dim.Y == rhs.dim.X) {
+        // only useful for dim-2 matrices. 
+        unsigned int final_num_rows = this->dim.X;
+        unsigned int final_num_cols = rhs.dim.Y;
+
+        matrix out(GL::GPU::dimensions{ final_num_rows, final_num_cols, 1 });
+        auto R_lhs = this->read();
+        auto R_rhs = rhs.read();
+        if (auto W = out.write()) {
+            if (R_lhs && R_rhs && W) {
+                auto N = out.dim.count();
+                // for (unsigned int n = 0; n < N; ++n) {
+                // if (n >= N) continue;
+                parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
+                    T v = (T)0;
+                    const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
+                    const unsigned int destination_X = n - (final_num_rows * destination_Y);
+                    for (unsigned int index = 0; index < this->dim.Y; ++index) {
+                        v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
+                    }
+                    W[n] = v;
+                    });
+            }
+        }
+        return out;
+    }
+    else if (this->dim.Y > rhs.dim.X) {
+        return matrix_multiply(matrix(rhs).join(0, matrix(GL::GPU::dimensions{ this->dim.Y - rhs.dim.X, rhs.dim.Y, rhs.dim.Z }) = 1));
+    }
+    else /*if (this->LenY < rhs.LenX)*/ {
+        // To-Do: need to set final column in joining array to 1?
+        return matrix(*this).join(1, matrix(GL::GPU::dimensions{ this->dim.X, rhs.dim.X - this->dim.Y, this->dim.Z }) = 0).matrix_multiply(rhs);
+    }
+};
+template <typename T> bool matrix<T>::is_colinear() const {
+    if constexpr (!std::is_same_v<float, T>) return {};
+    return std::abs(this->transpose().matrix_multiply(*this).determinant()) == 0;
+};
+template <typename T> T matrix<T>::sum() const {
+    if (this->size() > 512) {
+        matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+        mem_matrix::queue_gpu_work(GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()),
+            this->size(),
+            mem, Temp.mem, (unsigned int)this->size()
+        );
+        return Temp.sum();
+    }
+    else {
+        auto N = this->size();
+        T out = (T)0;
+        if (auto R = this->read()) {
+            for (unsigned int n = 0; n < N; ++n) {
+                out += R(n);
+            }
+        }
+        return out;
+    }
+};
+template <typename T> T matrix<T>::avg() const {
+    return (T)((long double)sum() / (long double)this->size());
+};
+template <typename T> T matrix<T>::max() const {
+    if (this->size() > 512) {
+        matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+        mem_matrix::queue_gpu_work(GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()),
+            this->size(),
+            mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::lowest()
+        );
+        return out.max();
+    }
+    else {
+        auto N = this->size();
+        T out = std::numeric_limits<T>::lowest();
+        if (auto R = this->read()) {
+            for (unsigned int n = 0; n < N; ++n) {
+                out = std::max(out, R(n));
+            }
+        }
+        return out;
+    }
+};
+template <typename T> T matrix<T>::min() const {
+    if (this->size() > 512) {
+        matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+        mem_matrix::queue_gpu_work(GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()),
+            this->size(),
+            mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::max()
+        );
+        return out.min();
+    }
+    else {
+        auto N = this->size();
+        T out = std::numeric_limits<T>::max();
+        if (auto R = this->read()) {
+            for (unsigned int n = 0; n < N; ++n) {
+                out = std::min(out, R(n));
+            }
+        }
+        return out;
+    }
+};
+template <typename T> matrix<T> matrix<T>::convolve(matrix_kernel<T> const& K) const {
+    if (this->dim.num_dimensions() == 2) {
+        matrix out(this->dim);
+        float kernel_tot = K.sum;
+        mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
+            this->size(),
+            out.mem, mem, K.mat->mem, this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
+        );
+        return out;
+    }
+    else {
+        return matrix();
+    }
+};
+template <typename T> matrix<T> matrix<T>::convolve(static_matrix_kernel<T> const& K) const {
+    if (this->dim.num_dimensions() == 2) {
+        matrix out(this->dim);
+        float kernel_tot = K.ptr->sum;
+
+        // K.ptr->mat->mem
+
+        mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
+            this->size(),
+            out.mem, this->mem, static_mem_matrix{ &(*K.ptr->mat->mem) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
+        );
+        return out;
+    }
+    else {
+        return matrix();
+    }
+};
+template <typename T>  matrix_kernel<float> matrix<T>::guassian_kernel(unsigned int X, unsigned int Y) {
+    matrix<float> out(X, Y, 1);
+    mem_matrix::queue_gpu_work(GL::string("guassian") + GL::string(opencl_impl::type_name<float>()),
+        out.size(),
+        out.mem, out.size(0), out.size(1)
+    );
+    float V = out.sum();
+    if (V == 0)
+        out = 1.0f;
+    else
+        out *= 1.0f / V;
+    out.mem->wait_for_events();
+    return matrix_kernel<float>(std::move(out));
+};
+template <typename T> matrix<char> matrix<T>::ASCII() const {
+    static std::vector<char> chars = []() {
+        std::vector<char> chars{
+            'Q', '&', '@', '$', 'B', 'M', 'W', '8', 'h', 'k', '%', '#', '0', 'O', 'b', 'd', 'p', 'q', 'w', 'm', 'Z',
+            'C', 'U', 'X', 'I', 'a', 'o', 'z', 'c', 'f', 'Y', 'v', 'u', 'n', 'x', 'r', 'L', 'J', 'j', 't', '|',
+            '[', ']', '(', ')', '/', '\\', '1', '{', '}', 'i', 'l', '<', '>', '?', '*', '+', '~', '!',
+            '\"', '^', ';', ':', '_', '-', ',', '\'', '.', '`', ' '
+        };
+        std::reverse(chars.begin(), chars.end());
+        return chars;
+    }();
+    static auto ramp{ matrix<char>::from_vector(chars) };
+    ramp.mem->wait_for_events();
+    auto thisMinV = this->min();
+    auto thisMaxV = this->max();
+
+    matrix<char> out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, thisMinV, thisMaxV, static_mem_matrix{ ramp.mem.get() }, ramp.size()
+    );
+    return out;
+    //}
+};
+template <typename T> matrix<T> matrix<T>::resize(unsigned int X, unsigned int Y, unsigned Z) const {
+    auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
+    mem_matrix::queue_gpu_work(GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
+    auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
+    mem_matrix::queue_gpu_work(GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::subsample_1D(matrix<float> const& FloatingPointIndexes) const {
+    matrix out(FloatingPointIndexes.dim);
+    mem_matrix::queue_gpu_work(GL::string("subsample_1D") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, this->mem, FloatingPointIndexes.mem
+    );
+    return out;
+};
+template <typename T> matrix<unsigned int> matrix<T>::binomial_search_smallest_gre(matrix const& find) const {
+    matrix<unsigned int> out(find.dim);
+    mem_matrix::queue_gpu_work(GL::string("binomial_search_smallest_gre") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, this->mem, find.mem, this->dim.X
+    );
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::subsample_pat(matrix const& X, matrix const& Y) const {
+    matrix out(this->dim);
+    mem_matrix::queue_gpu_work(GL::string("subsample_pat") + GL::string(opencl_impl::type_name<T>()),
+        out.size(),
+        out.mem, Y.mem, X.mem, this->mem, X.dim.X
+    );
+    return out;
+};
+template <typename T> matrix<float> matrix<T>::halfsize() const {
+
+    static std::vector<float> kernel{
+        (1.0f - (0.341f * 2.0f)) / 2.0f,
+        0.341f * 2.0f,
+        (1.0f - (0.341f * 2.0f)) / 2.0f
+    };
+    static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
+    static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
+    if constexpr (std::is_same_v<float, T>) {
+        return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+    }
+    else {
+        return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+    }
+    
+};
+template <typename T> matrix<float> matrix<T>::quartersize() const {
+    static std::vector<float> kernel{
+        (0.136f / 2.0f),
+        (0.341f / 2.0f) + (.186f / 2.0f),
+        0.341f,
+        (0.341f / 2.0f) + (.186f / 2.0f),
+        (0.136f / 2.0f)
+    };
+    matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 5, y = 1
+    matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 5     
+    return cast<float>().convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+};
+template <typename T> matrix<T> matrix<T>::doublesize() const {
+    return resize_stretch(size(0) * 2, size(1) * 2, size(2));
+};
+template <typename T> matrix<T> matrix<T>::quadruplesize() const {
+    return resize_stretch(size(0) * 4, size(1) * 4, size(2));
+};
+template <typename T> std::string&& matrix<T>::resize(std::string&& rhs, unsigned int len, const char def) {
+    if (rhs.length() != len) {
+        rhs.resize(len, def);
+    }
+    return std::forward<std::string>(rhs);
+};
+template <typename T> std::string matrix<T>::to_string_impl(reader const& R, unsigned int x) const {
+    if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+        auto c = R(x);
+        if ((c >= 32) && (c <= 126))
+            return std::string(1, c);
+        else
+            return " ";
+    }
+    else {
+        return std::to_string(R(x));
+    }
+};
+template <typename T> std::string matrix<T>::to_string_impl(reader const& R, unsigned int x, unsigned int y) const {
+    if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+        auto c = R(x, y);
+        if ((c >= 32) && (c <= 126))
+            return std::string(1, c);
+        else
+            return " ";
+    }
+    else {
+        return std::to_string(R(x, y));
+    }
+};
+template <typename T> std::string matrix<T>::to_string_impl(reader const& R, unsigned int x, unsigned int y, unsigned int z) const {
+    if constexpr (std::is_same_v<char, T> || std::is_same_v<unsigned char, T>) {
+        auto c = R(x, y, z);
+        if ((c >= 32) && (c <= 126))
+            return std::string(1, c);
+        else
+            return " ";
+    }
+    else {
+        return std::to_string(R(x, y, z));
+    }
+};
+template <typename T> std::vector<unsigned int> matrix<T>::evaluate_column_sizes(reader const& R, std::vector<std::string> column_titles) const {
+    std::vector<unsigned int> out;
+    out.resize(this->dim.Y);
+
+    for (unsigned int i = 0; i < out.size(); ++i) {
+        if (i < column_titles.size())
+            out[i] = (unsigned int)column_titles[i].size();
+        else
+            out[i] = 0u;
+    }
+
+    // only tests the first and last 10 rows of each column
+    for (unsigned int ColN = 0; ColN < this->dim.Y; ++ColN) {
+        for (unsigned int RowN = 0; RowN < this->dim.X && (RowN < 10); ++RowN) {
+            out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
+        }
+        if (this->dim.X > 10) {
+            for (unsigned int RowN = this->dim.X - 10; RowN < this->dim.X; ++RowN) {
+                out[ColN] = std::max<unsigned int>(out[ColN], (unsigned int)to_string_impl(R, RowN, ColN).size());
+            }
+        }
+    }
+
+    return out;
+};
+template <typename T> std::string matrix<T>::to_string(std::vector<std::string> column_titles, bool doNotSkip) const {
+    reader R = this->read();
+    std::string column_spacer = " ";
+    std::string out;
+
+    if constexpr (std::is_same_v<char, T>) {
+        out.reserve((dim.X + 1) * ((dim.Y * 2) + 1) * 2);
+    }
+
+    if (this->dim.num_dimensions() == 0) return out;
+    else if (this->dim.num_dimensions() == 1) {
+        auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+        unsigned int n = 0;
+        for (; (n < this->size()) && (n < 1); ++n) {
+            out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+        }
+        if (!doNotSkip && (this->size() >= 21)) {
+            for (; (n < this->size()) && (n < 10); ++n) {
+                out += "\n";
+                out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+            }
+            out += "\n...";
+            for (n = this->size() - 10; n < this->size(); ++n) {
+                out += "\n";
+                out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+            }
+        }
+        else {
+            for (; n < this->size(); ++n) {
+                out += "\n";
+                out += resize(to_string_impl(R, n), col_sizes[0], ' ');
+            }
+        }
+        if (column_titles.size() > 0) {
+            out = resize(std::string(column_titles[0]), col_sizes[0], ' ') + "\n" + out;
+        }
+    }
+    else if (this->dim.num_dimensions() == 2) {
+        auto col_sizes = evaluate_column_sizes(R, column_titles);
+
+        unsigned int n = 0;
+        for (; (n < this->dim.X) && (n < 1); ++n) {
+            unsigned int y = 0;
+            for (; (y < this->dim.Y) && (y < 1); ++y) {
+                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+            }
+            for (; y < this->dim.Y; ++y) {
+                out += column_spacer;
+                out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+            }
+        }
+        if (!doNotSkip && (this->dim.X >= 21)) {
+            for (; (n < this->dim.X) && (n < 10); ++n) {
+                out += "\n";
+                unsigned int y = 0;
+                for (; (y < this->dim.Y) && (y < 1); ++y) {
+                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+                for (; y < this->dim.Y; ++y) {
+                    out += column_spacer;
+                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+            }
+            out += "\n...";
+            for (n = this->dim.X - 10; n < this->dim.X; ++n) {
+                out += "\n";
+                unsigned int y = 0;
+                for (; (y < this->dim.Y) && (y < 1); ++y) {
+                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+                for (; y < this->dim.Y; ++y) {
+                    out += column_spacer;
+                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+            }
+        }
+        else {
+            for (; n < this->dim.X; ++n) {
+                out += "\n";
+                unsigned int y = 0;
+                for (; (y < this->dim.Y) && (y < 1); ++y) {
+                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+                for (; y < this->dim.Y; ++y) {
+                    out += column_spacer;
+                    out += resize(to_string_impl(R, n, y), col_sizes[y], ' ');
+                }
+            }
+        }
+
+        if (column_titles.size() > 0) {
+            std::string temp = column_titles[0];
+            for (unsigned int i = 1; i < column_titles.size(); ++i) {
+                temp += column_spacer;
+                temp += resize(std::string(column_titles[i]), col_sizes[i], ' ');
+            }
+            out = temp + "\n" + out;
+        }
+    }
+    else if (this->dim.num_dimensions() == 3) {
+        out = "3 dims";
+    }
+    return out;
+};
+template <typename T> static std::ostream& operator<<(std::ostream& os, matrix<T> const& obj) {
+    os << obj.to_string();
+    return os;
+};
+template <typename T> std::shared_ptr<T[]> matrix<T>::slice(size_t offset, size_t length) const {
+    length = std::min<size_t>(length, this->size() - offset);
+    if ((offset == 0) && (length == this->size())) {
+        return read().get();
+    }
+    else {
+        size_t alignment = WORKGROUP_SIZE;
+        std::shared_ptr<T[]> slice;
+        if (!mem_matrix::get_program().info.svm_memory_allowed) {
+            matrix<T> copier(GL::GPU::dimensions{ (unsigned int)length, 1u, 1u });
+            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                length,
+                copier.mem, this->mem, (unsigned int)offset
+            );
+            slice = std::shared_ptr<T[]>(new T[length], [](T* p) { delete[] p; });
+            if (auto r = copier.read()) {
+                for (int i = 0; i < length; ++i)
+                    slice[i] = r[i];
+            }
+        }
+        else {
+            slice = std::shared_ptr<T[]>(
+                (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                    sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
+                    , alignment),
+                [](T* p) {
+                    ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
+                }
+            );
+            mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
+                length,
+                slice, this->mem, (unsigned int)offset
+            );
+            this->mem->events.clear();
+        }
+        return slice;
+    }
+};
+template <typename T> T matrix<T>::operator[](unsigned int n) const {
+    auto ptr = slice(n, 1);
+    return ptr[0];
+};
+template <typename T> T matrix<T>::operator()(unsigned int x, unsigned int y, unsigned int z) const {
+    return operator[](x + (y * dim.X) + (z * dim.Y * dim.X));
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::solve_for_weights(matrix const& measurements, matrix const& features) {
+    return (features.transpose().matrix_multiply(features)).inverse().matrix_multiply(features.transpose()).matrix_multiply(measurements);
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::predict(matrix const& features, matrix const& weights) {
+    return features.matrix_multiply(weights);
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
+    auto prediction = predict(features, weights);
+    return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::standard_deviation(matrix const& measurements, matrix const& features, matrix const& weights) {
+    return standard_error(measurements, features, weights) * std::sqrt(measurements.size(0));
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::t_statistic(matrix const& weights, matrix const& std_err) {
+    return weights / std_err;
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::p_value(matrix const& features, matrix const& t_stat) {
+    boost::math::students_t dist(features.size(0) - features.size(1)); // n - k - 1, but should include the intercept in the features list already
+    matrix out(GL::GPU::dimensions{ t_stat.size(0), 1, 1 });
+    unsigned int N = out.size();
+    if (auto R = t_stat.read()) {
+        if (auto W = out.write()) {
+            for (unsigned int i = 0; i < N; ++i) {
+                W[i] = (1.0f - (float)boost::math::cdf(dist, R[i])) + boost::math::cdf(dist, -R[i]);
+                if ((W[i] > 1.0f) || (W[i] < 0.0f))
+                    W[i] = (1.0f - (float)boost::math::cdf(dist, -R[i])) + boost::math::cdf(dist, R[i]);
+            }
+        }
+    }
+    return out;
+};
+template <typename T> matrix<T> matrix<T>::linear_regressions::build_features(matrix const& current_best) {
+    return current_best;
+};
+
+
+
+
+
 
 void fnGpuProgramming() {
 #if 1
@@ -7738,6 +7813,21 @@ void fnGpuProgramming() {
     }
 
 #if 1
+    // basic neural-network example...
+    if (1) {
+        matrix<float> input = matrix<float>::linear(0, 100, 28 * 28, 1, 1); // say you had a 28*28 image...
+
+        // each hidden layer is defined by a weight matrix and a bias vector
+        int hidden_layer_size = 16;
+        matrix<float> hidden_layer_0_weights = matrix<float>::random_between(0.0, 1.0, hidden_layer_size, input.size(0), 1);
+        matrix<float> hidden_layer_0_bias = matrix<float>::constant(0, hidden_layer_size, 1, 1);
+
+        // you solve for the output of this layer through a simple matrix multiply and vector addition, followed by pushing it into a sigmoid function (snap back to 0-1 range, sorta)
+        matrix<float> hidden_layer_output = hidden_layer_0_weights.matrix_multiply(input) + hidden_layer_0_bias;
+        matrix<float> hidden_layer_output_sigmoid = hidden_layer_output / (1 + hidden_layer_output.abs()); // f(x) = x / (1 + abs(x))
+        // hidden_layer_output_sigmoid is the input into the next layer... 
+    }
+
     // Advertisement regression. Generally correct analysis.
     if (1) {
         /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
@@ -8134,7 +8224,7 @@ void fnGpuProgramming() {
                     while ((current->size(0) > 1) && (current->size(1) > 1)) {
                         // auto blurred = current->convolve(kernel);
                         // out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
-                        out.push_back(current->halfsize<false>()); // faster but less accurate
+                        out.push_back(current->halfsize()); // faster but less accurate
                         current = &out[out.size() - 1];
                     }
                     return out;
@@ -8182,7 +8272,6 @@ void fnGpuProgramming() {
         }
     }
 #endif
-
 
     return;
 
@@ -8947,9 +9036,3 @@ void fnGpuProgramming() {
 #endif
 #endif
 }
-
-
-
-
-
-
