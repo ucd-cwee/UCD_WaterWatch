@@ -5693,17 +5693,14 @@ struct static_matrix_kernel {
 
 template <typename T> class matrix {
 private:
-    std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>
-        memory;
+    void* // std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>
+        memory; 
     GL::GPU::dimensions 
         dim;
-    template <typename G> friend class matrix;
+    template <typename G> friend class matrix; 
 
 public:
-    auto&
-        internal_memory() {
-        return memory;
-    };
+    void*& internal_memory() { return memory; };
 
     // normal constructor
     matrix(GL::GPU::dimensions d);
@@ -6008,9 +6005,16 @@ public:
 
 
 
-template <typename T>
-static std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem(matrix<T> const& rhs) {
-    return const_cast<matrix<T>&>(rhs).internal_memory();
+
+
+
+
+
+
+
+
+template <typename T> static std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem(matrix<T> const& rhs) {
+    return reinterpret_cast<std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&>(const_cast<matrix<T>&>(rhs).internal_memory());
 };
 // N must be aligned with WORKGROUP_SIZE
 static unsigned int WorkgroupAdjustment(unsigned int N) {

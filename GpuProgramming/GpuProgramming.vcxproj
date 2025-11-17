@@ -172,6 +172,7 @@
     <ClInclude Include="Enum.h" />
     <ClInclude Include="GpuProgramming.h" />
     <ClInclude Include="kernel.hpp" />
+    <ClInclude Include="matrix.h" />
     <ClInclude Include="opencl.hpp" />
     <ClInclude Include="strings.hpp" />
     <ClInclude Include="utilities.hpp" />
