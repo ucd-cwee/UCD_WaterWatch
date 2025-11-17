@@ -2256,8 +2256,6 @@ public:
 
 	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {
-		parallel_binary_search_treeNode
-			* nxt;
 		std::pair<parallel_binary_search_treeNode*, locker>
 			out;
 		parallel_binary_search_treeNode*&

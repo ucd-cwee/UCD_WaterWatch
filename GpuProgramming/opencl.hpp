@@ -6,7 +6,9 @@
 
 // https://github.com/KhronosGroup/OpenCL-Headers
 // https://github.com/KhronosGroup/OpenCL-CLHPP
+#ifndef CL_HPP_MINIMUM_OPENCL_VERSION
 #define CL_HPP_MINIMUM_OPENCL_VERSION 100
+#endif
 #if !defined(__APPLE__) // Windows/Linux/Android
 #define CL_HPP_TARGET_OPENCL_VERSION 300 // Windows/Linux/Android can use OpenCL 3.0
 #else // macOS

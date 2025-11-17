@@ -170,7 +170,6 @@
     <ClInclude Include="BTree.h" />
     <ClInclude Include="dynamic_allocator.h" />
     <ClInclude Include="Enum.h" />
-    <ClInclude Include="GpuProgramming.h" />
     <ClInclude Include="kernel.hpp" />
     <ClInclude Include="matrix.h" />
     <ClInclude Include="opencl.hpp" />
@@ -178,7 +177,7 @@
     <ClInclude Include="utilities.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="GpuProgramming.cpp" />
+    <ClCompile Include="matrix.cpp" />
     <ClCompile Include="kernel.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
