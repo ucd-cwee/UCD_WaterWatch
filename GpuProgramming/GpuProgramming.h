@@ -368,3 +368,5 @@ namespace GL {
 };
 
 void fnGpuProgramming();
+
+#include "matrix.h"

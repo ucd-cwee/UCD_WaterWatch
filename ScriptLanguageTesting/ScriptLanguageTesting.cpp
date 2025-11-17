@@ -915,9 +915,7 @@ __forceinline void console_clear() {
 }
 
 int main() {
-    fnGpuProgramming();
-#if 0
-    // Conway's Game of Life, using the GPU.
+    // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
     if (1) {
         using namespace GL;
 
@@ -928,43 +926,18 @@ int main() {
         GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
         cursorInfo.bVisible = false;
         SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
-        
+
         int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
         float avg_framerate = 0; int avg_framerate_n = 0;
 
-        // TEST IMAGE
-        if (1) {
-            int width = 10; //       10 pix wide
-            int height = 10; //      10 pix tall
-
-            auto R = Array::linear(GL::ArrayTypes::FLOAT, 1, 2, width, height, 1);
-            auto G = Array::linear(GL::ArrayTypes::FLOAT, 3, 4, width, height, 1);
-            auto B = Array::linear(GL::ArrayTypes::FLOAT, 5, 6, width, height, 1);
-            //auto A = Array::linear(GL::ArrayTypes::FLOAT, 7, 8, width, height, 1);
-
-            auto RGBA = R/*.join(2, G).join(2, B)*/;//.join(2, A);
-            auto T = RGBA.TEST_IMAGE();
-            print(T);
-
-        }
-
         // Initialize the kernel array
-        auto kernel = Array::from_vector(ArrayTypes::UINT, std::vector<Number>{
-            1, 1, 1, 
-            1, 0, 1, 
+        matrix_kernel<unsigned int> kernel(matrix<unsigned int>::from_vector({
+            1, 1, 1,
+            1, 0, 1,
             1, 1, 1
-        },  3);
-        auto asciikernel = Array::guassian_kernel(3, 3);
-        auto asciiramp = Array::from_vector(GL::ArrayTypes::CHAR, std::vector<Number>{
-            '$', '@', 'B', '%', '8', '&', 'W', 'M', '#', '*', 'o', 'a', 'h', 'k', 'b', 'd', 'p', 'q', 'w', 'm', 'Z', 'O',
-            '0', 'Q', 'L', 'C', 'J', 'U', 'Y', 'X', 'z', 'c', 'v', 'u', 'n', 'x', 'r', 'j', 'f', 't', '/', '\\', '|',
-            '(', ')', '1', '{', '}', '[', ']', '?', '-', '_', '+', '~', '<', '>', 'i', '!', 'l', 'I', ';', ':', ',', '\"',
-            '^', '`', '\'', '.', ' '
-        });
+            }, 3));
+        auto state = (matrix<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
 
-        // Initialize the state of the world
-        auto state = (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) > 0.4f).cast(ArrayTypes::UINT);
-        
         int frame = 1;
         // Run the game of life
         for (;;) {
@@ -974,7 +947,7 @@ int main() {
                 game_w = game_w2;
                 game_h = game_h2;
 
-                state = state.resize_stretch(game_h, game_w, 1);
+                state = state.resize(game_h, game_w, 1);
 
                 avg_framerate_n = 0;
                 avg_framerate = 0;
@@ -983,7 +956,7 @@ int main() {
             GL::stopwatch sw;
 
             // Convolve aligns the kernel ontop of each pixel, multiplies the neighboring pixels by the kernel, and sums the results. The edges are correctly handled using weighted-balancing on the kernel itself.
-            auto nHood = state.convolve(kernel);
+            auto nHood = state.convolve(static_matrix_kernel<unsigned int>{ &kernel });
 
             // Generate conditions for life
             // state == 1 && nHood < 2 ->> state = 0
@@ -993,98 +966,118 @@ int main() {
             auto C0 = (nHood == 2);
             auto C1 = (nHood == 3);
 
-            auto a0 = (state == 1) && (nHood < 2);  // Die of under population
-            auto a1 = (state > 0) && (C0 || C1);   // Continue to live
-            auto a2 = (state <= 0) && C1;           // Reproduction
-            auto a3 = (state == 1) && (nHood > 3);  // Over-population
+            //auto a0 = (state == 1) && (nHood < 2);  // Die of under population
+            //auto a1 = (state > 0) && (C0 || C1);   // Continue to live
+            //auto a2 = (state <= 0) && C1;           // Reproduction
+            //auto a3 = (state == 1) && (nHood > 3);  // Over-population
 
             // display = (a0 + a1).join(2, a1 + a2).join(2, a3).cast(ArrayTypes::FLOAT);
-            auto R = a0 * a1;
-            auto G = a1 * a2;
-            auto B = a3;
+            //auto R = a0 * a1;
+            //auto G = a1 * a2;
+            //auto B = a3;
 
             // Update state
-            state *= C0.cast(ArrayTypes::UINT);
-            state += C1.cast(ArrayTypes::UINT);
+            state *= C0.cast<unsigned int>();
+            state += C1.cast<unsigned int>();
 
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
-            print(state.ASCII().to_string({}, true));
-#if 0
+            // print(state.ASCII().to_string({}, true));
 #if 1
-            auto statef = state.cast(ArrayTypes::FLOAT);
-            auto blur_1 = statef.convolve(Array::guassian_kernel(3, 3));
-            auto blur_2 = blur_1.convolve(Array::guassian_kernel(7, 7));
-            auto blur_3 = blur_2.convolve(Array::guassian_kernel(11, 11));
-            auto blur_4 = blur_3.convolve(Array::guassian_kernel(25, 25));
-            auto blur_5 = blur_4.convolve(Array::guassian_kernel(53, 53));
+#if 0
+            auto statef = state.cast<float>();
+            auto blur_1 = statef.convolve(matrix<float>::guassian_kernel(3, 3));
+            auto blur_2 = blur_1.convolve(matrix<float>::guassian_kernel(7, 7));
+            auto blur_3 = blur_2.convolve(matrix<float>::guassian_kernel(11, 11));
+            auto blur_4 = blur_3.convolve(matrix<float>::guassian_kernel(23, 23));
+            auto blur_5 = blur_4.convolve(matrix<float>::guassian_kernel(53, 53));
             print((statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true));
 #else
-            auto original = state.copy().resize(game_h / 3, game_w, 1);
-            auto correct_blur = state.convolve(Array::guassian_kernel(5, 5)).resize(game_h / 3, game_w, 1);
-            auto rough_blur = state.quartersize(false).quadruplesize().resize(game_h / 3, game_w, 1);
-            print(original.ASCII().join(0, correct_blur.ASCII()).join(0, rough_blur.ASCII()).to_string({}, true));
-#endif
-#endif
+            //// column position (0 to game_w)
+            //auto col_pos = (matrix<float>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) / (float)game_h2).floor().cast<unsigned int>();
 
-            state += ((state > 0).cast(ArrayTypes::FLOAT).convolve(Array::guassian_kernel(7, 7)) * (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.995f).cast(ArrayTypes::FLOAT)).cast(ArrayTypes::UINT);
-            if (1) {
-                auto temp{ state.min(1) };
-                state = temp;
-            }
+            //// row position (0 to game_h)
+            //auto row_pos = (matrix<unsigned int>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) % game_h2);            
+            //// UV coordinates for the screen
+            //auto screen_U = col_pos.cast<float>() / (float)game_w2;
+            //auto screen_V = row_pos.cast<float>() / (float)game_h2;
 
-            // add random chance for life to spawn anywhere. 
-            //if ((int)state.sum() <= (game_w * game_h) / 20) {
-            //    state += (Array::random(ArrayTypes::FLOAT, game_h, game_w, 1) >= 0.99f).cast(ArrayTypes::UINT);
-            //    if (1) {
-            //        auto temp{ state.min(1) };
-            //        state = temp;
-            //    }
-            //}
+            //matrix<float>::test_vector(100);
+            //matrix<float>::test_vector(1000);
+            //matrix<float>::test_vector(10000);
+            //matrix<float>::test_vector(100000);
+            //matrix<float>::test_vector(1000000);
 
-            // meanwhile, demonstrate performing a linear regression...
-            // Advertisement regression. Generally correct analysis.
-            if (0) {
-                /*          Coefficients    Standard Error	t Stat	        P-value	        Lower 95%	    Upper 95%
-                Intercept	4.625124079	    0.307501165	    15.04099695	    1.68268E-34	    4.018688356	    5.231559801
-                TV	        0.05444578	    0.001375188	    39.59152448	    1.89294E-95	    0.051733716	    0.057157845
-                Radio	    0.107001228	    0.008489563	    12.60385655	    4.6021E-27	    0.090258612	    0.123743844
-                Newspaper	0.000335658	    0.005788056	    0.057991479	    0.953814495	    -0.011079206	0.011750522
-                */
-                auto TV_Ads = GL::Array::from_vector(GL::ArrayTypes::FLOAT, std::vector<GL::Number>{
-                    230.1, 44.5, 17.2, 151.5, 180.8, 8.7, 57.5, 120.2, 8.6, 199.8, 66.1, 214.7, 23.8, 97.5, 204.1, 195.4, 67.8, 281.4, 69.2, 147.3, 218.4, 237.4, 13.2, 228.3, 62.3, 262.9, 142.9, 240.1, 248.8, 70.6, 292.9, 112.9, 97.2, 265.6, 95.7, 290.7, 266.9, 74.7, 43.1, 228.0, 202.5, 177.0, 293.6, 206.9, 25.1, 175.1, 89.7, 239.9, 227.2, 66.9, 199.8, 100.4, 216.4, 182.6, 262.7, 198.9, 7.3, 136.2, 210.8, 210.7, 53.5, 261.3, 239.3, 102.7, 131.1, 69.0, 31.5, 139.3, 237.4, 216.8, 199.1, 109.8, 26.8, 129.4, 213.4, 16.9, 27.5, 120.5, 5.4, 116.0, 76.4, 239.8, 75.3, 68.4, 213.5, 193.2, 76.3, 110.7, 88.3, 109.8, 134.3, 28.6, 217.7, 250.9, 107.4, 163.3, 197.6, 184.9, 289.7, 135.2, 222.4, 296.4, 280.2, 187.9, 238.2, 137.9, 25.0, 90.4, 13.1, 255.4, 225.8, 241.7, 175.7, 209.6, 78.2, 75.1, 139.2, 76.4, 125.7, 19.4, 141.3, 18.8, 224.0, 123.1, 229.5, 87.2, 7.8, 80.2, 220.3, 59.6, .7, 265.2, 8.4, 219.8, 36.9, 48.3, 25.6, 273.7, 43.0, 184.9, 73.4, 193.7, 220.5, 104.6, 96.2, 140.3, 240.1, 243.2, 38.0, 44.7, 280.7, 121.0, 197.6, 171.3, 187.8, 4.1, 93.9, 149.8, 11.7, 131.7, 172.5, 85.7, 188.4, 163.5, 117.2, 234.5, 17.9, 206.8, 215.4, 284.3, 50.0, 164.5, 19.6, 168.4, 222.4, 276.9, 248.4, 170.2, 276.7, 165.6, 156.6, 218.5, 56.2, 287.6, 253.8, 205.0, 139.5, 191.1, 286.0, 18.7, 39.5, 75.5, 17.2, 166.8, 149.7, 38.2, 94.2, 177.0, 283.6, 232.1
-                });
-                auto Radio_Ads = GL::Array::from_vector(GL::ArrayTypes::FLOAT, std::vector<GL::Number>{
-                    37.8, 39.3, 45.9, 41.3, 10.8, 48.9, 32.8, 19.6, 2.1, 2.6, 5.8, 24.0, 35.1, 7.6, 32.9, 47.7, 36.6, 39.6, 20.5, 23.9, 27.7, 5.1, 15.9, 16.9, 12.6, 3.5, 29.3, 16.7, 27.1, 16.0, 28.3, 17.4, 1.5, 20.0, 1.4, 4.1, 43.8, 49.4, 26.7, 37.7, 22.3, 33.4, 27.7, 8.4, 25.7, 22.5, 9.9, 41.5, 15.8, 11.7, 3.1, 9.6, 41.7, 46.2, 28.8, 49.4, 28.1, 19.2, 49.6, 29.5, 2.0, 42.7, 15.5, 29.6, 42.8, 9.3, 24.6, 14.5, 27.5, 43.9, 30.6, 14.3, 33.0, 5.7, 24.6, 43.7, 1.6, 28.5, 29.9, 7.7, 26.7, 4.1, 20.3, 44.5, 43.0, 18.4, 27.5, 40.6, 25.5, 47.8, 4.9, 1.5, 33.5, 36.5, 14.0, 31.6, 3.5, 21.0, 42.3, 41.7, 4.3, 36.3, 10.1, 17.2, 34.3, 46.4, 11.0, .3, .4, 26.9, 8.2, 38.0, 15.4, 20.6, 46.8, 35.0, 14.3, .8, 36.9, 16.0, 26.8, 21.7, 2.4, 34.6, 32.3, 11.8, 38.9, .0, 49.0, 12.0, 39.6, 2.9, 27.2, 33.5, 38.6, 47.0, 39.0, 28.9, 25.9, 43.9, 17.0, 35.4, 33.2, 5.7, 14.8, 1.9, 7.3, 49.0, 40.3, 25.8, 13.9, 8.4, 23.3, 39.7, 21.1, 11.6, 43.5, 1.3, 36.9, 18.4, 18.1, 35.8, 18.1, 36.8, 14.7, 3.4, 37.6, 5.2, 23.6, 10.6, 11.6, 20.9, 20.1, 7.1, 3.4, 48.9, 30.2, 7.8, 2.3, 10.0, 2.6, 5.4, 5.7, 43.0, 21.3, 45.1, 2.1, 28.7, 13.9, 12.1, 41.1, 10.8, 4.1, 42.0, 35.6, 3.7, 4.9, 9.3, 42.0, 8.6
-                });
-                auto Newspaper_Ads = GL::Array::from_vector(GL::ArrayTypes::FLOAT, std::vector<GL::Number>{
-                    69.2, 45.1, 69.3, 58.5, 58.4, 75.0, 23.5, 11.6, 1.0, 21.2, 24.2, 4.0, 65.9, 7.2, 46.0, 52.9, 114.0, 55.8, 18.3, 19.1, 53.4, 23.5, 49.6, 26.2, 18.3, 19.5, 12.6, 22.9, 22.9, 40.8, 43.2, 38.6, 30.0, .3, 7.4, 8.5, 5.0, 45.7, 35.1, 32.0, 31.6, 38.7, 1.8, 26.4, 43.3, 31.5, 35.7, 18.5, 49.9, 36.8, 34.6, 3.6, 39.6, 58.7, 15.9, 60.0, 41.4, 16.6, 37.7, 9.3, 21.4, 54.7, 27.3, 8.4, 28.9, .9, 2.2, 10.2, 11.0, 27.2, 38.7, 31.7, 19.3, 31.3, 13.1, 89.4, 20.7, 14.2, 9.4, 23.1, 22.3, 36.9, 32.5, 35.6, 33.8, 65.7, 16.0, 63.2, 73.4, 51.4, 9.3, 33.0, 59.0, 72.3, 10.9, 52.9, 5.9, 22.0, 51.2, 45.9, 49.8, 100.9, 21.4, 17.9, 5.3, 59.0, 29.7, 23.2, 25.6, 5.5, 56.5, 23.2, 2.4, 10.7, 34.5, 52.7, 25.6, 14.8, 79.2, 22.3, 46.2, 50.4, 15.6, 12.4, 74.2, 25.9, 50.6, 9.2, 3.2, 43.1, 8.7, 43.0, 2.1, 45.1, 65.6, 8.5, 9.3, 59.7, 20.5, 1.7, 12.9, 75.6, 37.9, 34.4, 38.9, 9.0, 8.7, 44.3, 11.9, 20.6, 37.0, 48.7, 14.2, 37.7, 9.5, 5.7, 50.5, 24.3, 45.2, 34.6, 30.7, 49.3, 25.6, 7.4, 5.4, 84.8, 21.6, 19.4, 57.6, 6.4, 18.4, 47.4, 17.0, 12.8, 13.1, 41.8, 20.3, 35.2, 23.7, 17.6, 8.3, 27.4, 29.7, 71.8, 30.0, 19.6, 26.6, 18.2, 3.7, 23.4, 5.8, 6.0, 31.6, 3.6, 6.0, 13.8, 8.1, 6.4, 66.2, 8.7
-                });
-                auto Sales_Revenue = GL::Array::from_vector(GL::ArrayTypes::FLOAT, std::vector<GL::Number>{
-                    22.1, 10.4, 12.0, 16.5, 17.9, 7.2, 11.8, 13.2, 4.8, 15.6, 12.6, 17.4, 9.2, 13.7, 19.0, 22.4, 12.5, 24.4, 11.3, 14.6, 18.0, 17.5, 5.6, 20.5, 9.7, 17.0, 15.0, 20.9, 18.9, 10.5, 21.4, 11.9, 13.2, 17.4, 11.9, 17.8, 25.4, 14.7, 10.1, 21.5, 16.6, 17.1, 20.7, 17.9, 8.5, 16.1, 10.6, 23.2, 19.8, 9.7, 16.4, 10.7, 22.6, 21.2, 20.2, 23.7, 5.5, 13.2, 23.8, 18.4, 8.1, 24.2, 20.7, 14.0, 16.0, 11.3, 11.0, 13.4, 18.9, 22.3, 18.3, 12.4, 8.8, 11.0, 17.0, 8.7, 6.9, 14.2, 5.3, 11.0, 11.8, 17.3, 11.3, 13.6, 21.7, 20.2, 12.0, 16.0, 12.9, 16.7, 14.0, 7.3, 19.4, 22.2, 11.5, 16.9, 16.7, 20.5, 25.4, 17.2, 16.7, 23.8, 19.8, 19.7, 20.7, 15.0, 7.2, 12.0, 5.3, 19.8, 18.4, 21.8, 17.1, 20.9, 14.6, 12.6, 12.2, 9.4, 15.9, 6.6, 15.5, 7.0, 16.6, 15.2, 19.7, 10.6, 6.6, 11.9, 24.7, 9.7, 1.6, 17.7, 5.7, 19.6, 10.8, 11.6, 9.5, 20.8, 9.6, 20.7, 10.9, 19.2, 20.1, 10.4, 12.3, 10.3, 18.2, 25.4, 10.9, 10.1, 16.1, 11.6, 16.6, 16.0, 20.6, 3.2, 15.3, 10.1, 7.3, 12.9, 16.4, 13.3, 19.9, 18.0, 11.9, 16.9, 8.0, 17.2, 17.1, 20.0, 8.4, 17.5, 7.6, 16.7, 16.5, 27.0, 20.2, 16.7, 16.8, 17.6, 15.5, 17.2, 8.7, 26.2, 17.6, 22.6, 10.3, 17.3, 20.9, 6.7, 10.8, 11.9, 5.9, 19.6, 17.3, 7.6, 14.0, 14.8, 25.5, 18.4
-                });
 
-                // TV_Ads = TV_Ads.grow_by_wrapping(1000000);
-                // Radio_Ads = Radio_Ads.grow_by_wrapping(1000000);
-                // Newspaper_Ads = Newspaper_Ads.grow_by_wrapping(1000000);
-                // Sales_Revenue = Sales_Revenue.grow_by_wrapping(1000000);
+            class MatrixImage {
+            public:
+                std::vector<matrix<float>> mip_maps;
+                MatrixImage() : mip_maps() {};
+                MatrixImage(matrix<float> const& srce) : mip_maps(calculate_mip_maps(srce)) {};
+                MatrixImage(MatrixImage const&) = default;
+                MatrixImage(MatrixImage&&) = default;
+                MatrixImage& operator=(MatrixImage const&) = default;
+                MatrixImage& operator=(MatrixImage&&) = default;
+                ~MatrixImage() = default;
 
-                auto Basic{
-                    GL::Array::constant(GL::ArrayTypes::FLOAT, 1, Sales_Revenue.size(0))
+                matrix<float> debug_display() const {
+                    matrix<float> out = mip_maps[0];
+                    for (int i = 1; i < mip_maps.size(); ++i) {
+                        out = out.join(1, mip_maps[i].resize(mip_maps[0].size(0), mip_maps[i].size(1) + 16, 1));
+                    }
+                    return out;
                 };
-                auto features = GL::linear_regression::build_features( // double-checks and removes colinearity
-                    Basic, TV_Ads, Radio_Ads, Newspaper_Ads
-                );
-                auto weights = GL::linear_regression::solve_for_weights(Sales_Revenue, features);
-                auto std_err = GL::linear_regression::standard_error(Sales_Revenue, features, weights);
-                auto std_dev = GL::linear_regression::standard_deviation(Sales_Revenue, features, weights);
-                auto t_stat = GL::linear_regression::t_statistic(weights, std_err);
-                auto p_value = GL::linear_regression::p_value(features, t_stat);
-                auto lower_95 = weights - (1.96 * std_err);
-                auto upper_95 = weights + (1.96 * std_err);
-                auto prediction = GL::linear_regression::predict(features, weights);
-            }
+                matrix<float> sum() const {
+                    std::vector<matrix<float>> mips;
+                    matrix<float> out = mip_maps[0];
+                    for (int i = 1; i < mip_maps.size(); ++i) {
+                        mips.emplace_back(mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1));
+                        out += mips[mips.size() - 1];
+                    }
+                    return out;
+                };
+
+            private:
+                static std::vector<matrix<float>> calculate_mip_maps(matrix<float> const& srce) {
+                    std::vector<matrix<float>> out;
+                    const matrix<float>* current = &srce;
+                    out.push_back(*current);
+                    auto kernel = matrix<float>::guassian_kernel<3, 3>();
+                    while ((current->size(0) > 1) && (current->size(1) > 1)) {
+                        // auto blurred = current->convolve(kernel);
+                        // out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+                        out.push_back(current->halfsize()); // faster but less accurate
+                        current = &out[out.size() - 1];
+                    }
+                    return out;
+                };
+
+            };
+
+            MatrixImage img(state.cast<float>());
+            //img.debug_display();
+            print(img.sum().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
+
+            //MatrixImage img2(img.sum());
+            //print(img2.debug_display().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
+
+
+
+            //auto texture_y = (screen_U * (float)I5.size(1)).cast<unsigned int>().min(I5.size(1) - 1);
+            //auto texture_x = (screen_V * (float)I5.size(0)).cast<unsigned int>().min(I5.size(0) - 1);
+            //auto texture_N = ((texture_y * I5.size(0)) + texture_x).min((I5.size(1) * I5.size(0)) - 1);
+            //auto scaled = I5.resample(texture_N);
+
+            //auto A = state.resize(game_h2 / 3, game_w2, 1);
+            //auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h2 / 3, game_w2, 1);
+            //auto C = state.halfsize<false>().doublesize().resize(game_h2 / 3, game_w2, 1);
+            //auto print_me = A.ASCII().join(0, B.ASCII()).join(0, C.ASCII());
+            //print(print_me.to_string({}, true));
+#endif
+#endif
+            // state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel<7,7>()) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
+            // state = state.min(1);
 
             print("");
 
@@ -1092,35 +1085,17 @@ int main() {
             avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
             avg_framerate += (float)((float)(1.0 / sw.stop()) / (float)avg_framerate_n);
 
-            print(std::to_string(avg_framerate) + " fps");
-
-            // limit refresh to 60 fps
+            print(std::to_string(avg_framerate) + " fps     ");
             std::cout << std::flush;
+
+            //while (sw.stop() < 1.0 / 60.0) {
+                // std::this_thread::yield();
+            //}
+
         }
     }
-#endif
 
-    // arrayfire. This does not currently work without explicitely installing the arrayFire installer (yet).  
-    // Some success was found by using OpenCL. 
-    if (1) {
-        print(af::getDevice());
-        print(af::getDeviceCount());
-        af::info();
-
-        using namespace GPU;
-        print(matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }).to_string());
-        print((matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }) + 2.0f).to_string());
-
-        print((matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f }) * matrix<float>::from_vector({ 0.0f, 1.0f, 2.0f, 3.0f })).to_string());
-
-        matrix<int> two_by_four_matrix = matrix<int>::from_vector({ 0, 1, 2, 3, 4, 5, 6, 7 });
-        print((two_by_four_matrix % 2).to_string());
-
-        //(void)arrayfire_conway_game_of_life();
-        //(void)arrayfire_shallow_water();
-        //(void)arrayfire_fields();
-        (void)arrayfire_linear_regression();
-    }
+    fnGpuProgramming();
 
     GL::parallel::For(0, 1000000, [&](size_t i) {});
     GL::parallel::Std_For(0, 1000000, [&](size_t i) {});
