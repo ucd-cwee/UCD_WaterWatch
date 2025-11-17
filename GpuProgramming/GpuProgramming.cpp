@@ -5693,13 +5693,18 @@ struct static_matrix_kernel {
 
 template <typename T> class matrix {
 private:
-    std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> 
-        mem;
+    std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>
+        memory;
     GL::GPU::dimensions 
         dim;
     template <typename G> friend class matrix;
 
 public:
+    auto&
+        internal_memory() {
+        return memory;
+    };
+
     // normal constructor
     matrix(GL::GPU::dimensions d);
     // normal constructor
@@ -5709,7 +5714,7 @@ public:
     // copy another, existing matrix into this. Does not take or share ownership.
     matrix(matrix const& rhs);
     // move another, temporary matrix into this, taking ownership of data.
-    matrix(matrix&& rhs) noexcept = default;
+    matrix(matrix&& rhs) noexcept;
     matrix& operator=(matrix const& rhs);
     matrix& operator=(matrix&& rhs) noexcept;
     ~matrix();
@@ -6003,8 +6008,10 @@ public:
 
 
 
-
-
+template <typename T>
+static std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem(matrix<T> const& rhs) {
+    return const_cast<matrix<T>&>(rhs).internal_memory();
+};
 // N must be aligned with WORKGROUP_SIZE
 static unsigned int WorkgroupAdjustment(unsigned int N) {
     return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
@@ -6034,23 +6041,32 @@ static void mem_free(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>
 };
 template <typename T> matrix<T>::matrix(GL::GPU::dimensions d)
     : dim{ d }
-    , mem(mem_matrix::make_unique_single< mem_matrix>(sizeof(T)* WorkgroupAdjustment(d.X* d.Y* d.Z), false, true))
-{};
+    , memory(nullptr)
+{
+    mem(*this) = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(d.X * d.Y * d.Z), false, true);
+};
 template <typename T> matrix<T>::matrix(unsigned int X, unsigned int Y, unsigned int Z, bool cpu_only)
     : dim{ X, Y, Z }
-    , mem(mem_matrix::make_unique_single< mem_matrix>(sizeof(T)* WorkgroupAdjustment(X* Y* Z), cpu_only, !cpu_only))
-{};
+    , memory(nullptr)
+{
+    mem(*this) = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(X * Y * Z), cpu_only, !cpu_only);
+};
 template <typename T> matrix<T>::matrix()
     : dim{ 0, 0, 0 }
-    , mem()
+    , memory(nullptr)
 {}
+template <typename T> matrix<T>::matrix(matrix&& rhs) noexcept : dim{ std::move(rhs.dim) }, memory(nullptr) {
+    mem(*this) = std::move(mem(rhs));
+    mem(rhs) = nullptr;
+};
 template <typename T> matrix<T>::matrix(matrix const& rhs)
     : dim{ rhs.dim }
-    , mem(mem_matrix::make_unique_single< mem_matrix>(sizeof(T)* WorkgroupAdjustment(rhs.dim.count()), (bool)rhs.mem->cpu_memory, (bool)rhs.mem->gpu_memory))
+    , memory(nullptr)
 {
+    mem(*this) = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(rhs.dim.count()), (bool)mem(rhs)->cpu_memory, (bool)mem(rhs)->gpu_memory);
     mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs.mem
+        mem(*this), mem(rhs)
     );
 };
 template <typename T> matrix<T>& matrix<T>::operator=(matrix const& rhs) {
@@ -6058,21 +6074,21 @@ template <typename T> matrix<T>& matrix<T>::operator=(matrix const& rhs) {
     auto mem2 = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(rhs.dim.count()), false, true);
     mem_matrix::queue_gpu_work(GL::string("copy") + GL::string(opencl_impl::type_name<T>()),
         rhs.dim.count(),
-        mem2, rhs.mem
+        mem2, mem(rhs)
     );
-    mem_free(mem);
-    mem = std::move(mem2);
+    mem_free(mem(*this));
+    mem(*this) = std::move(mem2);
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator=(matrix && rhs) noexcept {
-    mem_free(mem);
+    mem_free(mem(*this));
     dim = rhs.dim;
-    mem = std::move(rhs.mem);
-    rhs.mem = nullptr;
+    mem(*this) = std::move(mem(rhs));
+    mem(rhs) = nullptr;
     return *this;
 };
 template <typename T> matrix<T>::~matrix() {
-    mem_free(mem);
+    mem_free(mem(*this));
 };
 template <typename T> unsigned int matrix<T>::size() const {
     return dim.count();
@@ -6086,10 +6102,10 @@ template <typename T> unsigned int matrix<T>::size(unsigned int d) const {
     }
 };
 template <typename T> matrix<T>::reader::reader(matrix<T>& copy, GL::GPU::dimensions const& D) : data{ nullptr }, dim(D) {
-    if (copy.mem->gpu_memory) {
+    if (mem(copy)->gpu_memory) {
         if (mem_matrix::get_program().info.svm_memory_allowed) {
             data = std::shared_ptr<T[]>(
-                (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                (T*)::clSVMAlloc(mem(copy)->program().get_cl_context().get(), CL_MEM_READ_WRITE,
                     sizeof(T) * WorkgroupAdjustment(dim.count())
                     , WORKGROUP_SIZE),
                 [](T* p) {
@@ -6098,20 +6114,20 @@ template <typename T> matrix<T>::reader::reader(matrix<T>& copy, GL::GPU::dimens
             );
             mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                 dim.count(),
-                data, copy.mem, (unsigned int)0
+                data, mem(copy), (unsigned int)0
             );
-            copy.mem->events.clear();
+            mem(copy)->events.clear();
         }
         else {
-            copy.mem->ensure_host_mem_exists();
-            copy.mem->read_from_device();
-            data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
+            mem(copy)->ensure_host_mem_exists();
+            mem(copy)->read_from_device();
+            data = std::shared_ptr<T[]>(mem(copy)->cpu_data<T>(), [](T*) { /* do nothing */ });
         }
     }
     else {
-        copy.mem->ensure_host_mem_exists();
-        copy.mem->read_from_device();
-        data = std::shared_ptr<T[]>(copy.mem->cpu_data<T>(), [](T*) { /* do nothing */ });
+        mem(copy)->ensure_host_mem_exists();
+        mem(copy)->read_from_device();
+        data = std::shared_ptr<T[]>(mem(copy)->cpu_data<T>(), [](T*) { /* do nothing */ });
     }
 };
 template <typename T> matrix<T>::reader::reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
@@ -6129,14 +6145,14 @@ template <typename T> std::shared_ptr<T[]> matrix<T>::reader::get() const {
 };
 template <typename T> matrix<T>::writer::writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only) : gpu_cpu_data{ nullptr }, cpu_data{ nullptr }, data(&copy), dim(D), _cpu_only(cpu_only) {
     if (_cpu_only) {
-        data->mem->ensure_host_mem_exists();
-        data->mem->read_from_device();
-        cpu_data = data->mem->cpu_data<T>();
+        mem(*data)->ensure_host_mem_exists();
+        mem(*data)->read_from_device();
+        cpu_data = mem(*data)->cpu_data<T>();
     }
     else {
         if (mem_matrix::get_program().info.svm_memory_allowed) {
             gpu_cpu_data = std::shared_ptr<T[]>(
-                (T*)::clSVMAlloc(copy.mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                (T*)::clSVMAlloc(mem(copy)->program().get_cl_context().get(), CL_MEM_READ_WRITE,
                     sizeof(T) * WorkgroupAdjustment(dim.count())
                     , WORKGROUP_SIZE),
                 [](T* p) {
@@ -6145,14 +6161,14 @@ template <typename T> matrix<T>::writer::writer(matrix<T>& copy, GL::GPU::dimens
             );
             mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                 dim.count(),
-                gpu_cpu_data, copy.mem, (unsigned int)0
+                gpu_cpu_data, mem(copy), (unsigned int)0
             );
-            copy.mem->events.clear();
+            mem(copy)->events.clear();
         }
         else {
-            data->mem->ensure_host_mem_exists();
-            data->mem->read_from_device();
-            cpu_data = data->mem->cpu_data<T>();
+            mem(*data)->ensure_host_mem_exists();
+            mem(*data)->read_from_device();
+            cpu_data = mem(*data)->cpu_data<T>();
         }
     }
 };
@@ -6165,17 +6181,17 @@ template <typename T> matrix<T>::writer::writer(writer&& rhs) noexcept : gpu_cpu
 };
 template <typename T> matrix<T>::writer::~writer() {
     if (data) {
-        if (_cpu_only && cpu_data) data->mem->write_to_device();
+        if (_cpu_only && cpu_data) mem(*data)->write_to_device();
         else {
             if (mem_matrix::get_program().info.svm_memory_allowed) {
                 mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                     dim.count(),
-                    data->mem, gpu_cpu_data, (unsigned int)0
+                    mem(*data), gpu_cpu_data, (unsigned int)0
                 );
-                data->mem->events.clear();
+                mem(*data)->events.clear();
             }
             else {
-                data->mem->write_to_device();
+                mem(*data)->write_to_device();
             }
 
 
@@ -6231,63 +6247,63 @@ template <typename T>  typename matrix<T>::writer  matrix<T>::write(bool cpu_onl
 template <typename T> matrix<T>& matrix<T>::operator=(T rhs) {
     mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs
+        mem(*this), rhs
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator+=(T rhs) {
     mem_matrix::queue_gpu_work(GL::string("add_single_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs
+        mem(*this), rhs
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator-=(T rhs) {
     mem_matrix::queue_gpu_work(GL::string("sub_single_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs
+        mem(*this), rhs
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator*=(T rhs) {
     mem_matrix::queue_gpu_work(GL::string("mult_single_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs
+        mem(*this), rhs
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator/=(T rhs) {
     mem_matrix::queue_gpu_work(GL::string("divide_single_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs
+        mem(*this), rhs
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator+=(matrix const& rhs) {
     mem_matrix::queue_gpu_work(GL::string("add_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs.mem
+        mem(*this), mem(rhs)
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator-=(matrix const& rhs) {
     mem_matrix::queue_gpu_work(GL::string("sub_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs.mem
+        mem(*this), mem(rhs)
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator*=(matrix const& rhs) {
     mem_matrix::queue_gpu_work(GL::string("mult_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs.mem
+        mem(*this), mem(rhs)
     );
     return *this;
 };
 template <typename T> matrix<T>& matrix<T>::operator/=(matrix const& rhs) {
     mem_matrix::queue_gpu_work(GL::string("divide_inplace") + GL::string(opencl_impl::type_name<T>()),
         dim.count(),
-        mem, rhs.mem
+        mem(*this), mem(rhs)
     );
     return *this;
 };
@@ -6295,7 +6311,7 @@ template <typename U> matrix<U> operator+(matrix<U> const& lhs, matrix<U> const&
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("add") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6303,7 +6319,7 @@ template <typename U> matrix<U> operator-(matrix<U> const& lhs, matrix<U> const&
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("sub") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6311,7 +6327,7 @@ template <typename U> matrix<U> operator*(matrix<U> const& lhs, matrix<U> const&
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("mult") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6319,7 +6335,7 @@ template <typename U> matrix<U> operator/(matrix<U> const& lhs, matrix<U> const&
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("divide") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6327,7 +6343,7 @@ template <typename U> matrix<U> operator+(matrix<U> const& lhs, U rhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("add_single") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6335,7 +6351,7 @@ template <typename U> matrix<U> operator-(matrix<U> const& lhs, U rhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("sub_single") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6343,7 +6359,7 @@ template <typename U> matrix<U> operator*(matrix<U> const& lhs, U rhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("mult_single") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6351,7 +6367,7 @@ template <typename U> matrix<U> operator/(matrix<U> const& lhs, U rhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("divide_single") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6359,7 +6375,7 @@ template <typename U> matrix<U> operator+(U rhs, matrix<U> const& lhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("add_single") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6367,7 +6383,7 @@ template <typename U> matrix<U> operator-(U rhs, matrix<U> const& lhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("sub_single_inv") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6375,7 +6391,7 @@ template <typename U> matrix<U> operator*(U rhs, matrix<U> const& lhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("mult_single") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6383,7 +6399,7 @@ template <typename U> matrix<U> operator/(U rhs, matrix<U> const& lhs) {
     auto out = matrix<U>(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("divide_single_inv") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs, out.mem
+        mem(lhs), rhs, mem(out)
     );
     return out;
 };
@@ -6396,7 +6412,7 @@ template <typename T> template<typename G> matrix<G> matrix<T>::cast() const {
         auto out = matrix<G>(this->dim);
         mem_matrix::queue_gpu_work(CastFunc + GL::string(opencl_impl::type_name<G>()),
             out.size(),
-            out.mem, mem
+            mem(out), mem(*this)
         );
         return out;
     }
@@ -6406,7 +6422,7 @@ template <typename T> matrix<T> matrix<T>::random(unsigned int X, unsigned int Y
         matrix out(X, Y, Z);
         mem_matrix::queue_gpu_work(GL::string("Rand") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem
+            mem(out)
         );
         return out;
     }
@@ -6419,7 +6435,7 @@ template <typename T> matrix<T> matrix<T>::random_between(T lower, T upper, unsi
         matrix out(GL::GPU::dimensions{ X, Y, Z });
         mem_matrix::queue_gpu_work(GL::string("Rand") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem
+            mem(out)
         );
         out *= (upper - lower);
         out += lower;
@@ -6433,7 +6449,7 @@ template <typename T> matrix<T> matrix<T>::identity(unsigned int width) {
     matrix out(GL::GPU::dimensions{ width, width, 1 });
     mem_matrix::queue_gpu_work(GL::string("identity") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, width
+        mem(out), width
     );
     return out;
 };
@@ -6441,7 +6457,7 @@ template <typename T> matrix<T> matrix<T>::linear(T low, T high, unsigned int le
     matrix out(GL::GPU::dimensions{ lenX, lenY, lenZ });
     mem_matrix::queue_gpu_work(GL::string("linear_between") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, low, high, out.size()
+        mem(out), low, high, out.size()
     );
     return out;
 };
@@ -6449,7 +6465,7 @@ template <typename T> matrix<T> matrix<T>::constant(T value, unsigned int lenX, 
     matrix out(GL::GPU::dimensions{ lenX, lenY, lenZ });
     mem_matrix::queue_gpu_work(GL::string("copy_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, value
+        mem(out), value
     );
     return out;
 };
@@ -6473,7 +6489,7 @@ template <typename T> matrix<T> matrix<T>::pown(matrix<int> const& rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("power_n") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs.mem, out.mem
+        mem(*this), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6482,7 +6498,7 @@ template <typename T> matrix<T> matrix<T>::pow(matrix const& rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("power") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs.mem, out.mem
+        mem(*this), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6490,7 +6506,7 @@ template <typename T> matrix<T> matrix<T>::pown(int rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("power_n_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6499,7 +6515,7 @@ template <typename T> matrix<T> matrix<T>::pow(T rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("power_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6507,7 +6523,7 @@ template <typename T> matrix<float> matrix<T>::sqrt() const {
     matrix<float> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("square_root") + GL::string(opencl_impl::type_name<float>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6516,7 +6532,7 @@ template <typename T> matrix<T> matrix<T>::round() const {
         matrix out(this->dim);
         mem_matrix::queue_gpu_work(GL::string("round") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            mem, out.mem
+            mem(*this), mem(out)
         );
         return out;
     }
@@ -6529,7 +6545,7 @@ template <typename T> matrix<T> matrix<T>::ceil() const {
         matrix out(this->dim);
         mem_matrix::queue_gpu_work(GL::string("ceil") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            mem, out.mem
+            mem(*this), mem(out)
         );
         return out;
     }
@@ -6542,7 +6558,7 @@ template <typename T> matrix<T> matrix<T>::floor() const {
         matrix out(this->dim);
         mem_matrix::queue_gpu_work(GL::string("flr") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            mem, out.mem
+            mem(*this), mem(out)
         );
         return out;
     }
@@ -6554,7 +6570,7 @@ template <typename T> matrix<T> matrix<T>::fma(matrix const& multiply, matrix co
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("mult_add") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, multiply.mem, add.mem, out.mem
+        mem(*this), mem(multiply), mem(add), mem(out)
     );
     return out;
 };
@@ -6562,7 +6578,7 @@ template <typename T> matrix<T> matrix<T>::abs() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("absolute") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6570,7 +6586,7 @@ template <typename T> matrix<T> matrix<T>::cos() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Cos") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6578,7 +6594,7 @@ template <typename T> matrix<T> matrix<T>::sin() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Sin") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6586,7 +6602,7 @@ template <typename T> matrix<T> matrix<T>::tan() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Tan") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6594,7 +6610,7 @@ template <typename T> matrix<T> matrix<T>::acos() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("aCos") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6602,7 +6618,7 @@ template <typename T> matrix<T> matrix<T>::asin() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("aSin") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6610,7 +6626,7 @@ template <typename T> matrix<T> matrix<T>::atan() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("aTan") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6618,7 +6634,7 @@ template <typename T> matrix<T> matrix<T>::cosh() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Cosh") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6626,7 +6642,7 @@ template <typename T> matrix<T> matrix<T>::sinh() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Sinh") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6634,7 +6650,7 @@ template <typename T> matrix<T> matrix<T>::tanh() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Tanh") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6642,7 +6658,7 @@ template <typename T> matrix<T> matrix<T>::acosh() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("aCosh") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6650,7 +6666,7 @@ template <typename T> matrix<T> matrix<T>::asinh() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("aSinh") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6658,7 +6674,7 @@ template <typename T> matrix<T> matrix<T>::atanh() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("aTanh") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6666,7 +6682,7 @@ template <typename T> matrix<T> matrix<T>::exp() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Exp") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6674,7 +6690,7 @@ template <typename T> matrix<T> matrix<T>::exp2() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Exp2") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6682,7 +6698,7 @@ template <typename T> matrix<T> matrix<T>::exp10() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Exp10") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6690,7 +6706,7 @@ template <typename T> matrix<T> matrix<T>::expm1() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Expm1") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6698,7 +6714,7 @@ template <typename T> matrix<T> matrix<T>::lgamma() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Lgamma") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6706,7 +6722,7 @@ template <typename T> matrix<T> matrix<T>::log() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Log") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6714,7 +6730,7 @@ template <typename T> matrix<T> matrix<T>::log2() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Log2") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6722,7 +6738,7 @@ template <typename T> matrix<T> matrix<T>::log10() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Log10") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6730,7 +6746,7 @@ template <typename T> matrix<T> matrix<T>::log1p() const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Log1p") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, out.mem
+        mem(*this), mem(out)
     );
     return out;
 };
@@ -6744,7 +6760,7 @@ template <typename T> matrix<T> matrix<T>::mod(T rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Mod_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6752,7 +6768,7 @@ template <typename T> matrix<T> matrix<T>::mod(matrix const& rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Mod") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs.mem, out.mem
+        mem(*this), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6760,7 +6776,7 @@ template<typename T> matrix<T> matrix<T>::max(matrix const& rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Max") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs.mem, out.mem
+        mem(*this), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6768,7 +6784,7 @@ template<typename T> matrix<T> matrix<T>::max(T rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Max_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6776,7 +6792,7 @@ template<typename T> matrix<T> matrix<T>::min(matrix const& rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Min") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs.mem, out.mem
+        mem(*this), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6784,7 +6800,7 @@ template<typename T> matrix<T> matrix<T>::min(T rhs) const {
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("Min_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6792,7 +6808,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator!() const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_not") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem
+        mem(out), mem(*this)
     );
     return out;
 };
@@ -6800,7 +6816,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator==(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_eq_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6808,7 +6824,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator!=(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_neq_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6816,7 +6832,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator<(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_ls_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6824,7 +6840,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator<=(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_lse_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6832,7 +6848,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator>(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_gr_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6840,7 +6856,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator>=(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_gre_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        mem, rhs, out.mem
+        mem(*this), rhs, mem(out)
     );
     return out;
 };
@@ -6848,7 +6864,7 @@ template<typename U> static matrix<unsigned int> operator==(matrix<U> const& lhs
     matrix<unsigned int> out(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("item_eq") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6856,7 +6872,7 @@ template<typename U> static matrix<unsigned int> operator!=(matrix<U> const& lhs
     matrix<unsigned int> out(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("item_neq") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6864,7 +6880,7 @@ template<typename U> static matrix<unsigned int> operator<(matrix<U> const& lhs,
     matrix<unsigned int> out(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("item_ls") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6872,7 +6888,7 @@ template<typename U> static matrix<unsigned int> operator<=(matrix<U> const& lhs
     matrix<unsigned int> out(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("item_lse") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6880,7 +6896,7 @@ template<typename U> static matrix<unsigned int> operator>(matrix<U> const& lhs,
     matrix<unsigned int> out(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("item_gr") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6888,7 +6904,7 @@ template<typename U> static matrix<unsigned int> operator>=(matrix<U> const& lhs
     matrix<unsigned int> out(lhs.dim);
     mem_matrix::queue_gpu_work(GL::string("item_gre") + GL::string(opencl_impl::type_name<U>()),
         out.size(),
-        lhs.mem, rhs.mem, out.mem
+        mem(lhs), mem(rhs), mem(out)
     );
     return out;
 };
@@ -6896,7 +6912,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator&&(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_AND_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, rhs
+        mem(out), mem(*this), rhs
     );
     return out;
 };
@@ -6904,7 +6920,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator&&(matrix const& rh
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_AND") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, rhs.mem
+        mem(out), mem(*this), mem(rhs)
     );
     return out;
 };
@@ -6912,7 +6928,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator||(T rhs) const {
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_OR_single") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, rhs
+        mem(out), mem(*this), rhs
     );
     return out;
 };
@@ -6920,7 +6936,7 @@ template<typename T> matrix<unsigned int> matrix<T>::operator||(matrix const& rh
     matrix<unsigned int> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("item_OR") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, rhs.mem
+        mem(out), mem(*this), mem(rhs)
     );
     return out;
 };
@@ -6943,19 +6959,19 @@ template <typename T> matrix<T> matrix<T>::join(unsigned int jdim, matrix const&
     if (jdim == 0) {
         mem_matrix::queue_gpu_work(GL::string("join_dim_0") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem, (unsigned int)first.dim.X
+            mem(out), mem(*this), (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, mem(first), (unsigned int)first.dim.X
         );
     }
     else if (jdim == 1) {
         mem_matrix::queue_gpu_work(GL::string("join_dim_1") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem, (unsigned int)first.dim.Y
+            mem(out), mem(*this), (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, mem(first), (unsigned int)first.dim.Y
         );
     }
     else {
         mem_matrix::queue_gpu_work(GL::string("join_dim_2") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem, this->mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, first.mem
+            mem(out), mem(*this), (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, mem(first)
         );
     }
 
@@ -6969,7 +6985,7 @@ template <typename T> matrix<T> matrix<T>::transpose() const {
     matrix out(GL::GPU::dimensions{ this->dim.Y, this->dim.X, 1 });
     mem_matrix::queue_gpu_work(GL::string("Transpose") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y
+        mem(out), mem(*this), (unsigned int)dim.X, (unsigned int)dim.Y
     );
     return out;
 };
@@ -6979,7 +6995,7 @@ template <typename T> matrix<T> matrix<T>::make_square() const {
     matrix out(GL::GPU::dimensions{ len, len, 1 });
     mem_matrix::queue_gpu_work(GL::string("make_square") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len
+        mem(out), mem(*this), (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z, (unsigned int)len
     );
     return out;
 }
@@ -6990,7 +7006,7 @@ template <typename T> matrix<T> matrix<T>::diagonal() const {
     matrix out(GL::GPU::dimensions{ std::min<unsigned int>(this->dim.X, this->dim.Y), 1, 1 });
     mem_matrix::queue_gpu_work(GL::string("diagonal") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, dim.X
+        mem(out), mem(*this), dim.X
     );
     return out;
 };
@@ -6998,7 +7014,7 @@ template <typename T> matrix<T> matrix<T>::row(unsigned int rowN) const {
     matrix out(GL::GPU::dimensions{ dim.Y, dim.Z, 1 });
     mem_matrix::queue_gpu_work(GL::string("row_of") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z
+        mem(out), mem(*this), (unsigned int)rowN, (unsigned int)dim.X, (unsigned int)dim.Y, (unsigned int)dim.Z
     );
     return out;
 };
@@ -7007,7 +7023,7 @@ template <typename T> matrix<T> matrix<T>::grow_by_wrapping(unsigned int new_len
         matrix out(GL::GPU::dimensions{ new_length, 1, 1 });
         mem_matrix::queue_gpu_work(GL::string("wrap_around") + GL::string(opencl_impl::type_name<T>()),
             out.size(),
-            out.mem, mem, (unsigned int)this->size()
+            mem(out), mem(*this), (unsigned int)this->size()
         );
         return out;
     }
@@ -7020,7 +7036,7 @@ template <typename T> matrix<T> matrix<T>::resample(matrix<unsigned int> const& 
     matrix out(sample_indices.dim);
     mem_matrix::queue_gpu_work(GL::string("resample") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, sample_indices.mem
+        mem(out), mem(*this), mem(sample_indices)
     );
     return out;
 };
@@ -7155,7 +7171,7 @@ template <typename T> T matrix<T>::sum() const {
         matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
         mem_matrix::queue_gpu_work(GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()),
             this->size(),
-            mem, Temp.mem, (unsigned int)this->size()
+            mem(*this), mem(Temp), (unsigned int)this->size()
         );
         return Temp.sum();
     }
@@ -7178,7 +7194,7 @@ template <typename T> T matrix<T>::max() const {
         matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
         mem_matrix::queue_gpu_work(GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()),
             this->size(),
-            mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::lowest()
+            mem(*this), mem(out), (unsigned int)this->size(), std::numeric_limits<T>::lowest()
         );
         return out.max();
     }
@@ -7198,7 +7214,7 @@ template <typename T> T matrix<T>::min() const {
         matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
         mem_matrix::queue_gpu_work(GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()),
             this->size(),
-            mem, out.mem, (unsigned int)this->size(), std::numeric_limits<T>::max()
+            mem(*this), mem(out), (unsigned int)this->size(), std::numeric_limits<T>::max()
         );
         return out.min();
     }
@@ -7219,7 +7235,7 @@ template <typename T> matrix<T> matrix<T>::convolve(matrix_kernel<T> const& K) c
         float kernel_tot = K.sum;
         mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
             this->size(),
-            out.mem, mem, K.mat->mem, this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
+            mem(out), mem(*this), mem(*K.mat), this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
         );
         return out;
     }
@@ -7236,7 +7252,7 @@ template <typename T> matrix<T> matrix<T>::convolve(static_matrix_kernel<T> cons
 
         mem_matrix::queue_gpu_work(GL::string("convolve") + GL::string(opencl_impl::type_name<T>()),
             this->size(),
-            out.mem, this->mem, static_mem_matrix{ &(*K.ptr->mat->mem) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
+            mem(out), mem(*this), static_mem_matrix{ &(*mem(*K.ptr->mat)) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
         );
         return out;
     }
@@ -7248,14 +7264,14 @@ template <typename T>  matrix_kernel<float> matrix<T>::guassian_kernel(unsigned 
     matrix<float> out(X, Y, 1);
     mem_matrix::queue_gpu_work(GL::string("guassian") + GL::string(opencl_impl::type_name<float>()),
         out.size(),
-        out.mem, out.size(0), out.size(1)
+        mem(out), out.size(0), out.size(1)
     );
     float V = out.sum();
     if (V == 0)
         out = 1.0f;
     else
         out *= 1.0f / V;
-    out.mem->wait_for_events();
+    mem(out)->wait_for_events();
     return matrix_kernel<float>(std::move(out));
 };
 template <typename T> matrix<char> matrix<T>::ASCII() const {
@@ -7270,14 +7286,14 @@ template <typename T> matrix<char> matrix<T>::ASCII() const {
         return chars;
     }();
     static auto ramp{ matrix<char>::from_vector(chars) };
-    ramp.mem->wait_for_events();
+    mem(ramp)->wait_for_events();
     auto thisMinV = this->min();
     auto thisMaxV = this->max();
 
     matrix<char> out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, thisMinV, thisMaxV, static_mem_matrix{ ramp.mem.get() }, ramp.size()
+        mem(out), mem(*this), thisMinV, thisMaxV, static_mem_matrix{ mem(ramp).get() }, ramp.size()
     );
     return out;
     //}
@@ -7286,7 +7302,7 @@ template <typename T> matrix<T> matrix<T>::resize(unsigned int X, unsigned int Y
     auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
     mem_matrix::queue_gpu_work(GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
+        mem(out), mem(*this), X, Y, Z, this->size(0), this->size(1), this->size(2)
     );
     return out;
 };
@@ -7294,7 +7310,7 @@ template <typename T> matrix<T> matrix<T>::resize_stretch(unsigned int X, unsign
     auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
     mem_matrix::queue_gpu_work(GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, mem, X, Y, Z, this->size(0), this->size(1), this->size(2)
+        mem(out), mem(*this), X, Y, Z, this->size(0), this->size(1), this->size(2)
     );
     return out;
 };
@@ -7302,7 +7318,7 @@ template <typename T> matrix<T> matrix<T>::subsample_1D(matrix<float> const& Flo
     matrix out(FloatingPointIndexes.dim);
     mem_matrix::queue_gpu_work(GL::string("subsample_1D") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, this->mem, FloatingPointIndexes.mem
+        mem(out), mem(*this), mem(FloatingPointIndexes)
     );
     return out;
 };
@@ -7310,7 +7326,7 @@ template <typename T> matrix<unsigned int> matrix<T>::binomial_search_smallest_g
     matrix<unsigned int> out(find.dim);
     mem_matrix::queue_gpu_work(GL::string("binomial_search_smallest_gre") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, this->mem, find.mem, this->dim.X
+        mem(out), mem(*this), mem(find), this->dim.X
     );
     return out;
 };
@@ -7318,7 +7334,7 @@ template <typename T> matrix<T> matrix<T>::subsample_pat(matrix const& X, matrix
     matrix out(this->dim);
     mem_matrix::queue_gpu_work(GL::string("subsample_pat") + GL::string(opencl_impl::type_name<T>()),
         out.size(),
-        out.mem, Y.mem, X.mem, this->mem, X.dim.X
+        mem(out), mem(Y), mem(X), mem(*this), X.dim.X
     );
     return out;
 };
@@ -7545,7 +7561,7 @@ template <typename T> std::shared_ptr<T[]> matrix<T>::slice(size_t offset, size_
             matrix<T> copier(GL::GPU::dimensions{ (unsigned int)length, 1u, 1u });
             mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                 length,
-                copier.mem, this->mem, (unsigned int)offset
+                mem(copier), mem(*this), (unsigned int)offset
             );
             slice = std::shared_ptr<T[]>(new T[length], [](T* p) { delete[] p; });
             if (auto r = copier.read()) {
@@ -7555,7 +7571,7 @@ template <typename T> std::shared_ptr<T[]> matrix<T>::slice(size_t offset, size_
         }
         else {
             slice = std::shared_ptr<T[]>(
-                (T*)::clSVMAlloc(this->mem->program().get_cl_context().get(), CL_MEM_READ_WRITE,
+                (T*)::clSVMAlloc(mem(*this)->program().get_cl_context().get(), CL_MEM_READ_WRITE,
                     sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
                     , alignment),
                 [](T* p) {
@@ -7564,9 +7580,9 @@ template <typename T> std::shared_ptr<T[]> matrix<T>::slice(size_t offset, size_
             );
             mem_matrix::queue_gpu_work(GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()),
                 length,
-                slice, this->mem, (unsigned int)offset
+                slice, mem(*this), (unsigned int)offset
             );
-            this->mem->events.clear();
+            mem(*this)->events.clear();
         }
         return slice;
     }
