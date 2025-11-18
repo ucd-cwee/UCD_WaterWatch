@@ -2209,6 +2209,8 @@ public:
             sub_buffer;
         void* // this sub-buffer may be further split. 
             parent_buffer;
+        unsigned int
+            thread_id;
         bool
             is_available;
         bool
@@ -2229,7 +2231,7 @@ public:
 private:
     GL::atomic_parallel_allocator< dynamic_block >
         block_alloc;
-    parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
+    GL::thread_object_no_default<parallel_binary_search_tree< dynamic_block, unsigned long long, 10>>
         free_tree;
     unsigned long long
         total_allocations;
@@ -2268,18 +2270,19 @@ private:
 
                         // lhs->next is no longer valid and should be removed from the list
                         if (1) {
-                            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->next->length);
+                            auto& tree = free_tree[lhs->next->thread_id];
+                            auto [tree_node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->next->length);
                             while (tree_node) {
                                 if (tree_node->object()) {
                                     if (tree_node->key == lhs->next->length) {
                                         if (tree_node->object() == lhs->next) {
                                             block_alloc.Free(tree_node->object());
-                                            free_tree.Remove(tree_node, locker);
+                                            tree.Remove(tree_node, locker);
                                             break;
                                         }
                                     }
                                 }
-                                tree_node = free_tree.GetNextLeaf(tree_node, locker);
+                                tree_node = tree.GetNextLeaf(tree_node, locker);
                             }
                         }
                         lhs->next = lhs->next->next;
@@ -2311,18 +2314,19 @@ private:
 
                         // lhs->prev is no longer valid and should be removed from the list
                         if (1) {
-                            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->prev->length);
+                            auto& tree = free_tree[lhs->prev->thread_id];
+                            auto [tree_node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->prev->length);
                             while (tree_node) {
                                 if (tree_node->object()) {
                                     if (tree_node->key == lhs->prev->length) {
                                         if (tree_node->object() == lhs->prev) {
                                             block_alloc.Free(tree_node->object());
-                                            free_tree.Remove(tree_node, locker);
+                                            tree.Remove(tree_node, locker);
                                             break;
                                         }
                                     }
                                 }
-                                tree_node = free_tree.GetNextLeaf(tree_node, locker);
+                                tree_node = tree.GetNextLeaf(tree_node, locker);
                             }
                         }
 
@@ -2368,20 +2372,23 @@ public:
 
         if (1) {
             // try to get a free block
-            auto [tree_node, locker] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(N);
-            while (tree_node) {
-                if (tree_node->object()) {
-                    if (tree_node->key >= N) {
-                        if (tree_node->object()->is_available) {
-                            free_block = tree_node->object();
-                            free_block->generated_epoch = GL::util::get_current_epoch();
-                            free_tree.Remove(tree_node, locker);
-                            break;
+            free_tree.for_each_cancellable([&free_block, &N](auto& tree) -> bool {
+                auto [tree_node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(N);
+                while (tree_node) {
+                    if (tree_node->object()) {
+                        if (tree_node->key >= N) {
+                            if (tree_node->object()->is_available) {
+                                free_block = tree_node->object();
+                                free_block->generated_epoch = GL::util::get_current_epoch();
+                                tree.Remove(tree_node, locker);
+                                return true;
+                            }
                         }
                     }
+                    tree_node = tree.GetNextLeaf(tree_node, locker);
                 }
-                tree_node = free_tree.GetNextLeaf(tree_node, locker);
-            }
+                return false;
+            });
 
             // if no free block was acquired, we are starting fresh
             if (!free_block) { // allocate a new buffer
@@ -2400,6 +2407,8 @@ public:
                 free_block->is_free = true;
                 free_block->is_available = true;
                 free_block->generated_epoch = GL::util::get_current_epoch();
+                free_block->thread_id = GL::util::get_thread_id();
+                free_tree.get_or_init(); // ensures existance of this tree
             }
         }
 
@@ -2417,11 +2426,12 @@ public:
             child_block->sub_buffer = nullptr;
             child_block->is_free = true;
             child_block->is_available = true;
+            child_block->thread_id = free_block->thread_id;
             free_block->next = child_block;
             if (child_block->next) child_block->next->prev = child_block;
             free_block->length = N;
 
-            free_tree.Add(child_block, child_block->length);
+            free_tree[child_block->thread_id].Add(child_block, child_block->length);
         }
         
         // allocate the subbuffer
@@ -2443,7 +2453,7 @@ public:
 
         try_combine(free_block);
 
-        free_tree.Add(free_block, free_block->length);
+        free_tree[free_block->thread_id].Add(free_block, free_block->length);
     };
 
 public:

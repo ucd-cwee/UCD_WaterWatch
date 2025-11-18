@@ -391,7 +391,7 @@ namespace GL {
             return std::unique_ptr<_Ty, arena_memory_pool>(instance<_Ty>(std::move(_Args)...));
         };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_unique(size_t count) { // make a unique_ptr
+            make_unique(unsigned int count) { // make a unique_ptr
             return std::unique_ptr<_Ty, arena_memory_pool>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count));
         };
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
@@ -401,7 +401,7 @@ namespace GL {
             });
         };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_shared(size_t count) { // make a unique_ptr
+            make_shared(unsigned int count) { // make a unique_ptr
             return std::shared_ptr<_Ty>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count), [](std::decay_t<_Ty> p) {
                 free(p);
             });
