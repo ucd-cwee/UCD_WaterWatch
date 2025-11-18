@@ -90,12 +90,48 @@ int main() {
     // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
     if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
-        GL::GPU::matrix<float>::maximum_allocation_size() /= 2; 
-        
-        //GL::GPU::matrix<unsigned int>::constant(1, 10);
-        //GL::parallel::For(0, 1000000, [](size_t) {
-        //    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(100));
-        //});
+        GL::GPU::matrix<float>::maximum_allocation_size() /= 16; 
+        if (1) {
+            GL::GPU::matrix<unsigned int>(100);
+
+            GL::stopwatch sw;
+            if (auto timer = sw.debug_timer("Linear Arena Allocator")) {
+                for (size_t i = 0; i < 1000000; ++i) {
+                    auto a = std::make_unique<std::string>();     // value of 0
+                    auto b = std::make_unique<std::string[]>(100); // 100 "std::strings"
+                    auto c = std::make_shared<std::string>();     // value of 0
+                    auto d = std::shared_ptr<std::string[]>(new std::string[100], [](std::string* p) { delete[] p; }); // 100 "std::strings"
+                    ::free(::malloc(sizeof(std::string)*100));
+                }
+            }
+            if (auto timer = sw.debug_timer("Parallel Arena Allocator")) {
+                GL::parallel::For(0, 1000000, [](size_t) {
+                    auto a = std::make_unique<std::string>();     // value of 0
+                    auto b = std::make_unique<std::string[]>(100); // 100 "std::strings"
+                    auto c = std::make_shared<std::string>();     // value of 0
+                    auto d = std::shared_ptr<std::string[]>(new std::string[100], [](std::string* p) { delete[] p; }); // 100 "std::strings"
+                    ::free(::malloc(sizeof(std::string) * 100));
+                });
+            }
+            if (auto timer = sw.debug_timer("Linear Arena Allocator")) {
+                for (size_t i = 0; i < 1000000; ++i) {
+                    auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
+                    auto b = GL::arena_memory_pool::make_unique<std::string[]>(100); // 100 "std::strings"
+                    auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0
+                    auto d = GL::arena_memory_pool::make_shared<std::string[]>(100); // 100 "std::strings"
+                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(100));
+                }
+            }
+            if (auto timer = sw.debug_timer("Parallel Arena Allocator")) {
+                GL::parallel::For(0, 1000000, [](size_t) {
+                    auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
+                    auto b = GL::arena_memory_pool::make_unique<std::string[]>(100); // 100 "std::strings"
+                    auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0
+                    auto d = GL::arena_memory_pool::make_shared<std::string[]>(100); // 100 "std::strings"
+                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(100));
+                });
+            }
+        }
 
         using namespace GL;
         using namespace GL::GPU;

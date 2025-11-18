@@ -1989,6 +1989,18 @@ public:
     {
         if (max_single_size == 0)
             max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;
+
+        // pre-warm the allocator. Split this allocation into 100, allocate 50 of them, then release them. 
+        if (0) {
+            auto sz = max_single_size / 100;
+            std::array< dynamic_block*, 50 > allocs;
+            for (int i = 0; i < 50; ++i) {
+                allocs[i] = Alloc(sz);
+            }
+            for (int i = 0; i < 50; ++i) {
+                Free(allocs[i]);
+            }
+        }
     };
 
 private:
@@ -2334,6 +2346,18 @@ public:
     {
         if (max_single_size == 0)
             max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;
+
+        // pre-warm the allocator. Split this allocation into 100, allocate 50 of them, then release them. 
+        if (0) {
+            auto sz = max_single_size / 100;
+            std::array< dynamic_block*, 50 > allocs;
+            for (int i = 0; i < 50; ++i) {
+                allocs[i] = Alloc(sz);
+            }
+            for (int i = 0; i < 50; ++i) {
+                Free(allocs[i]);
+            }
+        }
     };
 
 public:
@@ -2643,7 +2667,7 @@ public:
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
             if constexpr (std::is_pod_v<T>) {
                 // best-case scenario!
-                std::memset(out, 0, (sizeof(T) * N));
+                // std::memset(out, 0, (sizeof(T) * N));
             }
             else {
                 // need to actually initialize the array...
@@ -4817,12 +4841,12 @@ namespace GL {
         };
     };
 
-    //void* 
-    //    arena_memory_pool::malloc_bytes(unsigned int bytes) {
-    //    return (void*)mem_matrix::helper<char>::create(bytes / sizeof(char));
-    //};
-    //void 
-    //    arena_memory_pool::free(void* p) {
-    //    mem_matrix::helper<char>::array_delete()((char*)p);
-    //};
+    void* 
+        arena_memory_pool::malloc_bytes(unsigned int bytes) {
+        return (void*)mem_matrix::helper<char>::create(bytes / sizeof(char));
+    };
+    void 
+        arena_memory_pool::free(void* p) {
+        mem_matrix::helper<char>::array_delete()((char*)p);
+    };
 };
