@@ -1946,7 +1946,7 @@ private:
 		nodeChildrenAllocator;
 	long
 		count;
-#if 1
+private:
 	class // exclusive lock manager. Since this is a course-grained type, though, it can only ever hold one lock at a time. 
 		locker {
 	public:
@@ -1957,9 +1957,9 @@ private:
 
 		locker() : locked{ nullptr }, hard_locked{ false } {};
 		locker(locker const&) = delete;
-		locker(locker&& rhs) : locked{ rhs.locked }, hard_locked{ rhs.hard_locked } { rhs.locked = nullptr; };
+		locker(locker&& rhs) noexcept : locked{ rhs.locked }, hard_locked{ rhs.hard_locked } { rhs.locked = nullptr; };
 		locker& operator=(locker const&) = delete;
-		locker& operator=(locker&& rhs) {
+		locker& operator=(locker&& rhs) noexcept {
 			clear();
 			locked = rhs.locked;
 			hard_locked = rhs.hard_locked;
@@ -1970,11 +1970,11 @@ private:
 			clear();
 		};
 		operator bool() const {
-			return locked;
+			return locked != nullptr;
 		};
 
 	public:
-		bool // store a shared lock
+		__declspec(noinline) bool // store a shared lock
 			try_push_back(lock_type& source) {
 			clear();
 			locked = &source;
@@ -1984,7 +1984,7 @@ private:
 			}
 			else {
 				hard_locked = false;
-				clear();
+				locked = nullptr;
 				return false;
 			}
 		};
@@ -2026,60 +2026,17 @@ private:
 		};
 		size_t // count of locks
 			size() const {
-			return locked ? 1 : 0;
+			return (locked != nullptr) ? 1 : 0;
 		};
 		void // clear all locks
 			clear() {
-			if (locked) {
+			if (locked != nullptr) {
 				if (hard_locked) locked->unlock();
 				else locked->unlock_shared();
 				locked = nullptr;
 			}
 		};
 	};
-#else
-	class // exclusive lock manager. Since this is a course-grained type, though, it can only ever hold one lock at a time. 
-		locker {
-	public:
-		std::shared_ptr<void>
-			locks;
-	public:
-		void // store a shared lock
-			push_back(lock_type& source) {
-			locks = std::static_pointer_cast<void>(std::make_shared<std::scoped_lock<lock_type>>(source));
-		};
-		void // store a shared lock
-			push_back_shared(lock_type& source) {
-			locks = std::static_pointer_cast<void>(std::make_shared<std::shared_lock<lock_type>>(source));
-		};
-		void // store a shared lock
-			push_pop(lock_type& source) {
-			locks = std::static_pointer_cast<void>(std::make_shared<std::scoped_lock<lock_type>>(source));
-		};
-		void // store a shared lock
-			push_pop_shared(lock_type& source) {
-			locks = std::static_pointer_cast<void>(std::make_shared<std::shared_lock<lock_type>>(source));
-		};
-		void // remove the youngest lock
-			pop_back() {
-			locks = nullptr;
-		};
-		void // remove the oldest lock
-			pop_front() {
-			locks = nullptr;
-		};
-		size_t // count of locks
-			size() const {
-			return locks ? 1 : 0;
-		};
-		void // clear all locks
-			clear() {
-			locks = nullptr;
-		};
-	};
-#endif
-
-
 public:
 	parallel_binary_search_tree()
 		: nodeAllocator()
@@ -2106,8 +2063,8 @@ public:
 			* node,
 			* child,
 			* newNode;
-		locker
-			locking;
+		locker&
+			locking = const_cast<locker&>(Locking);
 		newNode
 			= AllocNode(true);
 		newNode->key
@@ -2115,7 +2072,9 @@ public:
 		newNode->data
 			= object;
 
-		if (locking.size() == 0) locking.push_back(mut); // locked
+		if (!locking) {
+			locking.push_back(mut); // locked
+		}
 
 		if (root == nullptr) root = AllocNode(false); // start fresh
 
@@ -2276,7 +2235,12 @@ public:
 		out.try_push_back(mut);
 		return out;
 	};
-	
+	locker
+		lock() {
+		locker out;
+		out.push_back(mut);
+		return out;
+	};
 
 	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {

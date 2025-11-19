@@ -95,7 +95,7 @@ int main() {
             // GL::GPU::matrix<unsigned int>(100);
 
             GL::stopwatch sw;
-            /*
+            
             if (auto timer = sw.debug_timer("Std Linear Allocator (int)")) {
                 for (size_t i = 0; i < 1000000; ++i) {
                     auto a = std::make_unique<int>();     // value of 0
@@ -112,6 +112,42 @@ int main() {
                     auto c = std::make_shared<int>();     // value of 0
                     auto d = std::shared_ptr<int[]>(new int[10000], [](int* p) { delete[] p; }); // 100 "ints"
                     ::free(::malloc(sizeof(int) * 10000));
+                    });
+            }
+            if (auto timer = sw.debug_timer("Std Linear Random Allocator (int)")) {
+                for (size_t i = 0; i < 1000; ++i) {
+                    auto a = std::make_unique<int>();     // value of 0
+                    auto b = std::make_unique<int[]>(i + 1000); // 100 "ints"
+                    auto c = std::make_shared<int>();     // value of 0
+                    auto d = std::shared_ptr<int[]>(new int[i + 1000], [](int* p) { delete[] p; }); // 100 "ints"
+                    ::free(::malloc(sizeof(int) * (i + 1000)));
+                }
+            }
+            if (auto timer = sw.debug_timer("Std Parallel Random Allocator (int)")) {
+                GL::parallel::For(0, 1000, [](size_t i) {
+                    auto a = std::make_unique<int>();     // value of 0
+                    auto b = std::make_unique<int[]>(i + 1000); // 100 "ints"
+                    auto c = std::make_shared<int>();     // value of 0
+                    auto d = std::shared_ptr<int[]>(new int[i + 1000], [](int* p) { delete[] p; }); // 100 "ints"
+                    ::free(::malloc(sizeof(int) * (i + 1000)));
+                    });
+            }
+            if (auto timer = sw.debug_timer("Std Linear Random Allocator (std::string)")) {
+                for (size_t i = 0; i < 1000; ++i) {
+                    auto a = std::make_unique<std::string>();     // value of 0
+                    auto b = std::make_unique<std::string[]>(i + 1000); // 100 "std::strings"
+                    auto c = std::make_shared<std::string>();     // value of 0
+                    auto d = std::shared_ptr<std::string[]>(new std::string[i + 1000], [](std::string* p) { delete[] p; }); // 100 "std::strings"
+                    ::free(::malloc(sizeof(std::string) * (i + 1000)));
+                }
+            }
+            if (auto timer = sw.debug_timer("Std Parallel Random Allocator (std::string)")) {
+                GL::parallel::For(0, 1000, [](size_t i) {
+                    auto a = std::make_unique<std::string>();     // value of 0
+                    auto b = std::make_unique<std::string[]>(i + 1000); // 100 "std::strings"
+                    auto c = std::make_shared<std::string>();     // value of 0
+                    auto d = std::shared_ptr<std::string[]>(new std::string[i + 1000], [](std::string* p) { delete[] p; }); // 100 "std::strings"
+                    ::free(::malloc(sizeof(std::string) * (i + 1000)));
                     });
             }
             if (auto timer = sw.debug_timer("Std Linear Allocator (std::string)")) {
@@ -132,7 +168,7 @@ int main() {
                     ::free(::malloc(sizeof(std::string) * 100));
                 });
             }
-            */
+            
 
             print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Allocator (int)")) {
@@ -152,11 +188,11 @@ int main() {
                     auto c = GL::arena_memory_pool::make_shared<int>();     // value of 0
                     auto d = GL::arena_memory_pool::make_shared<int[]>(10000); // 100 "ints"
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(10000));
-                    });
+                });
             }
             print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Random Allocator (int)")) {
-                for (size_t i = 0; i < 1000000; ++i) {
+                for (size_t i = 0; i < 1000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
                     auto b = GL::arena_memory_pool::make_unique<int[]>(i + 1000); // 100 "ints"
                     auto c = GL::arena_memory_pool::make_shared<int>();     // value of 0
@@ -166,7 +202,7 @@ int main() {
             }
             print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Parallel Random Allocator (int)")) {
-                GL::parallel::For(0, 1000000, [](size_t i) {
+                GL::parallel::For(0, 1000, [](size_t i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
                     auto b = GL::arena_memory_pool::make_unique<int[]>(i + 1000); // 100 "ints"
                     auto c = GL::arena_memory_pool::make_shared<int>();     // value of 0
@@ -196,7 +232,7 @@ int main() {
             }
             print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Random Allocator (std::string)")) {
-                for (size_t i = 0; i < 1000000; ++i) {
+                for (size_t i = 0; i < 1000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
                     auto b = GL::arena_memory_pool::make_unique<std::string[]>(i + 1000); // 100 "std::strings"
                     auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0
@@ -206,7 +242,7 @@ int main() {
             }
             print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Parallel Random Allocator (std::string)")) {
-                GL::parallel::For(0, 1000000, [](size_t i) {
+                GL::parallel::For(0, 1000, [](size_t i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
                     auto b = GL::arena_memory_pool::make_unique<std::string[]>(i + 1000); // 100 "std::strings"
                     auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0

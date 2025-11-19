@@ -1865,11 +1865,29 @@ public:
         long
             locker;
 
-        void lock() {
-            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
+        __declspec(noinline) void lock() {
+            if (InterlockedIncrement(reinterpret_cast<volatile long*>(&locker)) == 1) {
+                return;
+            }
+            else {
+                InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
+                while (InterlockedIncrement(reinterpret_cast<volatile long*>(&locker)) != 1) {
+                    InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
+                }
+            }
+
+            // while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
         };
-        bool try_lock() {
-            return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
+        __declspec(noinline) bool try_lock() {
+            if (InterlockedIncrement(reinterpret_cast<volatile long*>(&locker)) == 1) {
+                return true;
+            }
+            else {
+                InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
+                return false;
+            }
+
+            // return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
         };
         void unlock() {
             InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
@@ -1890,7 +1908,7 @@ public:
         };
     };
 private:
-    GL::atomic_allocator<dynamic_block, 128, false, true>
+    GL::atomic_allocator<dynamic_block, 128, true, true>
         block_alloc;
     parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
@@ -1905,71 +1923,91 @@ private:
     std::function<void(buffer_type&)> // release and set nullptr
         free_sub_buffer;
     std::function<void(buffer_type&)> // release and delete
-        free_block;
+        free_parent_block;
 
-    __declspec(noinline) void try_combine(dynamic_block* lhs) {
+    __declspec(noinline) bool try_combine(dynamic_block* lhs) {
         // assumes lhs is locked already. 
+        bool retVal = false;
         bool successful = true;
         while (successful) {
             // if the block is still valid and alive, we should give it the opportunity to be re-used if recent enough
-            //if (lhs->sub_buffer) {
-            //    long long curr_epoch = GL::util::get_current_epoch();
-            //    // 1 second limit to extended lifetime
-            //    if ((curr_epoch - lhs->generated_epoch) < 1000) return;
-            //}
-
             successful = false;
-            if (!lhs->is_free) break; // something is wrong
-            if (!lhs->is_available) break; // something is wrong
-            if (lhs->next && lhs->next->try_lock()) {
-                auto* next = lhs->next;
-                if (next->is_available && next->is_free) {
-                    auto* next_next = next->next;
-                    if (!next_next || (next_next && next_next->try_lock())) {                        
-                        next->is_available = false;
-                        next->is_free = false;
-                        lhs->length += next->length;
-                        lhs->next = next_next;
+            if (!lhs->is_free || !lhs->is_available) { return true; }; // something is wrong
+            EXPECT_NE(lhs->next, lhs);
+            EXPECT_NE(lhs->prev, lhs);
+            if (lhs->next == lhs) lhs->next = nullptr;
+            if (lhs->prev == lhs) lhs->prev = nullptr;
+
+            long long curr_epoch = GL::util::get_current_epoch();
+
+            auto* next = lhs->next;
+            if (!next || (next && next->try_lock())) {
+                auto* next_next = next ? next->next : nullptr;
+                if (!next_next || (next_next && next_next->try_lock())) {
+                    if (next && next->is_available && next->is_free) { // check "next"
+                        bool proceed = true;
+                        //if (next->sub_buffer)  // 1 second limit to extended lifetime                            
+                        //    if ((curr_epoch - next->generated_epoch) < 1000) proceed = false;
                         
-                        if (next_next) {
-                            next_next->prev = lhs;
-                            next_next->unlock();
+                        if (proceed) {
+                            next->is_available = false;
+                            next->is_free = false;
+                            next->next = nullptr;
+                            next->prev = nullptr;
+                            if (next->sub_buffer) this->free_sub_buffer(next->sub_buffer);
+                            if (lhs->sub_buffer) this->free_sub_buffer(lhs->sub_buffer);
+                            lhs->length += next->length;
+                            lhs->next = next_next;
+                            if (next_next) next_next->prev = lhs;
+                            next->length = 0;
+                            next->start_position = 0;
+                            successful = true;
                         }
-
-                        // my sub-buffer is now wrong
-                        if (lhs->sub_buffer) this->free_sub_buffer(lhs->sub_buffer);
-
-                        successful = true;
                     }
+                    if (next) next->unlock();
+                    if (next_next) next_next->unlock();
+                    retVal = true;
                 }
-                next->unlock();
+                else {
+                    if (next) next->unlock();
+                }
             }
-            if (lhs->prev && lhs->prev->try_lock()) {
-                auto* prev = lhs->prev;
-                if (prev->is_available && prev->is_free) {
-                    auto* prev_prev = prev->prev;
-                    if (!prev_prev || (prev_prev && prev_prev->try_lock())) {
-                        prev->is_available = false;
-                        prev->is_free = false;
 
-                        lhs->start_position = prev->start_position;
-                        lhs->length += prev->length;
-                        lhs->prev = prev_prev;
+            auto* prev = lhs->prev;
+            if (!prev || (prev && prev->try_lock())) {
+                auto* prev_prev = prev ? prev->prev : nullptr;
+                if (!prev_prev || (prev_prev && prev_prev->try_lock())) { // all locks were acquired.
+                    if (prev && prev->is_available && prev->is_free) { // check "prev"
+                        bool proceed = true; 
+                        //if (prev->sub_buffer)  // 1 second limit to extended lifetime                            
+                        //    if ((curr_epoch - prev->generated_epoch) < 1000) proceed = false;
                         
-                        if (prev_prev) {
-                            prev_prev->next = lhs;
-                            prev_prev->unlock();
+                        if (proceed) {
+                            prev->is_available = false;
+                            prev->is_free = false;
+                            prev->next = nullptr;
+                            prev->prev = nullptr;
+                            if (prev->sub_buffer) this->free_sub_buffer(prev->sub_buffer);
+                            if (lhs->sub_buffer) this->free_sub_buffer(lhs->sub_buffer);
+                            lhs->start_position = prev->start_position;
+                            lhs->length += prev->length;
+                            lhs->prev = prev_prev;
+                            if (prev_prev) prev_prev->next = lhs;
+                            prev->length = 0;
+                            prev->start_position = 0;
+                            successful = true;
                         }
-
-                        // my sub-buffer is now wrong
-                        if (lhs->sub_buffer) this->free_sub_buffer(lhs->sub_buffer);
-
-                        successful = true;
                     }
+                    if (prev) prev->unlock();
+                    if (prev_prev) prev_prev->unlock();
+                    retVal = true;
                 }
-                prev->unlock();
+                else {
+                    if (prev) prev->unlock();
+                }
             }
         }
+        return retVal;
     };
     
 public:
@@ -1990,105 +2028,111 @@ public:
         , alloc_block{ _alloc_block }
         , split_sub_buffer{ _split_sub_buffer }
         , free_sub_buffer{ _free_sub_buffer }
-        , free_block{ _free_block }
+        , free_parent_block{ _free_block }
     {
         if (max_single_size == 0) max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;
     };
 
 public:
-    dynamic_block* Alloc(unsigned long long N) {
+    __declspec(noinline) dynamic_block* Alloc(unsigned long long N) {
         dynamic_block* free_block = nullptr;
-        if (N > 0) {
+        while (N > 0) {     
             while (!free_block) {
-                if (auto [tree_node, tree_locked] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(N); tree_node) {
-                    while (tree_node) {
-                        // std::scoped_lock node_locked(*tree_node->object());
-                        tree_node->object()->lock();
-                        if (tree_node->object()->is_available) {
-                            // this is our candidate node.
-                            if (tree_node->object()->is_free && (tree_node->object()->length > N)) {
-                                // we have a winner
-                                tree_node->object()->is_free = false;
-                                free_block = tree_node->object();
-                                free_tree.Remove(tree_node, tree_locked); // invalidates the tree.
-                                //free_block->unlock();
-                                break;
-                            }
-                            else {
-                                if (tree_node->object()->length != tree_node->key) {
-                                    // the object and its key in the tree no longer match. Do it a favor and update it. 
+                if (auto tree_locked = free_tree.lock()) {
+                    if (auto* tree_node = free_tree.NodeFindSmallestLargerEqual_Locked(N, tree_locked); tree_node) {
+                        while (tree_node) {
+                            // std::scoped_lock node_locked(*tree_node->object());
+                            if (tree_node->object()->try_lock()) {
+                                if (tree_node->object()->is_available) {
+                                    // this is our candidate node.
+                                    if (tree_node->object()->is_free && (tree_node->object()->length > N)) {
+                                        // we have a winner
+                                        tree_node->object()->is_free = false;
+                                        free_block = tree_node->object();
+                                        free_tree.Remove(tree_node, tree_locked); // invalidates the tree.
+                                        free_block->generated_epoch = GL::util::get_current_epoch();
+                                        break;
+                                    }
+                                    else {
+                                        if (tree_node->object()->length != tree_node->key) {
+                                            // the object and its key in the tree no longer match. Do it a favor and update it. 
+                                            free_block = tree_node->object();
+                                            free_tree.Remove(tree_node, tree_locked);
+                                            free_tree.Add(free_block, free_block->length, tree_locked);
+                                            free_block->unlock();
+                                            free_block = nullptr;
+                                            break;
+                                        }
+                                        else {
+                                            // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
+                                            tree_node->object()->unlock();
+                                            free_block = nullptr;
+                                        }
+                                    }
+                                }
+                                else {
+                                    // cooperatively remove this node
                                     free_block = tree_node->object();
                                     free_tree.Remove(tree_node, tree_locked);
-                                    free_tree.Add(free_block, free_block->length, tree_locked);
                                     free_block->unlock();
+                                    block_alloc.Free(free_block);
                                     free_block = nullptr;
                                     break;
                                 }
-                                else {
-                                    // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
-                                    tree_node->object()->unlock();
-                                    free_block = nullptr;
-                                }
                             }
+                            tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
                         }
-                        else {
-                            // cooperatively remove this node
-                            free_block = tree_node->object();
-                            free_tree.Remove(tree_node, tree_locked);
-                            if (free_block->sub_buffer) this->free_sub_buffer(free_block->sub_buffer);
-                            free_block->unlock();
+                    }
+                    else {
+                        free_block = block_alloc.Alloc();
+                        if (!free_block) return nullptr;
+                        free_block->length = std::max(N, max_single_size);
+                        free_block->is_available = true;
+                        free_block->generated_epoch = GL::util::get_current_epoch();
+                        free_block->is_free = false;
+                        free_block->locker = 1;
+                        free_block->next = nullptr;
+                        free_block->prev = nullptr;
+                        free_block->start_position = 0;
+                        free_block->thread_id = GL::util::get_thread_id();
+                        free_block->parent_buffer = this->alloc_block(free_block->length);
+                        if (!free_block->parent_buffer) {
                             block_alloc.Free(free_block);
-                            free_block = nullptr;
-                            break;
-                        }    
-                        tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
+                            return nullptr;
+                        }
+                        free_block->sub_buffer = nullptr;
                     }
-                }
-                else {
-                    free_block = block_alloc.Alloc();
-                    if (!free_block) return nullptr;
-                    free_block->length = std::max(N, max_single_size);
-                    free_block->is_available = true;
-                    free_block->generated_epoch = GL::util::get_current_epoch();
-                    free_block->is_free = false;
-                    free_block->locker = 0;
-                    free_block->next = nullptr;
-                    free_block->prev = nullptr;
-                    free_block->start_position = 0;
-                    free_block->thread_id = GL::util::get_thread_id();
-                    free_block->parent_buffer = this->alloc_block(free_block->length);
-                    if (!free_block->parent_buffer) {
-                        block_alloc.Free(free_block);
-                        return nullptr;
-                    }
-                    free_block->sub_buffer = nullptr;
-                    free_block->lock();
                 }
             }
 
             // if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
             if (!free_block->sub_buffer) {
                 // we will need to make a sub_buffer.                 
-                if ((free_block->length - (sizeof(dynamic_block)*2)) > N) {                    
+                if ((free_block->length - (sizeof(dynamic_block) * 2)) > N) {
                     // If we are far too big for the requested size, we should make a child node who will carry on our remainder. 
                     auto* child_block = block_alloc.Alloc();
+                    if (!child_block) {
+                        continue;
+                    }
                     child_block->generated_epoch = GL::util::get_current_epoch();
                     child_block->thread_id = GL::util::get_thread_id();
-                    child_block->locker = 0;
+                    child_block->locker = 1; // locked
                     child_block->is_available = true;
                     child_block->is_free = true;
                     child_block->parent_buffer = free_block->parent_buffer;
                     child_block->sub_buffer = nullptr;
                     child_block->length = free_block->length - N;
-                    child_block->next = nullptr;
+                    child_block->next = free_block->next;
+                    if (child_block->next) {
+                        child_block->next->lock();
+                        child_block->next->prev = child_block;
+                        child_block->next->unlock();
+                    }
                     child_block->prev = free_block;
-                    child_block->start_position = free_block->start_position + N;                    
-                    
-                    free_block->length = N;                    
+                    child_block->start_position = free_block->start_position + N;
+                    free_block->length = N;
                     free_block->sub_buffer = this->split_sub_buffer(free_block->parent_buffer, free_block->start_position, N);
                     free_block->next = child_block;
-
-                    child_block->lock();
                     free_tree.Add(child_block, child_block->length);
                     child_block->unlock();
                 }
@@ -2099,15 +2143,19 @@ public:
             }
 
             free_block->unlock();
+            return free_block;                      
         }
         return free_block;
     };
     // must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
     __declspec(noinline) void Free(dynamic_block* free_block) {
         if (free_block) {
-            std::scoped_lock locked(*free_block);
+            free_block->lock();
             free_block->is_free = true;
-            try_combine(free_block); // attempts to merge this node with parent and child nodes recursively. May modify its own length, therefore do not "add" until finished merging.
+            while (!try_combine(free_block)) {
+                // attempts to merge this node with parent and child nodes recursively. May modify its own length, therefore do not "add" until finished merging.
+            }
+            free_block->unlock();
             free_tree.Add(free_block, free_block->length);            
         }
     };
@@ -2115,7 +2163,7 @@ public:
 public:
     __declspec(noinline) ~dynamic_allocator() {
         for (auto& buf : allocations) 
-            free_block(buf);
+            free_parent_block(buf);
     };
 
     class unique_ptr {
@@ -2907,7 +2955,7 @@ public:
     };
 
     static auto& program() { return GL::GPU::opencl::get_program(); };
-
+    
     static dynamic_allocator<void*>& allocator() { 
         static dynamic_allocator<void*> out(
             [](unsigned long long length) -> void* {
@@ -3034,14 +3082,16 @@ public:
 public:
     template <typename T>
     struct helper {
+        using block_type = dynamic_allocator<void*>::dynamic_block;
+        // using block_type = dynamic_cpu_allocator::dynamic_block;
         struct array_delete { // default deleter for unique_ptr to array of unknown size
             constexpr array_delete() noexcept = default;
             array_delete(const array_delete&) noexcept {}
             __declspec(noinline) void operator()(T* p) const noexcept { // delete a pointer
                 static_assert(0 < sizeof(T), "can't delete an incomplete type");
-                auto* ptr = (void*)((::byte*)p - sizeof(dynamic_allocator<void*>::dynamic_block*));
-                auto* alloced = *(dynamic_allocator<void*>::dynamic_block**)(::byte*)(ptr);
-                unsigned int N = (alloced->length - sizeof(dynamic_allocator<void*>::dynamic_block*)) / sizeof(T);
+                auto* ptr = (void*)((::byte*)p - sizeof(block_type*));
+                auto* alloced = *(block_type**)(::byte*)(ptr);
+                unsigned int N = (alloced->length - sizeof(block_type*)) / sizeof(T);
                 if constexpr (!std::is_pod_v<T>) {
                     for (unsigned int i = 0; i < N; ++i)
                         (&p[i])->~T();
@@ -3051,10 +3101,10 @@ public:
         };
         __declspec(noinline) static T* create(unsigned int N) {
             //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_allocator<void*>::dynamic_block*));
+            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
 
-            *(dynamic_allocator<void*>::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_allocator<void*>::dynamic_block*));
+            *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
             if constexpr (std::is_pod_v<T>) {
                 // best-case scenario!
                 std::memset(out, 0, (sizeof(T) * N));
@@ -3067,10 +3117,10 @@ public:
         };
         template <typename... U> __declspec(noinline) static T* create_single(U&&... args) {
             unsigned int N = 1;
-            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_allocator<void*>::dynamic_block*));
+            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
 
-            *(dynamic_allocator<void*>::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_allocator<void*>::dynamic_block*));
+            *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
             new (&out[0]) T(std::move(args)...);
             return out;
         };
