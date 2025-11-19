@@ -1836,6 +1836,357 @@ namespace GL {
     };
 }
 
+
+// multi-threaded CPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
+template <typename buffer_type = void*>
+class dynamic_allocator {
+public:
+    struct dynamic_block {
+        dynamic_block*
+            prev;
+        dynamic_block*
+            next;
+        long long
+            generated_epoch;
+        unsigned long long
+            start_position;
+        unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
+            length;
+        buffer_type // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
+            sub_buffer;
+        buffer_type // this sub-buffer may be further split. 
+            parent_buffer;
+        unsigned int
+            thread_id;
+        bool
+            is_available;
+        bool
+            is_free;
+        long
+            locker;
+
+        void lock() {
+            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
+        };
+        bool try_lock() {
+            return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
+        };
+        void unlock() {
+            InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
+        };
+
+
+
+        bool is_base_block() const {
+            return (prev == nullptr);
+        };
+        dynamic_block* get_base_block() {
+            if (prev) return prev->get_base_block();
+            else return this;
+        };
+        bool is_split() const {
+            if (next || prev) return true;
+            else return false;
+        };
+    };
+private:
+    GL::atomic_allocator<dynamic_block, 128, false, true>
+        block_alloc;
+    parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
+        free_tree;
+    unsigned long long
+        max_single_size;
+    std::vector< buffer_type >
+        allocations;
+    std::function<buffer_type(unsigned long long)> // allon a fresh buffer with length
+        alloc_block;
+    std::function<buffer_type(buffer_type&, unsigned long long, unsigned long long)> // split parent with offset and length
+        split_sub_buffer;
+    std::function<void(buffer_type&)> // release and set nullptr
+        free_sub_buffer;
+    std::function<void(buffer_type&)> // release and delete
+        free_block;
+
+    __declspec(noinline) void try_combine(dynamic_block* lhs) {
+        // assumes lhs is locked already. 
+        bool successful = true;
+        while (successful) {
+            // if the block is still valid and alive, we should give it the opportunity to be re-used if recent enough
+            //if (lhs->sub_buffer) {
+            //    long long curr_epoch = GL::util::get_current_epoch();
+            //    // 1 second limit to extended lifetime
+            //    if ((curr_epoch - lhs->generated_epoch) < 1000) return;
+            //}
+
+            successful = false;
+            if (!lhs->is_free) break; // something is wrong
+            if (!lhs->is_available) break; // something is wrong
+            if (lhs->next && lhs->next->try_lock()) {
+                auto* next = lhs->next;
+                if (next->is_available && next->is_free) {
+                    auto* next_next = next->next;
+                    if (!next_next || (next_next && next_next->try_lock())) {                        
+                        next->is_available = false;
+                        next->is_free = false;
+                        lhs->length += next->length;
+                        lhs->next = next_next;
+                        
+                        if (next_next) {
+                            next_next->prev = lhs;
+                            next_next->unlock();
+                        }
+
+                        // my sub-buffer is now wrong
+                        if (lhs->sub_buffer) this->free_sub_buffer(lhs->sub_buffer);
+
+                        successful = true;
+                    }
+                }
+                next->unlock();
+            }
+            if (lhs->prev && lhs->prev->try_lock()) {
+                auto* prev = lhs->prev;
+                if (prev->is_available && prev->is_free) {
+                    auto* prev_prev = prev->prev;
+                    if (!prev_prev || (prev_prev && prev_prev->try_lock())) {
+                        prev->is_available = false;
+                        prev->is_free = false;
+
+                        lhs->start_position = prev->start_position;
+                        lhs->length += prev->length;
+                        lhs->prev = prev_prev;
+                        
+                        if (prev_prev) {
+                            prev_prev->next = lhs;
+                            prev_prev->unlock();
+                        }
+
+                        // my sub-buffer is now wrong
+                        if (lhs->sub_buffer) this->free_sub_buffer(lhs->sub_buffer);
+
+                        successful = true;
+                    }
+                }
+                prev->unlock();
+            }
+        }
+    };
+    
+public:
+    size_t size() const {
+        return block_alloc.size();
+    };
+    __declspec(noinline) dynamic_allocator(
+        std::function<buffer_type(unsigned long long)> _alloc_block,
+        std::function<buffer_type(buffer_type&, unsigned long long, unsigned long long)> _split_sub_buffer,
+        std::function<void(buffer_type&)> _free_sub_buffer,
+        std::function<void(buffer_type&)> _free_block,
+        unsigned long long max_single_alloc_size = 0
+    )
+        : block_alloc{}
+        , free_tree{}
+        , max_single_size{ max_single_alloc_size }
+        , allocations{}
+        , alloc_block{ _alloc_block }
+        , split_sub_buffer{ _split_sub_buffer }
+        , free_sub_buffer{ _free_sub_buffer }
+        , free_block{ _free_block }
+    {
+        if (max_single_size == 0) max_single_size = ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull;
+    };
+
+public:
+    dynamic_block* Alloc(unsigned long long N) {
+        dynamic_block* free_block = nullptr;
+        if (N > 0) {
+            while (!free_block) {
+                if (auto [tree_node, tree_locked] = free_tree.NodeFindSmallestLargerEqual_ForRemoval(N); tree_node) {
+                    while (tree_node) {
+                        // std::scoped_lock node_locked(*tree_node->object());
+                        tree_node->object()->lock();
+                        if (tree_node->object()->is_available) {
+                            // this is our candidate node.
+                            if (tree_node->object()->is_free && (tree_node->object()->length > N)) {
+                                // we have a winner
+                                tree_node->object()->is_free = false;
+                                free_block = tree_node->object();
+                                free_tree.Remove(tree_node, tree_locked); // invalidates the tree.
+                                //free_block->unlock();
+                                break;
+                            }
+                            else {
+                                if (tree_node->object()->length != tree_node->key) {
+                                    // the object and its key in the tree no longer match. Do it a favor and update it. 
+                                    free_block = tree_node->object();
+                                    free_tree.Remove(tree_node, tree_locked);
+                                    free_tree.Add(free_block, free_block->length, tree_locked);
+                                    free_block->unlock();
+                                    free_block = nullptr;
+                                    break;
+                                }
+                                else {
+                                    // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
+                                    tree_node->object()->unlock();
+                                    free_block = nullptr;
+                                }
+                            }
+                        }
+                        else {
+                            // cooperatively remove this node
+                            free_block = tree_node->object();
+                            free_tree.Remove(tree_node, tree_locked);
+                            if (free_block->sub_buffer) this->free_sub_buffer(free_block->sub_buffer);
+                            free_block->unlock();
+                            block_alloc.Free(free_block);
+                            free_block = nullptr;
+                            break;
+                        }    
+                        tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
+                    }
+                }
+                else {
+                    free_block = block_alloc.Alloc();
+                    if (!free_block) return nullptr;
+                    free_block->length = std::max(N, max_single_size);
+                    free_block->is_available = true;
+                    free_block->generated_epoch = GL::util::get_current_epoch();
+                    free_block->is_free = false;
+                    free_block->locker = 0;
+                    free_block->next = nullptr;
+                    free_block->prev = nullptr;
+                    free_block->start_position = 0;
+                    free_block->thread_id = GL::util::get_thread_id();
+                    free_block->parent_buffer = this->alloc_block(free_block->length);
+                    if (!free_block->parent_buffer) {
+                        block_alloc.Free(free_block);
+                        return nullptr;
+                    }
+                    free_block->sub_buffer = nullptr;
+                    free_block->lock();
+                }
+            }
+
+            // if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
+            if (!free_block->sub_buffer) {
+                // we will need to make a sub_buffer.                 
+                if ((free_block->length - (sizeof(dynamic_block)*2)) > N) {                    
+                    // If we are far too big for the requested size, we should make a child node who will carry on our remainder. 
+                    auto* child_block = block_alloc.Alloc();
+                    child_block->generated_epoch = GL::util::get_current_epoch();
+                    child_block->thread_id = GL::util::get_thread_id();
+                    child_block->locker = 0;
+                    child_block->is_available = true;
+                    child_block->is_free = true;
+                    child_block->parent_buffer = free_block->parent_buffer;
+                    child_block->sub_buffer = nullptr;
+                    child_block->length = free_block->length - N;
+                    child_block->next = nullptr;
+                    child_block->prev = free_block;
+                    child_block->start_position = free_block->start_position + N;                    
+                    
+                    free_block->length = N;                    
+                    free_block->sub_buffer = this->split_sub_buffer(free_block->parent_buffer, free_block->start_position, N);
+                    free_block->next = child_block;
+
+                    child_block->lock();
+                    free_tree.Add(child_block, child_block->length);
+                    child_block->unlock();
+                }
+                else {
+                    // we need to make a sub-buffer, but it's not worth splitting. 
+                    free_block->sub_buffer = this->split_sub_buffer(free_block->parent_buffer, free_block->start_position, free_block->length);
+                }
+            }
+
+            free_block->unlock();
+        }
+        return free_block;
+    };
+    // must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
+    __declspec(noinline) void Free(dynamic_block* free_block) {
+        if (free_block) {
+            std::scoped_lock locked(*free_block);
+            free_block->is_free = true;
+            try_combine(free_block); // attempts to merge this node with parent and child nodes recursively. May modify its own length, therefore do not "add" until finished merging.
+            free_tree.Add(free_block, free_block->length);            
+        }
+    };
+
+public:
+    __declspec(noinline) ~dynamic_allocator() {
+        for (auto& buf : allocations) 
+            free_block(buf);
+    };
+
+    class unique_ptr {
+        dynamic_allocator::dynamic_block* data;
+        dynamic_allocator* parent;
+
+    public:
+        explicit unique_ptr(dynamic_allocator::dynamic_block* d, dynamic_allocator* p) : data{ d }, parent{ p } {};
+        unique_ptr() : data{ nullptr }, parent{ nullptr } {};
+        unique_ptr(std::nullptr_t) : data{ nullptr }, parent{ nullptr } {};
+        unique_ptr(unique_ptr const&) = delete;
+        unique_ptr(unique_ptr&& rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
+            rhs.data = nullptr;
+            rhs.parent = nullptr;
+        };
+        unique_ptr& operator=(unique_ptr const&) = delete;
+        __declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
+            if (data && parent) { parent->Free(data); }
+            data = nullptr;
+            parent = nullptr;
+            return *this;
+        };
+        __declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
+            if (data && parent) { parent->Free(data); }
+            data = rhs.data;
+            parent = rhs.parent;
+            rhs.data = nullptr;
+            rhs.parent = nullptr;
+            return *this;
+        };
+        operator bool() const {
+            return data;
+        };
+
+        ~unique_ptr() {
+            if (data && parent) { parent->Free(data); }
+        };
+
+        const dynamic_allocator::dynamic_block* operator->() const {
+            return data;
+        };
+        const dynamic_allocator::dynamic_block* operator->() {
+            return data;
+        };
+        const dynamic_allocator::dynamic_block& operator*() const {
+            return *data;
+        };
+        dynamic_allocator::dynamic_block& operator*() {
+            return *data;
+        };
+        const dynamic_allocator::dynamic_block* get() const {
+            return data;
+        };
+        dynamic_allocator::dynamic_block* get() {
+            return data;
+        };
+
+    };
+    typedef typename std::shared_ptr<dynamic_allocator::dynamic_block> shared_ptr;
+
+    unique_ptr make_unique(unsigned int N) {
+        return unique_ptr(this->Alloc(N), this);
+    };
+
+    shared_ptr make_shared(unsigned int N) {
+        return shared_ptr(this->Alloc(N), [this](dynamic_allocator::dynamic_block* p) {
+            this->Free(p);
+        });
+    };
+};
+
 // single-threaded GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
 class dynamic_gpu_allocator {
 public:
@@ -1872,7 +2223,7 @@ public:
         };
     };
 private:
-    GL::atomic_allocator< dynamic_block >
+    GL::atomic_allocator< dynamic_block, 128, false, true >
         block_alloc;
     parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
@@ -1980,6 +2331,9 @@ private:
     };
 
 public:
+    size_t size() const {
+        return block_alloc.size();
+    };
     __declspec(noinline) dynamic_gpu_allocator(unsigned long long max_single_alloc_size = 0)
         : block_alloc{}
         , free_tree{}
@@ -2036,7 +2390,7 @@ private:
             auto& prog = GL::GPU::opencl::get_program();
             cl_mem buf = ::clCreateBuffer(prog.get_cl_context().get(),
                 CL_MEM_READ_WRITE | ((int)prog.info.patch_intel_gpu_above_4gb << 23)
-                , max_single_size, nullptr, &err);
+                , std::max(N, max_single_size), nullptr, &err);
             if ((err != CL_SUCCESS) || !buf) {
                 ::clReleaseMemObject(buf);
                 return nullptr;
@@ -2047,7 +2401,7 @@ private:
             free_block->prev = nullptr;
             free_block->next = nullptr;
             free_block->start_position = 0;
-            free_block->length = max_single_size;
+            free_block->length = std::max(N, max_single_size);
             free_block->sub_buffer = nullptr;
             free_block->is_free = true;
             free_block->is_available = true;
@@ -2229,9 +2583,9 @@ public:
         };
     };
 private:
-    GL::atomic_parallel_allocator< dynamic_block >
+    GL::atomic_parallel_allocator<dynamic_block, 128, false, true>
         block_alloc;
-    GL::thread_object_no_default<parallel_binary_search_tree< dynamic_block, unsigned long long, 10>>
+    /*GL::thread_object_no_default<*/parallel_binary_search_tree< dynamic_block, unsigned long long, 10>/*>*/
         free_tree;
     unsigned long long
         total_allocations;
@@ -2270,7 +2624,7 @@ private:
 
                         // lhs->next is no longer valid and should be removed from the list
                         if (1) {
-                            auto& tree = free_tree[lhs->next->thread_id];
+                            auto& tree = free_tree;// [lhs->next->thread_id] ;
                             auto [tree_node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->next->length);
                             while (tree_node) {
                                 if (tree_node->object()) {
@@ -2314,7 +2668,7 @@ private:
 
                         // lhs->prev is no longer valid and should be removed from the list
                         if (1) {
-                            auto& tree = free_tree[lhs->prev->thread_id];
+                            auto& tree = free_tree;// [lhs->prev->thread_id] ;
                             auto [tree_node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(lhs->prev->length);
                             while (tree_node) {
                                 if (tree_node->object()) {
@@ -2341,6 +2695,9 @@ private:
     };
 
 public:
+    size_t size() const { 
+        return block_alloc.size(); 
+    };
     __declspec(noinline) dynamic_cpu_allocator(unsigned long long max_single_alloc_size = 0)
         : block_alloc{}
         , free_tree{}
@@ -2372,7 +2729,9 @@ public:
 
         if (1) {
             // try to get a free block
-            free_tree.for_each_cancellable([&free_block, &N](auto& tree) -> bool {
+            //free_tree.for_each_cancellable([&free_block, &N](auto& tree) -> bool {
+            if (1) {
+                auto& tree = free_tree;
                 auto [tree_node, locker] = tree.NodeFindSmallestLargerEqual_ForRemoval(N);
                 while (tree_node) {
                     if (tree_node->object()) {
@@ -2381,14 +2740,16 @@ public:
                                 free_block = tree_node->object();
                                 free_block->generated_epoch = GL::util::get_current_epoch();
                                 tree.Remove(tree_node, locker);
-                                return true;
+                                //return true;
+                                break;
                             }
                         }
                     }
                     tree_node = tree.GetNextLeaf(tree_node, locker);
                 }
-                return false;
-            });
+                //return false;
+            }
+            //});
 
             // if no free block was acquired, we are starting fresh
             if (!free_block) { // allocate a new buffer
@@ -2408,7 +2769,7 @@ public:
                 free_block->is_available = true;
                 free_block->generated_epoch = GL::util::get_current_epoch();
                 free_block->thread_id = GL::util::get_thread_id();
-                free_tree.get_or_init(); // ensures existance of this tree
+                //free_tree.get_or_init(); // ensures existance of this tree
             }
         }
 
@@ -2431,9 +2792,9 @@ public:
             if (child_block->next) child_block->next->prev = child_block;
             free_block->length = N;
 
-            free_tree[child_block->thread_id].Add(child_block, child_block->length);
+            free_tree/*[child_block->thread_id]*/.Add(child_block, child_block->length);
         }
-        
+
         // allocate the subbuffer
         if (free_block && !free_block->sub_buffer) {
             cl_buffer_region region;
@@ -2453,7 +2814,7 @@ public:
 
         try_combine(free_block);
 
-        free_tree[free_block->thread_id].Add(free_block, free_block->length);
+        free_tree/*[free_block->thread_id]*/.Add(free_block, free_block->length);
     };
 
 public:
@@ -2546,6 +2907,25 @@ public:
     };
 
     static auto& program() { return GL::GPU::opencl::get_program(); };
+
+    static dynamic_allocator<void*>& allocator() { 
+        static dynamic_allocator<void*> out(
+            [](unsigned long long length) -> void* {
+                return Mem_Alloc(length);
+            }, // _alloc_block
+            [](void*& parent_block, unsigned long long offset, unsigned long long length) -> void* {
+                return (void*)((::byte*)parent_block + offset);
+            }, // _split_sub_buffer
+            [](void*& sub_buffer) -> void {
+                sub_buffer = nullptr;
+            }, // _free_sub_buffer
+            [](void*& parent_block) -> void {
+                Mem_Free(parent_block);
+            }, // _free_block
+            maximum_allocation_size()
+        ); 
+        return out; 
+    };
     static dynamic_cpu_allocator& cpu_allocator() { static dynamic_cpu_allocator out(maximum_allocation_size()); return out; };
     static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out(maximum_allocation_size()); return out; };
 
@@ -2659,25 +3039,25 @@ public:
             array_delete(const array_delete&) noexcept {}
             __declspec(noinline) void operator()(T* p) const noexcept { // delete a pointer
                 static_assert(0 < sizeof(T), "can't delete an incomplete type");
-                auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
-                auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
-                unsigned int N = (alloced->length - sizeof(dynamic_cpu_allocator::dynamic_block*)) / sizeof(T);
+                auto* ptr = (void*)((::byte*)p - sizeof(dynamic_allocator<void*>::dynamic_block*));
+                auto* alloced = *(dynamic_allocator<void*>::dynamic_block**)(::byte*)(ptr);
+                unsigned int N = (alloced->length - sizeof(dynamic_allocator<void*>::dynamic_block*)) / sizeof(T);
                 if constexpr (!std::is_pod_v<T>) {
                     for (unsigned int i = 0; i < N; ++i)
                         (&p[i])->~T();
                 }
-                cpu_allocator().Free(alloced);
+                allocator().Free(alloced);
             }
         };
         __declspec(noinline) static T* create(unsigned int N) {
             //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
+            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_allocator<void*>::dynamic_block*));
 
-            *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
+            *(dynamic_allocator<void*>::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_allocator<void*>::dynamic_block*));
             if constexpr (std::is_pod_v<T>) {
                 // best-case scenario!
-                // std::memset(out, 0, (sizeof(T) * N));
+                std::memset(out, 0, (sizeof(T) * N));
             }
             else {
                 // need to actually initialize the array...
@@ -2687,10 +3067,10 @@ public:
         };
         template <typename... U> __declspec(noinline) static T* create_single(U&&... args) {
             unsigned int N = 1;
-            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
+            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_allocator<void*>::dynamic_block*));
 
-            *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
+            *(dynamic_allocator<void*>::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_allocator<void*>::dynamic_block*));
             new (&out[0]) T(std::move(args)...);
             return out;
         };
@@ -4858,5 +5238,9 @@ namespace GL {
     void 
         arena_memory_pool::free(void* p) {
         mem_matrix::helper<char>::array_delete()((char*)p);
+    };
+    std::string
+        arena_memory_pool::debug() {
+        return GL::printf("gpu: %i, cpu: %i, general: %i", (int)mem_matrix::gpu_allocator().size(), (int)mem_matrix::cpu_allocator().size(), (int)mem_matrix::allocator().size()).to_string();
     };
 };

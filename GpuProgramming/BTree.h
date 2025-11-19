@@ -1969,7 +1969,25 @@ private:
 		~locker() {
 			clear();
 		};
+		operator bool() const {
+			return locked;
+		};
+
 	public:
+		bool // store a shared lock
+			try_push_back(lock_type& source) {
+			clear();
+			locked = &source;
+			if (locked->try_lock()) {
+				hard_locked = true;
+				return true;
+			}
+			else {
+				hard_locked = false;
+				clear();
+				return false;
+			}
+		};
 		void // store a shared lock
 			push_back(lock_type& source) {
 			clear();
@@ -2252,7 +2270,13 @@ public:
 		NodeFind_ForRemoval(keyType key) {
 		return NodeFind(key, true);
 	};
-
+	locker 
+		try_lock() {
+		locker out;
+		out.try_push_back(mut);
+		return out;
+	};
+	
 
 	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {
@@ -2289,6 +2313,32 @@ public:
 		node = nullptr;
 		locking.clear();
 		return out;
+	};
+	parallel_binary_search_treeNode* // find an object with the smallest key larger equal the given key
+		NodeFindSmallestLargerEqual_Locked(keyType key, locker const& locked) {
+		parallel_binary_search_treeNode*
+			node = nullptr;
+
+		if (!root || (root->numChildren <= 0)) {
+			node = nullptr;
+			return node;
+		}
+		for (node = root; node; ) {
+			node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
+			if (node->object()) {
+				if (node->key >= key) return node;
+				else {
+					node = nullptr;
+					return node;
+				}
+			}
+			if (!node || (node->numChildren <= 0)) {
+				node = nullptr;
+				return node;
+			}
+		}
+		node = nullptr;
+		return node;
 	};
 	std::pair<parallel_binary_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
 		NodeFindSmallestLargerEqual_ForRemoval(keyType key) {
@@ -2349,12 +2399,14 @@ public:
 #endif
 	std::pair<parallel_binary_search_treeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 		GetRoot() {
-		// auto guarded{ nodeAllocator.ProtectCurrentEpoch() };
-
 		std::pair<parallel_binary_search_treeNode*, locker> out;
 		out.second.push_back(mut);
 		out.first = root;
 		return out;
+	};
+	parallel_binary_search_treeNode* // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+		GetRoot(locker const& locked) {
+		return root;
 	};
 #if 0
 	static parallel_binary_search_treeNode* // goes through all nodes of the tree		

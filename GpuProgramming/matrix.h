@@ -406,6 +406,8 @@ namespace GL {
                 free(p);
             });
         };
+        static std::string
+            debug();
     };
 
 };
