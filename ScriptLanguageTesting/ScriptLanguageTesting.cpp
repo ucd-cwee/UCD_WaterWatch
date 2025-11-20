@@ -91,11 +91,9 @@ int main() {
     if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
         // GL::GPU::matrix<float>::maximum_allocation_size() /= 16; // = 1; // /= 16; // 16
-        if (0) {
-            // GL::GPU::matrix<unsigned int>(100);
-
+        if (1) {
             GL::stopwatch sw;
-#if 0
+#if 1
             if (auto timer = sw.debug_timer("Std Linear Allocator (int)")) {
                 for (size_t i = 0; i < 1000000; ++i) {
                     auto a = std::make_unique<int>();     // value of 0
@@ -169,8 +167,6 @@ int main() {
                 });
             }
 #endif       
-
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Allocator (int)")) {
                 for (size_t i = 0; i < 1000000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
@@ -180,7 +176,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(10000));
                 }
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Parallel Allocator (int)")) {
                 GL::parallel::For(0, 1000000, [](size_t) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
@@ -190,7 +185,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(10000));
                 });
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Random Allocator (int)")) {
                 for (size_t i = 0; i < 1000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
@@ -200,7 +194,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(i + 1000));
                 }
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Parallel Random Allocator (int)")) {
                 GL::parallel::For(0, 1000, [](size_t i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
@@ -210,7 +203,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(i + 1000));
                     });
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Allocator (std::string)")) {
                 for (size_t i = 0; i < 1000000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
@@ -220,7 +212,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(100));
                 }
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Parallel Allocator (std::string)")) {
                 GL::parallel::For(0, 1000000, [](size_t) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
@@ -230,7 +221,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(100));
                     });
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Linear Random Allocator (std::string)")) {
                 for (size_t i = 0; i < 1000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
@@ -240,7 +230,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(i + 1000));
                 }
             }
-            print(GL::arena_memory_pool::debug());
             if (auto timer = sw.debug_timer("Arena Parallel Random Allocator (std::string)")) {
                 GL::parallel::For(0, 1000, [](size_t i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
@@ -250,7 +239,6 @@ int main() {
                     GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(i + 1000));
                 });
             }
-            print(GL::arena_memory_pool::debug());
         }
 
         using namespace GL;

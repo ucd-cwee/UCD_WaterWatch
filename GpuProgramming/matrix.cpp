@@ -1521,14 +1521,10 @@ template <typename buffer_type = void*>
 class dynamic_allocator {
 public:
     struct dynamic_block {
-        long long
-            generated_epoch;
-        unsigned long long
-            start_position;
-        unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
-            length;
         buffer_type // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
             sub_buffer;
+        unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
+            length;
         long
             locker;
         long // this sub-buffer may be further split. 
@@ -1541,25 +1537,9 @@ public:
             is_free;
 
         __declspec(noinline) void lock() {
-            //if (InterlockedIncrement(reinterpret_cast<volatile long*>(&locker)) == 1) {
-            //    return;
-            //}
-            //else {
-            //    InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
-            //    while (InterlockedIncrement(reinterpret_cast<volatile long*>(&locker)) != 1) {
-            //        InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
-            //    }
-            //}
             while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
         };
         __declspec(noinline) bool try_lock() {
-            //if (InterlockedIncrement(reinterpret_cast<volatile long*>(&locker)) == 1) {
-            //    return true;
-            //}
-            //else {
-            //    InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
-            //    return false;
-            //}
             return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
         };
         void unlock() {
@@ -1567,9 +1547,9 @@ public:
         };
     };
 private:
-    GL::atomic_parallel_allocator<dynamic_block, 128, true, true>
+    GL::atomic_allocator<dynamic_block, 128, true, true>
         block_alloc;
-    parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
+    parallel_binary_search_tree<dynamic_block, unsigned long long, 10>
         free_tree;
     GL::atomic_vector< buffer_type >
         allocations;
@@ -1577,10 +1557,6 @@ private:
         allocation_tickets;
     std::function<buffer_type(unsigned long long)> 
         alloc_block; // alloc a fresh buffer with length
-    std::function<buffer_type(buffer_type&, unsigned long long, unsigned long long)> 
-        split_sub_buffer; // split parent with offset and length
-    std::function<void(buffer_type&)> 
-        free_sub_buffer; // release and set nullptr
     std::function<void(buffer_type&)> 
         free_parent_block; // release and delete
     
@@ -1590,8 +1566,6 @@ public:
     };
     __declspec(noinline) dynamic_allocator(
         std::function<buffer_type(unsigned long long)> _alloc_block,
-        std::function<buffer_type(buffer_type&, unsigned long long, unsigned long long)> _split_sub_buffer,
-        std::function<void(buffer_type&)> _free_sub_buffer,
         std::function<void(buffer_type&)> _free_block
     )
         : block_alloc{}
@@ -1599,8 +1573,6 @@ public:
         , allocations{}
         , allocation_tickets{}
         , alloc_block{ _alloc_block }
-        , split_sub_buffer{ _split_sub_buffer }
-        , free_sub_buffer{ _free_sub_buffer }
         , free_parent_block{ _free_block }
     {};
 
@@ -1626,11 +1598,10 @@ public:
                                 if (free_block->length >= N) {
                                     if (free_block->is_free) { // we have a winner.
                                         free_block->is_free = false;
-                                        if (allocation_tickets.num_tickets() > 2) { // If this node is a stand-alone allocation that is oversized, consider just killing it. 
-                                            if (free_block->length > N) {
+                                        if (free_block->length > N) {
+                                            if (allocation_tickets.num_tickets() > 2) { // If this node is a stand-alone allocation that is oversized, consider just killing it.                                             
                                                 // cooperatively remove this node
-                                                if (free_block->sub_buffer) this->free_sub_buffer(free_block->sub_buffer);
-
+                                                free_block->sub_buffer = nullptr;
                                                 this->free_parent_block(this->allocations[free_block->parent_buffer]);
                                                 this->allocations[free_block->parent_buffer] = nullptr;
                                                 allocation_tickets.return_ticket(free_block->parent_buffer);
@@ -1642,7 +1613,6 @@ public:
                                                 break;                                                
                                             }
                                         }                                        
-                                        if (free_block) free_block->generated_epoch = GL::util::get_current_epoch();
                                         free_tree.Remove(tree_node, tree_locked); // invalidates the tree.                                        
                                         break;
                                     }
@@ -1662,10 +1632,8 @@ public:
                         if (!free_block) return nullptr;
                         free_block->length = N;
                         free_block->is_available = true;
-                        free_block->generated_epoch = GL::util::get_current_epoch();
                         free_block->is_free = false;
                         free_block->locker = 1;
-                        free_block->start_position = 0;
                         free_block->thread_id = GL::util::get_thread_id();
 
                         free_block->parent_buffer = allocation_tickets.get_ticket();
@@ -1684,7 +1652,7 @@ public:
             // if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
             if (!free_block->sub_buffer) {
                 // we need to make a sub-buffer, but it's not worth splitting. 
-                free_block->sub_buffer = this->split_sub_buffer(this->allocations[free_block->parent_buffer], free_block->start_position, free_block->length);                
+                free_block->sub_buffer = this->allocations[free_block->parent_buffer];
             }
 
             free_block->unlock();
@@ -1702,12 +1670,6 @@ public:
 
 public:
     __declspec(noinline) ~dynamic_allocator() {
-        if (auto [n, locker] = free_tree.GetRoot(); n) while (n) {
-            if (n->object()) 
-                if (n->object()->sub_buffer) 
-                    free_sub_buffer(n->object()->sub_buffer);
-            n = free_tree.GetNextLeaf(n, locker);
-        }
         for (auto& buf : allocations) if (buf) free_parent_block(buf);
     };
 
@@ -1834,12 +1796,6 @@ public:
                 //((manager**)p)[0] = manager_p;
                 //return (void*)((::byte*)p + sizeof(manager*));
             }, // _alloc_block
-            [](void*& parent_block, unsigned long long offset, unsigned long long length) -> void* {
-                return (void*)((::byte*)parent_block + offset);
-            }, // _split_sub_buffer
-            [](void*& sub_buffer) -> void {
-                sub_buffer = nullptr;
-            }, // _free_sub_buffer
             [](void*& parent_block) -> void {
                 if (!parent_block) return;
                 Mem_Free(parent_block);
@@ -1869,24 +1825,6 @@ public:
                     return buf;
                 }
             }, // _alloc_block
-            [](cl_mem& parent_block, unsigned long long offset, unsigned long long length) -> cl_mem {
-                cl_int err = CL_SUCCESS;
-                cl_buffer_region region;
-                region.origin = offset;
-                region.size = length;
-                cl_mem buf = ::clCreateSubBuffer(parent_block, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
-                if ((err != CL_SUCCESS) || !buf) {
-                    ::clReleaseMemObject(buf);
-                    return nullptr;
-                }
-                else {
-                    return buf;
-                }
-            }, // _split_sub_buffer
-            [](cl_mem& sub_buffer) -> void {
-                ::clReleaseMemObject(sub_buffer);
-                sub_buffer = nullptr;
-            }, // _free_sub_buffer
             [](cl_mem& parent_block) -> void {
                 ::clReleaseMemObject(parent_block);
                 parent_block = nullptr;
