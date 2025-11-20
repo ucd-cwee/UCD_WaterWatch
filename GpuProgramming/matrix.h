@@ -61,8 +61,8 @@ namespace GL {
             // Change the maximum allocation size (and minimum allocation amount) for the CPU and GPU arena memory pools, in bytes.
             // Must be changed before the arena is initialized, otherwise will be ignored. Suggest changing this on start-up if needed to be changed at all. 
             // This is shared across all matrix<T> objects, regardless of T type. 
-            static unsigned int& 
-                maximum_allocation_size();
+            //static unsigned int& 
+            //    maximum_allocation_size();
 
             // normal constructor
             explicit matrix(GL::GPU::dimensions d);

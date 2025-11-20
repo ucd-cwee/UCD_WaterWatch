@@ -2645,17 +2645,13 @@ struct static_mem_matrix {
 class mem_matrix {
     template <typename G> friend class matrix;
 public:
-    static unsigned int& maximum_allocation_size() {
-        static unsigned int max_size{ ((unsigned long long)GL::GPU::opencl::get_program().info.memory * 1048576ull) / 8ull };
-        return max_size;
-    };
-
     static auto& program() { return GL::GPU::opencl::get_program(); };
     
     using dynamic_cpu_allocator = dynamic_allocator<void*>;
     static dynamic_cpu_allocator& cpu_allocator() { 
         //class 
         //    manager {
+        //public:
         //    manager()
         //        : p{ nullptr }
         //    {}
@@ -2663,28 +2659,35 @@ public:
         //        : p{ d } 
         //    {}
         //    manager(manager const&) = delete;
-        //    manager(manager && rhs)
+        //    manager(manager && rhs) noexcept
         //        : p{ rhs.p }
         //    {
         //        rhs.p = nullptr;
         //    }
         //    manager& operator=(manager const&) = delete;
-        //    manager& operator=(manager&& rhs) {
+        //    manager& operator=(manager&& rhs) noexcept {
         //        p = rhs.p;
         //        rhs.p = nullptr;
         //        return *this;
         //    }
-        //    ~manager() {
-        //        if (p) Mem_Free(p);
+        //    __declspec(noinline) ~manager() {
+        //        if (p) {
+        //            Mem_Free(p);
+        //        }
         //    }
         //    void* p;
         //};
-        //static GL::atomic_epoch_allocator< manager > 
+        //static GL::atomic_epoch_allocator< manager, GL::atomic_allocator<manager> >
         //    managers;
 
         static dynamic_allocator<void*> out(
             [](unsigned long long length) -> void* {
                 return Mem_Alloc(length);
+                //void* p = Mem_Alloc(length + sizeof(manager*));
+                //manager* manager_p = managers.Alloc(p);
+                //EXPECT_EQ(manager_p->p, p);
+                //((manager**)p)[0] = manager_p;
+                //return (void*)((::byte*)p + sizeof(manager*));
             }, // _alloc_block
             [](void*& parent_block, unsigned long long offset, unsigned long long length) -> void* {
                 return (void*)((::byte*)parent_block + offset);
@@ -2693,9 +2696,16 @@ public:
                 sub_buffer = nullptr;
             }, // _free_sub_buffer
             [](void*& parent_block) -> void {
+                if (!parent_block) return;
                 Mem_Free(parent_block);
+                //auto guard = managers.ProtectCurrentEpoch();
+                //manager** manager_p = (manager**)((::byte*)parent_block - sizeof(manager*));
+                //EXPECT_NE(manager_p, nullptr);
+                //EXPECT_EQ((*manager_p)->p, parent_block);
+                //managers.Free(*manager_p);
+                parent_block = nullptr;
             }, // _free_block
-            maximum_allocation_size()
+            1
         );
         // static dynamic_cpu_allocator out(maximum_allocation_size()); 
         return out; 
@@ -2737,7 +2747,7 @@ public:
                 ::clReleaseMemObject(parent_block);
                 parent_block = nullptr;
             }, // _free_block
-            maximum_allocation_size()
+            1
         );
         // static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out(maximum_allocation_size()); return out; };
         return out;
@@ -2752,6 +2762,8 @@ public:
             constexpr array_delete() noexcept = default;
             array_delete(const array_delete&) noexcept {}
             __declspec(noinline) void operator()(T* p) const noexcept { // delete a pointer
+
+
                 static_assert(0 < sizeof(T), "can't delete an incomplete type");
                 auto* ptr = (void*)((::byte*)p - sizeof(block_type*));
                 auto* alloced = *(block_type**)(::byte*)(ptr);
@@ -2849,12 +2861,13 @@ public:
 
         void clear() {
             if (len == 0) return;
-
-            ::clWaitForEvents((cl_int)len, &operator[](0));
-            for (long long L = 0; L < len; ++L) {
-                ::clReleaseEvent(operator[](L));
+            if (items) {
+                ::clWaitForEvents((cl_int)len, &items[0]);
+                for (long long L = 0; L < len; ++L) {
+                    ::clReleaseEvent(items[L]);
+                }
+                len = 0;
             }
-            len = 0;
         };
         void push_back(cl_event const& rhs) {
             if (!rhs) return;
@@ -3218,10 +3231,6 @@ namespace GL {
                 mem_free_helper().Free(p);
             }
             mem = nullptr;
-        };
-
-        template <typename T> unsigned int& matrix<T>::maximum_allocation_size() {
-            return mem_matrix::maximum_allocation_size();
         };
 
         template <typename T> matrix<T>::matrix(GL::GPU::dimensions d)
@@ -4866,7 +4875,7 @@ namespace GL {
             todo(GL::GPU::matrix<float>());
         };
         template <typename T> void do_precompile(GL::GPU::matrix<T> const&) {
-            matrix<T>::maximum_allocation_size();
+            // matrix<T>::maximum_allocation_size();
             matrix<T>(GL::GPU::dimensions{ 1, 1, 1 });
             matrix<T>(1, 1, 1, false);
             matrix<T>(1, 1, 1, true);

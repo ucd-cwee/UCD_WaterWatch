@@ -90,7 +90,7 @@ int main() {
     // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
     if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
-        GL::GPU::matrix<float>::maximum_allocation_size() = 1; // /= 16; // 16
+        // GL::GPU::matrix<float>::maximum_allocation_size() /= 16; // = 1; // /= 16; // 16
         if (0) {
             // GL::GPU::matrix<unsigned int>(100);
 
