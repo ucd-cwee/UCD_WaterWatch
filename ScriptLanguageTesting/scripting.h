@@ -79,7 +79,7 @@ namespace GL {
                     namespace_m; // may point to this
 
             private:
-                GL::ticket_dispensor::ScopedTicket
+                GL::ticket_dispensor<false>::ScopedTicket
                     scope_index; // unique index of this scope for check_flags
 
             public:
@@ -1053,7 +1053,7 @@ namespace GL {
             protected:
                 // When a scope is born it will get the smallest-possible unique index for itself. 
                 // This "ticket" or unique index will be unique to the scope for its life, after which it returns the ticket to here.
-                GL::ticket_dispensor
+                GL::ticket_dispensor<false>
                     scope_indexs;
                 GL::atomic_vector<Breadcrumb*>
                     scopes; // namespaces and classes may add themselves to this list (order not guarranteed) to help with debugging or other activities. 

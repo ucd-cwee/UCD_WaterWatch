@@ -2077,6 +2077,7 @@ public:
 		}
 
 		if (root == nullptr) root = AllocNode(false); // start fresh
+		if (root == nullptr) throw std::runtime_error("Root should not have been nullptr");
 
 		if (root->numChildren >= maxChildrenPerNode) { // make a new root and split
 			node = AllocNode(false);

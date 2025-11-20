@@ -128,6 +128,7 @@ namespace GL {
 
     // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
     // Prints new tickets as needed, but recycles old tickets as much as possible. 
+    template <bool perform_count = false>
     class ticket_dispensor {
     public:
         class ScopedTicket {
@@ -164,10 +165,17 @@ namespace GL {
             queue{};
         std::atomic<size_t>
             indexes{ 0 };
+        std::atomic<size_t>
+            count{ 0 };
 
     public:
         size_t num_tickets() const {
-            return indexes.load() + 1;
+            if constexpr (perform_count) {
+                return count.load();
+            }
+            else {
+                return indexes.load() + 1;
+            }
         };
         __declspec(noinline) ScopedTicket get_scoped_ticket() {
             return ScopedTicket(get_ticket(), *this);
@@ -177,9 +185,15 @@ namespace GL {
             if (!queue.try_pop(out)) {
                 out = ++indexes;
             }
+            if constexpr (perform_count) {
+                ++count;
+            }
             return out;
         };
         __declspec(noinline) void return_ticket(size_t ticket) {
+            if constexpr (perform_count) {
+                --count;
+            }
             queue.push(ticket);
         };
         void reserve(int n) {

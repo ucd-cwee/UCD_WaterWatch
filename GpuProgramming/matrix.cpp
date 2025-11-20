@@ -1317,6 +1317,7 @@ public:
 #include "../ScriptLanguageTesting/atomic_maps.h"
 #include "../ScriptLanguageTesting/atomic_stack.h"
 #include <concurrent_unordered_map.h>
+#include "../ScriptLanguageTesting/ticket_dispensor.h"
 
 namespace GL {
     template <typename T> class Lockable {
@@ -1365,325 +1366,6 @@ namespace GL {
         Locked get() {
             return Locked(mut, obj);
         };
-    };
-
-    template <typename T, unsigned int minAllocCount = (sizeof(T) << 8), unsigned int padding_bytes = 0>
-    class dynamic_allocator {
-        struct dynamic_block {
-            dynamic_block*
-                prev;
-            dynamic_block*
-                next;
-            long long
-                generated_epoch;
-            unsigned int
-                num;
-            unsigned int
-                original_allocation; // garbage value if is_base_block() returns false
-            bool
-                is_free;
-            bool
-                is_available;
-            char
-                Padding[padding_bytes];
-
-            bool is_base_block() const {
-                return (prev == nullptr);
-            };
-            dynamic_block* get_base_block() {
-                if (prev) return prev->get_base_block();
-                else return this;
-            };
-            bool is_split() const {
-                if (next || prev) return true;
-                else return false;
-            };
-        };
-        bTree< dynamic_block, unsigned int, 8>
-            free_tree{};
-        unsigned int
-            total_allocations{ 0 };
-        __declspec(noinline) bool try_combine(dynamic_block* lhs) {
-            if (lhs) {
-                if (lhs->is_free && lhs->next) {
-                    if (lhs->next->is_available && lhs->next->is_free) {
-                        // we are free, and the next pointer is free
-                        lhs->next->is_available = false;
-                        lhs->num += (sizeof(dynamic_block) + (lhs->next->num * sizeof(T))) / sizeof(T);
-                        if (lhs->next->next) {
-                            lhs->next->next->prev = lhs;
-                        }
-
-                        // lhs->next is no longer valid and should be removed from the list
-                        auto tree_node = free_tree.NodeFindSmallestLargerEqual(lhs->next->num);
-                        while (tree_node) {
-                            if (tree_node->object) {
-                                if (tree_node->key == lhs->next->num) {
-                                    if (tree_node->object == lhs->next) {
-                                        free_tree.Remove(tree_node);
-                                        break;
-                                    }
-                                }
-                            }
-                            tree_node = free_tree.GetNextLeaf(tree_node);
-                        }
-
-                        lhs->next = lhs->next->next;
-
-                        if (!lhs->next && !lhs->prev) {
-                            lhs->num = lhs->original_allocation;
-                        }
-
-                        // try to combine again!
-                        (void)try_combine(lhs);
-
-                        return true;
-                    }
-                }
-                //if (lhs->is_free && lhs->prev) {
-                //    if (lhs->prev->is_available && lhs->prev->is_free) {
-                //        // we are free, and the prev pointer is free
-                //        return try_combine(lhs->prev);
-                //    }
-                //}
-            }
-            return false;
-        };
-        std::mutex
-            mut;
-
-    public:
-        T* Alloc(unsigned int N) {
-            if (N == 0) return nullptr;
-
-            std::scoped_lock locked(mut);
-
-            dynamic_block* free_block = nullptr;
-            // try to get a free block
-            if (1) {
-                auto* tree_node = free_tree.NodeFindSmallestLargerEqual(N);
-                while (tree_node) {
-                    if (tree_node->object) {
-                        if (tree_node->key >= N) {
-                            if (tree_node->object->is_available) {
-                                free_block = tree_node->object;
-                                free_block->get_base_block()->generated_epoch = GL::util::get_current_epoch();
-                                free_tree.Remove(tree_node);
-                                break;
-                            }
-                        }
-                    }
-                    tree_node = free_tree.GetNextLeaf(tree_node);
-                }
-            }
-            // otherwise make a block
-            if (!free_block) { // allocate a new buffer to fit the requested size
-                unsigned int alloc_count = CONST_MAX(minAllocCount, ((N > minAllocCount) ? (N + (N % minAllocCount)) : N));
-                free_block = (dynamic_block*)Mem_Alloc(sizeof(dynamic_block) + sizeof(T) * alloc_count);
-                if (!free_block) return nullptr;
-                free_block->prev = nullptr;
-                free_block->next = nullptr;
-                free_block->num = alloc_count;
-                free_block->original_allocation = alloc_count;
-                free_block->is_available = true;
-                free_block->generated_epoch = GL::util::get_current_epoch();
-                total_allocations += free_block->original_allocation;
-            }
-            // split the block if too large
-            if (free_block && (free_block->num > N)) {
-                // we got a buffer of size enough. But, if it is too large, we can share it with another, smaller allocation later.
-                long long free_block_size = sizeof(T) * (free_block->num - N);
-                long long remaining_N = ((free_block_size - (long long)sizeof(dynamic_block)) / (long long)sizeof(T));
-                if (remaining_N > 0) {
-                    dynamic_block* child_block = (dynamic_block*)(((::byte*)free_block) + sizeof(dynamic_block) + sizeof(T) * N);
-                    child_block->prev = free_block;
-                    child_block->next = free_block->next;
-                    child_block->num = remaining_N;
-                    child_block->is_free = true;
-                    child_block->is_available = true;
-                    free_block->next = child_block;
-                    if (child_block->next) child_block->next->prev = child_block;
-                    free_block->num = N;
-
-                    free_tree.Add(child_block, child_block->num);
-                }
-            }
-            // return the result
-            free_block->is_free = false;
-
-            T* out = (T*)(((::byte*)free_block) + sizeof(dynamic_block));
-
-            std::memset(out, 0, N * sizeof(T));
-
-            return out;
-        };
-        __declspec(noinline) void Free(T* ptr) {
-            if (!ptr) return;
-
-            std::scoped_lock locked(mut);
-
-            dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
-            free_block->is_free = true;
-            try_combine(free_block);
-            if (free_block->is_base_block() && !free_block->is_split() && ((total_allocations - free_block->original_allocation) > 0)) {
-                long long curr_epoch = GL::util::get_current_epoch();
-
-                // has enough time passed to warrant this?
-                if ((curr_epoch - free_block->generated_epoch) > 1000) {
-                    total_allocations -= free_block->original_allocation;
-                    Mem_Free(free_block);
-                }
-                else {
-                    free_block->generated_epoch = curr_epoch;
-                    free_tree.Add(free_block, free_block->num);
-                }
-
-                // review the free tree and see if anyone is expired...
-                if (auto* tree_node = free_tree.GetRoot()) {
-                    while (tree_node) {
-                        if (tree_node->object) {
-                            if (try_combine(tree_node->object)) break;
-                            if (!tree_node->object->is_split() && tree_node->object->is_base_block()) {
-                                if ((curr_epoch - tree_node->object->generated_epoch) > 10) {
-                                    total_allocations -= tree_node->object->original_allocation;
-                                    Mem_Free(tree_node->object);
-
-                                    free_tree.Remove(tree_node);
-                                    break;
-                                }
-                            }
-                        }
-                        tree_node = free_tree.GetNextLeaf(tree_node);
-                    }
-                }
-            }
-            else {
-                free_tree.Add(free_block, free_block->num);
-            }
-        };
-        __declspec(noinline) ~dynamic_allocator() {
-            std::vector< dynamic_block* > blocks;
-            if (auto* tree_node = free_tree.GetRoot()) {
-                while (tree_node) {
-                    if (tree_node->object) {
-                        if (tree_node->object->is_base_block()) {
-                            blocks.push_back(tree_node->object);
-                        }
-                    }
-                    tree_node = free_tree.GetNextLeaf(tree_node);
-                }
-            }
-            for (auto& free_block : blocks) {
-                total_allocations -= free_block->original_allocation;
-                Mem_Free(free_block);
-            }
-            EXPECT_EQ(total_allocations, 0);
-        };
-        static char* get_padded_content(T* ptr) {
-            if (!ptr) return nullptr;
-            dynamic_block* free_block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
-            return &free_block->Padding[0];
-        };
-
-        class unique_ptr {
-            T* data;
-            dynamic_allocator* parent;
-
-        public:
-            explicit unique_ptr(T* d, dynamic_allocator* p) : data{ d }, parent{ p } {};
-            unique_ptr() : data{ nullptr }, parent{ nullptr } {};
-            unique_ptr(nullptr_t) : data{ nullptr }, parent{ nullptr } {};
-            unique_ptr(unique_ptr const&) = delete;
-            unique_ptr(unique_ptr&& rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
-                rhs.data = nullptr;
-                rhs.parent = nullptr;
-            };
-            unique_ptr& operator=(unique_ptr const&) = delete;
-            unique_ptr& operator=(nullptr_t) {
-                if (data && parent) { parent->Free(data); }
-                data = nullptr;
-                parent = nullptr;
-                return *this;
-            };
-            unique_ptr& operator=(unique_ptr&& rhs) noexcept {
-                if (data && parent) { parent->Free(data); }
-                data = rhs.data;
-                parent = rhs.parent;
-                rhs.data = nullptr;
-                rhs.parent = nullptr;
-                return *this;
-            };
-            ~unique_ptr() {
-                if (data && parent) { parent->Free(data); }
-            };
-
-            operator bool() const {
-                return data;
-            };
-            const T* operator->() const {
-                return data;
-            };
-            T* operator->() {
-                return data;
-            };
-            const T& operator*() const {
-                return *data;
-            };
-            T& operator*() {
-                return *data;
-            };
-            const T* get() const {
-                return data;
-            };
-            T* get() {
-                return data;
-            };
-
-            T& operator[](unsigned int N) {
-                return data[N];
-            };
-            const T& operator[](unsigned int N) const {
-                return data[N];
-            };
-
-        };
-
-        unique_ptr make_unique(unsigned int N) {
-            return unique_ptr(this->Alloc(N), this);
-        };
-        std::shared_ptr<T[]> make_shared(unsigned int N) {
-            return std::shared_ptr<T[]>(this->Alloc(N), [this](T* p) {
-                this->Free(p);
-            });
-        };
-
-    };
-
-    // Thread-safe, lock-free, high-performance page-based allocator with LIFO functionality for memory re-use. Optimized for heavy multithreading. 
-    template <typename _type_, size_t minAllocCount = (sizeof(_type_) << 8)>
-    class parallel_dynamic_allocator {
-    private:
-        thread_object_no_default<dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>>
-            TLS;
-
-    public:
-        parallel_dynamic_allocator() = default;
-        ~parallel_dynamic_allocator() = default;
-
-        _type_* Alloc(unsigned int N) {
-            const auto threadID = GL::util::get_thread_id();
-            _type_* out = TLS->Alloc(N);
-            auto& thread_id = reinterpret_cast<size_t&>(*dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>::get_padded_content(out));
-            thread_id = threadID;
-            return out;
-        };
-        __declspec(noinline) void Free(_type_* t) {
-            if (t) {
-                auto& thread_id = reinterpret_cast<size_t&>(*dynamic_allocator<_type_, minAllocCount, sizeof(size_t) / sizeof(char)>::get_padded_content(t));
-                TLS[thread_id].Free(t);
-            }
-        };
-
     };
 };
 namespace GL {
@@ -1762,8 +1444,6 @@ namespace GL {
                 queue;
             bool
                 initialized = false;
-            parallel_dynamic_allocator<char>
-                shared_mem_allocator;
 
             class kernel_list {
             public:
@@ -1809,7 +1489,6 @@ namespace GL {
                 , program(info, opencl_c_code)
                 , queue(info.cl_context, info.cl_device)
                 , initialized(true)
-                , shared_mem_allocator{}
             {}
             Program() = delete;
             Program(Program const&) = delete;
@@ -1854,7 +1533,7 @@ public:
             length;
         buffer_type // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
             sub_buffer;
-        buffer_type // this sub-buffer may be further split. 
+        long // this sub-buffer may be further split. 
             parent_buffer;
         unsigned int
             thread_id;
@@ -1908,22 +1587,24 @@ public:
         };
     };
 private:
-    GL::atomic_allocator<dynamic_block, 128, true, true>
+    GL::atomic_parallel_allocator<dynamic_block, 128, true, true>
         block_alloc;
     parallel_binary_search_tree< dynamic_block, unsigned long long, 10>
         free_tree;
     unsigned long long
         max_single_size;
-    std::vector< buffer_type >
+    GL::atomic_vector< buffer_type >
         allocations;
-    std::function<buffer_type(unsigned long long)> // allon a fresh buffer with length
-        alloc_block;
-    std::function<buffer_type(buffer_type&, unsigned long long, unsigned long long)> // split parent with offset and length
-        split_sub_buffer;
-    std::function<void(buffer_type&)> // release and set nullptr
-        free_sub_buffer;
-    std::function<void(buffer_type&)> // release and delete
-        free_parent_block;
+    GL::ticket_dispensor<true>
+        allocation_tickets;
+    std::function<buffer_type(unsigned long long)> 
+        alloc_block; // alloc a fresh buffer with length
+    std::function<buffer_type(buffer_type&, unsigned long long, unsigned long long)> 
+        split_sub_buffer; // split parent with offset and length
+    std::function<void(buffer_type&)> 
+        free_sub_buffer; // release and set nullptr
+    std::function<void(buffer_type&)> 
+        free_parent_block; // release and delete
 
     __declspec(noinline) bool try_combine(dynamic_block* lhs) {
         // assumes lhs is locked already. 
@@ -1959,7 +1640,7 @@ private:
                             lhs->length += next->length;
                             lhs->next = next_next;
                             if (next_next) next_next->prev = lhs;
-                            next->length = 0;
+                            //next->length = 0;
                             next->start_position = 0;
                             successful = true;
                         }
@@ -1993,7 +1674,7 @@ private:
                             lhs->length += prev->length;
                             lhs->prev = prev_prev;
                             if (prev_prev) prev_prev->next = lhs;
-                            prev->length = 0;
+                            //prev->length = 0;
                             prev->start_position = 0;
                             successful = true;
                         }
@@ -2025,6 +1706,7 @@ public:
         , free_tree{}
         , max_single_size{ max_single_alloc_size }
         , allocations{}
+        , allocation_tickets{}
         , alloc_block{ _alloc_block }
         , split_sub_buffer{ _split_sub_buffer }
         , free_sub_buffer{ _free_sub_buffer }
@@ -2041,45 +1723,50 @@ public:
                 if (auto tree_locked = free_tree.lock()) {
                     if (auto* tree_node = free_tree.NodeFindSmallestLargerEqual_Locked(N, tree_locked); tree_node) {
                         while (tree_node) {
-                            // std::scoped_lock node_locked(*tree_node->object());
-                            if (tree_node->object()->try_lock()) {
-                                if (tree_node->object()->is_available) {
-                                    // this is our candidate node.
-                                    if (tree_node->object()->is_free && (tree_node->object()->length > N)) {
-                                        // we have a winner
-                                        tree_node->object()->is_free = false;
-                                        free_block = tree_node->object();
-                                        free_tree.Remove(tree_node, tree_locked); // invalidates the tree.
-                                        free_block->generated_epoch = GL::util::get_current_epoch();
-                                        break;
-                                    }
-                                    else {
-                                        if (tree_node->object()->length != tree_node->key) {
-                                            // the object and its key in the tree no longer match. Do it a favor and update it. 
-                                            free_block = tree_node->object();
-                                            free_tree.Remove(tree_node, tree_locked);
-                                            free_tree.Add(free_block, free_block->length, tree_locked);
-                                            free_block->unlock();
-                                            free_block = nullptr;
-                                            break;
-                                        }
-                                        else {
-                                            // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
-                                            tree_node->object()->unlock();
-                                            free_block = nullptr;
-                                        }
-                                    }
-                                }
-                                else {
+                            free_block = tree_node->object();
+                            if (free_block && free_block->try_lock()) {
+                                if (!free_block->is_available) {
                                     // cooperatively remove this node
-                                    free_block = tree_node->object();
                                     free_tree.Remove(tree_node, tree_locked);
                                     free_block->unlock();
                                     block_alloc.Free(free_block);
                                     free_block = nullptr;
                                     break;
                                 }
+
+                                if (free_block->length >= N) {
+                                    if (free_block->is_free) { // we have a winner.
+                                        free_block->is_free = false;
+                                        if (allocation_tickets.num_tickets() > 2) { // If this node is a stand-alone allocation that is oversized, consider just killing it. 
+                                            if (free_block->length > N) {
+                                                if ((free_block->next == free_block->prev) && (free_block->prev == nullptr)) {
+                                                    // cooperatively remove this node
+                                                    if (free_block->sub_buffer) this->free_sub_buffer(free_block->sub_buffer);
+
+                                                    this->free_parent_block(this->allocations[free_block->parent_buffer]);
+                                                    this->allocations[free_block->parent_buffer] = nullptr;
+                                                    allocation_tickets.return_ticket(free_block->parent_buffer);
+
+                                                    free_tree.Remove(tree_node, tree_locked);
+                                                    free_block->unlock();
+                                                    block_alloc.Free(free_block);
+                                                    free_block = nullptr;
+                                                    break;
+                                                }
+                                            }
+                                        }                                        
+                                        if (free_block) free_block->generated_epoch = GL::util::get_current_epoch();
+                                        free_tree.Remove(tree_node, tree_locked); // invalidates the tree.                                        
+                                        break;
+                                    }
+                                    else {
+                                        // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
+                                        free_block->unlock();
+                                        free_block = nullptr;
+                                    }
+                                }                                
                             }
+                            free_block = nullptr;
                             tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
                         }
                     }
@@ -2095,8 +1782,12 @@ public:
                         free_block->prev = nullptr;
                         free_block->start_position = 0;
                         free_block->thread_id = GL::util::get_thread_id();
-                        free_block->parent_buffer = this->alloc_block(free_block->length);
-                        if (!free_block->parent_buffer) {
+
+                        free_block->parent_buffer = allocation_tickets.get_ticket();
+                        this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
+                        this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
+                        if (!this->allocations[free_block->parent_buffer]) {
+                            allocation_tickets.return_ticket(free_block->parent_buffer);
                             block_alloc.Free(free_block);
                             return nullptr;
                         }
@@ -2108,7 +1799,7 @@ public:
             // if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
             if (!free_block->sub_buffer) {
                 // we will need to make a sub_buffer.                 
-                if ((free_block->length - (sizeof(dynamic_block) * 2)) > N) {
+                if ((free_block->length - N) > (sizeof(dynamic_block) * 2)) {
                     // If we are far too big for the requested size, we should make a child node who will carry on our remainder. 
                     auto* child_block = block_alloc.Alloc();
                     if (!child_block) {
@@ -2131,14 +1822,14 @@ public:
                     child_block->prev = free_block;
                     child_block->start_position = free_block->start_position + N;
                     free_block->length = N;
-                    free_block->sub_buffer = this->split_sub_buffer(free_block->parent_buffer, free_block->start_position, N);
+                    free_block->sub_buffer = this->split_sub_buffer(this->allocations[free_block->parent_buffer], free_block->start_position, N);
                     free_block->next = child_block;
                     free_tree.Add(child_block, child_block->length);
                     child_block->unlock();
                 }
                 else {
                     // we need to make a sub-buffer, but it's not worth splitting. 
-                    free_block->sub_buffer = this->split_sub_buffer(free_block->parent_buffer, free_block->start_position, free_block->length);
+                    free_block->sub_buffer = this->split_sub_buffer(this->allocations[free_block->parent_buffer], free_block->start_position, free_block->length);
                 }
             }
 
@@ -2152,9 +1843,7 @@ public:
         if (free_block) {
             free_block->lock();
             free_block->is_free = true;
-            while (!try_combine(free_block)) {
-                // attempts to merge this node with parent and child nodes recursively. May modify its own length, therefore do not "add" until finished merging.
-            }
+            while (!try_combine(free_block)) {}  // attempts to merge this node with parent and child nodes recursively. May modify its own length, therefore do not "add" until finished merging.
             free_block->unlock();
             free_tree.Add(free_block, free_block->length);            
         }
@@ -2162,8 +1851,13 @@ public:
 
 public:
     __declspec(noinline) ~dynamic_allocator() {
-        for (auto& buf : allocations) 
-            free_parent_block(buf);
+        if (auto [n, locker] = free_tree.GetRoot(); n) while (n) {
+            if (n->object()) 
+                if (n->object()->sub_buffer) 
+                    free_sub_buffer(n->object()->sub_buffer);
+            n = free_tree.GetNextLeaf(n, locker);
+        }
+        for (auto& buf : allocations) if (buf) free_parent_block(buf);
     };
 
     class unique_ptr {
@@ -2236,6 +1930,7 @@ public:
 };
 
 // single-threaded GPU memory manager. Small number of actual memory allocations -- most are sub-buffers. Re-using subbuffers is prioritized. 
+#if 0
 class dynamic_gpu_allocator {
 public:
     struct dynamic_block {
@@ -2938,6 +2633,7 @@ public:
         });
     };
 };
+#endif
 
 class mem_matrix;
 struct static_mem_matrix {
@@ -2956,7 +2652,36 @@ public:
 
     static auto& program() { return GL::GPU::opencl::get_program(); };
     
-    static dynamic_allocator<void*>& allocator() { 
+    using dynamic_cpu_allocator = dynamic_allocator<void*>;
+    static dynamic_cpu_allocator& cpu_allocator() { 
+        //class 
+        //    manager {
+        //    manager()
+        //        : p{ nullptr }
+        //    {}
+        //    manager(void* d) 
+        //        : p{ d } 
+        //    {}
+        //    manager(manager const&) = delete;
+        //    manager(manager && rhs)
+        //        : p{ rhs.p }
+        //    {
+        //        rhs.p = nullptr;
+        //    }
+        //    manager& operator=(manager const&) = delete;
+        //    manager& operator=(manager&& rhs) {
+        //        p = rhs.p;
+        //        rhs.p = nullptr;
+        //        return *this;
+        //    }
+        //    ~manager() {
+        //        if (p) Mem_Free(p);
+        //    }
+        //    void* p;
+        //};
+        //static GL::atomic_epoch_allocator< manager > 
+        //    managers;
+
         static dynamic_allocator<void*> out(
             [](unsigned long long length) -> void* {
                 return Mem_Alloc(length);
@@ -2971,119 +2696,58 @@ public:
                 Mem_Free(parent_block);
             }, // _free_block
             maximum_allocation_size()
-        ); 
+        );
+        // static dynamic_cpu_allocator out(maximum_allocation_size()); 
         return out; 
     };
-    static dynamic_cpu_allocator& cpu_allocator() { static dynamic_cpu_allocator out(maximum_allocation_size()); return out; };
-    static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out(maximum_allocation_size()); return out; };
 
-public:
-    // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
-    class event_list {
-    public:
-        dynamic_cpu_allocator::unique_ptr 
-            items; // leverages the CPU allocator for speed of allocation
-        long long 
-            len;
-        long long 
-            reservation;
-
-        void clear() {
-            if (len == 0) return;
-
-            ::clWaitForEvents((cl_int)len, &operator[](0));
-            for (long long L = 0; L < len; ++L) {
-                ::clReleaseEvent(operator[](L));
-            }
-            // ::memset(items->sub_buffer, 0, sizeof(cl_event) * reservation);
-            len = 0;
-        };
-        void push_back(cl_event const& rhs) {
-            if (!rhs) return;
-            if (reservation == 0) reserve(16);
-
-            if (len < reservation) {
-                reinterpret_cast<cl_event*>(items->sub_buffer)[len] = rhs;
-                len = len + 1;
-            }
-            else {
-                clear();
-                items = cpu_allocator().make_unique(reservation * 2 + 16);
-                reservation = reservation * 2 + 16;
-                reinterpret_cast<cl_event*>(items->sub_buffer)[0] = rhs;
-                len = 1;
-            }
-        };
-        size_t size() const { return len; };
-        size_t capacity() const { return reservation; };
-        void reserve(size_t n) {
-            if (reservation < n) {
-                if (reservation > 0) {
-                    clear();
+    using dynamic_gpu_allocator = dynamic_allocator<cl_mem>;
+    static dynamic_gpu_allocator& gpu_allocator() {
+        static dynamic_allocator<cl_mem> out(
+            [](unsigned long long length) -> cl_mem {
+                cl_int err = CL_SUCCESS;
+                cl_mem buf = ::clCreateBuffer(program().get_cl_context().get(), CL_MEM_READ_WRITE | ((int)program().info.patch_intel_gpu_above_4gb << 23), length, nullptr, &err);
+                if ((err != CL_SUCCESS) || !buf) {
+                    ::clReleaseMemObject(buf);
+                    return nullptr;
                 }
-                reservation = n;
-                len = 0;
-                items = cpu_allocator().make_unique(sizeof(cl_event) * reservation);
-                ::memset(items->sub_buffer, 0, sizeof(cl_event) * reservation);
-            }
-        };
-        __declspec(noinline) cl_event& operator[](size_t n) {
-            if (((n * sizeof(cl_event)) > items->length) || (n >= len)) throw std::runtime_error("Bad Index");
-            return reinterpret_cast<cl_event*>(items->sub_buffer)[n];
-        }
-        __declspec(noinline) const cl_event& operator[](size_t n) const {
-            if (((n * sizeof(cl_event)) > items->length) || (n >= len)) throw std::runtime_error("Bad Index");
-            return reinterpret_cast<const cl_event*>(items->sub_buffer)[n];
-        }
-
-        event_list()
-            : items{}
-            , len{ 0 }
-            , reservation{ 0 }
-        {};
-        event_list(event_list const&) = delete;
-        event_list(event_list&& rhs) noexcept
-            : items{ std::move(rhs.items) }
-            , len{ std::move(rhs.len) }
-            , reservation{ std::move(rhs.reservation) }
-        {
-            rhs.items = nullptr;
-            rhs.len = 0;
-            rhs.reservation = 0;
-        };
-        event_list& operator=(event_list const&) = delete;
-        event_list& operator=(event_list&& rhs) noexcept {
-            this->clear();
-            this->items = nullptr;
-            this->items = std::move(rhs.items);
-            this->len = std::move(rhs.len);
-            this->reservation = std::move(rhs.reservation);
-            rhs.items = nullptr;
-            rhs.len = 0;
-            rhs.reservation = 0;
-            return *this;
-        };
-        ~event_list() {
-            clear();
-            this->items = nullptr;
-            len = 0;
-            reservation = 0;
-        };
+                else {
+                    return buf;
+                }
+            }, // _alloc_block
+            [](cl_mem& parent_block, unsigned long long offset, unsigned long long length) -> cl_mem {
+                cl_int err = CL_SUCCESS;
+                cl_buffer_region region;
+                region.origin = offset;
+                region.size = length;
+                cl_mem buf = ::clCreateSubBuffer(parent_block, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+                if ((err != CL_SUCCESS) || !buf) {
+                    ::clReleaseMemObject(buf);
+                    return nullptr;
+                }
+                else {
+                    return buf;
+                }
+            }, // _split_sub_buffer
+            [](cl_mem& sub_buffer) -> void {
+                ::clReleaseMemObject(sub_buffer);
+                sub_buffer = nullptr;
+            }, // _free_sub_buffer
+            [](cl_mem& parent_block) -> void {
+                ::clReleaseMemObject(parent_block);
+                parent_block = nullptr;
+            }, // _free_block
+            maximum_allocation_size()
+        );
+        // static dynamic_gpu_allocator& gpu_allocator() { static dynamic_gpu_allocator out(maximum_allocation_size()); return out; };
+        return out;
     };
-    dynamic_gpu_allocator::unique_ptr
-        gpu_memory;
-    dynamic_cpu_allocator::unique_ptr
-        cpu_memory;
-    unsigned long long
-        len_bytes;
-    mutable event_list
-        events;
-
+    
 public:
     template <typename T>
     struct helper {
-        using block_type = dynamic_allocator<void*>::dynamic_block;
-        // using block_type = dynamic_cpu_allocator::dynamic_block;
+        // using block_type = dynamic_allocator<void*>::dynamic_block;
+        using block_type = dynamic_cpu_allocator::dynamic_block;
         struct array_delete { // default deleter for unique_ptr to array of unknown size
             constexpr array_delete() noexcept = default;
             array_delete(const array_delete&) noexcept {}
@@ -3096,12 +2760,12 @@ public:
                     for (unsigned int i = 0; i < N; ++i)
                         (&p[i])->~T();
                 }
-                allocator().Free(alloced);
+                cpu_allocator().Free(alloced);
             }
         };
         __declspec(noinline) static T* create(unsigned int N) {
             //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
+            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
 
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
@@ -3111,13 +2775,13 @@ public:
             }
             else {
                 // need to actually initialize the array...
-                for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;                
+                for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;
             }
             return out;
         };
         template <typename... U> __declspec(noinline) static T* create_single(U&&... args) {
             unsigned int N = 1;
-            auto* ptr = allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
+            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
 
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
@@ -3171,6 +2835,102 @@ public:
         };
         return std::shared_ptr<T[]>(helper::create(N), &helper::destroy);
     };
+
+public:
+    // vector of events which does not shrink -- attempts to re-use the vector whenever possible. 
+    class event_list {
+    public:
+        std::unique_ptr< cl_event[], mem_matrix::helper<cl_event>::array_delete>
+            items; // leverages the CPU allocator for speed of allocation
+        long long 
+            len;
+        long long 
+            reservation;
+
+        void clear() {
+            if (len == 0) return;
+
+            ::clWaitForEvents((cl_int)len, &operator[](0));
+            for (long long L = 0; L < len; ++L) {
+                ::clReleaseEvent(operator[](L));
+            }
+            len = 0;
+        };
+        void push_back(cl_event const& rhs) {
+            if (!rhs) return;
+            if (reservation == 0) reserve(16);
+
+            if (len < reservation) {
+                items[len] = rhs;
+                len = len + 1;
+            }
+            else {
+                clear();
+                items = make_unique<cl_event>(reservation * 2 + 16);
+                reservation = reservation * 2 + 16;
+                items[0] = rhs;
+                len = 1;
+            }
+        };
+        size_t size() const { return len; };
+        size_t capacity() const { return reservation; };
+        void reserve(size_t n) {
+            if (reservation < n) {
+                if (reservation > 0) {
+                    clear();
+                }
+                reservation = n;
+                len = 0;
+                items = make_unique<cl_event>(reservation);
+                ::memset(&items[0], 0, sizeof(cl_event) * reservation);
+            }
+        };
+        cl_event& operator[](size_t n) { return items[n]; };
+        const cl_event& operator[](size_t n) const { return items[n]; };
+
+        event_list()
+            : items{}
+            , len{ 0 }
+            , reservation{ 0 }
+        {};
+        event_list(event_list const&) = delete;
+        event_list(event_list&& rhs) noexcept
+            : items{ std::move(rhs.items) }
+            , len{ std::move(rhs.len) }
+            , reservation{ std::move(rhs.reservation) }
+        {
+            rhs.items = nullptr;
+            rhs.len = 0;
+            rhs.reservation = 0;
+        };
+        event_list& operator=(event_list const&) = delete;
+        event_list& operator=(event_list&& rhs) noexcept {
+            this->clear();
+            this->items = nullptr;
+            this->items = std::move(rhs.items);
+            this->len = std::move(rhs.len);
+            this->reservation = std::move(rhs.reservation);
+            rhs.items = nullptr;
+            rhs.len = 0;
+            rhs.reservation = 0;
+            return *this;
+        };
+        ~event_list() {
+            clear();
+            this->items = nullptr;
+            len = 0;
+            reservation = 0;
+        };
+    };
+    dynamic_gpu_allocator::unique_ptr
+        gpu_memory;
+    dynamic_cpu_allocator::unique_ptr
+        cpu_memory;
+    unsigned long long
+        len_bytes;
+    mutable event_list
+        events;
+
 
     // immediate
     bool add_event(cl_event ev, bool copy = false) const {
@@ -4788,7 +4548,9 @@ namespace GL {
             static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
             static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
             if constexpr (std::is_same_v<float, T>) {
-                return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+                auto a1 = convolve(static_matrix_kernel<float>{ &kernel1 });
+                auto a2 = a1.convolve(static_matrix_kernel<float>{ &kernel2 });
+                return a2.resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
             else {
                 return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
@@ -5291,6 +5053,6 @@ namespace GL {
     };
     std::string
         arena_memory_pool::debug() {
-        return GL::printf("gpu: %i, cpu: %i, general: %i", (int)mem_matrix::gpu_allocator().size(), (int)mem_matrix::cpu_allocator().size(), (int)mem_matrix::allocator().size()).to_string();
+        return GL::printf("gpu: %i, cpu: %i", (int)mem_matrix::gpu_allocator().size(), (int)mem_matrix::cpu_allocator().size()).to_string();
     };
 };
