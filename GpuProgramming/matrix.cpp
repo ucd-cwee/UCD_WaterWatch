@@ -1599,21 +1599,19 @@ public:
                                     if (free_block->is_free) { // we have a winner.
                                         free_block->is_free = false;
                                         if (free_block->length > N) {
-                                            if (allocation_tickets.num_tickets() > 2) { // If this node is a stand-alone allocation that is oversized, consider just killing it.                                             
-                                                // cooperatively remove this node
-                                                free_block->sub_buffer = nullptr;
-                                                this->free_parent_block(this->allocations[free_block->parent_buffer]);
-                                                this->allocations[free_block->parent_buffer] = nullptr;
-                                                allocation_tickets.return_ticket(free_block->parent_buffer);
+                                            // cooperatively remove this node
+                                            free_block->sub_buffer = nullptr;
+                                            this->free_parent_block(this->allocations[free_block->parent_buffer]);
+                                            this->allocations[free_block->parent_buffer] = nullptr;
+                                            allocation_tickets.return_ticket(free_block->parent_buffer);
 
-                                                free_tree.Remove(tree_node, tree_locked);
-                                                free_block->unlock();
-                                                block_alloc.Free(free_block);
-                                                free_block = nullptr;
-                                                break;                                                
-                                            }
+                                            free_tree.Remove(tree_node, tree_locked);
+                                            free_block->unlock();
+                                            block_alloc.Free(free_block);
+                                            free_block = nullptr;
+                                            break;
                                         }                                        
-                                        free_tree.Remove(tree_node, tree_locked); // invalidates the tree.                                        
+                                        free_tree.Remove(tree_node, tree_locked); // invalidates the tree
                                         break;
                                     }
                                     else {
@@ -1663,8 +1661,10 @@ public:
     // must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
     __declspec(noinline) void Free(dynamic_block* free_block) {
         if (free_block) {
+            //free_block->lock();
             free_block->is_free = true;
-            free_tree.Add(free_block, free_block->length);            
+            free_tree.Add(free_block, free_block->length);
+            //free_block->unlock();            
         }
     };
 
