@@ -91,9 +91,9 @@ int main() {
     if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
         // GL::GPU::matrix<float>::maximum_allocation_size() /= 16; // = 1; // /= 16; // 16
-        if (0) {
+        if (1) {
             GL::stopwatch sw;
-#if 1
+#if 0
             if (auto timer = sw.debug_timer("Std Linear Allocator (int)")) {
                 for (size_t i = 0; i < 1000000; ++i) {
                     auto a = std::make_unique<int>();     // value of 0

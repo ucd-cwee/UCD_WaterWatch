@@ -365,6 +365,10 @@ namespace GL {
             pre_compile();
     };
     
+    // shared memory manager, that allows faster allocation/deallocation in multithreaded environments. 
+    // Threads allocate in their own TLS without competition, but can (in parallel) deallocate back into other threads. 
+    // At-risk of temporary memory leaks if a thread ID is made, used, and then never used again. The memory would be recovered once another thread comes to use it's old slot.
+    // Overall, not high a risk as long as the workload is consistant or patterned. 
     class arena_memory_pool {
     public:
         constexpr arena_memory_pool() noexcept = default;
