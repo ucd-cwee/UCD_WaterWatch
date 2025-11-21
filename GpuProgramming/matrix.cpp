@@ -20,8 +20,6 @@
 #include <set>
 #include <boost/math/distributions/students_t.hpp>
 #include "dynamic_allocator.h"
-#include "Enum.h"
-
 #include "matrix.h"
 
 #pragma region "Convenience implementation of CPU parallel computing for the conditions where GPU parallel compute is not available or not convenient."
@@ -1780,10 +1778,17 @@ public:
     ~parallel_dynamic_allocator() = default;
 
     dynamic_block* Alloc(unsigned long long N) {
-        dynamic_allocator< buffer_type >& this_allocator = allocator.get_or_init(alloc_block, free_parent_block);
-        dynamic_block* out = this_allocator.Alloc(N);
-        out->thread_id = GL::util::get_thread_id();
-        return out;
+        if (N > 0) {
+            dynamic_allocator< buffer_type >& this_allocator = allocator.get_or_init(alloc_block, free_parent_block);
+            dynamic_block* out = this_allocator.Alloc(N);
+            if (out) {
+                out->thread_id = GL::util::get_thread_id();
+            }
+            return out;
+        }
+        else {
+            return nullptr;
+        }
     };
     void Free(dynamic_block* free_block) {
         if (free_block) {
@@ -1793,13 +1798,20 @@ public:
 
 public:
     unique_ptr make_unique(unsigned int N) {
-        auto* p = this->Alloc(N);
-        return unique_ptr(p, &this->allocator[p->thread_id]);
+        if (auto* p = this->Alloc(N)) {
+            return unique_ptr(p, &this->allocator[p->thread_id]);
+        }
+        return nullptr;
     };
     shared_ptr make_shared(unsigned int N) {
-        return shared_ptr(this->Alloc(N), [this](dynamic_block* p) {
-            this->Free(p);
-        });
+        if (N > 0) {
+            return shared_ptr(this->Alloc(N), [this](dynamic_block* p) {
+                this->Free(p);
+            });
+        }
+        else {
+            return nullptr;
+        }
     };
 
 };
@@ -2425,12 +2437,22 @@ public:
     };
 
     template <typename T = void> T* cpu_data() {
-        ensure_host_mem_exists();
-        return reinterpret_cast<T*>(cpu_memory->sub_buffer);
+        if (cpu_memory) {
+            ensure_host_mem_exists();
+            return reinterpret_cast<T*>(cpu_memory->sub_buffer);
+        }
+        else {
+            return nullptr;
+        }
     };
     cl_mem gpu_data() {
-        ensure_device_mem_exists();
-        return gpu_memory->sub_buffer;
+        if (gpu_memory) {
+            ensure_device_mem_exists();
+            return gpu_memory->sub_buffer;
+        }
+        else {
+            return nullptr;
+        }
     };
     static auto& get_program() {
         return program();
@@ -2445,13 +2467,17 @@ private:
             }
         }
         else if constexpr (std::is_same_v<T, std::unique_ptr<mem_matrix>>) {
-            if (parameter->add_event(ev, true)) {
-                ++count;
+            if (parameter) {
+                if (parameter->add_event(ev, true)) {
+                    ++count;
+                }
             }
         }
         else if constexpr (std::is_same_v<T, std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>>) {
-            if (parameter->add_event(ev, true)) {
-                ++count;
+            if (parameter) {
+                if (parameter->add_event(ev, true)) {
+                    ++count;
+                }
             }
         }
         append_events(count, ev, parameters...);
@@ -2479,25 +2505,45 @@ private:
     template<class G, class... U>
     __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const G& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G, mem_matrix>) {
-            link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
-            for (size_t i = 0; i < parameter.events.size(); ++i) {
-                waitlist.insert(parameter.events.operator[](i));
+            if (parameter.gpu_memory) {
+                link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
+                for (size_t i = 0; i < parameter.events.size(); ++i) {
+                    waitlist.insert(parameter.events[i]);
+                }
+            }
+            else {                
+                throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
             }
         }
         else if constexpr (std::is_same_v<G, std::unique_ptr<mem_matrix>>) {
-            link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
-            for (size_t i = 0; i < parameter->events.size(); ++i) {
-                waitlist.insert(parameter->events.operator[](i));
+            if (parameter && parameter->gpu_memory) {
+                link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
+                for (size_t i = 0; i < parameter->events.size(); ++i) {
+                    waitlist.insert(parameter->events[i]);
+                }
+            }
+            else {
+                throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
             }
         }
         else if constexpr (std::is_same_v<G, std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>>) {
-            link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
-            for (size_t i = 0; i < parameter->events.size(); ++i) {
-                waitlist.insert(parameter->events.operator[](i));
+            if (parameter && parameter->gpu_memory) {
+                link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
+                for (size_t i = 0; i < parameter->events.size(); ++i) {
+                    waitlist.insert(parameter->events[i]);
+                }
+            }
+            else {
+                throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
             }
         }
         else if constexpr (std::is_same_v<G, static_mem_matrix>) {
-            link_parameter(cl_kernel, starting_position, parameter.ptr->gpu_memory->sub_buffer);
+            if (parameter.ptr && parameter.ptr->gpu_memory) {
+                link_parameter(cl_kernel, starting_position, parameter.ptr->gpu_memory->sub_buffer);
+            }
+            else {
+                throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
+            }
         }
         else {
             link_parameter(cl_kernel, starting_position, parameter);
@@ -2600,13 +2646,13 @@ namespace GL {
         };
 
         template <typename T> matrix<T>::matrix(GL::GPU::dimensions d)
-            : dim{ d }
+            : dim{ d.ensure() }
             , memory(nullptr)
         {
             mem(*this) = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(d.X * d.Y * d.Z), false, true);
         };
         template <typename T> matrix<T>::matrix(unsigned int X, unsigned int Y, unsigned int Z, bool cpu_only)
-            : dim{ X, Y, Z }
+            : dim{ GL::GPU::dimensions{ X, Y, Z }.ensure() }
             , memory(nullptr)
         {
             mem(*this) = mem_matrix::make_unique_single< mem_matrix>(sizeof(T) * WorkgroupAdjustment(X * Y * Z), cpu_only, !cpu_only);
@@ -3815,7 +3861,7 @@ namespace GL {
                 return out;
             }
             else {
-                return matrix();
+                return *this;
             }
         };
         template <typename T> matrix<T> matrix<T>::convolve(static_matrix_kernel<T> const& K) const {
@@ -3832,7 +3878,7 @@ namespace GL {
                 return out;
             }
             else {
-                return matrix();
+                return *this;
             }
         };
         template <typename T> matrix_kernel<float> matrix<T>::guassian_kernel(unsigned int X, unsigned int Y) {

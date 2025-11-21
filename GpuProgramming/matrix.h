@@ -11,7 +11,15 @@ namespace GL {
                 return std::max<unsigned int>(1u, (unsigned int)(X > 1u) + (unsigned int)(Y > 1u) + (unsigned int)(Z > 1u));
             };
             unsigned int count() const {
-                return X * Y * Z;
+                return std::max<unsigned int>(1u, X) * std::max<unsigned int>(1u, Y) * std::max<unsigned int>(1u, Z);
+            };
+            // ensure a minimum of 1 in each slot
+            dimensions ensure() const {
+                return dimensions{
+                    std::max<unsigned int>(1u, X),
+                    std::max<unsigned int>(1u, Y),
+                    std::max<unsigned int>(1u, Z)
+                };
             };
         };
 

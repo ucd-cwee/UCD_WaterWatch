@@ -267,7 +267,7 @@ int main() {
         // Run the game of life
         for (;;) {
             GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
-            int game_w2 = screen.dwSize.X / 2, game_h2 = screen.dwSize.Y - 3;
+            int game_w2 = (screen.dwSize.X / 2), game_h2 = ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1);
             if (game_w2 != game_w || game_h != game_h2) {
                 game_w = game_w2;
                 game_h = game_h2;
