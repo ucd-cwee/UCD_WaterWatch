@@ -32,5 +32,6 @@
     <ClInclude Include="datetime.h" />
     <ClInclude Include="functions.h" />
     <ClInclude Include="scripting.h" />
+    <ClInclude Include="atomic_tree.h" />
   </ItemGroup>
 </Project>

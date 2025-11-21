@@ -1,9 +1,12 @@
 #pragma once
-#include <algorithm>
+#include <memory>
+#include <string>
+
 namespace GL {
     namespace GPU {
         // wrapper for the dimensions of a GPU matrix.
-        struct dimensions {
+        struct 
+            dimensions {
             unsigned int X;
             unsigned int Y;
             unsigned int Z;
@@ -24,22 +27,35 @@ namespace GL {
         };
 
         // GPU-accelerated linear algebra wrapper. Should only be used by one thread at a time. 
-        template <typename T> class matrix;
+        template <typename T> class 
+            matrix;
 
         // a matrix_kernel is a matrix dedicated to the purpose of being a convolution kernel. 
-        template <typename T> class matrix_kernel {
+        template <typename T> class 
+            matrix_kernel {
         public:
             std::unique_ptr<matrix<T>>
                 mat;
             T
                 sum;
 
-            matrix_kernel() = default;
-            matrix_kernel(matrix<T>&& rhs)
+            matrix_kernel() 
+                : mat{ nullptr }, sum{ T{} } 
+            {};
+            matrix_kernel(matrix_kernel const&) = delete;
+            matrix_kernel(matrix<T>&& rhs) noexcept
                 : mat{ std::make_unique<matrix<T>>(std::move(rhs)) }
-                , sum{}
+                , sum{ T{} }
             {
                 sum = mat->sum();
+            };
+            matrix_kernel& operator=(matrix_kernel const&) = delete;
+            matrix_kernel& operator=(matrix_kernel&& rhs) noexcept {
+                mat = std::move(rhs.mat);
+                rhs.mat = nullptr;
+                sum = rhs.sum;
+                rhs.sum = T{};
+                return *this;
             };
             ~matrix_kernel() = default;
         };
@@ -47,13 +63,13 @@ namespace GL {
         // a static_matrix_kernel is a matrix_kernel which promises to never change its value and to out-live any jobs that use it as input. 
         // This will prevent accumulation of GPU jobs, but risks memory corruption if this is destroyed too early. Best used when static or thead_local. 
         // Leveraged when calling guassian_kernel. 
-        template <typename T> struct static_matrix_kernel {
-            matrix_kernel<T>* ptr;
-        };
+        template <typename T> struct 
+            static_matrix_kernel { matrix_kernel<T>* ptr; };
 
         // GPU-accelerated linear algebra wrapper. Should only be used by one thread at a time.
         // Leverages an arena memory pool and deferred destruction for higher performance. 
-        template <typename T> class matrix {
+        template <typename T> class 
+            matrix {
         private:
             void* // std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>
                 memory;
@@ -66,11 +82,6 @@ namespace GL {
 
             void*& 
                 internal_memory() { return memory; };
-            // Change the maximum allocation size (and minimum allocation amount) for the CPU and GPU arena memory pools, in bytes.
-            // Must be changed before the arena is initialized, otherwise will be ignored. Suggest changing this on start-up if needed to be changed at all. 
-            // This is shared across all matrix<T> objects, regardless of T type. 
-            //static unsigned int& 
-            //    maximum_allocation_size();
 
             // normal constructor
             explicit matrix(GL::GPU::dimensions d);
@@ -380,7 +391,11 @@ namespace GL {
     class arena_memory_pool {
     public:
         constexpr arena_memory_pool() noexcept = default;
-        arena_memory_pool(const arena_memory_pool&) noexcept {}
+        constexpr arena_memory_pool(const arena_memory_pool&) noexcept = default;
+        constexpr arena_memory_pool(arena_memory_pool&&) noexcept = default;
+        arena_memory_pool& operator=(const arena_memory_pool&) noexcept = default;
+        arena_memory_pool& operator=(arena_memory_pool&&) noexcept = default;
+        ~arena_memory_pool() noexcept = default;
         void operator()(void* p) const noexcept { free(p); };
     private:
         static _NODISCARD void*
@@ -421,5 +436,4 @@ namespace GL {
         static std::string
             debug();
     };
-
 };

@@ -167,12 +167,9 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="BTree.h" />
-    <ClInclude Include="dynamic_allocator.h" />
     <ClInclude Include="kernel.hpp" />
     <ClInclude Include="matrix.h" />
     <ClInclude Include="opencl.hpp" />
-    <ClInclude Include="strings.hpp" />
     <ClInclude Include="utilities.hpp" />
   </ItemGroup>
   <ItemGroup>

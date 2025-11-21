@@ -188,19 +188,19 @@ int main() {
             if (auto timer = sw.debug_timer("Arena Linear Random Allocator (int)")) {
                 for (size_t i = 0; i < 1000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
-                    auto b = GL::arena_memory_pool::make_unique<int[]>(i + 1000); // 100 "ints"
+                    auto b = GL::arena_memory_pool::make_unique<int[]>((unsigned int)(i + 1000)); // 100 "ints"
                     auto c = GL::arena_memory_pool::make_shared<int>();     // value of 0
-                    auto d = GL::arena_memory_pool::make_shared<int[]>(i + 1000); // 100 "ints"
-                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(i + 1000));
+                    auto d = GL::arena_memory_pool::make_shared<int[]>((unsigned int)(i + 1000)); // 100 "ints"
+                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>((unsigned int)(i + 1000)));
                 }
             }
             if (auto timer = sw.debug_timer("Arena Parallel Random Allocator (int)")) {
                 GL::parallel::For(0, 1000, [](size_t i) {
                     auto a = GL::arena_memory_pool::make_unique<int>();     // value of 0
-                    auto b = GL::arena_memory_pool::make_unique<int[]>(i + 1000); // 100 "ints"
+                    auto b = GL::arena_memory_pool::make_unique<int[]>((unsigned int)(i + 1000)); // 100 "ints"
                     auto c = GL::arena_memory_pool::make_shared<int>();     // value of 0
-                    auto d = GL::arena_memory_pool::make_shared<int[]>(i + 1000); // 100 "ints"
-                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>(i + 1000));
+                    auto d = GL::arena_memory_pool::make_shared<int[]>((unsigned int)(i + 1000)); // 100 "ints"
+                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<int>((unsigned int)(i + 1000)));
                     });
             }
             if (auto timer = sw.debug_timer("Arena Linear Allocator (std::string)")) {
@@ -224,19 +224,19 @@ int main() {
             if (auto timer = sw.debug_timer("Arena Linear Random Allocator (std::string)")) {
                 for (size_t i = 0; i < 1000; ++i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
-                    auto b = GL::arena_memory_pool::make_unique<std::string[]>(i + 1000); // 100 "std::strings"
+                    auto b = GL::arena_memory_pool::make_unique<std::string[]>((unsigned int)(i + 1000)); // 100 "std::strings"
                     auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0
-                    auto d = GL::arena_memory_pool::make_shared<std::string[]>(i + 1000); // 100 "std::strings"
-                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(i + 1000));
+                    auto d = GL::arena_memory_pool::make_shared<std::string[]>((unsigned int)(i + 1000)); // 100 "std::strings"
+                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>((unsigned int)(i + 1000)));
                 }
             }
             if (auto timer = sw.debug_timer("Arena Parallel Random Allocator (std::string)")) {
                 GL::parallel::For(0, 1000, [](size_t i) {
                     auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
-                    auto b = GL::arena_memory_pool::make_unique<std::string[]>(i + 1000); // 100 "std::strings"
+                    auto b = GL::arena_memory_pool::make_unique<std::string[]>((unsigned int)(i + 1000)); // 100 "std::strings"
                     auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0
-                    auto d = GL::arena_memory_pool::make_shared<std::string[]>(i + 1000); // 100 "std::strings"
-                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(i + 1000));
+                    auto d = GL::arena_memory_pool::make_shared<std::string[]>((unsigned int)(i + 1000)); // 100 "std::strings"
+                    GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>((unsigned int)(i + 1000)));
                 });
             }
         }

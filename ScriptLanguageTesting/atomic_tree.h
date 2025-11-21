@@ -1945,9 +1945,9 @@ namespace GL{
 			mut; // global tree lock. Should only be held temporarily if at all possible. 
 		parallel_binary_search_treeNode*
 			root;
-		GL::atomic_parallel_allocator< parallel_binary_search_treeNode, 256, true >
+		GL::atomic_allocator< parallel_binary_search_treeNode, 256, true >
 			nodeAllocator;
-		GL::atomic_parallel_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true >
+		GL::atomic_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true >
 			nodeChildrenAllocator;
 		long
 			count;
@@ -3212,3 +3212,302 @@ namespace GL{
 	};
 };
 #undef CONST_MAX
+
+namespace GL {
+	// thread-safe memory manager. Re-using previous allocations is prioritized, but will swiftly release memory if not needed anymore. 
+	template <typename buffer_type = void*>
+	class dynamic_allocator {
+	public:
+		struct dynamic_block {
+			buffer_type // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
+				sub_buffer;
+			unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
+				length;
+			long
+				locker;
+			long // this sub-buffer may be further split. 
+				parent_buffer;
+			unsigned int
+				thread_id;
+			bool
+				is_available;
+			bool
+				is_free;
+
+			__declspec(noinline) void lock() {
+				while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
+			};
+			__declspec(noinline) bool try_lock() {
+				return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
+			};
+			void unlock() {
+				InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
+			};
+		};
+	private:
+		GL::atomic_allocator<dynamic_block, 128, true, true>
+			block_alloc;
+		GL::parallel_binary_search_tree<dynamic_block, unsigned long long, 10>
+			free_tree;
+		GL::atomic_vector< buffer_type >
+			allocations;
+		GL::ticket_dispensor<true>
+			allocation_tickets;
+		std::function<buffer_type(unsigned long long)>
+			alloc_block; // alloc a fresh buffer with length
+		std::function<void(buffer_type&)>
+			free_parent_block; // release and delete
+
+	public:
+		size_t size() const {
+			return block_alloc.size();
+		};
+		__declspec(noinline) dynamic_allocator(
+			std::function<buffer_type(unsigned long long)> const& _alloc_block,
+			std::function<void(buffer_type&)> const& _free_block
+		)
+			: block_alloc{}
+			, free_tree{}
+			, allocations{}
+			, allocation_tickets{}
+			, alloc_block{ _alloc_block }
+			, free_parent_block{ _free_block }
+		{};
+
+	public:
+		__declspec(noinline) dynamic_block* Alloc(unsigned long long N) {
+			dynamic_block* free_block = nullptr;
+			while (N > 0) {
+				while (!free_block) {
+					if (auto tree_locked = free_tree.lock()) {
+						if (auto* tree_node = free_tree.NodeFindSmallestLargerEqual_Locked(N, tree_locked); tree_node) {
+							while (tree_node) {
+								free_block = tree_node->object();
+								if (free_block && free_block->try_lock()) {
+									if (!free_block->is_available) {
+										// cooperatively remove this node
+										free_tree.Remove(tree_node, tree_locked);
+										free_block->unlock();
+										block_alloc.Free(free_block);
+										free_block = nullptr;
+										break;
+									}
+
+									if (free_block->length >= N) {
+										if (free_block->is_free) { // we have a winner.
+											free_block->is_free = false;
+											if (free_block->length > N) {
+												// cooperatively remove this node
+												free_block->sub_buffer = nullptr;
+												this->free_parent_block(this->allocations[free_block->parent_buffer]);
+												this->allocations[free_block->parent_buffer] = nullptr;
+												allocation_tickets.return_ticket(free_block->parent_buffer);
+
+												free_tree.Remove(tree_node, tree_locked);
+												free_block->unlock();
+												block_alloc.Free(free_block);
+												free_block = nullptr;
+												break;
+											}
+											free_tree.Remove(tree_node, tree_locked); // invalidates the tree
+											break;
+										}
+										else {
+											// nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
+											free_block->unlock();
+											free_block = nullptr;
+										}
+									}
+								}
+								free_block = nullptr;
+								tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
+							}
+						}
+						else {
+							free_block = block_alloc.Alloc();
+							if (!free_block) return nullptr;
+							free_block->length = N;
+							free_block->is_available = true;
+							free_block->is_free = false;
+							free_block->locker = 1;
+
+							free_block->parent_buffer = allocation_tickets.get_ticket();
+							this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
+							this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
+							if (!this->allocations[free_block->parent_buffer]) {
+								allocation_tickets.return_ticket(free_block->parent_buffer);
+								block_alloc.Free(free_block);
+								return nullptr;
+							}
+							free_block->sub_buffer = nullptr;
+						}
+					}
+				}
+
+				// if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
+				if (!free_block->sub_buffer) {
+					// we need to make a sub-buffer, but it's not worth splitting. 
+					free_block->sub_buffer = this->allocations[free_block->parent_buffer];
+				}
+
+				free_block->unlock();
+				return free_block;
+			}
+			return free_block;
+		};
+		// must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
+		__declspec(noinline) void Free(dynamic_block* free_block) {
+			if (free_block) {
+				//free_block->lock();
+				free_block->is_free = true;
+				free_tree.Add(free_block, free_block->length);
+				//free_block->unlock();            
+			}
+		};
+
+	public:
+		__declspec(noinline) ~dynamic_allocator() {
+			for (auto& buf : allocations) if (buf) free_parent_block(buf);
+		};
+
+		class unique_ptr {
+			dynamic_allocator::dynamic_block* data;
+			dynamic_allocator* parent;
+
+		public:
+			explicit unique_ptr(dynamic_allocator::dynamic_block* d, dynamic_allocator* p) : data{ d }, parent{ p } {};
+			unique_ptr() : data{ nullptr }, parent{ nullptr } {};
+			unique_ptr(std::nullptr_t) : data{ nullptr }, parent{ nullptr } {};
+			unique_ptr(unique_ptr const&) = delete;
+			unique_ptr(unique_ptr&& rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
+				rhs.data = nullptr;
+				rhs.parent = nullptr;
+			};
+			unique_ptr& operator=(unique_ptr const&) = delete;
+			__declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
+				if (data && parent) { parent->Free(data); }
+				data = nullptr;
+				parent = nullptr;
+				return *this;
+			};
+			__declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
+				if (data && parent) { parent->Free(data); }
+				data = rhs.data;
+				parent = rhs.parent;
+				rhs.data = nullptr;
+				rhs.parent = nullptr;
+				return *this;
+			};
+			operator bool() const {
+				return data;
+			};
+
+			~unique_ptr() {
+				if (data && parent) { parent->Free(data); }
+			};
+
+			const dynamic_allocator::dynamic_block* operator->() const {
+				return data;
+			};
+			const dynamic_allocator::dynamic_block* operator->() {
+				return data;
+			};
+			const dynamic_allocator::dynamic_block& operator*() const {
+				return *data;
+			};
+			dynamic_allocator::dynamic_block& operator*() {
+				return *data;
+			};
+			const dynamic_allocator::dynamic_block* get() const {
+				return data;
+			};
+			dynamic_allocator::dynamic_block* get() {
+				return data;
+			};
+
+		};
+		typedef typename std::shared_ptr<dynamic_allocator::dynamic_block> shared_ptr;
+
+		unique_ptr make_unique(unsigned int N) {
+			return unique_ptr(this->Alloc(N), this);
+		};
+
+		shared_ptr make_shared(unsigned int N) {
+			return shared_ptr(this->Alloc(N), [this](dynamic_allocator::dynamic_block* p) {
+				this->Free(p);
+				});
+		};
+	};
+
+	// multi-threaded memory manager. Optimized for use in heavy multi-threaded conditions. 
+	// Re-using previous allocations is prioritized. If a thread dies before releasing its memory, however, that poses a risk for unreleased memory. 
+	// This unreleased memory will be correctly handled on destruction, or if a new thread shows up sharing that old thread's ID (which is also prioritized).
+	// This version has a slightly higher memory footprint (5-9%), in exchange for slightly higher performance (5-9%)
+	template <typename buffer_type = void*>
+	class parallel_dynamic_allocator {
+	private:
+		GL::thread_object_no_default< dynamic_allocator< buffer_type > >  // collection of allocators organized by thread_id
+			allocator;
+		std::function<buffer_type(unsigned long long)> // alloc a fresh buffer with length
+			alloc_block;
+		std::function<void(buffer_type&)> // release and delete
+			free_parent_block;
+
+	public:
+		using dynamic_block = typename dynamic_allocator< buffer_type >::dynamic_block;
+		using unique_ptr = typename dynamic_allocator< buffer_type >::unique_ptr;
+		using shared_ptr = typename dynamic_allocator< buffer_type >::shared_ptr;
+
+		size_t size() {
+			size_t out = 0;
+			allocator.for_each([&out](auto& alloc) {
+				out += alloc.size();
+			});
+			return out;
+		};
+		parallel_dynamic_allocator(
+			std::function<buffer_type(unsigned long long)> const& _alloc_block,
+			std::function<void(buffer_type&)> const& _free_block
+		)
+			: allocator{}
+			, alloc_block{ _alloc_block }
+			, free_parent_block{ _free_block }
+		{};
+		~parallel_dynamic_allocator() = default;
+
+		dynamic_block* Alloc(unsigned long long N) {
+			if (N > 0) {
+				dynamic_block* out = allocator.get_or_init(alloc_block, free_parent_block).Alloc(N);
+				out->thread_id = GL::util::get_thread_id();
+				return out;
+			}
+			else {
+				return nullptr;
+			}
+		};
+		void Free(dynamic_block* free_block) {
+			if (free_block) {
+				allocator[free_block->thread_id].Free(free_block);
+			}
+		};
+
+	public:
+		unique_ptr make_unique(unsigned int N) {
+			if (auto* p = this->Alloc(N)) {
+				return unique_ptr(p, &allocator.get_or_init(alloc_block, free_parent_block));
+			}
+			return nullptr;
+		};
+		shared_ptr make_shared(unsigned int N) {
+			if (N > 0) {
+				return shared_ptr(this->Alloc(N), [this](dynamic_block* p) {
+					this->Free(p);
+			    });
+			}
+			else {
+				return nullptr;
+			}
+		};
+
+	};
+};

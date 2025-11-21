@@ -1,35 +1,34 @@
-// GpuProgramming.cpp : Defines the functions for the static library.
+#pragma once
 
 #include <cstdarg>
 #include <type_traits>
-#include <tuple>
 #include <ShlDisp.h>
 #include <winnt.h>
 #include <thread>
 #include <execution>
-#include <vector>
-#include <iostream>
-#include <map>
-#include <stdint.h>
-#include <chrono>
-#include <ShlDisp.h>
-#include <winnt.h>
-#include <string>
 #include <memory>
-#include <iostream>
-#include <set>
 #include <boost/math/distributions/students_t.hpp>
-#include "dynamic_allocator.h"
-#include "matrix.h"
 
-#pragma region "Convenience implementation of CPU parallel computing for the conditions where GPU parallel compute is not available or not convenient."
+#include "matrix.h"
+#include "opencl.hpp"
+#include "../ScriptLanguageTesting/Strings.h"
+#include "../ScriptLanguageTesting/thread_object.h"
+#include "../ScriptLanguageTesting/atomic_allocator.h"
+#include "../ScriptLanguageTesting/atomic_maps.h"
+#include "../ScriptLanguageTesting/atomic_stack.h"
+#include "../ScriptLanguageTesting/ticket_dispensor.h"
+#include "../ScriptLanguageTesting/atomic_tree.h"
+
+class mem_matrix; // linear array of bytes that manages a pointer to GPU and/or CPU memory, as well as GPU events (queued GPU jobs). GPU jobs are awaited if attempting to be destroyed. 
+static void* Mem_Alloc(const size_t& size) {
+    if (!size) return nullptr; const size_t paddedSize = (size + 15) & ~15; return ::_aligned_malloc(paddedSize, 16);
+};
+static void  Mem_Free(void* ptr) {
+    if (ptr) ::_aligned_free(ptr);
+};
+
 namespace parallel {
-    /// <summary>
-    /// Iterator that steps through a list, without needing to instance the whole list. 
-    /// </summary>
-    /// <typeparam name="Type"></typeparam>
-    template<typename Type = unsigned int>
-    class sequence {
+    template<typename Type = unsigned int> class sequence {
     private:
         Type min;
         Type max;
@@ -118,9 +117,6 @@ namespace parallel {
         auto begin() const { return iterator(min, min, step); };
         auto end() const { return iterator(max, min, step); };
     };
-
-    /* parallel_for (auto i = start; i < end; i++){ todo(i); }
-    If the todo(i) returns anything, it will be collected into a vector at the end. */
     template<typename iteratorType, class F> decltype(auto) Std_For(iteratorType start, iteratorType end, F const& ToDo) {
         sequence<iteratorType> seq(start, end); // 0..999
         std::exception_ptr* e{ nullptr };
@@ -159,108 +155,7 @@ namespace parallel {
         }
     };
 };
-#pragma endregion
 
-#pragma region "Includes and Defines"
-#define CL_HPP_ENABLE_EXCEPTIONS
-#include "../arrayfire/include/CL/opencl.hpp"
-#include "opencl.hpp"
-#include "strings.hpp"
-
-#define print(a) std::cout << a << std::endl
-#define EXPECT_EQ(a, b) if (a != b){ std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
-#define EXPECT_NE(a, b) if (a == b){ std::cout << "FAILURE AT LINE " << __LINE__ << std::endl; }
-#pragma endregion
-
-#pragma once
-#pragma hdrstop
-
-namespace GL {
-    namespace clock {
-        // seconds since boot
-        __forceinline static long long s() {
-            return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-        };
-        // milliseconds since boot
-        __forceinline static long long ms() {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-        };
-        // microseconds since boot
-        __forceinline static long long us() {
-            return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-        };
-        // nanoseconds since boot
-        __forceinline static long long ns() {
-            return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-        };
-    };
-    class stopwatch {
-    public:
-        stopwatch() : t0(clock::ns()), t1(0) {};
-        // resets the timer to start "now"
-        long long reset() {
-            t0 = clock::ns();
-            return t0;
-        };
-        // stops the timer and returns the time passed since in seconds
-        long double stop() {
-            t1 = clock::ns();
-            return static_cast<long double>(t1 - t0) / 1000000000.0;
-        };
-        // does not stop the timer, but does return the time passed since in seconds
-        long double check() const {
-            if (t1 < t0) const_cast<stopwatch*>(this)->t1 = clock::ns(); // const_cast<stopwatch*>(this)->t1 = clock::ns();
-            return static_cast<long double>(t1 - t0) / 1000000000.0;
-        };
-
-        std::shared_ptr<void> debug_timer() {
-            return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this](int* p) -> void {
-                auto stopTime = this->stop();
-                std::string to_print = std::to_string(stopTime) + " s\n";
-                std::cout << to_print;
-                delete p;
-            }));
-        };
-
-        template <size_t N>
-        __forceinline std::shared_ptr<void> debug_timer(const char(&additional_message_content)[N]) {
-            return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this, additional_message = additional_message_content](int* p) -> void {
-                auto stopTime = this->stop();
-                if constexpr (N == 0) {
-                    std::string to_print = std::to_string(stopTime) + " s\n";
-                    std::cout << to_print;
-                }
-                else {
-                    std::string to_print = std::string(additional_message) + ": " + std::to_string(stopTime) + " s\n";
-                    std::cout << to_print;
-                }
-                delete p;
-            }));
-        };
-
-        template<typename T>
-        __forceinline std::shared_ptr<void> debug_timer(T const& additional_message_content) {
-            return std::static_pointer_cast<void>(std::shared_ptr<int>(new int(0), [startTime = this->reset(), this, additional_message = std::to_string(additional_message_content)](int* p) -> void {
-                auto stopTime = this->stop();
-                if (additional_message.empty()) {
-                    std::string to_print = std::to_string(stopTime) + " s\n";
-                    std::cout << to_print;
-                }
-                else {
-                    std::string to_print = additional_message + ": " + std::to_string(stopTime) + " s\n";
-                    std::cout << to_print;
-                }
-                delete p;
-            }));
-        };
-
-    private:
-        long long t0;
-        long long t1;
-    };
-};
-
-#pragma region OPEN CL ARRAY
 class opencl_impl {
 public:
     template<typename T>
@@ -1307,809 +1202,212 @@ public:
         return device;
     };
 };
-#pragma endregion 
 
-#include "dynamic_allocator.h"
-#include "../ScriptLanguageTesting/thread_object.h"
-#include "../ScriptLanguageTesting/atomic_allocator.h"
-#include "../ScriptLanguageTesting/atomic_maps.h"
-#include "../ScriptLanguageTesting/atomic_stack.h"
-#include <concurrent_unordered_map.h>
-#include "../ScriptLanguageTesting/ticket_dispensor.h"
+template <typename T> class Lockable {
+private:
+    T obj;
+    std::shared_mutex mut;
 
-namespace GL {
-    template <typename T> class Lockable {
+public:
+    template <typename... U> Lockable(const U&... args) : obj(args...), mut() {};
+    Lockable(Lockable const&) = delete;
+    Lockable(Lockable&&) = delete;
+    Lockable& operator=(Lockable const&) = delete;
+    Lockable& operator=(Lockable&&) = delete;
+    ~Lockable() = default;
+
+    class Locked {
+        std::scoped_lock<std::shared_mutex> locked;
+
+    public:
+        T& obj;
+
+        Locked(std::shared_mutex const& l, const T& o) : locked(const_cast<std::shared_mutex&>(l)), obj{ const_cast<T&>(o) } {};
+        Locked(Locked const&) = delete;
+        Locked(Locked&&) = delete;
+        Locked& operator=(Locked const&) = delete;
+        Locked& operator=(Locked&&) = delete;
+        ~Locked() = default;
+    };
+    class cLocked {
+        std::shared_lock<std::shared_mutex> locked;
+
+    public:
+        const T& obj;
+
+        cLocked(std::shared_mutex const& l, const T& o) : locked(const_cast<std::shared_mutex&>(l)), obj{ o } {};
+        cLocked(cLocked const&) = delete;
+        cLocked(cLocked&&) = delete;
+        cLocked& operator=(cLocked const&) = delete;
+        cLocked& operator=(cLocked&&) = delete;
+        ~cLocked() = default;
+    };
+
+    cLocked get() const {
+        return cLocked(mut, obj);
+    };
+    Locked get() {
+        return Locked(mut, obj);
+    };
+};
+
+// Compiles OpenCL code and makes it available through its assigned device.
+class Program {
+public:
+    class ProgramImpl {
     private:
-        T obj;
-        std::mutex mut;
-
-    public:
-        template <typename... U> Lockable(const U&... args) : obj(args...), mut() {};
-        Lockable(Lockable const&) = delete;
-        Lockable(Lockable&&) = delete;
-        Lockable& operator=(Lockable const&) = delete;
-        Lockable& operator=(Lockable&&) = delete;
-        ~Lockable() = default;
-
-        class Locked {
-            std::scoped_lock<std::mutex> locked;
-
-        public:
-            T& obj;
-
-            Locked(std::mutex const& l, const T& o) : locked(const_cast<std::mutex&>(l)), obj{ const_cast<T&>(o) } {};
-            Locked(Locked const&) = delete;
-            Locked(Locked&&) = delete;
-            Locked& operator=(Locked const&) = delete;
-            Locked& operator=(Locked&&) = delete;
-            ~Locked() = default;
-        };
-        class cLocked {
-            std::scoped_lock<std::mutex> locked;
-
-        public:
-            const T& obj;
-
-            cLocked(std::mutex const& l, const T& o) : locked(const_cast<std::mutex&>(l)), obj{ o } {};
-            cLocked(cLocked const&) = delete;
-            cLocked(cLocked&&) = delete;
-            cLocked& operator=(cLocked const&) = delete;
-            cLocked& operator=(cLocked&&) = delete;
-            ~cLocked() = default;
-        };
-
-        cLocked get() const {
-            return cLocked(mut, obj);
-        };
-        Locked get() {
-            return Locked(mut, obj);
-        };
-    };
-};
-namespace GL {
-    namespace GPU {
-        // Compiles OpenCL code and makes it available through its assigned device.
-        class Program {
-        public:
-            class ProgramImpl {
-            private:
-                static std::string combine(std::vector<std::string> const& opencl_code) {
-                    std::string out;
-                    if (opencl_code.size() > 0) {
-                        out = opencl_code[0];
-                        for (int i = 1; i < opencl_code.size(); i++) {
-                            out += "\n";
-                            out += opencl_code[i];
-                        }
-                    }
-                    return out;
-                };
-                static cl::Program::Sources make_kernel_code(Device_Info const& info, const std::string& opencl_c_code) {
-                    return cl::Program::Sources{ enable_device_capabilities(info) + "\n" + opencl_c_code };
-                };
-
-            public:
-                Lockable<cl::Program> cl_program;
-                bool initialized = false;
-
-            public:
-                // Instantiates and compiles the program.
-                ProgramImpl(Device_Info const& info, std::vector<std::string> const& opencl_code)
-                    : cl_program(info.cl_context, make_kernel_code(info, combine(opencl_code)))
-                {
-                    const std::string build_options
-                        = "-cl-std=CL" + info.opencl_c_version + " -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable" + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
-                    int error
-                        = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
-                    if (error)
-                        print_warning(cl_program.get().obj.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
-
-                    initialized = true;
+        static std::string combine(std::vector<std::string> const& opencl_code) {
+            std::string out;
+            if (opencl_code.size() > 0) {
+                out = opencl_code[0];
+                for (int i = 1; i < opencl_code.size(); i++) {
+                    out += "\n";
+                    out += opencl_code[i];
                 }
-                ProgramImpl() = delete;
-                ProgramImpl(ProgramImpl const&) = delete;
-                ProgramImpl(ProgramImpl&&) = delete;
-                ProgramImpl& operator=(ProgramImpl const&) = delete;
-                ProgramImpl& operator=(ProgramImpl&&) = delete;
-                ~ProgramImpl() = default;
-            };
-
-        private:
-            static std::string enable_device_capabilities(Device_Info const& info) {
-                return // enable FP64/FP16 capabilities if available
-                    std::string(info.patch_nvidia_fp16 ? "\n #define cl_khr_fp16" : "") + // Nvidia Pascal and newer GPUs with driver>=520.00 don't report cl_khr_fp16, but do support basic FP16 arithmetic
-                    std::string(info.patch_legacy_gpu_fma ? "\n #define fma(a, b, c) ((a)*(b)+(c))" : "") + // some old GPUs have terrible fma performance, so replace with a*b+c
-                    std::string(info.nvidia_compute_capability ? "\n #define cl_nv_compute_capability " + to_string(info.nvidia_compute_capability) : "") + // allows querying Nvidia compute capability for inline PTX
-                    std::string(info.is_dp4a_capable == 0u ? "\n #undef __opencl_c_integer_dot_product_input_4x8bit\n #undef __opencl_c_integer_dot_product_input_4x8bit_packed" : "") + // patch false dp4a reporting on Intel
-                    "\n #define cl_workgroup_size " + to_string(WORKGROUP_SIZE) + "u"
-                    "\n #ifdef cl_khr_fp64"
-                    "\n #pragma OPENCL EXTENSION cl_khr_fp64 : enable" // make sure cl_khr_fp64 extension is enabled
-                    "\n #endif"
-                    "\n #ifdef cl_khr_fp16"
-                    "\n #pragma OPENCL EXTENSION cl_khr_fp16 : enable" // make sure cl_khr_fp16 extension is enabled
-                    "\n #endif"
-                    "\n #ifdef cl_khr_int64_base_atomics"
-                    "\n #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable" // make sure cl_khr_int64_base_atomics extension is enabled
-                    "\n #endif";
-            };
-
-        public:
-            Device_Info
-                info;
-            ProgramImpl
-                program;
-            Lockable<cl::CommandQueue>
-                queue;
-            bool
-                initialized = false;
-
-            class kernel_list {
-            public:
-                bTree<struct _cl_kernel, size_t, 10> functions;
-
-                void push_back(GL::string const& name, cl_kernel new_kernel) {
-                    if (auto* node = functions.NodeFind(name.hash())) {
-                        ::clReleaseKernel(node->object);
-                        node->object = new_kernel;
-                    }
-                    else {
-                        functions.Add(new_kernel, name.hash());
-                    }
-                };
-                cl_kernel operator[](GL::string const& name) const {
-                    if (auto* node = functions.NodeFind(name.hash())) {
-                        return node->object;
-                    }
-                    else {
-                        return nullptr;
-                    }
-                }
-
-                kernel_list() {};
-                ~kernel_list() {
-                    if (auto* n = functions.GetRoot()) {
-                        while (n) {
-                            if (n->object) {
-                                ::clReleaseKernel(n->object);
-                            }
-                            n = functions.GetNextLeaf(n);
-                        }
-                    }
-                };
-
-            };
-
-            kernel_list functions;
-
-
-            __declspec(noinline) Program(std::vector<std::string> const& opencl_c_code)
-                : info(select_device_with_most_flops(get_devices(false)))
-                , program(info, opencl_c_code)
-                , queue(info.cl_context, info.cl_device)
-                , initialized(true)
-            {}
-            Program() = delete;
-            Program(Program const&) = delete;
-            Program(Program&&) = delete;
-            Program& operator=(Program const&) = delete;
-            Program& operator=(Program&&) = delete;
-            ~Program() = default;
-
-            //inline void barrier(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
-            //inline void finish_queue() { cl_queue.finish(); }
-            inline cl::Context get_cl_context() const { return info.cl_context; }
-            //inline cl::Program get_cl_program() const { return cl_program; }
-            //inline cl::CommandQueue get_cl_queue() const { return cl_queue; }
-
-        };
-
-        class opencl {
-        public:
-            static GL::GPU::Program& get_program() {
-                static GL::GPU::Program out({ opencl_impl::create_kernels() });
-                return out;
-            };
-        };
-    };
-}
-
-
-// thread-safe memory manager. Re-using previous allocations is prioritized, but will swiftly release memory if not needed anymore. 
-template <typename buffer_type = void*>
-class dynamic_allocator {
-public:
-    struct dynamic_block {
-        buffer_type // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
-            sub_buffer;
-        unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
-            length;
-        long
-            locker;
-        long // this sub-buffer may be further split. 
-            parent_buffer;
-        unsigned int
-            thread_id;
-        bool
-            is_available;
-        bool
-            is_free;
-
-        __declspec(noinline) void lock() {
-            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
-        };
-        __declspec(noinline) bool try_lock() {
-            return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
-        };
-        void unlock() {
-            InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
-        };
-    };
-private:
-    GL::atomic_allocator<dynamic_block, 128, true, true>
-        block_alloc;
-    parallel_binary_search_tree<dynamic_block, unsigned long long, 10>
-        free_tree;
-    GL::atomic_vector< buffer_type >
-        allocations;
-    GL::ticket_dispensor<true>
-        allocation_tickets;
-    std::function<buffer_type(unsigned long long)> 
-        alloc_block; // alloc a fresh buffer with length
-    std::function<void(buffer_type&)> 
-        free_parent_block; // release and delete
-    
-public:
-    size_t size() const {
-        return block_alloc.size();
-    };
-    __declspec(noinline) dynamic_allocator(
-        std::function<buffer_type(unsigned long long)> const& _alloc_block,
-        std::function<void(buffer_type&)> const& _free_block
-    )
-        : block_alloc{}
-        , free_tree{}
-        , allocations{}
-        , allocation_tickets{}
-        , alloc_block{ _alloc_block }
-        , free_parent_block{ _free_block }
-    {};
-
-public:
-    __declspec(noinline) dynamic_block* Alloc(unsigned long long N) {
-        dynamic_block* free_block = nullptr;
-        while (N > 0) {     
-            while (!free_block) {
-                if (auto tree_locked = free_tree.lock()) {
-                    if (auto* tree_node = free_tree.NodeFindSmallestLargerEqual_Locked(N, tree_locked); tree_node) {
-                        while (tree_node) {
-                            free_block = tree_node->object();
-                            if (free_block && free_block->try_lock()) {
-                                if (!free_block->is_available) {
-                                    // cooperatively remove this node
-                                    free_tree.Remove(tree_node, tree_locked);
-                                    free_block->unlock();
-                                    block_alloc.Free(free_block);
-                                    free_block = nullptr;
-                                    break;
-                                }
-
-                                if (free_block->length >= N) {
-                                    if (free_block->is_free) { // we have a winner.
-                                        free_block->is_free = false;
-                                        if (free_block->length > N) {
-                                            // cooperatively remove this node
-                                            free_block->sub_buffer = nullptr;
-                                            this->free_parent_block(this->allocations[free_block->parent_buffer]);
-                                            this->allocations[free_block->parent_buffer] = nullptr;
-                                            allocation_tickets.return_ticket(free_block->parent_buffer);
-
-                                            free_tree.Remove(tree_node, tree_locked);
-                                            free_block->unlock();
-                                            block_alloc.Free(free_block);
-                                            free_block = nullptr;
-                                            break;
-                                        }                                        
-                                        free_tree.Remove(tree_node, tree_locked); // invalidates the tree
-                                        break;
-                                    }
-                                    else {
-                                        // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
-                                        free_block->unlock();
-                                        free_block = nullptr;
-                                    }
-                                }                                
-                            }
-                            free_block = nullptr;
-                            tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
-                        }
-                    }
-                    else {
-                        free_block = block_alloc.Alloc();
-                        if (!free_block) return nullptr;
-                        free_block->length = N;
-                        free_block->is_available = true;
-                        free_block->is_free = false;
-                        free_block->locker = 1;
-                        free_block->thread_id = GL::util::get_thread_id();
-
-                        free_block->parent_buffer = allocation_tickets.get_ticket();
-                        this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
-                        this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
-                        if (!this->allocations[free_block->parent_buffer]) {
-                            allocation_tickets.return_ticket(free_block->parent_buffer);
-                            block_alloc.Free(free_block);
-                            return nullptr;
-                        }
-                        free_block->sub_buffer = nullptr;
-                    }
-                }
-            }
-
-            // if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
-            if (!free_block->sub_buffer) {
-                // we need to make a sub-buffer, but it's not worth splitting. 
-                free_block->sub_buffer = this->allocations[free_block->parent_buffer];
-            }
-
-            free_block->unlock();
-            return free_block;                      
-        }
-        return free_block;
-    };
-    // must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
-    __declspec(noinline) void Free(dynamic_block* free_block) {
-        if (free_block) {
-            //free_block->lock();
-            free_block->is_free = true;
-            free_tree.Add(free_block, free_block->length);
-            //free_block->unlock();            
-        }
-    };
-
-public:
-    __declspec(noinline) ~dynamic_allocator() {
-        for (auto& buf : allocations) if (buf) free_parent_block(buf);
-    };
-
-    class unique_ptr {
-        dynamic_allocator::dynamic_block* data;
-        dynamic_allocator* parent;
-
-    public:
-        explicit unique_ptr(dynamic_allocator::dynamic_block* d, dynamic_allocator* p) : data{ d }, parent{ p } {};
-        unique_ptr() : data{ nullptr }, parent{ nullptr } {};
-        unique_ptr(std::nullptr_t) : data{ nullptr }, parent{ nullptr } {};
-        unique_ptr(unique_ptr const&) = delete;
-        unique_ptr(unique_ptr&& rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
-            rhs.data = nullptr;
-            rhs.parent = nullptr;
-        };
-        unique_ptr& operator=(unique_ptr const&) = delete;
-        __declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
-            if (data && parent) { parent->Free(data); }
-            data = nullptr;
-            parent = nullptr;
-            return *this;
-        };
-        __declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
-            if (data && parent) { parent->Free(data); }
-            data = rhs.data;
-            parent = rhs.parent;
-            rhs.data = nullptr;
-            rhs.parent = nullptr;
-            return *this;
-        };
-        operator bool() const {
-            return data;
-        };
-
-        ~unique_ptr() {
-            if (data && parent) { parent->Free(data); }
-        };
-
-        const dynamic_allocator::dynamic_block* operator->() const {
-            return data;
-        };
-        const dynamic_allocator::dynamic_block* operator->() {
-            return data;
-        };
-        const dynamic_allocator::dynamic_block& operator*() const {
-            return *data;
-        };
-        dynamic_allocator::dynamic_block& operator*() {
-            return *data;
-        };
-        const dynamic_allocator::dynamic_block* get() const {
-            return data;
-        };
-        dynamic_allocator::dynamic_block* get() {
-            return data;
-        };
-
-    };
-    typedef typename std::shared_ptr<dynamic_allocator::dynamic_block> shared_ptr;
-
-    unique_ptr make_unique(unsigned int N) {
-        return unique_ptr(this->Alloc(N), this);
-    };
-
-    shared_ptr make_shared(unsigned int N) {
-        return shared_ptr(this->Alloc(N), [this](dynamic_allocator::dynamic_block* p) {
-            this->Free(p);
-        });
-    };
-};
-
-#if 1
-// multi-threaded memory manager. Optimized for use in heavy multi-threaded conditions. 
-// Re-using previous allocations is prioritized. If a thread dies before releasing its memory, however, that poses a risk for unreleased memory. 
-// This unreleased memory will be correctly handled on destruction, or if a new thread shows up sharing that old thread's ID (which is also prioritized).
-// This version has a slightly higher memory footprint (5-9%), in exchange for slightly higher performance (5-9%)
-template <typename buffer_type = void*>
-class parallel_dynamic_allocator {
-private:
-    GL::thread_object_no_default< dynamic_allocator< buffer_type > >  // collection of allocators organized by thread_id
-        allocator; 
-    std::function<buffer_type(unsigned long long)> // alloc a fresh buffer with length
-        alloc_block; 
-    std::function<void(buffer_type&)> // release and delete
-        free_parent_block; 
-
-public:
-    using dynamic_block = typename dynamic_allocator< buffer_type >::dynamic_block;
-    using unique_ptr = typename dynamic_allocator< buffer_type >::unique_ptr;
-    using shared_ptr = typename dynamic_allocator< buffer_type >::shared_ptr;
-
-    size_t size() {
-        size_t out = 0;
-        allocator.for_each([&out](auto& alloc) {
-            out += alloc.size();
-        });
-        return out;
-    };
-    parallel_dynamic_allocator(
-        std::function<buffer_type(unsigned long long)> const& _alloc_block,
-        std::function<void(buffer_type&)> const& _free_block
-    )
-        : allocator{}
-        , alloc_block{ _alloc_block }
-        , free_parent_block{ _free_block }
-    {};
-    ~parallel_dynamic_allocator() = default;
-
-    dynamic_block* Alloc(unsigned long long N) {
-        if (N > 0) {
-            dynamic_allocator< buffer_type >& this_allocator = allocator.get_or_init(alloc_block, free_parent_block);
-            dynamic_block* out = this_allocator.Alloc(N);
-            if (out) {
-                out->thread_id = GL::util::get_thread_id();
             }
             return out;
-        }
-        else {
-            return nullptr;
-        }
-    };
-    void Free(dynamic_block* free_block) {
-        if (free_block) {
-            allocator[free_block->thread_id].Free(free_block);
-        }
-    };
-
-public:
-    unique_ptr make_unique(unsigned int N) {
-        if (auto* p = this->Alloc(N)) {
-            return unique_ptr(p, &this->allocator[p->thread_id]);
-        }
-        return nullptr;
-    };
-    shared_ptr make_shared(unsigned int N) {
-        if (N > 0) {
-            return shared_ptr(this->Alloc(N), [this](dynamic_block* p) {
-                this->Free(p);
-            });
-        }
-        else {
-            return nullptr;
-        }
-    };
-
-};
-#else
-// multi-threaded memory manager. Optimized for use in heavy multi-threaded conditions. 
-// Re-using previous allocations is prioritized. If a thread dies before releasing its memory, however, that poses a risk for unreleased memory. 
-// This unreleased memory will be correctly handled on destruction, or if a new thread shows up sharing that old thread's ID (which is also prioritized).template <typename buffer_type = void*>
-// This version is as memory efficienct as possible while still leveraging the thread-local storage approach.
-template <typename buffer_type = void*>
-class parallel_dynamic_allocator {
-public:
-    struct dynamic_block {
-        buffer_type // this sub-buffer may NOT be further split. It should instead be free'd, then a new sub-buffer generated from the original "real" buffer. 
-            sub_buffer;
-        unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
-            length;
-        long
-            locker;
-        long // this sub-buffer may be further split. 
-            parent_buffer;
-        unsigned int
-            thread_id;
-        bool
-            is_available;
-        bool
-            is_free;
-
-        __declspec(noinline) void lock() {
-            while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
         };
-        __declspec(noinline) bool try_lock() {
-            return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
+        static cl::Program::Sources make_kernel_code(Device_Info const& info, const std::string& opencl_c_code) {
+            return cl::Program::Sources{ enable_device_capabilities(info) + "\n" + opencl_c_code };
         };
-        void unlock() {
-            InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
-        };
+
+    public:
+        Lockable<cl::Program> cl_program;
+        bool initialized = false;
+
+    public:
+        // Instantiates and compiles the program.
+        ProgramImpl(Device_Info const& info, std::vector<std::string> const& opencl_code)
+            : cl_program(info.cl_context, make_kernel_code(info, combine(opencl_code)))
+        {
+            const std::string build_options
+                = "-cl-std=CL" + info.opencl_c_version + " -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable" + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
+            int error
+                = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
+            if (error)
+                print_warning(cl_program.get().obj.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
+
+            initialized = true;
+        }
+        ProgramImpl() = delete;
+        ProgramImpl(ProgramImpl const&) = delete;
+        ProgramImpl(ProgramImpl&&) = delete;
+        ProgramImpl& operator=(ProgramImpl const&) = delete;
+        ProgramImpl& operator=(ProgramImpl&&) = delete;
+        ~ProgramImpl() = default;
     };
 
 private:
-    GL::atomic_parallel_allocator<dynamic_block, 128, true, true>
-        block_alloc;
-    GL::atomic_vector< buffer_type >
-        allocations;
-    GL::ticket_dispensor<true>
-        allocation_tickets;
-    GL::thread_object_no_default< parallel_binary_search_tree<dynamic_block, unsigned long long, 10> >
-        free_tree;
-    std::function<buffer_type(unsigned long long)>
-        alloc_block; // alloc a fresh buffer with length
-    std::function<void(buffer_type&)>
-        free_parent_block; // release and delete
-
-public:
-    size_t size() const {
-        return block_alloc.size();
+    static std::string enable_device_capabilities(Device_Info const& info) {
+        return // enable FP64/FP16 capabilities if available
+            std::string(info.patch_nvidia_fp16 ? "\n #define cl_khr_fp16" : "") + // Nvidia Pascal and newer GPUs with driver>=520.00 don't report cl_khr_fp16, but do support basic FP16 arithmetic
+            std::string(info.patch_legacy_gpu_fma ? "\n #define fma(a, b, c) ((a)*(b)+(c))" : "") + // some old GPUs have terrible fma performance, so replace with a*b+c
+            std::string(info.nvidia_compute_capability ? "\n #define cl_nv_compute_capability " + to_string(info.nvidia_compute_capability) : "") + // allows querying Nvidia compute capability for inline PTX
+            std::string(info.is_dp4a_capable == 0u ? "\n #undef __opencl_c_integer_dot_product_input_4x8bit\n #undef __opencl_c_integer_dot_product_input_4x8bit_packed" : "") + // patch false dp4a reporting on Intel
+            "\n #define cl_workgroup_size " + to_string(WORKGROUP_SIZE) + "u"
+            "\n #ifdef cl_khr_fp64"
+            "\n #pragma OPENCL EXTENSION cl_khr_fp64 : enable" // make sure cl_khr_fp64 extension is enabled
+            "\n #endif"
+            "\n #ifdef cl_khr_fp16"
+            "\n #pragma OPENCL EXTENSION cl_khr_fp16 : enable" // make sure cl_khr_fp16 extension is enabled
+            "\n #endif"
+            "\n #ifdef cl_khr_int64_base_atomics"
+            "\n #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable" // make sure cl_khr_int64_base_atomics extension is enabled
+            "\n #endif";
     };
-    __declspec(noinline) parallel_dynamic_allocator(
-        std::function<buffer_type(unsigned long long)> const& _alloc_block,
-        std::function<void(buffer_type&)> const& _free_block
-    )
-        : block_alloc{}
-        , free_tree{}
-        , allocations{}
-        , allocation_tickets{}
-        , alloc_block{ _alloc_block }
-        , free_parent_block{ _free_block }
-    {};
 
 public:
-    __declspec(noinline) dynamic_block* Alloc(unsigned long long N) {
-        dynamic_block* free_block = nullptr;
-        auto& this_tree = free_tree.operator*();
+    Device_Info
+        info;
+    ProgramImpl
+        program;
+    Lockable<cl::CommandQueue>
+        queue;
+    bool
+        initialized = false;
 
-        while (N > 0) {
-            while (!free_block) {
-                if (auto tree_locked = this_tree.lock()) {
-                    if (auto* tree_node = this_tree.NodeFindSmallestLargerEqual_Locked(N, tree_locked); tree_node) {
-                        while (tree_node) {
-                            free_block = tree_node->object();
-                            if (free_block && free_block->try_lock()) {
-                                if (!free_block->is_available) {
-                                    // cooperatively remove this node
-                                    this_tree.Remove(tree_node, tree_locked);
-                                    free_block->unlock();
-                                    block_alloc.Free(free_block);
-                                    free_block = nullptr;
-                                    break;
-                                }
+    class kernel_list {
+    public:
+        GL::bTree<struct _cl_kernel, size_t, 10> functions;
 
-                                if (free_block->length >= N) {
-                                    if (free_block->is_free) { // we have a winner.
-                                        free_block->is_free = false;
-                                        if (free_block->length > N) {
-                                            // cooperatively remove this node
-                                            free_block->sub_buffer = nullptr;
-                                            this->free_parent_block(this->allocations[free_block->parent_buffer]);
-                                            this->allocations[free_block->parent_buffer] = nullptr;
-                                            allocation_tickets.return_ticket(free_block->parent_buffer);
+        void push_back(GL::string const& name, cl_kernel new_kernel) {
+            if (auto* node = functions.NodeFind(name.hash())) {
+                ::clReleaseKernel(node->object);
+                node->object = new_kernel;
+            }
+            else {
+                functions.Add(new_kernel, name.hash());
+            }
+        };
+        cl_kernel operator[](GL::string const& name) const {
+            if (auto* node = functions.NodeFind(name.hash())) {
+                return node->object;
+            }
+            else {
+                return nullptr;
+            }
+        }
 
-                                            this_tree.Remove(tree_node, tree_locked);
-                                            free_block->unlock();
-                                            block_alloc.Free(free_block);
-                                            free_block = nullptr;
-                                            break;
-                                        }
-                                        this_tree.Remove(tree_node, tree_locked); // invalidates the tree
-                                        break;
-                                    }
-                                    else {
-                                        // nothing is wrong with this guy, he simply is being used. He doesn't belong in the tree!
-                                        free_block->unlock();
-                                        free_block = nullptr;
-                                    }
-                                }
-                            }
-                            free_block = nullptr;
-                            tree_node = this_tree.GetNextLeaf(tree_node, tree_locked);
-                        }
+        kernel_list() {};
+        ~kernel_list() {
+            if (auto* n = functions.GetRoot()) {
+                while (n) {
+                    if (n->object) {
+                        ::clReleaseKernel(n->object);
                     }
-                    else {
-                        free_block = block_alloc.Alloc();
-                        if (!free_block) return nullptr;
-                        free_block->length = N;
-                        free_block->is_available = true;
-                        free_block->is_free = false;
-                        free_block->locker = 1;
-                        free_block->thread_id = GL::util::get_thread_id();
-
-                        free_block->parent_buffer = allocation_tickets.get_ticket();
-                        this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
-                        this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
-                        if (!this->allocations[free_block->parent_buffer]) {
-                            allocation_tickets.return_ticket(free_block->parent_buffer);
-                            block_alloc.Free(free_block);
-                            return nullptr;
-                        }
-                        free_block->sub_buffer = nullptr;
-                    }
+                    n = functions.GetNextLeaf(n);
                 }
             }
+        };
 
-            // if this already has a sub_buffer, we should prefer re-use, even if it is too big.             
-            if (!free_block->sub_buffer) {
-                // we need to make a sub-buffer, but it's not worth splitting. 
-                free_block->sub_buffer = this->allocations[free_block->parent_buffer];
-            }
-
-            free_block->unlock();
-            return free_block;
-        }
-        return free_block;
-    };
-    // must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
-    __declspec(noinline) void Free(dynamic_block* free_block) {
-        if (free_block) {
-            free_block->is_free = true;
-            free_tree[free_block->thread_id].Add(free_block, free_block->length);
-        }
     };
 
+    kernel_list functions;
+
+
+    __declspec(noinline) Program(std::vector<std::string> const& opencl_c_code)
+        : info(select_device_with_most_flops(get_devices(false)))
+        , program(info, opencl_c_code)
+        , queue(info.cl_context, info.cl_device)
+        , initialized(true)
+    {}
+    Program() = delete;
+    Program(Program const&) = delete;
+    Program(Program&&) = delete;
+    Program& operator=(Program const&) = delete;
+    Program& operator=(Program&&) = delete;
+    ~Program() = default;
+
+    //inline void barrier(const std::pair<Event*, Event*> event_waitlist = { nullptr, nullptr }, Event* event_returned = nullptr) { cl_queue.enqueueBarrierWithWaitList(event_waitlist, event_returned); }
+    //inline void finish_queue() { cl_queue.finish(); }
+    inline cl::Context get_cl_context() const { return info.cl_context; }
+    //inline cl::Program get_cl_program() const { return cl_program; }
+    //inline cl::CommandQueue get_cl_queue() const { return cl_queue; }
+
+};
+class opencl {
 public:
-    __declspec(noinline) ~parallel_dynamic_allocator() {
-        for (auto& buf : allocations) if (buf) free_parent_block(buf);
-    };
-
-    class unique_ptr {
-        dynamic_block* data;
-        parallel_dynamic_allocator* parent;
-
-    public:
-        explicit unique_ptr(dynamic_block* d, parallel_dynamic_allocator* p) : data{ d }, parent{ p } {};
-        unique_ptr() : data{ nullptr }, parent{ nullptr } {};
-        unique_ptr(std::nullptr_t) : data{ nullptr }, parent{ nullptr } {};
-        unique_ptr(unique_ptr const&) = delete;
-        unique_ptr(unique_ptr&& rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
-            rhs.data = nullptr;
-            rhs.parent = nullptr;
-        };
-        unique_ptr& operator=(unique_ptr const&) = delete;
-        __declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
-            if (data && parent) { parent->Free(data); }
-            data = nullptr;
-            parent = nullptr;
-            return *this;
-        };
-        __declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
-            if (data && parent) { parent->Free(data); }
-            data = rhs.data;
-            parent = rhs.parent;
-            rhs.data = nullptr;
-            rhs.parent = nullptr;
-            return *this;
-        };
-        operator bool() const {
-            return data;
-        };
-
-        ~unique_ptr() {
-            if (data && parent) { parent->Free(data); }
-        };
-
-        const dynamic_block* operator->() const {
-            return data;
-        };
-        const dynamic_block* operator->() {
-            return data;
-        };
-        const dynamic_block& operator*() const {
-            return *data;
-        };
-        dynamic_block& operator*() {
-            return *data;
-        };
-        const dynamic_block* get() const {
-            return data;
-        };
-        dynamic_block* get() {
-            return data;
-        };
-
-    };
-    typedef typename std::shared_ptr<dynamic_block> shared_ptr;
-
-    unique_ptr make_unique(unsigned int N) {
-        return unique_ptr(this->Alloc(N), this);
-    };
-    shared_ptr make_shared(unsigned int N) {
-        return shared_ptr(this->Alloc(N), [this](dynamic_block* p) {
-            this->Free(p);
-        });
+    static Program& get_program() {
+        static Program out({ opencl_impl::create_kernels() });
+        return out;
     };
 };
 
-
-#endif
-
-class mem_matrix;
-struct static_mem_matrix {
-    mem_matrix* ptr;
-};
-
-// linear array of bytes that manages a pointer to GPU and/or CPU memory, as well as GPU events (queued GPU jobs). 
-// GPU jobs are awaited if attempting to be destroyed. 
+struct static_mem_matrix { mem_matrix* ptr; };
 class mem_matrix {
     template <typename G> friend class matrix;
 public:
-    static auto& program() { return GL::GPU::opencl::get_program(); };
+    static auto& program() { return opencl::get_program(); };
     
-    using dynamic_cpu_allocator = parallel_dynamic_allocator<void*>;
+    using dynamic_cpu_allocator = GL::parallel_dynamic_allocator<void*>;
     static dynamic_cpu_allocator& cpu_allocator() { 
-        //class 
-        //    manager {
-        //public:
-        //    manager()
-        //        : p{ nullptr }
-        //    {}
-        //    manager(void* d) 
-        //        : p{ d } 
-        //    {}
-        //    manager(manager const&) = delete;
-        //    manager(manager && rhs) noexcept
-        //        : p{ rhs.p }
-        //    {
-        //        rhs.p = nullptr;
-        //    }
-        //    manager& operator=(manager const&) = delete;
-        //    manager& operator=(manager&& rhs) noexcept {
-        //        p = rhs.p;
-        //        rhs.p = nullptr;
-        //        return *this;
-        //    }
-        //    __declspec(noinline) ~manager() {
-        //        if (p) {
-        //            Mem_Free(p);
-        //        }
-        //    }
-        //    void* p;
-        //};
-        //static GL::atomic_epoch_allocator< manager, GL::atomic_allocator<manager> >
-        //    managers;
-
         static dynamic_cpu_allocator out(
             [](unsigned long long length) -> void* {
                 return Mem_Alloc(length);
-                //void* p = Mem_Alloc(length + sizeof(manager*));
-                //manager* manager_p = managers.Alloc(p);
-                //EXPECT_EQ(manager_p->p, p);
-                //((manager**)p)[0] = manager_p;
-                //return (void*)((::byte*)p + sizeof(manager*));
             }, // _alloc_block
             [](void*& parent_block) -> void {
                 if (!parent_block) return;
                 Mem_Free(parent_block);
-                //auto guard = managers.ProtectCurrentEpoch();
-                //manager** manager_p = (manager**)((::byte*)parent_block - sizeof(manager*));
-                //EXPECT_NE(manager_p, nullptr);
-                //EXPECT_EQ((*manager_p)->p, parent_block);
-                //managers.Free(*manager_p);
                 parent_block = nullptr;
             } // _free_block
         );
@@ -2117,7 +1415,7 @@ public:
         return out; 
     };
 
-    using dynamic_gpu_allocator = parallel_dynamic_allocator<cl_mem>;
+    using dynamic_gpu_allocator = GL::parallel_dynamic_allocator<cl_mem>;
     static dynamic_gpu_allocator& gpu_allocator() {
         static dynamic_gpu_allocator out(
             [](unsigned long long length) -> cl_mem {
@@ -2612,7 +1910,7 @@ public:
     };
 };
 
-// implimentation of matrix<T>
+// implement the GPU-accelerated interface for matrix<T>
 namespace GL {
     namespace GPU {
         template <typename T> static std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem(matrix<T> const& rhs) {
@@ -4274,6 +3572,7 @@ namespace GL {
         };
     };
 };
+
 // pre-compilation of all functions to be used by matrix<T>; This is necessary is we want to keep the matrix<T> implimentation seperate but still guarrantee its compilation. 
 namespace GL {
     namespace GPU {

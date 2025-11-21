@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include "atomic_vector.h"
 #include "util.h"
+#include <iostream>
 
 // Atomic Thread-Local Objects
 namespace GL {
@@ -207,12 +208,17 @@ namespace GL {
             return *_tls_slot.second;
         };
         // valid call to get a _tls slot when it was properly initialized at some point previously. 
-        auto& GetTLS(size_t thread_index) const {
-            auto& _tls_slot = _tls[thread_index];
-            if (!_tls_slot.second) {
-                throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
-            }
-            return *_tls_slot.second;
+        __declspec(noinline) auto& GetTLS(size_t thread_index) const {
+            //if (_tls.size() > thread_index) {
+                auto& _tls_slot = _tls[thread_index];
+                if (!_tls_slot.second) {
+                    throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
+                }
+                return *_tls_slot.second;
+            //}
+            //else {
+            //    throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
+            //}
         };
 
     public:
@@ -244,6 +250,21 @@ namespace GL {
 
         T& operator[](size_t thread_index) { return GetTLS(thread_index); };
         const T& operator[](size_t thread_index) const { return GetTLS(thread_index); };
+        // valid call to get a _tls slot when it was properly initialized at some point previously. 
+        T* try_get(size_t thread_index) const {
+            if (_tls.size() > thread_index) {
+                auto& _tls_slot = _tls[thread_index];
+                if (_tls_slot.second) {
+                    return _tls_slot.second;
+                }
+                else {
+                    return (T*)nullptr;
+                }
+            }
+            else {
+                return (T*)nullptr;
+            }
+        };
 
         template <typename T> bool for_each_cancellable_alive(T const& func) {
             const auto index = GL::util::get_thread_id();
