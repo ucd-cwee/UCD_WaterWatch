@@ -1462,8 +1462,8 @@ public:
             auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
-            if constexpr (std::is_pod_v<T>)  // best-case scenario!
-                std::memset(out, 0, (sizeof(T) * N));            
+            if constexpr (std::is_pod_v<T>) // best-case scenario!
+                std::memset(out, 0, (sizeof(T) * N));
             else  // need to actually initialize the array...
                 for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;            
             return out;

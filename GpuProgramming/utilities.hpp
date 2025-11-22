@@ -1,7 +1,6 @@
 #pragma once
 
 #define UTILITIES_REGEX
-//#define UTILITIES_FILE
 #define CONSOLE_WIDTH 79
 #define UTILITIES_NO_CPP17
 
@@ -63,19 +62,6 @@ template <typename T> constexpr decltype(auto) type_name() {
 	else static_assert("Not all numeric types are supported by GPU calculations.");
 }
 
-class Clock {
-private:
-	typedef std::chrono::high_resolution_clock clock;
-	std::chrono::time_point<clock> t;
-public:
-	inline Clock() { start(); }
-	inline void start() { t = clock::now(); }
-	inline double stop() const { return std::chrono::duration_cast<std::chrono::duration<double>>(clock::now() - t).count(); }
-};
-inline void sleep(const double t) {
-	if (t > 0.0) std::this_thread::sleep_for(std::chrono::milliseconds((int)(1E3 * t + 0.5)));
-}
-
 inline float as_float(const uint x) {
 	return *(float*)&x;
 }
@@ -88,7 +74,6 @@ inline double as_double(const ulong x) {
 inline ulong as_ulong(const double x) {
 	return *(ulong*)&x;
 }
-
 inline float half_to_float(const ushort x) { // IEEE-754 16-bit floating-point format (without infinity): 1-5-10, exp-15, +-131008.0, +-6.1035156E-5, +-5.9604645E-8, 3.311 digits
 	const uint e = (x & 0x7C00) >> 10; // exponent
 	const uint m = (x & 0x03FF) << 13; // mantissa
@@ -735,43 +720,3 @@ inline void set_environment_variable(char* s) { // usage: set_environment_variab
 	(void)putenv(s);
 #endif // Linux
 }
-
-#ifdef UTILITIES_FILE
-#include <fstream> // read/write files
-#ifndef UTILITIES_NO_CPP17
-#include <filesystem> // automatically create directory before writing file, requires C++17
-inline vector<string> find_files(const string& path, const string& extension = ".*") {
-	vector<string> files;
-	if (std::filesystem::is_directory(path) && std::filesystem::exists(path)) {
-		for (const auto& entry : std::filesystem::directory_iterator(path)) {
-			if (extension == ".*" || entry.path().extension().string() == extension) files.push_back(entry.path().string());
-		}
-	}
-	return files;
-}
-#endif // UTILITIES_NO_CPP17
-inline void create_folder(const string& path) { // create folder if it not already exists
-	const int slash_position = (int)path.rfind('/'); // find last slash dividing the path from the filename
-	if (slash_position == (int)string::npos) return; // no slash found
-	const string f = path.substr(0, slash_position); // cut off file name if there is any
-#ifndef UTILITIES_NO_CPP17
-	if (!std::filesystem::is_directory(f) || !std::filesystem::exists(f)) std::filesystem::create_directories(f); // create folder if it not already exists
-#endif // UTILITIES_NO_CPP17
-}
-inline string create_file_extension(const string& filename, const string& extension) {
-	return filename.substr(0, filename.rfind('.')) + (extension.at(0) != '.' ? "." : "") + extension; // remove existing file extension if existing and replace it with new one
-}
-inline string read_file(const string& filename) {
-	std::ifstream file(filename, std::ios::in);
-	if (file.fail()) print_error("File \"" + filename + "\" does not exist!");
-	const string r((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-	file.close();
-	return r;
-}
-inline void write_file(const string& filename, const string& content = "") {
-	create_folder(filename);
-	std::ofstream file(filename, std::ios::out);
-	file.write(content.c_str(), content.length());
-	file.close();
-}
-#endif // UTILITIES_FILE

@@ -397,6 +397,7 @@ namespace GL {
         arena_memory_pool& operator=(arena_memory_pool&&) noexcept = default;
         ~arena_memory_pool() noexcept = default;
         void operator()(void* p) const noexcept { free(p); };
+
     private:
         static _NODISCARD void*
             malloc_bytes(unsigned int bytes);
@@ -406,33 +407,20 @@ namespace GL {
             new (&out[0]) T(std::move(args)...);
             return out;
         };
+
     public:    
         static void
             free(void* p);
         template<typename T> _NODISCARD static T*
-            malloc(unsigned int count) {
-            return (T*)malloc_bytes(sizeof(T) * count);
-        };
+            malloc(unsigned int count) { return (T*)malloc_bytes(sizeof(T) * count); };
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto 
-            make_unique(_Types&&... _Args) { // make a unique_ptr
-            return std::unique_ptr<_Ty, arena_memory_pool>(instance<_Ty>(std::move(_Args)...));
-        };
+            make_unique(_Types&&... _Args) { return std::unique_ptr<_Ty, arena_memory_pool>(instance<_Ty>(std::move(_Args)...)); };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_unique(unsigned int count) { // make a unique_ptr
-            return std::unique_ptr<_Ty, arena_memory_pool>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count));
-        };
+            make_unique(unsigned int count) { return std::unique_ptr<_Ty, arena_memory_pool>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count)); };
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_shared(_Types&&... _Args) { // make a unique_ptr
-            return std::shared_ptr<_Ty>(instance<_Ty>(std::move(_Args)...), [](_Ty* p) {
-                free(p);
-            });
-        };
+            make_shared(_Types&&... _Args) { return std::shared_ptr<_Ty>(instance<_Ty>(std::move(_Args)...), &free); };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_shared(unsigned int count) { // make a unique_ptr
-            return std::shared_ptr<_Ty>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count), [](std::decay_t<_Ty> p) {
-                free(p);
-            });
-        };
+            make_shared(unsigned int count) { return std::shared_ptr<_Ty>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count), &free); };
         static std::string
             debug();
     };
