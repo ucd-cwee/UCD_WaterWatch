@@ -14,7 +14,7 @@
 namespace GL {
     // Thread-safe, lock-free, okay-performance allocator that delays destruction until likely safe to do so. 
     // uses the real clock of the OS to time when enough periods have passed that a free'd pointer is likely forgotten. 
-    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_, 128, false, false>>
+    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_, 128, false, false>, int deferment_size = 3>
     class atomic_epoch_allocator {
     private:
         struct DeleteType {
@@ -47,18 +47,14 @@ namespace GL {
                 _scope_count;
             long long
                 EpochLimit{ -1 };
-            long long
-                Epoch_3{ -1 }; // oldest Epoch
-            long long
-                Epoch_2{ -1 }; // middle Epoch
-            long long
-                Epoch_1{ -1 }; // youngest Epoch
+            std::array<long long, deferment_size>
+                epochs;
 
             long long ForwardEpoch(long long CurrentEpoch) {
-                EpochLimit = Epoch_3;
-                Epoch_3 = Epoch_2;
-                Epoch_2 = Epoch_1;
-                Epoch_1 = CurrentEpoch;
+                int i;
+                EpochLimit = epochs[0];                
+                for (i = 0; i < (deferment_size-1); ++i) epochs[i] = epochs[i + 1];
+                epochs[i] = CurrentEpoch;
                 return EpochLimit;
             };
             bool EpochCheck(long long CurrentEpoch) {
@@ -132,10 +128,10 @@ namespace GL {
 
             if (((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch)) {
                 _TLS.for_each_alive([&_EpochLimit](TLS& _tls) {
-                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.Epoch_1) {
+                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs[deferment_size-1]) {
                         _EpochLimit = std::min<long long>(_EpochLimit, L);
                     }
-                    });
+                });
 
                 if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
                     while (_delete_list.try_pop(out)) {

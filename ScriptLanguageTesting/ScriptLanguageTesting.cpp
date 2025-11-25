@@ -338,13 +338,18 @@ int main() {
             class MatrixImage {
             public:
                 std::vector<matrix<float>> mip_maps;
-                MatrixImage() : mip_maps() {};
-                MatrixImage(matrix<float> const& srce) : mip_maps(calculate_mip_maps(srce)) {};
-                MatrixImage(MatrixImage const&) = default;
-                MatrixImage(MatrixImage&&) = default;
-                MatrixImage& operator=(MatrixImage const&) = default;
-                MatrixImage& operator=(MatrixImage&&) = default;
-                ~MatrixImage() = default;
+                MatrixImage() : mip_maps{} {};
+                MatrixImage(matrix<float>&& srce) : mip_maps{} {
+                    calculate_mip_maps(std::move(srce));
+                };
+                MatrixImage(MatrixImage const&) = delete;
+                MatrixImage(MatrixImage&&) = delete;
+                MatrixImage& operator=(MatrixImage const&) = delete;
+                MatrixImage& operator=(MatrixImage&&) = delete;
+                ~MatrixImage() {
+                    for (auto& x : mip_maps)
+                        x = matrix<float>();
+                };
 
                 matrix<float> debug_display() const {
                     matrix<float> out = mip_maps[0];
@@ -364,18 +369,17 @@ int main() {
                 };
 
             private:
-                static std::vector<matrix<float>> calculate_mip_maps(matrix<float> const& srce) {
-                    std::vector<matrix<float>> out;
-                    const matrix<float>* current = &srce;
-                    out.push_back(*current);
+                void calculate_mip_maps(matrix<float> && srce) {
+                    mip_maps.push_back(std::move(srce));
+                    const matrix<float>* current = &mip_maps[0];
                     //auto kernel = matrix<float>::guassian_kernel<13, 13>();
                     while ((current->size(0) > 1) && (current->size(1) > 1)) {
                         //auto blurred = current->convolve(kernel);
-                        //out.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
-                        out.push_back(current->halfsize()); // faster but less accurate
-                        current = &out[out.size() - 1];
+                        //mip_maps.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+
+                        mip_maps.push_back(current->halfsize()); // faster but less accurate
+                        current = &mip_maps[mip_maps.size() - 1];
                     }
-                    return out;
                 };
 
             };

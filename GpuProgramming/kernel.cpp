@@ -1,4 +1,4 @@
-#include "strings.hpp"
+#include "../ScriptLanguageTesting/Strings.h"
 #include "kernel.hpp" // note: unbalanced round brackets () are not allowed and string literals can't be arbitrarily long, so periodically interrupt with )+R(
 
 string opencl_c_container(string const& typeName, bool floatingPoint) {

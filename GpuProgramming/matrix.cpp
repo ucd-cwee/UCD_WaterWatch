@@ -1547,7 +1547,7 @@ public:
         };
         void push_back(cl_event const& rhs) {
             if (!rhs) return;
-            if (reservation == 0) reserve(16);
+            if (reservation == 0) reserve(4);
 
             if (len < reservation) {
                 items[len] = rhs;
@@ -1555,8 +1555,8 @@ public:
             }
             else {
                 clear();
-                items = make_unique<cl_event>(reservation * 2 + 16);
-                reservation = reservation * 2 + 16;
+                items = make_unique<cl_event>(reservation * 2 + 8);
+                reservation = reservation * 2 + 8;
                 items[0] = rhs;
                 len = 1;
             }
@@ -1571,7 +1571,7 @@ public:
                 reservation = n;
                 len = 0;
                 items = make_unique<cl_event>(reservation);
-                ::memset(&items[0], 0, sizeof(cl_event) * reservation);
+                // ::memset(&items[0], 0, sizeof(cl_event) * reservation);
             }
         };
         cl_event& operator[](size_t n) { return items[n]; };
@@ -1619,7 +1619,6 @@ public:
         len_bytes;
     mutable event_list
         events;
-
 
     // immediate
     bool add_event(cl_event ev, bool copy = false) const {
@@ -1789,24 +1788,28 @@ private:
     template<typename T> static void link_parameter(cl_kernel const& cl_kernel, const uint position, const T& constant) {
         check_for_errors(::clSetKernelArg(cl_kernel, position, sizeof(T), (void*)&constant));
     };
-    static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position) { }
+    static void link_parameters(cl_kernel const& cl_kernel, std::array<cl_event, 128>& waitlist, int& waitlistSize, const uint starting_position) { }
     template<template<class> typename G, typename T, class... U>
-    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const G<T>& parameter, const U&... parameters) {
+    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::array<cl_event, 128>& waitlist, int& waitlistSize, const uint starting_position, const G<T>& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
             check_for_errors(::clSetKernelArgSVMPointer(cl_kernel, starting_position, parameter.get()));
         }
         else {
             link_parameter(cl_kernel, starting_position, parameter);
         }
-        link_parameters(cl_kernel, waitlist, starting_position + 1u, parameters...);
+        link_parameters(cl_kernel, waitlist, waitlistSize, starting_position + 1u, parameters...);
     };
     template<class G, class... U>
-    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::set<cl_event>& waitlist, const uint starting_position, const G& parameter, const U&... parameters) {
+    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::array<cl_event, 128>& waitlist, int& waitlistSize, const uint starting_position, const G& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G, mem_matrix>) {
             if (parameter.gpu_memory) {
                 link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
                 for (size_t i = 0; i < parameter.events.size(); ++i) {
-                    waitlist.insert(parameter.events[i]);
+                    size_t j = 0;
+                    for (j = 0; j < waitlistSize; ++j) {
+                        if (waitlist[j] == parameter.events[i]) break;
+                    }
+                    if (j == waitlistSize) waitlist[waitlistSize++] = parameter.events[i];
                 }
             }
             else {                
@@ -1817,7 +1820,11 @@ private:
             if (parameter && parameter->gpu_memory) {
                 link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
                 for (size_t i = 0; i < parameter->events.size(); ++i) {
-                    waitlist.insert(parameter->events[i]);
+                    size_t j = 0;
+                    for (j = 0; j < waitlistSize; ++j) {
+                        if (waitlist[j] == parameter->events[i]) break;
+                    }
+                    if (j == waitlistSize) waitlist[waitlistSize++] = parameter->events[i];
                 }
             }
             else {
@@ -1828,7 +1835,11 @@ private:
             if (parameter && parameter->gpu_memory) {
                 link_parameter(cl_kernel, starting_position, parameter->gpu_memory->sub_buffer);
                 for (size_t i = 0; i < parameter->events.size(); ++i) {
-                    waitlist.insert(parameter->events[i]);
+                    size_t j = 0;
+                    for (j = 0; j < waitlistSize; ++j) {
+                        if (waitlist[j] == parameter->events[i]) break;
+                    }
+                    if (j == waitlistSize) waitlist[waitlistSize++] = parameter->events[i];
                 }
             }
             else {
@@ -1846,16 +1857,14 @@ private:
         else {
             link_parameter(cl_kernel, starting_position, parameter);
         }
-        link_parameters(cl_kernel, waitlist, starting_position + 1u, parameters...);
+        link_parameters(cl_kernel, waitlist, waitlistSize, starting_position + 1u, parameters...);
     };
 
 public:
     // for a given name and count (with optional params, including either "mem_matrix const&" or POD-types) it will queue a GPU kernel for completion. 
     template<class... T> static void queue_gpu_work(GL::string const& name, unsigned long long count, const T&... parameters) {
-        static std::set<cl_event>
-            waitlist_set;
-        static std::vector<cl_event>
-            waitlist;
+        static std::array<cl_event, 128>
+            waitlist{};
         auto& prog
             = mem_matrix::program();
         auto kernel
@@ -1868,29 +1877,22 @@ public:
             cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
             cl_range_local = cl::NDRange(WORKGROUP_SIZE);
 
-        waitlist_set.clear();
-        waitlist.clear();
+        int waitlist_size = 0;
+        // std::memset(&waitlist[0], 0, sizeof(cl_event) * 128);
 
         if (!kernel) {
             prog.functions.push_back(name, ::clCreateKernel(prog.program.cl_program.get().obj.get(), name.c_str().data(), &err));
             check_for_errors(err);
             kernel = prog.functions[name];
         }
-        link_parameters(kernel, waitlist_set, 0u, parameters...); // expand variadic template to link kernel parameters
-        for (auto& x : waitlist_set) {
-            if (x != nullptr) {
-                // all of these are "copies"
-                // ::clRetainEvent(x);
-                waitlist.push_back(x);
-            }
-        }
+        link_parameters(kernel, waitlist, waitlist_size, 0u, parameters...); // expand variadic template to link kernel parameters
 
         err = ::clEnqueueNDRangeKernel(
             prog.queue.get().obj.get(), kernel, (cl_uint)cl_range_global.dimensions(),
             nullptr, (const size_t*)cl_range_global,
             cl_range_local.dimensions() != 0 ? (const size_t*)cl_range_local : nullptr,
-            (cl_int)waitlist.size(),
-            (cl_event*)((waitlist.size() > 0) ? &waitlist[0] : nullptr),
+            (cl_int)waitlist_size,
+            (cl_event*)((waitlist_size > 0) ? &waitlist[0] : nullptr),
             &tmp);
 
         check_for_errors(err);
@@ -1898,8 +1900,8 @@ public:
         append_events(C, tmp, parameters...);
         if (C == 0) { // makes copies for each reference to a mem_matrix
             // if no references, we wait for the jobs to finish
-            if (waitlist.size() > 0) {
-                err = ::clWaitForEvents(waitlist.size(), &waitlist[0]);
+            if (waitlist_size > 0) {
+                err = ::clWaitForEvents(waitlist_size, &waitlist[0]);
                 check_for_errors(err);
             }
             err = ::clWaitForEvents(1, &tmp);
@@ -1913,12 +1915,27 @@ public:
 // implement the GPU-accelerated interface for matrix<T>
 namespace GL {
     namespace GPU {
+        template <typename T, size_t capacity>
+        class deferred_deletion_support {
+        private:
+            GL::thread_object_no_default<std::pair<size_t, std::array<T, capacity>>> vecs;
+        public:
+            void push_back(T&& arg) {
+                std::pair<size_t, std::array<T, capacity>>& PR = *vecs;
+                short pos = PR.first++ % capacity;
+                auto& vec = PR.second;
+                if (pos > capacity) pos = 0;
+                vec[pos] = nullptr;
+                vec[pos] = std::move(arg);
+            };
+        };
+
         template <typename T> static std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem(matrix<T> const& rhs) {
             return reinterpret_cast<std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&>(const_cast<matrix<T>&>(rhs).internal_memory());
         };
-        static unsigned int WorkgroupAdjustment(unsigned int N) {
-            return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-        }
+        static unsigned int WorkgroupAdjustment(unsigned int N) { 
+            return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE; 
+        };
         static auto& mem_free_helper() {
             class wrap {
             public:
@@ -1931,15 +1948,19 @@ namespace GL {
                 wrap& operator=(wrap&&) = default;
                 ~wrap() = default;
             };
-            static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>> allocator{};
+            static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>, 3> allocator{};
             return allocator;
         }
         static void mem_free(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem) {
+            //static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 2048> helper;
+            //helper.push_back(std::move(mem));
+            
             if (mem) {
                 auto* p = mem_free_helper().Alloc(std::move(mem));
                 mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
                 mem_free_helper().Free(p);
             }
+
             mem = nullptr;
         };
 
@@ -2184,7 +2205,8 @@ namespace GL {
             return *this;
         };
         template <typename T> matrix<T>& matrix<T>::operator+=(matrix const& rhs) {
-            mem_matrix::queue_gpu_work(GL::string("add_inplace") + GL::string(opencl_impl::type_name<T>()),
+            static auto func_name{ GL::string("add_inplace") + GL::string(opencl_impl::type_name<T>()) };
+            mem_matrix::queue_gpu_work(func_name,
                 dim.count(),
                 mem(*this), mem(rhs)
             );
@@ -3194,6 +3216,7 @@ namespace GL {
             return matrix_kernel<float>(std::move(out));
         };
         template <typename T> matrix<char> matrix<T>::ASCII() const {
+            static auto func_name{ GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()) };
             static std::vector<char> chars = []() {
                 std::vector<char> chars{
                     'Q', '&', '@', '$', 'B', 'M', 'W', '8', 'h', 'k', '%', '#', '0', 'O', 'b', 'd', 'p', 'q', 'w', 'm', 'Z',
@@ -3210,7 +3233,7 @@ namespace GL {
             auto thisMaxV = this->max();
 
             matrix<char> out(this->dim);
-            mem_matrix::queue_gpu_work(GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()),
+            mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(out), mem(*this), thisMinV, thisMaxV, static_mem_matrix{ mem(ramp).get() }, ramp.size()
             );
@@ -3218,40 +3241,45 @@ namespace GL {
             //}
         };
         template <typename T> matrix<T> matrix<T>::resize(unsigned int X, unsigned int Y, unsigned Z) const {
+            static auto func_name{ GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()) };
             auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
-            mem_matrix::queue_gpu_work(GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()),
+            mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(out), mem(*this), X, Y, Z, this->size(0), this->size(1), this->size(2)
             );
             return out;
         };
         template <typename T> matrix<T> matrix<T>::resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const {
+            static auto func_name{ GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()) };
             auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
-            mem_matrix::queue_gpu_work(GL::string("copy_resize_stretch") + GL::string(opencl_impl::type_name<T>()),
+            mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(out), mem(*this), X, Y, Z, this->size(0), this->size(1), this->size(2)
             );
             return out;
         };
         template <typename T> matrix<T> matrix<T>::subsample_1D(matrix<float> const& FloatingPointIndexes) const {
+            static auto func_name{ GL::string("subsample_1D") + GL::string(opencl_impl::type_name<T>()) };
             matrix out(FloatingPointIndexes.dim);
-            mem_matrix::queue_gpu_work(GL::string("subsample_1D") + GL::string(opencl_impl::type_name<T>()),
+            mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem<T>(out), mem<T>(*this), mem<float>(FloatingPointIndexes)
             );
             return out;
         };
         template <typename T> matrix<unsigned int> matrix<T>::binomial_search_smallest_gre(matrix const& find) const {
+            static auto func_name{ GL::string("binomial_search_smallest_gre") + GL::string(opencl_impl::type_name<T>()) };
             matrix<unsigned int> out(find.dim);
-            mem_matrix::queue_gpu_work(GL::string("binomial_search_smallest_gre") + GL::string(opencl_impl::type_name<T>()),
+            mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(out), mem(*this), mem(find), this->dim.X
             );
             return out;
         };
         template <typename T> matrix<T> matrix<T>::subsample_pat(matrix const& X, matrix const& Y) const {
+            static auto func_name{ GL::string("subsample_pat") + GL::string(opencl_impl::type_name<T>()) };
             matrix out(this->dim);
-            mem_matrix::queue_gpu_work(GL::string("subsample_pat") + GL::string(opencl_impl::type_name<T>()),
+            mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(out), mem(Y), mem(X), mem(*this), X.dim.X
             );
