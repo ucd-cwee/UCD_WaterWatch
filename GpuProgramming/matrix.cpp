@@ -19,6 +19,7 @@
 #include "../ScriptLanguageTesting/ticket_dispensor.h"
 #include "../ScriptLanguageTesting/atomic_tree.h"
 #include "../ScriptLanguageTesting/stopwatch.h"
+#include "../ScriptLanguageTesting/util.h"
 
 class mem_matrix; // linear array of bytes that manages a pointer to GPU and/or CPU memory, as well as GPU events (queued GPU jobs). GPU jobs are awaited if attempting to be destroyed. 
 static void* Mem_Alloc(const size_t& size) {
@@ -180,7 +181,7 @@ public:
         GL::string out;
 #define R(...) GL::string(" "#__VA_ARGS__" ")
         out = out + R(
-            kernel void copy_type_(global _type_ * A, global _type_ * B) {
+        kernel void copy_type_(global _type_ * A, global _type_ * B) {
             const uint n = get_global_id(0);
             A[n] = B[n];
         };
@@ -209,17 +210,17 @@ public:
             long mid = len;
             long offset = 0;
             long res = 0;
-            _type_* sample = 0;
+            _type_ sample = 0;
             while (mid > 0) {
                 mid = len >> 1;
                 // OPTIMIZED ORDERING
-                sample = &Source[offset + mid];
-                if (time >= *sample)
+                sample = Source[offset + mid];
+                if (time >= sample)
                 {
                     offset += mid;
                     len -= mid;
                     res = 1;
-                    if (time == *sample) {
+                    if (time == sample) {
                         destination[n] = (uint)(offset);
                         return;
                     }
@@ -243,17 +244,17 @@ public:
             long mid = len;
             long offset = 0;
             long res = 0;
-            _type_* sample = 0;
+            _type_ sample;
             while (mid > 0) {
                 mid = len >> 1;
                 // OPTIMIZED ORDERING
-                sample = &SourceX[offset + mid];
-                if (time >= *sample)
+                sample = SourceX[offset + mid];
+                if (time >= sample)
                 {
                     offset += mid;
                     len -= mid;
                     res = 1;
-                    if (time == *sample) {
+                    if (time == sample) {
                         destination[n] = SourceY[(uint)offset];
                         return;
                     }
@@ -829,7 +830,7 @@ public:
         );
         if constexpr (std::is_floating_point_v<T>) {
             out = out + R(
-                global atomic_int __rand_global_counter = ATOMIC_VAR_INIT(123456789);
+            global atomic_int __rand_global_counter = ATOMIC_VAR_INIT(123456789);
             uint __rand_global() {
                 uint x, y;
                 for (;;) {
@@ -837,6 +838,7 @@ public:
                     x ^= x << 13;
                     x ^= x >> 17;
                     x ^= x << 5;
+                    // atomic_xchg(&__rand_global_counter, x);
                     if (atom_cmpxchg(&__rand_global_counter, y, x) == y) break;
                 }
                 return x;
@@ -844,9 +846,8 @@ public:
             kernel void Rand_type_(global _type_ * A) {
                 const uint n = get_global_id(0);
                 const uint lS = get_local_id(0);
-
                 local uint __rand_counter;
-                if (get_local_id(0) == 0) {
+                if (lS == 0) {
                     __rand_counter = __rand_global();
                 }
                 barrier(CLK_LOCAL_MEM_FENCE);
@@ -858,7 +859,6 @@ public:
                     __this_rand_counter ^= __this_rand_counter >> 19;
                     __this_rand_counter ^= __this_rand_counter << 7;
                 }
-
                 A[n] = (_type_)__this_rand_counter / ((uint)~((uint)0));
             };
             kernel void power_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
@@ -927,7 +927,7 @@ public:
                 C[n] = fmin(A[n], B);
             }
             kernel void reduce_max_type_(global _type_ * input, global _type_ * output, uint n, _type_ minV) {
-                uint global_id = get_global_id(0);
+                const uint global_id = get_global_id(0);
                 uint local_id = get_local_id(0);
                 uint group_size = get_local_size(0);
                 local _type_ scratch[64];
@@ -946,11 +946,11 @@ public:
 
                 // Write the work-group's partial sum to global memory
                 if (local_id == 0) {
-                    output[get_group_id(0)] = scratch[0];
+                    output[global_id] = scratch[0];
                 }
             }
             kernel void reduce_min_type_(global _type_ * input, global _type_ * output, uint n, _type_ maxV) {
-                uint global_id = get_global_id(0);
+                const uint global_id = get_global_id(0);
                 uint local_id = get_local_id(0);
                 uint group_size = get_local_size(0);
                 local _type_ scratch[64];
@@ -969,26 +969,26 @@ public:
 
                 // Write the work-group's partial sum to global memory
                 if (local_id == 0) {
-                    output[get_group_id(0)] = scratch[0];
+                    output[global_id] = scratch[0];
                 }
             }
             );
             out = out + R(
                 kernel void item_AND_type_(global uint * A, global _type_ * B, global _type_ * C) {
                 const uint n = get_global_id(0);
-                A[n] = *((uint*)(&B[n])) && *((uint*)(&C[n]));
+                A[n] = B[n] && C[n];
             };
             kernel void item_OR_type_(global uint * A, global _type_ * B, global _type_ * C) {
                 const uint n = get_global_id(0);
-                A[n] = *((uint*)(&B[n])) || *((uint*)(&C[n]));
+                A[n] = B[n] || C[n];
             };
             kernel void item_AND_single_type_(global uint * A, global _type_ * B, _type_ C) {
                 const uint n = get_global_id(0);
-                A[n] = *((uint*)(&B[n])) && C;
+                A[n] = B[n] && C;
             };
             kernel void item_OR_single_type_(global uint * A, global _type_ * B, _type_ C) {
                 const uint n = get_global_id(0);
-                A[n] = *((uint*)(&B[n])) || C;
+                A[n] = B[n] || C;
             };
             kernel void guassian_type_(global _type_ * A, uint lX, uint lY) {
                 const int n = (int)get_global_id(0);
@@ -1006,7 +1006,7 @@ public:
         }
         else {
             out = out + R(
-                kernel void power_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
+            kernel void power_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = pow((float)A[n], (float)B);
             }
@@ -1063,7 +1063,7 @@ public:
                 C[n] = min(A[n], B);
             }
             kernel void reduce_max_type_(global _type_ * input, global _type_ * output, uint n, _type_ minV) {
-                uint global_id = get_global_id(0);
+                const uint global_id = get_global_id(0);
                 uint local_id = get_local_id(0);
                 uint group_size = get_local_size(0);
                 local _type_ scratch[64];
@@ -1082,11 +1082,11 @@ public:
 
                 // Write the work-group's partial sum to global memory
                 if (local_id == 0) {
-                    output[get_group_id(0)] = scratch[0];
+                    output[global_id] = scratch[0];
                 }
             }
             kernel void reduce_min_type_(global _type_ * input, global _type_ * output, uint n, _type_ maxV) {
-                uint global_id = get_global_id(0);
+                const uint global_id = get_global_id(0);
                 uint local_id = get_local_id(0);
                 uint group_size = get_local_size(0);
                 local _type_ scratch[64];
@@ -1105,7 +1105,7 @@ public:
 
                 // Write the work-group's partial sum to global memory
                 if (local_id == 0) {
-                    output[get_group_id(0)] = scratch[0];
+                    output[global_id] = scratch[0];
                 }
             }
             kernel void item_AND_type_(global uint * A, global _type_ * B, global _type_ * C) {
@@ -1141,61 +1141,6 @@ public:
             create_kernel<long>() + "\n" +
             create_kernel<unsigned long>() + "\n" +
             create_kernel<float>() + "\n";
-
-        // additional kernels for type-free stuff. 
-        out = out + R"(
-            kernel void buffer_to_image(write_only image2d_t output, global float* input, uint lX, uint lY, uint channels) {
-                const int n = (int)get_global_id(0);
-                const int COL = (int)floor((float)n / (float)lX);
-                const int ROW = (int)n - COL * (int)lX;
-                
-                float4 copy;
-                if (channels >= 1){ copy[0] = input[n]; }
-                if (channels >= 2){ copy[1] = input[n + (lX * lY)]; }
-                if (channels >= 3){ copy[2] = input[n + (lX * lY) * 2]; }
-                if (channels >= 4){ copy[3] = input[n + (lX * lY) * 3]; }
-
-                write_imagef(output, (int2)(ROW, COL), copy);
-            }
-            kernel void image_to_buffer(read_only image2d_t input, global float* output, uint lX, uint lY, uint lZ) {
-                const int n = (int)get_global_id(0);
-                const int DEPTH = (int)floor((float)n / (float)(lX * lY));
-                const int COL = (int)floor((float)(n - (DEPTH * (lX * lY))) / (float)lX);
-                const int ROW = (int)n - COL * (int)lX;
- 
-                const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
-                float4 r = read_imagef(input, sampler, (float2)((float)ROW, (float)COL));
-
-                output[n] = r[DEPTH];
-            }
-
-            kernel void sample_image(read_only image2d_t input, global float* output, uint lX, uint lY, uint channels) {
-                const int n = (int)get_global_id(0);
-                const int COL = (int)floor((float)n / (float)lX);
-                const int ROW = (int)n - COL * (int)lX;
-
-                const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
-                float4 r = read_imagef(input, sampler, (float2)((float)ROW, (float)COL));     
-
-                if (COL <= 2){
-                    output[n] = r[0];
-                }
-                else if (COL <= 4){
-                    output[n] = r[1];
-                }
-                else if (COL <= 6){
-                    output[n] = r[2];
-                }
-                else {
-                    output[n] = r[3];
-                }
-
-                //const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_FILTER_NEAREST;
-                //float4 r = read_imagef(input, sampler, (int2)(X, Y));                  
-                //output[n] = r[0];
-            };
-        )";
-
 
         return out;
     };
@@ -1281,14 +1226,21 @@ public:
     public:
         // Instantiates and compiles the program.
         ProgramImpl(Device_Info const& info, std::vector<std::string> const& opencl_code)
-            : cl_program(info.cl_context, make_kernel_code(info, combine(opencl_code)))
+            : cl_program(info.cl_context, make_kernel_code(info, GL::string(combine(opencl_code)).replace("; ", ";\n").to_string()))
         {
             const std::string build_options
-                = /*"-cl-std=CL" + info.opencl_c_version + */std::string(" -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable") + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
+                = std::string("-cl-std=CL") + /*"2.0"*/ info.opencl_c_version + std::string(" -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable") + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
             int error
                 = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
-            if (error)
+            if (error) {
                 print_warning(cl_program.get().obj.getBuildInfo<CL_PROGRAM_BUILD_LOG>(info.cl_device)); // print build log
+
+                auto splits = GL::string(combine(opencl_code)).replace("; ", ";\n").split("\n");
+                int l = 1;
+                for (auto& split : splits) {
+                    std::cout << (GL::string(std::to_string(l++)) + "\t" + split) << std::endl;
+                }
+            }
 
             initialized = true;
         }
@@ -1543,18 +1495,24 @@ public:
             if (items) {
                 cl_int eventStatus = 0;
                 cl_int err = 0;
+#if 0
                 for (long long L = 0; L < len; ++L) {
                     GL::stopwatch sw;
                     do {
                         err = ::clGetEventInfo(items[L], CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
                         check_for_errors(err);
-                        if ((eventStatus > CL_QUEUED) || (eventStatus < CL_COMPLETE) || (sw.check() > 5.0l)) {
-                            std::cout << eventStatus << std::endl;
-                            break;
+                        if ((eventStatus > CL_QUEUED) || (eventStatus < CL_COMPLETE) || (sw.check() > 1.0l)) {
+                            ::clFlush(program().queue.get().obj.get());
+                            ::clFinish(program().queue.get().obj.get());
                         }
+                        if (eventStatus == CL_QUEUED || eventStatus == CL_SUBMITTED) std::this_thread::yield();
                     } while (eventStatus != CL_COMPLETE);
                     ::clReleaseEvent(items[L]);
                 }
+#else
+                ::clWaitForEvents(len, &items[0]);
+                for (long long L = 0; L < len; ++L) ::clReleaseEvent(items[L]);
+#endif
                 len = 0;
             }
         };
@@ -1659,7 +1617,6 @@ public:
     void read_from_device() {
         if (gpu_memory && cpu_memory) {
             events.clear();
-
             cl_event ev;
             cl_int err =
                 ::clEnqueueReadBuffer(
@@ -1667,10 +1624,26 @@ public:
                     0, nullptr, &ev
                 );
             check_for_errors(err);
+#if 0            
+            cl_int eventStatus = 0;
+            GL::stopwatch sw;
+            do {
+                err = ::clGetEventInfo(ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
+                check_for_errors(err);
+                if ((eventStatus > CL_QUEUED) || (eventStatus < CL_COMPLETE) || (sw.check() > 1.0l)) {
+                    ::clFlush(program().queue.get().obj.get());
+                    ::clFinish(program().queue.get().obj.get());
+                }
+                if (eventStatus == CL_QUEUED || eventStatus == CL_SUBMITTED) std::this_thread::yield();
+            } while (eventStatus != CL_COMPLETE);
+            check_for_errors(err);
+            ::clReleaseEvent(ev);  
+#else
             err = ::clWaitForEvents(1, &ev);
             check_for_errors(err);
             ::clReleaseEvent(ev);
-        }
+#endif
+        }        
     };
     void write_to_device() {
         if (gpu_memory && cpu_memory) {
@@ -1876,7 +1849,7 @@ private:
 public:
     // for a given name and count (with optional params, including either "mem_matrix const&" or POD-types) it will queue a GPU kernel for completion. 
     template<class... T> static void queue_gpu_work(GL::string const& name, unsigned long long count, const T&... parameters) {
-        static std::array<cl_event, 128>
+        thread_local std::array<cl_event, 128>
             waitlist{};
         auto& prog
             = mem_matrix::program();
@@ -1889,9 +1862,8 @@ public:
         cl::NDRange
             cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
             cl_range_local = cl::NDRange(WORKGROUP_SIZE);
-
-        int waitlist_size = 0;
-        // std::memset(&waitlist[0], 0, sizeof(cl_event) * 128);
+        int waitlist_size 
+            = 0;
 
         if (!kernel) {
             prog.functions.push_back(name, ::clCreateKernel(prog.program.cl_program.get().obj.get(), name.c_str().data(), &err));
@@ -1912,16 +1884,19 @@ public:
         int C = 0;
         append_events(C, tmp, parameters...);
         if (C == 0) { // makes copies for each reference to a mem_matrix
-            // if no references, we wait for the jobs to finish
-            if (waitlist_size > 0) {
-                err = ::clWaitForEvents(waitlist_size, &waitlist[0]);
-                check_for_errors(err);
+            event_list list;
+            for (int i = 0; i < waitlist_size; ++i) {
+                ::clRetainEvent(waitlist[i]);
+                list.push_back(waitlist[i]);
             }
-            err = ::clWaitForEvents(1, &tmp);
-            check_for_errors(err);
+            list.clear();
+            list.push_back(tmp);
+            list.clear();
         }
-        // remove this reference to the job. 
-        ::clReleaseEvent(tmp);
+        else {
+            // remove this reference to the job. 
+            ::clReleaseEvent(tmp);
+        }
     };
 };
 
@@ -1933,7 +1908,7 @@ namespace GL {
         private:
             GL::thread_object_no_default<std::pair<size_t, std::array<T, capacity>>> vecs;
         public:
-            void push_back(T&& arg) {
+            __declspec(noinline) void push_back(T&& arg) {
                 std::pair<size_t, std::array<T, capacity>>& PR = *vecs;
                 // size_t pos = PR.first++ % capacity;
                 size_t pos = PR.first++ & (capacity - 1); // faster than %, must be power of two
@@ -1950,32 +1925,33 @@ namespace GL {
         static unsigned int WorkgroupAdjustment(unsigned int N) { 
             return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE; 
         };
-        //static auto& mem_free_helper() {
-        //    class wrap {
-        //    public:
-        //        std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> mem;
-        //        wrap() = default;
-        //        wrap(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&& rhs) : mem{ std::move(rhs) } {};
-        //        wrap(wrap const&) = delete;
-        //        wrap(wrap&&) = default;
-        //        wrap& operator=(wrap const&) = delete;
-        //        wrap& operator=(wrap&&) = default;
-        //        ~wrap() = default;
-        //    };
-        //    static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>, 8> allocator{};
-        //    return allocator;
-        //}
+        static auto& mem_free_helper() {
+            class wrap {
+            public:
+                std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> mem;
+                wrap() = default;
+                wrap(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&& rhs) : mem{ std::move(rhs) } {};
+                wrap(wrap const&) = delete;
+                wrap(wrap&&) = default;
+                wrap& operator=(wrap const&) = delete;
+                wrap& operator=(wrap&&) = default;
+                ~wrap() = default;
+            };
+            static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>, 8> allocator{};
+            return allocator;
+        }
         static void mem_free(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem) {
-            static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 256> helper;
-            helper.push_back(std::move(mem));
-            
-            //if (mem) {
-            //    auto* p = mem_free_helper().Alloc(std::move(mem));
-            //    mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
-            //    mem_free_helper().Free(p);
-            //}
+            if (mem) {
+                if (/*mem->cpu_memory || */mem->gpu_memory) {
+                    static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 256> helper;
+                    helper.push_back(std::move(mem));
 
-            mem = nullptr;
+                    //auto* p = mem_free_helper().Alloc(std::move(mem));
+                    //mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
+                    //mem_free_helper().Free(p);
+                }
+            }
+            mem = nullptr;            
         };
 
         template <typename T> matrix<T>::matrix(GL::GPU::dimensions d)
@@ -2400,9 +2376,8 @@ namespace GL {
                 return out;
             }
         };
-        template <typename T> matrix<T> matrix<T>::random(unsigned int X, unsigned int Y, unsigned int Z) {
+        template <typename T> matrix<T> matrix<T>::random(unsigned int X, unsigned int Y, unsigned int Z) { 
             static auto func_name{ GL::string("Rand") + GL::string(opencl_impl::type_name<T>()) };
-
             if constexpr (std::is_floating_point_v<T>) {
                 matrix out(X, Y, Z);
                 mem_matrix::queue_gpu_work(func_name,
@@ -2411,13 +2386,21 @@ namespace GL {
                 );
                 return out;
             }
+            //if constexpr (std::is_floating_point_v<T>) {
+            //    matrix out(X, Y, Z);
+            //    if (auto w = out.write()) {
+            //        for (int i = 0; i < out.size(); ++i) {
+            //            w[i] = GL::util::rand_fast(0, 1);
+            //        }
+            //    }
+            //    return out;
+            //}
             else {
                 return (matrix<float>::random(X, Y, Z) * (float)std::numeric_limits<T>::max()).cast<T>();
             }
         };
         template <typename T> matrix<T> matrix<T>::random_between(T lower, T upper, unsigned int X, unsigned int Y, unsigned int Z) {
             static auto func_name{ GL::string("Rand") + GL::string(opencl_impl::type_name<T>()) };
-
             if constexpr (std::is_floating_point_v<T>) {
                 matrix out(GL::GPU::dimensions{ X, Y, Z });
                 mem_matrix::queue_gpu_work(func_name,
@@ -2428,6 +2411,15 @@ namespace GL {
                 out += lower;
                 return out;
             }
+            //if constexpr (std::is_floating_point_v<T>) {
+            //    matrix out(X, Y, Z);
+            //    if (auto w = out.write()) {
+            //        for (int i = 0; i < out.size(); ++i) {
+            //            w[i] = GL::util::rand_fast(lower, upper);
+            //        }
+            //    }
+            //    return out;
+            //}
             else {
                 return matrix<float>::random_between((float)lower, (float)upper, X, Y, Z).cast<T>();
             }
@@ -3290,16 +3282,25 @@ namespace GL {
             return std::abs(this->transpose().matrix_multiply(*this).determinant()) == 0;
         };
         template <typename T> T matrix<T>::sum() const {
-            static auto func_name{ GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()) };
-            if (this->size() > 512) {
-                matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                mem_matrix::queue_gpu_work(func_name,
-                    this->size(),
-                    mem(*this), mem(Temp), (unsigned int)this->size()
-                );
-                return Temp.sum();
-            }
-            else {
+            //static auto func_name{ GL::string("reduce_sum") + GL::string(opencl_impl::type_name<T>()) };
+            //if (this->size() > 512) {
+            //    matrix Temp(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+            //    mem_matrix::queue_gpu_work(func_name,
+            //        this->size(),
+            //        mem(*this), mem(Temp), (unsigned int)this->size()
+            //    );
+            //    {
+            //        auto N = Temp.size();
+            //        T out2 = (T)0;
+            //        if (auto R = Temp.read()) {
+            //            for (unsigned int n = 0; n < N; ++n) {
+            //                out2 += R(n);
+            //            }
+            //        }
+            //        return out2;
+            //    }
+            //}
+            //else {
                 auto N = this->size();
                 T out = (T)0;
                 if (auto R = this->read()) {
@@ -3308,22 +3309,31 @@ namespace GL {
                     }
                 }
                 return out;
-            }
+            // }
         };
         template <typename T> T matrix<T>::avg() const {
             return (T)((long double)sum() / (long double)this->size());
         };
         template <typename T> T matrix<T>::max() const {
-            static auto func_name{ GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()) };
-            if (this->size() > 512) {
-                matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                mem_matrix::queue_gpu_work(func_name,
-                    this->size(),
-                    mem(*this), mem(out), (unsigned int)this->size(), std::numeric_limits<T>::lowest()
-                );
-                return out.max();
-            }
-            else {
+            //static auto func_name{ GL::string("reduce_max") + GL::string(opencl_impl::type_name<T>()) };
+            //if (this->size() > 512) {
+            //    matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+            //    mem_matrix::queue_gpu_work(func_name,
+            //        this->size(),
+            //        mem(*this), mem(out), (unsigned int)this->size(), std::numeric_limits<T>::lowest()
+            //    );
+            //    {
+            //        auto N = out.size();
+            //        T out2 = std::numeric_limits<T>::lowest();
+            //        if (auto R = out.read()) {
+            //            for (unsigned int n = 0; n < N; ++n) {
+            //                out2 = std::max(out2, R(n));
+            //            }
+            //        }
+            //        return out2;
+            //    }
+            //}
+            //else {
                 auto N = this->size();
                 T out = std::numeric_limits<T>::lowest();
                 if (auto R = this->read()) {
@@ -3332,19 +3342,28 @@ namespace GL {
                     }
                 }
                 return out;
-            }
+            //}
         };
         template <typename T> T matrix<T>::min() const {
-            static auto func_name{ GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()) };
-            if (this->size() > 512) {
-                matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
-                mem_matrix::queue_gpu_work(func_name,
-                    this->size(),
-                    mem(*this), mem(out), (unsigned int)this->size(), std::numeric_limits<T>::max()
-                );
-                return out.min();
-            }
-            else {
+            //static auto func_name{ GL::string("reduce_min") + GL::string(opencl_impl::type_name<T>()) };
+            //if (this->size() > 512) {
+            //    matrix out(GL::GPU::dimensions{ (unsigned int)std::ceil((long double)(this->size()) / (long double)64), 1, 1 });
+            //    mem_matrix::queue_gpu_work(func_name,
+            //        this->size(),
+            //        mem(*this), mem(out), (unsigned int)this->size(), std::numeric_limits<T>::max()
+            //    );
+            //    {
+            //        auto N = out.size();
+            //        T out2 = std::numeric_limits<T>::max();
+            //        if (auto R = out.read()) {
+            //            for (unsigned int n = 0; n < N; ++n) {
+            //                out2 = std::min(out2, R(n));
+            //            }
+            //        }
+            //        return out2;
+            //    }
+            //}
+            //else {
                 auto N = this->size();
                 T out = std::numeric_limits<T>::max();
                 if (auto R = this->read()) {
@@ -3353,7 +3372,7 @@ namespace GL {
                     }
                 }
                 return out;
-            }
+            //}
         };
         template <typename T> matrix<T> matrix<T>::convolve(matrix_kernel<T> const& K) const {
             static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
@@ -3482,9 +3501,7 @@ namespace GL {
             static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
             static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
             if constexpr (std::is_same_v<float, T>) {
-                auto a1 = convolve(static_matrix_kernel<float>{ &kernel1 });
-                auto a2 = a1.convolve(static_matrix_kernel<float>{ &kernel2 });
-                return a2.resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+                return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
             else {
                 return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));

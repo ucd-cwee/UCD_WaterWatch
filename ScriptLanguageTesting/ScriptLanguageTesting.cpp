@@ -38,7 +38,7 @@
 #include "shared_ptr.h"
 
 
-#include "../FiberTasks/Concurrent_Queue.h"
+// #include "../FiberTasks/Concurrent_Queue.h"
 
 
 #include <concurrent_vector.h>
@@ -69,6 +69,8 @@
 #include <stdlib.h>
 
 #include "../GpuProgramming/matrix.h"
+// #include "../ExcelInterop/Wrapper.h"
+
 __forceinline void console_clear() {
     COORD topLeft = { 0, 0 };
     HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -87,6 +89,24 @@ __forceinline void console_clear() {
 }
 
 int main() {
+#if 0
+    if (auto wb = cweeExcel::OpenExcel("S:\\Engineering\\Monthly Conservation Report\\Analysis File\\DemandSupplyShortage.xlsx")) {        
+        if (auto ws = wb->active_sheet()) {
+            print(ws->cell("A2")->value<std::string>());
+        }
+    }
+    if (auto wb = cweeExcel::OpenExcel("S:\\Engineering\\Monthly Conservation Report\\Analysis File\\Demand ProRating\\ProRating Calculator.xlsx")) {        
+        for (int sheet_index = 0; sheet_index < wb->sheet_count(); ++sheet_index) {
+            if (auto ws = wb->sheet_by_index(sheet_index)) {
+                if (auto cell = ws->cell("A1")) {
+                    auto str = cell->value<std::string>();
+                    print(str);
+                }
+            }
+        }
+    }
+#endif
+
     // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
     if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
@@ -420,8 +440,7 @@ int main() {
 
             //while (sw.stop() < 1.0 / 60.0) {
                 // std::this_thread::yield();
-            //}
-
+            //}            
         }
     }
 

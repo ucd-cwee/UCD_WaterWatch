@@ -622,8 +622,10 @@ inline void print_error(const string& s) { // print formatted error message
 	println("'" + b + "'");
 #ifdef _WIN32
 	wait();
-#endif //_WIN32
+	std::cout << "\n\n";
+#else
 	exit(1);
+#endif //_WIN32	
 }
 inline void print_warning(const string& s) { // print formatted warning message
 	print_message(s, "Warning");
