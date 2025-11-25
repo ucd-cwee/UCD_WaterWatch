@@ -492,6 +492,17 @@ namespace GL {
             }
         };
 
+        std::vector<string> split(const string& what) const {
+            std::vector<string> out;
+            std::pair<string, string> s = this->left_and_right_of(what);
+            out.push_back(s.first);
+            while (s.second != "") {
+                s = s.second.left_and_right_of(what);
+                out.push_back(s.first);
+            }
+            return out;
+            
+        };
     };
 
 #if 0 // need to make a atomic_string_view
