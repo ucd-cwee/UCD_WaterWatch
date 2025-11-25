@@ -4,7 +4,105 @@
 #include <memory>
 #include <set>
 #include "atomic_allocator.h"
-#include "atomic_maps.h"
+// #include "atomic_maps.h"
+
+// a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
+namespace GL {
+	class fast_shared_mutex {
+	private:
+		mutable std::atomic<long long> mut{ 0 }; // Read, Write
+
+	public:
+		__declspec(noinline) bool try_lock() const {
+			thread_local long long read, planned;
+			read = planned = mut.load(std::memory_order::memory_order_relaxed);
+			if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
+				if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
+					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+						return true; // success!
+					}
+				}
+			}
+			return false;
+		};
+		__declspec(noinline) void unlock() const {
+			thread_local long long read, planned;
+			int i = 0;
+			while (true) {
+				if (++i > 40) std::this_thread::yield();
+				read = planned = mut.load(std::memory_order::memory_order_relaxed);
+				--reinterpret_cast<short*>(&planned)[1];
+				if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+					break; // success!
+				}
+			}
+		};
+		__declspec(noinline) void lock() const {
+			int i = 0;
+			while (!try_lock()) {
+				if (++i > 40) std::this_thread::yield();
+			}
+		};
+
+		__declspec(noinline) bool try_lock_shared() const {
+			thread_local long long read;
+			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+			if (
+				(reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
+				&& (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
+				) {
+				return true;
+			}
+			else {
+				mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+				return false;
+			}
+		};
+		__declspec(noinline) void unlock_shared() const {
+			mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
+		};
+		__declspec(noinline) void lock_shared() const {
+			thread_local long long read;
+			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+			while (reinterpret_cast<long*>(&read)[1] != 0) {
+				read = mut.load();
+			}
+
+
+			//int i = 0;
+			//while (!try_lock_shared()) {
+			//	if (++i > 40) std::this_thread::yield();
+			//}
+		};
+
+		// if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
+		// Returns true if this ideal scenario was successful. Returns false otherwise.
+		__declspec(noinline) bool upgrade_lock() const {
+			thread_local long long read, planned;
+			// increment the write count and decrement our read count...
+			//for (int i = 0; i < 40; ++i) {
+			planned = read = mut.load(std::memory_order::memory_order_relaxed);
+			if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
+				if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
+					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+						return true;
+					}
+				}
+			}
+			//else {
+			//	break;
+			//}
+		//}
+
+			unlock_shared();
+			lock();
+
+			return false;
+		};
+
+	};
+};
+
 
 #define CONST_MAX( x, y ) ( (x) > (y) ? (x) : (y) )
 namespace GL{
@@ -345,7 +443,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = std::shared_mutex;
+		using lock_type = fast_shared_mutex; // std::shared_mutex;
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;

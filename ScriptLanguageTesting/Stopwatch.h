@@ -43,8 +43,8 @@ namespace GL {
 		};
 		// does not stop the timer, but does return the time passed since in seconds
 		long double check() const { 
-			if (t1 < t0) InterlockedExchange64(reinterpret_cast<volatile long long*>(&const_cast<stopwatch*>(this)->t1), clock::ns()); // const_cast<stopwatch*>(this)->t1 = clock::ns();
-			return static_cast<long double>(t1 - t0) / 1000000000.0; 
+			// if (t1 < t0) InterlockedExchange64(reinterpret_cast<volatile long long*>(&const_cast<stopwatch*>(this)->t1), clock::ns()); // const_cast<stopwatch*>(this)->t1 = clock::ns();
+			return static_cast<long double>(clock::ns() - t0) / 1000000000.0;
 		};
 
 		std::shared_ptr<void> debug_timer() {

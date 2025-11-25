@@ -272,7 +272,8 @@ int main() {
                 game_w = game_w2;
                 game_h = game_h2;
 
-                state = state.resize(game_h, game_w, 1);
+                auto temp = state.resize(game_h, game_w, 1);
+                state = temp;
 
                 avg_framerate_n = 0;
                 avg_framerate = 0;
