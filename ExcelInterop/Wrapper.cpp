@@ -1,64 +1,65 @@
 #include <xlnt/xlnt.hpp>
 #include "Wrapper.h"
+#include "../ScriptLanguageTesting/units.h"
 
-#include "../WaterWatchCpp/cweeUnitedValue.h"
-#include "../WaterWatchCpp/enum.h"
-#include "../WaterWatchCpp/cweeUnitPattern.h"
-#include "../WaterWatchCpp/fileSystemH.h"
-#include "../WaterWatchCpp/cweeScheduler.h"
-#include "../WaterWatchCpp/InterpolatedMatrix.h"
-#include "../WaterWatchCpp/Engineering.h"
+//#include "../WaterWatchCpp/cweeUnitedValue.h"
+//#include "../WaterWatchCpp/enum.h"
+//#include "../WaterWatchCpp/cweeUnitPattern.h"
+//#include "../WaterWatchCpp/fileSystemH.h"
+//#include "../WaterWatchCpp/cweeScheduler.h"
+//#include "../WaterWatchCpp/InterpolatedMatrix.h"
+//#include "../WaterWatchCpp/Engineering.h"
 
-INLINE cweeSharedPtr<ExcelCellReference> To_ExcelCellReference(xlnt::cell_reference cell) {
-    return make_cwee_shared<ExcelCellReference>(new ExcelCellReference(cweeSharedPtr<void>(make_cwee_shared<xlnt::cell_reference>(cell), [](void* p) { return p; })));
+__forceinline std::shared_ptr<ExcelCellReference> To_ExcelCellReference(xlnt::cell_reference cell) {
+    return std::shared_ptr<ExcelCellReference>(new ExcelCellReference(std::static_pointer_cast<void>(std::make_shared<xlnt::cell_reference>(cell))));
 };
-INLINE cweeSharedPtr<ExcelCell> To_ExcelCell(xlnt::cell cell) {
-    return make_cwee_shared<ExcelCell>(new ExcelCell(cweeSharedPtr<void>(make_cwee_shared<xlnt::cell>(cell), [](void* p) { return p; })));
+__forceinline std::shared_ptr<ExcelCell> To_ExcelCell(xlnt::cell cell) {
+    return std::shared_ptr<ExcelCell>(new ExcelCell(std::static_pointer_cast<void>(std::make_shared<xlnt::cell>(cell))));
 };
-INLINE cweeSharedPtr<ExcelRangeReference> To_ExcelRangeReference(xlnt::range_reference  range) {
-    return make_cwee_shared<ExcelRangeReference>(new ExcelRangeReference(cweeSharedPtr<void>(make_cwee_shared<xlnt::range_reference >(range), [](void* p) { return p; })));
+__forceinline std::shared_ptr<ExcelRangeReference> To_ExcelRangeReference(xlnt::range_reference  range) {
+    return std::shared_ptr<ExcelRangeReference>(new ExcelRangeReference(std::static_pointer_cast<void>(std::make_shared<xlnt::range_reference >(range))));
 };
-INLINE cweeSharedPtr<ExcelRange> To_ExcelRange(xlnt::range range) {
-    return make_cwee_shared<ExcelRange>(new ExcelRange(cweeSharedPtr<void>(make_cwee_shared<xlnt::range>(range), [](void* p) { return p; })));
+__forceinline std::shared_ptr<ExcelRange> To_ExcelRange(xlnt::range range) {
+    return std::shared_ptr<ExcelRange>(new ExcelRange(std::static_pointer_cast<void>(std::make_shared<xlnt::range>(range))));
 };
-INLINE cweeSharedPtr<ExcelWorksheet> To_ExcelWorkSheet(xlnt::worksheet worksheet) {
-    return make_cwee_shared<ExcelWorksheet>(new ExcelWorksheet(cweeSharedPtr<void>(make_cwee_shared<xlnt::worksheet>(worksheet), [](void* p) { return p; })));
+__forceinline std::shared_ptr<ExcelWorksheet> To_ExcelWorkSheet(xlnt::worksheet worksheet) {
+    return std::shared_ptr<ExcelWorksheet>(new ExcelWorksheet(std::static_pointer_cast<void>(std::make_shared<xlnt::worksheet>(worksheet))));
 };
-INLINE cweeSharedPtr<ExcelWorkbook> To_ExcelWorkBook(xlnt::workbook& range) {
-    return make_cwee_shared<ExcelWorkbook>(new ExcelWorkbook(cweeSharedPtr<void>(cweeSharedPtr< xlnt::workbook >(&range, [](xlnt::workbook* p) { /* do not delete this ptr, b/c it's a reference. */ }), [](void* p) { return p; })));
+__forceinline std::shared_ptr<ExcelWorkbook> To_ExcelWorkBook(xlnt::workbook& range) {
+    return std::shared_ptr<ExcelWorkbook>(new ExcelWorkbook(std::static_pointer_cast<void>(std::shared_ptr< xlnt::workbook >(&range, [](xlnt::workbook* p) { /* do not delete this ptr, b/c it's a reference. */ }))));
 };
 
-INLINE ExcelRange::cell_vector To_CellVector(xlnt::cell_vector const& cv) {
+__forceinline ExcelRange::cell_vector To_CellVector(xlnt::cell_vector const& cv) {
     ExcelRange::cell_vector out;
     for (auto& x : cv) {
-        out.Append(To_ExcelCell(x));
+        out.push_back(To_ExcelCell(x));
     }
     return out;
 };
 
-INLINE xlnt::cell_reference& To_CellReference(ExcelCellReference const& c) {
+__forceinline xlnt::cell_reference& To_CellReference(ExcelCellReference const& c) {
     using namespace xlnt;
-    return *static_cast<xlnt::cell_reference*>(c.data.Get());
+    return *static_cast<xlnt::cell_reference*>(c.data.get());
 };
-INLINE xlnt::cell& To_Cell(ExcelCell const& c) {
+__forceinline xlnt::cell& To_Cell(ExcelCell const& c) {
     using namespace xlnt;
-    return *static_cast<xlnt::cell*>(c.data.Get());
+    return *static_cast<xlnt::cell*>(c.data.get());
 };
-INLINE xlnt::range_reference& To_RangeReference(ExcelRangeReference const& c) {
+__forceinline xlnt::range_reference& To_RangeReference(ExcelRangeReference const& c) {
     using namespace xlnt;
-    return *static_cast<xlnt::range_reference*>(c.data.Get());
+    return *static_cast<xlnt::range_reference*>(c.data.get());
 };
-INLINE xlnt::range& To_Range(ExcelRange const& c) {
+__forceinline xlnt::range& To_Range(ExcelRange const& c) {
     using namespace xlnt;
-    return *static_cast<xlnt::range*>(c.data.Get());
+    return *static_cast<xlnt::range*>(c.data.get());
 };
-INLINE xlnt::workbook& To_Workbook(ExcelWorkbook const& c) {
+__forceinline xlnt::workbook& To_Workbook(ExcelWorkbook const& c) {
     using namespace xlnt;
-    return *static_cast<xlnt::workbook*>(c.data.Get());
+    return *static_cast<xlnt::workbook*>(c.data.get());
 };
-INLINE xlnt::worksheet& To_Worksheet(ExcelWorksheet const& c) {
+__forceinline xlnt::worksheet& To_Worksheet(ExcelWorksheet const& c) {
     using namespace xlnt;
-    return *static_cast<xlnt::worksheet*>(c.data.Get());
+    return *static_cast<xlnt::worksheet*>(c.data.get());
 };
 
 #pragma region ExcelRange
@@ -78,24 +79,24 @@ const ExcelRange::cell_vector ExcelRange::vector(std::size_t n) const {
     xlnt::range& ThisRange = To_Range(*this);
     return To_CellVector(ThisRange.vector(n));
 };
-cweeSharedPtr<ExcelCell> ExcelRange::cell(cweeSharedPtr<ExcelCellReference> ref) {
+std::shared_ptr<ExcelCell> ExcelRange::cell(std::shared_ptr<ExcelCellReference> ref) {
     using namespace xlnt;
     xlnt::range& ThisRange = To_Range(*this);
     xlnt::cell_reference& CellRef = To_CellReference(*ref);
     return To_ExcelCell(ThisRange.cell(CellRef));
 };
-const cweeSharedPtr<ExcelCell> ExcelRange::cell(cweeSharedPtr<ExcelCellReference> ref) const {
+const std::shared_ptr<ExcelCell> ExcelRange::cell(std::shared_ptr<ExcelCellReference> ref) const {
     using namespace xlnt;
     xlnt::range& ThisRange = To_Range(*this);
     xlnt::cell_reference& CellRef = To_CellReference(*ref);
     return To_ExcelCell(ThisRange.cell(CellRef));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelRange::target_worksheet() const {
+std::shared_ptr<ExcelWorksheet> ExcelRange::target_worksheet() const {
     using namespace xlnt;
     xlnt::range& ThisRange = To_Range(*this);
     return To_ExcelWorkSheet(ThisRange.target_worksheet());
 };
-cweeSharedPtr<ExcelRangeReference> ExcelRange::ref() const {
+std::shared_ptr<ExcelRangeReference> ExcelRange::ref() const {
     using namespace xlnt;
     xlnt::range& ThisRange = To_Range(*this);
     return To_ExcelRangeReference(ThisRange.reference());
@@ -105,7 +106,7 @@ std::size_t ExcelRange::length() const {
     xlnt::range& ThisRange = To_Range(*this);
     return ThisRange.length();
 };
-bool ExcelRange::contains(cweeSharedPtr<ExcelCellReference> ref) {
+bool ExcelRange::contains(std::shared_ptr<ExcelCellReference> ref) {
     using namespace xlnt;
     xlnt::range& ThisRange = To_Range(*this);
     xlnt::cell_reference& CellRef = To_CellReference(*ref);
@@ -131,7 +132,7 @@ const ExcelRange::cell_vector ExcelRange::back() const {
     xlnt::range& ThisRange = To_Range(*this);
     return To_CellVector(ThisRange.back());
 };
-void ExcelRange::apply(std::function<void(cweeSharedPtr<ExcelCell>)> f) {
+void ExcelRange::apply(std::function<void(std::shared_ptr<ExcelCell>)> f) {
     using namespace xlnt;
     xlnt::range& ThisRange = To_Range(*this);
     ThisRange.apply([f](xlnt::cell Cell) {
@@ -152,7 +153,7 @@ const ExcelRange::cell_vector ExcelRange::operator[](std::size_t n) const {
 #pragma endregion
 
 #pragma region ExcelCell
-cweeStr ExcelCell::address() const {
+std::string ExcelCell::address() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     auto str = ThisCell.reference().to_string();
@@ -183,7 +184,7 @@ void ExcelCell::value(double float_value) {
     xlnt::cell& ThisCell = To_Cell(*this);
     ThisCell.value(float_value);
 };
-void ExcelCell::value(const cweeTime& date_value) {
+void ExcelCell::value(const GL::datetime& date_value) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     datetime dt = datetime(
@@ -192,16 +193,18 @@ void ExcelCell::value(const cweeTime& date_value) {
             date_value.tm_mon()+1, 
             date_value.tm_mday()
         ), 
+        
+
         xlnt::time(
             date_value.tm_hour(), 
             date_value.tm_min(), 
             date_value.tm_sec(), 
-            ((units::time::microsecond_t)(units::time::millisecond_t(date_value.tm_fractionalsec())))()
+            (float)((GL::microsecond)(GL::millisecond(date_value.tm_fractionalsec())))
         )
     );    
     ThisCell.value(dt);
 };
-void ExcelCell::value(const cweeStr& string_value) {
+void ExcelCell::value(const std::string& string_value) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     ThisCell.value(std::string(string_value.c_str()));
@@ -212,7 +215,7 @@ void ExcelCell::value(const ExcelCell& other_cell) {
     xlnt::cell& OtherCell = To_Cell(other_cell);
     ThisCell.value(OtherCell);
 };
-void ExcelCell::value(const cweeStr& string_value, bool infer_type) {
+void ExcelCell::value(const std::string& string_value, bool infer_type) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     ThisCell.value(string_value.c_str(), infer_type);
@@ -232,7 +235,7 @@ bool ExcelCell::is_date() const {
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.is_date();
 };
-cweeSharedPtr<ExcelCellReference> ExcelCell::reference() const {
+std::shared_ptr<ExcelCellReference> ExcelCell::reference() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return To_ExcelCellReference(ThisCell.reference());
@@ -267,12 +270,12 @@ void ExcelCell::clear_format() {
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.clear_format();
 };
-cweeStr ExcelCell::formula() const {
+std::string ExcelCell::formula() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.formula().c_str();
 };
-void ExcelCell::formula(const cweeStr& formula) {
+void ExcelCell::formula(const std::string& formula) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.formula(formula.c_str());
@@ -287,7 +290,7 @@ bool ExcelCell::has_formula() const {
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.has_formula();
 };
-cweeStr ExcelCell::to_string() const {
+std::string ExcelCell::to_string() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.to_string().c_str();
@@ -297,42 +300,42 @@ bool ExcelCell::is_merged() const {
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.is_merged();
 };
-cweeStr ExcelCell::error() const {
+std::string ExcelCell::error() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.error().c_str();
 };
-void ExcelCell::error(const cweeStr& error) {
+void ExcelCell::error(const std::string& error) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.error(error.c_str());
 };
-cweeSharedPtr<ExcelCell> ExcelCell::offset(int column, int row) {
+std::shared_ptr<ExcelCell> ExcelCell::offset(int column, int row) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return To_ExcelCell(ThisCell.offset(column, row));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelCell::worksheet() {
+std::shared_ptr<ExcelWorksheet> ExcelCell::worksheet() {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return To_ExcelWorkSheet(ThisCell.worksheet());
 };
-const cweeSharedPtr<ExcelWorksheet> ExcelCell::worksheet() const {
+const std::shared_ptr<ExcelWorksheet> ExcelCell::worksheet() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return To_ExcelWorkSheet(ThisCell.worksheet());
 };
-cweeSharedPtr<ExcelWorkbook> ExcelCell::workbook() {
+std::shared_ptr<ExcelWorkbook> ExcelCell::workbook() {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return To_ExcelWorkBook(ThisCell.workbook()); // NOT COPY
 };
-cweeSharedPtr<ExcelWorkbook> ExcelCell::workbook() const {
+std::shared_ptr<ExcelWorkbook> ExcelCell::workbook() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return To_ExcelWorkBook(ThisCell.workbook()); // NOT COPY
 };
-cweeStr ExcelCell::check_string(const cweeStr& to_check) {
+std::string ExcelCell::check_string(const std::string& to_check) {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.check_string(to_check.c_str()).c_str();
@@ -382,13 +385,13 @@ template <> double ExcelCell::value<double>() const {
     xlnt::cell& ThisCell = To_Cell(*this);
     return ThisCell.value<double>();
 };
-template <> cweeTime ExcelCell::value<cweeTime>() const {
+template <> GL::datetime ExcelCell::value<GL::datetime>() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     xlnt::datetime dt = ThisCell.value<datetime>();
-    return cweeTime::make_time(dt.year, dt.month, dt.day, dt.hour, dt.minute, ((units::time::second_t)(units::time::second_t(dt.second) + units::time::microsecond_t(dt.microsecond)))());
+    return GL::datetime::make_time(dt.year, dt.month, dt.day, dt.hour, dt.minute, (float)((GL::second)(GL::second(dt.second) + GL::microsecond(dt.microsecond))));
 };
-template <> cweeStr ExcelCell::value<cweeStr>() const {
+template <> std::string ExcelCell::value<std::string>() const {
     using namespace xlnt;
     xlnt::cell& ThisCell = To_Cell(*this);
     std::string str = ThisCell.value<std::string>();
@@ -418,7 +421,7 @@ void ExcelCellReference::row_absolute(bool absolute_row) {
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     ThisRef.row_absolute(absolute_row);
 };
-cweeSharedPtr< ExcelCellReference> ExcelCellReference::make_absolute(bool absolute_column, bool absolute_row) {
+std::shared_ptr< ExcelCellReference> ExcelCellReference::make_absolute(bool absolute_column, bool absolute_row) {
     using namespace xlnt;
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     return To_ExcelCellReference(ThisRef.make_absolute(absolute_column, absolute_row));
@@ -428,7 +431,7 @@ int ExcelCellReference::column() const {
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     return ThisRef.column().index;
 };
-void ExcelCellReference::column(const cweeStr& column_string) {
+void ExcelCellReference::column(const std::string& column_string) {
     using namespace xlnt;
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     ThisRef.column(column_string.c_str());
@@ -453,17 +456,17 @@ void ExcelCellReference::row(int row) {
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     ThisRef.row(row);
 };
-cweeSharedPtr< ExcelCellReference> ExcelCellReference::make_offset(int column_offset, int row_offset) const {
+std::shared_ptr< ExcelCellReference> ExcelCellReference::make_offset(int column_offset, int row_offset) const {
     using namespace xlnt;
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     return To_ExcelCellReference(ThisRef.make_offset(column_offset, row_offset));
 };
-cweeStr ExcelCellReference::to_string() const {
+std::string ExcelCellReference::to_string() const {
     using namespace xlnt;
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     return ThisRef.to_string().c_str();
 };
-cweeSharedPtr< ExcelRangeReference> ExcelCellReference::to_range() const {
+std::shared_ptr< ExcelRangeReference> ExcelCellReference::to_range() const {
     using namespace xlnt;
     xlnt::cell_reference& ThisRef = To_CellReference(*this);
     return To_ExcelRangeReference(ThisRef.to_range());
@@ -471,7 +474,7 @@ cweeSharedPtr< ExcelRangeReference> ExcelCellReference::to_range() const {
 #pragma endregion
 
 #pragma region ExcelRangeReference
-cweeSharedPtr<ExcelRangeReference> ExcelRangeReference::make_absolute() {
+std::shared_ptr<ExcelRangeReference> ExcelRangeReference::make_absolute() {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return To_ExcelRangeReference(range_reference::make_absolute(ThisRef));
@@ -491,37 +494,37 @@ std::size_t ExcelRangeReference::height() const {
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return ThisRef.height();
 };
-cweeSharedPtr< ExcelCellReference > ExcelRangeReference::top_left() const {
+std::shared_ptr< ExcelCellReference > ExcelRangeReference::top_left() const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return To_ExcelCellReference(ThisRef.top_left());
 };
-cweeSharedPtr< ExcelCellReference > ExcelRangeReference::top_right() const {
+std::shared_ptr< ExcelCellReference > ExcelRangeReference::top_right() const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return To_ExcelCellReference(ThisRef.top_right());
 };
-cweeSharedPtr< ExcelCellReference > ExcelRangeReference::bottom_left() const {
+std::shared_ptr< ExcelCellReference > ExcelRangeReference::bottom_left() const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return To_ExcelCellReference(ThisRef.bottom_left());
 };
-cweeSharedPtr< ExcelCellReference > ExcelRangeReference::bottom_right() const {
+std::shared_ptr< ExcelCellReference > ExcelRangeReference::bottom_right() const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return To_ExcelCellReference(ThisRef.bottom_right());
 };
-cweeSharedPtr<ExcelRangeReference> ExcelRangeReference::make_offset(int column_offset, int row_offset) const {
+std::shared_ptr<ExcelRangeReference> ExcelRangeReference::make_offset(int column_offset, int row_offset) const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return To_ExcelRangeReference(ThisRef.make_offset(column_offset, row_offset));
 };
-cweeStr ExcelRangeReference::to_string() const {
+std::string ExcelRangeReference::to_string() const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return ThisRef.to_string().c_str();
 };
-bool ExcelRangeReference::contains(cweeSharedPtr< ExcelCellReference > ref) const {
+bool ExcelRangeReference::contains(std::shared_ptr< ExcelCellReference > ref) const {
     using namespace xlnt;
     xlnt::range_reference& ThisRef = To_RangeReference(*this);
     return ThisRef.contains(To_CellReference(*ref));
@@ -539,12 +542,12 @@ void ExcelWorksheet::id(std::size_t id) {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.id(id);
 };
-cweeStr ExcelWorksheet::title() const {
+std::string ExcelWorksheet::title() const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.title().c_str();
 };
-void ExcelWorksheet::title(cweeStr const& title) {
+void ExcelWorksheet::title(std::string const& title) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.title(title.c_str());
@@ -565,58 +568,58 @@ bool ExcelWorksheet::has_frozen_panes() const {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.has_frozen_panes();
 };
-cweeSharedPtr<ExcelCell> ExcelWorksheet::cell(int column, int row) {
+std::shared_ptr<ExcelCell> ExcelWorksheet::cell(int column, int row) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     xlnt::cell thisCell = worksheet.cell(column, row);
     return To_ExcelCell(thisCell);
 };
-cweeSharedPtr<ExcelCell> ExcelWorksheet::cell(int column, int row) const {
+std::shared_ptr<ExcelCell> ExcelWorksheet::cell(int column, int row) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     xlnt::cell thisCell = worksheet.cell(column, row);
     return To_ExcelCell(thisCell);
 };
-cweeSharedPtr<ExcelCell> ExcelWorksheet::cell(cweeStr const& address) const {
+std::shared_ptr<ExcelCell> ExcelWorksheet::cell(std::string const& address) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     xlnt::cell thisCell = worksheet.cell(address.c_str());
     return To_ExcelCell(thisCell);
 };
-cweeSharedPtr<ExcelRange> ExcelWorksheet::range(cweeStr reference_string) {
+std::shared_ptr<ExcelRange> ExcelWorksheet::range(std::string reference_string) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    AUTO thisObj = worksheet.range(reference_string.c_str());
+    auto thisObj = worksheet.range(reference_string.c_str());
     return To_ExcelRange(thisObj);
 };
-const cweeSharedPtr<ExcelRange> ExcelWorksheet::range(cweeStr reference_string) const {
+const std::shared_ptr<ExcelRange> ExcelWorksheet::range(std::string reference_string) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    AUTO thisObj = worksheet.range(reference_string.c_str());
+    auto thisObj = worksheet.range(reference_string.c_str());
     return To_ExcelRange(thisObj);
 };
-cweeSharedPtr<ExcelRange> ExcelWorksheet::rows(bool skip_null) {
+std::shared_ptr<ExcelRange> ExcelWorksheet::rows(bool skip_null) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    AUTO thisObj = worksheet.rows(skip_null);
+    auto thisObj = worksheet.rows(skip_null);
     return To_ExcelRange(thisObj);
 };
-const cweeSharedPtr<ExcelRange> ExcelWorksheet::rows(bool skip_null) const {
+const std::shared_ptr<ExcelRange> ExcelWorksheet::rows(bool skip_null) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    AUTO thisObj = worksheet.rows(skip_null);
+    auto thisObj = worksheet.rows(skip_null);
     return To_ExcelRange(thisObj);
 };
-cweeSharedPtr<ExcelRange> ExcelWorksheet::columns(bool skip_null) {
+std::shared_ptr<ExcelRange> ExcelWorksheet::columns(bool skip_null) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    AUTO thisObj = worksheet.columns(skip_null);
+    auto thisObj = worksheet.columns(skip_null);
     return To_ExcelRange(thisObj);
 };
-const cweeSharedPtr<ExcelRange> ExcelWorksheet::columns(bool skip_null) const {
+const std::shared_ptr<ExcelRange> ExcelWorksheet::columns(bool skip_null) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    AUTO thisObj = worksheet.columns(skip_null);
+    auto thisObj = worksheet.columns(skip_null);
     return To_ExcelRange(thisObj);
 };
 void ExcelWorksheet::clear_row(int row) {
@@ -654,27 +657,27 @@ double ExcelWorksheet::row_height(int row) const {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.row_height(row);
 };
-void ExcelWorksheet::create_named_range(cweeStr name, cweeStr reference_string) {
+void ExcelWorksheet::create_named_range(std::string name, std::string reference_string) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.create_named_range(name.c_str(), reference_string.c_str());
 };
-bool ExcelWorksheet::has_named_range(cweeStr name) const {
+bool ExcelWorksheet::has_named_range(std::string name) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.has_named_range(name.c_str());
 };
-cweeSharedPtr<ExcelRange> ExcelWorksheet::named_range(cweeStr name) {
+std::shared_ptr<ExcelRange> ExcelWorksheet::named_range(std::string name) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return To_ExcelRange(worksheet.named_range(name.c_str()));
 };
-cweeSharedPtr<ExcelRange> ExcelWorksheet::named_range(cweeStr name) const {
+std::shared_ptr<ExcelRange> ExcelWorksheet::named_range(std::string name) const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.named_range(name.c_str());
 };
-void ExcelWorksheet::remove_named_range(cweeStr name) {
+void ExcelWorksheet::remove_named_range(std::string name) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.remove_named_range(name.c_str());
@@ -724,12 +727,12 @@ int ExcelWorksheet::highest_column_or_props() const {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.highest_column_or_props().index;
 };
-void ExcelWorksheet::merge_cells(cweeStr reference_string) {
+void ExcelWorksheet::merge_cells(std::string reference_string) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.merge_cells(reference_string.c_str());
 };
-void ExcelWorksheet::unmerge_cells(cweeStr reference_string) {
+void ExcelWorksheet::unmerge_cells(std::string reference_string) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.unmerge_cells(reference_string.c_str());
@@ -739,7 +742,7 @@ bool ExcelWorksheet::has_page_setup() const {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     return worksheet.has_page_setup();
 };
-void ExcelWorksheet::auto_filter(cweeStr range_string) {
+void ExcelWorksheet::auto_filter(std::string range_string) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.auto_filter(range_string.c_str());
@@ -784,7 +787,7 @@ void ExcelWorksheet::clear_print_titles() {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.clear_print_titles();
 };
-void ExcelWorksheet::print_area(cweeStr print_area) {
+void ExcelWorksheet::print_area(std::string print_area) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.print_area(print_area.c_str());
@@ -814,22 +817,26 @@ void ExcelWorksheet::clear_page_breaks() {
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.clear_page_breaks();
 };
-cweeList<int> ExcelWorksheet::page_break_rows() const {
+std::vector<int> ExcelWorksheet::page_break_rows() const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    return worksheet.page_break_rows();
+    std::vector<int> out;
+    for (auto& x : worksheet.page_break_rows()) {
+        out.push_back(x);
+    }
+    return out;
 };
 void ExcelWorksheet::page_break_at_row(int row) {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
     worksheet.page_break_at_row(row);
 };
-cweeList<int> ExcelWorksheet::page_break_columns() const {
+std::vector<int> ExcelWorksheet::page_break_columns() const {
     using namespace xlnt;
     xlnt::worksheet& worksheet = To_Worksheet(*this);
-    cweeList<int> out; 
+    std::vector<int> out; 
     for (auto& x : worksheet.page_break_columns()) {
-        out.Append(x.index);
+        out.push_back(x.index);
     }
     return out;
 };
@@ -855,27 +862,27 @@ void ExcelWorkbook::calculate_now() {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::create_sheet() {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::create_sheet() {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.create_sheet());
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::create_sheet(std::size_t index) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::create_sheet(std::size_t index) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.create_sheet(index));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::copy_sheet(cweeSharedPtr<ExcelWorksheet> worksheet) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::copy_sheet(std::shared_ptr<ExcelWorksheet> worksheet) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.copy_sheet(To_Worksheet(*worksheet)));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::copy_sheet(cweeSharedPtr<ExcelWorksheet> worksheet, std::size_t index) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::copy_sheet(std::shared_ptr<ExcelWorksheet> worksheet, std::size_t index) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.copy_sheet(To_Worksheet(*worksheet), index));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::active_sheet() {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::active_sheet() {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.active_sheet());
@@ -885,32 +892,32 @@ void ExcelWorkbook::active_sheet(std::size_t index) {
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.active_sheet(index);
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::sheet_by_title(const cweeStr& title) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::sheet_by_title(const std::string& title) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.sheet_by_title(title.c_str()));
 };
-const cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::sheet_by_title(const cweeStr& title) const {
+const std::shared_ptr<ExcelWorksheet> ExcelWorkbook::sheet_by_title(const std::string& title) const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.sheet_by_title(title.c_str()));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::sheet_by_index(std::size_t index) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::sheet_by_index(std::size_t index) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.sheet_by_index(index));
 };
-const cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::sheet_by_index(std::size_t index) const {
+const std::shared_ptr<ExcelWorksheet> ExcelWorkbook::sheet_by_index(std::size_t index) const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.sheet_by_index(index));
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::sheet_by_id(std::size_t id) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::sheet_by_id(std::size_t id) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.sheet_by_id(id));
 };
-const cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::sheet_by_id(std::size_t id) const {
+const std::shared_ptr<ExcelWorksheet> ExcelWorkbook::sheet_by_id(std::size_t id) const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return To_ExcelWorkSheet(workbook.sheet_by_id(id));
@@ -920,17 +927,17 @@ bool ExcelWorkbook::sheet_hidden_by_index(std::size_t index) const {
     xlnt::workbook& workbook = To_Workbook(*this);
     return workbook.sheet_hidden_by_index(index);
 };
-bool ExcelWorkbook::contains(const cweeStr& title) const {
+bool ExcelWorkbook::contains(const std::string& title) const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return workbook.contains(title.c_str());
 };
-std::size_t ExcelWorkbook::index(cweeSharedPtr<ExcelWorksheet> worksheet) {
+std::size_t ExcelWorkbook::index(std::shared_ptr<ExcelWorksheet> worksheet) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return workbook.index(To_Worksheet(*worksheet));
 };
-void ExcelWorkbook::remove_sheet(cweeSharedPtr<ExcelWorksheet> worksheet) {
+void ExcelWorkbook::remove_sheet(std::shared_ptr<ExcelWorksheet> worksheet) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.remove_sheet(To_Worksheet(*worksheet));
@@ -940,19 +947,19 @@ void ExcelWorkbook::clear() {
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.clear();
 };
-void ExcelWorkbook::apply_to_cells(std::function<void(cweeSharedPtr<ExcelCell>)> f) {
+void ExcelWorkbook::apply_to_cells(std::function<void(std::shared_ptr<ExcelCell>)> f) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.apply_to_cells([f](xlnt::cell Cell) {
         f(To_ExcelCell(Cell));
     });
 };
-cweeList<cweeStr> ExcelWorkbook::sheet_titles() const {
+std::vector<std::string> ExcelWorkbook::sheet_titles() const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
-    cweeList<cweeStr> strs;
+    std::vector<std::string> strs;
     for (auto& x : workbook.sheet_titles()) {
-        strs.Append(x.c_str());
+        strs.push_back(x.c_str());
     }
     return strs;
 };
@@ -966,57 +973,57 @@ bool ExcelWorkbook::has_title() const {
     xlnt::workbook& workbook = To_Workbook(*this);
     return workbook.has_title();
 };
-cweeStr ExcelWorkbook::title() const {
+std::string ExcelWorkbook::title() const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     return workbook.title().c_str();
 };
-void ExcelWorkbook::title(const cweeStr& title) {
+void ExcelWorkbook::title(const std::string& title) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.title(title.c_str());
 };
-void ExcelWorkbook::abs_path(const cweeStr& path) {
+void ExcelWorkbook::abs_path(const std::string& path) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.abs_path(path.c_str());
 };
-void ExcelWorkbook::save(const cweeStr& filename) const {
+void ExcelWorkbook::save(const std::string& filename) const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.save(filename.c_str());
 };
-void ExcelWorkbook::save(const cweeStr& filename, const cweeStr& password) const {
+void ExcelWorkbook::save(const std::string& filename, const std::string& password) const {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.save(filename.c_str(), password.c_str());
 };
-void ExcelWorkbook::load(const cweeStr& filename) {
+void ExcelWorkbook::load(const std::string& filename) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.load(filename.c_str());
 };
-void ExcelWorkbook::load_limited(const cweeStr& filename, const cweeStr& sheetTitle) {
+void ExcelWorkbook::load_limited(const std::string& filename, const std::string& sheetTitle) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.load_limited(filename.c_str(), sheetTitle.c_str());
 };
-void ExcelWorkbook::load(const cweeStr& filename, const cweeStr& password) {
+void ExcelWorkbook::load(const std::string& filename, const std::string& password) {
     using namespace xlnt;
     xlnt::workbook& workbook = To_Workbook(*this);
     workbook.load(filename.c_str(), password.c_str());
 };
-cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::operator[](std::size_t n) {
+std::shared_ptr<ExcelWorksheet> ExcelWorkbook::operator[](std::size_t n) {
     return sheet_by_index(n);
 };
-const cweeSharedPtr<ExcelWorksheet> ExcelWorkbook::operator[](std::size_t n) const {
+const std::shared_ptr<ExcelWorksheet> ExcelWorkbook::operator[](std::size_t n) const {
     return sheet_by_index(n);
 };
 
 #pragma endregion
 
 #pragma region Excel
-cweeSharedPtr<ExcelWorkbook> cweeExcel::OpenExcel(cweeStr filePath, cweeStr sheetTitle) {
+std::shared_ptr<ExcelWorkbook> cweeExcel::OpenExcel(std::string filePath, std::string sheetTitle) {
     using namespace xlnt;
     auto* workbook = new xlnt::workbook();
     workbook->load(filePath.c_str());
@@ -1027,748 +1034,17 @@ cweeSharedPtr<ExcelWorkbook> cweeExcel::OpenExcel(cweeStr filePath, cweeStr shee
             workbook->remove_sheet(worksheet);
         }
     }
-    return make_cwee_shared<ExcelWorkbook>(new ExcelWorkbook(cweeSharedPtr<void>(make_cwee_shared<xlnt::workbook>(workbook), [](void* p) { return p; })));
+    return std::shared_ptr<ExcelWorkbook>(new ExcelWorkbook(std::static_pointer_cast<void>(std::shared_ptr<xlnt::workbook>(workbook))));
 };
-cweeSharedPtr<ExcelWorkbook> cweeExcel::OpenExcel(cweeStr filePath) {
+std::shared_ptr<ExcelWorkbook> cweeExcel::OpenExcel(std::string filePath) {
     using namespace xlnt;
     auto* workbook = new xlnt::workbook();
     workbook->load(filePath.c_str());
-    return make_cwee_shared<ExcelWorkbook>(new ExcelWorkbook(cweeSharedPtr<void>(make_cwee_shared<xlnt::workbook>(workbook), [](void* p) { return p; })));
+    return std::shared_ptr<ExcelWorkbook>(new ExcelWorkbook(std::static_pointer_cast<void>(std::shared_ptr<xlnt::workbook>(workbook))));
 };
-cweeSharedPtr<ExcelWorkbook> cweeExcel::OpenExcel() {
+std::shared_ptr<ExcelWorkbook> cweeExcel::OpenExcel() {
     using namespace xlnt;
     auto* workbook = new xlnt::workbook();
-    return make_cwee_shared<ExcelWorkbook>(new ExcelWorkbook(cweeSharedPtr<void>(make_cwee_shared<xlnt::workbook>(workbook), [](void* p) { return p; })));
+    return std::shared_ptr<ExcelWorkbook>(new ExcelWorkbook(std::static_pointer_cast<void>(std::shared_ptr<xlnt::workbook>(workbook))));
 };
 #pragma endregion
-
-namespace chaiscript {
-    namespace WaterWatch_Lib {
-        [[nodiscard]] ModulePtr Excel_library() {
-            auto lib = chaiscript::make_shared<Module>();
-
-            // cweeExcel
-            {
-                lib->AddFunction(, OpenExcel, , return cweeExcel::OpenExcel());
-                lib->AddFunction(, OpenExcel, , return cweeExcel::OpenExcel(filePath), cweeStr const& filePath);
-                lib->AddFunction(, OpenExcel, , return cweeExcel::OpenExcel(filePath, sheetTitle), cweeStr const& filePath, cweeStr const& sheetTitle);
-            }
-
-#define ThrowIfBadAccess throw(chaiscript::exception::eval_error("Cannot access a member of a null (empty) shared object."))
-#define WorkbookPtr cweeSharedPtr<ExcelWorkbook>
-#define WorksheetPtr cweeSharedPtr<ExcelWorksheet>
-#define RangePtr cweeSharedPtr<ExcelRange>
-#define CellPtr cweeSharedPtr<ExcelCell>
-
-            // ExcelWorkbook
-            {
-                AddSharedPtrClass(, ExcelWorkbook);
-                {
-                    lib->AddFunction(, save, , if (a) return a->save(filePath.c_str()); else ThrowIfBadAccess; , WorkbookPtr& a, cweeStr const& filePath);
-                    lib->AddFunction(, create_sheet, , if (a) return a->create_sheet(); else ThrowIfBadAccess;, WorkbookPtr& a);
-                    lib->AddFunction(, create_sheet, , if (a) return a->create_sheet(index); else ThrowIfBadAccess; , WorkbookPtr& a, int index);
-                    lib->AddFunction(, copy_sheet, , if (a) return a->copy_sheet(worksheet); else ThrowIfBadAccess; , WorkbookPtr& a, WorksheetPtr worksheet);
-                    lib->AddFunction(, copy_sheet, , if (a) return a->copy_sheet(worksheet, index); else ThrowIfBadAccess; , WorkbookPtr& a, WorksheetPtr worksheet, int index);
-                    lib->AddFunction(, active_sheet, , if (a) return a->active_sheet(); else ThrowIfBadAccess; , WorkbookPtr& a);
-                    lib->AddFunction(, active_sheet, , if (a) return a->active_sheet(index); else ThrowIfBadAccess; , WorkbookPtr& a, int index);
-                    lib->AddFunction(, sheet_by_title, , if (a) return a->sheet_by_title(title); else ThrowIfBadAccess; , WorkbookPtr& a, cweeStr const& title);
-                    lib->AddFunction(, sheet_by_index, , if (a) return a->sheet_by_index(index); else ThrowIfBadAccess; , WorkbookPtr& a, int index);
-                    lib->AddFunction(, sheet_by_id, , if (a) return a->sheet_by_id(index); else ThrowIfBadAccess; , WorkbookPtr& a, int index);
-                    lib->AddFunction(, sheet_hidden_by_index, , if (a) return a->sheet_hidden_by_index(index); else ThrowIfBadAccess; , WorkbookPtr& a, int index);
-                    lib->AddFunction(, contains, , if (a) return a->contains(title); else ThrowIfBadAccess; , WorkbookPtr& a, cweeStr const& title);
-                    lib->AddFunction(, index, , if (a) return a->index(worksheet); else ThrowIfBadAccess; , WorkbookPtr& a, WorksheetPtr worksheet);
-                    lib->AddFunction(, remove_sheet, , if (a) return a->remove_sheet(worksheet); else ThrowIfBadAccess; , WorkbookPtr& a, WorksheetPtr worksheet);
-                }
-
-                AddSharedPtrClass(, ExcelWorksheet);
-                {
-                    lib->AddFunction(, id, , if (a) return a->id(); else ThrowIfBadAccess;, WorksheetPtr& a);
-                    lib->AddFunction(, id, , if (a) return a->id(id); else ThrowIfBadAccess;, WorksheetPtr& a, int id);
-                    lib->AddFunction(, title, , if (a) return a->title(); else ThrowIfBadAccess;, WorksheetPtr& a);
-                    lib->AddFunction(, title, , if (a) return a->title(title); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& title);
-                    lib->AddFunction(, freeze_panes, , if (a) return a->freeze_panes(*cell); else ThrowIfBadAccess;, WorksheetPtr& a, CellPtr cell);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, unfreeze_panes);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_frozen_panes);
-                    lib->AddFunction(, cell, , if (a) return a->cell(column, row); else ThrowIfBadAccess;, WorksheetPtr& a, int column, int row);
-                    lib->AddFunction(, cell, , if (a) return a->cell(range); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& range);
-                    lib->AddFunction(, range, , if (a) return a->range(range); else ThrowIfBadAccess;, WorksheetPtr& a, cweeStr const& range);
-                    lib->AddFunction(, rows, , if (a) return a->rows(skip_null); else ThrowIfBadAccess;, WorksheetPtr& a, bool skip_null);
-                    lib->AddFunction(, rows, , if (a) return a->rows(); else ThrowIfBadAccess;, WorksheetPtr& a);
-                    lib->AddFunction(, columns, , if (a) return a->columns(skip_null); else ThrowIfBadAccess;, WorksheetPtr& a, bool skip_null);
-                    lib->AddFunction(, columns, , if (a) return a->columns(); else ThrowIfBadAccess;, WorksheetPtr& a);
-                    lib->AddFunction(, clear_row, , if (a) return a->clear_row(row); else ThrowIfBadAccess;, WorksheetPtr& a, int row);
-                    lib->AddFunction(, insert_rows, , if (a) return a->insert_rows(row, amount); else ThrowIfBadAccess;, WorksheetPtr& a, int row, int amount);
-                    lib->AddFunction(, insert_columns, , if (a) return a->insert_columns(row, amount); else ThrowIfBadAccess;, WorksheetPtr& a, int row, int amount);
-                    lib->AddFunction(, delete_rows, , if (a) return a->delete_rows(row, amount); else ThrowIfBadAccess;, WorksheetPtr& a, int row, int amount);
-                    lib->AddFunction(, delete_columns, , if (a) return a->delete_columns(row, amount); else ThrowIfBadAccess; , WorksheetPtr& a, int row, int amount);
-                    lib->AddFunction(, column_width, , if (a) return a->column_width(col); else ThrowIfBadAccess; , WorksheetPtr& a, int col);
-                    lib->AddFunction(, row_height, , if (a) return a->row_height(row); else ThrowIfBadAccess; , WorksheetPtr& a, int row);
-                    lib->AddFunction(, create_named_range, , if (a) return a->create_named_range(name, reference_string); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& name, cweeStr const& reference_string);
-                    lib->AddFunction(, has_named_range, , if (a) return a->has_named_range(name); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& name);
-                    lib->AddFunction(, named_range, , if (a) return a->named_range(name); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& name);
-                    lib->AddFunction(, remove_named_range, , if (a) return a->remove_named_range(name); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& name);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, lowest_row);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, lowest_row_or_props);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, highest_row);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, highest_row_or_props);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, next_row);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, lowest_column);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, lowest_column_or_props);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, highest_column);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, highest_column_or_props);
-                    lib->AddFunction(, merge_cells, , if (a) return a->merge_cells(name); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& name);
-                    lib->AddFunction(, unmerge_cells, , if (a) return a->unmerge_cells(name); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& name);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_page_setup);
-                    lib->AddFunction(, auto_filter, , if (a) return a->auto_filter(name); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr name);
-                    lib->AddFunction(, auto_filter, , if (a) return a->auto_filter(*range); else ThrowIfBadAccess; , WorksheetPtr& a, RangePtr range);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, clear_auto_filter);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_auto_filter);
-                    lib->AddFunction(, reserve, , if (a) return a->reserve(n); else ThrowIfBadAccess; , WorksheetPtr& a, int n);
-                    lib->AddFunction(, print_title_rows, , if (a) return a->print_title_rows(start, end); else ThrowIfBadAccess; , WorksheetPtr& a, int start, int end);
-                    lib->AddFunction(, print_title_cols, , if (a) return a->print_title_cols(start, end); else ThrowIfBadAccess; , WorksheetPtr& a, int start, int end);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_print_titles);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, clear_print_titles);
-                    lib->AddFunction(, print_area, , if (a) return a->print_area(print_area); else ThrowIfBadAccess; , WorksheetPtr& a, cweeStr const& print_area);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, clear_print_area);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_print_area);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_view);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_active_cell);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, clear_page_breaks);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, page_break_rows);
-                    lib->AddFunction(, page_break_at_row, , if (a) return a->page_break_at_row(row); else ThrowIfBadAccess; , WorksheetPtr& a, int row);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, page_break_columns);
-                    lib->AddFunction(, page_break_at_column, , if (a) return a->page_break_at_column(column); else ThrowIfBadAccess;, WorksheetPtr& a, int column);                    
-                    AddSharedPtrClassFunction(, ExcelWorksheet, has_drawing);
-                    AddSharedPtrClassFunction(, ExcelWorksheet, is_empty);
-                }
-
-                AddSharedPtrClass(, ExcelRange);
-                {
-                    DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(CellPtr);
-
-                    AddSharedPtrClassFunction(, ExcelRange, clear_cells);
-
-                    lib->AddFunction(, cell, , if (a) return a->cell(cell->reference()); else ThrowIfBadAccess; , RangePtr& a, CellPtr cell);
-                    AddSharedPtrClassFunction(, ExcelRange, target_worksheet);
-                    AddSharedPtrClassFunction(, ExcelRange, length);
-                    lib->AddFunction(, contains, , if (a) return a->contains(cell->reference()); else ThrowIfBadAccess;, RangePtr& a, CellPtr cell);
-
-                    lib->AddFunction(, [], , SINGLE_ARG(
-                        if (a) {
-                            std::vector<Boxed_Value> boxed_vec;
-                            for (auto& cell : a->operator[](n)) {
-                                if (cell) {
-                                    boxed_vec.push_back(var((CellPtr)cell));
-                                }
-                                else {
-                                    boxed_vec.push_back(Boxed_Value());
-                                }
-                            }
-                            return boxed_vec;
-                        }
-                        else ThrowIfBadAccess;
-                    ), RangePtr& a, int n);
-                    lib->AddFunction(, apply, , if (a) a->apply(f); else ThrowIfBadAccess;, RangePtr& a, std::function<void(cweeSharedPtr<ExcelCell>)> f);
-                   
-                    lib->AddFunction(, Vector, , SINGLE_ARG(
-                        std::vector<Boxed_Value> boxed_vec; 
-                        if (a) {
-                            for (auto& row : *a) {
-                                for (auto& cell : row) {
-                                    if (cell) {
-                                        boxed_vec.push_back(var((CellPtr)cell));
-                                    }
-                                    else {
-                                        boxed_vec.push_back(Boxed_Value());
-                                    }
-                                }
-                            }
-                        }
-                        else ThrowIfBadAccess;
-                        return boxed_vec;
-                    ), RangePtr& a);
-
-                    lib->AddFunction(, Values, , SINGLE_ARG(
-                        std::vector<Boxed_Value> boxed_vec;
-                        int n = 0; for (auto& row : *a) for (auto& cell : row) ++n;
-                        boxed_vec.reserve(n+16);
-                        if (a) {
-                            try {
-                                for (auto& row : *a) {
-                                    int numC = row.Num();
-                                    try {
-                                        for (auto& cell : row) {
-                                            try {
-                                                if (cell->has_value()) {
-                                                    switch (cell->data_type()) {
-                                                    case CellType::empty:
-                                                        boxed_vec.push_back(chaiscript::Boxed_Value());
-                                                    case CellType::error:
-                                                        boxed_vec.push_back(var(cell->error()));
-                                                    default:
-                                                        if (cell->is_date()) {
-                                                            boxed_vec.push_back(var(cell->value<cweeTime>()));
-                                                        }
-                                                        else {
-                                                            switch (cell->data_type()) {
-                                                            case CellType::date:
-                                                                boxed_vec.push_back(var(cell->value<cweeTime>()));
-                                                                break;
-                                                            case CellType::formula_string:
-                                                            case CellType::inline_string:
-                                                            case CellType::shared_string:
-                                                                boxed_vec.push_back(var(cell->value<cweeStr>()));
-                                                                break;
-                                                            case CellType::number:
-                                                                boxed_vec.push_back(var(cell->value<double>()));
-                                                                break;
-                                                            case CellType::boolean:
-                                                                boxed_vec.push_back(var(cell->value<bool>()));
-                                                                break;
-                                                            default:
-                                                                boxed_vec.push_back(chaiscript::Boxed_Value());
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                else {
-                                                    boxed_vec.push_back(chaiscript::Boxed_Value());
-                                                }
-                                                numC--;
-                                            }
-                                            catch (...) {
-                                                boxed_vec.push_back(chaiscript::Boxed_Value()); // bad cell value
-                                            }
-                                        }
-                                    }
-                                    catch (...) {
-                                        for (; numC > 0; --numC) {
-                                            boxed_vec.push_back(chaiscript::Boxed_Value()); // bad column values
-                                        }
-                                    }
-                                }
-                            }
-                            catch (...) {
-                                // bad row(s) -- do nothing. 
-                            }
-                        }
-                        else ThrowIfBadAccess;
-                        return boxed_vec;
-                    ), RangePtr& a);
-
-                    lib->AddFunction(, to_patterns, , SINGLE_ARG(
-                        if (a) {
-                            cweeList<cweeStr> positions; positions = { cweeStr("Top"), cweeStr("Left"), cweeStr("") };
-                            timeLocation = timeLocation.BestMatch(positions);
-
-                            AUTO timeHash = timeLocation.Hash();
-
-                            cweeThreadedMap<cweeStr, cweeUnitPattern> patterns;
-
-                            bool LeftToRight = false;
-                            {
-                                switch (timeHash) {
-                                case cweeStr::Hash("Left"):
-                                    // values go top-to-bottom
-                                    LeftToRight = false;
-
-                                    break;
-                                case cweeStr::Hash("Top"):
-                                    // values go left-to-right
-                                    LeftToRight = true;
-
-                                    break;
-                                default:
-                                case cweeStr::Hash(""):
-                                    // Unknown direction! Find out the firstion based on the dimensions
-                                    auto numRows = a->length();
-                                    auto numCols = std::numeric_limits<decltype(numRows)>::max();
-                                    for (auto& rowOrCol : *a) {
-                                        numCols = ::Min<decltype(numCols)>(rowOrCol.Num(), numCols);
-                                    }
-
-                                    if (numRows >= numCols) {
-                                        LeftToRight = false;
-                                    }
-                                    else {
-                                        LeftToRight = true;
-                                    }
-
-                                    break;
-                                }
-                            }
-
-                            int headerOffset = 0;
-                            cweeList<cweeStr> headers;
-                            {
-                                if (LeftToRight) {
-                                    // IF there are any sites, they will be in the first column
-                                    int firstIsString = 0;
-                                    int firstIsNumber = 0;
-                                    for (auto& rowOrCol : *a) {
-                                        for (auto& cell : rowOrCol) {
-                                            switch (cell->data_type()) {
-                                            case CellType::boolean:
-                                            case CellType::date:
-                                            case CellType::number:
-                                                firstIsNumber++;
-                                                break;
-                                            case CellType::error:
-                                            case CellType::formula_string:
-                                            case CellType::inline_string:
-                                            case CellType::shared_string:
-                                                firstIsString++;
-                                                break;
-                                            case CellType::empty:
-                                            default:
-                                                break;
-                                            }
-                                            break;
-                                        }
-                                        if (std::fabs(firstIsString - firstIsNumber) > 100) {
-                                            break;
-                                        }
-                                    }
-                                    if (firstIsString > firstIsNumber) {
-                                        headerOffset = 1;
-                                    }
-                                    else {
-                                        headerOffset = 0;
-                                    }
-                                }
-                                else {
-                                    // IF there are any sites, they will be in the first row
-                                    for (auto& rowOrCol : *a) {
-                                        int firstIsString = 0;
-                                        int firstIsNumber = 0;
-                                        for (auto& cell : rowOrCol) {
-                                            switch (cell->data_type()) {
-                                            case CellType::boolean:
-                                            case CellType::date:
-                                            case CellType::number:
-                                                firstIsNumber++;
-                                                break;
-                                            case CellType::error:
-                                            case CellType::formula_string:
-                                            case CellType::inline_string:
-                                            case CellType::shared_string:
-                                                firstIsString++;
-                                                break;
-                                            case CellType::empty:
-                                            default:
-                                                break;
-                                            }
-                                            if (std::fabs(firstIsString - firstIsNumber) > 100) {
-                                                break;
-                                            }
-                                        }
-                                        if (firstIsString > firstIsNumber) {
-                                            headerOffset = 1;
-                                        }
-                                        else {
-                                            headerOffset = 0;
-                                        }
-                                        break;
-                                    }
-                                }
-
-                                if (headerOffset >= 1) {
-                                    // we have headers based on the cell values
-                                    if (LeftToRight) {
-                                        for (auto& rowOrCol : *a) {
-                                            for (auto& cell : rowOrCol) {
-                                                headers.Append(cell->to_string().c_str());
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    else {
-                                        for (auto& rowOrCol : *a) {
-                                            for (auto& cell : rowOrCol) {
-                                                headers.Append(cell->to_string().c_str());
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                                else {
-                                    // we have headers based on the row/column index
-                                    if (LeftToRight) {
-                                        for (auto& rowOrCol : *a) {
-                                            for (auto& cell : rowOrCol) {
-                                                headers.Append(cweeStr(headers.Num() + 1).c_str());
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    else {
-                                        for (auto& rowOrCol : *a) {
-                                            for (auto& cell : rowOrCol) {
-                                                headers.Append(cweeStr(headers.Num() + 1).c_str());
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            // collect the data
-                            cweeList<double> times;
-                            int rowNumber = 0;
-                            int colNumber;
-                            cweeStr* siteName = nullptr;
-                            double* thisTime = nullptr;
-                            for (auto& rowOrCol : *a) { // rowOrColumn
-                                rowNumber++;
-                                if (LeftToRight && rowNumber == 1 && timeHash != cweeStr::Hash("")) {
-                                    // the first row is the time row
-                                    colNumber = 0;
-                                    for (auto& cell : rowOrCol) {
-                                        colNumber++;
-                                        if (LeftToRight && colNumber == 1 && headerOffset >= 1) {
-                                            // the first column is the site names
-                                            continue;
-                                        }
-                                        else {
-                                            times.Append(cell->value<double>());
-                                        }
-                                    }
-                                    continue;
-                                }
-                                else if (!LeftToRight && rowNumber == 1 && headerOffset >= 1) {
-                                    // the first row is the site names
-                                    continue;
-                                }
-                                else {
-                                    colNumber = 0;
-                                    for (auto& cell : rowOrCol) {
-                                        colNumber++;
-                                        if (!LeftToRight && colNumber == 1 && timeHash != cweeStr::Hash("")) {
-                                            // the first column is the time row
-                                            times.Append(cell->value<double>());
-                                            continue;
-                                        }
-                                        else if (LeftToRight && colNumber == 1 && headerOffset >= 1) {
-                                            // the first column is the site names
-                                            continue;
-                                        }
-                                        else {
-                                            if (LeftToRight) {
-                                                siteName = &headers[rowNumber - 1];
-                                                if (times.Num() <= (colNumber - 1)) { times.AssureSize(colNumber, colNumber); }
-                                                thisTime = &times[colNumber - 1];
-                                            }
-                                            else {
-                                                siteName = &headers[colNumber - 1];
-                                                if (times.Num() <= (rowNumber - 1)) { times.AssureSize(rowNumber, rowNumber); }
-                                                thisTime = &times[rowNumber - 1];
-                                            }
-
-                                            patterns.GetPtr(*siteName)->AddValue(*thisTime, cell->value<double>());
-                                        }
-                                    }
-                                }
-                            }
-
-                            std::map<std::string, chaiscript::Boxed_Value> out;
-                            for (auto& site : patterns) {
-                                out.emplace(std::string(site.first.c_str()), var(cweeUnitPattern(*site.second)));
-                            }
-                            return out;
-                        }
-                        else ThrowIfBadAccess;
-                    ) , RangePtr& a, cweeStr timeLocation);
-                }
-
-                AddSharedPtrClass(, ExcelCell);
-                {
-                    ADD_BETTER_ENUM_TO_SCRIPT_ENGINE(CellType, CellType);
-                    // DEF_DECLARE_VECTOR_WITH_SCRIPT_ENGINE_AND_MODULE(CellPtr);
-
-                    AddSharedPtrClassFunction(, ExcelCell, address);
-                    AddSharedPtrClassFunction(, ExcelCell, has_value);
-                    lib->add(chaiscript::fun([](CellPtr& a) -> chaiscript::Boxed_Value { if (a) {
-                        if (a->has_value()) {
-                            switch (a->data_type()) {
-                            case CellType::empty:
-                                return chaiscript::Boxed_Value();
-                            case CellType::error:
-                                return var(a->error());
-                            default:
-                                if (a->is_date()) {
-                                    return var(a->value<cweeTime>());
-                                }
-                                else {
-                                    switch (a->data_type()) {
-                                    case CellType::date:
-                                        return var(a->value<cweeTime>());
-                                    case CellType::formula_string:
-                                    case CellType::inline_string:
-                                    case CellType::shared_string:
-                                        return var(a->value<cweeStr>());
-                                    case CellType::number:
-                                        return var(a->value<double>());
-                                    case CellType::boolean:
-                                        return var(a->value<bool>());
-                                    default:
-                                        return chaiscript::Boxed_Value();
-                                    }
-                                }
-                            }
-                        }
-                        else {
-                            return chaiscript::Boxed_Value();
-                        }
-                    }
-                    else ThrowIfBadAccess; }), "value");
-                    AddSharedPtrClassFunction(, ExcelCell, clear_value);
-                    // lib->AddFunction(, value, , if (a) return a->value(v); else ThrowIfBadAccess; , CellPtr& a, bool v);                    
-                    lib->add(chaiscript::fun([](CellPtr& a, bool v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, int v) { if (a) a->value((double)v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, float v) { if (a) a->value((double)v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, double v) { if (a) a->value((double)v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeTime const& v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr const& v) { if (a) a->value(v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, CellPtr const& v) { if (a) a->value(*v); else ThrowIfBadAccess; }), "value");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr const& v, bool inferType) { if (a) a->value(v, inferType); else ThrowIfBadAccess; }), "value");                    
-                    lib->eval("def value(ExcelCell cell, v) : v == null { cell.clear_value(); };"); // allows for trying to set the 
-                    lib->add(chaiscript::fun([](CellPtr& a) { if (a) return a->data_type(); else ThrowIfBadAccess; }), "data_type");
-                    lib->add(chaiscript::fun([](CellPtr& a, CellType type) { if (a) a->data_type(type); else ThrowIfBadAccess; }), "data_type");
-                    AddSharedPtrClassFunction(, ExcelCell, is_date);
-                    AddSharedPtrClassFunction(, ExcelCell, column);
-                    AddSharedPtrClassFunction(, ExcelCell, column_index);
-                    AddSharedPtrClassFunction(, ExcelCell, row);
-                    AddSharedPtrClassFunction(, ExcelCell, has_format);
-                    AddSharedPtrClassFunction(, ExcelCell, clear_format);
-                    lib->add(chaiscript::fun([](CellPtr& a) { if (a) return a->formula(); else ThrowIfBadAccess; }), "formula");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr formula) { if (a) a->formula(formula); else ThrowIfBadAccess; }), "formula");
-                    AddSharedPtrClassFunction(, ExcelCell, clear_formula);
-                    AddSharedPtrClassFunction(, ExcelCell, has_formula);
-                    AddSharedPtrClassFunction(, ExcelCell, to_string);
-                    lib->add(chaiscript::fun([](CellPtr& a) { if (a) return a->is_merged(); else ThrowIfBadAccess; }), "is_merged");
-                    lib->add(chaiscript::fun([](CellPtr& a) { if (a) return a->error(); else ThrowIfBadAccess; }), "error");
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr v) { if (a) a->error(v); else ThrowIfBadAccess; }), "error");
-                    lib->add(chaiscript::fun([](CellPtr& a, int column, int row) { if (a) return a->offset(column, row); else ThrowIfBadAccess; }), "offset");
-                    AddSharedPtrClassFunction(, ExcelCell, worksheet);
-                    AddSharedPtrClassFunction(, ExcelCell, workbook);
-                    lib->add(chaiscript::fun([](CellPtr& a, cweeStr to_check) { if (a) return a->check_string(to_check); else ThrowIfBadAccess; }), "check_string");
-                    AddSharedPtrClassFunction(, ExcelCell, width);
-                    AddSharedPtrClassFunction(, ExcelCell, height);
-                }
-
-                lib->add(chaiscript::fun([](cweeStr filePathToData, cweeStr filePathToCoordinates) {
-                    // This is the script code called from C# to C++, that requests the underlying data to be used to draw into C#. 
-
-                    using TimeSeriesType = cweeUnitPattern; // Time to Measurement .. setting measurement units to "dimensionless" for now.
-                    using SiteMeasurementType = cweeThreadedMap<cweeStr, TimeSeriesType>; // AL to TimeSeries
-                    using SiteCollectionType = cweeThreadedMap<cweeStr, SiteMeasurementType>; // AA-01 to SiteMeasurementType
-
-                    cweeSharedPtr<SiteCollectionType> SiteCollection = make_cwee_shared<SiteCollectionType>();
-                    cweeThreadedMap<cweeStr, cweePair<double, double>> Coordinates;
-
-                    // Parse Data
-                    {
-                        cweeSharedPtr<ExcelWorkbook> workbook;
-                        workbook = cweeExcel::OpenExcel();
-                        workbook->load(filePathToData);
-
-                        for (auto& worksheet : *workbook) {
-                            int rowNum = 0;
-                            cweeStr siteName = worksheet.title();
-                            AUTO siteMeasurement = SiteCollection->GetPtr(siteName); // gets a shared PTR
-                            if (siteMeasurement) {
-                                cweeList<cweeStr> header;
-                                try {
-                                    AUTO rows = worksheet.rows();
-                                    for (auto& row : *rows) {
-                                        rowNum++;
-                                        if (rowNum <= 1) {
-                                            for (auto& cell : row) {
-                                                header.Append(cell->to_string());
-                                            }
-                                        }
-                                        else {
-                                            int colNum = 0; cweeTime time;
-                                            for (auto& cell : row) {
-                                                colNum++;
-
-                                                switch (colNum) {
-                                                case 1: break;
-                                                case 2: {
-                                                    try {
-                                                        time = cell->value<cweeTime>();
-                                                    }
-                                                    catch (...) {}
-                                                    break;
-                                                }
-                                                default: {
-                                                    cweeStr& headerForThisCell = header[colNum - 1];
-
-                                                    AUTO TM = siteMeasurement->GetPtr(headerForThisCell);
-                                                    if (TM) {
-                                                        try {
-                                                            TM->AddValue((u64)time, cell->value<double>());
-                                                        }
-                                                        catch (...) {}
-                                                    }
-                                                    break;
-                                                }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                catch (...) {}
-                            }
-                        }
-                    }
-                    // Parse Coordinates
-                    {
-                        cweeSharedPtr<ExcelWorkbook> workbook;
-                        workbook = cweeExcel::OpenExcel();
-                        workbook->load(filePathToCoordinates);
-
-                        for (auto& worksheet : *workbook) {
-                            try {
-                                int rowNum = 0;
-                                AUTO rows = worksheet.rows();
-                                for (auto& row : *rows) {
-                                    rowNum++;
-                                    if (rowNum <= 2) { /* skip the headers */ }
-                                    else {
-                                        int colNum = 0; cweeStr name; double longitude, latitude;
-                                        for (auto& cell : row) {
-                                            colNum++;
-
-                                            switch (colNum) {
-                                            case 1:
-                                                name = cell->value<cweeStr>();
-                                                break;
-                                            case 2: {
-                                                longitude = cell->value<double>();
-                                                break;
-                                            }
-                                            case 3: {
-                                                latitude = cell->value<double>();
-                                                break;
-                                            }
-                                            default: {
-                                                break;
-                                            }
-                                            }
-                                        }
-                                        Coordinates.Emplace(name, cweePair<double, double>(longitude, latitude));
-                                    }
-                                }
-                            }
-                            catch (...) {}
-                        }
-                    }
-
-                    // This is the overall display
-                    std::shared_ptr<UI_Grid> displayGrid = make_shared<UI_Grid>(); {
-                        displayGrid->RowDefinitions.push_back("*");
-                        displayGrid->ColumnDefinitions.push_back("2*");
-                        displayGrid->ColumnDefinitions.push_back("1*");
-                    }
-                    // This is the pattern display
-                    std::shared_ptr<UI_Grid> listPatternsContainer = make_shared<UI_Grid>(); {
-                        listPatternsContainer->ColumnDefinitions.push_back("*");
-                        listPatternsContainer->RowDefinitions.push_back("*");
-                    }
-                    displayGrid->AddChild(var(listPatternsContainer), 0, 1, 1, 1);
-
-                    // this function is called when the pop-up for each DOT or site is loaded -- and is called EVERY time it is loaded.
-                    AUTO updatePatterns = [=](UI_Grid& destination, cweeSharedPtr< SiteMeasurementType> measurements) {
-                        listPatternsContainer->Children.Clear();
-                        std::map<std::string, chaiscript::Boxed_Value> listPatterns;
-
-                        for (auto& meas : *measurements) {
-                            AUTO measurementName = meas.first;
-                            AUTO measurementData = meas.second;
-
-                            UI_Grid patContainer;
-                            patContainer.MinHeight = 180;
-                            patContainer.MinWidth = 600;
-                            {
-                                patContainer.AddChild(var(*measurementData), 0, 0, 1, 1);
-
-                                AUTO title = UI_TextBlock(measurementName);
-                                {
-                                    title.HorizontalAlignment = "Left";
-                                    title.VerticalAlignment = "Top";
-                                    title.HorizontalTextAlignment = "Left";
-                                    title.FontSize = 12;
-                                    title.Foreground = UI_Color(cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(128, 200));
-                                }
-
-                                patContainer.AddChild(var(title), 0, 0, 1, 1);
-                            }
-                            listPatterns[measurementName.c_str()] = var(patContainer);
-                        }
-
-                        listPatternsContainer->AddChild(var(listPatterns), 0, 0, 1, 1);
-                        listPatternsContainer->Update();
-                    };
-
-                    {
-                        UI_Map map;
-                        {
-                            UI_MapLayer layer;
-                            {
-                                for (auto& site : *SiteCollection) {
-                                    UI_MapIcon icon;
-                                    AUTO measurements = site.second;
-
-                                    double longitude = -1;
-                                    double latitude = -1;
-
-                                    AUTO coords = Coordinates.TryGetPtr(site.first);
-                                    if (coords) {
-                                        longitude = coords->first;
-                                        latitude = coords->second;
-                                    }
-
-                                    icon.color = UI_Color(cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(0, 255), cweeRandomFloat(128, 200));
-                                    icon.longitude = longitude;
-                                    icon.latitude = latitude;
-                                    icon.size = 24;
-                                    {
-                                        // set the Tag object, which when "Loaded" will update the righthand side of the figure.
-                                        UI_Grid panel; {
-                                            panel.RowDefinitions.push_back("Auto");
-                                            panel.RowDefinitions.push_back("Auto");
-                                            panel.RowDefinitions.push_back("Auto");
-                                            panel.OnLoaded = var(fun([=]() {
-                                                updatePatterns(*listPatternsContainer, measurements);
-                                            }));
-                                            panel.AddChild(var(site.first), 0, 0, 1, 1);
-                                            panel.AddChild(var(longitude), 1, 0, 1, 1);
-                                            panel.AddChild(var(latitude), 2, 0, 1, 1);
-                                        }
-                                        icon.Tag = var(panel);
-                                    }
-                                    icon.HideOnCollision = false;
-
-                                    layer.Children.push_back(var(icon));
-                                }
-                            }
-                            map.Layers.push_back(var(layer));
-                        }
-                        displayGrid->AddChild(var(map), 0, 0, 1, 1);
-                    }
-                    return displayGrid;
-                }), "WaterQualityMap");
-            }
-
-#undef ThrowIfBadAccess
-#undef WorkbookPtr
-#undef WorksheetPtr
-#undef RangePtr
-#undef CellPtr
-
-            return lib;
-        };
-    };
-}; // namespace chaiscript
