@@ -1559,26 +1559,26 @@ public:
             if (!rhs._ev) return;
             if (reservation == 0) reserve(4);
 
-            if (len < reservation) {
-                items[len] = rhs;
-                len = len + 1;
-            }
-            else {
+            if (len >= 64) {
                 clear();
-                reservation = std::min<long long>(64, reservation * 2 + 8);
-                items = make_unique<gpu_event>(reservation);                
-                items[0] = rhs;
-                len = 1;
             }
+            if (len >= reservation) {
+                reservation = std::min<long long>(64, reservation * 2);
+                auto new_items = make_unique<gpu_event>(reservation);      
+                for (int i = 0; i < len; ++i) new_items[i] = std::move(items[i]);
+                items = std::move(new_items);
+            }
+            items[len++] = rhs;
         };
         size_t size() const { return len; };
         size_t capacity() const { return reservation; };
         void reserve(size_t n) {
+            n = std::min<long long>(64, n);
             if (reservation < n) {
-                if (reservation > 0) clear();                
-                reservation = std::min<long long>(64, n);
-                len = 0;
-                items = make_unique<gpu_event>(reservation);
+                reservation = n;
+                auto new_items = make_unique<gpu_event>(reservation);
+                for (int i = 0; i < len; ++i) new_items[i] = std::move(items[i]);
+                items = std::move(new_items);
             }
         };
         gpu_event& operator[](size_t n) { return items[n]; };
@@ -1972,30 +1972,30 @@ namespace GL {
         static unsigned int WorkgroupAdjustment(unsigned int N) { 
             return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE; 
         };
-        //static auto& mem_free_helper() {
-        //    class wrap {
-        //    public:
-        //        std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> mem;
-        //        wrap() = default;
-        //        wrap(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&& rhs) : mem{ std::move(rhs) } {};
-        //        wrap(wrap const&) = delete;
-        //        wrap(wrap&&) = default;
-        //        wrap& operator=(wrap const&) = delete;
-        //        wrap& operator=(wrap&&) = default;
-        //        ~wrap() = default;
-        //    };
-        //    static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>, 8> allocator{};
-        //    return allocator;
-        //}
+        static auto& mem_free_helper() {
+            class wrap {
+            public:
+                std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete> mem;
+                wrap() = default;
+                wrap(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&& rhs) : mem{ std::move(rhs) } {};
+                wrap(wrap const&) = delete;
+                wrap(wrap&&) = default;
+                wrap& operator=(wrap const&) = delete;
+                wrap& operator=(wrap&&) = default;
+                ~wrap() = default;
+            };
+            static GL::atomic_epoch_allocator<wrap, GL::atomic_allocator<wrap, 128, false, false>, 32> allocator{};
+            return allocator;
+        }
         static void mem_free(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem) {
             if (mem) {
                 if (/*mem->cpu_memory || */mem->gpu_memory) {
-                    static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 256> helper;
-                    helper.push_back(std::move(mem));
+                    //static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 256> helper;
+                    //helper.push_back(std::move(mem));
 
-                    //auto* p = mem_free_helper().Alloc(std::move(mem));
-                    //mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
-                    //mem_free_helper().Free(p);
+                    auto* p = mem_free_helper().Alloc(std::move(mem));
+                    mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
+                    mem_free_helper().Free(p);
                 }
             }
             mem = nullptr;            
