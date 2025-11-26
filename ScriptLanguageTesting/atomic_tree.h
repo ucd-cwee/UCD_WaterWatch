@@ -4,6 +4,7 @@
 #include <memory>
 #include <set>
 #include "atomic_allocator.h"
+#include "Strings.h"
 // #include "atomic_maps.h"
 
 // a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
@@ -443,7 +444,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = fast_shared_mutex; // std::shared_mutex;
+		using lock_type = std::shared_mutex; // fast_shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;
@@ -675,13 +676,13 @@ namespace GL{
 		};
 
 	private:
-		lock_type
+		mutable lock_type
 			mut; // global tree lock. Should only be held temporarily if at all possible. 
 		parallel_binary_search_treeNode*
 			root;
-		GL::atomic_allocator< parallel_binary_search_treeNode, 256, true >
+		GL::atomic_allocator< parallel_binary_search_treeNode, 256, true, true >
 			nodeAllocator;
-		GL::atomic_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true >
+		GL::atomic_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true, true >
 			nodeChildrenAllocator;
 		long
 			count;
@@ -1159,8 +1160,8 @@ namespace GL{
 			}
 		};
 		size_t size() const {
-			auto locked = std::shared_lock(mut);
-			return (size_t)count;
+			auto locked{ std::shared_lock(mut) };
+			return (size_t)count + nodeChildrenAllocator.size() + nodeAllocator.size();
 		};
 
 	private:
@@ -1874,13 +1875,13 @@ namespace GL {
 			};
 		};
 	private:
-		GL::atomic_allocator<dynamic_block, 128, true, true>
+		GL::atomic_allocator<dynamic_block, 128, true>
 			block_alloc;
 		GL::parallel_binary_search_tree<dynamic_block, unsigned long long, 10>
 			free_tree;
 		GL::atomic_vector< buffer_type >
 			allocations;
-		GL::ticket_dispensor<true>
+		GL::ticket_dispensor<false>
 			allocation_tickets;
 		std::function<buffer_type(unsigned long long)>
 			alloc_block; // alloc a fresh buffer with length
@@ -1889,7 +1890,7 @@ namespace GL {
 
 	public:
 		size_t size() const {
-			return block_alloc.size();
+			return allocations.size();
 		};
 		__declspec(noinline) dynamic_allocator(
 			std::function<buffer_type(unsigned long long)> const& _alloc_block,
@@ -1961,7 +1962,9 @@ namespace GL {
 							free_block->locker = 1;
 
 							free_block->parent_buffer = allocation_tickets.get_ticket();
-							this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
+							if (this->allocations.grow_to_at_least(free_block->parent_buffer + 1)) {
+								// std::cout << "GREW THE ALLOCATOR TO " + std::to_string(free_block->parent_buffer + 1) + "\n";
+							}
 							this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
 							if (!this->allocations[free_block->parent_buffer]) {
 								allocation_tickets.return_ticket(free_block->parent_buffer);
@@ -1986,12 +1989,9 @@ namespace GL {
 		};
 		// must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
 		__declspec(noinline) void Free(dynamic_block* free_block) {
-			if (free_block) {
-				//free_block->lock();
-				free_block->is_free = true;
-				free_tree.Add(free_block, free_block->length);
-				//free_block->unlock();            
-			}
+			if (free_block == nullptr) return;
+			free_block->is_free = true;
+			free_tree.Add(free_block, free_block->length);
 		};
 
 	public:
@@ -2086,7 +2086,7 @@ namespace GL {
 		using dynamic_block = typename dynamic_allocator< buffer_type >::dynamic_block;
 		using unique_ptr = typename dynamic_allocator< buffer_type >::unique_ptr;
 		using shared_ptr = typename dynamic_allocator< buffer_type >::shared_ptr;
-
+		
 		size_t size() {
 			size_t out = 0;
 			allocator.for_each([&out](auto& alloc) {
@@ -2095,12 +2095,12 @@ namespace GL {
 			return out;
 		};
 		parallel_dynamic_allocator(
-			std::function<buffer_type(unsigned long long)> const& _alloc_block,
-			std::function<void(buffer_type&)> const& _free_block
+			std::function<buffer_type(unsigned long long)> && _alloc_block,
+			std::function<void(buffer_type&)> && _free_block
 		)
 			: allocator{}
-			, alloc_block{ _alloc_block }
-			, free_parent_block{ _free_block }
+			, alloc_block{ std::move(_alloc_block) }
+			, free_parent_block{ std::move(_free_block) }
 		{};
 		~parallel_dynamic_allocator() = default;
 
@@ -2115,7 +2115,7 @@ namespace GL {
 			}
 		};
 		void Free(dynamic_block* free_block) {
-			if (free_block) {
+			if (free_block != nullptr) {
 				allocator[free_block->thread_id].Free(free_block);
 			}
 		};

@@ -71,19 +71,24 @@ namespace GL {
         short
             current_blockN;
 
-        void EnsureBlockExists(short block_n) noexcept {
+        bool EnsureBlockExists(short block_n) noexcept {
+            bool out = false;
+            if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
                     auto* new_ptr = new std::vector< element_t >();
                     new_ptr->resize(block_to_allocsize(blockN));
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {}
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                        out = true;
+                    }
                     else {
                         delete new_ptr;
                     }
                 }
             }
+            return out;
         };
-        void grow_to_at_least_blocksN(short blockN) noexcept { EnsureBlockExists(blockN); };
+        bool grow_to_at_least_blocksN(short blockN) noexcept { (void)EnsureBlockExists(blockN); };
     public:
         atomic_vector() noexcept : blocks{}, current_pos{ 0 }, valid_pos{ 0 }, current_blockN{ -1 } {};
         ~atomic_vector() noexcept {
@@ -109,8 +114,8 @@ namespace GL {
         const element_t& at(size_t index) const noexcept {
             return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
         };
-        void grow_to_at_least(size_t index) noexcept {
-            EnsureBlockExists(global_index_to_block(index));
+        bool grow_to_at_least(size_t index) noexcept {
+            bool did_grow = EnsureBlockExists(global_index_to_block(index));
             while (true) {
                 size_t prevValid = valid_pos;
                 if (prevValid < index) {
@@ -122,6 +127,7 @@ namespace GL {
                     break;
                 }
             }
+            return did_grow;
         };
         size_t push_back(element_t const& srce) noexcept {
             size_t position;

@@ -276,12 +276,15 @@ int main() {
         float avg_framerate = 0; int avg_framerate_n = 0;
 
         // Initialize the kernel array
+        print(GL::arena_memory_pool::debug());
         matrix_kernel<unsigned int> kernel(matrix<unsigned int>::from_vector({
             1, 1, 1,
             1, 0, 1,
             1, 1, 1
         }, 3));
+        print(GL::arena_memory_pool::debug());
         auto state = (matrix<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
+        print(GL::arena_memory_pool::debug());
 
         int frame = 1;
         // Run the game of life
@@ -367,10 +370,7 @@ int main() {
                 MatrixImage(MatrixImage&&) = delete;
                 MatrixImage& operator=(MatrixImage const&) = delete;
                 MatrixImage& operator=(MatrixImage&&) = delete;
-                ~MatrixImage() {
-                    for (auto& x : mip_maps)
-                        x = matrix<float>();
-                };
+                ~MatrixImage() = default;
 
                 matrix<float> debug_display() const {
                     matrix<float> out = mip_maps[0];
@@ -391,6 +391,7 @@ int main() {
 
             private:
                 void calculate_mip_maps(matrix<float> && srce) {
+                    mip_maps.reserve(32);
                     mip_maps.push_back(std::move(srce));
                     const matrix<float>* current = &mip_maps[0];
                     //auto kernel = matrix<float>::guassian_kernel<13, 13>();
@@ -404,15 +405,8 @@ int main() {
                 };
 
             };
-
             MatrixImage img(state.cast<float>());
-            //img.debug_display();
             print(img.sum().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
-
-            //MatrixImage img2(img.sum());
-            //print(img2.debug_display().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true));
-
-
 
             //auto texture_y = (screen_U * (float)I5.size(1)).cast<unsigned int>().min(I5.size(1) - 1);
             //auto texture_x = (screen_V * (float)I5.size(0)).cast<unsigned int>().min(I5.size(0) - 1);
@@ -421,7 +415,7 @@ int main() {
 
             //auto A = state.resize(game_h2 / 3, game_w2, 1);
             //auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h2 / 3, game_w2, 1);
-            //auto C = state.halfsize<false>().doublesize().resize(game_h2 / 3, game_w2, 1);
+            //auto C = state.halfsize().doublesize().resize(game_h2 / 3, game_w2, 1);
             //auto print_me = A.ASCII().join(0, B.ASCII()).join(0, C.ASCII());
             //print(print_me.to_string({}, true));
 #endif
