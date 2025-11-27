@@ -158,7 +158,7 @@ namespace parallel {
     };
 };
 
-#define CL_HPP_CL_1_2_DEFAULT_BUILD
+// #define CL_HPP_CL_1_2_DEFAULT_BUILD
 
 class opencl_impl {
 public:
@@ -1229,7 +1229,7 @@ public:
             : cl_program(info.cl_context, make_kernel_code(info, GL::string(combine(opencl_code)).replace("; ", ";\n").to_string()))
         {
             const std::string build_options
-                = std::string("-cl-std=CL") + /*"2.0"*/ info.opencl_c_version + std::string(" -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable") + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
+                = std::string("-cl-std=CL") + "2.0" /*info.opencl_c_version*/ + std::string(" -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable") + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
             int error
                 = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
             if (error) {
@@ -1320,7 +1320,7 @@ public:
     kernel_list functions;
 
 
-    __declspec(noinline) Program(std::vector<std::string> const& opencl_c_code)
+     Program(std::vector<std::string> const& opencl_c_code)
         : info(select_device_with_most_flops(get_devices(false)))
         , program(info, opencl_c_code)
         , queue(info.cl_context, info.cl_device)
@@ -1441,7 +1441,7 @@ public:
     template <typename T>
     static auto make_shared(unsigned int N) {
         struct helper {
-            __declspec(noinline) static void destroy(T* p) noexcept { // delete a pointer
+             static void destroy(T* p) noexcept { // delete a pointer
                 static_assert(0 < sizeof(T), "can't delete an incomplete type");
                 auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
                 auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
@@ -1452,7 +1452,7 @@ public:
                 }
                 cpu_allocator().Free(alloced);
             };
-            __declspec(noinline) static T* create(unsigned int N) {
+             static T* create(unsigned int N) {
                 //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
                 auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
 
@@ -1483,20 +1483,20 @@ public:
         gpu_event()
             : _ev{ nullptr } 
         {};
-        __declspec(noinline) gpu_event(cl_event ev) // assumes the event comes in fresh & retained already.
+         gpu_event(cl_event ev) // assumes the event comes in fresh & retained already.
             : _ev{ev} 
         {};
-        __declspec(noinline) gpu_event(gpu_event const& rhs) // copies
+         gpu_event(gpu_event const& rhs) // copies
             : _ev{ rhs._ev } 
         {
             if (_ev) ::clRetainEvent(_ev);
         };
-        __declspec(noinline) gpu_event(gpu_event && rhs) noexcept // moves
+         gpu_event(gpu_event && rhs) noexcept // moves
             : _ev{ rhs._ev } 
         {
             rhs._ev = nullptr;
         };
-        __declspec(noinline) gpu_event& operator=(gpu_event const& rhs) { // copies        
+         gpu_event& operator=(gpu_event const& rhs) { // copies        
             if (_ev) {
                 ::clReleaseEvent(_ev);
             }
@@ -1504,7 +1504,7 @@ public:
             if (_ev) ::clRetainEvent(_ev);
             return *this;
         };
-        __declspec(noinline) gpu_event& operator=(gpu_event&& rhs) noexcept { // moves        
+         gpu_event& operator=(gpu_event&& rhs) noexcept { // moves        
             if (_ev) {
                 ::clReleaseEvent(_ev);
             }
@@ -1512,7 +1512,7 @@ public:
             rhs._ev = nullptr;
             return *this;
         };
-        __declspec(noinline) ~gpu_event() {
+         ~gpu_event() {
             if (_ev) {
                 ::clReleaseEvent(_ev);
             }
@@ -1810,7 +1810,7 @@ private:
     };
     static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position) { }
     template<template<class> typename G, typename T, class... U>
-    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G<T>& parameter, const U&... parameters) {
+     static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G<T>& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
             check_for_errors(::clSetKernelArgSVMPointer(cl_kernel, starting_position, parameter.get()));
         }
@@ -1820,7 +1820,7 @@ private:
         link_parameters(cl_kernel, waitlist, waitlistSize, starting_position + 1u, parameters...);
     };
     template<class G, class... U>
-    __declspec(noinline) static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G& parameter, const U&... parameters) {
+     static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G, mem_matrix>) {
             if (parameter.gpu_memory) {
                 link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
@@ -1955,7 +1955,7 @@ namespace GL {
         private:
             GL::thread_object_no_default<std::pair<size_t, std::array<T, capacity>>> vecs;
         public:
-            __declspec(noinline) void push_back(T&& arg) {
+             void push_back(T&& arg) {
                 std::pair<size_t, std::array<T, capacity>>& PR = *vecs;
                 // size_t pos = PR.first++ % capacity;
                 size_t pos = PR.first++ & (capacity - 1); // faster than %, must be power of two
@@ -2426,22 +2426,23 @@ namespace GL {
         template <typename T> matrix<T> matrix<T>::random(unsigned int X, unsigned int Y, unsigned int Z) { 
             static auto func_name{ GL::string("Rand") + GL::string(opencl_impl::type_name<T>()) };
             if constexpr (std::is_floating_point_v<T>) {
+#if 1 // should result in better quality, but is performed on the CPU rather than the GPU. 
+                matrix out(X, Y, Z);
+                if (auto w = out.write()) {
+                    for (int i = 0; i < out.size(); ++i) {
+                        w[i] = GL::util::rand_fast(0, 1);
+                    }
+                }
+                return out;
+#else // perform the random on the GPU directly, which requires contention and locking
                 matrix out(X, Y, Z);
                 mem_matrix::queue_gpu_work(func_name,
                     out.size(),
                     mem(out)
                 );
                 return out;
+#endif
             }
-            //if constexpr (std::is_floating_point_v<T>) {
-            //    matrix out(X, Y, Z);
-            //    if (auto w = out.write()) {
-            //        for (int i = 0; i < out.size(); ++i) {
-            //            w[i] = GL::util::rand_fast(0, 1);
-            //        }
-            //    }
-            //    return out;
-            //}
             else {
                 return (matrix<float>::random(X, Y, Z) * (float)std::numeric_limits<T>::max()).cast<T>();
             }
@@ -2449,6 +2450,15 @@ namespace GL {
         template <typename T> matrix<T> matrix<T>::random_between(T lower, T upper, unsigned int X, unsigned int Y, unsigned int Z) {
             static auto func_name{ GL::string("Rand") + GL::string(opencl_impl::type_name<T>()) };
             if constexpr (std::is_floating_point_v<T>) {
+#if 1 // should result in better quality, but is performed on the CPU rather than the GPU. 
+                matrix out(X, Y, Z);
+                if (auto w = out.write()) {
+                    for (int i = 0; i < out.size(); ++i) {
+                        w[i] = GL::util::rand_fast(lower, upper);
+                    }
+                }
+                return out;
+#else // perform the random on the GPU directly, which requires contention and locking
                 matrix out(GL::GPU::dimensions{ X, Y, Z });
                 mem_matrix::queue_gpu_work(func_name,
                     out.size(),
@@ -2457,16 +2467,8 @@ namespace GL {
                 out *= (upper - lower);
                 out += lower;
                 return out;
+#endif
             }
-            //if constexpr (std::is_floating_point_v<T>) {
-            //    matrix out(X, Y, Z);
-            //    if (auto w = out.write()) {
-            //        for (int i = 0; i < out.size(); ++i) {
-            //            w[i] = GL::util::rand_fast(lower, upper);
-            //        }
-            //    }
-            //    return out;
-            //}
             else {
                 return matrix<float>::random_between((float)lower, (float)upper, X, Y, Z).cast<T>();
             }

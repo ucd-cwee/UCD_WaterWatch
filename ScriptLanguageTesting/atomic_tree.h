@@ -1863,6 +1863,8 @@ namespace GL {
 				is_available;
 			bool
 				is_free;
+			bool
+				in_tree;
 
 			__declspec(noinline) void lock() {
 				while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
@@ -1917,6 +1919,7 @@ namespace GL {
 									if (!free_block->is_available) {
 										// cooperatively remove this node
 										free_tree.Remove(tree_node, tree_locked);
+										free_block->in_tree = false;
 										free_block->unlock();
 										block_alloc.Free(free_block);
 										free_block = nullptr;
@@ -1931,15 +1934,16 @@ namespace GL {
 												free_block->sub_buffer = nullptr;
 												this->free_parent_block(this->allocations[free_block->parent_buffer]);
 												this->allocations[free_block->parent_buffer] = nullptr;
-												allocation_tickets.return_ticket(free_block->parent_buffer);
-
+												allocation_tickets.return_ticket(free_block->parent_buffer);												
 												free_tree.Remove(tree_node, tree_locked);
+												free_block->in_tree = false;
 												free_block->unlock();
 												block_alloc.Free(free_block);
 												free_block = nullptr;
 												break;
-											}
+											}											
 											free_tree.Remove(tree_node, tree_locked); // invalidates the tree
+											free_block->in_tree = false;
 											break;
 										}
 										else {
@@ -1960,11 +1964,9 @@ namespace GL {
 							free_block->is_available = true;
 							free_block->is_free = false;
 							free_block->locker = 1;
-
+							free_block->in_tree = false;
 							free_block->parent_buffer = allocation_tickets.get_ticket();
-							if (this->allocations.grow_to_at_least(free_block->parent_buffer + 1)) {
-								// std::cout << "GREW THE ALLOCATOR TO " + std::to_string(free_block->parent_buffer + 1) + "\n";
-							}
+							(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
 							this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
 							if (!this->allocations[free_block->parent_buffer]) {
 								allocation_tickets.return_ticket(free_block->parent_buffer);
@@ -1990,8 +1992,16 @@ namespace GL {
 		// must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
 		__declspec(noinline) void Free(dynamic_block* free_block) {
 			if (free_block == nullptr) return;
+			while (!free_block->try_lock()) {};			
 			free_block->is_free = true;
-			free_tree.Add(free_block, free_block->length);
+			if (!free_block->in_tree) {
+				free_block->in_tree = true;
+				free_block->unlock();
+				free_tree.Add(free_block, free_block->length);
+			}
+			else {
+				free_block->unlock();
+			}			
 		};
 
 	public:

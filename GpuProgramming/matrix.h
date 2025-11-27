@@ -412,7 +412,15 @@ namespace GL {
         static void
             free(void* p);
         template<typename T> _NODISCARD static T*
-            malloc(unsigned int count) { return (T*)malloc_bytes(sizeof(T) * count); };
+            malloc(unsigned int count) { 
+            T* p = (T*)malloc_bytes(sizeof(T) * count);
+            if constexpr (std::is_pod_v<T>) {
+                for (; count > 0; --count) {
+                    new (&p[count - 1]) T();
+                }
+            }
+            return p;
+        };
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto 
             make_unique(_Types&&... _Args) { return std::unique_ptr<_Ty, arena_memory_pool>(instance<_Ty>(std::move(_Args)...)); };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
