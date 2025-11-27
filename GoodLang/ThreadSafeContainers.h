@@ -18,7 +18,6 @@
 #include <set>
 #include <concurrent_unordered_set.h>
 #include <stack>
-#include "../FiberTasks/Concurrent_Queue.h"
 #include "veque.hpp"
 #include <intrin.h>
 

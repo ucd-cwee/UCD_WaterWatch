@@ -226,9 +226,6 @@
     <ProjectReference Include="..\EPAnetLib\EPAnetLib.vcxproj">
       <Project>{e402eb0b-ba79-4b97-8bd4-b07bb860c9c2}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\FiberTasks\FiberTasks.vcxproj">
-      <Project>{a79e05b0-3b4e-4242-a0c8-177f4548db0d}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\ExcelInterop\ExcelInterop.vcxproj">
       <Project>{3dabaf53-08be-41ce-aca1-bbd6b36fc7ae}</Project>
     </ProjectReference>

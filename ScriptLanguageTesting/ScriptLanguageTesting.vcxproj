@@ -178,9 +178,6 @@
     <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\GoodLang\GoodLang.vcxproj">
-      <Project>{b4845e23-67fe-409d-bafe-2d73131d28dd}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\GpuProgramming\GpuProgramming.vcxproj">
       <Project>{5b15c29f-cb79-4aa9-b470-a01cbb101d57}</Project>
     </ProjectReference>

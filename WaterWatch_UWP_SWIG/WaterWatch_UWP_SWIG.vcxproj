@@ -322,9 +322,6 @@ copy "$(ProjectDir)$(ProjectName).dll" "$(OutDir)"
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\FiberTasks\FiberTasks.vcxproj">
-      <Project>{a79e05b0-3b4e-4242-a0c8-177f4548db0d}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\ExcelInterop\ExcelInterop.vcxproj">
       <Project>{3dabaf53-08be-41ce-aca1-bbd6b36fc7ae}</Project>
     </ProjectReference>
