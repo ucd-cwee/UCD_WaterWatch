@@ -444,7 +444,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = std::shared_mutex; // fast_shared_mutex; // 
+		using lock_type = fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;
@@ -680,9 +680,9 @@ namespace GL{
 			mut; // global tree lock. Should only be held temporarily if at all possible. 
 		parallel_binary_search_treeNode*
 			root;
-		GL::atomic_allocator< parallel_binary_search_treeNode, 256, true, true >
+		GL::atomic_allocator< parallel_binary_search_treeNode, 256, true, false >
 			nodeAllocator;
-		GL::atomic_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true, true >
+		GL::atomic_allocator< std::array<parallel_binary_search_treeNode*, maxChildrenPerNode>, 32, true, false >
 			nodeChildrenAllocator;
 		long
 			count;
@@ -1161,7 +1161,7 @@ namespace GL{
 		};
 		size_t size() const {
 			auto locked{ std::shared_lock(mut) };
-			return (size_t)count + nodeChildrenAllocator.size() + nodeAllocator.size();
+			return (size_t)count;
 		};
 
 	private:

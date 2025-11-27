@@ -68,7 +68,7 @@
 
 #include <stdlib.h>
 
-#include "../GpuProgramming/matrix.h"
+#include "../GpuProgramming/matrix.h" // Working implimentation of GPU-accelrated matrix
 // #include "../ExcelInterop/Wrapper.h"
 
 __forceinline void console_clear() {

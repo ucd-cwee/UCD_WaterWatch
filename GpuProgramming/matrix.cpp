@@ -1229,7 +1229,7 @@ public:
             : cl_program(info.cl_context, make_kernel_code(info, GL::string(combine(opencl_code)).replace("; ", ";\n").to_string()))
         {
             const std::string build_options
-                = std::string("-cl-std=CL") + "2.0" /*info.opencl_c_version*/ + std::string(" -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable") + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
+                = std::string("-cl-std=CL") + info.opencl_c_version + std::string(" -cl-finite-math-only -cl-no-signed-zeros -cl-mad-enable") + (info.patch_intel_gpu_above_4gb ? " -cl-intel-greater-than-4GB-buffer-required" : "");
             int error
                 = cl_program.get().obj.build(info.cl_device, (build_options + " -w").c_str());
             if (error) {
@@ -1407,12 +1407,12 @@ public:
                 cpu_allocator().Free(alloced);
             }
         };
-        static T* create(unsigned int N) {
+        __declspec(noinline) static T* create(unsigned int N) {
             auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
             if constexpr (std::is_pod_v<T>) {// best-case scenario!
-                std::memset(out, 0, (sizeof(T) * N));
+                // std::memset(out, 0, (sizeof(T) * N));
             }
             else  // need to actually initialize the array...
                 for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;            
