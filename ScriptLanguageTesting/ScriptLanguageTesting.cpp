@@ -3,7 +3,7 @@
 
 #include <math.h>
 #include <stdio.h>
-#include <af/util.h>
+// #include <af/util.h>
 #include <algorithm>
 #include <iterator>
 #include <fstream>
