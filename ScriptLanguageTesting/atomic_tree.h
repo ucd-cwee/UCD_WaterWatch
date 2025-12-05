@@ -2104,6 +2104,13 @@ namespace GL {
 			});
 			return out;
 		};
+		size_t num_threads() {
+			size_t out = 0;
+			allocator.for_each([&out](auto& alloc) {
+				out += 1;
+			});
+			return out;
+		};
 		parallel_dynamic_allocator(
 			std::function<buffer_type(unsigned long long)> && _alloc_block,
 			std::function<void(buffer_type&)> && _free_block

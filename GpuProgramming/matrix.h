@@ -401,13 +401,11 @@ namespace GL {
     private:
         static _NODISCARD void*
             malloc_bytes(unsigned int bytes);
-
-
-    public:    
         static void
             free(void* p);
         template<typename T> _NODISCARD static T*
-            malloc(unsigned int count) { 
+            malloc(unsigned int count) {
+
             T* p = (T*)malloc_bytes(sizeof(T) * count);
             if constexpr (std::is_pod_v<T>) {
                 for (; count > 0; --count) {
@@ -416,6 +414,8 @@ namespace GL {
             }
             return p;
         };
+
+    public: 
         template<typename T, typename... Args> _NODISCARD static T*
             instance(Args&&... args) {
             T* out = (T*)(malloc_bytes(sizeof(T) * 1));

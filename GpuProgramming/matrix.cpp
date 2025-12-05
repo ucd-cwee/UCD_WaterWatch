@@ -4044,14 +4044,16 @@ namespace GL {
 
     void* 
         arena_memory_pool::malloc_bytes(unsigned int bytes) {
+        //return Mem_Alloc(bytes); // significantly slower
         return (void*)mem_matrix::helper<char>::create(bytes / sizeof(char));
     };
     void 
         arena_memory_pool::free(void* p) {
+        //Mem_Free(p); // significantly slower
         mem_matrix::helper<char>::array_delete()((char*)p);
     };
     std::string
         arena_memory_pool::debug() {
-        return GL::printf("gpu(%i*) cpu(%i*)", (int)mem_matrix::gpu_allocator().size(), (int)mem_matrix::cpu_allocator().size()).to_string();
+        return GL::printf("gpu(%i / %i) cpu(%i / %i)", (int)mem_matrix::gpu_allocator().size(), (int)1, (int)mem_matrix::cpu_allocator().size(), (int)mem_matrix::cpu_allocator().num_threads()).to_string();
     };
 };

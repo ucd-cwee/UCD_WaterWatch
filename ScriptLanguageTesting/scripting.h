@@ -160,7 +160,8 @@ namespace GL {
                 using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
                 GL::atomic_map<size_t, std::array<GL::deferred<ResultForInputType>, numCategories>>
                     _current_cache; // cache uses atomic_map since it may delete items as well as append items. Needs to be sorted since we "pop" the first item frequently. 
-
+                std::atomic<long>
+                    _working{ 0 };
             public:
                 Cache() = default;
                 Cache(Cache const&) = delete;
@@ -174,41 +175,65 @@ namespace GL {
                 };
 
                 // Insert an item into the cache.
-                template<int category> void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
+                template<int category> __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
                     auto g{ _current_cache.ProtectCurrentEpoch() };
                     bool success = false;
+                    ++_working;
                     while (!success) {
                         if (!_current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
                             if (curr_version >= cache_version) {
                                 InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
                                 success = true;
                             }
-                            })) {
-                        };
+                        })) {};
                         if (!success) {
-                            (void)_current_cache.operator[](cache_version); // default-initializes the item at the specified index if it does not already exist. 
+                            (void)_current_cache.get_or_make(cache_version, [&]()-> std::array<GL::deferred<ResultForInputType>, numCategories> {
+                                std::array<GL::deferred<ResultForInputType>, numCategories> out;
+                                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&out[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
+                                return out;
+                            });
+                            // (void)_current_cache.operator[](cache_version); // default-initializes the item at the specified index if it does not already exist. 
                             _current_cache.pop_front_if([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) -> bool {
                                 return curr_version < cache_version;
-                                });
+                            });
                         }
                     }
+                    --_working;
                 };
 
                 // Try to copy an item from the cache.
-                template<int category> Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
+                template<int category> __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
                     auto g{ _current_cache.ProtectCurrentEpoch() };
-                    Breadcrumb* out{ nullptr };
-                    _current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
-                        if (curr_version >= cache_version) {
-                            if (cache[category].valid()) {
-                                if (auto f = cache[category]->find(input_hash); f != cache[category]->end()) {
-                                    out = f->second;
-                                }
-                            }
-
-                            // out = cache[category]->operator[](input_hash);
-                        }
+                    Breadcrumb* out{ nullptr };   
+                    //long attempts = 2;
+                    //while (!out) {
+                        //while (_working.load() != 0) {}
+                        _current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
+                            if (curr_version >= cache_version) 
+                                if (cache[category].valid()) 
+                                    if (auto f = cache[category]->find(input_hash); f != cache[category]->end())
+                                        out = f->second;  
                         });
+                        //if (!out) {
+                        //    if (auto* cache = _current_cache.try_at(cache_version)) {
+                        //        if (cache->operator[](category).valid())
+                        //            if (auto f = cache->operator[](category)->find(input_hash); f != cache->operator[](category)->end())
+                        //                out = f->second;
+                        //    };
+                        //}
+                        
+
+
+
+
+                        //if (!_working.load()) {
+                        //    if (--attempts <= 0) break;
+                        //    else std::this_thread::yield();
+                        //}
+                        //else {
+                        //    std::this_thread::yield();
+                        //}
+                    //}
                     return out;
                 };
 
@@ -328,7 +353,7 @@ namespace GL {
                     out.clear();
                     return out;
                 };
-                virtual Breadcrumb* FindNearestScopeWhere(
+                __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,
                     Breadcrumb* SecondaryPriortyScope = nullptr,
                     int searchState = 0,
@@ -511,6 +536,7 @@ namespace GL {
                             }
                         }
                     }
+
                     return finalResult;
                 };
 
@@ -595,8 +621,27 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
-                    return this->EmplaceObject_Impl<false>(sv, std::move(Obj));
+                __declspec(noinline) bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
+                    if (this->EmplaceObject_Impl<false>(sv, std::move(Obj))) {
+                        // check the cache to make sure we aren't changing something from "empty" to "existing"
+                        //auto* NS = this->GetNamespace();
+                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, sv.hash())) {
+                        //    // existing cache
+                        //    //if (cache == &this->breadcrumb_m) {
+                        //    //    // do nothing
+                        //    //}
+                        //    //else {
+                        //    //    NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //    //}
+                        //}
+                        //else {
+                        //    // cache is empty or does not exist
+                        //    NS->invalidate_cache();
+                        //    // NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //}
+                        return true;
+                    }
+                    return false;
                 };
 
                 /// <summary>
@@ -605,8 +650,27 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool emplace_object_here(GL::string const& sv, GL::any&& Obj) {
-                    return this->EmplaceObject_Impl<true>(sv, std::move(Obj));
+                __declspec(noinline) bool emplace_object_here(GL::string const& sv, GL::any&& Obj) {
+                    if (this->EmplaceObject_Impl<true>(sv, std::move(Obj))) {
+                        // check the cache to make sure we aren't changing something from "empty" to "existing"
+                        //auto* NS = this->GetNamespace();
+                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, sv.hash())) {
+                        //    //// existing cache
+                        //    //if (cache == &this->breadcrumb_m) {
+                        //    //    // do nothing
+                        //    //}
+                        //    //else {
+                        //    //    NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //    //}
+                        //}
+                        //else {
+                        //    // cache is empty or does not exist
+                        //    NS->invalidate_cache();
+                        //    // NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //}
+                        return true;
+                    }
+                    return false;
                 };
 
                 /// <summary>
@@ -672,24 +736,31 @@ namespace GL {
             public:
                 // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
                 GL::any* find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const {
-                    GL::any* p{ nullptr };
+                    GL::any
+                        *p = nullptr;
                     if (search_from) {
+                        if (p = search_from->this_m.scope->find_object_here(PossiblyScopedName)) {
+                            return p;
+                        }
+
                         // we have a scope with a specific object name
                         // PossiblyScopedName should NOT have colons in this case. 
                         if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
                             // we should not be able to find objects in children scopes
-                            // search_state & Scopes::BasicScope::
                             if (SearchState::SearchingChildren & search_state) {
-                                return SearchResult::Failure | SearchResult::StaticFailure;
+                                throw std::runtime_error("This should never happen");
+                                // p = nullptr;
+                                // return SearchResult::Failure | SearchResult::StaticFailure;
                             }
 
                             if (p = namespacePtr->this_m.scope->find_object_here(PossiblyScopedName)) {
                                 return SearchResult::Success;
                             }
                             else {
+                                p = nullptr;
                                 return SearchResult::Failure;
                             }
-                            }, nullptr, SearchState::SkipChildren)) {
+                        }, nullptr, SearchState::SkipChildren)) {
                             return p;
                         }
                         else {
@@ -697,35 +768,37 @@ namespace GL {
                         }
                     }
                     else {
-                        auto* NS = this->GetNamespace();
-                        if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
-                            p = reinterpret_cast<GL::any*>(cache);
-                            return p;
-                        }
+                        //auto* NS = this->GetNamespace();
+                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
+                        //    p = reinterpret_cast<GL::any*>(cache);
+                        //    return p;
+                        //}
 
                         // we don't have a scope (yet)
                         const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
                         if (optionalName.length() == 0) {
                             // We only have an object name -- just do the normal search from here.
                             p = find_object(optionalScope, &const_cast<BasicScope*>(this)->breadcrumb_m);
+                            //if (p) NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
+                            return p;
                         }
                         else {
                             Breadcrumb* closest_scope{ nullptr };
                             if (optionalScope.length() == 0) {
                                 p = find_object(optionalName, this->breadcrumb_m.root_m);
+                                //if (p) NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
+                                return p;
                             }
                             else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {
-                                p = find_object(optionalName, nameSpace);
+                                return nameSpace->this_m.scope->find_object(optionalName, nameSpace);
                             }
                             else if (closest_scope) { // namespace was not found                        
-                                p = nullptr; //  throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s' in namespace '%s'", optionalName.c_str().data(), closest_scope->GetCurrentNamespace().c_str().data()));
+                                return nullptr; //  throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s' in namespace '%s'", optionalName.c_str().data(), closest_scope->GetCurrentNamespace().c_str().data()));
                             }
                             else { // namespace was not found AND no nearest was discovered     
-                                p = nullptr; // throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s'", optionalName.c_str().data()));
+                                return nullptr; // throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s'", optionalName.c_str().data()));
                             }
                         }
-                        if (p) NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
-                        return p;
                     }
                 };
             };
@@ -800,7 +873,7 @@ namespace GL {
                 };
 
             protected:
-                virtual Breadcrumb* FindNearestScopeWhere(
+                __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,
                     Breadcrumb* SecondaryPriortyScope = nullptr,
                     int searchState = 0,
@@ -970,7 +1043,7 @@ namespace GL {
                     }
 
                     // Test my children themselves. 
-                    if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && this->children.size() > 0ull) {
+                    if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && (this->children.size() > 0ull)) {
                         for (auto& child : this->children) {
                             auto* child_bc = &child.second->breadcrumb_m;
                             auto& flag = check_flags[child_bc->GetScopeIndex()];
@@ -1005,7 +1078,6 @@ namespace GL {
                                         return finalResult;
                                     }
                                 }
-
                             }
                         }
                     }

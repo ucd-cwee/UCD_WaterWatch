@@ -3,6 +3,7 @@
 #include <functional>
 #include <atomic>
 #include <memory>
+#include "../GpuProgramming/matrix.h"
 
 namespace /* atomic_shared_ptr */ GL {
     constexpr size_t MAGIC_LEN = 16;
@@ -37,7 +38,7 @@ namespace /* atomic_shared_ptr */ GL {
             delete static_cast<T*>(this->data);
         };
         void DeleteSelf(control_block_base* p) override {
-            delete reinterpret_cast<control_block*>(p);
+            GL::arena_memory_pool::destroy_and_free(reinterpret_cast<control_block*>(p));
         };
 
     };
@@ -52,7 +53,7 @@ namespace /* atomic_shared_ptr */ GL {
             delete_func(static_cast<T*>(this->data));
         };
         void DeleteSelf(control_block_base* p) override {
-            delete reinterpret_cast<deleter_control_block*>(p);
+            GL::arena_memory_pool::destroy_and_free(reinterpret_cast<deleter_control_block*>(p));
         };
 
         std::function<void(T*)> delete_func;
@@ -66,8 +67,8 @@ namespace /* atomic_shared_ptr */ GL {
     public:
         shared_ptr() : controlBlock(nullptr), data{ nullptr } {}
         shared_ptr(std::nullptr_t) : controlBlock(nullptr), data{ nullptr } {}
-        template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(new control_block<U>(Data))), data{ Data } {}
-        template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(new deleter_control_block<U>(Data, std::move(deleter)))), data{ Data } {}
+        template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<U>>(Data))), data{ Data } {}
+        template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<deleter_control_block<U>>(Data, std::move(deleter)))), data{ Data } {}
 
         explicit shared_ptr(control_block_base* ControlBlock, bool) : controlBlock(ControlBlock), data{ reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr) } {}
         static shared_ptr clone_from_control_block(control_block_base* ControlBlock) {
@@ -248,7 +249,7 @@ namespace /* atomic_shared_ptr */ GL {
     template<typename T> class alignas(CACHE_LINE_SIZE) atomic_shared_ptr {
     public:
         atomic_shared_ptr(shared_ptr<T> && data) {
-            control_block_base* block = dynamic_cast<control_block_base*>(new control_block<T>(nullptr));
+            control_block_base* block = dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<T>>(nullptr));
             packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
             while (true) {
                 auto holder = this->load_fast();
@@ -258,7 +259,7 @@ namespace /* atomic_shared_ptr */ GL {
             }
         };
         atomic_shared_ptr(T* data = nullptr) {
-            control_block_base* block = dynamic_cast<control_block_base*>(new control_block<T>(data));
+            control_block_base* block = dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<T>>(data));
             packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
         };
         explicit atomic_shared_ptr(control_block_base* controlBlock, bool) {
@@ -413,7 +414,9 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
-        return shared_ptr<_Ty>(new _Ty(_STD forward<_Types>(_Args)...)); 
+        return shared_ptr<_Ty>(GL::arena_memory_pool::instance<_Ty>(_STD forward<_Types>(_Args)...), [](_Ty* p) {
+            GL::arena_memory_pool::destroy_and_free(p);
+        });
     };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
