@@ -1,6 +1,7 @@
 #pragma once
 
 #include "functions.h"
+#include "../GpuProgramming/matrix.h"
 
 namespace GL {
     namespace scope {
@@ -42,12 +43,12 @@ namespace GL {
                     : scope_name{ std::move(scope_name_p) }
                     , scope{ nullptr }
                     , current_namespace{ GL::string::empty_string() }
-                    , scope_type{ std::move(scope_type_p) }
+                    , scope_type{ scope_type_p }
                 {}
                 ScopeID(ScopeID&& rhs)
                     : scope_name{ std::move(rhs.scope_name) }
                     , scope{ std::move(rhs.scope) }
-                    , scope_type{ std::move(rhs.scope_type) }
+                    , scope_type{ rhs.scope_type }
                     , current_namespace{ std::move(rhs.current_namespace) }
                 {};
                 ScopeID(ScopeID const&) = delete;
@@ -241,15 +242,17 @@ namespace GL {
                         return &f->second;
                     return nullptr;
                 };
-                virtual void AddUsing_Impl(Breadcrumb* scope) {
+                virtual bool AddUsing_Impl(Breadcrumb* scope) {
                     if (scope) {
                         if (scope->this_m.is_namespace()) {
                             if (auto f = using_m.find(scope); f == using_m.end()) {
                                 using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, GL::callback<NamespaceScope>::ScopedListener() });
                                 invalidate_cache(); // does nothing for normal scopes
+                                return true;
                             }
                         }
                     }
+                    return false;
                 };
 
             protected:
@@ -576,11 +579,14 @@ namespace GL {
                 /// </summary>
                 /// <param name="ptr"></param>
                 /// <returns></returns>
-                void add_using_here(NamespaceScope const& ptr) {
+                bool add_using_here(NamespaceScope const& ptr) {
                     if (auto p = static_cast<const BasicScope*>(&ptr)) {
-                        if (this == p) return; // may not "use" yourself.
-                        this->AddUsing_Impl(const_cast<Breadcrumb*>(&p->breadcrumb_m));
+                        if (this == p) return false; // may not "use" yourself.
+                        if (this->is_root()) return false; // the root may not call the using statement
+                        if (p->is_root()) return false; // the root may not be "used"
+                        return this->AddUsing_Impl(const_cast<Breadcrumb*>(&p->breadcrumb_m));
                     }
+                    return false;
                 }
 
                 /// <summary>
@@ -755,20 +761,22 @@ namespace GL {
                 };
 
             protected:
-                virtual void AddUsing_Impl(Breadcrumb* scope) override {
+                virtual bool AddUsing_Impl(Breadcrumb* scope) override {
                     if (scope) {
                         if (scope->this_m.is_namespace()) {
                             if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
                                 using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
                                 invalidate_cache();
+                                return true;
                             }
                         }
                     }
+                    return false;
                 };
 
-            protected:
+            public:
                 // instancing a child namespace should only be done from an existing namespace
-                NamespaceScope(GL::string&& name, int scope_type_p = ScopeType::Basic & ScopeType::Namespace, Breadcrumb* parent = nullptr)
+                NamespaceScope(GL::string&& name, int scope_type_p = ScopeType::Basic | ScopeType::Namespace, Breadcrumb* parent = nullptr)
                     : BasicScope(std::move(name), scope_type_p, parent)
                     , children{}
                     , search_cache{}
@@ -782,6 +790,7 @@ namespace GL {
                         }
                     }
                 };
+            protected:
                 // unloads the connections to other namespaces before deletion, which can prevent a memory-access crash. 
                 void unload() {
                     this->connection_for_cache_version = {};
@@ -1060,7 +1069,7 @@ namespace GL {
 
             public:
                 RootScope()
-                    : NamespaceScope("::", ScopeType::Basic& ScopeType::Namespace& ScopeType::Root, nullptr)
+                    : NamespaceScope("::", ScopeType::Basic | ScopeType::Namespace | ScopeType::Root, nullptr)
                 {};
                 virtual ~RootScope() {
                     this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 

@@ -15,8 +15,7 @@
 #include <functional>
 #include <tuple>
 #include "ticket_dispensor.h"
-#include <concurrent_vector.h>
-
+#include "atomic_vector.h"
 #pragma endregion
 
 // Good Language namespace
@@ -584,9 +583,11 @@ namespace GL {
 			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
 			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
 
-		public:
+		public:			
 			std::weak_ptr<job> self;
-			concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
+			GL::atomic_vector< std::weak_ptr<job_base> > children;
+			std::atomic<size_t> num_children;
+
 		protected:
 			std::atomic<bool> dispatch_once;
 			impl::dispatch_context ctx;
@@ -595,9 +596,18 @@ namespace GL {
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
-				job* data = reinterpret_cast<job*>(_args);
-				std::this_thread::yield(); // helps with scheduling
-				for (auto& x : data->children) if (auto p = x.lock()) p->dispatch();
+				job* data;
+				size_t s, sz;
+				if (data = reinterpret_cast<job*>(_args)) {
+					std::this_thread::yield(); // helps with scheduling
+					sz = data->num_children.load();
+					for (s = 0; s < sz; ++s) {
+						auto& x = data->children[s];
+						if (auto p = x.lock()) {
+							p->dispatch();
+						}						
+					}
+				}
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				job* data = reinterpret_cast<job*>(_args.task_memory);
@@ -655,6 +665,7 @@ namespace GL {
 				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) } 
 				, parent{  }
 				, todo{ std::move(_todo) }
+				, num_children{ 0 }
 			{ 
 				if constexpr (!this_is_job_start) {
 					parent = _parent->self.lock();
@@ -706,7 +717,8 @@ namespace GL {
 
 		public:
 			std::weak_ptr<jobs> self;
-			concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
+			GL::atomic_vector< std::weak_ptr<job_base> > children;
+			std::atomic<size_t> num_children;
 
 		protected:		
 			std::atomic<bool> dispatch_once;
@@ -718,9 +730,18 @@ namespace GL {
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
-				jobs* data = reinterpret_cast<jobs*>(_args);
-				std::this_thread::yield(); // helps with scheduling
-				for (auto& x : data->children) if (auto p = x.lock()) p->dispatch();
+				jobs* data;
+				size_t s, sz;
+				if (data = reinterpret_cast<jobs*>(_args)) {
+					std::this_thread::yield(); // helps with scheduling
+					sz = data->num_children.load();
+					for (s = 0; s < sz; ++s) {
+						auto& x = data->children[s];
+						if (auto p = x.lock()) {
+							p->dispatch();
+						}						
+					}
+				}
 			};
 			static void DoTask(impl::job_argument const& _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
@@ -808,6 +829,7 @@ namespace GL {
 				, ctx{ 0, nullptr, &jobs::Callback, reinterpret_cast<void*>(this) }
 				, parent{  }
 				, todo{ std::move(_todo) }
+				, num_children{ 0 }
 			{
 				if constexpr (!this_is_job_start) {
 					parent = _parent->self.lock();
@@ -852,7 +874,12 @@ namespace GL {
 			auto out = std::make_shared<job<F, Parent>>(std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) {
-				parent->children.push_back(out);
+				auto index = parent->children.push_back(out);
+				while (true) {
+					auto prev = parent->num_children.load();
+					if (prev < index) parent->num_children.compare_exchange_weak(prev, index);					
+					else break;					
+				}
 			}
 			else {
 				out->dispatch();
@@ -863,7 +890,12 @@ namespace GL {
 			auto out = std::make_shared < jobs<F, Parent> >(start, end, std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) {
-				parent->children.push_back(out);
+				auto index = parent->children.push_back(out);
+				while (true) {
+					auto prev = parent->num_children.load();
+					if (prev < index) parent->num_children.compare_exchange_weak(prev, index);					
+					else break;					
+				}
 			}
 			else {
 				out->dispatch();

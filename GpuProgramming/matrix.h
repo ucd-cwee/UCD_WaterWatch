@@ -401,12 +401,7 @@ namespace GL {
     private:
         static _NODISCARD void*
             malloc_bytes(unsigned int bytes);
-        template<typename T, typename... Args> _NODISCARD static T*
-            instance(Args&&... args) {
-            T* out = (T*)(malloc_bytes(sizeof(T) * 1));
-            new (&out[0]) T(std::move(args)...);
-            return out;
-        };
+
 
     public:    
         static void
@@ -421,6 +416,20 @@ namespace GL {
             }
             return p;
         };
+        template<typename T, typename... Args> _NODISCARD static T*
+            instance(Args&&... args) {
+            T* out = (T*)(malloc_bytes(sizeof(T) * 1));
+            new (&out[0]) T(std::move(args)...);
+            return out;
+        };
+        template<typename T> static void
+            destroy_and_free(T* p) {
+            if (p) {
+                p->~T();
+                free(p);
+            }
+        };
+
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto 
             make_unique(_Types&&... _Args) { return std::unique_ptr<_Ty, arena_memory_pool>(instance<_Ty>(std::move(_Args)...)); };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto

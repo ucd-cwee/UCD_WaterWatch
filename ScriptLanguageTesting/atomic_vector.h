@@ -4,6 +4,9 @@
 #include <array>
 #include <ShlDisp.h>
 #include <winnt.h>
+// #include "../GpuProgramming/matrix.h"
+// #include <exception>
+#include <stdexcept>
 
 // Atomic Vector
 namespace GL {
@@ -88,7 +91,7 @@ namespace GL {
             }
             return out;
         };
-        bool grow_to_at_least_blocksN(short blockN) noexcept { (void)EnsureBlockExists(blockN); };
+        bool grow_to_at_least_blocksN(short blockN) noexcept { return EnsureBlockExists(blockN); };
     public:
         atomic_vector() noexcept : blocks{}, current_pos{ 0 }, valid_pos{ 0 }, current_blockN{ -1 } {};
         ~atomic_vector() noexcept {
@@ -101,19 +104,18 @@ namespace GL {
                 }
             }
         };
-
-        element_t& operator[](size_t index) noexcept {
-            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
-        };
         element_t& at(size_t index) noexcept {
-            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
+            auto block_i = global_index_to_block(index);
+            auto block_j = global_index_to_local_index(index, block_i);
+            return blocks[block_i]->operator[](block_j);
         };
-        const element_t& operator[](size_t index) const noexcept {
-            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
-        };
+        element_t& operator[](size_t index) noexcept { return at(index); };
         const element_t& at(size_t index) const noexcept {
-            return blocks[global_index_to_block(index)]->operator[](global_index_to_local_index(index));
+            auto block_i = global_index_to_block(index);
+            auto block_j = global_index_to_local_index(index, block_i);
+            return blocks[block_i]->operator[](block_j);
         };
+        const element_t& operator[](size_t index) const noexcept { return at(index); };
         bool grow_to_at_least(size_t index) noexcept {
             bool did_grow = EnsureBlockExists(global_index_to_block(index));
             while (true) {
@@ -140,7 +142,6 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = srce;
-            InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
             return position;
         };
         size_t push_back(element_t&& srce) noexcept {
@@ -154,12 +155,12 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = std::move(srce);
-            InterlockedIncrement(reinterpret_cast<volatile size_t*>(&valid_pos));
             return position;
         };
         size_t size() const {
             return valid_pos;
         };
+
         class Iterator {
         public:
             using iterator_category = std::random_access_iterator_tag;
