@@ -48,25 +48,28 @@ namespace GL {
             wakeCondition.notify_one();
         };
     };
-    void control_block_base::DeferredDeletion(control_block_base* to_delete) {
-        static GL::atomic_parallel_stack< control_block_base* > _destruction_queue{};
-        struct Wrap {
-            static void DeleteFunc(void) {                
-                _destruction_queue.for_each_pop([](control_block_base*& out) {
-                    if (out) {
-                        out->Delete();
-                        out->DeleteSelf(out);
-                    }
-                });
-            };
-        };        
-        static Taskable<Wrap::DeleteFunc> _destruction_thread{};
+    void control_block_base::DeferredDeletion(control_block_base* to_delete) {     
+        
         if (to_delete) {
             size_t before = to_delete->refCount.fetch_sub(1);
             if (before == 1) {
-#if 0 // do you prefer more speed? (larger overhead for deferred memory destruction)                
-                if ((_destruction_queue.push(to_delete) & 255) == 0)
+#if 0 // do you prefer more speed? (larger overhead for deferred memory destruction)        
+                static GL::atomic_parallel_stack< control_block_base* > _destruction_queue{};
+                struct Wrap {
+                    __declspec(noinline) static void DeleteFunc(void) {
+                        _destruction_queue.for_each_pop([](control_block_base*& out) {
+                            if (out) {
+                                out->Delete();
+                                out->DeleteSelf(out);
+                            }
+                        });
+                    };
+                };
+                static Taskable<Wrap::DeleteFunc> _destruction_thread{};
+
+                if ((_destruction_queue.push(to_delete) & 255) == 0) {
                     _destruction_thread.wake();
+                }
 #else // or do you prefer better memory utilization? (immediate destruction while stalling the current thread)
                 to_delete->Delete();
                 to_delete->DeleteSelf(to_delete);

@@ -396,7 +396,6 @@ namespace GL {
         arena_memory_pool& operator=(const arena_memory_pool&) noexcept = default;
         arena_memory_pool& operator=(arena_memory_pool&&) noexcept = default;
         ~arena_memory_pool() noexcept = default;
-        void operator()(void* p) const noexcept { free(p); };
 
     private:
         static _NODISCARD void*
@@ -405,39 +404,64 @@ namespace GL {
             free(void* p);
         template<typename T> _NODISCARD static T*
             malloc(unsigned int count) {
-
-            T* p = (T*)malloc_bytes(sizeof(T) * count);
+            void* p = malloc_bytes(sizeof(T) * count + sizeof(size_t));
+            T* out = (T*)(void*)((::byte*)p + sizeof(size_t));
+            size_t& Count = ((size_t*)p)[0];
+            Count = count;
             if constexpr (std::is_pod_v<T>) {
                 for (; count > 0; --count) {
-                    new (&p[count - 1]) T();
+                    new (&out[count - 1]) T();
                 }
             }
-            return p;
+            return out;
         };
-
     public: 
         template<typename T, typename... Args> _NODISCARD static T*
             instance(Args&&... args) {
-            T* out = (T*)(malloc_bytes(sizeof(T) * 1));
+            void* p = malloc_bytes(sizeof(T) * 1 + sizeof(size_t));
+            T* out = (T*)(void*)((::byte*)p + sizeof(size_t));
+            size_t& count = ((size_t*)p)[0];
+            count = 1;
             new (&out[0]) T(std::move(args)...);
             return out;
         };
         template<typename T> static void
             destroy_and_free(T* p) {
             if (p) {
-                p->~T();
-                free(p);
+                void* ptr = (void*)((::byte*)p - sizeof(size_t));
+                if constexpr (!std::is_pod_v<T>) {
+                    size_t& count = ((size_t*)ptr)[0];
+                    for (size_t n = 0; n < count; ++n) {
+                        p[n].~T();
+                    }
+                }
+                free(ptr);
             }
         };
 
+    public:
+        template<typename T>
+        struct deleter {
+            constexpr deleter() noexcept = default;
+            constexpr deleter(const deleter&) noexcept = default;
+            constexpr deleter(deleter&&) noexcept = default;
+            deleter& operator=(const deleter&) noexcept = default;
+            deleter& operator=(deleter&&) noexcept = default;
+            ~deleter() noexcept = default;
+            void operator()(void* p) const noexcept {
+                arena_memory_pool::destroy_and_free(static_cast<T*>(p));
+            };
+        };
+
+    public:
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto 
-            make_unique(_Types&&... _Args) { return std::unique_ptr<_Ty, arena_memory_pool>(instance<_Ty>(std::move(_Args)...)); };
+            make_unique(_Types&&... _Args) { return std::unique_ptr<_Ty, arena_memory_pool::deleter<std::remove_pointer_t<std::decay_t<_Ty>>>>(instance<_Ty>(std::move(_Args)...)); };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_unique(unsigned int count) { return std::unique_ptr<_Ty, arena_memory_pool>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count)); };
+            make_unique(unsigned int count) { return std::unique_ptr<_Ty, arena_memory_pool::deleter<std::remove_pointer_t<std::decay_t<_Ty>>>>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count)); };
         template <class _Ty, class... _Types, std::enable_if_t<!std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_shared(_Types&&... _Args) { return std::shared_ptr<_Ty>(instance<_Ty>(std::move(_Args)...), &free); };
+            make_shared(_Types&&... _Args) { return std::shared_ptr<_Ty>(instance<_Ty>(std::move(_Args)...), &destroy_and_free<_Ty>); };
         template <class _Ty, class... _Types, std::enable_if_t<std::is_array_v<_Ty>, int> = 0> _NODISCARD static auto
-            make_shared(unsigned int count) { return std::shared_ptr<_Ty>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count), &free); };
+            make_shared(unsigned int count) { return std::shared_ptr<_Ty>(malloc<std::remove_pointer_t<std::decay_t<_Ty>>>(count), &destroy_and_free<std::remove_pointer_t<std::decay_t<_Ty>>>); };
         static std::string
             debug();
     };

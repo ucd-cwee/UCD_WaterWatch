@@ -100,6 +100,12 @@ namespace /* atomic_shared_ptr */ GL {
                 controlBlock->refCount.fetch_add(1);
             }
         };
+        template<class U> shared_ptr(shared_ptr<U>&& other) {
+            controlBlock = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).controlBlock;
+            data = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).data;
+            other.controlBlock = nullptr;
+            other.data = nullptr;
+        };
 
         shared_ptr& operator=(const shared_ptr& other) {
             auto old = controlBlock;
