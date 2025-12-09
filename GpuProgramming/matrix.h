@@ -404,7 +404,7 @@ namespace GL {
             free(void* p);
         template<typename T> _NODISCARD static T*
             malloc(unsigned int count) {
-            void* p = malloc_bytes(sizeof(T) * count + sizeof(size_t));
+            void* p = malloc_bytes((sizeof(T) * count) + sizeof(size_t));
             T* out = (T*)(void*)((::byte*)p + sizeof(size_t));
             size_t& Count = ((size_t*)p)[0];
             Count = count;
@@ -418,11 +418,13 @@ namespace GL {
     public: 
         template<typename T, typename... Args> _NODISCARD static T*
             instance(Args&&... args) {
-            void* p = malloc_bytes(sizeof(T) * 1 + sizeof(size_t));
+            void* p = malloc_bytes((sizeof(T) * 1) + sizeof(size_t));
             T* out = (T*)(void*)((::byte*)p + sizeof(size_t));
             size_t& count = ((size_t*)p)[0];
             count = 1;
-            new (&out[0]) T(std::move(args)...);
+            if constexpr (std::is_pod_v<T> || (sizeof...(Args) > 0)) {
+                new (&out[0]) T(std::move(args)...);
+            }
             return out;
         };
         template<typename T> static void

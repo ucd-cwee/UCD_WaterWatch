@@ -3302,8 +3302,8 @@ namespace GL {
                     if (auto W = out.write()) {
                         if (R_lhs && R_rhs && W) {
                             auto N = out.dim.count();
-                            for (unsigned int n = 0; n < N; ++n){
-                            // parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
+                            //for (unsigned int n = 0; n < N; ++n){
+                            parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
                                 T v = (T)0;
                                 const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
                                 const unsigned int destination_X = n - (final_num_rows * destination_Y);
@@ -3311,7 +3311,7 @@ namespace GL {
                                     v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
                                 }
                                 W[n] = v;
-                            } // );
+                            });
                         }
                     }
                     return out;
