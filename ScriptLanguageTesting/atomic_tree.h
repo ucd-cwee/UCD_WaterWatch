@@ -444,7 +444,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
+		using lock_type = std::shared_mutex; //  fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;
@@ -742,6 +742,20 @@ namespace GL{
 				locked->lock_shared();
 				hard_locked = false;
 			};
+			__declspec(noinline) bool // store a shared lock
+				try_push_back_shared(lock_type& source) {
+				clear();
+				locked = &source;
+				if (locked->try_lock_shared()) {
+					hard_locked = false;
+					return true;
+				}
+				else {
+					hard_locked = false;
+					locked = nullptr;
+					return false;
+				}
+			};
 			void // store a shared lock
 				push_pop(lock_type& source) {
 				source.lock();
@@ -977,9 +991,22 @@ namespace GL{
 			return out;
 		};
 		locker
-			lock() {
+			lock(bool do_hard_lock = true) {
 			locker out;
-			out.push_back(mut);
+			if (do_hard_lock) out.push_back(mut);
+			else out.push_back_shared(mut);
+			return out;
+		};
+		locker
+			lock_shared() {
+			locker out;
+			out.push_back_shared(mut);
+			return out;
+		};
+		locker
+			try_lock_shared() {
+			locker out;
+			out.try_push_back_shared(mut);
 			return out;
 		};
 
@@ -1909,14 +1936,21 @@ namespace GL {
 	public:
 		__declspec(noinline) dynamic_block* Alloc(unsigned long long N) {
 			dynamic_block* free_block = nullptr;
+			bool do_hard_lock = false;
 			while (N > 0) {
 				while (!free_block) {
-					if (auto tree_locked = free_tree.lock()) {
+					if (auto tree_locked = free_tree.lock(do_hard_lock)) {
 						if (auto* tree_node = free_tree.NodeFindSmallestLargerEqual_Locked(N, tree_locked); tree_node) {
 							while (tree_node) {
 								free_block = tree_node->object();
 								if (free_block && free_block->try_lock()) {
 									if (!free_block->is_available) {
+										if (!do_hard_lock) {
+											free_block->unlock();
+											do_hard_lock = true;
+											free_block = nullptr;
+											break;
+										}
 										// cooperatively remove this node
 										free_tree.Remove(tree_node, tree_locked);
 										free_block->in_tree = false;
@@ -1930,6 +1964,13 @@ namespace GL {
 										if (free_block->is_free) { // we have a winner.
 											free_block->is_free = false;
 											if (free_block->length > N) {
+												if (!do_hard_lock) {
+													free_block->unlock();
+													do_hard_lock = true;
+													free_block = nullptr;
+													break;
+												}
+
 												// cooperatively remove this node
 												free_block->sub_buffer = nullptr;
 												this->free_parent_block(this->allocations[free_block->parent_buffer]);
@@ -1940,10 +1981,32 @@ namespace GL {
 												free_block->unlock();
 												block_alloc.Free(free_block);
 												free_block = nullptr;
+
+												if (!tree_node) {
+													tree_locked.clear();
+
+													free_block = block_alloc.Alloc();
+													if (!free_block) return nullptr;
+													free_block->length = N;
+													free_block->is_available = true;
+													free_block->is_free = false;
+													free_block->locker = 1;
+													free_block->in_tree = false;
+													free_block->parent_buffer = allocation_tickets.get_ticket();
+													(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
+													this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
+													if (!this->allocations[free_block->parent_buffer]) {
+														allocation_tickets.return_ticket(free_block->parent_buffer);
+														block_alloc.Free(free_block);
+														return nullptr;
+													}
+													free_block->sub_buffer = nullptr;
+												}
+
 												break;
 											}											
-											free_tree.Remove(tree_node, tree_locked); // invalidates the tree
-											free_block->in_tree = false;
+											// free_tree.Remove(tree_node, tree_locked); // invalidates the tree
+											// free_block->in_tree = false;
 											break;
 										}
 										else {
@@ -1955,9 +2018,31 @@ namespace GL {
 								}
 								free_block = nullptr;
 								tree_node = free_tree.GetNextLeaf(tree_node, tree_locked);
+								if (!tree_node) {
+									tree_locked.clear();
+
+									free_block = block_alloc.Alloc();
+									if (!free_block) return nullptr;
+									free_block->length = N;
+									free_block->is_available = true;
+									free_block->is_free = false;
+									free_block->locker = 1;
+									free_block->in_tree = false;
+									free_block->parent_buffer = allocation_tickets.get_ticket();
+									(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
+									this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
+									if (!this->allocations[free_block->parent_buffer]) {
+										allocation_tickets.return_ticket(free_block->parent_buffer);
+										block_alloc.Free(free_block);
+										return nullptr;
+									}
+									free_block->sub_buffer = nullptr;
+								}
 							}
 						}
 						else {
+							tree_locked.clear();
+
 							free_block = block_alloc.Alloc();
 							if (!free_block) return nullptr;
 							free_block->length = N;

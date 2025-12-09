@@ -42,7 +42,26 @@ namespace GL {
             aba_problem::Stack_Push(*head, new_ptr);
             return ++count;
         };
+        size_t push(size_t thread_index, T const& obj) {
+            // get a new element
+            element_t* new_ptr;
+            new_ptr = allocator.Alloc();
+            new_ptr->data = obj;
+            new_ptr->m_pNext = nullptr;
+            aba_problem::Stack_Push(head[thread_index], new_ptr);
+            return ++count;
+        };
+        size_t push(size_t thread_index, T&& obj) {
+            // get a new element
+            element_t* new_ptr;
+            new_ptr = allocator.Alloc();
+            new_ptr->data = std::move(obj);
+            new_ptr->m_pNext = nullptr;
+            aba_problem::Stack_Push(head[thread_index], new_ptr);
+            return ++count;
+        };
         bool try_pop(T& out) {
+            if (count.load(std::memory_order_relaxed) == 0) return false;
             return head.for_each_cancellable([&](auto& this_head) -> bool {
                 if (element_t* ptr = aba_problem::Pop(this_head)) {
                     if constexpr (std::is_move_assignable<T>::value) {
@@ -62,6 +81,7 @@ namespace GL {
         };
         template <typename F>
         void for_each_pop(F const& func) {
+            if (count == 0) return;
             head.for_each([&](auto& this_head) {
                 while (element_t* ptr = aba_problem::Pop(this_head)) {
                     if constexpr (std::is_move_assignable<T>::value) {

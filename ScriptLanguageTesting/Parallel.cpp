@@ -74,6 +74,74 @@ namespace GL {
 				double relative_speed;
 			};
 
+			template<typename T>
+			struct locking_queue {
+				std::mutex mut;
+				std::deque<T> q;
+
+				size_t push(T const& obj) {
+					auto locked{ std::scoped_lock(mut) };
+					q.push_back(obj);
+					return q.size();
+				};
+				size_t push(T&& obj) {
+					auto locked{ std::scoped_lock(mut) };
+					q.push_back(std::move(obj));
+					return q.size();
+				};
+				size_t push(size_t thread_index, T const& obj) {
+					auto locked{ std::scoped_lock(mut) };
+					q.push_back(obj);
+					return q.size();
+				};
+				size_t push(size_t thread_index, T&& obj) {
+					auto locked{ std::scoped_lock(mut) };
+					q.push_back(std::move(obj));
+					return q.size();
+				};
+				bool try_pop(T& out) {
+					auto locked{ std::scoped_lock(mut) };
+					if (q.size() > 0) {
+						out = q.front();
+						q.pop_front();
+						return true;
+					}
+					return false;
+				};
+				size_t size() const {
+					auto locked{ std::scoped_lock(mut) };
+					return q.size();
+				};
+			};
+
+			template<typename T>
+			struct parallel_queue {
+				GL::thread_object_no_default< locking_queue<T> > q;
+
+				size_t push(T const& obj) {
+					return q->push(obj);
+				};
+				size_t push(T&& obj) {
+					return q->push(std::move(obj));
+				};
+				size_t push(size_t thread_index, T const& obj) {
+					return q[thread_index].push(obj);
+				};
+				size_t push(size_t thread_index, T&& obj) {
+					return q[thread_index].push(std::move(obj));
+				};
+				bool try_pop(T& out) {
+					if (q.for_each_cancellable([&out](auto& Q) -> bool {
+						return Q.try_pop(out);
+				    })) {
+						return true;
+					}
+					else {
+						return false;
+					};
+				};
+			};
+
 			struct InternalState {
 				enum alive_state {
 					is_dead = 0,
@@ -85,7 +153,7 @@ namespace GL {
 					numCores{ 0 };
 				size_t 
 					numThreads{ 0 };
-			    GL::atomic_parallel_queue< thread_task >
+				atomic_parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
 					jobQueue{};
 				std::atomic<alive_state> 
 					alive{ is_dead };
@@ -199,23 +267,28 @@ namespace GL {
 				}
 				else {
 					// work until there are no jobs left
-					long long last_job_time{ GL::util::get_current_epoch() };
-					while (true) {
+					//long long last_job_time{ GL::util::get_current_epoch() };
+					//long long current_epoch = last_job_time;
+					//while (true) {
 						while (try_get_job(internal_state.jobQueue, task)) {							
 							do_task(task, args, sizeOfData, data);
-							last_job_time = GL::util::get_current_epoch();
+							//last_job_time = GL::util::get_current_epoch();
 						}
-						if ((GL::util::get_current_epoch() - last_job_time) > 16) {
-							break;
-						}
-					}			
+						//break; 
+						//if ((current_epoch - last_job_time) > 16) {
+						//	current_epoch = GL::util::get_current_epoch();
+						//	if ((current_epoch - last_job_time) > 16) {
+						//		break;
+						//	}
+						//}
+					//}			
 					if (data && (sizeOfData > 0)) ::_aligned_free(data);
 				}
 			};
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
 #if 1
-				if (jobCount > 32 * internal_state.numThreads) { 	
+				if (jobCount > (32 * internal_state.numThreads)) { 	
 					// if there are enough jobs, then it is worth spending a few extra moments distributing jobs based on the "effectiveness" of the hyperthreads. Not all threads are built equal, 
 					// and some have 1/2 or worse of the performance of others. This strategy attempted to measure the performance at start-up, and then uses that to divy-up jobs. 
 #if 0
@@ -277,10 +350,11 @@ namespace GL {
 					}
 #endif
 #else
-					size_t 
-						thread_counter{ 0 }
-						, submission_thread{ internal_state.threads[thread_counter % internal_state.numThreads].thread_index }
-					    , max_job_num{ static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter % internal_state.numThreads].relative_speed) };
+					size_t
+						thread_counter{ GL::util::get_thread_id() % internal_state.numThreads };
+					size_t
+						submission_thread{ internal_state.threads[thread_counter].thread_index }
+					    , max_job_num{ static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter].relative_speed) };
 
 					for (job.group_id = 0, job.group_job_offset = 0; ; ++job.group_id) {
 						// For each group, generate one real job:					
@@ -289,10 +363,11 @@ namespace GL {
 						internal_state.jobQueue.push(submission_thread, job);
 						job.group_job_offset += groupSize;
 
+
 						if (job.group_job_end > max_job_num) {
 							thread_counter = (thread_counter + 1) % internal_state.numThreads;
 							submission_thread = internal_state.threads[thread_counter].thread_index;
-							max_job_num += static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter].relative_speed);
+							max_job_num += static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter].relative_speed);													
 						}
 					}
 #endif
@@ -311,12 +386,12 @@ namespace GL {
 			};
 
 			void initialize_if_necessary() {
-				if (internal_state.alive.load() == InternalState::alive_state::is_alive) return;
+				if (internal_state.alive.load(std::memory_order_relaxed) == InternalState::alive_state::is_alive) return;
 				auto prevS = InternalState::alive_state::is_dead;
 				if (internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_booting)) {
-					internal_state.numCores = util::get_hardware_thread_count();
+					internal_state.numCores = std::max<long long>(1, util::get_hardware_thread_count());
 					// Calculate the actual number of worker threads we want (-1 main thread):
-					internal_state.numThreads = std::max<long long>(1, internal_state.numCores - 1);
+					internal_state.numThreads = std::max<long long>(1, (internal_state.numCores - 5) - ((internal_state.numCores - 5) % 4));
 
 					std::atomic<size_t> boot_count{ internal_state.numThreads };
 					internal_state.threads.reserve(internal_state.numThreads);
@@ -405,7 +480,7 @@ namespace GL {
 					internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_alive);
 				}
 				else {
-					while (internal_state.alive.load() != InternalState::alive_state::is_alive) {};
+					while (internal_state.alive.load(std::memory_order_relaxed) != InternalState::alive_state::is_alive) {};
 				}
 			};
 

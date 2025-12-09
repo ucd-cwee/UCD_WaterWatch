@@ -119,25 +119,26 @@ int main() {
 
         while (true) {
             loop_sw.reset();
+
             // Testing Scopes::Scopes
 #if 1
             if (1) {
                 GL::scope::impl::RootScope root; // successfully starts a new script root
 
-           // >> TEST SCOPES
-#if 1
+                // >> TEST SCOPES
+                GL::parallel::For(0, 1000000, [&](int i) {
+                    ++i;
+                });
                 GL::parallel::For(0, 1000000, [&](int i) {
                     auto scope{ root.make_scope() };
-                    });
-
+                });
                 GL::parallel::For(0, 1000000, [&](int i) {
                     auto& scope{ root.make_namespace("std") };
-                    });
-
+                });
                 GL::parallel::For(0, 1000000, [&](int i) {
                     auto& scope{ root.make_namespace("std") };
                     scope.invalidate_cache();
-                    });
+                });
 
                 // Test recursive update calls. Should only recurse one time until the "call num" saturates. 
                 if (1) {
@@ -151,12 +152,9 @@ int main() {
                     scope2.invalidate_cache();
                     root.invalidate_cache();
                 }
-
-#if 1
                 GL::parallel::For(0, 1000000, [&](int i) {
                     switch (i % 3) {
                     case 0: {
-#if 1
                         auto& scope1{ root.make_namespace("std") };
                         auto& scope2{ scope1.make_namespace("impl") };
                         auto scope3{ scope2.make_scope() };
@@ -167,11 +165,10 @@ int main() {
 
                         auto scope5{ scope3.make_scope() };
                         scope5.get_unique_index();
-#endif 
+
                         break;
                     }
                     case 1: {
-#if 1
                         auto& scope1{ root.make_namespace("std") };
                         auto& scope2{ scope1.make_namespace("string") };
                         auto& scope3{ scope2.make_namespace("impl") };
@@ -188,12 +185,9 @@ int main() {
                         auto scope6{ scope4.make_scope() };
                         scope5.get_unique_index();
                         scope6.get_unique_index();
-
-#endif 
                         break;
                     }
                     case 2: {
-#if 1
                         auto& scope1{ root.make_namespace("string") };
                         auto& scope2{ scope1.make_namespace("impl") };
                         auto scope3{ scope2.make_scope() };
@@ -206,11 +200,16 @@ int main() {
 
                         auto scope5{ scope3.make_scope() };
                         scope5.get_unique_index();
-#endif
                         break;
                     }
                     }
-                    });
+                });
+
+#if 1
+
+
+#if 1
+
 #endif // << NO LEAK
 
 #if 1
@@ -274,11 +273,11 @@ int main() {
                 GL::parallel::For(0, 1000000, [&](int i) {
                     EXPECT_NE(nullptr, root.find_namespace("std")->this_m.scope->find_object("string::npos"));
                     EXPECT_NE(nullptr, root.find_object("std::string::npos"));
-                    });
+                });
 
                 GL::parallel::For(0, 1000000, [&](int i) {
                     EXPECT_EQ(nullptr, root.find_object("std::string2::npos")); // should not be successfully found.
-                    });
+                });
 
                 if (1) {
                     auto scope1{ root.make_scope() };
@@ -430,7 +429,7 @@ int main() {
                 nearest = nullptr;
                 EXPECT_EQ(nullptr, root.find_namespace(GL::string("impl"), nearest)); // does not find it, but returns the root as the nearest location
                 EXPECT_NE(nullptr, nearest);
-#if 0
+#if 1
                 nearest = nullptr;
                 EXPECT_NE(nullptr, root.find_namespace(GL::string("std::string::impl"), nearest)); // successfully finds it
                 EXPECT_NE(nullptr, nearest);
@@ -465,10 +464,16 @@ int main() {
 #endif
 
 #endif // << NO LEAK
+
+
+
+
+
+
             }
 #endif // << NO LEAK
 
-            if (1) {
+            if (0) {
                 GL::scope::impl::RootScope this_root;
                 GL::any
                     * x,
@@ -506,8 +511,8 @@ int main() {
 
             }
 
-#if 1
-            if (1) {
+#if 0
+            if (0) {
                 GL::function_signature sig(
                     "sum",
                     GL::type_of<int>(),
@@ -523,7 +528,7 @@ int main() {
                 EXPECT_EQ(false, sig.can_call_with_cast({ GL::type_of<int const&>() }));
                 EXPECT_EQ(false, sig.can_call_with_free_cast({ GL::type_of<int const&>() }));
             }
-            if (1) {
+            if (0) {
                 GL::function_signature sig(
                     "sum",
                     GL::type_of<int>(),
@@ -538,27 +543,27 @@ int main() {
                 EXPECT_EQ(true, sig.can_call_with_cast({  }));
                 EXPECT_EQ(true, sig.can_call_with_free_cast({  }));
             }
-            if (1) {
+            if (0) {
                 GL::details::Explicit_Function_Impl function(std::function([](int i) -> int {
                     EXPECT_EQ(i, 100);
                     return i + 1;
                     }));
                 EXPECT_EQ(101, function.operator()({ 100 }).cast<int>());
             }
-            if (1) {
+            if (0) {
                 GL::details::Explicit_Function_Impl function([](int i) -> int {
                     return i + 1;
                     }, { 0 });
                 EXPECT_EQ(101, function.operator()({ 100 }).cast<int>());
                 EXPECT_EQ(1, function.operator()({}).cast<int>());
             }
-            if (1) {
+            if (0) {
                 GL::details::Explicit_Function_Impl function([]() -> double {
                     return 1.0;
                     });
                 EXPECT_EQ(1.0, function.operator()({}).cast<double>());
             }
-            if (1) {
+            if (0) {
                 class temp {
                 public:
                     int x;
@@ -715,10 +720,10 @@ int main() {
             GL::shared_ptr<int> temp_ptr(new int(100), [](int* p) {
                 EXPECT_EQ(*p, 100);
                 delete p;
-                });
+            });
 
             // check GL::value and GL::datetime
-            if (1) {
+            if (0) {
                 GL::value val{ 10.0f };
                 val = 10.0f;
                 val = 10;
@@ -890,7 +895,7 @@ int main() {
             }
 
             // check GL::type
-            if (1) {
+            if (0) {
                 GL::type ti = GL::type_of<std::string>();
                 EXPECT_EQ(false, ti.is_void());
                 EXPECT_EQ(true, ti.is_cpp_type());
@@ -906,7 +911,7 @@ int main() {
                 EXPECT_EQ(false, ti.is_ref());
                 EXPECT_EQ(false, ti.is_temp());
             }
-            if (1) {
+            if (0) {
                 GL::type ti = GL::type_of<const std::string&>();
                 EXPECT_EQ(false, ti.is_void());
                 EXPECT_EQ(false, ti.is_base());
@@ -915,21 +920,21 @@ int main() {
                 EXPECT_EQ(true, ti.is_ref());
                 EXPECT_EQ(false, ti.is_temp());
             }
-            if (1) {
+            if (0) {
                 GL::type ti;
                 EXPECT_EQ(true, ti.is_void());
                 EXPECT_EQ(true, ti.is_base());
                 EXPECT_EQ(true, ti.is_cpp_type());
                 EXPECT_EQ(ti.name(), "void");
             }
-            if (1) {
+            if (0) {
                 GL::type ti = GL::type_of<void>();
                 EXPECT_EQ(true, ti.is_void());
                 EXPECT_EQ(true, ti.is_base());
                 EXPECT_EQ(true, ti.is_cpp_type());
                 EXPECT_EQ(ti.name(), "void");
             }
-            if (1) {
+            if (0) {
                 GL::script_type custom_type("string");
                 GL::type ti = custom_type;
                 EXPECT_EQ(false, ti.is_void());
@@ -1035,13 +1040,13 @@ int main() {
                 }
 
                 if (1) {
-                    if (1) {
+                    if (0) {
                         any wrap;
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             wrap = std::to_string(index);
                             });
                     }
-                    if (1) {
+                    if (0) {
                         any wrap = GL::string("TEST");
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             auto& ptr = wrap.cast<GL::string>();
@@ -1053,9 +1058,9 @@ int main() {
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             auto ptr = wrap.cast<GL::shared_ptr<GL::string>>();
                             EXPECT_EQ(*ptr, GL::string("TEST"));
-                            });
+                        });
                     }
-                    if (1) {
+                    if (0) {
                         any wrap{ GL::string("TEST") };
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             wrap = GL::string("TEST");
@@ -1066,9 +1071,9 @@ int main() {
                             else {
                                 EXPECT_EQ(false, true);
                             }
-                            });
+                        });
                     }
-                    if (1) {
+                    if (0) {
                         GL::var wrap(GL::make_shared<any>(GL::string("TEST")));
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             wrap = GL::var(GL::make_shared<any>(GL::string("TEST")));
@@ -1638,7 +1643,7 @@ int main() {
 #endif
 #endif
 
-#if 1
+#if 0
             for (size_t repeats = 10; repeats <= 10000; repeats *= 10) {
                 //print(repeats);
 
@@ -2252,13 +2257,13 @@ int main() {
                             }
 #endif
 
-            if (1) { // if (auto timer = sw.debug_timer("increment as individuals")) {
+            if (0) { // if (auto timer = sw.debug_timer("increment as individuals")) {
                 GL::thread_object<size_t> counter{ 0 };
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     ++* counter;
                     });
             }
-            if (1) { // if (auto timer = sw.debug_timer("increment as atomic")) {
+            if (0) { // if (auto timer = sw.debug_timer("increment as atomic")) {
                 std::atomic<size_t> counter{ 0 };
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     ++counter;
@@ -2548,12 +2553,12 @@ int main() {
             }
             if (1) { // if (auto timer = sw.debug_timer("Arena Parallel Allocator (std::string)")) {
                 GL::parallel::For(0, 1000000, [](size_t) {
-                    auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
-                    auto b = GL::arena_memory_pool::make_unique<std::string[]>(100); // 100 "std::strings"
+                    //auto a = GL::arena_memory_pool::make_unique<std::string>();     // value of 0
+                    //auto b = GL::arena_memory_pool::make_unique<std::string[]>(100); // 100 "std::strings"
                     auto c = GL::arena_memory_pool::make_shared<std::string>();     // value of 0
                     auto d = GL::arena_memory_pool::make_shared<std::string[]>(100); // 100 "std::strings"
                     //GL::arena_memory_pool::free(GL::arena_memory_pool::malloc<std::string>(100));
-                    });
+                });
             }
             if (1) { // if (auto timer = sw.debug_timer("Arena Linear Random Allocator (std::string)")) {
                 for (size_t i = 0; i < 1000; ++i) {
@@ -2587,7 +2592,7 @@ int main() {
         SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
 
         int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
-        float avg_framerate = 0; int avg_framerate_n = 0;
+        std::deque<float> framerates;
 
         // Initialize the kernel array
         //print(GL::arena_memory_pool::debug());
@@ -2611,9 +2616,6 @@ int main() {
 
                 auto temp = state.resize(game_h, game_w, 1);
                 state = temp;
-
-                avg_framerate_n = 0;
-                avg_framerate = 0;
             }
 
             GL::stopwatch sw;
@@ -2739,18 +2741,38 @@ int main() {
 
             print("");
             auto this_frame = (float)(1.0 / sw.stop());
-            avg_framerate_n++;
-            avg_framerate -= (float)((float)avg_framerate / (float)avg_framerate_n);
-            avg_framerate += (float)((float)this_frame / (float)avg_framerate_n);
+            framerates.push_back(this_frame);
+           
+            if (framerates.size() > 10000) framerates.pop_front();
+            std::deque<float> copy(framerates);
+            std::sort(copy.begin(), copy.end());
+            float q0 = 0;
+            float q1 = 0;
+            float q2 = 0;
+            float q3 = 0;
+            float q4 = 0;
+            if (copy.size() >= 4) {
+                q0 = copy.at(0);
+                q1 = copy.at(copy.size() / 4);
+                q2 = copy.at(2 * copy.size() / 4);
+                q3 = copy.at(3 * copy.size() / 4);
+                q4 = copy.at(copy.size() - 1);
+            }
 
-            print(std::to_string(avg_framerate) + " avg fps. \t" + std::to_string(this_frame) + " this fps. \t" + GL::arena_memory_pool::debug() + "        \t");
+            //if (q2 > 0) 
+            //    while (framerates.size() > (size_t)(q2 * 10)) 
+            //        framerates.pop_front();
+            
+
+            print(GL::printf("min{ %f } \tq1{ %f } \tmedian{ %f } \tq2{ %f } \tmax{ %f } \t", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t");
             std::cout << std::flush;
 
-            //while (sw.stop() < 1.0 / 60.0) {
-                // std::this_thread::yield();
-            //}            
+/*            while (sw.stop() < 1.0 / 60.0) {
+                std::this_thread::yield();
+            }      */      
         }
     }
+
     test_thread.join();
     return 0;
 };

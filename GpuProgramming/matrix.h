@@ -1,6 +1,15 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <math.h>
+#include <stdio.h>
+#include <algorithm>
+#include <iterator>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace GL {
     namespace GPU {
@@ -396,6 +405,45 @@ namespace GL {
         arena_memory_pool& operator=(const arena_memory_pool&) noexcept = default;
         arena_memory_pool& operator=(arena_memory_pool&&) noexcept = default;
         ~arena_memory_pool() noexcept = default;
+        
+        struct dynamic_block {
+            unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
+                length;
+        };
+        template <typename T>
+        struct helper {
+            // using block_type = dynamic_allocator<void*>::dynamic_block;
+            using block_type = dynamic_block;
+            struct array_delete { // default deleter for unique_ptr to array of unknown size
+                constexpr array_delete() noexcept = default;
+                array_delete(const array_delete&) noexcept {}
+                void operator()(T* p) const noexcept { // delete a pointer
+                    static_assert(0 < sizeof(T), "can't delete an incomplete type");
+                    block_type* ptr = (block_type*)(void*)((::byte*)p - sizeof(block_type));
+                    if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < ptr->length; ++i) (&p[i])->~T();
+                    free(ptr);
+                }
+            };
+            __declspec(noinline) static T* create(unsigned int N) {
+                dynamic_block* ptr = (dynamic_block*)malloc_bytes((sizeof(T) * N) + sizeof(block_type));
+                ptr->length = N;
+                T* out = (T*)(void*)((::byte*)ptr + sizeof(block_type));
+                if constexpr (std::is_pod_v<T>) {// best-case scenario!
+                    std::memset(out, 0, (sizeof(T) * N));
+                }
+                else  // need to actually initialize the array...
+                    for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;
+                return out;
+            };
+            template <typename... U> static T* create_single(U&&... args) {
+                dynamic_block* ptr = (dynamic_block*)malloc_bytes(sizeof(T) + sizeof(block_type));
+                ptr->length = 1;
+                T* out = (T*)(void*)((::byte*)ptr + sizeof(block_type));
+                if constexpr (!std::is_pod_v<T> || (sizeof...(args) > 0)) new (&out[0]) T(std::move(args)...);
+                return out;
+            };
+        };
+
 
     private:
         static _NODISCARD void*
@@ -404,40 +452,17 @@ namespace GL {
             free(void* p);
         template<typename T> _NODISCARD static T*
             malloc(unsigned int count) {
-            void* p = malloc_bytes((sizeof(T) * count) + sizeof(size_t));
-            T* out = (T*)(void*)((::byte*)p + sizeof(size_t));
-            size_t& Count = ((size_t*)p)[0];
-            Count = count;
-            if constexpr (std::is_pod_v<T>) {
-                for (; count > 0; --count) {
-                    new (&out[count - 1]) T();
-                }
-            }
-            return out;
+            return helper<T>::create(count);
         };
     public: 
-        template<typename T, typename... Args> _NODISCARD static T*
+        template<typename T, typename... Args> __declspec(noinline) _NODISCARD static T*
             instance(Args&&... args) {
-            void* p = malloc_bytes((sizeof(T) * 1) + sizeof(size_t));
-            T* out = (T*)(void*)((::byte*)p + sizeof(size_t));
-            size_t& count = ((size_t*)p)[0];
-            count = 1;
-            if constexpr (std::is_pod_v<T> || (sizeof...(Args) > 0)) {
-                new (&out[0]) T(std::move(args)...);
-            }
-            return out;
+            return helper<T>::create_single(std::move(args)...);
         };
-        template<typename T> static void
+        template<typename T> __declspec(noinline) static void
             destroy_and_free(T* p) {
             if (p) {
-                void* ptr = (void*)((::byte*)p - sizeof(size_t));
-                if constexpr (!std::is_pod_v<T>) {
-                    size_t& count = ((size_t*)ptr)[0];
-                    for (size_t n = 0; n < count; ++n) {
-                        p[n].~T();
-                    }
-                }
-                free(ptr);
+                return helper<T>::array_delete().operator()(p);
             }
         };
 

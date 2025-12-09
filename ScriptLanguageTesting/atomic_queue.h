@@ -61,6 +61,7 @@ namespace GL {
             return ++count;
         };
         bool try_pop(T& out) {
+            if (count.load(std::memory_order_relaxed) == 0) return false;
             if constexpr (is_pod) {
                 if (_que.for_each_cancellable([&out](auto& Q) -> bool {
                     return Q.try_pop(out);

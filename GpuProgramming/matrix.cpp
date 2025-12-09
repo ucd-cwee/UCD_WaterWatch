@@ -1400,30 +1400,26 @@ public:
             array_delete(const array_delete&) noexcept {}
             void operator()(T* p) const noexcept { // delete a pointer
                 static_assert(0 < sizeof(T), "can't delete an incomplete type");
-                auto* ptr = (void*)((::byte*)p - sizeof(block_type*));
+                auto* ptr = (void*)((::byte*)p - sizeof(block_type));
                 auto* alloced = *(block_type**)(::byte*)(ptr);
-                unsigned int N = (alloced->length - sizeof(block_type*)) / sizeof(T);
+                unsigned int N = (alloced->length - sizeof(block_type)) / sizeof(T);
                 if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < N; ++i) (&p[i])->~T();         
                 cpu_allocator().Free(alloced);
             }
         };
         __declspec(noinline) static T* create(unsigned int N) {
-            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
+            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type));
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
-            if constexpr (std::is_pod_v<T>) {// best-case scenario!
-                // std::memset(out, 0, (sizeof(T) * N));
-            }
-            else  // need to actually initialize the array...
-                for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;            
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type));
+            if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;            
             return out;
         };
         template <typename... U> static T* create_single(U&&... args) {
             unsigned int N = 1;
-            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type*));
+            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type));
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type*));
-            new (&out[0]) T(std::move(args)...);
+            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type));
+            if constexpr (!std::is_pod_v<T> || (sizeof...(args) > 0)) new (&out[0]) T(std::move(args)...);
             return out;
         };
     };
@@ -1990,12 +1986,12 @@ namespace GL {
         static void mem_free(std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem) {
             if (mem) {
                 if (/*mem->cpu_memory || */mem->gpu_memory) {
-                    //static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 256> helper;
-                    //helper.push_back(std::move(mem));
+                    static deferred_deletion_support< std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>, 256> helper;
+                    helper.push_back(std::move(mem));
 
-                    auto* p = mem_free_helper().Alloc(std::move(mem));
-                    mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
-                    mem_free_helper().Free(p);
+                    //auto* p = mem_free_helper().Alloc(std::move(mem));
+                    //mem_free_helper().ProtectCurrentEpoch_Fast(); // increments the epoch and protects the next free() call
+                    //mem_free_helper().Free(p);
                 }
             }
             mem = nullptr;            
@@ -3302,8 +3298,8 @@ namespace GL {
                     if (auto W = out.write()) {
                         if (R_lhs && R_rhs && W) {
                             auto N = out.dim.count();
-                            //for (unsigned int n = 0; n < N; ++n){
-                            parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
+                            for (unsigned int n = 0; n < N; ++n){
+                            // parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
                                 T v = (T)0;
                                 const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
                                 const unsigned int destination_X = n - (final_num_rows * destination_Y);
@@ -3311,7 +3307,7 @@ namespace GL {
                                     v += R_lhs(destination_X, index) * R_rhs(index, destination_Y);
                                 }
                                 W[n] = v;
-                            });
+                            }// );
                         }
                     }
                     return out;
@@ -4043,7 +4039,7 @@ namespace GL {
 
     void* 
         arena_memory_pool::malloc_bytes(unsigned int bytes) {
-        //return Mem_Alloc(bytes); // significantly slower
+        // return Mem_Alloc(bytes); // significantly slower
         return (void*)mem_matrix::helper<char>::create(bytes / sizeof(char));
     };
     void 

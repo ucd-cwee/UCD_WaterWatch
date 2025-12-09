@@ -36,9 +36,69 @@ namespace GL {
             };
             return ticket;
         };
-        long long get_current_epoch() {
-            return clock::ms();
+
+
+
+        template <void (*Func)(void)> class Taskable {
+            std::atomic<bool>
+                alive;
+            std::condition_variable
+                wakeCondition;
+            std::mutex
+                wakeMutex;
+            std::thread
+                thread;
+
+        public:
+            Taskable()
+                : alive{ 1 }, wakeMutex{}, wakeCondition{}
+            {
+                thread = std::thread{ [this] {
+                    // pre-warm this thread's heap
+                    for (int i = 0; i < 100000; i++) delete (new int(i));
+
+                    while (this->alive.load()) {
+                        // Work until no more jobs are found
+                        Func();
+
+                        // go to sleep, to be awoken when new jobs are added
+                        auto lock{ std::unique_lock(this->wakeMutex) };
+                        // this->wakeCondition.wait(lock);
+                        this->wakeCondition.wait_for(lock, std::chrono::microseconds(500));
+                    }
+                } };
+            }
+            Taskable(Taskable const&) = delete;
+            Taskable(Taskable&&) = delete;
+            Taskable& operator=(Taskable const&) = delete;
+            Taskable& operator=(Taskable&&) = delete;
+            ~Taskable() {
+                if (alive) {
+                    alive = false; // indicate that new jobs cannot be started from this point                
+                    wakeCondition.notify_all();
+                    thread.join();
+                }
+            }
+
+            void wake() { // try to wake-up the thread if it is sleeping. 
+                wakeCondition.notify_one();
+            };
         };
+        long long get_current_epoch() {
+#if 0
+            static std::atomic<long long> _epoch{ clock::ms() };
+            struct Wrap {
+                __declspec(noinline) static void UpdateEpoch(void) {
+                    _epoch.store(clock::ms(), std::memory_order_relaxed);
+                };
+            };
+            static Taskable<Wrap::UpdateEpoch> _update_thread{};
+            return _epoch.load(std::memory_order_relaxed);
+#else
+            return clock::ms();
+#endif
+        };
+
         /*
          * GetOptimalCoreNumber() - Return the concurrency level on hardware
          *
