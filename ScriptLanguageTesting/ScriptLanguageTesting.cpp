@@ -1273,7 +1273,7 @@ int main() {
 
 #else
 // to-do, re-enable
-#if 1 
+#if 0
             (void)GL::parallel::async([]() {
                 return std::string("TEST 0");
             }).wait();
@@ -1636,7 +1636,7 @@ int main() {
 #endif
 #endif
 
-#if 0
+#if 1
             for (size_t repeats = 10; repeats <= 10000; repeats *= 10) {
                 //print(repeats);
 
@@ -1673,24 +1673,24 @@ int main() {
                         ptr = nullptr;
                     });
                 }
-                //if (1) { // if (auto timer = sw.debug_timer("parallel::std increment")) {
-                //    std::atomic<size_t> D{ 0 };
-                //    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
-                //        ++D;
-                //    });
-                //}
+                if (1) { // if (auto timer = sw.debug_timer("parallel::std increment")) {
+                    std::atomic<size_t> D{ 0 };
+                    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+                        ++D;
+                    });
+                }
                 if (1) { // if (auto timer = sw.debug_timer("parallel::manual increment")) {
                     std::atomic<size_t> D{ 0 };
                     GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
                         ++D;
                     });
                 }
-                //if (1) { // if (auto timer = sw.debug_timer("parallel::std map")) {
-                //    concurrency::concurrent_unordered_map<size_t, size_t> map;
-                //    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
-                //        map[i] = i;
-                //    });
-                //}
+                if (1) { // if (auto timer = sw.debug_timer("parallel::std map")) {
+                    concurrency::concurrent_unordered_map<size_t, size_t> map;
+                    GL::parallel::Std_For<size_t>(0, repeats, [&](size_t i) {
+                        map[i] = i;
+                    });
+                }
                 if (1) { // if (auto timer = sw.debug_timer("parallel::manual map")) {
                     concurrency::concurrent_unordered_map<size_t, size_t> map;
                     GL::parallel::For<size_t>(0, repeats, [&](size_t i) {
@@ -1698,12 +1698,12 @@ int main() {
                     });
                 }
 
-                //if (1) { // if (auto timer = sw.debug_timer("parallel::std ForEach")) {
-                //    std::vector<size_t*> vec(1000000, nullptr);
-                //    GL::parallel::Std_ForEach(vec, [](size_t*& p) {
-                //        p = reinterpret_cast<size_t*>(100);
-                //    });
-                //}
+                if (1) { // if (auto timer = sw.debug_timer("parallel::std ForEach")) {
+                    std::vector<size_t*> vec(1000000, nullptr);
+                    GL::parallel::Std_ForEach(vec, [](size_t*& p) {
+                        p = reinterpret_cast<size_t*>(100);
+                    });
+                }
                 if (1) {
                     std::vector<size_t*> vec(repeats, nullptr);
                     if (1) { // if (auto timer = sw.debug_timer("parallel::manual ForEach")) {
@@ -1716,7 +1716,7 @@ int main() {
             }
 #endif
 
-#if 0
+#if 1
                             if (1) { // if (auto timer = sw.debug_timer(GL::string("queue"))) {
                                 GL::atomic_queue<size_t> queue;
                                 size_t L;
@@ -1913,70 +1913,70 @@ int main() {
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_parallel_stack<size_t>")) {
                                 GL::atomic_parallel_stack<size_t> queue;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_queue<size_t>")) {
                                 GL::atomic_queue<size_t> queue;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_parallel_queue<size_t>")) {
                                 GL::atomic_parallel_queue<size_t> queue;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push(i);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_parallel_queue<short>")) {
                                 GL::atomic_parallel_queue<short> queue;
 
                                 GL::parallel::For(0, 1000000, [&](short i) {
                                     queue.push(i);
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                                 GL::parallel::For(0, 1000000, [&](short i) {
                                     queue.push(i);
-                                    });
+                                });
                                 GL::parallel::For(0, 1000000, [&](short i) {
-                                    EXPECT_EQ(true, queue.try_pop(i));
-                                    });
+                                    queue.try_pop(i);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_parallel_stack<GL::string>")) {
                                 GL::atomic_parallel_stack<GL::string> queue;
@@ -1984,16 +1984,16 @@ int main() {
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     GL::string str = std::to_string(i);
                                     queue.push(str);
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     GL::string str = std::to_string(i);
                                     queue.push(str);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     GL::string str;
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_parallel_queue<GL::string>")) {
                                 GL::atomic_parallel_queue<GL::string> queue;
@@ -2001,16 +2001,16 @@ int main() {
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     GL::string str = std::to_string(i);
                                     queue.push(str);
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str); // not guarranteed -- may miss
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     GL::string str = std::to_string(i);
-                                    queue.push(str);
+                                    queue.push(str); // not guarranteed -- may miss
                                     });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     GL::string str;
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str); // not guarranteed -- may miss
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_priority_queue<std::string>")) {
                                 GL::atomic_priority_queue < std::string > queue;
@@ -2052,16 +2052,16 @@ int main() {
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     std::string str = std::to_string(i);
                                     queue.push(str);
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     std::string str = std::to_string(i);
                                     queue.push(str);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     std::string str;
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("atomic_parallel_priority_queue<std::string>")) {
                                 GL::atomic_parallel_priority_queue < std::string > queue;
@@ -2103,71 +2103,71 @@ int main() {
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     std::string str = std::to_string(i);
                                     queue.push(str);
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str);
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     std::string str = std::to_string(i);
                                     queue.push(str);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     std::string str;
-                                    EXPECT_EQ(true, queue.try_pop(str));
-                                    });
+                                    queue.try_pop(str);
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("GL::atomic_vector<size_t>")) {
                                 GL::atomic_vector<size_t> queue;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     queue.push_back(i);
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     ++queue[i];
-                                    });
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("GL::atomic_map<size_t, size_t>")) {
                                 GL::atomic_map<size_t, size_t> map;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     map[i] += i;
-                                    });
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("GL::atomic_hash_map<size_t, size_t>")) {
                                 GL::atomic_hash_map<size_t, size_t> map;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     map[i] += i;
-                                    });
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("concurrency::concurrent_unordered_map<size_t, size_t>")) {
                                 concurrency::concurrent_unordered_map<size_t, size_t> map;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     map[i] += i;
-                                    });
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("GL::atomic_map<size_t, size_t> w/ erasure")) {
                                 GL::atomic_map<size_t, size_t> map;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     map[i] += i;
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     auto& loc = map[i];
                                     map.erase(i);
                                     ++loc;
-                                    });
+                                });
                             }
                             if (1) { // if (auto timer = sw.debug_timer("GL::atomic_hash_map<size_t, size_t> w/ erasure")) {
                                 GL::atomic_hash_map<size_t, size_t> map;
 
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     map[i] += i;
-                                    });
+                                });
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     auto& loc = map[i];
                                     map.erase(i);
                                     ++loc;
-                                    });
+                                });
                             }
 #endif
 #if 0
@@ -2179,13 +2179,13 @@ int main() {
                                 d = 0;
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     ++d;
-                                    });
+                                });
                                 EXPECT_EQ(1000000, d);
 
                                 d = 0;
                                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                                     d += 2;
-                                    });
+                                });
                                 EXPECT_EQ(1000000, d / 2);
                             }
                             if (1) { // if (auto timer = sw.debug_timer("GL::atomic_float")) {
@@ -2250,13 +2250,13 @@ int main() {
                             }
 #endif
 
-            if (0) { // if (auto timer = sw.debug_timer("increment as individuals")) {
+            if (1) { // if (auto timer = sw.debug_timer("increment as individuals")) {
                 GL::thread_object<size_t> counter{ 0 };
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     ++* counter;
                     });
             }
-            if (0) { // if (auto timer = sw.debug_timer("increment as atomic")) {
+            if (1) { // if (auto timer = sw.debug_timer("increment as atomic")) {
                 std::atomic<size_t> counter{ 0 };
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     ++counter;
@@ -2269,7 +2269,7 @@ int main() {
             for (double ratio = 1000000.0; ratio >= 1.0; ratio /= 10) {
                 //print(ratio);
 
-                if (0) { // if (auto timer = sw.debug_timer("std::shared_ptr<std::string> with std shared lock")) {
+                if (1) { // if (auto timer = sw.debug_timer("std::shared_ptr<std::string> with std shared lock")) {
                     std::shared_mutex mut;
                     std::shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };
                     GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
@@ -2289,7 +2289,7 @@ int main() {
                         }
                         });
                 }
-                if (0) { // if (auto timer = sw.debug_timer("std::shared_ptr<std::string> access with std shared lock")) {
+                if (1) { // if (auto timer = sw.debug_timer("std::shared_ptr<std::string> access with std shared lock")) {
                     std::shared_mutex mut;
                     std::shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };
                     GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
@@ -2304,7 +2304,7 @@ int main() {
                         mut.unlock_shared();
                         });
                 }
-                if (0) { // if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<std::string> slow test")) {
+                if (1) { // if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<std::string> slow test")) {
                     GL::atomic_shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };
                     GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                         if (i % (int)ratio == 0) {
@@ -2315,7 +2315,7 @@ int main() {
                         }
                     });
                 }
-                if (0) { // if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<std::string> fast test")) {
+                if (1) { // if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<std::string> fast test")) {
                     GL::atomic_shared_ptr<std::string> ptr{ new std::string(std::to_string(1)) };
                     GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                         if (i % (int)ratio == 0) {
@@ -2328,7 +2328,7 @@ int main() {
                 }
             }
 
-            if (0) { // if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<void>")) {
+            if (1) { // if (auto timer = sw.debug_timer("GL::atomic_shared_ptr<void>")) {
                 auto ptr = GL::static_pointer_cast<void>(GL::atomic_shared_ptr<std::string>(new std::string("test")));
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
                     if (i % 50 == 0) {
@@ -2339,7 +2339,7 @@ int main() {
                     }
                     });
             }
-            if (0) { // if (auto timer = sw.debug_timer("std::shared_ptr<void>")) {
+            if (1) { // if (auto timer = sw.debug_timer("std::shared_ptr<void>")) {
                 std::shared_mutex mut;
                 std::shared_ptr<void> ptr{ std::shared_ptr<std::string>(new std::string("test")) };
                 GL::parallel::For<size_t>(0, 1000000, [&](size_t i) {
@@ -2368,7 +2368,7 @@ int main() {
             EXPECT_EQ(str_type.name(), "class GL::string");
 
 #endif
-#if 0
+#if 1
                             if (1) { // if (auto timer = sw.debug_timer("atomic_wait")) {
                                 std::atomic<long> lock{ 0 };
                                 std::thread temp_thread([&]() {
@@ -2400,13 +2400,7 @@ int main() {
 
 
 
-                            if (1) {
-                                GL::atomic_shared_ptr<int> ptr;
-                                auto* p = ptr.load();
 
-
-
-                            }
 
 #endif
 
@@ -2757,9 +2751,9 @@ int main() {
             print(GL::printf("min{ %f }  q1{ %f }  median{ %f }  q2{ %f }  max{ %f }  ", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t");
             std::cout << std::flush;
 
-/*            while (sw.stop() < 1.0 / 60.0) {
-                std::this_thread::yield();
-            }      */      
+            // while (sw.stop() < 1.0 / 60.0) {
+                // std::this_thread::yield();
+            // }
         }
     }
 

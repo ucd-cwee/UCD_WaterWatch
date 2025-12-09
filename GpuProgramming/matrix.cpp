@@ -3861,9 +3861,9 @@ namespace GL {
         };
         template <typename T> void do_precompile(GL::GPU::matrix<T> const&) {
             // matrix<T>::maximum_allocation_size();
-            matrix<T>(GL::GPU::dimensions{ 1, 1, 1 });
-            matrix<T>(1, 1, 1, false);
-            matrix<T>(1, 1, 1, true);
+            matrix<T> pre1(GL::GPU::dimensions{ 1, 1, 1 });
+            matrix<T> pre2(1, 1, 1, false);
+            matrix<T> pre3(1, 1, 1, true);
             if (1) {
                 matrix<T> a1{};
                 matrix<T> a2{ a1 };

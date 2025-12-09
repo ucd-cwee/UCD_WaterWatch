@@ -10,37 +10,14 @@
 
 namespace GL {
     namespace util {
-        //long& __thread_alive(size_t thread_id) {
-        //    static GL::atomic_vector<long> thread_ids{};
-        //    thread_ids.grow_to_at_least(thread_id + 1);
-        //    return thread_ids[thread_id];
-
-        //    // static std::atomic<size_t> thread_count{ 0 };            
-        //    //if (thread_count.load(std::memory_order_relaxed) <= thread_id) {
-        //    //    thread_ids.grow_to_at_least(thread_id + 1);
-        //    //    thread_count.exchange(thread_id, std::memory_order_relaxed);
-        //    //}
-        //    //return thread_ids[thread_id];            
-        //};
-        //bool get_thread_alive(size_t thread_id) {
-        //    return static_cast<bool>(__thread_alive(thread_id));
-        //};
         size_t get_thread_id() {
             static ticket_dispensor tickets;
             thread_local auto ticket{ tickets.get_ticket() };
-            thread_local auto scoped_alive{
-                // increments the "alive" during construction, and decrements during destruction.
-                std::shared_ptr<size_t>(reinterpret_cast<size_t*>(ticket),[/*incrementOnce = InterlockedIncrement(reinterpret_cast<volatile long*>(&__thread_alive(ticket)))*/](size_t* p) -> void {
-                    if (p/* && (incrementOnce > 0)*/) {
-                        // InterlockedDecrement(reinterpret_cast<volatile long*>(&__thread_alive(reinterpret_cast<size_t&>(p))));
-                        tickets.return_ticket(reinterpret_cast<size_t&>(p));
-                    }
-                })
-            };
+            thread_local auto scoped_alive{ std::shared_ptr<size_t>(reinterpret_cast<size_t*>(ticket), [](size_t* p) -> void {
+                if (p) tickets.return_ticket(reinterpret_cast<size_t&>(p));                
+            })};
             return ticket;
         };
-
-
 
         template <void (*Func)(void)> class Taskable {
             std::atomic<bool>
@@ -88,7 +65,7 @@ namespace GL {
             };
         };
         long long get_current_epoch() {
-#if 1
+#if 0
             static std::atomic<long long> _epoch{ clock::ms() };
             struct Wrap {
                 __declspec(noinline) static void UpdateEpoch(void) {

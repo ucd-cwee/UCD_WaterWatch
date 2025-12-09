@@ -19,9 +19,6 @@ namespace GL {
         static size_t actual_thread_id() {
             static thread_local size_t unique_hash{ GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id()) };
             return unique_hash;
-
-            //static thread_local std::thread::id thread_id{ std::this_thread::get_id() };
-            //return thread_id;
         };
 
         auto& GetTLS() const {
