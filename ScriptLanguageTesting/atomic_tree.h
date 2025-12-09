@@ -68,12 +68,6 @@ namespace GL {
 			while (reinterpret_cast<long*>(&read)[1] != 0) {
 				read = mut.load();
 			}
-
-
-			//int i = 0;
-			//while (!try_lock_shared()) {
-			//	if (++i > 40) std::this_thread::yield();
-			//}
 		};
 
 		// if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
@@ -444,7 +438,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = std::shared_mutex; //  fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
+		using lock_type = std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;
@@ -1890,8 +1884,8 @@ namespace GL {
 				is_available;
 			bool
 				is_free;
-			bool
-				in_tree;
+			//bool
+				//in_tree;
 
 			__declspec(noinline) void lock() {
 				while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
@@ -1936,7 +1930,7 @@ namespace GL {
 	public:
 		__declspec(noinline) dynamic_block* Alloc(unsigned long long N) {
 			dynamic_block* free_block = nullptr;
-			bool do_hard_lock = false;
+			bool do_hard_lock = true;
 			while (N > 0) {
 				while (!free_block) {
 					if (auto tree_locked = free_tree.lock(do_hard_lock)) {
@@ -1953,7 +1947,7 @@ namespace GL {
 										}
 										// cooperatively remove this node
 										free_tree.Remove(tree_node, tree_locked);
-										free_block->in_tree = false;
+										//free_block->in_tree = false;
 										free_block->unlock();
 										block_alloc.Free(free_block);
 										free_block = nullptr;
@@ -1977,36 +1971,35 @@ namespace GL {
 												this->allocations[free_block->parent_buffer] = nullptr;
 												allocation_tickets.return_ticket(free_block->parent_buffer);												
 												free_tree.Remove(tree_node, tree_locked);
-												free_block->in_tree = false;
+												//free_block->in_tree = false;
 												free_block->unlock();
 												block_alloc.Free(free_block);
 												free_block = nullptr;
 
-												if (!tree_node) {
-													tree_locked.clear();
-
-													free_block = block_alloc.Alloc();
-													if (!free_block) return nullptr;
-													free_block->length = N;
-													free_block->is_available = true;
-													free_block->is_free = false;
-													free_block->locker = 1;
-													free_block->in_tree = false;
-													free_block->parent_buffer = allocation_tickets.get_ticket();
-													(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
-													this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
-													if (!this->allocations[free_block->parent_buffer]) {
-														allocation_tickets.return_ticket(free_block->parent_buffer);
-														block_alloc.Free(free_block);
-														return nullptr;
-													}
-													free_block->sub_buffer = nullptr;
-												}
+												//if (!tree_node) {
+												//	tree_locked.clear();
+												//	free_block = block_alloc.Alloc();
+												//	if (!free_block) return nullptr;
+												//	free_block->length = N;
+												//	free_block->is_available = true;
+												//	free_block->is_free = false;
+												//	free_block->locker = 1;
+												//	free_block->in_tree = false;
+												//	free_block->parent_buffer = allocation_tickets.get_ticket();
+												//	(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
+												//	this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
+												//	if (!this->allocations[free_block->parent_buffer]) {
+												//		allocation_tickets.return_ticket(free_block->parent_buffer);
+												//		block_alloc.Free(free_block);
+												//		return nullptr;
+												//	}
+												//	free_block->sub_buffer = nullptr;
+												//}
 
 												break;
 											}											
-											// free_tree.Remove(tree_node, tree_locked); // invalidates the tree
-											// free_block->in_tree = false;
+											free_tree.Remove(tree_node, tree_locked); // invalidates the tree
+											//free_block->in_tree = false;
 											break;
 										}
 										else {
@@ -2027,7 +2020,7 @@ namespace GL {
 									free_block->is_available = true;
 									free_block->is_free = false;
 									free_block->locker = 1;
-									free_block->in_tree = false;
+									//free_block->in_tree = false;
 									free_block->parent_buffer = allocation_tickets.get_ticket();
 									(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
 									this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
@@ -2049,7 +2042,7 @@ namespace GL {
 							free_block->is_available = true;
 							free_block->is_free = false;
 							free_block->locker = 1;
-							free_block->in_tree = false;
+							//free_block->in_tree = false;
 							free_block->parent_buffer = allocation_tickets.get_ticket();
 							(void)this->allocations.grow_to_at_least(free_block->parent_buffer + 1);
 							this->allocations[free_block->parent_buffer] = this->alloc_block(free_block->length);
@@ -2077,16 +2070,16 @@ namespace GL {
 		// must be explicitely free'd before the dynamic_allocator goes out of scope, otherwise memory leak. 
 		__declspec(noinline) void Free(dynamic_block* free_block) {
 			if (free_block == nullptr) return;
-			while (!free_block->try_lock()) {};			
+			//while (!free_block->try_lock()) {};			
 			free_block->is_free = true;
-			if (!free_block->in_tree) {
-				free_block->in_tree = true;
-				free_block->unlock();
+			//if (!free_block->in_tree) {
+				//free_block->in_tree = true;
+				//free_block->unlock();
 				free_tree.Add(free_block, free_block->length);
-			}
-			else {
-				free_block->unlock();
-			}			
+			//}
+			//else {
+			//	free_block->unlock();
+			//}			
 		};
 
 	public:

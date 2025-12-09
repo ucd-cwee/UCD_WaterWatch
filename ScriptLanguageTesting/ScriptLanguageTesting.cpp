@@ -466,7 +466,7 @@ int main() {
             }
 #endif // << NO LEAK
 
-            if (0) {
+            if (1) {
                 GL::scope::impl::RootScope this_root;
                 GL::any
                     * x,
@@ -504,8 +504,8 @@ int main() {
 
             }
 
-#if 0
-            if (0) {
+#if 1
+            if (1) {
                 GL::function_signature sig(
                     "sum",
                     GL::type_of<int>(),
@@ -521,7 +521,7 @@ int main() {
                 EXPECT_EQ(false, sig.can_call_with_cast({ GL::type_of<int const&>() }));
                 EXPECT_EQ(false, sig.can_call_with_free_cast({ GL::type_of<int const&>() }));
             }
-            if (0) {
+            if (1) {
                 GL::function_signature sig(
                     "sum",
                     GL::type_of<int>(),
@@ -536,27 +536,27 @@ int main() {
                 EXPECT_EQ(true, sig.can_call_with_cast({  }));
                 EXPECT_EQ(true, sig.can_call_with_free_cast({  }));
             }
-            if (0) {
+            if (1) {
                 GL::details::Explicit_Function_Impl function(std::function([](int i) -> int {
                     EXPECT_EQ(i, 100);
                     return i + 1;
                     }));
                 EXPECT_EQ(101, function.operator()({ 100 }).cast<int>());
             }
-            if (0) {
+            if (1) {
                 GL::details::Explicit_Function_Impl function([](int i) -> int {
                     return i + 1;
                     }, { 0 });
                 EXPECT_EQ(101, function.operator()({ 100 }).cast<int>());
                 EXPECT_EQ(1, function.operator()({}).cast<int>());
             }
-            if (0) {
+            if (1) {
                 GL::details::Explicit_Function_Impl function([]() -> double {
                     return 1.0;
                     });
                 EXPECT_EQ(1.0, function.operator()({}).cast<double>());
             }
-            if (0) {
+            if (1) {
                 class temp {
                 public:
                     int x;
@@ -716,7 +716,7 @@ int main() {
             });
 
             // check GL::value and GL::datetime
-            if (0) {
+            if (1) {
                 GL::value val{ 10.0f };
                 val = 10.0f;
                 val = 10;
@@ -837,14 +837,14 @@ int main() {
                     EXPECT_EQ(DT1.ToNextMinute() - DT1.ToStartOfMinute(), GL::minute(1));
                 }
 
-                if (0) {
+                if (1) {
                     GL::foot v{ 100 };
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         ++v;
                     });
                     EXPECT_EQ((int)(float)v, 1000100);
                 }
-                if (0) {
+                if (1) {
                     GL::foot v{ 0 };
                     GL::scalar s{ 0 };
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
@@ -852,7 +852,7 @@ int main() {
                     });
                     EXPECT_EQ((int)(float)v, 0);
                 }
-                if (0) {
+                if (1) {
                     GL::foot v = 0;
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         for (;;) {
@@ -864,14 +864,14 @@ int main() {
                     });
                     EXPECT_EQ((int)(float)v, 1000000);
                 }
-                if (0) {
+                if (1) {
                     GL::datetime v = GL::datetime(2025, 1, 1, 0, 0, 0);
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         v += GL::minute(1);
                     });
                     EXPECT_EQ((int)(float)GL::minute(v - GL::datetime(2025, 1, 1, 0, 0, 0)), 1000000);
                 }
-                if (0) {
+                if (1) {
                     GL::datetime v = GL::datetime(2025, 1, 1, 0, 0, 0);
                     GL::parallel::For(0, 1000000, [&](size_t const& index) {
                         for (;;) {
@@ -888,7 +888,7 @@ int main() {
             }
 
             // check GL::type
-            if (0) {
+            if (1) {
                 GL::type ti = GL::type_of<std::string>();
                 EXPECT_EQ(false, ti.is_void());
                 EXPECT_EQ(true, ti.is_cpp_type());
@@ -904,7 +904,7 @@ int main() {
                 EXPECT_EQ(false, ti.is_ref());
                 EXPECT_EQ(false, ti.is_temp());
             }
-            if (0) {
+            if (1) {
                 GL::type ti = GL::type_of<const std::string&>();
                 EXPECT_EQ(false, ti.is_void());
                 EXPECT_EQ(false, ti.is_base());
@@ -913,21 +913,21 @@ int main() {
                 EXPECT_EQ(true, ti.is_ref());
                 EXPECT_EQ(false, ti.is_temp());
             }
-            if (0) {
+            if (1) {
                 GL::type ti;
                 EXPECT_EQ(true, ti.is_void());
                 EXPECT_EQ(true, ti.is_base());
                 EXPECT_EQ(true, ti.is_cpp_type());
                 EXPECT_EQ(ti.name(), "void");
             }
-            if (0) {
+            if (1) {
                 GL::type ti = GL::type_of<void>();
                 EXPECT_EQ(true, ti.is_void());
                 EXPECT_EQ(true, ti.is_base());
                 EXPECT_EQ(true, ti.is_cpp_type());
                 EXPECT_EQ(ti.name(), "void");
             }
-            if (0) {
+            if (1) {
                 GL::script_type custom_type("string");
                 GL::type ti = custom_type;
                 EXPECT_EQ(false, ti.is_void());
@@ -1033,13 +1033,13 @@ int main() {
                 }
 
                 if (1) {
-                    if (0) {
+                    if (1) {
                         any wrap;
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             wrap = std::to_string(index);
                             });
                     }
-                    if (0) {
+                    if (1) {
                         any wrap = GL::string("TEST");
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             auto& ptr = wrap.cast<GL::string>();
@@ -1053,7 +1053,7 @@ int main() {
                             EXPECT_EQ(*ptr, GL::string("TEST"));
                         });
                     }
-                    if (0) {
+                    if (1) {
                         any wrap{ GL::string("TEST") };
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             wrap = GL::string("TEST");
@@ -1066,7 +1066,7 @@ int main() {
                             }
                         });
                     }
-                    if (0) {
+                    if (1) {
                         GL::var wrap(GL::make_shared<any>(GL::string("TEST")));
                         GL::parallel::For(0, 1000000, [&](size_t const& index) {
                             wrap = GL::var(GL::make_shared<any>(GL::string("TEST")));
@@ -2609,6 +2609,8 @@ int main() {
 
                 auto temp = state.resize(game_h, game_w, 1);
                 state = temp;
+
+                framerates.clear();
             }
 
             GL::stopwatch sw;
@@ -2750,14 +2752,9 @@ int main() {
                 q2 = copy.at(2 * copy.size() / 4);
                 q3 = copy.at(3 * copy.size() / 4);
                 q4 = copy.at(copy.size() - 1);
-            }
+            }            
 
-            //if (q2 > 0) 
-            //    while (framerates.size() > (size_t)(q2 * 10)) 
-            //        framerates.pop_front();
-            
-
-            print(GL::printf("min{ %f } \tq1{ %f } \tmedian{ %f } \tq2{ %f } \tmax{ %f } \t", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t");
+            print(GL::printf("min{ %f }  q1{ %f }  median{ %f }  q2{ %f }  max{ %f }  ", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t");
             std::cout << std::flush;
 
 /*            while (sw.stop() < 1.0 / 60.0) {
