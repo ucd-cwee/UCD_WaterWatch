@@ -155,7 +155,7 @@ namespace GL {
 					numCores{ 0 };
 				size_t 
 					numThreads{ 0 };
-				atomic_parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
+				parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
 					jobQueue{};
 				std::atomic<alive_state> 
 					alive{ is_dead };
@@ -399,10 +399,7 @@ namespace GL {
 				if (internal_state.alive.compare_exchange_strong(prevS, alive_state::is_booting)) {
 					internal_state.numCores = std::max<long long>(1, util::get_hardware_thread_count());
 					// Calculate the actual number of worker threads we want (-1 main thread):
-					internal_state.numThreads = internal_state.numCores - 1;
-					//internal_state.numThreads = (internal_state.numCores - 5) - ((internal_state.numCores - 5) % 4);
-					//internal_state.numThreads = std::max<long long>(internal_state.numThreads, internal_state.numThreads / 2);
-					//internal_state.numThreads = std::max<long long>(1, internal_state.numThreads);
+					internal_state.numThreads = internal_state.numCores;
 					std::atomic<size_t> boot_count{ internal_state.numThreads };
 					internal_state.threads.reserve(internal_state.numThreads);
 
@@ -418,7 +415,7 @@ namespace GL {
 
 							auto start_time = GL::util::get_current_epoch();
 							volatile std::atomic<long> count{ 0 };
-							for (volatile size_t i = 0; i < 1000000; ++i) ++count;							
+							for (volatile size_t i = 0; i < 10000000; ++i) ++count;							
 							internal_state.threads[threadID].relative_speed = 1.0 / (double)((GL::util::get_current_epoch() - start_time) + 1);
 
 							if (1) {
@@ -504,23 +501,25 @@ namespace GL {
 					internal_state.alive.compare_exchange_strong(prevS, alive_state::is_alive);
 
 					// Idea: release threads that are minimally contributing to the actual task of multithreading. Free's those for the UI or other thread tasks, while greedily keeping the stronger/faster threads for us. 
-					total = 1.0;
-					while ((total > internal_state.target_cpu_utilization) && (internal_state.numThreads > (internal_state.numCores / 2)) && (internal_state.numThreads >= 2)) {
-						total -= internal_state.threads[internal_state.numThreads - 1].relative_speed;
-						internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_debooting;
-						
+					if (1) {
 						bool wake_loop = true;
 						std::thread waker([&] {
 							while (wake_loop) internal_state.wakeCondition.notify_all(); // wakes up sleeping worker threads
 					    });
 
-						internal_state.threads[internal_state.numThreads - 1].thread.join();
-						internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_dead;
+						total = 1.0;
+						while ((total > internal_state.target_cpu_utilization) && (internal_state.numThreads > (internal_state.numCores / 2)) && (internal_state.numThreads >= 2)) {
+							total -= internal_state.threads[internal_state.numThreads - 1].relative_speed;
+							internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_debooting;
+
+							internal_state.threads[internal_state.numThreads - 1].thread.join(); // perform the join
+							internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_dead; // declare it dead
+
+							--internal_state.numThreads;
+						}
 
 						wake_loop = false;
 						waker.join();
-
-						--internal_state.numThreads;
 					}
 				}
 				else {
