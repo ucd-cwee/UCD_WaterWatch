@@ -127,7 +127,7 @@ namespace GL {
             DeleteType out;
 
             if (((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch)) {
-                _TLS.for_each_alive([&_EpochLimit](TLS& _tls) {
+                _TLS.for_each([&_EpochLimit](TLS& _tls) {
                     if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs[deferment_size-1]) {
                         _EpochLimit = std::min<long long>(_EpochLimit, L);
                     }

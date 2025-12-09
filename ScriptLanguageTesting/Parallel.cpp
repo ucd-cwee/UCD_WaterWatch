@@ -61,6 +61,13 @@ typedef void* HMODULE;
 namespace GL {
 	namespace parallel {
 		namespace impl {
+			enum alive_state {
+				is_dead = 0,
+				is_booting = 1,
+				is_alive = 2,
+				is_debooting = 3
+			};
+
 			struct thread_wrap {
 				std::thread 
 					thread;
@@ -68,7 +75,8 @@ namespace GL {
 					thread_hash;
 				size_t 
 					thread_index;
-
+				alive_state
+					thread_alive;
 				// Ratio of "work" this CPU core is capable of. E.g. 0.25 would indicate this core is capable of 25% of the workload of this CPU. 
 				// Intended to help identify the primary cores vs. hyperthreaded cores, as their capacity for work is noticibly different. 
 				double relative_speed;
@@ -143,12 +151,6 @@ namespace GL {
 			};
 
 			struct InternalState {
-				enum alive_state {
-					is_dead = 0,
-					is_booting = 1,
-					is_alive = 2,
-					is_debooting = 3
-				};
 				size_t 
 					numCores{ 0 };
 				size_t 
@@ -163,6 +165,8 @@ namespace GL {
 					wakeMutex{};
 				std::vector<thread_wrap> 
 					threads{};
+				double
+					target_cpu_utilization{ 0.8 };
 
 				void ShutDown() {
 					if (alive.load() == is_dead) return;
@@ -172,9 +176,13 @@ namespace GL {
 						bool wake_loop = true;
 						std::thread waker([&] {
 							while (wake_loop) wakeCondition.notify_all(); // wakes up sleeping worker threads
-							});
+					    });
 						for (auto& thread : threads) {
-							thread.thread.join();
+							if (thread.thread_alive == alive_state::is_alive) {
+								thread.thread.join();
+								thread.thread_alive = alive_state::is_dead;
+							}
+							while (thread.thread_alive != alive_state::is_dead) {}
 						}
 						wake_loop = false;
 						waker.join();
@@ -386,18 +394,19 @@ namespace GL {
 			};
 
 			void initialize_if_necessary() {
-				if (internal_state.alive.load(std::memory_order_relaxed) == InternalState::alive_state::is_alive) return;
-				auto prevS = InternalState::alive_state::is_dead;
-				if (internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_booting)) {
+				if (internal_state.alive.load(std::memory_order_relaxed) == alive_state::is_alive) return;
+				auto prevS = alive_state::is_dead;
+				if (internal_state.alive.compare_exchange_strong(prevS, alive_state::is_booting)) {
 					internal_state.numCores = std::max<long long>(1, util::get_hardware_thread_count());
 					// Calculate the actual number of worker threads we want (-1 main thread):
-					//internal_state.numThreads = internal_state.numCores - 1;
-					internal_state.numThreads = (internal_state.numCores - 5) - ((internal_state.numCores - 5) % 4);
-					internal_state.numThreads = std::max<long long>(internal_state.numThreads, internal_state.numThreads / 2);
-					internal_state.numThreads = std::max<long long>(1, internal_state.numThreads);
+					internal_state.numThreads = internal_state.numCores - 1;
+					//internal_state.numThreads = (internal_state.numCores - 5) - ((internal_state.numCores - 5) % 4);
+					//internal_state.numThreads = std::max<long long>(internal_state.numThreads, internal_state.numThreads / 2);
+					//internal_state.numThreads = std::max<long long>(1, internal_state.numThreads);
 					std::atomic<size_t> boot_count{ internal_state.numThreads };
 					internal_state.threads.reserve(internal_state.numThreads);
 
+					// initialize the thread pool
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						internal_state.threads.emplace_back(thread_wrap{ std::thread{ [threadID, &boot_count] {
 							// pre-warm this thread's heap
@@ -405,6 +414,7 @@ namespace GL {
 
 							internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 							internal_state.threads[threadID].thread_index = GL::util::get_thread_id();
+							internal_state.threads[threadID].thread_alive = alive_state::is_booting;
 
 							auto start_time = GL::util::get_current_epoch();
 							volatile std::atomic<long> count{ 0 };
@@ -418,14 +428,26 @@ namespace GL {
 							}
 
 							--boot_count;
+							internal_state.threads[threadID].thread_alive = alive_state::is_alive;
 
-							while (internal_state.alive == InternalState::alive_state::is_booting) {} // wait until we stop booting... 
-							while (internal_state.alive == InternalState::alive_state::is_alive) {
+							while (internal_state.alive == alive_state::is_booting) {} // wait until we stop booting... 
+
+							// find my "final" index
+							size_t my_final_index = threadID;
+							for (int i = 0; i < internal_state.numThreads; ++i) {
+								if (internal_state.threads[i].thread_index == GL::util::get_thread_id()) {
+									// found me		
+									my_final_index = i;
+									break;
+								}
+							}
+
+							while ((internal_state.alive == alive_state::is_alive) && (internal_state.threads[my_final_index].thread_alive == is_alive)) {
 								work(); // Work until no more jobs are found		
 								auto lock{ std::unique_lock(internal_state.wakeMutex) };
 								internal_state.wakeCondition.wait(lock);
 							}
-						} }, 0, 0 });
+						} }, 0, 0, alive_state::is_booting, 0.0 });
 						std::thread& worker = internal_state.threads.back().thread;
 
 #ifdef _WIN32
@@ -467,7 +489,6 @@ namespace GL {
 #undef handle_error_en
 #endif // _WIN32
 					}
-
 					while (boot_count.load() > 0) {}
 					
 					double total = 0;
@@ -478,12 +499,32 @@ namespace GL {
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						internal_state.threads[threadID].relative_speed /= total;
 					}
+					std::sort(internal_state.threads.begin(), internal_state.threads.end(), [](auto& lhs, auto& rhs) -> bool { return lhs.relative_speed > rhs.relative_speed; });
+					prevS = alive_state::is_booting;
+					internal_state.alive.compare_exchange_strong(prevS, alive_state::is_alive);
 
-					prevS = InternalState::alive_state::is_booting;
-					internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_alive);
+					// Idea: release threads that are minimally contributing to the actual task of multithreading. Free's those for the UI or other thread tasks, while greedily keeping the stronger/faster threads for us. 
+					total = 1.0;
+					while ((total > internal_state.target_cpu_utilization) && (internal_state.numThreads > (internal_state.numCores / 2)) && (internal_state.numThreads >= 2)) {
+						total -= internal_state.threads[internal_state.numThreads - 1].relative_speed;
+						internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_debooting;
+						
+						bool wake_loop = true;
+						std::thread waker([&] {
+							while (wake_loop) internal_state.wakeCondition.notify_all(); // wakes up sleeping worker threads
+					    });
+
+						internal_state.threads[internal_state.numThreads - 1].thread.join();
+						internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_dead;
+
+						wake_loop = false;
+						waker.join();
+
+						--internal_state.numThreads;
+					}
 				}
 				else {
-					while (internal_state.alive.load(std::memory_order_relaxed) != InternalState::alive_state::is_alive) {};
+					while (internal_state.alive.load(std::memory_order_relaxed) != alive_state::is_alive) {};
 				}
 			};
 

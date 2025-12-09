@@ -35,7 +35,7 @@ namespace GL {
         };
 
         // returns true if a thread at this ID is alive and running.    
-        bool get_thread_alive(size_t thread_id);
+        // bool get_thread_alive(size_t thread_id);
         // returns the thread ID of the current, requesting thread from [1, inf). Thread IDs will be re-used once a thread terminates, resulting in low-digit IDs e.g. in practice the id's are between [1,20)
         size_t get_thread_id();
         // get the approximate count of milliseconds since the application launched. 

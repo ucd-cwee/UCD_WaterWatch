@@ -265,28 +265,6 @@ namespace GL {
                 return (T*)nullptr;
             }
         };
-
-        template <typename T> bool for_each_cancellable_alive(T const& func) {
-            const auto index = GL::util::get_thread_id();
-            size_t i;
-            for (i = index; i < _tls_size; ++i) {
-                if (GL::util::get_thread_alive(i)) {
-                    auto& x = _tls[i];
-                    if (x.second) {
-                        if (func(*x.second)) { return true; }
-                    }
-                }
-            }
-            for (i = 0; (i < index) && (i < _tls_size); ++i) {
-                if (GL::util::get_thread_alive(i)) {
-                    auto& x = _tls[i];
-                    if (x.second) {
-                        if (func(*x.second)) { return true; }
-                    }
-                }
-            }
-            return false;
-        };
         template <typename T> bool for_each_cancellable(T const& func) {
             const auto index = GL::util::get_thread_id();
             size_t i;
@@ -325,12 +303,6 @@ namespace GL {
                 func(x);
                 return false;
             });
-        };
-        template <typename T> void for_each_alive(T const& func) {
-            (void)for_each_cancellable_alive([&func](auto& x) -> bool {
-                func(x);
-                return false;
-                });
         };
     };
 };
