@@ -204,7 +204,6 @@ int main() {
                     }
                     }
                 });
-
 #if 1
 
 
@@ -429,7 +428,7 @@ int main() {
                 nearest = nullptr;
                 EXPECT_EQ(nullptr, root.find_namespace(GL::string("impl"), nearest)); // does not find it, but returns the root as the nearest location
                 EXPECT_NE(nullptr, nearest);
-#if 1
+
                 nearest = nullptr;
                 EXPECT_NE(nullptr, root.find_namespace(GL::string("std::string::impl"), nearest)); // successfully finds it
                 EXPECT_NE(nullptr, nearest);
@@ -461,14 +460,8 @@ int main() {
                     if (auto* p = scope.find_object_here(GL::printf("%i", i))) {}
                     else EXPECT_EQ(true, false);                    
                 });
-#endif
 
 #endif // << NO LEAK
-
-
-
-
-
 
             }
 #endif // << NO LEAK

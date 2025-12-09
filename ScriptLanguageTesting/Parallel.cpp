@@ -391,8 +391,10 @@ namespace GL {
 				if (internal_state.alive.compare_exchange_strong(prevS, InternalState::alive_state::is_booting)) {
 					internal_state.numCores = std::max<long long>(1, util::get_hardware_thread_count());
 					// Calculate the actual number of worker threads we want (-1 main thread):
-					internal_state.numThreads = std::max<long long>(1, (internal_state.numCores - 5) - ((internal_state.numCores - 5) % 4));
-
+					// internal_state.numThreads = internal_state.numCores - 1;
+					internal_state.numThreads = (internal_state.numCores - 5) - ((internal_state.numCores - 5) % 4);
+					internal_state.numThreads = std::max<long long>(internal_state.numThreads, internal_state.numThreads / 2);
+					internal_state.numThreads = std::max<long long>(1, internal_state.numThreads);
 					std::atomic<size_t> boot_count{ internal_state.numThreads };
 					internal_state.threads.reserve(internal_state.numThreads);
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
