@@ -1273,7 +1273,7 @@ int main() {
 
 #else
 // to-do, re-enable
-#if 0 
+#if 1 
             (void)GL::parallel::async([]() {
                 return std::string("TEST 0");
             }).wait();
@@ -1312,17 +1312,17 @@ int main() {
                 if (1){//auto timer = sw.debug_timer("No Sin()")) {
                     GL::parallel::For(0, 1000000, [](size_t i) {
                         (void)GL::degree(static_cast<float>(i));
-                        });
+                    });
                 }
                 if (1) {//auto timer = sw.debug_timer("Sin()")) {
                     GL::parallel::For(0, 1000000, [](size_t i) {
                         (void)GL::degree(static_cast<float>(i)).sin();
-                        });
+                    });
                 }
                 if (1) {//auto timer = sw.debug_timer("SinFast()")) {
                     GL::parallel::For(0, 1000000, [](size_t i) {
                         (void)GL::degree(static_cast<float>(i)).sin_fast();
-                        });
+                    });
                 }
 
 

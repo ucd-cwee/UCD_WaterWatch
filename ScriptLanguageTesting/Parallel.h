@@ -575,8 +575,8 @@ namespace GL {
 		template<typename F, typename Parent>
 		class job final : public job_base {
 			friend class job_base;
+			template<typename G, typename ParentB> friend class job;
 			template<typename G, typename ParentB> friend class jobs;
-
 		public:
 			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
 			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
@@ -612,8 +612,8 @@ namespace GL {
 			static void DoTask(impl::job_argument const& _args) {
 				job* data = reinterpret_cast<job*>(_args.task_memory);
 
-				if constexpr (!this_is_job_start)
-					data->parent->wait();
+				if constexpr (!this_is_job_start) 
+					data->parent->wait();				
 
 				if constexpr (this_is_job_start || (this_num_args == 0)) {
 					if constexpr (this_returns_void) data->todo();
@@ -709,6 +709,7 @@ namespace GL {
 		class jobs final : public job_base {
 			friend class job_base;
 			template<typename G, typename ParentB> friend class job;
+			template<typename G, typename ParentB> friend class jobs;
 		public:
 			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
 			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
@@ -746,9 +747,8 @@ namespace GL {
 			static void DoTask(impl::job_argument const& _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
 
-				if constexpr (!this_is_job_start)
-					data->parent->wait();
-
+				if constexpr (!this_is_job_start) 
+					data->parent->wait();				
 
 				if constexpr (this_num_args == 0) {
 					if constexpr (this_returns_void) (void)data->todo();
