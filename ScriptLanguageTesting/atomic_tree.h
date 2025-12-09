@@ -2235,3 +2235,934 @@ namespace GL {
 
 	};
 };
+
+#include "atomic_maps.h"
+#include <variant>
+
+namespace GL {
+
+	// Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
+    // Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
+	template< class objType, class keyType, int maxChildrenPerNode >
+	class epoch_search_tree {
+	public:
+		using lock_type = std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
+		struct epoch_search_treeNode {
+			std::variant<objType, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
+				data;
+			epoch_search_treeNode // parent node
+				* parent;
+			keyType	// key used for sorting						
+				key;
+			int	// number of children							
+				numChildren;
+			int
+				parent_index;
+			bool
+				is_leaf;
+			objType*
+				object() {
+				if (numChildren > 0 || !is_leaf) return nullptr;
+				return &std::get<objType>(data);
+			};
+			epoch_search_treeNode**
+				children() {
+				return &std::get<std::array<epoch_search_treeNode*, maxChildrenPerNode>>(data)[0];
+			};
+
+			epoch_search_treeNode* // next sibling
+				next() {
+				if (parent && (parent->numChildren > (parent_index + 1))) {
+					return parent->children()[parent_index + 1];
+				}
+				else {
+					return nullptr;
+				}
+			};
+			epoch_search_treeNode* // prev sibling
+				prev() {
+				if (parent && (parent_index >= 1)) {
+					return parent->children()[parent_index - 1];
+				}
+				else {
+					return nullptr;
+				}
+			};
+			epoch_search_treeNode* // first child
+				firstChild() {
+				if (numChildren == 0) return nullptr;
+				return children()[0];
+			};
+			epoch_search_treeNode* // last child
+				lastChild() {
+				if (numChildren == 0) return nullptr;
+				return children()[numChildren - 1];
+			};
+			void
+				add_child(epoch_search_treeNode* p) {
+				p->parent = this;
+				p->parent_index = numChildren;
+				children()[numChildren] = p;
+				++numChildren;
+				if (this->key < p->key) this->key = p->key;
+			}
+			__declspec(noinline) void
+				add_child_at(epoch_search_treeNode* p, int i) {
+				if (i >= numChildren) add_child(p);
+				else {
+					epoch_search_treeNode**
+						ch = children();
+					int
+						j;
+
+					if (this->key < p->key) this->key = p->key;
+					p->parent = this;
+					p->parent_index = i;
+					// shift everything forward
+
+#if 0
+					for (j = numChildren; j > i; --j) {
+						ch[j] = ch[j - 1];
+						ch[j]->parent_index = j;
+					}
+					ch[i] = p;
+#else
+					std::memmove(&ch[i + 1], &ch[i], sizeof(epoch_search_treeNode*) * (numChildren - i));
+					ch[i] = p;
+					ch = &ch[i];
+					for (j = i + 1; j <= numChildren; ++j) {
+						++ch;
+						(*ch)->parent_index = j;
+					}
+#endif
+					++numChildren;
+				}
+			}
+			epoch_search_treeNode*
+				pop_front_child() {
+				if (numChildren <= 0) {
+					return nullptr;
+				}
+				else {
+					auto* out = children()[0];
+					int i = 0;
+					for (i = 0; i < (numChildren - 1); ++i) {
+						children()[i] = children()[i + 1];
+						children()[i]->parent_index = i;
+					}
+					children()[i] = nullptr;
+					--numChildren;
+					return out;
+				}
+			}
+			void
+				pop_front_children(int n) {
+				if (numChildren >= n) {
+					int i = 0;
+					for (i = 0; i < (numChildren - n); ++i) {
+						children()[i] = children()[i + n];
+						children()[i]->parent_index = i;
+					}
+					for (; i < maxChildrenPerNode; ++i) {
+						children()[i] = nullptr;
+					}
+					numChildren -= n;
+				}
+			}
+			epoch_search_treeNode*
+				pop_child(int i) {
+				if (numChildren <= 0) {
+					return nullptr;
+				}
+				else {
+					epoch_search_treeNode**
+						ch = children();
+					epoch_search_treeNode*
+						out = ch[i];
+					int
+						j = numChildren - 1;
+
+#if 0
+					for (; i < (numChildren - 1); ++i) {
+						ch[i] = ch[i + 1];
+						ch[i]->parent_index = i;
+					}
+					ch[i] = nullptr;
+					--numChildren;
+					if (numChildren > 0) this->key = ch[numChildren - 1]->key;
+#else
+					std::memmove(&ch[i], &ch[i + 1], sizeof(epoch_search_treeNode*) * ((numChildren - i) - 1));
+					if (numChildren > 1) this->key = ch[numChildren - 2]->key;
+					ch[j] = nullptr;
+					ch = &ch[i];
+					for (; i < j; ++i) {
+						(*ch)->parent_index = i;
+						++ch;
+					}
+					--numChildren;
+#endif
+					return out;
+				}
+			}
+			epoch_search_treeNode*
+				pop_back_child() {
+				if (numChildren <= 0) {
+					return nullptr;
+				}
+				else {
+					auto* out = children()[numChildren - 1];
+					children()[numChildren - 1] = nullptr;
+					--numChildren;
+					if (numChildren > 0) this->key = children()[numChildren - 1]->key;
+					return out;
+				}
+			};
+			epoch_search_treeNode*
+				binomial_search_smallest_greater_equal_to(keyType K) {
+#if 0
+				epoch_search_treeNode* child = this->firstChild();
+				for (; child->next(); child = child->next()) {
+					if (K <= child->key)
+						break;
+				}
+				return child;
+#else
+				//if (K >= children()[numChildren - 1]->key) {
+				//	// it will be one of the final children
+				//	for (int i = numChildren - 2; i >= 0; --i) {
+				//		if (children()[i]->key < K) return children()[i + 1];
+				//	}
+				//	// worst-case we searched them all...
+				//	return children()[0];
+				//}
+				//else {
+				int
+					len,
+					mid,
+					offset;
+				bool
+					res;
+				epoch_search_treeNode
+					* sample;
+				if (numChildren == 0)
+					return nullptr;
+				if (numChildren == 1)
+					return children()[0];
+
+				len = numChildren;
+				mid = len;
+				offset = 0;
+				res = false;
+
+				while (mid > 0) {
+					mid = len >> 1;
+					sample = children()[offset + mid];
+					if (K >= sample->key) {
+						offset += mid;
+						len -= mid;
+						res = true;
+						if (K == sample->key) return sample;
+					}
+					else {
+						len -= mid;
+						res = false;
+					}
+				}
+				mid = offset + (int)res;
+				if (mid == numChildren) return children()[offset];
+				else return children()[mid];
+				//}
+#endif
+			};
+
+		};
+
+	private:
+		mutable lock_type
+			mut; // global tree lock. Should only be held temporarily if at all possible. 
+		epoch_search_treeNode*
+			root;
+		GL::atomic_epoch_allocator< epoch_search_treeNode, atomic_allocator< epoch_search_treeNode, 256, true, false >, 3>
+			nodeAllocator;
+		long
+			count;
+	private:
+		class // exclusive lock manager. Since this is a course-grained type, though, it can only ever hold one lock at a time. 
+			locker {
+		public:
+			lock_type*
+				locked;
+			bool
+				hard_locked;
+
+			locker() : locked{ nullptr }, hard_locked{ false } {};
+			locker(locker const&) = delete;
+			locker(locker&& rhs) noexcept : locked{ rhs.locked }, hard_locked{ rhs.hard_locked } { rhs.locked = nullptr; };
+			locker& operator=(locker const&) = delete;
+			locker& operator=(locker&& rhs) noexcept {
+				clear();
+				locked = rhs.locked;
+				hard_locked = rhs.hard_locked;
+				rhs.locked = nullptr;
+				return *this;
+			};
+			~locker() {
+				clear();
+			};
+			operator bool() const {
+				return locked != nullptr;
+			};
+
+		public:
+			__declspec(noinline) bool // store a shared lock
+				try_push_back(lock_type& source) {
+				clear();
+				locked = &source;
+				if (locked->try_lock()) {
+					hard_locked = true;
+					return true;
+				}
+				else {
+					hard_locked = false;
+					locked = nullptr;
+					return false;
+				}
+			};
+			void // store a shared lock
+				push_back(lock_type& source) {
+				clear();
+				locked = &source;
+				locked->lock();
+				hard_locked = true;
+			};
+			void // store a shared lock
+				push_back_shared(lock_type& source) {
+				clear();
+				locked = &source;
+				locked->lock_shared();
+				hard_locked = false;
+			};
+			__declspec(noinline) bool // store a shared lock
+				try_push_back_shared(lock_type& source) {
+				clear();
+				locked = &source;
+				if (locked->try_lock_shared()) {
+					hard_locked = false;
+					return true;
+				}
+				else {
+					hard_locked = false;
+					locked = nullptr;
+					return false;
+				}
+			};
+			void // store a shared lock
+				push_pop(lock_type& source) {
+				source.lock();
+				clear();
+				locked = &source;
+				hard_locked = true;
+			};
+			void // store a shared lock
+				push_pop_shared(lock_type& source) {
+				source.lock_shared();
+				clear();
+				locked = &source;
+				hard_locked = false;
+			};
+			void // remove the youngest lock
+				pop_back() {
+				clear();
+			};
+			void // remove the oldest lock
+				pop_front() {
+				clear();
+			};
+			size_t // count of locks
+				size() const {
+				return (locked != nullptr) ? 1 : 0;
+			};
+			void // clear all locks
+				clear() {
+				if (locked != nullptr) {
+					if (hard_locked) locked->unlock();
+					else locked->unlock_shared();
+					locked = nullptr;
+				}
+			};
+		};
+	public:
+		using GuardType = typename decltype(nodeAllocator)::GuardType;
+		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
+			return nodeAllocator.ProtectCurrentEpoch();
+		};
+		void ProtectCurrentEpoch_Fast() const {
+			nodeAllocator.ProtectCurrentEpoch_Fast();
+		};
+
+		epoch_search_tree()
+			: nodeAllocator()
+			, root{ nullptr }
+			, mut()
+			, count{ 0 }
+		{
+			root = AllocNode(false);
+		};
+		epoch_search_tree(epoch_search_tree const&)
+			= delete;
+		epoch_search_tree(epoch_search_tree&&) noexcept
+			= delete;
+		epoch_search_tree& operator=(epoch_search_tree const&)
+			= delete;
+		epoch_search_tree& operator=(epoch_search_tree&&) noexcept
+			= delete;
+		~epoch_search_tree()
+			= default;
+
+		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
+			Add(objType&& object, keyType key, locker const& Locking = locker()) {
+			epoch_search_treeNode
+				* node,
+				* child,
+				* newNode;
+			locker&
+				locking = const_cast<locker&>(Locking);
+			newNode
+				= AllocNode(true);
+			newNode->key
+				= key;
+			newNode->data
+				= std::move(object);
+
+			if (!locking) {
+				locking.push_back(mut); // locked
+			}
+
+			if (root == nullptr) root = AllocNode(false); // start fresh
+			if (root == nullptr) throw std::runtime_error("Root should not have been nullptr");
+
+			if (root->numChildren >= maxChildrenPerNode) { // make a new root and split
+				node = AllocNode(false);
+				node->key = root->key;
+				node->add_child(root);
+				SplitNode(root);
+				root = node;
+				node = nullptr;
+			}
+
+			for (node = root; node->numChildren > 0; node = child) {
+				if (key > node->key) node->key = key; // in prep for the insertion
+
+				// find the first child with a key larger equal to the key of the new node
+				child = node->binomial_search_smallest_greater_equal_to(key);
+
+				// we are inside of a branch of leafs -- we will do the insert.
+				if (child->object()) {
+					if (key <= child->key) {
+						// insert new node before child
+						node->add_child_at(newNode, child->parent_index);
+					}
+					else {
+						// insert new node after child
+						node->add_child_at(newNode, child->parent_index + 1);
+					}
+
+					++count;
+					return newNode;
+				}
+				else if (child->numChildren >= maxChildrenPerNode) {
+					SplitNode(child);
+					if (key <= child->prev()->key) child = child->prev();
+				}
+			}
+
+			// we only end up here if the root node is empty
+			root->add_child(newNode);
+
+			++count;
+			return newNode;
+
+		};
+		__declspec(noinline) bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+			Remove(epoch_search_treeNode* node, locker const& Locking = locker()) {
+			epoch_search_treeNode
+				* Node,
+				* parent,
+				* oldRoot;
+			locker&
+				locking = const_cast<locker&>(Locking);
+
+			// acquire all relevant locks before we perform the deletion
+			if (locking.size() == 0) locking.push_back(mut); // get the global tree lock		
+
+			// unlink the node from it's parent
+			parent = node->parent;
+			parent->pop_child(node->parent_index);
+
+			// make sure there are no parent nodes with a single child
+			for (; (parent != root) && (parent->numChildren <= 1); parent = parent->parent) {
+				while (true) {
+					if (Node = parent->next()) {
+						if ((parent->numChildren + Node->numChildren) > maxChildrenPerNode) {
+							SplitNode(Node);
+							continue;
+						}
+						parent = MergeNodes(parent, Node);
+						break;
+					}
+					else if (Node = parent->prev()) {
+						if ((parent->numChildren + Node->numChildren) > maxChildrenPerNode) {
+							SplitNode(Node);
+							continue;
+						}
+						parent = MergeNodes(Node, parent);
+						break;
+					}
+				}
+
+				if (parent->numChildren > maxChildrenPerNode) {
+					SplitNode(parent);
+					break;
+				}
+			}
+
+			// a parent may not use a key higher than the key of it's last child. Work backwards and make sure this is true. 
+			for (; parent && (parent->numChildren > 0); parent = parent->parent)
+				if (Node = parent->children()[parent->numChildren - 1])
+					if (parent->key > Node->key)
+						parent->key = Node->key;
+
+			// actually free the node
+			--count;
+			FreeNode(node);
+
+			// remove the root node if it has a single internal node as child		
+			if ((root->numChildren == 1) && !root->firstChild()->object()) {
+				oldRoot = root;
+
+				root = oldRoot->firstChild();
+				root->parent = nullptr;
+				root->parent_index = 0;
+
+				FreeNode(oldRoot);
+			}
+
+			return true;
+		};
+		std::pair<epoch_search_treeNode*, locker> // find an object using the given key
+			NodeFind(keyType key, bool for_removal = false) {
+			epoch_search_treeNode
+				* nxt;
+			std::pair<epoch_search_treeNode*, locker>
+				out;
+			epoch_search_treeNode*&
+				node = out.first;
+			locker&
+				locking = out.second;
+
+			if (!for_removal) locking.push_back_shared(mut);
+			else locking.push_back(mut);
+			if (!root || (root->numChildren <= 0)) {
+				node = nullptr;
+				locking.clear();
+				return out;
+			}
+
+			for (node = root; node; ) {
+				node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
+				if (node->object()) {
+					if (node->key == key) return out;
+					else {
+						node = nullptr;
+						locking.clear();
+						return out;
+					}
+				}
+				if (!node || (node->numChildren <= 0)) {
+					node = nullptr;
+					locking.clear();
+					return out;
+				}
+			}
+			node = nullptr;
+			locking.clear();
+			return out;
+		};
+		std::pair<epoch_search_treeNode*, locker> // find an object using the given key
+			NodeFind_ForRemoval(keyType key) {
+			return NodeFind(key, true);
+		};
+		locker
+			try_lock() {
+			locker out;
+			out.try_push_back(mut);
+			return out;
+		};
+		locker
+			lock(bool do_hard_lock = true) {
+			locker out;
+			if (do_hard_lock) out.push_back(mut);
+			else out.push_back_shared(mut);
+			return out;
+		};
+		locker
+			lock_shared() {
+			locker out;
+			out.push_back_shared(mut);
+			return out;
+		};
+		locker
+			try_lock_shared() {
+			locker out;
+			out.try_push_back_shared(mut);
+			return out;
+		};
+
+		std::pair<epoch_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
+			NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {
+			std::pair<epoch_search_treeNode*, locker>
+				out;
+			epoch_search_treeNode*&
+				node = out.first;
+			locker&
+				locking = out.second;
+
+			if (!for_removal) locking.push_back_shared(mut);
+			else locking.push_back(mut);
+			if (!root || (root->numChildren <= 0)) {
+				node = nullptr;
+				locking.clear();
+				return out;
+			}
+			for (node = root; node; ) {
+				node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
+				if (node->object()) {
+					if (node->key >= key) return out;
+					else {
+						node = nullptr;
+						locking.clear();
+						return out;
+					}
+				}
+				if (!node || (node->numChildren <= 0)) {
+					node = nullptr;
+					locking.clear();
+					return out;
+				}
+			}
+			node = nullptr;
+			locking.clear();
+			return out;
+		};
+		epoch_search_treeNode* // find an object with the smallest key larger equal the given key
+			NodeFindSmallestLargerEqual_Locked(keyType key, locker const& locked) {
+			epoch_search_treeNode*
+				node = nullptr;
+
+			if (!root || (root->numChildren <= 0)) {
+				node = nullptr;
+				return node;
+			}
+			for (node = root; node; ) {
+				node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
+				if (node->object()) {
+					if (node->key >= key) return node;
+					else {
+						node = nullptr;
+						return node;
+					}
+				}
+				if (!node || (node->numChildren <= 0)) {
+					node = nullptr;
+					return node;
+				}
+			}
+			node = nullptr;
+			return node;
+		};
+		std::pair<epoch_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
+			NodeFindSmallestLargerEqual_ForRemoval(keyType key) {
+			return NodeFindSmallestLargerEqual(key, true);
+		}
+
+
+#if 0
+		std::pair<epoch_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
+			NodeFindLargestSmallerEqual(keyType key) {
+			epoch_search_treeNode
+				* smaller;
+			std::pair<epoch_search_treeNode*, locker>
+				out;
+			epoch_search_treeNode*&
+				node = out.first;
+			locker&
+				locking = out.second;
+
+			locking.push_back(mut);
+			if (!root || !root->firstChild) {
+				node = nullptr;
+				locking.clear();
+				return out;
+			}
+
+			for (node = root->firstChild, smaller = nullptr; node != nullptr; ) {
+				while (node->next) {
+					if (node->key >= key) break;
+					smaller = node;
+					node = node->next;
+				}
+				if (node->object) {
+					if (node->key <= key) return node;
+					else if (smaller == nullptr) {
+						node = nullptr;
+						locking.clear();
+						return out;
+					}
+					else {
+						node = smaller;
+						if (node->object) return out;
+					}
+				}
+
+				if (!node || !node->firstChild) {
+					node = nullptr;
+					locking.clear();
+					return out;
+				}
+
+				node = node->firstChild;
+			}
+			node = nullptr;
+			locking.clear();
+			return out;
+		};
+#endif
+		std::pair<epoch_search_treeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+			GetRoot() {
+			std::pair<epoch_search_treeNode*, locker> out;
+			out.second.push_back(mut);
+			out.first = root;
+			return out;
+		};
+		epoch_search_treeNode* // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+			GetRoot(locker const& locked) {
+			return root;
+		};
+#if 0
+		static epoch_search_treeNode* // goes through all nodes of the tree		
+			GetNext(epoch_search_treeNode* node, locker& locking) {
+			if (node->firstChild) {
+				return node->firstChild;
+			}
+			else {
+				while (node && (node->next == nullptr)) {
+					node = node->parent;
+				}
+				return node;
+			}
+
+		};
+#endif
+		static epoch_search_treeNode* // goes through all leaf nodes of the tree		
+			GetNextLeaf(epoch_search_treeNode* node, locker& locking) {
+			if (!node) return nullptr;
+
+			epoch_search_treeNode*
+				nxt;
+			if (nxt = node->firstChild()) {
+				while (nxt) {
+					node = nxt;
+					nxt = node->firstChild();
+				}
+				return node;
+			}
+			else {
+				while (node && (node->next() == nullptr)) {
+					nxt = node->parent;
+					node = nxt;
+				}
+				if (node) {
+					nxt = node->next();
+					node = nxt;
+					nxt = node->firstChild();
+					while (nxt) {
+						node = nxt;
+						nxt = node->firstChild();
+					}
+					return node;
+				}
+				else return nullptr;
+			}
+		};
+		size_t size() const {
+			auto locked{ std::shared_lock(mut) };
+			return (size_t)count;
+		};
+
+	private:
+		epoch_search_treeNode*
+			AllocNode(bool is_leaf) {
+			epoch_search_treeNode
+				* node;
+
+			node = nodeAllocator.Alloc();
+			if (is_leaf) {
+				node->is_leaf = true;
+				node->data = objType{};
+			}
+			else {
+				node->is_leaf = false;
+				node->data = std::array<epoch_search_treeNode*, maxChildrenPerNode>{};
+				for (int i = 0; i < maxChildrenPerNode; ++i) node->children()[i] = nullptr;
+			}
+
+			node->key = 0;
+			node->parent = nullptr;
+			node->parent_index = 0;
+			node->numChildren = 0;
+
+			return node;
+		};
+		__declspec(noinline) void
+			FreeNode(epoch_search_treeNode* node) {
+			if (node) {
+				nodeAllocator.Free(node);
+			}
+		};
+		void // will split node by creating a neighbor next to it in the parent node and sharing half its children
+			SplitNode(epoch_search_treeNode* node) {
+			int
+				i, j;
+			epoch_search_treeNode
+				* child,
+				* newNode;
+
+			// allocate a new node
+			newNode = AllocNode(false);
+			newNode->parent = node->parent;
+
+			// divide the children over the two nodes
+			child = node->firstChild();
+			newNode->children()[0] = child;
+			for (j = 1, i = 3; i < node->numChildren; i += 2, j++) {
+				child = child->next();
+				newNode->children()[j] = child;
+			}
+			newNode->key = child->key;
+			newNode->numChildren = node->numChildren / 2;
+			for (i = 0; i < newNode->numChildren; ++i) {
+				newNode->children()[i]->parent = newNode;
+				newNode->children()[i]->parent_index = i;
+			}
+
+			newNode->parent_index = node->parent_index;
+			node->pop_front_children(newNode->numChildren);
+			node->parent->add_child_at(newNode, newNode->parent_index);
+			node->key = node->children()[node->numChildren - 1]->key;
+		};;
+		epoch_search_treeNode* // node1 will be deleted and its children appended to node2
+			MergeNodes(epoch_search_treeNode* node1, epoch_search_treeNode* node2) {
+			for (int i = 0; i < node1->numChildren; ++i)
+				node2->add_child_at(node1->children()[i], i);
+			(void)node1->parent->pop_child(node1->parent_index);
+			FreeNode(node1);
+			return node2;
+		};
+
+	};
+
+	template< class objType, class keyType>
+	class epoch_multimap{
+	private:
+		mutable epoch_search_tree<objType, keyType, 10>
+			tree;
+		using GuardType = typename decltype(tree)::GuardType;
+
+	public:
+		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
+			return tree.ProtectCurrentEpoch();
+		};
+		void ProtectCurrentEpoch_Fast() const {
+			tree.ProtectCurrentEpoch_Fast();
+		};
+
+		class WrappedReference {
+		private:
+			GuardType guard;
+
+		public:
+			const keyType&
+				first;
+			objType&
+				second;
+
+			WrappedReference(
+				const keyType& _first, 
+				objType& _second, 
+				const epoch_multimap* _parent)
+				: first{ _first }
+				, second{ _second }
+				, guard{ _parent->ProtectCurrentEpoch() }
+			{};
+			WrappedReference(WrappedReference const&) = delete;
+			WrappedReference(WrappedReference&&) = delete;
+			WrappedReference& operator=(WrappedReference const&) = delete;
+			WrappedReference& operator=(WrappedReference&&) = delete;
+			~WrappedReference() = default;
+		};
+
+		epoch_multimap() = default;
+		epoch_multimap(epoch_multimap const& rhs) = delete;
+		epoch_multimap(epoch_multimap&& rhs) = delete;
+		epoch_multimap& operator=(epoch_multimap const& rhs) = delete;
+		epoch_multimap& operator=(epoch_multimap&& rhs) = delete;
+		~epoch_multimap() = default;
+
+		WrappedReference
+			insert(const keyType& time, objType&& value) {
+			auto g{ ProtectCurrentEpoch() };
+			auto* node_ptr = tree.Add(std::move(value), time);
+			return WrappedReference(node_ptr->key, *node_ptr->object(), this);
+		};
+		void
+			insert_fast(const keyType& time, objType&& value) {
+			(void)tree.Add(std::move(value), time);
+		};
+		objType& // throws if the key is not found. 
+			at(const keyType& time) const {
+			auto g{ ProtectCurrentEpoch() };
+			if (auto [node, locker] = tree.NodeFind(time); node) {
+				return *node->object();
+			}
+			throw std::range_error("Could not find key");			
+		};
+		objType* // returns nullptr if the key is not found. 
+			try_at(const keyType& time) const {
+			auto g{ ProtectCurrentEpoch() };
+			if (auto [node, locker] = tree.NodeFind(time); node) {
+				return node->object();
+			}
+			return nullptr;
+		};
+		__declspec(noinline) objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+			operator[](const keyType& time) {
+			auto g{ ProtectCurrentEpoch() };
+			if (auto [node, locker] = tree.NodeFind(time); node) {
+				return *node->object();
+			}
+			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) {
+				return *node->object();
+			}
+			else if (node = tree.Add({}, time, locker); node) {
+				return *node->object();
+			}
+			else {
+				throw std::range_error("Could not find key");
+			}
+		};
+
+
+
+	};
+
+};

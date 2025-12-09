@@ -39,6 +39,7 @@
 #include "datetime.h"
 #include "functions.h"
 #include "scripting.h"
+#include "atomic_tree.h"
 
 #pragma endregion
 
@@ -102,6 +103,59 @@ int main() {
         }
     }
 #endif
+
+    if (0) {
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {                
+                map[i] = i;
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 3")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 1")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 2")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 3")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
+        }
+    }
+
+
 
     std::thread test_thread([&]() {
         GL::parallel::For(0, 1000000, [&](size_t i) {});
