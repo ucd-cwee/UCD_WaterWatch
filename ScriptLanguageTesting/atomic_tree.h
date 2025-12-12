@@ -2683,7 +2683,7 @@ namespace GL {
 			return newNode;
 
 		};
-		__declspec(noinline) bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+		bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
 			Remove(epoch_search_treeNode* node, locker const& Locking = locker()) {
 			epoch_search_treeNode
 				* Node,
@@ -3120,7 +3120,7 @@ namespace GL {
 
 		WrappedReference
 			insert(const keyType& time, objType&& value) {
-			auto g{ ProtectCurrentEpoch() };
+			ProtectCurrentEpoch_Fast();
 			auto* node_ptr = tree.Add(std::move(value), time);
 			return WrappedReference(node_ptr->key, *node_ptr->object(), this);
 		};
@@ -3130,36 +3130,49 @@ namespace GL {
 		};
 		objType& // throws if the key is not found. 
 			at(const keyType& time) const {
-			auto g{ ProtectCurrentEpoch() };
 			if (auto [node, locker] = tree.NodeFind(time); node) {
+				ProtectCurrentEpoch_Fast();
 				return *node->object();
 			}
 			throw std::range_error("Could not find key");			
 		};
 		objType* // returns nullptr if the key is not found. 
 			try_at(const keyType& time) const {
-			auto g{ ProtectCurrentEpoch() };
 			if (auto [node, locker] = tree.NodeFind(time); node) {
+				ProtectCurrentEpoch_Fast();
 				return node->object();
 			}
 			return nullptr;
 		};
-		__declspec(noinline) objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+		objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
 			operator[](const keyType& time) {
-			auto g{ ProtectCurrentEpoch() };
 			if (auto [node, locker] = tree.NodeFind(time); node) {
+				ProtectCurrentEpoch_Fast();
 				return *node->object();
 			}
 			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) {
+				ProtectCurrentEpoch_Fast();
 				return *node->object();
 			}
 			else if (node = tree.Add({}, time, locker); node) {
+				ProtectCurrentEpoch_Fast();
 				return *node->object();
 			}
 			else {
 				throw std::range_error("Could not find key");
 			}
 		};
+		bool // optionally get a copy of the object being deleted. 
+			erase(const keyType& time, objType* out = nullptr) const {
+			if (auto [node, locker] = tree.NodeFind(time, true); node) {
+				ProtectCurrentEpoch_Fast();
+				if (out) *out = *node->object();
+				return tree.Remove(node, locker);
+			}
+			return false;
+		};
+
+
 
 
 

@@ -41,20 +41,34 @@ namespace GL {
             };
         };
 
+        template <typename T, long long len>
+        class fast_queue {            
+            std::array<T, len> arr{};
+            long long pos{ 0 };
+        public:
+            void push(T&& rhs) {
+                arr[pos++ % len] = std::move(rhs);
+            };
+            void push(T const& rhs) {
+                arr[pos++ % len] = rhs;
+            };
+            T const& front() const {
+                return arr[pos % len];
+            };
+        };
+
         class TLS {
         public:
             long long
                 _scope_count;
             long long
                 EpochLimit{ -1 };
-            std::array<long long, deferment_size>
+            fast_queue<long long, deferment_size>
                 epochs;
 
             long long ForwardEpoch(long long CurrentEpoch) {
-                int i;
-                EpochLimit = epochs[0];                
-                for (i = 0; i < (deferment_size-1); ++i) epochs[i] = epochs[i + 1];
-                epochs[i] = CurrentEpoch;
+                EpochLimit = epochs.front();
+                epochs.push(CurrentEpoch);
                 return EpochLimit;
             };
             bool EpochCheck(long long CurrentEpoch) {
@@ -128,7 +142,7 @@ namespace GL {
 
             if (((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch)) {
                 _TLS.for_each([&_EpochLimit](TLS& _tls) {
-                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs[deferment_size-1]) {
+                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs.front()) {
                         _EpochLimit = std::min<long long>(_EpochLimit, L);
                     }
                 });

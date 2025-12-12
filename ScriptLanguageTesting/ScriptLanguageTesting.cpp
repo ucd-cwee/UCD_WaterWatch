@@ -105,11 +105,23 @@ int main() {
 #endif
 
     if (0) {
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 0")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000; ++i) {
+                map[i] = i;
+            }
+        }
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1")) {
             GL::epoch_multimap<int, int> map;
             for (int i = 0; i < 1000000; ++i) {                
                 map[i] = i;
             }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1a")) {
+            GL::epoch_multimap<int, int> map;
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2")) {
             GL::epoch_multimap<int, int> map;
@@ -129,11 +141,50 @@ int main() {
                 map[i] = i;
             });
         }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 4")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                map.erase(i);
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 5")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map.erase(i);
+            });
+        }
+        if (1) { // this feature is only possible with the epoch_multimap
+            GL::epoch_multimap<int, int> map;
+            GL::parallel::For(0, 1000000, [&](int i) {
+                auto ref = map.insert(i, (int)i);
+                ref.second++;
+                map.erase(i);
+                ref.second++;
+            });
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 0")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            for (int i = 0; i < 1000; ++i) {
+                map[i] = i;
+            }
+        }
         if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 1")) {
             concurrency::concurrent_unordered_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
             }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 1a")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 2")) {
             concurrency::concurrent_unordered_map<int, int> map;
@@ -153,9 +204,30 @@ int main() {
                 map[i] = i;
             });
         }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 4")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                map.unsafe_erase(i);
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 5")) {
+            concurrency::concurrent_unordered_map<int, int> map;
+            std::mutex mut;
+            for (int i = 0; i < 1000000; ++i) {
+                mut.lock();
+                map[i] = i;
+                mut.unlock();
+            }
+            GL::parallel::For(0, 1000000, [&](int i) {
+                mut.lock();
+                map.unsafe_erase(i);
+                mut.unlock();
+            });
+        }
     }
-
-
 
     std::thread test_thread([&]() {
         GL::parallel::For(0, 1000000, [&](size_t i) {});
