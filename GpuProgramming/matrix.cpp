@@ -3829,9 +3829,9 @@ namespace GL {
                 if (auto R = t_stat.read()) {
                     if (auto W = out.write()) {
                         for (unsigned int i = 0; i < N; ++i) {
-                            W[i] = (1.0f - (float)boost::math::cdf(dist, R[i])) + boost::math::cdf(dist, -R[i]);
+                            W[i] = (1.0f - (float)boost::math::cdf(dist, R[i])) + (float)boost::math::cdf(dist, -R[i]);
                             if ((W[i] > 1.0f) || (W[i] < 0.0f))
-                                W[i] = (1.0f - (float)boost::math::cdf(dist, -R[i])) + boost::math::cdf(dist, R[i]);
+                                W[i] = (1.0f - (float)boost::math::cdf(dist, -R[i])) + (float)boost::math::cdf(dist, R[i]);
                         }
                     }
                 }

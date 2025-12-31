@@ -6,6 +6,7 @@
 #include "atomic_allocator.h"
 #include "Strings.h"
 // #include "atomic_maps.h"
+#include "ticket_dispensor.h"
 
 // a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
 namespace GL {
