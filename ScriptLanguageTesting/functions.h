@@ -1164,6 +1164,29 @@ namespace GL {
         Func&& func,
         size_t stateModifier,
         std::vector<any>&& defaults,
+        std::vector<std::pair<GL::string, GL::type>> const& arguments,
+        GL::type returnType
+    ) {
+        auto out = make_callable(name, std::move(func), stateModifier, std::move(defaults));
+
+        if (arguments.size() > 0) {
+            for (int i = 0; (i < arguments.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
+                out->m_signature.argument_names_m[i] = arguments[i].first;
+                //if (out->m_signature.argument_types_m[i].is_any()) {
+                out->m_signature.argument_types_m[i] = arguments[i].second;
+                //}
+            }
+            out->m_signature.returns_m = returnType;
+            out->m_signature.evaluate_if_template_function();
+        }
+        return out;
+    };
+
+    template<typename Func> __forceinline Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        size_t stateModifier,
+        std::vector<any>&& defaults,
         std::vector<GL::string> const& argument_names
     ) {
         auto out = make_callable(name, std::move(func), stateModifier, std::move(defaults));
@@ -1191,6 +1214,28 @@ namespace GL {
                     out->m_signature.argument_types_m[i] = arguments[i].second;
                // }
             }
+            out->m_signature.evaluate_if_template_function();
+        }
+        return out;
+    };
+
+    template<typename Func> __forceinline Proxy_Function make_callable(
+        GL::string const& name,
+        Func&& func,
+        std::vector<any>&& defaults,
+        std::vector<std::pair<GL::string, GL::type>> const& arguments,
+        GL::type returnType
+    ) {
+        auto out = make_callable(name, std::move(func), std::move(defaults));
+
+        if (arguments.size() > 0) {
+            for (int i = 0; (i < arguments.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
+                out->m_signature.argument_names_m[i] = arguments[i].first;
+                // if (out->m_signature.argument_types_m[i].is_any()) {
+                out->m_signature.argument_types_m[i] = arguments[i].second;
+                // }
+            }
+            out->m_signature.returns_m = returnType;
             out->m_signature.evaluate_if_template_function();
         }
         return out;

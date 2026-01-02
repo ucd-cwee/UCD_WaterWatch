@@ -246,6 +246,108 @@ int main() {
         while (true) {
             loop_sw.reset();
 
+            if (1) {
+                GL::scope::impl::RootScope 
+                    program_root;
+                auto& std_namespace 
+                    = program_root.make_namespace("std");
+                auto& std_string_namespace
+                    = std_namespace.make_namespace("string");
+
+                std_string_namespace.insert_object_here("npos", GL::any(std::string::npos) + GL::type::Reference);
+
+                if (auto* p = std_string_namespace.find_object("npos")) {
+                    auto f = p->fast();
+                    EXPECT_EQ(f.m_casted_type.is_const(), false);
+                    EXPECT_EQ(f.m_casted_type.is_ref(), true);
+                    EXPECT_EQ(f.m_casted_type.is_cpp_type(), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), true);
+                }
+                else {
+                    EXPECT_EQ(true, false);
+                }
+
+                if (auto* p = std_namespace.find_object("string::npos")) {
+                    auto f = p->fast();
+                    EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::Const) > 0, false);
+                    EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::Reference) > 0, true);
+                    EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::CppType) > 0, true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), true);
+                }
+                else {
+                    EXPECT_EQ(true, false);
+                }
+
+                if (auto* p = program_root.find_object("std::string::npos")) {
+                    auto f = p->fast();
+                    EXPECT_EQ(f.m_casted_type & GL::type::Const, false);
+                    EXPECT_EQ(f.m_casted_type & GL::type::Reference, true);
+                    EXPECT_EQ(f.m_casted_type & GL::type::CppType, true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), true);
+                }
+                else {
+                    EXPECT_EQ(true, false);
+                }
+
+                if (auto* p = program_root.find_object("x")) {
+                    EXPECT_EQ(true, false);
+                }
+                else {
+                    EXPECT_EQ(true, true);
+                }
+
+                auto constructor1 = GL::make_callable("string", []() -> std::string { return std::string(); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);
+                auto constructor2 = GL::make_callable("string", [](std::string const& rhs) -> std::string { return std::string(rhs); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);
+                //auto set_operator = GL::make_callable("=", // function name
+                //    [](GL::any::fast_any const& lhs, std::string const& rhs) -> GL::any::fast_any {
+                //        lhs.cast<std::string&>() = rhs;
+                //        return lhs;
+                //    }, // function impl
+                //    {}, // defaults
+                //    { { "lhs", GL::type_of<std::string&>() }, { "rhs", GL::type_of<std::string const&>() } }, // arguments
+                //    GL::type_of<std::string&>() // return type
+                //);
+                auto set_operator = GL::make_callable("=", // function name
+                    [](GL::any const& lhs, std::string const& rhs) -> GL::any {
+                        lhs.cast<std::string&>() = rhs;
+                        return lhs;
+                    }, // function impl
+                    {}, // defaults
+                    { { "lhs", GL::type_of<std::string&>() }, { "rhs", GL::type_of<std::string const&>() } }, // arguments
+                    GL::type_of<std::string&>() // return type
+                );
+                GL::details::Const_Member_Function_Impl length_func(&std::string::length);
+                // auto length_func = GL::decl_func(&std::string::length);
+
+                auto constructed1_str = constructor1->operator()({});
+                constructed1_str.cast<std::string&>() = "TEST";
+                auto constructed2_str = constructor2->operator()({ constructed1_str });
+                EXPECT_EQ(constructed2_str.cast<std::string&>(), "TEST");               
+                constructed2_str.cast<std::string&>() = "TEST2";
+                auto ref_str = set_operator->operator()({ constructed1_str, constructed2_str });
+                EXPECT_EQ(constructed2_str.cast<std::string&>(), "TEST2");
+                EXPECT_EQ(ref_str.cast<std::string&>(), "TEST2");
+                EXPECT_EQ(constructed1_str.cast<std::string&>(), "TEST2");
+                EXPECT_EQ(length_func.operator()({ ref_str }).cast<size_t>(), 5);
+
+                ref_str.cast<std::string&>() = "TEST3";
+                EXPECT_EQ(ref_str.cast<std::string&>(), "TEST3");
+                EXPECT_EQ(constructed1_str.cast<std::string&>(), "TEST3");
+
+            }
+
+
+
+
+
+
+
+
+
+
             // Testing Scopes::Scopes
 #if 1
             if (1) {
