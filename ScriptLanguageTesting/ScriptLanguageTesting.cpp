@@ -11,7 +11,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
+#include <map>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -104,14 +104,36 @@ int main() {
     }
 #endif
 
-    if (0) {
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1")) {
+    if (1) {
+        if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 1")) {
+            std::map<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 2")) {
+            std::map<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+        }
+
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1.1")) {
             GL::epoch_multimap<int, int> map;
             for (int i = 0; i < 1000000; ++i) {                
                 map[i] = i;
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2")) {
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1.2")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map.insert_fast(i, int{ i });
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2.1")) {
             GL::epoch_multimap<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
@@ -120,7 +142,16 @@ int main() {
                 map[i] = i;
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 3")) {
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2.2")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map.insert_fast(i, int{ i });
+            }
+            for (int i = 0; i < 1000000; ++i) {
+                map[i] = i;
+            }
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 3.1")) {
             GL::epoch_multimap<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
@@ -129,6 +160,28 @@ int main() {
                 map[i] = i;
             });
         }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 3.2")) {
+            GL::epoch_multimap<int, int> map;
+            for (int i = 0; i < 1000000; ++i) {
+                map.insert_fast(i, int{ i });
+            }
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 4.1")) {
+            GL::epoch_multimap<int, int> map;
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 4.2")) {
+            GL::epoch_multimap<int, int> map;
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map.insert_fast(i, int{ i });
+            });
+        }
+
         if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 1")) {
             concurrency::concurrent_unordered_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
@@ -149,6 +202,12 @@ int main() {
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
             }
+            GL::parallel::For(0, 1000000, [&](int i) {
+                map[i] = i;
+            });
+        }
+        if (GL::stopwatch sw; auto x = sw.debug_timer("concurrent_unordered_map 4")) {
+            concurrency::concurrent_unordered_map<int, int> map;
             GL::parallel::For(0, 1000000, [&](int i) {
                 map[i] = i;
             });

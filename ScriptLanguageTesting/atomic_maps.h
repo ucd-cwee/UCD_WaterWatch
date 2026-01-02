@@ -14,7 +14,7 @@
 namespace GL {
     // Thread-safe, lock-free, okay-performance allocator that delays destruction until likely safe to do so. 
     // uses the real clock of the OS to time when enough periods have passed that a free'd pointer is likely forgotten. 
-    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_, 128, false, false>, int deferment_size = 3>
+    template <typename _type_, typename AllocatorType = atomic_parallel_allocator<_type_, 128, false, false>, int deferment_size = 4>
     class atomic_epoch_allocator {
     private:
         struct DeleteType {
@@ -41,20 +41,42 @@ namespace GL {
             };
         };
 
+        static constexpr bool is_powerof2(int v) {
+            return v && ((v & (v - 1)) == 0);
+        }
+
+        template <class T, int len>
+        class fast_circular_queue {
+            std::array<T, len> data;
+            unsigned int pos{ 0 };
+
+        public:
+            void push(T const& t) {
+                if constexpr (is_powerof2(len)) data[pos++ & (len - 1)] = t;
+                else data[pos++ % len] = t;
+            };
+            void push(T&& t) {
+                if constexpr (is_powerof2(len)) data[pos++ & (len - 1)] = std::move(t);                
+                else data[pos++ % len] = std::move(t);                
+            };
+            const T& front() const {
+                if constexpr (is_powerof2(len)) return data[pos & (len - 1)];                
+                else return data[pos % len];
+            };
+        };
+
         class TLS {
         public:
             long long
                 _scope_count;
             long long
                 EpochLimit{ -1 };
-            std::array<long long, deferment_size>
+            fast_circular_queue<long long, deferment_size>
                 epochs;
 
             long long ForwardEpoch(long long CurrentEpoch) {
-                int i;
-                EpochLimit = epochs[0];                
-                for (i = 0; i < (deferment_size-1); ++i) epochs[i] = epochs[i + 1];
-                epochs[i] = CurrentEpoch;
+                EpochLimit = epochs.front();
+                epochs.push(CurrentEpoch);
                 return EpochLimit;
             };
             bool EpochCheck(long long CurrentEpoch) {
@@ -103,6 +125,8 @@ namespace GL {
                     RunGC();
                 };
             };
+
+
         };
         // Allocator means larger memory footprint, but faster when multiple threads are in use. 
         AllocatorType // Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
@@ -128,7 +152,7 @@ namespace GL {
 
             if (((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch)) {
                 _TLS.for_each([&_EpochLimit](TLS& _tls) {
-                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs[deferment_size-1]) {
+                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs.front()) {
                         _EpochLimit = std::min<long long>(_EpochLimit, L);
                     }
                 });

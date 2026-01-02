@@ -2482,7 +2482,7 @@ namespace GL {
 			mut; // global tree lock. Should only be held temporarily if at all possible. 
 		epoch_search_treeNode*
 			root;
-		GL::atomic_epoch_allocator< epoch_search_treeNode, atomic_allocator< epoch_search_treeNode, 256, true, false >, 3>
+		GL::atomic_epoch_allocator< epoch_search_treeNode, atomic_allocator< epoch_search_treeNode, 256, true, false >, 4>
 			nodeAllocator;
 		long
 			count;
@@ -2607,6 +2607,7 @@ namespace GL {
 			, count{ 0 }
 		{
 			root = AllocNode(false);
+			ProtectCurrentEpoch_Fast();
 		};
 		epoch_search_tree(epoch_search_tree const&)
 			= delete;
@@ -3120,7 +3121,7 @@ namespace GL {
 
 		WrappedReference
 			insert(const keyType& time, objType&& value) {
-			auto g{ ProtectCurrentEpoch() };
+			ProtectCurrentEpoch_Fast();
 			auto* node_ptr = tree.Add(std::move(value), time);
 			return WrappedReference(node_ptr->key, *node_ptr->object(), this);
 		};
@@ -3130,35 +3131,23 @@ namespace GL {
 		};
 		objType& // throws if the key is not found. 
 			at(const keyType& time) const {
-			auto g{ ProtectCurrentEpoch() };
-			if (auto [node, locker] = tree.NodeFind(time); node) {
-				return *node->object();
-			}
+			ProtectCurrentEpoch_Fast();
+			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();			
 			throw std::range_error("Could not find key");			
 		};
 		objType* // returns nullptr if the key is not found. 
 			try_at(const keyType& time) const {
-			auto g{ ProtectCurrentEpoch() };
-			if (auto [node, locker] = tree.NodeFind(time); node) {
-				return node->object();
-			}
+			ProtectCurrentEpoch_Fast();
+			if (auto [node, locker] = tree.NodeFind(time); node) return node->object();			
 			return nullptr;
 		};
-		__declspec(noinline) objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
+		objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
 			operator[](const keyType& time) {
-			auto g{ ProtectCurrentEpoch() };
-			if (auto [node, locker] = tree.NodeFind(time); node) {
-				return *node->object();
-			}
-			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) {
-				return *node->object();
-			}
-			else if (node = tree.Add({}, time, locker); node) {
-				return *node->object();
-			}
-			else {
-				throw std::range_error("Could not find key");
-			}
+			ProtectCurrentEpoch_Fast();
+			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();			
+			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();			
+			else if (node = tree.Add({}, time, locker); node) return *node->object();			
+			else throw std::range_error("Could not find key");			
 		};
 
 

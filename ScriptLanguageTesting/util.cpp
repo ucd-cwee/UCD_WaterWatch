@@ -65,7 +65,7 @@ namespace GL {
             };
         };
         long long get_current_epoch() {
-#if 0
+#if 1
             static std::atomic<long long> _epoch{ clock::ms() };
             struct Wrap {
                 __declspec(noinline) static void UpdateEpoch(void) {
