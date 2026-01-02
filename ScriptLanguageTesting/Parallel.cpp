@@ -275,21 +275,9 @@ namespace GL {
 				}
 				else {
 					// work until there are no jobs left
-					//long long last_job_time{ GL::util::get_current_epoch() };
-					//long long current_epoch = last_job_time;
-					//while (true) {
-						while (try_get_job(internal_state.jobQueue, task)) {							
-							do_task(task, args, sizeOfData, data);
-							//last_job_time = GL::util::get_current_epoch();
-						}
-						//break; 
-						//if ((current_epoch - last_job_time) > 16) {
-						//	current_epoch = GL::util::get_current_epoch();
-						//	if ((current_epoch - last_job_time) > 16) {
-						//		break;
-						//	}
-						//}
-					//}			
+					while (try_get_job(internal_state.jobQueue, task)) {							
+						do_task(task, args, sizeOfData, data);
+					}	
 					if (data && (sizeOfData > 0)) ::_aligned_free(data);
 				}
 			};
@@ -299,8 +287,8 @@ namespace GL {
 				if (jobCount > (32 * internal_state.numThreads)) { 	
 					// if there are enough jobs, then it is worth spending a few extra moments distributing jobs based on the "effectiveness" of the hyperthreads. Not all threads are built equal, 
 					// and some have 1/2 or worse of the performance of others. This strategy attempted to measure the performance at start-up, and then uses that to divy-up jobs. 
-#if 0
-#if 0
+#if 1
+#if 1
 					job.group_job_offset = 0;
 					long long job_remaining = jobCount;
 					size_t groupID = 0;

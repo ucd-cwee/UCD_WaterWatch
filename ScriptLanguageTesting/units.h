@@ -6,6 +6,7 @@
 #include <concurrent_unordered_map.h>
 #include <limits>
 #include <sstream>
+#include "atomic_tree.h"
 
 namespace GL {
 #ifdef DECL_UNIT_LITERALS 
@@ -690,7 +691,10 @@ namespace GL {
         };
 
     public:      
-        static const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& all_known_unit_types();
+        static 
+            // const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
+            const GL::epoch_multimap< value::si_unit, uint16_t>&
+            all_known_unit_types();
 
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       
         explicit value(impl_unit const& from) : packed(from.default_bits) {};

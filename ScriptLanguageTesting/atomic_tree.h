@@ -6,6 +6,7 @@
 #include "atomic_allocator.h"
 #include "Strings.h"
 // #include "atomic_maps.h"
+#include "ticket_dispensor.h"
 
 // a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
 namespace GL {
@@ -2684,7 +2685,7 @@ namespace GL {
 			return newNode;
 
 		};
-		__declspec(noinline) bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
+		bool // remove an object node from the tree. Assumes the user cannot remove branch nodes, and can only request to remove leafs.
 			Remove(epoch_search_treeNode* node, locker const& Locking = locker()) {
 			epoch_search_treeNode
 				* Node,
@@ -3149,6 +3150,8 @@ namespace GL {
 			else if (node = tree.Add({}, time, locker); node) return *node->object();			
 			else throw std::range_error("Could not find key");			
 		};
+
+
 
 
 
