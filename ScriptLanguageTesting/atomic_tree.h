@@ -3150,7 +3150,15 @@ namespace GL {
 			else if (node = tree.Add({}, time, locker); node) return *node->object();			
 			else throw std::range_error("Could not find key");			
 		};
-
+		bool // optionally get a copy of the object being deleted. 
+			erase(const keyType& time, objType* out = nullptr) const {
+			ProtectCurrentEpoch_Fast();
+			if (auto [node, locker] = tree.NodeFind(time, true); node) {				
+				if (out) *out = *node->object();
+				return tree.Remove(node, locker);
+			}
+			return false;
+		};
 
 
 
