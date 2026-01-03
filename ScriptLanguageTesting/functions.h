@@ -977,62 +977,121 @@ namespace GL {
             // Free functions
             template<typename Ret, typename... Param>
             Function_Signature(Ret(*f)(Param...))
-                ->Function_Signature<Ret, void, Function_Params<Param...>>; // static function
+                ->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
 
             // no reference specifier
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) volatile)
-                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) volatile const)
-                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...))
-                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) const)
-                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
 
             // & reference specifier
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) volatile&)
-                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) volatile const&)
-                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...)&)
-                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) const&)
-                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
 
             // && reference specifier
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) volatile&&)
-                ->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) volatile const&&)
-                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...)&&)
-                ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) const&&)
-                ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true>; // member function
+                ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
+
+
+#if 1
+                        // Free functions
+            template<typename Ret, typename... Param>
+            Function_Signature(Ret(*f)(Param...) noexcept)
+                ->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+            // no reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile const noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) const noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+            // & reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile const& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...)& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) const& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+            // && reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile&& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) volatile const&& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...)&& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature(Ret(Class::* f)(Param...) const&& noexcept)
+                ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
+#endif
 
             template<typename Ret, typename Class>
             Function_Signature(Ret Class::* f)
-                ->Function_Signature<Ret, Class, Function_Params<Class&>, true, true>; // member object
+                ->Function_Signature<Ret, Class, Function_Params<Class&>, true, true, false>; // member object
 
             // primary template handles types that have no nested ::type member:
             template<class, class = std::void_t<>>

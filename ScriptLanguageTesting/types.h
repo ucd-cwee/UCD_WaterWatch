@@ -161,13 +161,13 @@ namespace GL {
             InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 60) & impl::cached_type::MAGIC_MASK1));
         };
 
-        bool is_temp() const noexcept { return hash & 0x4000000000000000; };
-        bool is_const() const noexcept { return is_temp() ? false : hash & 0x1000000000000000; };
-        bool is_ref() const noexcept { return is_temp() ? false : hash & 0x2000000000000000; };
-        bool is_const_ref() const noexcept { return is_temp() ? false : hash & 0x3000000000000000; };
+        bool is_temp() const noexcept { return ((hash & 0x4000000000000000) > 0); };
+        bool is_const() const noexcept { return is_temp() ? false : ((hash & 0x1000000000000000) > 0); };
+        bool is_ref() const noexcept { return is_temp() ? false : ((hash & 0x2000000000000000) > 0); };
+        bool is_const_ref() const noexcept { return is_temp() ? false : ((hash & 0x3000000000000000) == 0x3000000000000000); };
         bool is_base() const noexcept {  return 0 == (hash & ~0x8FFFFFFFFFFFFFFF); };
         bool is_void() const noexcept { return get_base_hash() == (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2); };
-        bool is_cpp_type() const noexcept { return hash & 0x8000000000000000; };
+        bool is_cpp_type() const noexcept { return (hash & 0x8000000000000000) > 0; };
         bool is_any() const noexcept { return get_base_hash() == (util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2); };
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
@@ -700,6 +700,7 @@ namespace GL {
             m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
             return *this;
         };
+        
         bool operator&(int p_modifiers) const {
             return m_casted_type & p_modifiers;
         };
@@ -727,6 +728,19 @@ namespace GL {
 
         operator bool() const noexcept {
             return m_ptr.operator bool();
+        };
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static any ref(ValueType& value) {
+            auto base_t = type_of<ValueType>();
+            any out(GL::shared_ptr<std::decay_t< ValueType >>((std::decay_t< ValueType >*)(&value), [](std::decay_t< ValueType >*) {}));
+            out.m_casted_type = base_t;
+            if constexpr (std::is_const_v< ValueType>) {                
+                out.m_casted_type |= GL::type::Reference;
+                out.m_casted_type |= GL::type::Const;
+            }
+            else {
+                out.m_casted_type |= GL::type::Reference;                
+            }            
+            return out;
         };
         bool empty() const noexcept {
             return !operator bool();

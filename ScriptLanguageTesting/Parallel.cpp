@@ -293,7 +293,7 @@ namespace GL {
 					long long job_remaining = jobCount;
 					size_t groupID = 0;
 					for (size_t thread_index = 0; (thread_index < internal_state.numThreads) && (job_remaining > 0); ++thread_index) {
-						long long num_jobs = std::min<long long>(job_remaining, std::round(static_cast<double>(jobCount) * internal_state.threads[thread_index].relative_speed));
+						long long num_jobs = std::min<long long>(job_remaining, (long long)(unsigned long long)std::round(static_cast<double>(jobCount) * internal_state.threads[thread_index].relative_speed));
 
 						// submit groups evenly into the thread pool:
 						for (; ; ) { // groupID < groupCount

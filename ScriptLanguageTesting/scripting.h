@@ -251,21 +251,27 @@ namespace GL {
                     breadcrumb_m;
                 concurrency::concurrent_unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>
                     using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-                concurrency::concurrent_unordered_map<GL::string, GL::any>
+                GL::epoch_map<GL::any, GL::string> // concurrency::concurrent_unordered_map
                     objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
                 virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
                 template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any&& Obj) {
-                    if constexpr (overwriteIfExists)
-                        objects_m[sv] = std::move(Obj);
-                    else
-                        objects_m.insert({ sv, std::move(Obj) });
+                    if constexpr (overwriteIfExists) {
+                        objects_m.insert_fast(sv, std::move(Obj));
+                    }
+                    else {
+                        if (auto* f = objects_m.try_at(sv)) return false;
+                        else {
+                            objects_m.insert_fast(sv, std::move(Obj));
+                        }
+                    }
                     return true;
                 };
                 GL::any* GetObject_Impl(GL::string const& sv) {
-                    if (auto f = objects_m.find(sv), e = objects_m.end(); f != e)
-                        return &f->second;
-                    return nullptr;
+                    if (auto* f = objects_m.try_at(sv))
+                        return f;
+                    else
+                        return nullptr;
                 };
                 virtual bool AddUsing_Impl(Breadcrumb* scope) {
                     if (scope) {
@@ -624,20 +630,50 @@ namespace GL {
                 __declspec(noinline) bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
                     if (this->EmplaceObject_Impl<false>(sv, std::move(Obj))) {
                         // check the cache to make sure we aren't changing something from "empty" to "existing"
-                        //auto* NS = this->GetNamespace();
+                         if (this->is_root()) {
+                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
+                                if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
+                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
+                                namespacePtr->this_m.scope->invalidate_cache();
+                                return SearchResult::Failure;
+                            }, nullptr, SearchState::SkipParent)) {};
+                        }
+                        else 
+                        if (this->is_namespace()) {
+                            // this->invalidate_cache();
+
+                            //if (Breadcrumb* BC = this->GetRoot()->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
+                            //    if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
+                            //    namespacePtr->this_m.scope->invalidate_cache();
+                            //    return SearchResult::Failure;
+                            //    }, nullptr, SearchState::SkipParent)) {
+                            //};
+                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
+                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
+                                namespacePtr->this_m.scope->invalidate_cache();
+                                return SearchResult::Failure;
+                                }, nullptr, 0/*SearchState::SkipParent*/)) {
+                            };
+                        }
+
                         //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, sv.hash())) {
-                        //    // existing cache
-                        //    //if (cache == &this->breadcrumb_m) {
-                        //    //    // do nothing
-                        //    //}
-                        //    //else {
-                        //    //    NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
-                        //    //}
+                        //    if (cache == reinterpret_cast<Breadcrumb*>(1)) {
+                        //        NS->invalidate_cache();
+                        //        NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //    }
+                        //    else {
+                        //        // existing cache
+                        //        if (cache == &this->breadcrumb_m) {
+                        //            // do nothing
+                        //        }
+                        //        else {
+                        //            NS->invalidate_cache();
+                        //            NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //        }
+                        //    }
                         //}
                         //else {
-                        //    // cache is empty or does not exist
-                        //    NS->invalidate_cache();
-                        //    // NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
+                        //    // cache does not exist -- do nothing. 
                         //}
                         return true;
                     }
@@ -743,6 +779,17 @@ namespace GL {
                             return p;
                         }
 
+                        auto* NS = this->GetNamespace();
+                        if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
+                            if (cache == reinterpret_cast<Breadcrumb*>(1)) {
+                                return nullptr;
+                            }
+                            else {
+                                p = reinterpret_cast<GL::any*>(cache);
+                                return p;
+                            }
+                        }
+
                         // we have a scope with a specific object name
                         // PossiblyScopedName should NOT have colons in this case. 
                         if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
@@ -761,32 +808,26 @@ namespace GL {
                                 return SearchResult::Failure;
                             }
                         }, nullptr, SearchState::SkipChildren)) {
+                            NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
                             return p;
                         }
                         else {
+                            NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(1));
                             return nullptr;
                         }
                     }
                     else {
-                        //auto* NS = this->GetNamespace();
-                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
-                        //    p = reinterpret_cast<GL::any*>(cache);
-                        //    return p;
-                        //}
-
                         // we don't have a scope (yet)
                         const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
                         if (optionalName.length() == 0) {
                             // We only have an object name -- just do the normal search from here.
                             p = find_object(optionalScope, &const_cast<BasicScope*>(this)->breadcrumb_m);
-                            //if (p) NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
                             return p;
                         }
                         else {
                             Breadcrumb* closest_scope{ nullptr };
                             if (optionalScope.length() == 0) {
                                 p = find_object(optionalName, this->breadcrumb_m.root_m);
-                                //if (p) NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
                                 return p;
                             }
                             else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {

@@ -11,7 +11,7 @@ namespace /* atomic_shared_ptr */ GL {
     constexpr int CACHE_LINE_SIZE = 128;
 
     // base class for the shared_ptr control block
-    struct alignas(CACHE_LINE_SIZE) control_block_base {
+    struct /*alignas(CACHE_LINE_SIZE)*/ control_block_base {
         explicit control_block_base() = delete;
         explicit control_block_base(void* data)
             : data(data)
@@ -30,7 +30,7 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     // specialized, derived class for control blocks with specialized types.
-    template<typename T> struct alignas(CACHE_LINE_SIZE) control_block final : public control_block_base {
+    template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ control_block final : public control_block_base {
         explicit control_block() = delete;
         explicit control_block(T* _data) : control_block_base(reinterpret_cast<void*>(_data)) {}
         ~control_block() = default;
@@ -44,7 +44,7 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     // specialized, derived class for control blocks with specialized types.
-    template<typename T> struct alignas(CACHE_LINE_SIZE) deleter_control_block final : public control_block_base{
+    template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ deleter_control_block final : public control_block_base{
         explicit deleter_control_block() = delete;
         explicit deleter_control_block(T* data, std::function<void(T*)>&& deleter) : control_block_base(static_cast<void*>(data)), delete_func(std::move(deleter)) {}
         ~deleter_control_block() = default;
@@ -172,7 +172,7 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. Read-only, and cannot be shared without the move operator. 
-    template<typename T> class alignas(CACHE_LINE_SIZE) fast_shared_ptr {
+    template<typename T> class /*alignas(CACHE_LINE_SIZE)*/ fast_shared_ptr {
         template<typename A> friend class atomic_shared_ptr;
     public:
         fast_shared_ptr() : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {}
@@ -252,7 +252,7 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     // lock-free, thread-safe version of std::atomic<shared_ptr>.
-    template<typename T> class alignas(CACHE_LINE_SIZE) atomic_shared_ptr {
+    template<typename T> class /*alignas(CACHE_LINE_SIZE)*/ atomic_shared_ptr {
     public:
         atomic_shared_ptr(shared_ptr<T> && data) {
             control_block_base* block = dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<T>>(nullptr));

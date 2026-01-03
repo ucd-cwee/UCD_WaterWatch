@@ -2622,7 +2622,7 @@ namespace GL {
 			= default;
 
 		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
-			Add(objType&& object, keyType key, locker const& Locking = locker()) {
+			Add(objType&& object, keyType key, locker const& Locking = locker(), bool unique = true) {
 			epoch_search_treeNode
 				* node,
 				* child,
@@ -2661,6 +2661,12 @@ namespace GL {
 				// we are inside of a branch of leafs -- we will do the insert.
 				if (child->object()) {
 					if (key <= child->key) {
+						if (unique && (key == child->key)) {
+							*child->object() = std::move(*newNode->object());
+							FreeNode(newNode);
+							return child;
+						}
+
 						// insert new node before child
 						node->add_child_at(newNode, child->parent_index);
 					}
@@ -2753,8 +2759,6 @@ namespace GL {
 		};
 		std::pair<epoch_search_treeNode*, locker> // find an object using the given key
 			NodeFind(keyType key, bool for_removal = false) {
-			epoch_search_treeNode
-				* nxt;
 			std::pair<epoch_search_treeNode*, locker>
 				out;
 			epoch_search_treeNode*&
@@ -3018,7 +3022,7 @@ namespace GL {
 				for (int i = 0; i < maxChildrenPerNode; ++i) node->children()[i] = nullptr;
 			}
 
-			node->key = 0;
+			node->key = {};
 			node->parent = nullptr;
 			node->parent_index = 0;
 			node->numChildren = 0;
@@ -3074,7 +3078,7 @@ namespace GL {
 	};
 
 	template< class objType, class keyType>
-	class epoch_multimap{
+	class epoch_map{
 	private:
 		mutable epoch_search_tree<objType, keyType, 10>
 			tree;
@@ -3101,7 +3105,7 @@ namespace GL {
 			WrappedReference(
 				const keyType& _first, 
 				objType& _second, 
-				const epoch_multimap* _parent)
+				const epoch_map* _parent)
 				: first{ _first }
 				, second{ _second }
 				, guard{ _parent->ProtectCurrentEpoch() }
@@ -3113,12 +3117,12 @@ namespace GL {
 			~WrappedReference() = default;
 		};
 
-		epoch_multimap() = default;
-		epoch_multimap(epoch_multimap const& rhs) = delete;
-		epoch_multimap(epoch_multimap&& rhs) = delete;
-		epoch_multimap& operator=(epoch_multimap const& rhs) = delete;
-		epoch_multimap& operator=(epoch_multimap&& rhs) = delete;
-		~epoch_multimap() = default;
+		epoch_map() = default;
+		epoch_map(epoch_map const& rhs) = delete;
+		epoch_map(epoch_map&& rhs) = delete;
+		epoch_map& operator=(epoch_map const& rhs) = delete;
+		epoch_map& operator=(epoch_map&& rhs) = delete;
+		~epoch_map() = default;
 
 		WrappedReference
 			insert(const keyType& time, objType&& value) {

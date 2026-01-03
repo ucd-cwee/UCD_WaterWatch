@@ -3422,7 +3422,7 @@ namespace GL {
             static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
             if (this->dim.num_dimensions() == 2) {
                 matrix out(this->dim);
-                float kernel_tot = K.sum;
+                float kernel_tot = (float)K.sum;
                 mem_matrix::queue_gpu_work(func_name,
                     this->size(),
                     mem(out), mem(*this), mem(*K.mat), this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
@@ -3437,7 +3437,7 @@ namespace GL {
             static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
             if (this->dim.num_dimensions() == 2) {
                 matrix out(this->dim);
-                float kernel_tot = K.ptr->sum;
+                float kernel_tot = (float)K.ptr->sum;
                 mem_matrix::queue_gpu_work(func_name,
                     this->size(),
                     mem(out), mem(*this), static_mem_matrix{ &(*mem(*K.ptr->mat)) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
@@ -3809,7 +3809,7 @@ namespace GL {
         template <typename T> matrix<T> matrix<T>::linear_regressions::standard_error(matrix const& measurements, matrix const& features, matrix const& weights) {
             if constexpr (std::is_same_v<float, T>) {
                 auto prediction = predict(features, weights);
-                return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>(features.size(0)) - 2.0)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
+                return ((((measurements - prediction).pow(2.0f).sum() / std::max<float>(1.0f, static_cast<float>((float)features.size(0)) - 2.0f)) * (features.transpose().matrix_multiply(features)).inverse()).pow(0.5)).diagonal();
             }
             else {
                 return matrix<float>::linear_regressions::standard_error(measurements.cast<float>(), features.cast<float>(), weights.cast<float>()).cast<T>();

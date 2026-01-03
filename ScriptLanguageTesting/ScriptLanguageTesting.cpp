@@ -104,7 +104,7 @@ int main() {
     }
 #endif
 
-    if (1) {
+    if (0) {
         if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 1")) {
             std::map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
@@ -121,32 +121,32 @@ int main() {
             }
         }
 
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 0.1")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 0.1")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000; ++i) {
                 map[i] = i;
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 0.2")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 0.2")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000; ++i) {
                 map.insert_fast(i, int{ i });
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1.1")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 1.1")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {                
                 map[i] = i;
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 1.2")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 1.2")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map.insert_fast(i, int{ i });
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2.1")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 2.1")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
             }
@@ -154,8 +154,8 @@ int main() {
                 map[i] = i;
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 2.2")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 2.2")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map.insert_fast(i, int{ i });
             }
@@ -163,8 +163,8 @@ int main() {
                 map[i] = i;
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 3.1")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 3.1")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
             }
@@ -172,8 +172,8 @@ int main() {
                 map[i] = i;
             });
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 3.2")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 3.2")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map.insert_fast(i, int{ i });
             }
@@ -181,20 +181,20 @@ int main() {
                 map[i] = i;
             });
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 4.1")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 4.1")) {
+            GL::epoch_map<int, int> map;
             GL::parallel::For(0, 1000000, [&](int i) {
                 map[i] = i;
             });
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 4.2")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 4.2")) {
+            GL::epoch_map<int, int> map;
             GL::parallel::For(0, 1000000, [&](int i) {
                 map.insert_fast(i, int{ i });
             });
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 5")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 5")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map.insert_fast(i, int{ i });
             }
@@ -202,8 +202,8 @@ int main() {
                 map.erase(i);
             }
         }
-        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_multimap 6")) {
-            GL::epoch_multimap<int, int> map;
+        if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 6")) {
+            GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map.insert_fast(i, int{ i });
             }
@@ -211,8 +211,8 @@ int main() {
                 map.erase(i);
             });
         }
-        if (1) { // this feature is only possible with the epoch_multimap
-            GL::epoch_multimap<int, int> map;
+        if (1) { // this feature is only possible with the epoch_map
+            GL::epoch_map<int, int> map;
             GL::parallel::For(0, 1000000, [&](int i) {
                 auto ref = map.insert(i, (int)i);
                 ref.second++;
@@ -305,23 +305,47 @@ int main() {
         while (true) {
             loop_sw.reset();
 
-            if (1) {
+            EXPECT_EQ(GL::type_of<size_t>().is_cpp_type(), true);
+            EXPECT_EQ(GL::type_of<size_t>().is_const(), false);
+            EXPECT_EQ(GL::type_of<size_t>().is_ref(), false);
+            EXPECT_EQ(GL::type_of<size_t>().is_const_ref(), false);
+
+            EXPECT_EQ(GL::type_of<size_t&>().is_cpp_type(), true);
+            EXPECT_EQ(GL::type_of<size_t&>().is_const(), false);
+            EXPECT_EQ(GL::type_of<size_t&>().is_ref(), true);
+            EXPECT_EQ(GL::type_of<size_t&>().is_const_ref(), false);
+
+            EXPECT_EQ(GL::type_of<const size_t>().is_cpp_type(), true);
+            EXPECT_EQ(GL::type_of<const size_t>().is_const(), true);
+            EXPECT_EQ(GL::type_of<const size_t>().is_ref(), false);
+            EXPECT_EQ(GL::type_of<const size_t>().is_const_ref(), false);
+
+            EXPECT_EQ(GL::type_of<const size_t&>().is_cpp_type(), true);
+            EXPECT_EQ(GL::type_of<const size_t&>().is_const(), true);
+            EXPECT_EQ(GL::type_of<const size_t&>().is_ref(), true);
+            EXPECT_EQ(GL::type_of<const size_t&>().is_const_ref(), true);
+
+            while (1) {
                 GL::scope::impl::RootScope 
                     program_root;
                 auto& std_namespace 
                     = program_root.make_namespace("std");
                 auto& std_string_namespace
                     = std_namespace.make_namespace("string");
+                auto& std_map_namespace
+                    = std_namespace.make_namespace("map");
 
-                std_string_namespace.insert_object_here("npos", GL::any(std::string::npos) + GL::type::Reference);
+                std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));              
 
                 if (auto* p = std_string_namespace.find_object("npos")) {
                     auto f = p->fast();
-                    EXPECT_EQ(f.m_casted_type.is_const(), false);
+                    EXPECT_EQ(f.m_casted_type.is_const_ref(), true);
+                    EXPECT_EQ(f.m_casted_type.is_const(), true);
                     EXPECT_EQ(f.m_casted_type.is_ref(), true);
                     EXPECT_EQ(f.m_casted_type.is_cpp_type(), true);
                     EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
-                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
+                    EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
                 }
                 else {
                     EXPECT_EQ(true, false);
@@ -329,11 +353,12 @@ int main() {
 
                 if (auto* p = std_namespace.find_object("string::npos")) {
                     auto f = p->fast();
-                    EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::Const) > 0, false);
+                    EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::Const) > 0, true);
                     EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::Reference) > 0, true);
                     EXPECT_EQ((f.m_casted_type.get_qualifiers() & GL::type::CppType) > 0, true);
                     EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
-                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
+                    EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
                 }
                 else {
                     EXPECT_EQ(true, false);
@@ -341,36 +366,23 @@ int main() {
 
                 if (auto* p = program_root.find_object("std::string::npos")) {
                     auto f = p->fast();
-                    EXPECT_EQ(f.m_casted_type & GL::type::Const, false);
-                    EXPECT_EQ(f.m_casted_type & GL::type::Reference, true);
-                    EXPECT_EQ(f.m_casted_type & GL::type::CppType, true);
+                    EXPECT_EQ(f.m_casted_type.is_const(), true);
+                    EXPECT_EQ(f.m_casted_type.is_ref(), true);
+                    EXPECT_EQ(f.m_casted_type.is_cpp_type(), true);
                     EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
-                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
+                    EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
                 }
                 else {
                     EXPECT_EQ(true, false);
                 }
 
-                if (auto* p = program_root.find_object("x")) {
-                    EXPECT_EQ(true, false);
-                }
-                else {
-                    EXPECT_EQ(true, true);
-                }
+                EXPECT_EQ(program_root.find_object("npos"), nullptr);
 
                 auto constructor1 = GL::make_callable("string", []() -> std::string { return std::string(); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);
                 auto constructor2 = GL::make_callable("string", [](std::string const& rhs) -> std::string { return std::string(rhs); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);
-                //auto set_operator = GL::make_callable("=", // function name
-                //    [](GL::any::fast_any const& lhs, std::string const& rhs) -> GL::any::fast_any {
-                //        lhs.cast<std::string&>() = rhs;
-                //        return lhs;
-                //    }, // function impl
-                //    {}, // defaults
-                //    { { "lhs", GL::type_of<std::string&>() }, { "rhs", GL::type_of<std::string const&>() } }, // arguments
-                //    GL::type_of<std::string&>() // return type
-                //);
                 auto set_operator = GL::make_callable("=", // function name
-                    [](GL::any const& lhs, std::string const& rhs) -> GL::any {
+                    [](GL::any::fast_any const& lhs, std::string const& rhs) -> GL::any::fast_any { // can use GL::any::fast_any or GL::any for these and it will work either way. fast_any is more efficient and 'honest' with the underlying system, and is therefore recommended.
                         lhs.cast<std::string&>() = rhs;
                         return lhs;
                     }, // function impl
@@ -378,8 +390,11 @@ int main() {
                     { { "lhs", GL::type_of<std::string&>() }, { "rhs", GL::type_of<std::string const&>() } }, // arguments
                     GL::type_of<std::string&>() // return type
                 );
-                GL::details::Const_Member_Function_Impl length_func(&std::string::length);
-                // auto length_func = GL::decl_func(&std::string::length);
+                auto length_func = GL::decl_func(&std::string::length);
+                EXPECT_EQ(((set_operator->m_signature.state_m & GL::function_signature::Template) > 0), false);
+                EXPECT_EQ(((length_func->m_signature.state_m  & GL::function_signature::Template) > 0), false);
+                EXPECT_EQ(((length_func->m_signature.state_m  & GL::function_signature::Constant) > 0), true);
+                EXPECT_EQ(((length_func->m_signature.state_m  & GL::function_signature::Async) > 0), false);
 
                 auto constructed1_str = constructor1->operator()({});
                 constructed1_str.cast<std::string&>() = "TEST";
@@ -390,11 +405,60 @@ int main() {
                 EXPECT_EQ(constructed2_str.cast<std::string&>(), "TEST2");
                 EXPECT_EQ(ref_str.cast<std::string&>(), "TEST2");
                 EXPECT_EQ(constructed1_str.cast<std::string&>(), "TEST2");
-                EXPECT_EQ(length_func.operator()({ ref_str }).cast<size_t>(), 5);
-
+                EXPECT_EQ(length_func->operator()({ ref_str }).cast<size_t>(), 5);
                 ref_str.cast<std::string&>() = "TEST3";
                 EXPECT_EQ(ref_str.cast<std::string&>(), "TEST3");
                 EXPECT_EQ(constructed1_str.cast<std::string&>(), "TEST3");
+
+                EXPECT_EQ(std_map_namespace.find_object("npos"), nullptr);
+                EXPECT_EQ(std_map_namespace.find_object("npos"), nullptr);
+                std_map_namespace.add_using_here(std_string_namespace);
+                if (auto* p = std_map_namespace.find_object("npos")) {
+                    auto f = p->fast();
+                    EXPECT_EQ(f.m_casted_type.is_const(), true);
+                    EXPECT_EQ(f.m_casted_type.is_ref(), true);
+                    EXPECT_EQ(f.m_casted_type.is_cpp_type(), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t const&>()), true);
+                    EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
+                    EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
+                }
+                else {
+                    EXPECT_EQ(true, false);
+                }
+
+                EXPECT_EQ(program_root.find_object("x"), nullptr);
+                EXPECT_EQ(std_map_namespace.find_object("x"), nullptr);
+                program_root.insert_object_here("x", 100.0f);
+                EXPECT_NE(program_root.find_object("x"), nullptr);
+                EXPECT_NE(std_map_namespace.find_object("x"), nullptr);
+
+                EXPECT_EQ(program_root.find_object("y"), nullptr);
+                EXPECT_EQ(std_namespace.find_object("y"), nullptr);
+                EXPECT_EQ(std_map_namespace.find_object("y"), nullptr);
+                std_namespace.insert_object_here("y", 500.0);
+                EXPECT_EQ(program_root.find_object("y"), nullptr);
+                EXPECT_NE(std_namespace.find_object("y"), nullptr);
+                EXPECT_NE(std_map_namespace.find_object("y"), nullptr);
+
+                EXPECT_EQ(program_root.find_object("std::map::z"), nullptr);
+                EXPECT_EQ(std_namespace.find_object("std::map::z"), nullptr);
+                EXPECT_EQ(std_map_namespace.find_object("std::map::z"), nullptr);
+                std_map_namespace.insert_object_here("z", 500);
+                EXPECT_NE(program_root.find_object("std::map::z"), nullptr);
+                EXPECT_NE(std_namespace.find_object("std::map::z"), nullptr);
+                EXPECT_NE(std_map_namespace.find_object("std::map::z"), nullptr);
+
+                if (auto scope = std_map_namespace.make_scope(); !scope.is_namespace()) {
+                    scope.insert_object_here("w", std::string("TEST"));
+                    EXPECT_NE(nullptr, scope.find_object("x"));
+                    EXPECT_NE(nullptr, scope.find_object("y"));
+                    EXPECT_NE(nullptr, scope.find_object("z"));
+                    EXPECT_NE(nullptr, scope.find_object("w"));
+
+                }
+
+
+
 
             }
 
@@ -863,7 +927,7 @@ int main() {
                     double SUM() {
                         return x + y;
                     };
-                    double CONST_SUM() const {
+                    double CONST_SUM() const noexcept {
                         return x + y;
                     };
                     int& Increment() {
@@ -908,7 +972,6 @@ int main() {
                 EXPECT_EQ(100.0, GL::make_callable("FUNC", &temp::FUNC)->operator()().cast<double>());
 
                 EXPECT_EQ(decl_func(&temp::CONST_SUM)->m_signature.name_m, "CONST_SUM");
-
 
                 decl_func(&temp::CONST_SUM, GL::function_signature::Constant, {}, { "parent" });
                 EXPECT_EQ("int&", decl_func(&temp::x, GL::function_signature::Async, {}, { {"parent", GL::type_of<temp&>()} })->operator()({ temp(100, 200.0) }).m_casted_type.name());
@@ -2701,7 +2764,7 @@ int main() {
     });
 
     // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
-    if (1) {
+    if (0) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
         // GL::GPU::matrix<float>::maximum_allocation_size() /= 16; // = 1; // /= 16; // 16
         while (0) {
