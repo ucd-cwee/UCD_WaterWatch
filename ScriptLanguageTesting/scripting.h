@@ -218,15 +218,66 @@ namespace GL {
 
             class Functions {
             public:
-                GL::epoch_map< GL::deferred<GL::epoch_map<GL::Proxy_Function, size_t>>, GL::string>
+                GL::deferred<GL::epoch_map< GL::deferred<GL::epoch_map<GL::Proxy_Function, size_t>>, GL::string>>
                     functions;
 
             public:
+                // insert a function into the storage
                 void add_function(GL::Proxy_Function const& func) {
-                    functions[func->m_signature.name_m]->insert_fast(func->m_signature.get_hash(), (GL::Proxy_Function)func);
+                    functions->operator[](func->m_signature.name_m)->insert_fast(func->m_signature.get_hash(), (GL::Proxy_Function)func);
+                };
+
+                // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
+                template<typename Func> GL::Proxy_Function const& for_each(Func const& to_do) const {
+                    typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
+                    static_assert(std::is_same_v<bool, function_header::Return_Type>);
+                    static_assert(std::is_same_v< GL::Proxy_Function const&, std::tuple_element_t<0, function_header::Param_Types::argType>>);
+                    static_assert(function_header::Param_Types::numArgs <= 1);
+
+                    static GL::Proxy_Function temp;
+                    if (functions.valid()) {
+                        for (auto& funcs_by_name : *functions) {
+                            if (*funcs_by_name.second) {
+                                GL::string const& name = *funcs_by_name.first;
+                                for (auto& funcs : funcs_by_name.second->operator*()) {
+                                    GL::Proxy_Function const& func = *funcs.second;
+                                    if (to_do(func)) {
+                                        return func;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return temp;
+                };
+
+                // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
+                template<typename Func> GL::Proxy_Function const& for_each(GL::string const& name, Func const& to_do) const {
+                    typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
+                    static_assert(std::is_same_v<bool, function_header::Return_Type>);
+                    static_assert(std::is_same_v< GL::Proxy_Function const&, std::tuple_element_t<0, function_header::Param_Types::argType>>);
+                    static_assert(function_header::Param_Types::numArgs <= 1);
+
+                    static GL::Proxy_Function temp;
+                    if (functions.valid()) {
+                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && funcs_by_name->valid()) {
+                            for (auto& funcs : funcs_by_name->operator*()) {
+                                GL::Proxy_Function const& func = *funcs.second;
+                                if (to_do(func)) {
+                                    return func;
+                                }
+                            }
+                        }
+                    }
+                    return temp;
                 };
 
             };
+
+
+
+            
+
 
 
             /// <summary>

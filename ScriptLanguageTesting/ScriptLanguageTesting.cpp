@@ -85,6 +85,23 @@ __forceinline void console_clear() {
     SetConsoleCursorPosition(console, topLeft);
 }
 
+
+
+
+template <typename T, typename U> struct helper : helper<T, decltype(&U::operator())> {};
+template <typename T, typename C, typename R, typename... A> struct helper<T, R(C::*)(A...) const> {
+    static const bool value = std::is_convertible<T, R(*)(A...)>::value;
+};
+// successfully tests if a lambda is stateless or not. 
+template<typename T> struct is_stateless {
+    static const bool value = helper<T, T>::value;
+};
+
+
+
+
+
+
 int main() {
 #if 0
     if (auto wb = cweeExcel::OpenExcel("S:\\Engineering\\Monthly Conservation Report\\Analysis File\\DemandSupplyShortage.xlsx")) {        
@@ -103,6 +120,35 @@ int main() {
         }
     }
 #endif
+
+    //auto func = [](int x) -> double { return x; };
+    //typedef decltype(GL::details::detail::function_signature(&std::string::length)) function_header;
+    //function_header::
+
+    GL::scope::impl::Functions funcs;
+    funcs.add_function(GL::make_converter<GL::foot, GL::meter>());
+    funcs.add_function(GL::make_converter<GL::meter, GL::foot>());
+    funcs.add_function(GL::make_converter<GL::meter, GL::value>());
+    funcs.add_function(GL::make_converter<GL::value, GL::meter>());
+    funcs.add_function(GL::make_converter<int, double>());
+    funcs.add_function(GL::make_converter<int, float>());
+    funcs.add_function(GL::make_converter<int, long>());
+    funcs.add_function(GL::make_converter<int const&, int>());
+    funcs.add_function(GL::make_callable("type_name", [](GL::any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }));
+    funcs.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }));
+    funcs.add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }));
+    funcs.add_function(GL::decl_func(&std::string::length));
+    funcs.add_function(GL::decl_func(&std::string::capacity));
+    funcs.add_function(GL::decl_func(&std::string::clear));
+    funcs.add_function(GL::decl_func(&std::string::empty));
+    funcs.for_each([](GL::Proxy_Function const& f) -> bool {
+        print(f->m_signature.display());
+        return false;
+    });
+    funcs.for_each("empty", [](GL::Proxy_Function const& f) -> bool {
+        print(f->m_signature.display());
+        return false;
+    });
 
     while (1) {
         if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 1")) {

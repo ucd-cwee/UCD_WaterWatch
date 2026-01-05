@@ -20,7 +20,9 @@ namespace GL {
             Async = 4, // whether this function can be safely called asynchronously or not
             Template = 8, // whether the function is a template 
             Explicit = 16, // whether the function is explicit and the input params must exactly match (does not allow conversion)
-            Cached = 32 // whether the function is a cache from another function, for performance reasons. 
+            Cached = 32, // whether the function is a cache from another function, for performance reasons. 
+            NoCost = 64,
+            Constructor = 128
         };
 
     public:
@@ -117,12 +119,21 @@ namespace GL {
 
         // reviews the arguments to see if any are defined as "any". If so, sets the state of the function as "template". Otherwise, unsets the template state. 
         void evaluate_if_template_function() {
+            state_m &= ~function_state::Constructor; // unsets the constructor flag
+            if ((state_m & Static) > 0) {
+                if (argument_types_m.size() <= 1) {
+                    if (returns_m.name() == name_m) {
+                        state_m |= Constructor;
+                    }
+                }
+            }
+
             for (auto& t : argument_types_m) {
                 if (t.is_any()) {
                     state_m |= function_state::Template;
                     return;
                 }
-            }
+            }     
             state_m &= ~function_state::Template; // unsets the template flag
         }
         template<typename iter_type> bool can_call_with_free_cast(iter_type iter, iter_type const& end) const {
@@ -162,6 +173,59 @@ namespace GL {
         bool can_call_with_cast(std::vector<GL::type> const& from) const {
             return can_call_with_cast(from.begin(), from.end());
         };
+        GL::string display() const {
+            GL::string out;
+            if ((this->state_m & Template) > 0) {
+                out = out.add_to_delim("[[template]]", " ");
+            }
+            if ((this->state_m & Constructor) > 0) {
+                out = out.add_to_delim("[[constructor]]", " ");
+            }
+            if ((this->state_m & Cached) > 0) {
+                out = out.add_to_delim("[[cached]]", " ");
+            }
+            if ((this->state_m & NoCost) > 0) {
+                out = out.add_to_delim("[[nocost]]", " ");
+            }
+            if ((this->state_m & Static) > 0) {
+                out = out.add_to_delim("static", " ");
+            }
+
+            if ((this->state_m & Constructor) > 0) {
+                out = out.add_to_delim(name_m, " ");
+            }
+            else {
+                out = out.add_to_delim(returns_m.name(), " ");
+                out = out.add_to_delim(name_m, " ");
+            }
+            {
+                GL::string args; 
+                for (int i = 0; i < argument_types_m.size(); ++i) {
+                    GL::string arg = argument_types_m[i].name();
+                    arg = arg.add_to_delim(argument_names_m[i], " ");
+                    if (!argument_defaults_m[i].empty()) {
+                        arg = arg + " = {}";
+                    }                    
+                    args = args.add_to_delim(arg, ", ");
+                }
+                out = out + "(" + args + ")";
+            }
+
+            if ((this->state_m & Constant) > 0) {
+                out = out.add_to_delim("const", " ");
+            }
+            if ((this->state_m & Async) > 0) {
+                out = out.add_to_delim("async", " ");
+            }
+            if ((this->state_m & Explicit) > 0) {
+                out = out.add_to_delim("explicit", " ");
+            }
+
+            out = out.add_to_delim("{ ... }", " ");
+
+            return out;
+        };
+
     };
 
     namespace details {
@@ -447,7 +511,7 @@ namespace GL {
             static function_signature CreateSignature(std::vector<any>&& defaults = {}) {
                 std::vector<std::pair<GL::string, GL::type>>
                     args;
-                args.push_back({ "parent", GL::type_of<const Class&>() });
+                args.push_back({ "parent", GL::type_of<Class&>() });
 #define argT(NN) if constexpr (numArgs > NN) { args.push_back({ GL::printf("param%i", NN), GL::type_of<typename std::tuple_element_t<NN, argType>>() }); }
                 argT(0);
                 argT(1);
@@ -958,12 +1022,13 @@ namespace GL {
                 static constexpr auto numArgs = std::tuple_size_v<argType>;
             };
 
-            template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false>
+            template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
             struct Function_Signature {
                 typedef Params Param_Types;
                 typedef Class Class_Type;
                 typedef Ret Return_Type;
 
+                // constexpr static const bool is_stateless_object = IsStatelessObject; // e.g. lambda object that does not capture anything
                 constexpr static const bool is_object = IsObject; // e.g. lambda object
                 constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
                 constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
@@ -1030,9 +1095,7 @@ namespace GL {
             Function_Signature(Ret(Class::* f)(Param...) const&&)
                 ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
 
-
-#if 1
-                        // Free functions
+            // Free functions
             template<typename Ret, typename... Param>
             Function_Signature(Ret(*f)(Param...) noexcept)
                 ->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
@@ -1087,11 +1150,146 @@ namespace GL {
             template<typename Ret, typename Class, typename... Param>
             Function_Signature(Ret(Class::* f)(Param...) const&& noexcept)
                 ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
-#endif
 
             template<typename Ret, typename Class>
             Function_Signature(Ret Class::* f)
                 ->Function_Signature<Ret, Class, Function_Params<Class&>, true, true, false>; // member object
+
+#if 1
+            namespace impl {
+
+                template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
+                struct Function_Signature_m1 {
+                    typedef Params Param_Types;
+                    typedef Class Class_Type;
+                    typedef Ret Return_Type;
+
+                    // constexpr static const bool is_stateless_object = IsStatelessObject; // e.g. lambda object that does not capture anything
+                    constexpr static const bool is_object = IsObject; // e.g. lambda object
+                    constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+                    constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+                    constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+                    constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+                    template<typename T> constexpr Function_Signature_m1(T&&) noexcept { };
+                    constexpr Function_Signature_m1() noexcept = default;
+                };
+
+                // Free functions
+                template<typename Ret, typename... Param>
+                Function_Signature_m1(Ret(*f)(Param...))
+                    ->Function_Signature_m1<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+                // no reference specifier
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile const)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...))
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) const)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                // & reference specifier
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...)&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) const&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                // && reference specifier
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile&&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...)&&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) const&&)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                // Free functions
+                template<typename Ret, typename... Param>
+                Function_Signature_m1(Ret(*f)(Param...) noexcept)
+                    ->Function_Signature_m1<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+                // no reference specifier
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile const noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) const noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                // & reference specifier
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile& noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile const& noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) & noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) const& noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                // && reference specifier
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile&& noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&& noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) && noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+                template<typename Ret, typename Class, typename... Param>
+                Function_Signature_m1(Ret(Class::* f)(Param...) const&& noexcept)
+                    ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            }
+#endif
+
 
             // primary template handles types that have no nested ::type member:
             template<class, class = std::void_t<>>
@@ -1106,11 +1304,12 @@ namespace GL {
                 if constexpr (has_call_operator<Func>::value) {
                     return Function_Signature<
                         typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
-                        typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Class_Type,
-                        typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Param_Types,
+                        void,
+                        typename decltype(impl::Function_Signature_m1{ &std::decay_t<Func>::operator() })::Param_Types,
                         false,
                         false,
-                        true
+                        true 
+                        // , std::is_empty_v<Func>
                     > {};
                 }
                 else {
@@ -1158,6 +1357,10 @@ namespace GL {
             function_impl->m_signature.state_m |= function_signature::Constant;
             //function_impl->m_signature.state |= FunctionState::Async; // static functions are assumed to be async-friendly. 
             out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+
+            //if constexpr (function_header::is_stateless_object) {
+            //    function_impl->m_signature.state_m |= function_signature::Static;
+            //}
         }
         else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
             auto f = details::Attribute_Access_Impl(func, {});
@@ -1182,6 +1385,15 @@ namespace GL {
         }
 
         out->m_signature.name_m = name;
+
+        if ((out->m_signature.state_m & function_signature::Static) > 0) {
+            if (out->m_signature.argument_types_m.size() <= 1) {
+                if (out->m_signature.returns_m.name() == out->m_signature.name_m) {
+                    out->m_signature.state_m |= function_signature::Constructor;
+                }
+            }
+        }
+
         return out;
     };
 
@@ -1374,6 +1586,7 @@ namespace GL {
                 return GL::shared_ptr<To>(from);
             });
             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+            out->m_signature.state_m |= GL::function_signature::NoCost;
         }
         else {
             if constexpr (is_convertable) {
@@ -1381,6 +1594,7 @@ namespace GL {
                     return static_cast<To>(from);
                 });
                 out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                out->m_signature.state_m |= GL::function_signature::NoCost;
             }
             else {
                 if constexpr (details::is_numeric_type<From>() && details::is_numeric_type<To>()) {
@@ -1390,12 +1604,14 @@ namespace GL {
                                 return To(from);
                             });
                             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                            out->m_signature.state_m |= GL::function_signature::NoCost;
                         }
                         else {
                             out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                                 return static_cast<To>((float)from);
                             });
                             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                            out->m_signature.state_m |= GL::function_signature::NoCost;
                         }
                     }
                     else if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
@@ -1403,12 +1619,14 @@ namespace GL {
                             return To((float)from);
                         });
                         out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                        out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
                     else {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return static_cast<To>(from);
                         });
                         out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                        out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
                 }
                 else {
@@ -1416,6 +1634,7 @@ namespace GL {
                         return To(from);
                     });
                     out->m_signature.state_m |= GL::function_signature::Static;
+                    out->m_signature.state_m |= GL::function_signature::NoCost;
                 }
             }
         }
