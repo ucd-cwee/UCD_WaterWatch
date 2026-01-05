@@ -205,39 +205,29 @@ namespace GL {
                 template<int category> __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
                     auto g{ _current_cache.ProtectCurrentEpoch() };
                     Breadcrumb* out{ nullptr };   
-                    //long attempts = 2;
-                    //while (!out) {
-                        //while (_working.load() != 0) {}
-                        _current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
-                            if (curr_version >= cache_version) 
-                                if (cache[category].valid()) 
-                                    if (auto f = cache[category]->find(input_hash); f != cache[category]->end())
-                                        out = f->second;  
-                        });
-                        //if (!out) {
-                        //    if (auto* cache = _current_cache.try_at(cache_version)) {
-                        //        if (cache->operator[](category).valid())
-                        //            if (auto f = cache->operator[](category)->find(input_hash); f != cache->operator[](category)->end())
-                        //                out = f->second;
-                        //    };
-                        //}
-                        
-
-
-
-
-                        //if (!_working.load()) {
-                        //    if (--attempts <= 0) break;
-                        //    else std::this_thread::yield();
-                        //}
-                        //else {
-                        //    std::this_thread::yield();
-                        //}
-                    //}
+                    _current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
+                        if (curr_version >= cache_version) 
+                            if (cache[category].valid()) 
+                                if (auto f = cache[category]->find(input_hash); f != cache[category]->end())
+                                    out = f->second;  
+                    });
                     return out;
                 };
 
             };
+
+            class Functions {
+            public:
+                GL::epoch_map< GL::deferred<GL::epoch_map<GL::Proxy_Function, size_t>>, GL::string>
+                    functions;
+
+            public:
+                void add_function(GL::Proxy_Function const& func) {
+                    functions[func->m_signature.name_m]->insert_fast(func->m_signature.get_hash(), (GL::Proxy_Function)func);
+                };
+
+            };
+
 
             /// <summary>
             /// Foundational element of a scope. Should not be created on its own, and instead should be issued by a parent.
@@ -278,7 +268,7 @@ namespace GL {
                         if (scope->this_m.is_namespace()) {
                             if (auto f = using_m.find(scope); f == using_m.end()) {
                                 using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, GL::callback<NamespaceScope>::ScopedListener() });
-                                invalidate_cache(); // does nothing for normal scopes
+                                // this->GetNamespace()->invalidate_cache();
                                 return true;
                             }
                         }
@@ -370,13 +360,13 @@ namespace GL {
                     Breadcrumb* finalResult = nullptr;
                     if (depth == 0) {
                         if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
-                            check_flags.resize(numTickets);
+                            check_flags.resize(numTickets + 1);
                         }
                         for (auto& x : check_flags) x = CheckFlagState::none;
                     }
 
                     // Prevent Duplication
-                    if (check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) {
+                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) > 0) {
                         finalResult = nullptr;
                         return finalResult;
                     }
@@ -385,15 +375,15 @@ namespace GL {
                     }
 
                     // test myself directly	
-                    if (!(check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self)) {
+                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self) == 0) {
                         check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
 
                         auto res = func(&selfPtr, searchState);
-                        if (res & SearchResult::Success) {
+                        if ((res & SearchResult::Success) > 0) {
                             finalResult = &selfPtr;
                             return finalResult;
                         }
-                        else if (res & SearchResult::StaticFailure) {
+                        else if ((res & SearchResult::StaticFailure) > 0) {
                             finalResult = nullptr;
                             return finalResult;
                         }
@@ -402,7 +392,7 @@ namespace GL {
                     // test my personal "using" namespaces completely
                     if (using_m.size() > 0ull) {
                         for (auto& childNamespace : using_m) {
-                            if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
+                            if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                 return finalResult;
                             }
@@ -414,27 +404,27 @@ namespace GL {
                         Breadcrumb* thisParent = &selfPtr;
                         while (thisParent = thisParent->parent_m) {
                             auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if (flag & CheckFlagState::self) break;
+                            if ((flag & CheckFlagState::self) > 0) break;
                             else {
                                 flag |= CheckFlagState::self;
                             }
                             if (thisParent->this_m.is_namespace()) {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
                             else {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
@@ -442,7 +432,7 @@ namespace GL {
                             if (thisParent->this_m.scope->using_m.size() > 0) {
                                 for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                                     auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if (flag2 & CheckFlagState::all) continue;
+                                    if ((flag2 & CheckFlagState::all) > 0) continue;
                                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                         return finalResult;
                                     }
@@ -459,15 +449,15 @@ namespace GL {
                             flag1 = CheckFlagState::none;
 
                             // test myself directly
-                            if (!(flag1 & CheckFlagState::self)) {
+                            if ((flag1 & CheckFlagState::self) == 0) {
                                 flag1 |= CheckFlagState::self;
 
                                 auto res = func(thisParent, searchState);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     finalResult = nullptr;
                                     return finalResult;
                                 }
@@ -477,7 +467,7 @@ namespace GL {
                             if (thisParent->this_m.scope->using_m.size() > 0) {
                                 for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                                     auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if (flag & CheckFlagState::all) { continue; }
+                                    if ((flag & CheckFlagState::all) > 0) { continue; }
                                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                         return finalResult;
                                     }
@@ -486,27 +476,27 @@ namespace GL {
                         }
                         while (thisParent = thisParent->parent_m) {
                             auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if (flag & CheckFlagState::self) break;
+                            if ((flag & CheckFlagState::self) > 0) break;
                             else {
                                 flag |= CheckFlagState::self;
                             }
                             if (thisParent->this_m.is_namespace()) {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
                             else {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
@@ -514,7 +504,7 @@ namespace GL {
                             if (thisParent->this_m.scope->using_m.size() > 0) {
                                 for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                                     auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if (flag2 & CheckFlagState::all) continue;
+                                    if ((flag2 & CheckFlagState::all) > 0) continue;
                                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                         return finalResult;
                                     }
@@ -524,10 +514,10 @@ namespace GL {
                     }
 
                     // Test my parent completely.
-                    if (!(searchState & SkipParent)) {
+                    if ((searchState & SkipParent) == 0) {
                         if (selfPtr.parent_m) {
                             auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
-                            if (!(flag & CheckFlagState::all)) {
+                            if ((flag & CheckFlagState::all) == 0) {
                                 if (selfPtr.parent_m->this_m.is_namespace()) {
                                     if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
                                         return finalResult;
@@ -586,7 +576,13 @@ namespace GL {
 
             public:
                 BasicScope() = delete;
-                virtual ~BasicScope() = default;
+                virtual ~BasicScope() {
+                    //if (!this->is_namespace()) {
+                        //if (using_m.size() > 0) {
+                            //this->GetNamespace()->invalidate_cache();
+                        //}
+                    //}
+                };
 
                 /// <summary>
                 /// Get the index that is unique to this scope, which will remain unique for the life of the scope. May be re-used after the scope ends. 
@@ -630,51 +626,22 @@ namespace GL {
                 __declspec(noinline) bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
                     if (this->EmplaceObject_Impl<false>(sv, std::move(Obj))) {
                         // check the cache to make sure we aren't changing something from "empty" to "existing"
-                         if (this->is_root()) {
+                        if (this->is_root()) {
                             if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
                                 if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
                                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                namespacePtr->this_m.scope->invalidate_cache();
+                                //namespacePtr->this_m.scope->invalidate_cache();
                                 return SearchResult::Failure;
                             }, nullptr, SearchState::SkipParent)) {};
                         }
-                        else 
-                        if (this->is_namespace()) {
-                            // this->invalidate_cache();
-
-                            //if (Breadcrumb* BC = this->GetRoot()->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
-                            //    if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                            //    namespacePtr->this_m.scope->invalidate_cache();
-                            //    return SearchResult::Failure;
-                            //    }, nullptr, SearchState::SkipParent)) {
-                            //};
+                        else if (this->is_namespace()) {
                             if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
                                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                namespacePtr->this_m.scope->invalidate_cache();
+                                //namespacePtr->this_m.scope->invalidate_cache();
                                 return SearchResult::Failure;
-                                }, nullptr, 0/*SearchState::SkipParent*/)) {
+                                }, nullptr, 0)) {
                             };
                         }
-
-                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, sv.hash())) {
-                        //    if (cache == reinterpret_cast<Breadcrumb*>(1)) {
-                        //        NS->invalidate_cache();
-                        //        NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
-                        //    }
-                        //    else {
-                        //        // existing cache
-                        //        if (cache == &this->breadcrumb_m) {
-                        //            // do nothing
-                        //        }
-                        //        else {
-                        //            NS->invalidate_cache();
-                        //            NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
-                        //        }
-                        //    }
-                        //}
-                        //else {
-                        //    // cache does not exist -- do nothing. 
-                        //}
                         return true;
                     }
                     return false;
@@ -689,21 +656,23 @@ namespace GL {
                 __declspec(noinline) bool emplace_object_here(GL::string const& sv, GL::any&& Obj) {
                     if (this->EmplaceObject_Impl<true>(sv, std::move(Obj))) {
                         // check the cache to make sure we aren't changing something from "empty" to "existing"
-                        //auto* NS = this->GetNamespace();
-                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, sv.hash())) {
-                        //    //// existing cache
-                        //    //if (cache == &this->breadcrumb_m) {
-                        //    //    // do nothing
-                        //    //}
-                        //    //else {
-                        //    //    NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
-                        //    //}
-                        //}
-                        //else {
-                        //    // cache is empty or does not exist
-                        //    NS->invalidate_cache();
-                        //    // NS->search_cache.EmplaceCache<1>(NS->cache_version, sv.hash(), &this->breadcrumb_m);
-                        //}
+                        if (this->is_root()) {
+                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
+                                if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
+                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
+                                //namespacePtr->this_m.scope->invalidate_cache();
+                                return SearchResult::Failure;
+                                }, nullptr, SearchState::SkipParent)) {
+                            };
+                        }
+                        else if (this->is_namespace()) {
+                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
+                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
+                                //namespacePtr->this_m.scope->invalidate_cache();
+                                return SearchResult::Failure;
+                                }, nullptr, 0)) {
+                            };
+                        }
                         return true;
                     }
                     return false;
@@ -720,18 +689,24 @@ namespace GL {
                 // Searches for a namespace that best fits the provided information, starting from this scope's namespace or position.
                 Breadcrumb* find_namespace(GL::string const& Name) const {
                     auto* NS = this->GetNamespace();
-                    if (auto* cache = NS->search_cache.TryGetCache<0>(NS->cache_version, Name.hash())) {
-                        return cache;
-                    }
+                    //if (auto* cache = NS->search_cache.TryGetCache<0>(NS->cache_version, Name.hash())) {
+                    //    if (cache == reinterpret_cast<Breadcrumb*>(1)) {
+                    //        return nullptr;
+                    //    }
+                    //    else {
+                    //        return cache;
+                    //    }
+                    //}
 
                     if (auto* out = FindNamespace(
                         make_scope_name(Name), // "std" or "::std" or "::std::" -> "::std::" 
                         &const_cast<BasicScope*>(this)->breadcrumb_m // where
                     )) {
-                        NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), out);
+                        //NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), out);
                         return out;
                     }
                     else {
+                        //NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), reinterpret_cast<Breadcrumb*>(1));
                         return nullptr;
                     }
                 };
@@ -780,21 +755,21 @@ namespace GL {
                         }
 
                         auto* NS = this->GetNamespace();
-                        if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
-                            if (cache == reinterpret_cast<Breadcrumb*>(1)) {
-                                return nullptr;
-                            }
-                            else {
-                                p = reinterpret_cast<GL::any*>(cache);
-                                return p;
-                            }
-                        }
+                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
+                        //    if (cache == reinterpret_cast<Breadcrumb*>(1)) {
+                        //        return nullptr;
+                        //    }
+                        //    else {
+                        //        p = reinterpret_cast<GL::any*>(cache);
+                        //        return p;
+                        //    }
+                        //}
 
                         // we have a scope with a specific object name
                         // PossiblyScopedName should NOT have colons in this case. 
                         if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
                             // we should not be able to find objects in children scopes
-                            if (SearchState::SearchingChildren & search_state) {
+                            if ((SearchState::SearchingChildren & search_state) > 0) {
                                 throw std::runtime_error("This should never happen");
                                 // p = nullptr;
                                 // return SearchResult::Failure | SearchResult::StaticFailure;
@@ -808,11 +783,11 @@ namespace GL {
                                 return SearchResult::Failure;
                             }
                         }, nullptr, SearchState::SkipChildren)) {
-                            NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
+                            //NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
                             return p;
                         }
                         else {
-                            NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(1));
+                            //NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(1));
                             return nullptr;
                         }
                     }
@@ -858,16 +833,13 @@ namespace GL {
                     children; // children cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
 
             protected:
-                Cache<4>
-                    search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
+                // Cache<4> search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
 
             protected:
-                GL::callback<NamespaceScope>
-                    sockets_for_cache_versions; // socket(s) for others to connect to for listening to changes to THIS scope. Thread-safe. 
-                GL::callback<NamespaceScope>::ScopedListener
-                    connection_for_cache_version; // socket connection for this scope to its parent, to listen to changes to THEIR scope. Not thread-safe.
-                size_t
-                    cache_version; // the current cache version of this scope. Thread-safe to read. Will be updated during every call to "invalidate_cache()"
+                GL::callback<NamespaceScope> sockets_for_cache_versions; // socket(s) for others to connect to for listening to changes to THIS scope. Thread-safe. 
+                GL::callback<NamespaceScope>::ScopedListener connection_for_cache_version; // socket connection for this scope to its parent, to listen to changes to THEIR scope. Not thread-safe.
+                size_t cache_version; // the current cache version of this scope. Thread-safe to read. Will be updated during every call to "invalidate_cache()"
+
             public:
                 virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override {
                     InterlockedIncrement(static_cast<volatile size_t*>(&cache_version));
@@ -880,7 +852,7 @@ namespace GL {
                         if (scope->this_m.is_namespace()) {
                             if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
                                 using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
-                                invalidate_cache();
+                                //invalidate_cache();
                                 return true;
                             }
                         }
@@ -893,7 +865,7 @@ namespace GL {
                 NamespaceScope(GL::string&& name, int scope_type_p = ScopeType::Basic | ScopeType::Namespace, Breadcrumb* parent = nullptr)
                     : BasicScope(std::move(name), scope_type_p, parent)
                     , children{}
-                    , search_cache{}
+                    //, search_cache{}
                     , sockets_for_cache_versions(&NamespaceScope::invalidate_cache)
                     , connection_for_cache_version{}
                     , cache_version{ 0 }
@@ -920,18 +892,18 @@ namespace GL {
                     int searchState = 0,
                     check_cache& check_flags = GetCheckMap(),
                     int depth = 0
-                ) const override {
+                ) const {
                     auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
                     Breadcrumb* finalResult = nullptr;
                     if (depth == 0) {
                         if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
-                            check_flags.resize(numTickets);
+                            check_flags.resize(numTickets + 1);
                         }
                         for (auto& x : check_flags) x = CheckFlagState::none;
                     }
 
                     // Prevent Duplication
-                    if (check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) {
+                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) > 0) {
                         finalResult = nullptr;
                         return finalResult;
                     }
@@ -940,15 +912,15 @@ namespace GL {
                     }
 
                     // test myself directly	
-                    if (!(check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self)) {
+                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self) == 0) {
                         check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
 
                         auto res = func(&selfPtr, searchState);
-                        if (res & SearchResult::Success) {
+                        if ((res & SearchResult::Success) > 0) {
                             finalResult = &selfPtr;
                             return finalResult;
                         }
-                        else if (res & SearchResult::StaticFailure) {
+                        else if ((res & SearchResult::StaticFailure) > 0) {
                             finalResult = nullptr;
                             return finalResult;
                         }
@@ -962,7 +934,7 @@ namespace GL {
                     // test my personal "using" namespaces completely
                     if (using_m.size() > 0ull) {
                         for (auto& childNamespace : using_m) {
-                            if (check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) { continue; }
+                            if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
                             if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                 return finalResult;
                             }
@@ -974,27 +946,27 @@ namespace GL {
                         Breadcrumb* thisParent = &selfPtr;
                         while (thisParent = thisParent->parent_m) {
                             auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if (flag & CheckFlagState::self) break;
+                            if ((flag & CheckFlagState::self) > 0) break;
                             else {
                                 flag |= CheckFlagState::self;
                             }
                             if (thisParent->this_m.is_namespace()) {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
                             else {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
@@ -1002,7 +974,7 @@ namespace GL {
                             if (thisParent->this_m.scope->using_m.size() > 0) {
                                 for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                                     auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if (flag2 & CheckFlagState::all) continue;
+                                    if ((flag2 & CheckFlagState::all) > 0) continue;
                                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                         return finalResult;
                                     }
@@ -1019,15 +991,15 @@ namespace GL {
                             flag1 = CheckFlagState::none;
 
                             // test myself directly
-                            if (!(flag1 & CheckFlagState::self)) {
+                            if ((flag1 & CheckFlagState::self) == 0) {
                                 flag1 |= CheckFlagState::self;
 
                                 auto res = func(thisParent, searchState);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     finalResult = nullptr;
                                     return finalResult;
                                 }
@@ -1037,7 +1009,7 @@ namespace GL {
                             if (thisParent->this_m.scope->using_m.size() > 0) {
                                 for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                                     auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if (flag & CheckFlagState::all) { continue; }
+                                    if ((flag & CheckFlagState::all) > 0) { continue; }
                                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                         return finalResult;
                                     }
@@ -1046,27 +1018,27 @@ namespace GL {
                         }
                         while (thisParent = thisParent->parent_m) {
                             auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if (flag & CheckFlagState::self) break;
+                            if ((flag & CheckFlagState::self) > 0) break;
                             else {
                                 flag |= CheckFlagState::self;
                             }
                             if (thisParent->this_m.is_namespace()) {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
                             else {
                                 auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if (res & SearchResult::Success) {
+                                if ((res & SearchResult::Success) > 0) {
                                     finalResult = thisParent;
                                     return finalResult;
                                 }
-                                else if (res & SearchResult::StaticFailure) {
+                                else if ((res & SearchResult::StaticFailure) > 0) {
                                     flag |= CheckFlagState::all;
                                 }
                             }
@@ -1074,7 +1046,7 @@ namespace GL {
                             if (thisParent->this_m.scope->using_m.size() > 0) {
                                 for (auto& childNamespace : thisParent->this_m.scope->using_m) {
                                     auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if (flag2 & CheckFlagState::all) continue;
+                                    if ((flag2 & CheckFlagState::all) > 0) continue;
                                     if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
                                         return finalResult;
                                     }
@@ -1084,31 +1056,31 @@ namespace GL {
                     }
 
                     // Test my children themselves. 
-                    if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && (this->children.size() > 0ull)) {
+                    if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && (this->children.size() > 0ull)) {
                         for (auto& child : this->children) {
                             auto* child_bc = &child.second->breadcrumb_m;
                             auto& flag = check_flags[child_bc->GetScopeIndex()];
 
-                            if (flag & CheckFlagState::self) continue;
+                            if ((flag & CheckFlagState::self) > 0) continue;
 
                             flag |= CheckFlagState::self;
 
                             auto res = func(child_bc, searchState | SearchingChildren | SkipChildren | SkipParent);
-                            if (res & SearchResult::Success) {
+                            if ((res & SearchResult::Success) > 0) {
                                 finalResult = child_bc;
                                 return finalResult;
                             }
-                            else if (res & SearchResult::StaticFailure) {
+                            else if ((res & SearchResult::StaticFailure) > 0) {
                                 flag |= CheckFlagState::all;
                             }
                         }
                     }
 
                     // Test my parent completely.
-                    if (!(searchState & SkipParent)) {
+                    if ((searchState & SkipParent) == 0) {
                         if (selfPtr.parent_m) {
                             auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
-                            if (!(flag & CheckFlagState::all)) {
+                            if ((flag & CheckFlagState::all) == 0) {
                                 if (selfPtr.parent_m->this_m.is_namespace()) {
                                     if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
                                         return finalResult;
@@ -1119,17 +1091,18 @@ namespace GL {
                                         return finalResult;
                                     }
                                 }
+
                             }
                         }
                     }
 
                     // Test my children completely. 
-                    if (!RequestedSkipChildren && (!(searchState & SkipChildren)) && this->children.size() > 0ull) {
+                    if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && this->children.size() > 0ull) {
                         for (auto& child : this->children) {
                             auto* child_bc = &child.second->breadcrumb_m;
                             auto& flag = check_flags[child_bc->GetScopeIndex()];
 
-                            if (flag & CheckFlagState::all) continue;
+                            if ((flag & CheckFlagState::all) > 0) continue;
 
                             if (finalResult = child_bc->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingChildren | SkipParent, check_flags, depth + 1)) {
                                 return finalResult;
@@ -1157,12 +1130,12 @@ namespace GL {
                         return *f->second;
                     }
                     else {
+                        // this->invalidate_cache();
                         return *children.insert(
                             { name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((GL::string)name, ScopeType::Basic | ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m))) }
                         ).first->second;
                     }
                 };
-
             };
 
             /// <summary>

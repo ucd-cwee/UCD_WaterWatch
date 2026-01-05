@@ -1433,8 +1433,6 @@ namespace std {
     };
 };
 
-
-
 #if 0
 // Sorted Proxy_Functions with support for caching
 namespace GL {

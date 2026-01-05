@@ -7,6 +7,7 @@
 #include "Strings.h"
 // #include "atomic_maps.h"
 #include "ticket_dispensor.h"
+#include "atomic_shared_ptr.h"
 
 // a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
 namespace GL {
@@ -439,7 +440,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
+		using lock_type = fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // std::shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;
@@ -2244,10 +2245,10 @@ namespace GL {
 
 	// Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
     // Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
-	template< class objType, class keyType, int maxChildrenPerNode >
+	template< class objType, class keyType, int maxChildrenPerNode = 10>
 	class epoch_search_tree {
 	public:
-		using lock_type = std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // 
+		using lock_type = fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; //
 		struct epoch_search_treeNode {
 			std::variant<objType, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
 				data;
@@ -2418,7 +2419,7 @@ namespace GL {
 					return out;
 				}
 			};
-			epoch_search_treeNode*
+			__declspec(noinline) epoch_search_treeNode*
 				binomial_search_smallest_greater_equal_to(keyType K) {
 #if 0
 				epoch_search_treeNode* child = this->firstChild();
@@ -2445,11 +2446,19 @@ namespace GL {
 					res;
 				epoch_search_treeNode
 					* sample;
+				epoch_search_treeNode
+					** childrens;
 				if (numChildren == 0)
 					return nullptr;
 				if (numChildren == 1)
-					return children()[0];
+					return this->children()[0];
 
+				if (numChildren >= maxChildrenPerNode) {
+					// std::cout << "Something went wrong 1...\n";
+					// throw std::runtime_error(std::to_string(numChildren) + " - Bad index");
+				}
+
+				childrens = this->children();
 				len = numChildren;
 				mid = len;
 				offset = 0;
@@ -2457,7 +2466,18 @@ namespace GL {
 
 				while (mid > 0) {
 					mid = len >> 1;
-					sample = children()[offset + mid];
+					if (((offset + mid) < 0) || ((offset + mid) >= maxChildrenPerNode)) {
+						// std::cout << "Something went wrong 2...\n";
+						// return binomial_search_smallest_greater_equal_to(K);
+						return nullptr;
+						// throw std::runtime_error(std::to_string(offset + mid) + " - Bad index");
+					}
+					sample = childrens[std::min<int>(numChildren - 1, offset + mid)];
+					if (!sample) {
+						// std::cout << "Something went wrong 3...\n";
+						// return binomial_search_smallest_greater_equal_to(K);
+						return nullptr;
+					}
 					if (K >= sample->key) {
 						offset += mid;
 						len -= mid;
@@ -2470,8 +2490,8 @@ namespace GL {
 					}
 				}
 				mid = offset + (int)res;
-				if (mid == numChildren) return children()[offset];
-				else return children()[mid];
+				if (mid == numChildren) return childrens[std::min<int>(numChildren - 1, offset)];
+				else return childrens[std::min<int>(numChildren - 1, mid)];
 				//}
 #endif
 			};
@@ -2487,7 +2507,7 @@ namespace GL {
 			nodeAllocator;
 		long
 			count;
-	private:
+	public:
 		class // exclusive lock manager. Since this is a course-grained type, though, it can only ever hold one lock at a time. 
 			locker {
 		public:
@@ -2776,7 +2796,7 @@ namespace GL {
 
 			for (node = root; node; ) {
 				node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
-				if (node->object()) {
+				if (node && node->object()) {
 					if (node->key == key) return out;
 					else {
 						node = nullptr;
@@ -2842,7 +2862,7 @@ namespace GL {
 			}
 			for (node = root; node; ) {
 				node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
-				if (node->object()) {
+				if (node && node->object()) {
 					if (node->key >= key) return out;
 					else {
 						node = nullptr;
@@ -2871,7 +2891,7 @@ namespace GL {
 			}
 			for (node = root; node; ) {
 				node = node->binomial_search_smallest_greater_equal_to(key); // returns the child with a node->key >= provided key. 
-				if (node->object()) {
+				if (node && node->object()) {
 					if (node->key >= key) return node;
 					else {
 						node = nullptr;
@@ -3116,6 +3136,23 @@ namespace GL {
 			WrappedReference& operator=(WrappedReference&&) = delete;
 			~WrappedReference() = default;
 		};
+		class WrappedReferenceFast {
+		public:
+			const keyType&
+				first;
+			objType&
+				second;
+			
+			WrappedReferenceFast(const keyType* _first, objType* _second)
+				: first{ *_first }
+				, second{ *_second }
+			{};
+			WrappedReferenceFast(WrappedReferenceFast const&) = delete;
+			WrappedReferenceFast(WrappedReferenceFast&&) = delete;
+			WrappedReferenceFast& operator=(WrappedReferenceFast const&) = delete;
+			WrappedReferenceFast& operator=(WrappedReferenceFast&&) = delete;
+			~WrappedReferenceFast() = default;
+		};
 
 		epoch_map() = default;
 		epoch_map(epoch_map const& rhs) = delete;
@@ -3149,7 +3186,7 @@ namespace GL {
 		objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
 			operator[](const keyType& time) {
 			ProtectCurrentEpoch_Fast();
-			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();			
+			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();
 			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();			
 			else if (node = tree.Add({}, time, locker); node) return *node->object();			
 			else throw std::range_error("Could not find key");			
@@ -3164,8 +3201,86 @@ namespace GL {
 			return false;
 		};
 
+		class Iterator {
+		public:
+			using iterator_category = std::forward_iterator_tag;
+			using value_type = std::pair< const keyType*, objType* >;
+			using difference_type = ptrdiff_t;
+			using pointer = value_type*;
+			using reference = value_type&;
+			using iter_type = typename decltype(tree)::epoch_search_treeNode;
+			using lock_type = typename decltype(tree)::locker;
 
+			Iterator(epoch_map* parent = nullptr, iter_type* ptr = nullptr) : _parent{ parent }, _ptr(ptr), _data(nullptr, nullptr), _lock((parent&& ptr) ? parent->tree.lock_shared() : lock_type{}) {
+				if (_ptr) {
+					_data = { &_ptr->key, _ptr->object() };
+				}
+			};
+			Iterator(const Iterator& rhs) : _parent(rhs._parent), _ptr(rhs._ptr), _data(nullptr) {
+				if (_ptr) {
+					_data = { &_ptr->key, _ptr->object() };
+				}
+			};
 
+			inline reference operator*() { return _data; }
+			inline pointer operator->() { return &_data; }
+			inline const reference operator*() const { return _data; }
+			inline const pointer operator->() const { return &_data; }
+
+			inline Iterator& operator++() {
+				_ptr = typename decltype(tree)::GetNextLeaf(_ptr, _lock);
+				if (_ptr) {
+					_data = { &_ptr->key, _ptr->object() };
+				}
+				else {
+					_data = { nullptr, nullptr };
+				}
+				return *this; 
+			}
+			inline Iterator operator++(int) { Iterator tmp(*this); this->operator++(); return tmp; }
+
+			inline bool operator==(const Iterator& rhs) const { return _ptr == rhs._ptr; }
+			inline bool operator!=(const Iterator& rhs) const { return _ptr != rhs._ptr; }
+			inline bool operator>(const Iterator& rhs) const {
+				if (_ptr == rhs._ptr) return false;
+				if (!_ptr) return false;
+				if (!rhs._ptr) return true;
+				return _ptr->key > rhs._ptr->key;
+			};
+			inline bool operator>=(const Iterator& rhs) const {
+				if (_ptr == rhs._ptr) return true;
+				if (!_ptr) return false;
+				if (!rhs._ptr) return true;
+				return _ptr->key >= rhs._ptr->key;
+			};
+			inline bool operator<(const Iterator& rhs) const { return !operator>=(rhs); };			
+			inline bool operator<=(const Iterator& rhs) const { return !operator>(rhs); };
+
+		protected:
+			std::pair< const keyType*, objType* >
+				_data;
+			iter_type*
+				_ptr;
+			epoch_map*
+				_parent;
+			lock_type
+				_lock;
+		};
+
+		using iterator = Iterator;
+		using const_iterator = iterator;
+
+		auto begin() { 
+			auto locked = this->tree.lock_shared();
+			return Iterator(this, this->tree.GetNextLeaf(this->tree.GetRoot(locked), locked));
+		};
+		auto end() { 
+			return Iterator(nullptr, nullptr);
+		};
+		auto cbegin() const { return const_cast<epoch_map*>(this)->begin(); };
+		auto cend() const { return const_cast<epoch_map*>(this)->end(); };
+		auto begin() const { return const_cast<epoch_map*>(this)->begin(); };
+		auto end() const { return const_cast<epoch_map*>(this)->end(); };
 
 	};
 

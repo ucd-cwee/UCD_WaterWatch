@@ -104,12 +104,17 @@ int main() {
     }
 #endif
 
-    if (0) {
+    while (1) {
         if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 1")) {
             std::map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map[i] = i;
             }
+            auto iter = map.begin();
+            auto e = map.end();
+            while (iter != e) { ++iter; }
+            for (auto& x : map) {}
+            for (auto const& x : map) {}
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 2")) {
             std::map<int, int> map;
@@ -120,30 +125,49 @@ int main() {
                 map[i] = i;
             }
         }
-
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 0.1")) {
             GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000; ++i) {
                 map[i] = i;
             }
+            auto iter = map.begin();
+            auto e = map.end();
+            while (iter != e) { ++iter; }
+            for (auto& x : map) {}
+            for (auto const& x : map) {}
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 0.2")) {
             GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000; ++i) {
                 map.insert_fast(i, int{ i });
             }
+            auto iter = map.begin();
+            auto e = map.end();
+            while (iter != e) { ++iter; }
+            for (auto& x : map) {}
+            for (auto const& x : map) {}
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 1.1")) {
             GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {                
                 map[i] = i;
             }
+            auto iter = map.begin();
+            auto e = map.end();
+            while (iter != e) { ++iter; }
+            for (auto& x : map) {}
+            for (auto const& x : map) {}
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 1.2")) {
             GL::epoch_map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {
                 map.insert_fast(i, int{ i });
             }
+            auto iter = map.begin();
+            auto e = map.end();
+            while (iter != e) { ++iter; }
+            for (auto& x : map) {}
+            for (auto const& x : map) {}
         }
         if (GL::stopwatch sw; auto x = sw.debug_timer("epoch_map 2.1")) {
             GL::epoch_map<int, int> map;
@@ -334,8 +358,12 @@ int main() {
                     = std_namespace.make_namespace("string");
                 auto& std_map_namespace
                     = std_namespace.make_namespace("map");
+                auto& std_numeric_limits_namespace
+                    = std_namespace.make_namespace("numeric_limits");
 
                 std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));              
+                std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());
+                std_numeric_limits_namespace.insert_object_here("max", std::numeric_limits<double>::max());
 
                 if (auto* p = std_string_namespace.find_object("npos")) {
                     auto f = p->fast();
@@ -380,7 +408,7 @@ int main() {
                 EXPECT_EQ(program_root.find_object("npos"), nullptr);
 
                 auto constructor1 = GL::make_callable("string", []() -> std::string { return std::string(); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);
-                auto constructor2 = GL::make_callable("string", [](std::string const& rhs) -> std::string { return std::string(rhs); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);
+                auto constructor2 = GL::make_callable("string", [](std::string const& rhs) -> std::string { return std::string(rhs); }, GL::function_signature::Static | GL::function_signature::Async | GL::function_signature::Constant);                
                 auto set_operator = GL::make_callable("=", // function name
                     [](GL::any::fast_any const& lhs, std::string const& rhs) -> GL::any::fast_any { // can use GL::any::fast_any or GL::any for these and it will work either way. fast_any is more efficient and 'honest' with the underlying system, and is therefore recommended.
                         lhs.cast<std::string&>() = rhs;
@@ -449,14 +477,20 @@ int main() {
                 EXPECT_NE(std_map_namespace.find_object("std::map::z"), nullptr);
 
                 if (auto scope = std_map_namespace.make_scope(); !scope.is_namespace()) {
-                    scope.insert_object_here("w", std::string("TEST"));
-                    EXPECT_NE(nullptr, scope.find_object("x"));
-                    EXPECT_NE(nullptr, scope.find_object("y"));
-                    EXPECT_NE(nullptr, scope.find_object("z"));
-                    EXPECT_NE(nullptr, scope.find_object("w"));
+                    scope.insert_object_here("w", std::string("TEST")); // inserting an object into a basic scope does NOT invalidate any search cache's
+                    EXPECT_NE(nullptr, scope.find_object("x")); // found at ::
+                    EXPECT_NE(nullptr, scope.find_object("y")); // found in ::std
+                    EXPECT_NE(nullptr, scope.find_object("z")); // found in ::std::map
+                    EXPECT_NE(nullptr, scope.find_object("npos")); // found in ::std::string, which is 'used' by std::map
+                    EXPECT_NE(nullptr, scope.find_object("w")); // found in ::std::map::{}
 
+                    EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
+                    EXPECT_EQ(nullptr, scope.find_object("max")); 
+                    scope.add_using_here(std_numeric_limits_namespace);
+                    EXPECT_NE(nullptr, scope.find_object("max"));            
+                    EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
                 }
-
+                EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
 
 
 
