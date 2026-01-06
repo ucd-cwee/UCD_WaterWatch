@@ -150,7 +150,7 @@ int main() {
         return false;
     });
 
-    while (1) {
+    if (0) {
         if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 1")) {
             std::map<int, int> map;
             for (int i = 0; i < 1000000; ++i) {

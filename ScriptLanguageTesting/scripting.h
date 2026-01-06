@@ -272,6 +272,179 @@ namespace GL {
                     return temp;
                 };
 
+                // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
+                template<typename Func> void for_each_constructor(GL::string const& name, Func const& to_do) const {
+                    typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
+                    static_assert(std::is_same_v<bool, function_header::Return_Type>);
+                    static_assert(std::is_same_v< GL::Proxy_Function const&, std::tuple_element_t<0, function_header::Param_Types::argType>>);
+                    static_assert(function_header::Param_Types::numArgs <= 1);
+
+                    if (functions.valid()) {
+                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && funcs_by_name->valid()) {
+                            for (auto& funcs : funcs_by_name->operator*()) {
+                                GL::Proxy_Function const& func = *funcs.second;
+                                if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
+                                    if (to_do(func)) {
+                                        return func;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+            private:
+                class UniformCostSearchNodeBestPath {
+                public:
+                    UniformCostSearchNodeBestPath() = default;
+                    UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath* previous, GL::type const& nextNodePath)
+                        : previousBestPath(previous)
+                        , thisNodePath(nextNodePath)
+                    {};
+                    UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath const&) = default;
+                    UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath&&) = default;
+                    UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath const&) = default;
+                    UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath&&) = default;
+                    ~UniformCostSearchNodeBestPath() = default;
+
+                    UniformCostSearchNodeBestPath* previousBestPath{ nullptr };
+                    GL::type thisNodePath;
+                    size_t cached_size{ 0 };
+
+                private:
+                    void get_impl(std::vector<GL::type>& out) const {
+                        if (previousBestPath) previousBestPath->get_impl(out);
+                        out.push_back(thisNodePath);
+                    };
+
+                public:
+                    void get(std::vector<GL::type>& out) const {
+                        out.clear();
+                        get_impl(out);
+                    };
+                    size_t size() const {
+                        if (cached_size == 0) {
+                            if (previousBestPath) {
+                                const_cast<size_t&>(cached_size) = 1 + previousBestPath->size();
+                            }
+                            else {
+                                const_cast<size_t&>(cached_size) = 1;
+                            }
+                        }
+                        return cached_size;
+                    };
+                };
+                class UniformCostSearchNode {
+                public:
+                    UniformCostSearchNode() = default;
+                    UniformCostSearchNode(GL::type const& a, double b, UniformCostSearchNodeBestPath* c)
+                        : thisVertexType(a)
+                        , distanceFromTarget(std::move(b))
+                        , bestPath(std::move(c))
+                    {};
+                    UniformCostSearchNode(UniformCostSearchNode&&) = default;
+                    UniformCostSearchNode(UniformCostSearchNode const&) = default;
+                    UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
+                    UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
+                    ~UniformCostSearchNode() = default;
+                public:
+                    GL::type thisVertexType;
+                    double distanceFromTarget; // if not known, then we can simply guess. 
+                    UniformCostSearchNodeBestPath* bestPath{ nullptr };
+
+                public:
+                    size_t size() const {
+                        if (bestPath) {
+                            return bestPath->size();
+                        }
+                        else {
+                            return 0;
+                        }
+                    };
+                    bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
+                        return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
+                    };
+                    bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
+                        return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
+                    };
+                };
+
+#if 0
+                // Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
+                // If no path is possible, returns false.
+                std::unordered_map<size_t, std::pair<GL::type, UniformCostSearchNode*>> CreateConversionPaths(
+                    GL::atomic_allocator<std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>, 1024>& alloc,
+                    GL::type const& From, 
+                    GL::type const& To
+                ){
+                    // create the shortest paths from "From" to all possible vertices.
+                    std::unordered_map<size_t, std::pair<GL::type, UniformCostSearchNode*>> vertices;
+
+                    if (1) {
+                        // create an empty vertex set
+                        std::priority_queue<
+                            UniformCostSearchNode*
+                            , std::vector<UniformCostSearchNode*>
+                            , UniformCostSearchNode
+                        > vertexSet;
+
+                        // Add the source vertex into the set
+                        vertexSet.push(alloc.Alloc(From, 0.0, nullptr));
+
+                        // is the vertex set empty?
+                        double conversionCost{ 0 };
+                        // conversionTreeType::iterator f;
+                        UniformCostSearchNode* smallestDistanceNode;
+                        //conversionTreeType::value_type::second_type::const_iterator fSecondIter;
+                        //conversionTreeType::value_type::second_type::const_iterator fSecondEnd;
+                        //GoodLang::details::Type_Conversion_Base* func;
+                        while (vertexSet.size() != 0) {
+                            // extract the vertex with the smallest distance value from the set
+                            smallestDistanceNode = vertexSet.top();
+                            vertexSet.pop();
+
+                            // for each neighbor of the extracted vertex... 
+                            f = AllConversions.find(smallestDistanceNode->thisVertexType);
+                            if (f != AllConversions.end()) {
+                                for (fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
+                                    auto& connection = *fSecondIter;
+                                    if (func = connection.second.second.get()) {
+                                        conversionCost = GoodLang::details::TypeConversionBaselineCost;
+                                        if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
+                                            conversionCost = func->cost(); // calculate distance value for the neighbor vertex
+
+                                        if (1) {
+                                            // Is the neighbor already in the vertex set? 
+                                            auto& toVertex = vertices[connection.first];
+                                            if (!toVertex.first) toVertex.first = connection.second.first;
+
+                                            if (!toVertex.second) { // Instance it before we start working with it on an as-needed basis
+                                                toVertex.second = alloc.Alloc(
+                                                    connection.second.first,
+                                                    std::numeric_limits<double>::infinity(),
+                                                    alloc2.Alloc(nullptr, connection.second.first)
+                                                );
+                                            }
+                                            if ((toVertex.second->size() + 1) > (smallestDistanceNode->size() + 1)) {
+                                                toVertex.second->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+                                                toVertex.second->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex.second->thisVertexType);
+                                                vertexSet.push(toVertex.second);
+                                            }
+                                            else if (toVertex.second->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
+                                                toVertex.second->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+                                                toVertex.second->bestPath = alloc2.Alloc(smallestDistanceNode->bestPath, toVertex.second->thisVertexType);
+                                                vertexSet.push(toVertex.second);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return vertices;
+                };
+#endif
+
             };
 
 
