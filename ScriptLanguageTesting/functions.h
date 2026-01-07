@@ -149,7 +149,7 @@ namespace GL {
                         return false;
                     }
                 }
-                return true;
+                return iter == end;
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
                 size_t i = 0;
@@ -163,7 +163,7 @@ namespace GL {
                         return false;
                     }
                 }
-                return true;
+                return iter == end;
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 size_t i = 0;
@@ -177,7 +177,7 @@ namespace GL {
                         return false;
                     }
                 }
-                return true;
+                return iter == end;
             }
         };
         template<typename iter_type> bool can_call_with_cast(iter_type iter, iter_type const& end) const {
@@ -193,7 +193,7 @@ namespace GL {
                         return false;
                     }
                 }
-                return true;
+                return iter == end;
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
                 size_t i = 0;
@@ -207,7 +207,7 @@ namespace GL {
                         return false;
                     }
                 }
-                return true;
+                return iter == end;
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 size_t i = 0;
@@ -221,7 +221,7 @@ namespace GL {
                         return false;
                     }
                 }
-                return true;
+                return iter == end;
             }
         };
         bool can_call_with_free_cast(std::vector<GL::type> const& from) const {
@@ -293,6 +293,7 @@ namespace GL {
         function classes */
         class Proxy_Function_Base {
         public:
+            Proxy_Function_Base() = default;
             virtual ~Proxy_Function_Base() = default;
 
             function_signature 
@@ -345,7 +346,9 @@ namespace GL {
             virtual GL::shared_ptr<details::Proxy_Function_Base> duplicate() const = 0;
 
         protected:
-            virtual any do_call(any::fast_any** begin) const = 0;
+            virtual any do_call(any::fast_any** begin) const {
+                return {};
+            };
             Proxy_Function_Base(function_signature&& p_signature) : m_signature(std::move(p_signature)) {}
 
         };
@@ -1417,6 +1420,10 @@ namespace GL {
         Func&& func,
         std::vector<any>&& defaults = {}
     ) {
+        static bool update_name{ []() -> bool {
+            return GL::type_of<details::Proxy_Function_Base>().try_update_name("function");
+        }() };
+
         Proxy_Function out;
         typedef decltype(details::detail::function_signature(func)) function_header;
         if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};

@@ -152,33 +152,33 @@ int main() {
     });
     if (1) {
         std::vector < GL::type > types{ GL::type_of<std::string>() };
-        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
-        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
         std::vector < GL::type > types{ GL::type_of<std::string&>() };
-        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
-        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
         std::vector < GL::type > types{ GL::type_of<std::string const&>() };
-        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
-        EXPECT_EQ(false, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+        EXPECT_EQ(false, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
         std::vector < GL::type > types{ GL::type_of<std::string const&>() };
-        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), false));
-        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), false));
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end()));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end()));
     }
     if (1) {
         std::vector < GL::any > types{ GL::any{ std::string{} } };
-        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
-        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
         std::vector < GL::any::fast_any > types{ GL::any{ std::string{} }.fast() };
-        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
-        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
 
 
@@ -441,6 +441,7 @@ int main() {
                     = std_namespace.make_namespace("numeric_limits");
 
                 std_string_namespace.add_function(GL::decl_func(&std::string::length));
+                std_string_namespace.insert_object_here("length", GL::make_callable(GL::string::empty_string(), []() -> size_t { return std::numeric_limits<size_t>::max(); })); // insert a function as an object. Basically a lambda!
                 std_string_namespace.add_function(GL::decl_func(&std::string::capacity));
                 std_string_namespace.add_function(GL::decl_func(&std::string::clear));
                 std_string_namespace.add_function(GL::decl_func(&std::string::empty));
@@ -471,39 +472,51 @@ int main() {
                     , [](std::string const& any_type) -> std::string { return any_type + "_std_string"; }
                 ));
 
+                if (1) {
+                    std::vector < GL::any > empty_types;
+                    EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
+                }
+
                 GL::parallel::For(0, 1000000, [&](size_t i) {
                     std::vector < GL::any > types{ GL::any{ std::string{ "test" }} };
                     std::vector < GL::any > types2{ GL::any{ GL::foot{ 100.0f }} };
                     std::vector < GL::any > empty_types;
 
-                    EXPECT_EQ(false, program_root.try_find_callable("length", types.begin(), types.end(), true));
-                    EXPECT_EQ(true, program_root.try_find_callable("type_name", types.begin(), types.end(), true));
-                    EXPECT_EQ(true, program_root.try_find_callable("type_of", types.begin(), types.end(), true));
+                    EXPECT_EQ(nullptr, program_root.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                    EXPECT_EQ(nullptr, program_root.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only)); // finds an object
+                    EXPECT_NE(nullptr, program_root.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                    EXPECT_NE(nullptr, program_root.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
 
-                    EXPECT_EQ(true, std_string_namespace.try_find_callable("length", types.begin(), types.end(), true));
-                    EXPECT_EQ(true, std_string_namespace.try_find_callable("type_name", types.begin(), types.end(), true));
-                    EXPECT_EQ(true, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), true));
+                    EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                    EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
+                    EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                    EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
 
-                    if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), true); f) {
+                    if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("std_string", f->operator()(types).cast<GL::type>().name()); // std_string
                     }
-                    if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), true); f) {
+                    if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ(4, f->operator()(types).cast<size_t>()); // 4
                     }
-                    if (auto const& f = program_root.try_find_callable("print", types.begin(), types.end(), true); f) {
+
+                    // finds the ProxyFunction object. objects are preferred over functions if that object is a compatable function. Note that template-function-objects are preferred over free-cast namespaced-functions! 
+                    if (auto const& f = std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                        EXPECT_EQ(std::numeric_limits<size_t>::max(), f->operator()(types).cast<size_t>());
+                    }
+                    if (auto const& f = program_root.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
                     }
-                    if (auto const& f = program_root.try_find_callable("print", empty_types.begin(), empty_types.end(), true); f) {
+                    if (auto const& f = program_root.try_find_callable("print", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("root_default_root", f->operator()(empty_types).cast<std::string>()); // default
                         EXPECT_EQ("root_default_root", f->operator()().cast<std::string>()); // default
                     }
-                    if (auto const& f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), true); f) {
+                    if (auto const& f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
                     }
-                    if (auto const& f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), true); f) {
+                    if (auto const& f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("any_std", f->operator()(types2).cast<std::string>()); // test
                     }
-                    if (auto const& f = std_string_namespace.try_find_callable("print", empty_types.begin(), empty_types.end(), true); f) {
+                    if (auto const& f = std_string_namespace.try_find_callable("print", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("std_string_default_std", f->operator()(empty_types).cast<std::string>()); // default
                         EXPECT_EQ("std_string_default_std", f->operator()().cast<std::string>()); // default
                     }

@@ -2449,8 +2449,8 @@ namespace GL {
 #if 1 // should result in better quality, but is performed on the CPU rather than the GPU. 
                 matrix out(X, Y, Z);
                 if (auto w = out.write()) {
-                    for (int i = 0; i < out.size(); ++i) {
-                        w[i] = GL::util::rand_fast(lower, upper);
+                    for (unsigned int i = 0; i < out.size(); ++i) {
+                        w[i] = (float)GL::util::rand_fast(lower, upper);
                     }
                 }
                 return out;
@@ -3542,10 +3542,10 @@ namespace GL {
             static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
             static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
             if constexpr (std::is_same_v<float, T>) {
-                return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+                return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch((unsigned int)std::floorf(((float)size(0) / 2.0f) + 0.5f), (unsigned int)std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
             else {
-                return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch(std::floorf(((float)size(0) / 2.0f) + 0.5f), std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
+                return cast<float>().convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch((unsigned int)std::floorf(((float)size(0) / 2.0f) + 0.5f), (unsigned int)std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
             }
 
         };

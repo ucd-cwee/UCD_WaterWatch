@@ -846,7 +846,12 @@ namespace GL {
                     }
                 }
                 else {
-                    return *any_p.cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
+                    if (any_p.can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                        return *any_p.cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
+                    }
+                    else {
+                        throw std::runtime_error("Cannot cast to requested type");
+                    }
                 }
             };
             
@@ -868,7 +873,12 @@ namespace GL {
                     }
                 }
                 else {
-                    return *container->cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
+                    if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                        return *container->cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
+                    }
+                    else {
+                        throw std::runtime_error("Cannot cast to requested type");
+                    }
                 }
             };
 
@@ -1270,10 +1280,13 @@ namespace GL {
             template <typename T> operator GL::shared_ptr<T>() const noexcept {
                 return any::DataCaster::DoCast<GL::shared_ptr<T>>(parent);
             };
+#pragma warning(push)
+#pragma warning(disable : 4172)
             template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
             operator ValueTypeT& () const noexcept {
                 return any::DataCaster::DoCast<ValueTypeT&>(parent);
             };
+#pragma warning(pop)
             template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
             operator ValueTypeT* () const noexcept {
                 return any::DataCaster::DoCast<ValueTypeT*>(parent);
@@ -1393,7 +1406,7 @@ namespace GL {
                 out |= GL::type::Qualifiers::Temporary;
                 return out;
             }
-            else if constexpr (std::is_copy_assignable_v<base_type>) {
+            else if constexpr (std::is_copy_assignable_v<base_type> && std::is_constructible_v< base_type>) {
                 GL::any out(base_type{  });
                 out.cast<T>() = from.cast<T>();
                 out |= GL::type::Qualifiers::Temporary;
