@@ -317,7 +317,18 @@ namespace GL {
             };
             // fastest path
             any operator()() const {
-                return do_call(nullptr);
+                if (m_signature.argument_types_m.size() > 0) {
+                    static thread_local std::array<any::fast_any*, 16> inputs;
+                    std::memset(&inputs[0], 0, sizeof(inputs));
+                    short pos{ 0 };
+                    for (; (pos < 16) && (pos < m_signature.argument_defaults_m.size()); ++pos) {
+                        inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
+                    }
+                    return do_call(&inputs[0]);
+                }
+                else {
+                    return do_call(nullptr);
+                }
             };
             // fast path
             any operator()(std::vector<any::fast_any>& params) const {

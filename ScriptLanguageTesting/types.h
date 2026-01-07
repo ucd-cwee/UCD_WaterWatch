@@ -177,7 +177,9 @@ namespace GL {
         bool add_base(type const& base);
         bool match_base_hash(type const& to_match) const;
 
-        GL::string name() const; 
+        GL::string name() const;
+        // this is NOT a thread-safe operation. Ideally should be done on start-up. 
+        bool try_update_name(GL::string const& new_name);
 
         size_t get_hash() const {
             return hash;

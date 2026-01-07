@@ -1105,8 +1105,8 @@ namespace GL {
 	DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0)); \
 	DerivedUnitType(furlong, length, fur, Conversion<foot>(660)); \
 	DerivedUnitType(mile, length, mi, Conversion<foot>(5280)); \
-	DerivedUnitType(nauticalMile, length, nmi, Conversion<meter>(1852.0)); \
-	DerivedUnitType(astronicalUnit, length, au, Conversion<meter>(149597870700.0)); \
+	DerivedUnitType(nautical_mile, length, nmi, Conversion<meter>(1852.0)); \
+	DerivedUnitType(astronical_unit, length, au, Conversion<meter>(149597870700.0)); \
 	DerivedUnitType(yard, length, yd, Conversion<foot>(3.0)); \
 	DerivedUnitTypeWithMetricPrefixes(gram, mass, g, 1.0 / 1000.0); \
 	DerivedUnitType(metric_ton, mass, t, Conversion<kilogram>(1000.0)); \
@@ -1135,7 +1135,7 @@ namespace GL {
 	DerivedUnitType(feet_per_hour, velocity, fph, Conversion<foot>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(miles_per_hour, velocity, mph, Conversion<mile>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(kilometers_per_hour, velocity, kph, Conversion<kilometer>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(knot, velocity, kts, Conversion<nauticalMile>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(knot, velocity, kts, Conversion<nautical_mile>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(meters_per_second_squared, acceleration, mps_sq, Conversion<meter>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
 	DerivedUnitType(feet_per_second_squared, acceleration, fps_sq, Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
 	DerivedUnitType(standard_gravity, acceleration, SG, Conversion<meters_per_second_squared>(980665.0 / 100000.0)); \
@@ -1285,7 +1285,7 @@ namespace GL {
 	};
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
-	DerivedUnitType(type, category, abbreviation, ratio); \
+    DerivedUnitType(type, category, abbreviation, ratio); \
 	DerivedUnitTypeWithMetricPrefix(type, femto); \
 	DerivedUnitTypeWithMetricPrefix(type, pico); \
 	DerivedUnitTypeWithMetricPrefix(type, nano); \
@@ -1303,6 +1303,8 @@ namespace GL {
 
     DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
+#pragma region "Unusual units that are manually handled"
+    // kelvin shares the same scale as celsius, but is offset from the origin.
     class kelvin final : public value {
         static package unique_pkg();
     public: 
@@ -1312,6 +1314,7 @@ namespace GL {
         kelvin(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); };
         ~kelvin() = default;
     };
+    // fahrenheit shares an unusual scale with celsius as well as an offset from the origin.
     class fahrenheit final : public value {
         static package unique_pkg();
     public:
@@ -1321,6 +1324,7 @@ namespace GL {
         fahrenheit(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); };
         ~fahrenheit() = default;
     };
+#pragma endregion
 
 #undef DerivedUnitTypeWithMetricPrefixes
 #undef DerivedUnitTypeWithMetricPrefix

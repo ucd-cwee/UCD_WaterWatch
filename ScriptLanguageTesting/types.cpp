@@ -95,6 +95,16 @@ namespace GL {
         else if (!is_const() && is_ref()) return Base.name + "&";
         else return Base.name;
     };
+    bool type::try_update_name(GL::string const& new_name) {
+        //if (this->is_cpp_type()) {
+            auto& Base = get_base(*this);
+            Base.name = new_name;
+            return true;
+        //}
+        //else {
+        //    return false;
+        //}
+    };
 
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 
     bool type::is_derived_from(type const& base) const {
@@ -139,5 +149,30 @@ namespace GL {
         this_base.destroy(p);
     };
 
+    static auto precompiled_cpp_names = []() -> bool {
+        GL::type_of<void>().try_update_name("void");
+        GL::type_of<bool>().try_update_name("bool");
+        GL::type_of<char>().try_update_name("char");
+        GL::type_of<unsigned char>().try_update_name("uchar");
+        GL::type_of<short>().try_update_name("short");
+        GL::type_of<unsigned short>().try_update_name("ushort");
+        GL::type_of<int>().try_update_name("int");
+        GL::type_of<unsigned int>().try_update_name("uint");
+        GL::type_of<long>().try_update_name("long");
+        GL::type_of<unsigned long>().try_update_name("ulong");
+        GL::type_of<long long>().try_update_name("llong");
+        GL::type_of<unsigned long long>().try_update_name("size_t");
+        GL::type_of<float>().try_update_name("float");
+        GL::type_of<double>().try_update_name("double");
+        GL::type_of<long double>().try_update_name("ldouble");
 
+        GL::type_of<std::string>().try_update_name("std_string");
+        GL::type_of<GL::string>().try_update_name("string");        
+        GL::type_of<GL::any>().try_update_name("any");
+        GL::type_of<GL::any::fast_any>().try_update_name("fast_any");
+        GL::type_of<GL::type>().try_update_name("type");
+        GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition. 
+
+        return true;
+    }();
 };

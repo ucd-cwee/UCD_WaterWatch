@@ -445,14 +445,37 @@ int main() {
                 std_string_namespace.add_function(GL::decl_func(&std::string::clear));
                 std_string_namespace.add_function(GL::decl_func(&std::string::empty));
 
-                program_root.add_function(GL::make_callable("print", [](GL::any const& any_type) -> void { print(any_type.cast<std::string>()); }, std::vector<GL::any>{ GL::any{ std::string{ "default" }}}));
+                program_root.add_function(GL::make_callable(
+                    "print"
+                    , [](GL::any const& any_type) -> std::string { return any_type.cast<std::string>() + "_root"; }
+                    , { std::string{ "root_default" } }
+                ));
                 program_root.add_function(GL::make_callable("type_name", [](GL::any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }));
                 program_root.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }));
                 program_root.add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }));
+                
+                std_string_namespace.add_function(GL::make_callable(
+                    "print"
+                    , [](GL::any const& any_type) -> std::string { 
+                        if (any_type.can_cast(GL::type_of<std::string>())) {
+                            return any_type.cast<std::string>() + "_std";
+                        }
+                        else {
+                            return "any_std";
+                        }
+                    }
+                    , { std::string{ "std_string_default" } }
+                ));
+                std_string_namespace.add_function(GL::make_callable(
+                    "print"
+                    , [](std::string const& any_type) -> std::string { return any_type + "_std_string"; }
+                ));
 
-                if (1) {
-                    std::vector < GL::any > types{ GL::any{ std::string{ "test" }}};
+                GL::parallel::For(0, 1000000, [&](size_t i) {
+                    std::vector < GL::any > types{ GL::any{ std::string{ "test" }} };
+                    std::vector < GL::any > types2{ GL::any{ GL::foot{ 100.0f }} };
                     std::vector < GL::any > empty_types;
+
                     EXPECT_EQ(false, program_root.try_find_callable("length", types.begin(), types.end(), true));
                     EXPECT_EQ(true, program_root.try_find_callable("type_name", types.begin(), types.end(), true));
                     EXPECT_EQ(true, program_root.try_find_callable("type_of", types.begin(), types.end(), true));
@@ -462,22 +485,29 @@ int main() {
                     EXPECT_EQ(true, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), true));
 
                     if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), true); f) {
-                        print(f->operator()(types).cast<GL::type>().name()); // prints "class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >"
+                        EXPECT_EQ("std_string", f->operator()(types).cast<GL::type>().name()); // std_string
                     }
                     if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), true); f) {
-                        print(f->operator()(types).cast<size_t>()); // prints 4
+                        EXPECT_EQ(4, f->operator()(types).cast<size_t>()); // 4
+                    }
+                    if (auto const& f = program_root.try_find_callable("print", types.begin(), types.end(), true); f) {
+                        EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
+                    }
+                    if (auto const& f = program_root.try_find_callable("print", empty_types.begin(), empty_types.end(), true); f) {
+                        EXPECT_EQ("root_default_root", f->operator()(empty_types).cast<std::string>()); // default
+                        EXPECT_EQ("root_default_root", f->operator()().cast<std::string>()); // default
                     }
                     if (auto const& f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), true); f) {
-                        f->operator()(types); // prints "test"
+                        EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
+                    }
+                    if (auto const& f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), true); f) {
+                        EXPECT_EQ("any_std", f->operator()(types2).cast<std::string>()); // test
                     }
                     if (auto const& f = std_string_namespace.try_find_callable("print", empty_types.begin(), empty_types.end(), true); f) {
-                        f->operator()(empty_types); // prints "default"
+                        EXPECT_EQ("std_string_default_std", f->operator()(empty_types).cast<std::string>()); // default
+                        EXPECT_EQ("std_string_default_std", f->operator()().cast<std::string>()); // default
                     }
-                }
-
-
-
-
+                });
 
                 std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));              
                 std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());

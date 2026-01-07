@@ -22,7 +22,7 @@ namespace GL {
 #ifdef DECL_UNIT_LITERALS
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
     static auto* type ## _pkg{ &GL::value::get_si_unit(value::Categories::##category##::unitType_m[0], value::Categories::##category##::unitType_m[1], value::Categories::##category##::unitType_m[2], value::Categories::##category##::unitType_m[3], value::Categories::##category##::unitType_m[4], value::Categories::##category##::unitType_m[5]).get_impl_unit(Ratio, #type, #abbreviation) }; \
-    static bool type ## _added_to_base { GL::type_of< type >().add_base(GL::type_of<GL::value>()) }; \
+    static bool type ## _added_to_base { GL::type_of< type >().add_base(GL::type_of<GL::value>()) && GL::type_of< type >().try_update_name( #type ) }; \
     value::package type ## ::unique_pkg() { return type ## _pkg->default_bits; };
 
 #define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) \
@@ -48,11 +48,11 @@ namespace GL {
 	DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
     static auto* kelvin_pkg{ &GL::value::get_si_unit(value::Categories::temperature::unitType_m[0], value::Categories::temperature::unitType_m[1], value::Categories::temperature::unitType_m[2], value::Categories::temperature::unitType_m[3], value::Categories::temperature::unitType_m[4], value::Categories::temperature::unitType_m[5]).get_impl_unit(1.0, -273.15, "kelvin", "degK") }; 
-    static bool kelvin_added_to_base { GL::type_of< kelvin >().add_base(GL::type_of<GL::value>()) }; 
+    static bool kelvin_added_to_base { GL::type_of< kelvin >().add_base(GL::type_of<GL::value>()) && GL::type_of< kelvin >().try_update_name("kelvin") };
     value::package kelvin::unique_pkg() { return kelvin_pkg->default_bits; };
 
 	static auto* fahrenheit_pkg{ &GL::value::get_si_unit(value::Categories::temperature::unitType_m[0], value::Categories::temperature::unitType_m[1], value::Categories::temperature::unitType_m[2], value::Categories::temperature::unitType_m[3], value::Categories::temperature::unitType_m[4], value::Categories::temperature::unitType_m[5]).get_impl_unit(5.0 / 9.0, -32.0, "fahrenheit", "degF") };
-	static bool fahrenheit_added_to_base{ GL::type_of< fahrenheit >().add_base(GL::type_of<GL::value>()) };
+	static bool fahrenheit_added_to_base{ GL::type_of< fahrenheit >().add_base(GL::type_of<GL::value>()) && GL::type_of< fahrenheit >().try_update_name("fahrenheit") };
 	value::package fahrenheit::unique_pkg() { return fahrenheit_pkg->default_bits; };
 
 #undef DerivedUnitTypeWithMetricPrefixes
