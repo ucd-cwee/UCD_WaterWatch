@@ -137,35 +137,92 @@ namespace GL {
             state_m &= ~function_state::Template; // unsets the template flag
         }
         template<typename iter_type> bool can_call_with_free_cast(iter_type iter, iter_type const& end) const {
-            static_assert(std::is_same_v<iter_type::value_type, GL::type>, "iterator must be for a GL::type class");
-
-            size_t i = 0;
-            for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
-                if (!iter->can_free_cast(argument_types_m[i])) {
-                    return false;
+            if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return false;
+                    }
                 }
-            }
-            for (; i < argument_defaults_m.size(); ++i) {
-                if (argument_defaults_m[i].m_casted_type.is_void()) {
-                    return false;
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return false;
+                    }
                 }
+                return true;
             }
-            return true;
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return false;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return false;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return false;
+                    }
+                }
+                return true;
+            }
         };
         template<typename iter_type> bool can_call_with_cast(iter_type iter, iter_type const& end) const {
-            static_assert(std::is_same_v<iter_type::value_type, GL::type>, "iterator must be for a GL::type class");
-            size_t i = 0;
-            for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
-                if (!iter->can_cast(argument_types_m[i])) {
-                    return false;
+            if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return false;
+                    }
                 }
-            }
-            for (; i < argument_defaults_m.size(); ++i) {
-                if (argument_defaults_m[i].m_casted_type.is_void()) {
-                    return false;
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return false;
+                    }
                 }
+                return true;
             }
-            return true;
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return false;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return false;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return false;
+                    }
+                }
+                return true;
+            }
         };
         bool can_call_with_free_cast(std::vector<GL::type> const& from) const {
             return can_call_with_free_cast(from.begin(), from.end());

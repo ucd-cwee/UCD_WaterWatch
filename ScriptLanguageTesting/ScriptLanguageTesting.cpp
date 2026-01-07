@@ -141,6 +141,7 @@ int main() {
     funcs.add_function(GL::decl_func(&std::string::capacity));
     funcs.add_function(GL::decl_func(&std::string::clear));
     funcs.add_function(GL::decl_func(&std::string::empty));
+
     funcs.for_each([](GL::Proxy_Function const& f) -> bool {
         print(f->m_signature.display());
         return false;
@@ -149,6 +150,38 @@ int main() {
         print(f->m_signature.display());
         return false;
     });
+    if (1) {
+        std::vector < GL::type > types{ GL::type_of<std::string>() };
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+    }
+    if (1) {
+        std::vector < GL::type > types{ GL::type_of<std::string&>() };
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+    }
+    if (1) {
+        std::vector < GL::type > types{ GL::type_of<std::string const&>() };
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
+        EXPECT_EQ(false, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+    }
+    if (1) {
+        std::vector < GL::type > types{ GL::type_of<std::string const&>() };
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), false));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), false));
+    }
+    if (1) {
+        std::vector < GL::any > types{ GL::any{ std::string{} } };
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+    }
+    if (1) {
+        std::vector < GL::any::fast_any > types{ GL::any{ std::string{} }.fast() };
+        EXPECT_EQ(true, funcs.try_find_callable("length", types.begin(), types.end(), true));
+        EXPECT_EQ(true, funcs.try_find_callable("clear", types.begin(), types.end(), true));
+    }
+
+
 
     if (0) {
         if (GL::stopwatch sw; auto x = sw.debug_timer("std_map 1")) {
@@ -407,6 +440,45 @@ int main() {
                 auto& std_numeric_limits_namespace
                     = std_namespace.make_namespace("numeric_limits");
 
+                std_string_namespace.add_function(GL::decl_func(&std::string::length));
+                std_string_namespace.add_function(GL::decl_func(&std::string::capacity));
+                std_string_namespace.add_function(GL::decl_func(&std::string::clear));
+                std_string_namespace.add_function(GL::decl_func(&std::string::empty));
+
+                program_root.add_function(GL::make_callable("print", [](GL::any const& any_type) -> void { print(any_type.cast<std::string>()); }, std::vector<GL::any>{ GL::any{ std::string{ "default" }}}));
+                program_root.add_function(GL::make_callable("type_name", [](GL::any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }));
+                program_root.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }));
+                program_root.add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }));
+
+                if (1) {
+                    std::vector < GL::any > types{ GL::any{ std::string{ "test" }}};
+                    std::vector < GL::any > empty_types;
+                    EXPECT_EQ(false, program_root.try_find_callable("length", types.begin(), types.end(), true));
+                    EXPECT_EQ(true, program_root.try_find_callable("type_name", types.begin(), types.end(), true));
+                    EXPECT_EQ(true, program_root.try_find_callable("type_of", types.begin(), types.end(), true));
+
+                    EXPECT_EQ(true, std_string_namespace.try_find_callable("length", types.begin(), types.end(), true));
+                    EXPECT_EQ(true, std_string_namespace.try_find_callable("type_name", types.begin(), types.end(), true));
+                    EXPECT_EQ(true, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), true));
+
+                    if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), true); f) {
+                        print(f->operator()(types).cast<GL::type>().name()); // prints "class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> >"
+                    }
+                    if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), true); f) {
+                        print(f->operator()(types).cast<size_t>()); // prints 4
+                    }
+                    if (auto const& f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), true); f) {
+                        f->operator()(types); // prints "test"
+                    }
+                    if (auto const& f = std_string_namespace.try_find_callable("print", empty_types.begin(), empty_types.end(), true); f) {
+                        f->operator()(empty_types); // prints "default"
+                    }
+                }
+
+
+
+
+
                 std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));              
                 std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());
                 std_numeric_limits_namespace.insert_object_here("max", std::numeric_limits<double>::max());
@@ -537,6 +609,10 @@ int main() {
                     EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
                 }
                 EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
+
+
+
+
 
 
 

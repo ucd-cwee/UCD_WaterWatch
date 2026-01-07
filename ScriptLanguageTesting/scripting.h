@@ -293,6 +293,16 @@ namespace GL {
                     }
                 };
 
+                // attempts to find a suitable function from this set that is callable with the given parameters. 
+                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter from_iter, iter const& from_end, bool free_cast_only = false) const {
+                    return for_each(name, [&](GL::Proxy_Function const& f)->bool {
+                        if (free_cast_only) 
+                            return f->m_signature.can_call_with_free_cast(from_iter, from_end);
+                        else 
+                            return f->m_signature.can_call_with_cast(from_iter, from_end);
+                    });
+                };
+
             private:
                 class UniformCostSearchNodeBestPath {
                 public:
@@ -1055,6 +1065,8 @@ namespace GL {
                 // explicit children namespaces, with strongly-held protections to their memory.
                 concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
                     children; // children cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
+                Functions
+                    functions;
 
             protected:
                 // Cache<4> search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
@@ -1360,6 +1372,36 @@ namespace GL {
                         ).first->second;
                     }
                 };
+
+                // attempts to find a suitable function from this set that is callable with the given parameters. 
+                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter from_iter, iter const& from_end, bool free_cast_only = false) const {                 
+                    static GL::Proxy_Function failed;
+                    if (Breadcrumb* BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
+                        if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
+                        if (auto const& f = namespacePtr->this_m.scope->GetNamespace()->functions.try_find_callable(name, (iter)from_iter, from_end, free_cast_only); f) {
+                            return SearchResult::Success;
+                        }
+                        else {
+                            return SearchResult::Failure;
+                        }
+                    }, nullptr, SkipChildren)) {
+                        if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(name, (iter)from_iter, from_end, free_cast_only); f) {
+                            return f;
+                        }
+                        else {
+                            return failed;
+                        }
+                    }
+                    else {
+                        return failed;
+                    }
+                };
+
+                // insert a function into the storage
+                void add_function(GL::Proxy_Function const& func) {
+                    functions.add_function(func);
+                };
+
             };
 
             /// <summary>

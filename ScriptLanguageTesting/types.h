@@ -244,7 +244,10 @@ namespace GL {
                 // Otherwise OK
                 return true;
             }
-            return false;
+            if (from.is_any() || to.is_any()) {
+                return !from.is_void() && !to.is_void();
+            }
+            return from.is_void() && to.is_void();
         };
     public:
         // Returns true if the types are similar enough to be casted for free (0 cost)
@@ -253,7 +256,13 @@ namespace GL {
         };
         // Returns true if the types are the same foundational type (may not be zero cost to convert)
         bool can_cast(type const& to) const {
-            return this->match_base_hash(to);
+            if (this->match_base_hash(to)) {
+                return true;
+            }
+            if (is_any() || to.is_any()) {
+                return !is_void() && !to.is_void();
+            }
+            return is_void() && to.is_void();
         };
         size_t size() const;
 
