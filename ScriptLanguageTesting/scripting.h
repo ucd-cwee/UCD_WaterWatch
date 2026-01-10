@@ -1065,6 +1065,7 @@ namespace GL {
                         }
                     }
                 };
+
             };
 
             /// <summary>
@@ -1388,85 +1389,113 @@ namespace GL {
                 };
 
                 // attempts to find a suitable function from this set that is callable with the given parameters. 
-                template<typename iter> const GL::details::Proxy_Function_Base* try_find_callable(GL::string const& name, iter from_iter, iter const& from_end, int search_state = 0) const {
-                    // search for exact match?
-                    if (Breadcrumb* BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
-                        if (auto* o = namespacePtr->this_m.scope->find_object_here(name)) {
-                            if (o->can_free_cast(GL::type_of<GL::details::Proxy_Function_Base const&>())) {
-                                if ((search_state & Functions::search_conditions::free_cast_only) > 0) {
-                                    if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {
-                                        return SearchResult::Success;
+                // searches for object-lambdas (lambda or not), non-template-functions, and template-functions, in that order of preference. 
+                template<typename iter> const GL::details::Proxy_Function_Base* try_find_callable(GL::string const& PossiblyScopedName, iter from_iter, iter const& from_end, int search_state = 0, Breadcrumb* search_from = nullptr) const {
+                    if (search_from) {
+                        // search for exact match?
+                        if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
+                            if (auto* o = namespacePtr->this_m.scope->find_object_here(PossiblyScopedName)) {
+                                if (o->can_free_cast(GL::type_of<GL::details::Proxy_Function_Base const&>())) {
+                                    if ((search_state & Functions::search_conditions::free_cast_only) > 0) {
+                                        if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {
+                                            return SearchResult::Success;
+                                        }
                                     }
-                                }
-                                else {
-                                    if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_cast(from_iter, from_end)) {
-                                        return SearchResult::Success;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;                        
-                        if (auto const& f = namespacePtr->this_m.scope->GetNamespace()->functions.try_find_callable(name, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state); f) {
-                            return SearchResult::Success;
-                        }
-                        else {
-                            return SearchResult::Failure;
-                        }                        
-                    }, nullptr, SkipChildren)) {
-                        if (auto* o = BC->this_m.scope->find_object_here(name)) {
-                            if (o->can_free_cast(GL::type_of<GL::details::Proxy_Function_Base const&>())) {
-                                if ((search_state & Functions::search_conditions::free_cast_only) > 0) {
-                                    if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {
-                                        return &o->cast<GL::details::Proxy_Function_Base const&>();
-                                    }
-                                }
-                                else {
-                                    if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_cast(from_iter, from_end)) {
-                                        return &o->cast<GL::details::Proxy_Function_Base const&>();
+                                    else {
+                                        if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_cast(from_iter, from_end)) {
+                                            return SearchResult::Success;
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        // re-do the search
-                        if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(name, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state); f) {
-                            return &*f;
-                        }
-                        else {
-                            return nullptr;
-                        }
-                    }
-
-                    // search for template match?
-                    if ((search_state & Functions::search_conditions::ignore_templates) == 0) {                        
-                        if (Breadcrumb* BC = FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
                             if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
-                            if (auto const& f = namespacePtr->this_m.scope->GetNamespace()->functions.try_find_callable(name, (iter)from_iter, from_end, Functions::search_conditions::only_templates | search_state); f) {
+                            if (auto const& f = namespacePtr->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state); f) {
                                 return SearchResult::Success;
                             }
                             else {
                                 return SearchResult::Failure;
                             }
                             }, nullptr, SkipChildren)) {
+                            if (auto* o = BC->this_m.scope->find_object_here(PossiblyScopedName)) {
+                                if (o->can_free_cast(GL::type_of<GL::details::Proxy_Function_Base const&>())) {
+                                    if ((search_state & Functions::search_conditions::free_cast_only) > 0) {
+                                        if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {
+                                            return &o->cast<GL::details::Proxy_Function_Base const&>();
+                                        }
+                                    }
+                                    else {
+                                        if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_cast(from_iter, from_end)) {
+                                            return &o->cast<GL::details::Proxy_Function_Base const&>();
+                                        }
+                                    }
+                                }
+                            }
+
                             // re-do the search
-                            if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(name, (iter)from_iter, from_end, Functions::search_conditions::only_templates | search_state); f) {
+                            if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state); f) {
                                 return &*f;
                             }
                             else {
                                 return nullptr;
                             }
                         }
-                    }
 
-                    // failure
-                    return nullptr;
+                        // search for template match?
+                        if ((search_state & Functions::search_conditions::ignore_templates) == 0) {
+                            if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
+                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
+                                if (auto const& f = namespacePtr->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::only_templates | search_state); f) {
+                                    return SearchResult::Success;
+                                }
+                                else {
+                                    return SearchResult::Failure;
+                                }
+                                }, nullptr, SkipChildren)) {
+                                // re-do the search
+                                if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::only_templates | search_state); f) {
+                                    return &*f;
+                                }
+                                else {
+                                    return nullptr;
+                                }
+                            }
+                        }
+
+                        // failure
+                        return nullptr;
+                    }
+                    else {
+                        // we don't have a scope (yet)
+                        const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
+                        if (optionalName.length() == 0) {
+                            // We only have an object name -- just do the normal search from here.
+                            return try_find_callable(optionalScope, from_iter, from_end, search_state, &const_cast<NamespaceScope*>(this)->breadcrumb_m);
+                        }
+                        else {
+                            Breadcrumb* closest_scope{ nullptr };
+                            if (optionalScope.length() == 0) {
+                                return try_find_callable(optionalName, from_iter, from_end, search_state, this->breadcrumb_m.root_m);
+                            }
+                            else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {
+                                return dynamic_cast<NamespaceScope*>(nameSpace->this_m.scope)->try_find_callable(optionalName, from_iter, from_end, search_state, nameSpace);
+                            }
+                            else if (closest_scope) { // namespace was not found                        
+                                return nullptr; 
+                            }
+                            else { // namespace was not found AND no nearest was discovered     
+                                return nullptr; 
+                            }
+                        }
+                    }
                 };
 
                 // insert a function into the storage
                 void add_function(GL::Proxy_Function const& func) {
                     functions.add_function(func);
                 };
+
+
 
             };
 

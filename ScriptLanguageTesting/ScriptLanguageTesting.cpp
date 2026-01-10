@@ -503,6 +503,9 @@ int main() {
                     if (auto const& f = std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ(std::numeric_limits<size_t>::max(), f->operator()(types).cast<size_t>());
                     }
+                    if (auto const& f = program_root.try_find_callable("::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                        EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
+                    }
                     if (auto const& f = program_root.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
                     }
@@ -510,7 +513,13 @@ int main() {
                         EXPECT_EQ("root_default_root", f->operator()(empty_types).cast<std::string>()); // default
                         EXPECT_EQ("root_default_root", f->operator()().cast<std::string>()); // default
                     }
+                    if (auto const& f = std_string_namespace.try_find_callable("::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                        EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
+                    }
                     if (auto const& f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                        EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
+                    }
+                    if (auto const& f = program_root.try_find_callable("std::string::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                         EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
                     }
                     if (auto const& f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), GL::scope::impl::Functions::free_cast_only); f) {

@@ -1546,7 +1546,7 @@ public:
                     ::clReleaseEvent(items[L]);
                 }
 #else
-                ::clWaitForEvents(len, &items[0]._ev);
+                ::clWaitForEvents((cl_uint)len, &items[0]._ev);
 #endif
                 len = 0;
             }
@@ -1560,7 +1560,7 @@ public:
             }
             if (len >= reservation) {
                 reservation = std::min<long long>(64, reservation * 2);
-                auto new_items = make_unique<gpu_event>(reservation);      
+                auto new_items = make_unique<gpu_event>((cl_uint)reservation);
                 for (int i = 0; i < len; ++i) new_items[i] = std::move(items[i]);
                 items = std::move(new_items);
             }
@@ -1568,11 +1568,11 @@ public:
         };
         size_t size() const { return len; };
         size_t capacity() const { return reservation; };
-        void reserve(size_t n) {
+        void reserve(long long n) {
             n = std::min<long long>(64, n);
             if (reservation < n) {
                 reservation = n;
-                auto new_items = make_unique<gpu_event>(reservation);
+                auto new_items = make_unique<gpu_event>((cl_uint)reservation);
                 for (int i = 0; i < len; ++i) new_items[i] = std::move(items[i]);
                 items = std::move(new_items);
             }
@@ -1694,20 +1694,20 @@ public:
     // immediate
     void ensure_host_mem_exists() {
         if (!cpu_memory) {
-            cpu_memory = cpu_allocator().make_unique(len_bytes);
+            cpu_memory = cpu_allocator().make_unique((cl_uint)len_bytes);
         }
     };
     // immediate
     void ensure_device_mem_exists() {
         if (!gpu_memory) {
-            gpu_memory = gpu_allocator().make_unique(len_bytes);
+            gpu_memory = gpu_allocator().make_unique((cl_uint)len_bytes);
         }
     };
 
     mem_matrix(unsigned long long bytes, const bool allocate_cpu = true, const bool allocate_gpu = true)
         : len_bytes{ bytes }
-        , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique(bytes) : nullptr }
-        , gpu_memory{ allocate_gpu ? gpu_allocator().make_unique(bytes) : nullptr }
+        , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique((cl_uint)bytes) : nullptr }
+        , gpu_memory{ allocate_gpu ? gpu_allocator().make_unique((cl_uint)bytes) : nullptr }
         , events{}
     {};
     mem_matrix()
