@@ -3194,12 +3194,31 @@ namespace GL {
 		bool // optionally get a copy of the object being deleted. 
 			erase(const keyType& time, objType* out = nullptr) const {
 			ProtectCurrentEpoch_Fast();
-			if (auto [node, locker] = tree.NodeFind(time, true); node) {				
+			if (auto [node, locker] = tree.NodeFind(time, true); node) {
 				if (out) *out = *node->object();
 				return tree.Remove(node, locker);
 			}
 			return false;
 		};
+		void clear() {
+			ProtectCurrentEpoch_Fast();
+			auto locked = tree.lock();
+			while (true) {
+				if (auto* p = tree.GetRoot(locked)) {
+					if (p = tree.GetNextLeaf(p, locked); p) {
+						tree.Remove(p, locked);
+					}
+					else {
+						break;
+					}
+				}
+				else {
+					break;
+				}
+			}
+
+		};
+
 
 		class Iterator {
 		public:

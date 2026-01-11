@@ -317,6 +317,12 @@ namespace GL {
                     });
                 };
 
+                void clear() {
+                    if (functions.valid()) {
+                        functions->clear();
+                    }
+                };
+
             private:
                 class UniformCostSearchNodeBestPath {
                 public:
@@ -392,33 +398,47 @@ namespace GL {
                         return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
                     };
                 };
-
-#if 0
+            public:
+#if 1
                 // Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to "To", puts the path in "Out", and returns true. 
                 // If no path is possible, returns false.
-                std::unordered_map<size_t, std::pair<GL::type, UniformCostSearchNode*>> CreateConversionPaths(
-                    GL::atomic_allocator<std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>, 1024>& alloc,
+                std::unordered_map<GL::type, std::unordered_map<GL::type, GL::Proxy_Function const*>> CreateConversionPaths(
+                    // GL::atomic_allocator<std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>, 1024>& alloc,
                     GL::type const& From, 
                     GL::type const& To
                 ){
+                    std::unordered_map<GL::type, std::unordered_map<GL::type, GL::Proxy_Function const*>> AllConversions;
+                    (void)this->for_each([&AllConversions](GL::Proxy_Function const& func)->bool {
+                        if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
+                            if (func->m_signature.argument_types_m.size() == 1) {
+                                auto& from = func->m_signature.argument_types_m[0];
+                                auto& to = func->m_signature.returns_m;
+                                AllConversions[from][to] = &func;
+                            }
+                        }
+                        return false;
+                    });
+                    return AllConversions;
+
+#if 0
                     // create the shortest paths from "From" to all possible vertices.
-                    std::unordered_map<size_t, std::pair<GL::type, UniformCostSearchNode*>> vertices;
+                    std::unordered_map<GL::type, std::pair<GL::type, UniformCostSearchNode*>> vertices;
 
                     if (1) {
                         // create an empty vertex set
                         std::priority_queue<
-                            UniformCostSearchNode*
-                            , std::vector<UniformCostSearchNode*>
+                            std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>*
+                            , std::vector<std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>*>
                             , UniformCostSearchNode
                         > vertexSet;
 
                         // Add the source vertex into the set
-                        vertexSet.push(alloc.Alloc(From, 0.0, nullptr));
+                        vertexSet.push(alloc.Alloc(UniformCostSearchNode{ From, 0.0, nullptr }));
 
                         // is the vertex set empty?
                         double conversionCost{ 0 };
                         // conversionTreeType::iterator f;
-                        UniformCostSearchNode* smallestDistanceNode;
+                        std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>* smallestDistanceNode;
                         //conversionTreeType::value_type::second_type::const_iterator fSecondIter;
                         //conversionTreeType::value_type::second_type::const_iterator fSecondEnd;
                         //GoodLang::details::Type_Conversion_Base* func;
@@ -428,18 +448,19 @@ namespace GL {
                             vertexSet.pop();
 
                             // for each neighbor of the extracted vertex... 
-                            f = AllConversions.find(smallestDistanceNode->thisVertexType);
+                            auto f = AllConversions.find(std::get<UniformCostSearchNode>(*smallestDistanceNode).thisVertexType);
                             if (f != AllConversions.end()) {
-                                for (fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
+                                for (auto fSecondIter = f->second.cbegin(), fSecondEnd = f->second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
                                     auto& connection = *fSecondIter;
-                                    if (func = connection.second.second.get()) {
-                                        conversionCost = GoodLang::details::TypeConversionBaselineCost;
-                                        if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
-                                            conversionCost = func->cost(); // calculate distance value for the neighbor vertex
+                                    if (auto& func = *connection.second) {
+                                        //conversionCost = GoodLang::details::TypeConversionBaselineCost;
+                                        //if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
+                                        //    conversionCost = func->cost(); // calculate distance value for the neighbor vertex
 
                                         if (1) {
                                             // Is the neighbor already in the vertex set? 
                                             auto& toVertex = vertices[connection.first];
+
                                             if (!toVertex.first) toVertex.first = connection.second.first;
 
                                             if (!toVertex.second) { // Instance it before we start working with it on an as-needed basis
@@ -466,6 +487,7 @@ namespace GL {
                         }
                     }
                     return vertices;
+#endif
                 };
 #endif
 
@@ -1493,6 +1515,10 @@ namespace GL {
                 // insert a function into the storage
                 void add_function(GL::Proxy_Function const& func) {
                     functions.add_function(func);
+                    if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
+                        // this->invalidate_cache();
+                        this->GetRoot()->constructors.add_function(func);
+                    }
                 };
 
 
@@ -1513,6 +1539,9 @@ namespace GL {
                     scope_indexs;
                 GL::atomic_vector<Breadcrumb*>
                     scopes; // namespaces and classes may add themselves to this list (order not guarranteed) to help with debugging or other activities. 
+            public:
+                Functions
+                    constructors;
 
             public:
                 RootScope()
@@ -1520,6 +1549,13 @@ namespace GL {
                 {};
                 virtual ~RootScope() {
                     this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
+                };
+
+                virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override {
+                    InterlockedIncrement(static_cast<volatile size_t*>(&this->cache_version));
+                    this->sockets_for_cache_versions.speak(parent_alive, call_number);
+
+                    // constructors.clear();
                 };
 
             };

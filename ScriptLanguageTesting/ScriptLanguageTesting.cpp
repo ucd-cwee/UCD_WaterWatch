@@ -440,6 +440,15 @@ int main() {
                 auto& std_numeric_limits_namespace
                     = std_namespace.make_namespace("numeric_limits");
 
+                program_root.add_function(GL::make_converter<GL::foot, GL::meter>());
+                program_root.add_function(GL::make_converter<GL::meter, GL::foot>());
+                program_root.add_function(GL::make_converter<GL::meter, GL::value>());
+                program_root.add_function(GL::make_converter<GL::value, GL::meter>());
+                program_root.add_function(GL::make_converter<int, double>());
+                program_root.add_function(GL::make_converter<int, float>());
+                program_root.add_function(GL::make_converter<int, long>());
+                program_root.add_function(GL::make_converter<int const&, int>());
+
                 std_string_namespace.add_function(GL::decl_func(&std::string::length));
                 std_string_namespace.insert_object_here("length", GL::make_callable(GL::string::empty_string(), []() -> size_t { return std::numeric_limits<size_t>::max(); })); // insert a function as an object. Basically a lambda!
                 std_string_namespace.add_function(GL::decl_func(&std::string::capacity));
@@ -476,6 +485,18 @@ int main() {
                     std::vector < GL::any > empty_types;
                     EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
                 }
+
+                auto converters = program_root.constructors.CreateConversionPaths(GL::type_of<void>(), GL::type_of<void>());
+                for (auto& From : converters) {
+                    for (auto& To : From.second) {
+                        if (To.second) {
+                            print((*To.second)->m_signature.display());
+                        }
+                    }
+                }
+                
+
+
 
                 GL::parallel::For(0, 1000000, [&](size_t i) {
                     std::vector < GL::any > types{ GL::any{ std::string{ "test" }} };
