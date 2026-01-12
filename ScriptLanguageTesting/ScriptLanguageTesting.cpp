@@ -443,9 +443,17 @@ int main() {
                 program_root.add_function(GL::make_converter<GL::foot, GL::meter>());
                 program_root.add_function(GL::make_converter<GL::meter, GL::foot>());
                 program_root.add_function(GL::make_converter<GL::meter, GL::value>());
-                program_root.add_function(GL::make_converter<GL::value, GL::meter>());
-                program_root.add_function(GL::make_converter<int, double>());
+                program_root.add_function(GL::make_converter<GL::value, GL::meter>());                
+                program_root.add_function(GL::make_converter<GL::value, float>());
+                program_root.add_function(GL::make_converter<float, GL::value>());
+                program_root.add_function(GL::make_converter<int, char>());
+                program_root.add_function(GL::make_converter<char, unsigned char>());
+                program_root.add_function(GL::make_converter<int, long>());
+                program_root.add_function(GL::make_converter<long, long long>());
                 program_root.add_function(GL::make_converter<int, float>());
+                program_root.add_function(GL::make_converter<float, double>());
+                program_root.add_function(GL::make_converter<double, long double>());
+                program_root.add_function(GL::make_converter<long long, long double>());
                 program_root.add_function(GL::make_converter<int, long>());
                 program_root.add_function(GL::make_converter<int const&, int>());
 
@@ -486,13 +494,31 @@ int main() {
                     EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
                 }
 
-                auto converters = program_root.constructors.CreateConversionPaths(GL::type_of<void>(), GL::type_of<void>());
-                for (auto& From : converters) {
-                    for (auto& To : From.second) {
+                while (1) {
+                    GL::atomic_allocator<std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>, 1024> 
+                        temp_alloc;
+                    auto converters 
+                        = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
+                    for (auto& To : converters) {
                         if (To.second) {
-                            print((*To.second)->m_signature.display());
+                            //print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
+
+                            std::vector<GL::type> best_path;
+                            To.second->bestPath->get(best_path);
+                            GL::string t;
+                            t = t.add_to_delim(GL::type_of<int>().name(), "->");
+                            for (auto& path : best_path) {
+                                t = t.add_to_delim(path.name(), "->");
+                            }
+                            //print("\t" + t);
+
+                            auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
+                            auto converted = converter->operator()({ 1 });
+                            EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
+
+                            // print((*To.second)->m_signature.display());
                         }
-                    }
+                    }                    
                 }
                 
 

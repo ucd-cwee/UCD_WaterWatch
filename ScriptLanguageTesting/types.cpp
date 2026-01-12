@@ -7,7 +7,7 @@
 namespace GL {
     namespace impl {
         // boost::type_info hashes are unpredictable and therefore we must use a map.
-        static epoch_map< impl::cached_type, size_t> builtin_cpp_types; 
+        static concurrency::concurrent_unordered_map< size_t, impl::cached_type > builtin_cpp_types;
         // atomic_vector because ticket system will prefer small values. 
         static GL::atomic_vector< impl::cached_type > scripted_types; 
         // ticket system helps ensure values remain small. 

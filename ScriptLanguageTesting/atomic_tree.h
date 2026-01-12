@@ -3200,7 +3200,8 @@ namespace GL {
 			}
 			return false;
 		};
-		void clear() {
+		void 
+			clear() {
 			ProtectCurrentEpoch_Fast();
 			auto locked = tree.lock();
 			while (true) {
