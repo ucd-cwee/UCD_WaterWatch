@@ -120,7 +120,6 @@ int main() {
         }
     }
 #endif
-
     //auto func = [](int x) -> double { return x; };
     //typedef decltype(GL::details::detail::function_signature(&std::string::length)) function_header;
     //function_header::
@@ -494,7 +493,7 @@ int main() {
                     EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
                 }
 
-                while (1) {
+                if (1) {
                     GL::atomic_allocator<std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>, 1024> 
                         temp_alloc;
                     auto converters 

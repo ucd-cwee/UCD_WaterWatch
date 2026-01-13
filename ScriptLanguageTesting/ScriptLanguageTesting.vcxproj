@@ -199,6 +199,7 @@
     <ClInclude Include="atomic_stack.h" />
     <ClInclude Include="atomic_tree.h" />
     <ClInclude Include="atomic_vector.h" />
+    <ClInclude Include="constexpr_math.h" />
     <ClInclude Include="datetime.h" />
     <ClInclude Include="functions.h" />
     <ClInclude Include="Parallel.h" />

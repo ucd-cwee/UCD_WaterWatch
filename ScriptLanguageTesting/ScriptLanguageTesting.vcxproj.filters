@@ -33,5 +33,6 @@
     <ClInclude Include="functions.h" />
     <ClInclude Include="scripting.h" />
     <ClInclude Include="atomic_tree.h" />
+    <ClInclude Include="constexpr_math.h" />
   </ItemGroup>
 </Project>
