@@ -494,32 +494,23 @@ int main() {
                 }
 
                 if (1) {
-                    GL::atomic_allocator<std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>, 1024> 
-                        temp_alloc;
-                    auto converters 
-                        = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
-                    for (auto& To : converters) {
-                        if (To.second) {
-                            //print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
-
-                            std::vector<GL::type> best_path;
-                            To.second->bestPath->get(best_path);
-                            GL::string t;
-                            t = t.add_to_delim(GL::type_of<int>().name(), "->");
-                            for (auto& path : best_path) {
-                                t = t.add_to_delim(path.name(), "->");
-                            }
-                            //print("\t" + t);
-
-                            auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
-                            auto converted = converter->operator()({ 1 });
-                            EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
-
-                            // print((*To.second)->m_signature.display());
-                        }
-                    }                    
+                    auto From = GL::type_of<int const&>();
+                    auto conversions = program_root.constructors.CreateConversions(From);
+                    for (auto& To : conversions) {
+                        auto converted = To.second->operator()({ From.instance() });
+                        EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
+                        // print(To.second->m_signature.display());
+                    }               
                 }
-                
+                if (1) {
+                    auto From = GL::type_of<GL::foot const&>();
+                    auto conversions = program_root.constructors.CreateConversions(From);
+                    for (auto& To : conversions) {
+                        auto converted = To.second->operator()({ From.instance() });
+                        EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
+                        print(To.second->m_signature.display());
+                    }
+                }
 
 
 
