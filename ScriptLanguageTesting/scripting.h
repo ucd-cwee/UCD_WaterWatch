@@ -353,10 +353,12 @@ namespace GL {
                         std::vector<GL::Proxy_Function const*> converters;
                         GL::type this_t = from;
                         get(path);
+                        int state = std::numeric_limits<int>::max();
                         for (auto& t : path) {
                             if (auto& x = srce.try_find_callable(t.name(), &this_t, &this_t + 1, 0); x) {
                                 converters.push_back(&x);
                                 this_t = t;
+                                state &= x->m_signature.state_m;
                             }
                             else {
                                 return nullptr;
@@ -374,7 +376,7 @@ namespace GL {
                                 for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(&from, &from + 1);                                
                                 for (; pos < converters.size(); ++pos) out = (*converters[pos])->operator()(out);                          
                                 return out;
-                            }, {}, { { "From", from } }, thisNodePath);
+                            }, state, {}, { { "From", from } }, thisNodePath);
                         }
                     };
                     void get(std::vector<GL::type>& out) const {
@@ -515,35 +517,18 @@ namespace GL {
                 };
 
 
-                // to-do, add easy-to-use function to get all conversion functions for all types?
-#if 0
-                if (1) {
+                std::unordered_map<GL::type, GL::Proxy_Function> CreateConversions(GL::type const& From) {
+                    std::unordered_map<GL::type, GL::Proxy_Function> out;
+
                     GL::atomic_allocator<std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>, 1024>
                         temp_alloc;
                     auto converters
-                        = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
-                    for (auto& To : converters) {
-                        if (To.second) {
-                            //print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
-
-                            std::vector<GL::type> best_path;
-                            To.second->bestPath->get(best_path);
-                            GL::string t;
-                            t = t.add_to_delim(GL::type_of<int>().name(), "->");
-                            for (auto& path : best_path) {
-                                t = t.add_to_delim(path.name(), "->");
-                            }
-                            //print("\t" + t);
-
-                            auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
-                            auto converted = converter->operator()({ 1 });
-                            EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
-
-                            // print((*To.second)->m_signature.display());
-                        }
-                    }
-                }
-#endif
+                        = CreateConversionPaths(temp_alloc, From);
+                    for (auto& To : converters) 
+                        if (To.second) 
+                            out[To.first] = To.second->bestPath->make_converter(From, *this);
+                    return out;
+                };
 
 
 

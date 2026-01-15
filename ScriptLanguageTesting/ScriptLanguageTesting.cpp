@@ -519,6 +519,22 @@ int main() {
                 }
 
                 if (1) {
+                    auto From = GL::type_of<int const&>();
+                    auto conversions = program_root.constructors.CreateConversions(From);
+                    for (auto& To : conversions) {
+                        auto converted = To.second->operator()({ From.instance() });
+                        EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
+                        // print(To.second->m_signature.display());
+                    }               
+                }
+                if (1) {
+                    auto From = GL::type_of<GL::foot const&>();
+                    auto conversions = program_root.constructors.CreateConversions(From);
+                    for (auto& To : conversions) {
+                        auto converted = To.second->operator()({ From.instance() });
+                        EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
+                        print(To.second->m_signature.display());
+                    }
                     GL::atomic_allocator<
                         std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>
                         , 1024
@@ -545,7 +561,6 @@ int main() {
                         }
                     }                    
                 }
-                
 
 
 
