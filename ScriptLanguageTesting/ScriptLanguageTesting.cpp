@@ -428,6 +428,9 @@ int main() {
             EXPECT_EQ(GL::type_of<const size_t&>().is_const_ref(), true);
 
             while (1) {
+                GL::script_type custom_unit_type("custom_unit_type");
+
+
                 GL::scope::impl::RootScope 
                     program_root;
                 auto& std_namespace 
@@ -455,6 +458,15 @@ int main() {
                 program_root.add_function(GL::make_converter<long long, long double>());
                 program_root.add_function(GL::make_converter<int, long>());
                 program_root.add_function(GL::make_converter<int const&, int>());
+                program_root.add_function(GL::make_callable("value", [](GL::any::fast_any const& from) -> GL::value {
+                    return GL::meter();
+                }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", custom_unit_type.load() | GL::type::Const | GL::type::Reference } }, GL::type_of< GL::value>() ));
+                program_root.add_function(GL::make_callable("custom_unit_type", [x = custom_unit_type.load()](GL::meter from) -> GL::any {
+                    GL::any out;
+                    out.m_casted_type = x;
+                    return out;
+                }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", GL::type_of<GL::meter>() } }, custom_unit_type.load()));
+
 
                 std_string_namespace.add_function(GL::decl_func(&std::string::length));
                 std_string_namespace.insert_object_here("length", GL::make_callable(GL::string::empty_string(), []() -> size_t { return std::numeric_limits<size_t>::max(); })); // insert a function as an object. Basically a lambda!
@@ -493,14 +505,28 @@ int main() {
                     EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
                 }
 
+                // function calling with a custom script type with user-defined name(s)
                 if (1) {
-                    GL::atomic_allocator<std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>, 1024> 
-                        temp_alloc;
+                    GL::script_type custom_type("custom_type");
+                    GL::any custom_impl = 100;
+                    custom_impl.m_casted_type = custom_type.load() | GL::type::Const | GL::type::Reference;
+
+                    std::vector < GL::any::fast_any > types{ custom_impl.fast() };
+                    if (auto p = std_string_namespace.try_find_callable("type_name", types.begin(), types.end()); p) {
+                        EXPECT_EQ("const custom_type&", p->operator()(types.begin(), types.end()).cast<GL::string>());
+                    }
+                }
+
+                if (1) {
+                    GL::atomic_allocator<
+                        std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>
+                        , 1024
+                    > temp_alloc;
                     auto converters 
                         = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
                     for (auto& To : converters) {
                         if (To.second) {
-                            //print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
+                            print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
 
                             std::vector<GL::type> best_path;
                             To.second->bestPath->get(best_path);
@@ -509,13 +535,12 @@ int main() {
                             for (auto& path : best_path) {
                                 t = t.add_to_delim(path.name(), "->");
                             }
-                            //print("\t" + t);
+                            print("\t" + t + ": ");
 
                             auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
                             auto converted = converter->operator()({ 1 });
                             EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
-
-                            // print((*To.second)->m_signature.display());
+                            print("\t" + converter->m_signature.display());
                         }
                     }                    
                 }
