@@ -429,7 +429,7 @@ int main() {
 
             while (1) {
                 GL::script_type custom_unit_type("custom_unit_type");
-
+                custom_unit_type.load().add_base(GL::type_of<GL::value>());
 
                 GL::scope::impl::RootScope 
                     program_root;
@@ -510,7 +510,8 @@ int main() {
                     GL::script_type custom_type("custom_type");
                     GL::any custom_impl = 100;
                     custom_impl.m_casted_type = custom_type.load() | GL::type::Const | GL::type::Reference;
-
+                    EXPECT_EQ(false, custom_impl.m_casted_type.is_cpp_type());
+                    EXPECT_EQ(true, custom_impl.m_casted_type.is_const_ref());
                     std::vector < GL::any::fast_any > types{ custom_impl.fast() };
                     if (auto p = std_string_namespace.try_find_callable("type_name", types.begin(), types.end()); p) {
                         EXPECT_EQ("const custom_type&", p->operator()(types.begin(), types.end()).cast<GL::string>());

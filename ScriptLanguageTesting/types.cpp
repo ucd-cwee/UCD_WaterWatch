@@ -29,6 +29,8 @@ namespace GL {
             auto& out = scripted_types[ticket];
             out.name = "";
             out.base_hash = 0;
+            out.base_classes = {};
+
             scripted_types_ticket_dispensor.return_ticket(ticket);
         };
         cached_type& get_scripted_type(size_t hash) {
