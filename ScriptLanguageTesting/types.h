@@ -54,6 +54,9 @@ namespace GL {
             GL::any(*instance)(); // This&&
             void(*destroy)(void*); // // p->~T();
 
+            bool is_cpp_type() const {
+                return T_size != std::numeric_limits<size_t>::max();
+            };
             // returns true if this is found to be a child of the parent type (id'd by its base hash) 
             bool is_derived_from(size_t base) const;
             // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
@@ -148,6 +151,7 @@ namespace GL {
         };
         ~type() = default;
 
+        std::set<type> all_base_types() const;
         // removes the qualifiers and returns only the base hash value
         size_t get_base_hash() const {
             return hash & impl::cached_type::MAGIC_MASK2;
@@ -226,19 +230,21 @@ namespace GL {
 
     private:
         // Returns true if the types are similar enough to be casted for free (0 cost)
-        static bool can_free_cast(type const& from, type const& to) {
-            if ((from.get_base_hash() == to.get_base_hash()) || from.match_base_hash(to)) {
-                // conversion is possible. 
+        __declspec(noinline) static bool can_free_cast(type const& from, type const& to) {
+            if (from.hash == to.hash) return true;
+
+            if (from.get_base_hash() == to.get_base_hash()) {
+                // conversion is possible and does not use polymorphism. 
                 if (to.is_const_ref()) return true;
 
                 // cannot cast-away the const-ness
                 if (from.is_const() && !to.is_const()) return false;
 
-                // temporary (T&&) can be used for a base cast.
-                if (from.is_temp() && to.is_base()) return true;
-
                 // temporary (T&&) cannot be used as const-less references (T&)
                 if (from.is_temp() && to.is_ref()) return false;
+
+                // temporary (T&&) cannot be used for a base cast (requires a copy)
+                if (from.is_temp() && to.is_base()) return false;
 
                 // T& cannot cast to T or T&& without a conversion function
                 if (from.is_ref() && (to.is_temp() || to.is_base())) return false;
@@ -246,9 +252,33 @@ namespace GL {
                 // Otherwise OK
                 return true;
             }
+
+            if (from.match_base_hash(to)) {
+                // conversion uses polymorphism. 
+                // cannot be used for a base cast (requires a copy in some way)
+                if (to.is_base()) return false;
+
+                if (from.is_temp()) {
+                    return to.is_temp() || to.is_const_ref();
+                }
+
+                // cannot cast-away the const-ness
+                if (from.is_const() && !to.is_const()) return false;
+
+                // conversion is possible
+                if (to.is_const_ref()) return true;
+
+                // T& cannot cast to T or T&& without a conversion function
+                if (from.is_ref() && to.is_temp()) return false;
+
+                // Otherwise OK
+                return true;
+            }
+
             if (from.is_any() || to.is_any()) {
                 return !from.is_void() && !to.is_void();
             }
+
             return from.is_void() && to.is_void();
         };
     public:
@@ -299,9 +329,10 @@ namespace GL {
     // get the type information for a c++ type.
     template<typename T> __forceinline static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
+        static constexpr size_t temp_modifier{ std::is_rvalue_reference<T>::value ? type::Qualifiers::Temporary : 0 };
         static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
         static constexpr size_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
-        static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
+        static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | temp_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
         return Base;
     };
 

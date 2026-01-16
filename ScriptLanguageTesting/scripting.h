@@ -2,6 +2,7 @@
 
 #include "functions.h"
 #include "../GpuProgramming/matrix.h"
+#include <unordered_set>
 
 namespace GL {
     namespace scope {
@@ -316,6 +317,27 @@ namespace GL {
                             return f->m_signature.can_call_with_cast(from_iter, from_end);
                     });
                 };
+                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::type const& return_type, iter from_iter, iter const& from_end, int search_mode = 0) const {
+                    return for_each([&](GL::Proxy_Function const& f)->bool {
+                        if (!f->m_signature.returns_m.can_free_cast(return_type)) {
+                            return false;
+                        }
+
+                        if ((search_mode & only_templates) > 0) {
+                            if ((f->m_signature.state_m & GL::function_signature::Template) == 0)
+                                return false;
+                        }
+                        else if ((search_mode & ignore_templates) > 0) {
+                            if ((f->m_signature.state_m & GL::function_signature::Template) > 0)
+                                return false;
+                        }
+
+                        if ((search_mode & free_cast_only) > 0)
+                            return f->m_signature.can_call_with_free_cast(from_iter, from_end);
+                        else
+                            return f->m_signature.can_call_with_cast(from_iter, from_end);
+                        });
+                };
 
                 void clear() {
                     if (functions.valid()) {
@@ -355,11 +377,19 @@ namespace GL {
                         get(path);
                         int state = std::numeric_limits<int>::max();
                         for (auto& t : path) {
-                            if (auto& x = srce.try_find_callable(t.name(), &this_t, &this_t + 1, 0); x) {
+                            if (this_t.can_free_cast(t)) {
+                                this_t = t;
+                            }
+                            else if (auto& x = srce.try_find_callable(t, &this_t, &this_t + 1, free_cast_only); x) {
                                 converters.push_back(&x);
                                 this_t = t;
                                 state &= x->m_signature.state_m;
                             }
+ /*                           else if (auto& x = srce.try_find_callable("", &this_t, &this_t + 1, 0); x) {
+                                converters.push_back(&x);
+                                this_t = t;
+                                state &= x->m_signature.state_m;
+                            }*/
                             else {
                                 return nullptr;
                             }                            
@@ -370,7 +400,7 @@ namespace GL {
                         else {
                             // generic function that casts "from"-type objects to "this"-type by iteratively making the inner-type casts. 
                             // e.g. int->ldouble might take the path of int->long->float->double->ldouble, for a total of 4 casts hidden as a single cast or a single call to this Proxy_Function. 
-                            return GL::make_callable(thisNodePath.name(), [converters](GL::any::fast_any& from) -> GL::any {
+                            return GL::make_callable( "`operator " + (thisNodePath - GL::type::Temporary).name() + "`" /*(thisNodePath - GL::type::Temporary).name()*/, [converters](GL::any::fast_any& from) -> GL::any {
                                 GL::any out;
                                 int pos{ 0 };                                
                                 for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(&from, &from + 1);                                
@@ -436,8 +466,12 @@ namespace GL {
                     GL::atomic_allocator<std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>, 1024>& alloc,
                     GL::type const& From
                 ){
+                    std::unordered_set<GL::type> AllTypes;
                     std::unordered_map<GL::type, std::unordered_map<GL::type, GL::Proxy_Function const*>> AllConversions; // all built-in conversions, e.g. int->float, float->double, etc.
-                    (void)this->for_each([&AllConversions](GL::Proxy_Function const& func)->bool {
+                    (void)this->for_each([&AllConversions, &AllTypes](GL::Proxy_Function const& func)->bool {
+                        AllTypes.insert(func->m_signature.returns_m);
+                        for (auto& x : func->m_signature.argument_types_m) AllTypes.insert(x);                        
+
                         if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                             if (func->m_signature.argument_types_m.size() == 1) {
                                 auto& from = func->m_signature.argument_types_m[0];
@@ -447,6 +481,59 @@ namespace GL {
                         }
                         return false;
                     });
+                    
+#if 1
+                    // Also, we should add the conversions for "inherited& -> base&", "inherited -> base const&", "inherited&& -> base&&".
+                    for (auto& Type : AllTypes) {
+                        for (auto& base_type : Type.all_base_types()) {
+                            if (1){
+                                auto temp_func = GL::make_callable("`operator " + (base_type + GL::type::Reference).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
+                                    GL::any from = inherited;
+                                    from.m_casted_type = base | GL::type::Reference;
+                                    return from;
+                                }, GL::function_signature::NoCost | GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Reference } }, base_type | GL::type::Reference);
+
+                                if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
+                                    this->add_function(temp_func);
+                                }
+
+                                if (auto* func = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); func != nullptr) {
+                                    AllConversions[func->operator->()->m_signature.argument_types_m[0]][func->operator->()->m_signature.returns_m] = func;
+                                }
+                            }
+                            if (0) {
+                                auto temp_func = GL::make_callable("`operator " + (base_type + GL::type::Reference + GL::type::Const).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
+                                    GL::any from = inherited;
+                                    from.m_casted_type = base | GL::type::Reference | GL::type::Const;
+                                    return from;
+                                }, GL::function_signature::NoCost | GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type } }, base_type | GL::type::Reference | GL::type::Const);
+
+                                if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
+                                    this->add_function(temp_func);
+                                }
+
+                                if (auto* func = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); func != nullptr) {
+                                    AllConversions[func->operator->()->m_signature.argument_types_m[0]][func->operator->()->m_signature.returns_m] = func;
+                                }
+                            }
+                            if (1) {
+                                auto temp_func = GL::make_callable("`operator " + (base_type + GL::type::Temporary).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
+                                    GL::any from = inherited;
+                                    from.m_casted_type = base | GL::type::Temporary;
+                                    return from;
+                                }, GL::function_signature::NoCost | GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Temporary } }, base_type | GL::type::Temporary);
+
+                                if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
+                                    this->add_function(temp_func);
+                                }
+
+                                if (auto* func = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); func != nullptr) {
+                                    AllConversions[func->operator->()->m_signature.argument_types_m[0]][func->operator->()->m_signature.returns_m] = func;
+                                }
+                            }
+                        }
+                    }
+#endif
 
                     // create the shortest paths from "From" to all possible vertices.
                     std::unordered_map<GL::type, UniformCostSearchNode*> vertices;
@@ -474,37 +561,39 @@ namespace GL {
                             vertexSet.pop();
 
                             // for each neighbor of the extracted vertex... 
-                            for (auto& x : AllConversions) {
+                            for (auto& x : AllConversions) {                                
                                 if (smallestDistanceNode->thisVertexType.can_free_cast(x.first)) {
                                     for (auto fSecondIter = x.second.cbegin(), fSecondEnd = x.second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
                                         auto& connection = *fSecondIter;
-                                        if (auto& func = *connection.second) {
-                                            //conversionCost = GoodLang::details::TypeConversionBaselineCost;
-                                            //if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
-                                            conversionCost = ((func->m_signature.state_m & GL::function_signature::NoCost) > 0) ? 0.01 : 1.0;
+                                        if (connection.second != nullptr) {
+                                            if (auto& func = *connection.second) {
+                                                //conversionCost = GoodLang::details::TypeConversionBaselineCost;
+                                                //if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
+                                                conversionCost = ((func->m_signature.state_m & GL::function_signature::NoCost) > 0) ? 0.01 : 1.0;
 
-                                            if (1) {
-                                                // Is the neighbor already in the vertex set? 
-                                                auto& toVertex = vertices[connection.first];
+                                                if (1) {
+                                                    // Is the neighbor already in the vertex set? 
+                                                    auto& toVertex = vertices[connection.first];
 
-                                                if (!toVertex) { // Instance it before we start working with it on an as-needed basis
-                                                    toVertex = &std::get<UniformCostSearchNode>(*alloc.Alloc(
-                                                        UniformCostSearchNode{
-                                                            connection.first,
-                                                            std::numeric_limits<double>::infinity(),
-                                                            &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ nullptr, connection.first }))
-                                                        }
-                                                    ));
-                                                }
-                                                if ((toVertex->size() + 1) > (smallestDistanceNode->size() + 1)) {
-                                                    toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-                                                    toVertex->bestPath = &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ smallestDistanceNode->bestPath, toVertex->thisVertexType }));
-                                                    vertexSet.push(toVertex);
-                                                }
-                                                else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
-                                                    toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-                                                    toVertex->bestPath = &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ smallestDistanceNode->bestPath, toVertex->thisVertexType }));
-                                                    vertexSet.push(toVertex);
+                                                    if (!toVertex) { // Instance it before we start working with it on an as-needed basis
+                                                        toVertex = &std::get<UniformCostSearchNode>(*alloc.Alloc(
+                                                            UniformCostSearchNode{
+                                                                connection.first,
+                                                                std::numeric_limits<double>::infinity(),
+                                                                &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ nullptr, connection.first }))
+                                                            }
+                                                        ));
+                                                    }
+                                                    if ((toVertex->size() + 1) > (smallestDistanceNode->size() + 1)) {
+                                                        toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+                                                        toVertex->bestPath = &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ smallestDistanceNode->bestPath, toVertex->thisVertexType }));
+                                                        vertexSet.push(toVertex);
+                                                    }
+                                                    else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
+                                                        toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
+                                                        toVertex->bestPath = &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ smallestDistanceNode->bestPath, toVertex->thisVertexType }));
+                                                        vertexSet.push(toVertex);
+                                                    }
                                                 }
                                             }
                                         }
@@ -525,8 +614,14 @@ namespace GL {
                     auto converters
                         = CreateConversionPaths(temp_alloc, From);
                     for (auto& To : converters) 
-                        if (To.second) 
-                            out[To.first] = To.second->bestPath->make_converter(From, *this);
+                        if (To.second) {
+                            if (auto p = To.second->bestPath->make_converter(From, *this)) {
+                                out[To.first] = p;
+                            }
+                            //else {
+                                //p = To.second->bestPath->make_converter(From, *this);
+                            //}
+                        }
                     return out;
                 };
 

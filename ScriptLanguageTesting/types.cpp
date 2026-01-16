@@ -14,29 +14,44 @@ namespace GL {
         static GL::ticket_dispensor scripted_types_ticket_dispensor; 
 
         size_t checkout_scripted_type(GL::string type_name) {
-            size_t ticket = scripted_types_ticket_dispensor.get_ticket();
-            scripted_types.grow_to_at_least(ticket);
+            size_t ticket = scripted_types_ticket_dispensor.get_ticket() - 1;
+            scripted_types.grow_to_at_least(ticket + 1); // desired size
 
             auto& out = scripted_types[ticket];
             if (out.base_hash == 0) {
                 if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out.base_hash), ticket, 0) == 0) {
                     out.name = type_name;
+                    out.T_size = std::numeric_limits<size_t>::max();
+                    out.base_classes = {};
+                    out.instance_by_copy = [](GL::any const& orig) -> GL::any {
+                        return orig;
+                    };
+                    out.instance_by_value = [](GL::any const& orig) -> GL::any {
+                        return orig;
+                    };
+                    out.instance = []() -> GL::any {
+                        return GL::any{};
+                    };
                 }
             }
             return ticket;
         };
         void return_scripted_type(size_t ticket) {
-            auto& out = scripted_types[ticket];
+            auto& out = scripted_types[ticket];            
             out.name = "";
-            out.base_hash = 0;
+            out.T_size = std::numeric_limits<size_t>::max();            
             out.base_classes = {};
-
-            scripted_types_ticket_dispensor.return_ticket(ticket);
+            out.base_hash = 0;
+            scripted_types_ticket_dispensor.return_ticket(ticket + 1);
         };
         cached_type& get_scripted_type(size_t hash) {
-            return scripted_types[hash];
+            if (hash < scripted_types.size()) {
+                return scripted_types[hash];
+            } 
+            else {
+                return builtin_cpp_types[hash];
+            }
         };
-
         cached_type& get_impl(size_t hash) {
             return builtin_cpp_types[hash];
         };
@@ -47,33 +62,69 @@ namespace GL {
             else {
                 if (this->base_classes.find(base) != this->base_classes.end()) return true;
                 for (auto& x : this->base_classes) {
-                    auto& Base = get_impl(x);
-                    if (Base.is_derived_from(base)) {
-                        return true;
+                    if (this->is_cpp_type()) {
+                        auto& Base = get_impl(x);
+                        if (Base.is_derived_from(base)) {
+                            return true;
+                        }
+                    }
+                    else {
+                        auto& Base = get_scripted_type(x);
+                        if (Base.is_derived_from(base)) {
+                            return true;
+                        }
                     }
                 }
                 return false;
             }
         };
         bool cached_type::is_base_of(size_t derived) const {
-            auto& base = get_impl(derived);
-            return base.is_derived_from(this->base_hash);
+            if (this->is_cpp_type()) {
+                auto& base = get_impl(derived);
+                return base.is_derived_from(this->base_hash);
+            }
+            else {
+                auto& base = get_scripted_type(derived);
+                return base.is_derived_from(this->base_hash);
+            }  
         };
         bool cached_type::add_base(size_t base) {
-            auto& Base = get_impl(base);
-            if (this->is_derived_from(base) || Base.is_derived_from(this->base_hash))
-                return false;
-            else {
-                this->base_classes.insert(base);
-                return true;
+            if (this->is_cpp_type()) {
+                auto& Base = get_impl(base);
+                if (Base.is_cpp_type() && Base.T_size != 0) {
+                    if (this->is_derived_from(base) || Base.is_derived_from(this->base_hash))
+                        return false;
+                    else {
+                        this->base_classes.insert(base);
+                        return true;
+                    }
+                }
             }
+            else {
+                auto& Base = get_scripted_type(base);
+                if (!Base.is_cpp_type()) {
+                    if (this->is_derived_from(base) || Base.is_derived_from(this->base_hash))
+                        return false;
+                    else {
+                        this->base_classes.insert(base);
+                        return true;
+                    }
+                }
+            }
+            return false;
         };
         bool cached_type::match_base_hash(size_t to_match) const {
             if (base_hash == to_match) return true;
             if (this->base_classes.find(to_match) != this->base_classes.end()) return true;
             for (auto& x : base_classes) {
-                auto& base = get_impl(x);
-                if (base.match_base_hash(to_match)) return true;
+                if (this->is_cpp_type()) {
+                    auto& base = get_impl(x);
+                    if (base.match_base_hash(to_match)) return true;
+                }
+                else {
+                    auto& base = get_scripted_type(x);
+                    if (base.match_base_hash(to_match)) return true;
+                }
             }
             return false;
         };
@@ -91,11 +142,18 @@ namespace GL {
 
     GL::string type::name() const {
         auto& Base = get_base(*this);
-        if (is_temp()) return Base.name + "&&";
-        else if (is_const() && is_ref()) return "const " + Base.name + "&";
-        else if (is_const() && !is_ref()) return "const " + Base.name;
-        else if (!is_const() && is_ref()) return Base.name + "&";
-        else return Base.name;
+        GL::string out = Base.name;
+        if (is_const()) out = "const " + out;
+        if (is_ref()) out = out + "&";
+        if (is_temp()) out = out + "&&";
+        return out;
+
+        //auto& Base = get_base(*this);
+        //if (is_temp()) return Base.name + "&&";
+        //else if (is_const() && is_ref()) return "const " + Base.name + "&";
+        //else if (is_const() && !is_ref()) return "const " + Base.name;
+        //else if (!is_const() && is_ref()) return Base.name + "&";
+        //else return Base.name;
     };
     bool type::try_update_name(GL::string const& new_name) {
         //if (this->is_cpp_type()) {
@@ -107,18 +165,43 @@ namespace GL {
         //    return false;
         //}
     };
-
+    std::set<type> type::all_base_types() const {
+        std::set<type> out;
+        if (this->is_cpp_type()) {
+            for (auto& x : get_base(*this).base_classes) {
+                auto& Base = impl::get_impl(x);
+                out.insert(type(Base.base_hash) + GL::type::CppType);
+            }
+        }
+        else {
+            for (auto& x : get_base(*this).base_classes) {
+                auto& Base = impl::get_scripted_type(x);
+                out.insert(type(Base.base_hash));
+            }
+        }
+        return out;
+    };
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 
     bool type::is_derived_from(type const& base) const {
         return get_base(*this).is_derived_from(get_base(base).base_hash);
     };
     // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
     bool type::is_base_of(type const& derived) const {
-        return get_base(*this).is_base_of(get_base(derived).base_hash);
+        //if (this->is_cpp_type() == derived.is_cpp_type()) {
+            return get_base(*this).is_base_of(get_base(derived).base_hash);
+        //}
+        //else {
+        //    return false;
+        //}
     };
     // attempts to include the specified hash as a base of this class.
     bool type::add_base(type const& base) {
-        return get_base(*this).add_base(get_base(base).base_hash);
+        if (this->is_cpp_type() == base.is_cpp_type()) {
+            return get_base(*this).add_base(get_base(base).base_hash);
+        }
+        else {
+            return false;
+        }
     };
 
     bool type::match_base_hash(type const& to_match) const {

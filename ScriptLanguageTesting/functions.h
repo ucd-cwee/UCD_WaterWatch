@@ -119,11 +119,12 @@ namespace GL {
 
         // reviews the arguments to see if any are defined as "any". If so, sets the state of the function as "template". Otherwise, unsets the template state. 
         void evaluate_if_template_function() {
-            state_m &= ~function_state::Constructor; // unsets the constructor flag
+            // state_m &= ~function_state::Constructor; // unsets the constructor flag
             if ((state_m & Static) > 0) {
                 if (argument_types_m.size() <= 1) {
-                    if (returns_m.name() == name_m) {
-                        state_m |= Constructor;
+                    if ((returns_m.name() == name_m) || (returns_m.name() == (name_m + "&&"))) {
+                        this->state_m |= Constructor;
+                        this->returns_m |= GL::type::Temporary;
                     }
                 }
             }
@@ -334,6 +335,7 @@ namespace GL {
             }
 
             if ((this->state_m & Constructor) > 0) {
+                out = out.add_to_delim(returns_m.name(), " ");
                 out = out.add_to_delim(name_m, " ");
             }
             else {
@@ -1557,7 +1559,12 @@ namespace GL {
 
         if ((out->m_signature.state_m & function_signature::Static) > 0) {
             if (out->m_signature.argument_types_m.size() <= 1) {
-                if (out->m_signature.returns_m.name() == out->m_signature.name_m) {
+                if (
+                    (out->m_signature.returns_m.name() == out->m_signature.name_m)
+                    || 
+                    (out->m_signature.returns_m.name() == out->m_signature.name_m + "&&")
+                ) {
+                    out->m_signature.returns_m |= GL::type::Temporary;
                     out->m_signature.state_m |= function_signature::Constructor;
                 }
             }
@@ -1753,7 +1760,7 @@ namespace GL {
         if constexpr (is_polymorphic && ((std::is_reference_v<To_Requested> || std::is_pointer_v<To_Requested> || std::is_same_v<GL::shared_ptr<To>, To_Requested> || std::is_same_v<std::shared_ptr<To>, To_Requested>) || (!is_convertable))) {
             out = GL::make_callable(GL::type_of<To>().name(), [](GL::shared_ptr<From> from) -> GL::shared_ptr<To> {
                 return GL::shared_ptr<To>(from);
-            });
+            }, {}, { { "From", GL::type_of<From>() | GL::type::Reference } }, GL::type_of<To>() | GL::type::Reference);
             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
             out->m_signature.state_m |= GL::function_signature::NoCost;
         }
@@ -1761,7 +1768,7 @@ namespace GL {
             if constexpr (is_convertable) {
                 out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                     return static_cast<To>(from);
-                });
+                }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                 out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                 out->m_signature.state_m |= GL::function_signature::NoCost;
             }
@@ -1771,14 +1778,14 @@ namespace GL {
                         if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
                             out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                                 return To(from);
-                            });
+                            }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                             out->m_signature.state_m |= GL::function_signature::NoCost;
                         }
                         else {
                             out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                                 return static_cast<To>((float)from);
-                            });
+                            }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                             out->m_signature.state_m |= GL::function_signature::NoCost;
                         }
@@ -1786,14 +1793,14 @@ namespace GL {
                     else if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return To((float)from);
-                        });
+                        }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                         out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
                     else {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return static_cast<To>(from);
-                        });
+                        }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference }}, GL::type_of<To>() | GL::type::Temporary);
                         out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
@@ -1801,7 +1808,7 @@ namespace GL {
                 else {
                     out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                         return To(from);
-                    });
+                    }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                     out->m_signature.state_m |= GL::function_signature::Static;
                     out->m_signature.state_m |= GL::function_signature::NoCost;
                 }
