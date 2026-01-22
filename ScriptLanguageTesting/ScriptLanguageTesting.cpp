@@ -449,18 +449,29 @@ int main() {
                 program_root.add_function(GL::make_converter<GL::meter, GL::foot>());
                 program_root.add_function(GL::make_converter<GL::meter, GL::value>());
                 program_root.add_function(GL::make_converter<GL::value, GL::meter>());                
+                program_root.add_function(GL::make_converter<GL::value, GL::foot>());
                 program_root.add_function(GL::make_converter<GL::value, float>());
                 program_root.add_function(GL::make_converter<float, GL::value>());
-                program_root.add_function(GL::make_converter<int, char>());
-                program_root.add_function(GL::make_converter<char, unsigned char>());
-                program_root.add_function(GL::make_converter<int, long>());
-                program_root.add_function(GL::make_converter<long, long long>());
-                program_root.add_function(GL::make_converter<int, float>());
-                program_root.add_function(GL::make_converter<float, double>());
-                program_root.add_function(GL::make_converter<double, long double>());
-                program_root.add_function(GL::make_converter<long long, long double>());
-                program_root.add_function(GL::make_converter<int, long>());
-                program_root.add_function(GL::make_converter<int const&, int>());
+
+#define add_c(type) \
+                program_root.add_function(GL::make_converter<type, char>()); \
+                program_root.add_function(GL::make_converter<type, unsigned char>()); \
+                program_root.add_function(GL::make_converter<type, int>()); \
+                program_root.add_function(GL::make_converter<type, long>()); \
+                program_root.add_function(GL::make_converter<type, long long>()); \
+                program_root.add_function(GL::make_converter<type, float>()); \
+                program_root.add_function(GL::make_converter<type, double>()); \
+                program_root.add_function(GL::make_converter<type, long double>())
+
+                add_c(char);
+                add_c(unsigned char);
+                add_c(int);
+                add_c(long);
+                add_c(long long);
+                add_c(float);
+                add_c(double);
+                add_c(long double);
+#undef add_c
 
                 program_root.add_function(GL::make_callable("ref_cast", [](GL::any::fast_any const& from) -> GL::any {
                     GL::any out(from);
@@ -527,6 +538,18 @@ int main() {
                         EXPECT_EQ("const custom_type&", p->operator()(types.begin(), types.end()).cast<GL::string>());
                     }
                 }
+
+                if (1) {
+                    auto from_type = GL::type_of<GL::meter&&>();
+                    auto& func = program_root.constructors.try_find_callable(GL::type_of<GL::value&>(), &from_type, &from_type + 1, 0);
+                    if (func) print(func->m_signature.display());
+                }
+                if (1) {
+                    auto from_type = GL::type_of<GL::meter&&>();
+                    auto& func = program_root.constructors.try_find_callable(GL::type_of<GL::meter&>(), &from_type, &from_type + 1, 0);
+                    if (func) print(func->m_signature.display());
+                }
+
                 EXPECT_EQ(false, GL::type_of<GL::meter&&>().can_free_cast(GL::type_of<GL::value&>()));
                 EXPECT_EQ(false, GL::type_of<GL::meter&&>().can_free_cast(GL::type_of<GL::value>()));
                 EXPECT_EQ(false, GL::type_of<GL::meter>().can_free_cast(GL::type_of<GL::value>()));
@@ -560,21 +583,21 @@ int main() {
                         , 1024
                     > temp_alloc;
                     auto converters
-                        = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
+                        = program_root.constructors.CreateConversionPaths(temp_alloc, From);
+
                     for (auto& To : converters) {
                         if (To.second) {
-                            print(GL::type_of<int>().name() + " to " + To.first.name() + ": " + std::to_string(To.first.get_qualifiers()));
+                            print(From.name() + " to " + To.first.name() + ": " + std::to_string(To.first.get_qualifiers()));
 
                             std::vector<GL::type> best_path;
                             To.second->bestPath->get(best_path);
                             GL::string t;
-                            t = t.add_to_delim(GL::type_of<int>().name(), "->");
+                            t = t.add_to_delim(From.name(), "->");
                             for (auto& path : best_path) {
                                 t = t.add_to_delim(path.name(), "->");
                             }
                             print("\t" + t + ": ");
-
-                            auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
+                            auto converter = To.second->bestPath->make_converter(From, program_root.constructors);
                             auto converted = converter->operator()({ 1 });
                             EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
                             print("\t" + converter->m_signature.display());
@@ -603,21 +626,21 @@ int main() {
                         , 1024
                     > temp_alloc;
                     auto converters
-                        = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
+                        = program_root.constructors.CreateConversionPaths(temp_alloc, From);
                     for (auto& To : converters) {
                         if (To.second) {
-                            print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
+                            print(From.name() + " to " + To.first.name() + ": ");
 
                             std::vector<GL::type> best_path;
                             To.second->bestPath->get(best_path);
                             GL::string t;
-                            t = t.add_to_delim(GL::type_of<int>().name(), "->");
+                            t = t.add_to_delim(From.name(), "->");
                             for (auto& path : best_path) {
                                 t = t.add_to_delim(path.name(), "->");
                             }
                             print("\t" + t + ": ");
 
-                            auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
+                            auto converter = To.second->bestPath->make_converter(From, program_root.constructors);
                             auto converted = converter->operator()({ 1 });
                             EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
                             print("\t" + converter->m_signature.display());
@@ -648,28 +671,74 @@ int main() {
                         , 1024
                     > temp_alloc;
                     auto converters 
-                        = program_root.constructors.CreateConversionPaths(temp_alloc, GL::type_of<int>());
+                        = program_root.constructors.CreateConversionPaths(temp_alloc, From);
                     for (auto& To : converters) {
                         if (To.second) {
-                            print(GL::type_of<int>().name() + " to " + To.first.name() + ": ");
+                            print(From.name() + " to " + To.first.name() + ": ");
 
                             std::vector<GL::type> best_path;
                             To.second->bestPath->get(best_path);
                             GL::string t;
-                            t = t.add_to_delim(GL::type_of<int>().name(), "->");
+                            t = t.add_to_delim(From.name(), "->");
                             for (auto& path : best_path) {
                                 t = t.add_to_delim(path.name(), "->");
                             }
                             print("\t" + t + ": ");
 
-                            auto converter = To.second->bestPath->make_converter(GL::type_of<int>(), program_root.constructors);
-                            auto converted = converter->operator()({ 1 });
-                            EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));
+                            auto converter = To.second->bestPath->make_converter(From, program_root.constructors);
                             print("\t" + converter->m_signature.display());
+
+                            auto converted = converter->operator()({ GL::foot(1) });
+                            EXPECT_EQ(true, converted.m_casted_type.can_free_cast(To.first));                            
                         }
                     }                    
                 }
                 print("");
+
+                if (1) {
+                    auto From = custom_unit_type.load() + GL::type::Const + GL::type::Reference;
+                    GL::atomic_allocator<
+                        std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>
+                        , 1024
+                    > temp_alloc;
+                    auto converters
+                        = program_root.constructors.CreateConversionPaths(temp_alloc, From);
+                    for (auto& To : converters) {
+                        if (To.second) {
+                            print(From.name() + " to " + To.first.name() + ": ");
+
+                            std::vector<GL::type> best_path;
+                            To.second->bestPath->get(best_path);
+                            GL::string t;
+                            t = t.add_to_delim(From.name(), "->");
+                            for (auto& path : best_path) {
+                                t = t.add_to_delim(path.name(), "->");
+                            }
+                            print("\t" + t + ": ");
+
+                            auto converter = To.second->bestPath->make_converter(From, program_root.constructors);
+                            if (converter) {
+                                print("\t" + converter->m_signature.display());
+                            }
+                        }
+                    }
+                }
+                print("");
+
+                if (1) {
+                    std::vector < GL::type > types = { GL::type_of<int>(), GL::type_of<float>(), GL::type_of<double>(), GL::type_of<std::string>() };
+                    for (auto& from : types) {
+                        auto converters = program_root.constructors.CreateConversions(from);
+                        for (auto& to : converters) {
+                            std::vector<GL::any::fast_any> params{ from.instance().fast() };
+                            GL::string out = from.name() + " -> " + to.first.name();                            
+                            print(out);
+                            EXPECT_EQ(to.second->operator()(params.begin(), params.end()).m_casted_type.can_free_cast(to.first), true);                            
+                        }
+                    }
+                }
+
+
 
 
                 GL::parallel::For(0, 1000000, [&](size_t i) {

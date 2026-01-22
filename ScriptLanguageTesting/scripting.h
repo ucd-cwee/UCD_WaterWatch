@@ -224,8 +224,8 @@ namespace GL {
 
             public:
                 // insert a function into the storage
-                void add_function(GL::Proxy_Function const& func) {
-                    functions->operator[](func->m_signature.name_m)->insert_fast(func->m_signature.get_hash(), (GL::Proxy_Function)func);
+                GL::Proxy_Function const& add_function(GL::Proxy_Function const& func) {
+                    return functions->operator[](func->m_signature.name_m)->insert(func->m_signature.get_hash(), (GL::Proxy_Function)func).second;
                 };
 
                 // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
@@ -394,19 +394,31 @@ namespace GL {
                                 return nullptr;
                             }                            
                         }
-                        if (converters.size() == 1) {
+
+                        // no conversion function is necessary
+                        if (converters.size() == 0) {
+                            this_t = thisNodePath;
+                            return GL::make_callable("`static_cast " + (this_t).name() + "`", [converters, this_t](GL::any::fast_any& from) -> GL::any::fast_any {
+                                GL::any::fast_any out{ from };
+                                out.m_casted_type = this_t;
+                                return out;
+                            }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Constructor | GL::function_signature::NoCost | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
+                        }
+                        // use a user-provided function exactly
+                        else if (converters.size() == 1) {
                             return *converters[0];
                         }
+                        // create a daisy-chain function
                         else {
                             // generic function that casts "from"-type objects to "this"-type by iteratively making the inner-type casts. 
                             // e.g. int->ldouble might take the path of int->long->float->double->ldouble, for a total of 4 casts hidden as a single cast or a single call to this Proxy_Function. 
-                            return GL::make_callable( "`operator " + (thisNodePath - GL::type::Temporary).name() + "`" /*(thisNodePath - GL::type::Temporary).name()*/, [converters](GL::any::fast_any& from) -> GL::any {
+                            return GL::make_callable( "`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any {
                                 GL::any out;
                                 int pos{ 0 };                                
                                 for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(&from, &from + 1);                                
                                 for (; pos < converters.size(); ++pos) out = (*converters[pos])->operator()(out);                          
                                 return out;
-                            }, state, {}, { { "From", from } }, thisNodePath);
+                            }, state | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
                         }
                     };
                     void get(std::vector<GL::type>& out) const {
@@ -482,16 +494,19 @@ namespace GL {
                         return false;
                     });
                     
-#if 1
+#if 1 // allow polymorphic/dynamic casts
                     // Also, we should add the conversions for "inherited& -> base&", "inherited -> base const&", "inherited&& -> base&&".
-                    for (auto& Type : AllTypes) {
+                    for (auto& rawType : AllTypes) {
+                        auto Type = GL::type(rawType.get_base_hash()) | (rawType.is_cpp_type() ? GL::type::CppType : 0);
                         for (auto& base_type : Type.all_base_types()) {
+
                             if (1){
-                                auto temp_func = GL::make_callable("`operator " + (base_type + GL::type::Reference).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
+                                auto temp_func = GL::make_callable("`dynamic_cast " + (base_type + GL::type::Reference).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
                                     GL::any from = inherited;
                                     from.m_casted_type = base | GL::type::Reference;
                                     return from;
                                 }, GL::function_signature::NoCost | GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Reference } }, base_type | GL::type::Reference);
+
 
                                 if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
                                     this->add_function(temp_func);
@@ -502,7 +517,7 @@ namespace GL {
                                 }
                             }
                             if (0) {
-                                auto temp_func = GL::make_callable("`operator " + (base_type + GL::type::Reference + GL::type::Const).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
+                                auto temp_func = GL::make_callable("`dynamic_cast " + (base_type + GL::type::Reference + GL::type::Const).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
                                     GL::any from = inherited;
                                     from.m_casted_type = base | GL::type::Reference | GL::type::Const;
                                     return from;
@@ -517,7 +532,7 @@ namespace GL {
                                 }
                             }
                             if (1) {
-                                auto temp_func = GL::make_callable("`operator " + (base_type + GL::type::Temporary).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
+                                auto temp_func = GL::make_callable("`dynamic_cast " + (base_type + GL::type::Temporary).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
                                     GL::any from = inherited;
                                     from.m_casted_type = base | GL::type::Temporary;
                                     return from;
