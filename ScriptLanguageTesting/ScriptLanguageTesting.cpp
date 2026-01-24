@@ -471,7 +471,6 @@ int main() {
                 add_c(float);
                 add_c(double);
                 add_c(long double);
-#undef add_c
 
                 program_root.add_function(GL::make_callable("ref_cast", [](GL::any::fast_any const& from) -> GL::any {
                     GL::any out(from);
@@ -539,12 +538,12 @@ int main() {
                     }
                 }
 
-                if (1) {
+                if (0) {
                     auto from_type = GL::type_of<GL::meter&&>();
                     auto& func = program_root.constructors.try_find_callable(GL::type_of<GL::value&>(), &from_type, &from_type + 1, 0);
                     if (func) print(func->m_signature.display());
                 }
-                if (1) {
+                if (0) {
                     auto from_type = GL::type_of<GL::meter&&>();
                     auto& func = program_root.constructors.try_find_callable(GL::type_of<GL::meter&>(), &from_type, &from_type + 1, 0);
                     if (func) print(func->m_signature.display());
@@ -563,7 +562,7 @@ int main() {
                 EXPECT_EQ(false, GL::type_of<GL::value&>().can_free_cast(GL::type_of<GL::meter&>()));
                 EXPECT_EQ(false, GL::type_of<GL::value&&>().can_free_cast(GL::type_of<GL::meter&&>()));
 
-                if (1) {
+                if (0) {
                     auto From = GL::type_of<int&>();
                     //auto conversions = program_root.constructors.CreateConversions(From);
                     //for (auto& To : conversions) {
@@ -606,7 +605,7 @@ int main() {
                 }
                 print("");
 
-                if (1) {
+                if (0) {
                     auto From = GL::type_of<int const&>();
 /*                    auto conversions = program_root.constructors.CreateConversions(From);
                     for (auto& To : conversions) {
@@ -726,7 +725,7 @@ int main() {
                 print("");
 
                 if (1) {
-                    std::vector < GL::type > types = { GL::type_of<int>(), GL::type_of<float>(), GL::type_of<double>(), GL::type_of<std::string>() };
+                    std::vector < GL::type > types = { GL::type_of<int>(), GL::type_of<float>(), GL::type_of<double>(), GL::type_of<std::string>(), GL::type_of<GL::meter>(), GL::type_of<GL::meter&&>(), GL::type_of<GL::meter const&>() };
                     for (auto& from : types) {
                         auto converters = program_root.constructors.CreateConversions(from);
                         for (auto& to : converters) {
@@ -738,6 +737,57 @@ int main() {
                     }
                 }
 
+                if (1) {
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int const&>()));                    
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int const&>()));                    
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter const&>()));                    
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<double>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<double const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<GL::value>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&>(), GL::type_of<GL::value&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<GL::value&>()));                    
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), GL::type_of<GL::value const&>()));  
+
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), custom_unit_type));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), custom_unit_type));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), custom_unit_type.load() | GL::type::Temporary));
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), custom_unit_type)); // requires a copy operation, but since it's going to a base type, that's OK
+                    EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), custom_unit_type.load() | GL::type::Temporary)); // requires a copy operation, but since it's going to a temp type, that's OK
+                    EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type, GL::type_of<GL::value>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type, GL::type_of<GL::meter const&>()));
+                    EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference));
+                    EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference | GL::type::Const, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
+                    EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
+                    
+                    EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&>()));
+                    EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&>()));
+                    EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&>()));
+                    EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
+                    EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
+                    EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
+                }
 
 
 
