@@ -502,7 +502,7 @@ namespace GL {
         };
 
         template <bool EmplaceIfExists = true> _iterType*
-            Add(objType object, keyType const& key) {
+            Add(objType const& object, keyType const& key) {
             _iterType
                 * node,
                 * child,
@@ -513,7 +513,7 @@ namespace GL {
                 auto locked{ std::shared_lock(mutex) };
                 node = NodeFind(key, root);
                 if (node && node->object) {
-                    *node->object = std::move(object);
+                    *node->object = object;
                     return node;
                 }
             }
@@ -531,7 +531,7 @@ namespace GL {
             if constexpr (EmplaceIfExists) {
                 node = NodeFind(key, root);
                 if (node && node->object) {
-                    *node->object = std::move(object);
+                    *node->object = object;
                     return node;
                 }
             }
@@ -544,7 +544,7 @@ namespace GL {
 
             newNode = AllocNode();
             newNode->key = key;
-            newNode->object = objAllocator->Alloc(std::move(object));
+            newNode->object = objAllocator->Alloc(object);
             Num++;
 
             if (root->numChildren >= maxChildrenPerNode) {

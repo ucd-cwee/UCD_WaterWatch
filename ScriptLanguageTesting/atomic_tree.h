@@ -1876,12 +1876,12 @@ namespace GL {
 				sub_buffer;
 			unsigned long long // the blocks are sorted by this length... that is how we quickly find buffers of adequate size for the request. 
 				length;
+			unsigned long long // this sub-buffer may be further split. 
+				parent_buffer;
+			unsigned long long
+				thread_id;
 			long
 				locker;
-			long // this sub-buffer may be further split. 
-				parent_buffer;
-			unsigned int
-				thread_id;
 			bool
 				is_available;
 			bool
@@ -2250,7 +2250,7 @@ namespace GL {
 	public:
 		using lock_type = fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; //
 		struct epoch_search_treeNode {
-			std::variant<objType, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
+			std::variant<std::unique_ptr<objType>, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
 				data;
 			epoch_search_treeNode // parent node
 				* parent;
@@ -2265,7 +2265,7 @@ namespace GL {
 			objType*
 				object() {
 				if (numChildren > 0 || !is_leaf) return nullptr;
-				return &std::get<objType>(data);
+				return std::get<std::unique_ptr<objType>>(data).get();
 			};
 			epoch_search_treeNode**
 				children() {
@@ -2654,7 +2654,7 @@ namespace GL {
 			newNode->key
 				= key;
 			newNode->data
-				= std::move(object);
+				= std::make_unique<objType>(std::move(object));
 
 			if (!locking) {
 				locking.push_back(mut); // locked
@@ -3034,7 +3034,7 @@ namespace GL {
 			node = nodeAllocator.Alloc();
 			if (is_leaf) {
 				node->is_leaf = true;
-				node->data = objType{};
+				node->data = std::make_unique<objType>();
 			}
 			else {
 				node->is_leaf = false;

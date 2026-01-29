@@ -55,8 +55,14 @@
 #define print(a) std::cout << a << std::endl
 struct catcher {
 public:
+    static bool& allow_print(){ 
+        static bool out{ true };
+        return out;
+    };
     static __declspec(noinline) void CatchMe(long L) {
-        std::cout << GL::printf("FAILURE AT LINE %i\n", (int)L);
+        if (allow_print()) {
+            std::cout << GL::printf("FAILURE AT LINE %i\n", (int)L);
+        }
     }
 };
 #define EXPECT_EQ(a, b) if (a != b){ catcher::CatchMe(__LINE__); }
@@ -503,6 +509,14 @@ int main() {
                 program_root.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }));
                 program_root.add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }));
                 
+                program_root.add_function(GL::make_callable("+", [](GL::foot const& a, GL::foot const& b) -> GL::foot { return a + b; }));
+                program_root.add_function(GL::make_callable("+2", [](GL::foot const& a, GL::foot const& b) -> GL::foot { return a + b; }));
+                program_root.add_function(GL::make_callable("+2", [](GL::meter const& a, GL::meter const& b) -> GL::meter { return a + b; }));
+                program_root.add_function(GL::make_callable("+2", [](int const& a, int const& b) -> int { return a + b; }));
+                program_root.add_function(GL::make_callable("+2", [](float const& a, float const& b) -> float { return a + b; }));
+                program_root.add_function(GL::make_callable("+2", [](double const& a, double const& b) -> double { return a + b; }));
+                program_root.add_function(GL::make_callable("+2", [](long double const& a, long double const& b) -> long double { return a + b; }));
+
                 std_string_namespace.add_function(GL::make_callable(
                     "print"
                     , [](GL::any const& any_type) -> std::string { 
@@ -737,7 +751,8 @@ int main() {
                     }
                 }
 
-                if (1) {
+                catcher::allow_print() = false;
+                GL::parallel::For(0, 1000000, [&](size_t i) {    
                     EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double>()));
                     EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double&&>()));
                     EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double const&>()));
@@ -786,14 +801,20 @@ int main() {
                     EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&>()));
                     EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
                     EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
-                    EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
-                }
+                    EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));                    
+                });
+                catcher::allow_print() = true;
 
+                for (int i = 0; i < 1000000; ++i) {
+                // GL::parallel::For(0, 1000000, [&](size_t i) {
+                    using namespace GL::literals;
+                    using namespace std::literals::string_literals;
 
-
-                GL::parallel::For(0, 1000000, [&](size_t i) {
-                    std::vector < GL::any > types{ GL::any{ std::string{ "test" }} };
-                    std::vector < GL::any > types2{ GL::any{ GL::foot{ 100.0f }} };
+                    std::vector < GL::any > types{ GL::any{ "test"s } };
+                    std::vector < GL::any > types2{ GL::any{ 100_ft } };
+                    std::vector < GL::any > types3{ GL::any{ 100_ft }, GL::any{ 100_ft } };
+                    std::vector < GL::any > types4{ GL::any{ 100 }, GL::any{ 100 } };
+                    std::vector < GL::any > types5{ GL::any{ 'a' }, GL::any{ 'b' } };
                     std::vector < GL::any > empty_types;
 
                     EXPECT_EQ(nullptr, program_root.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
@@ -843,7 +864,31 @@ int main() {
                         EXPECT_EQ("std_string_default_std", f->operator()(empty_types).cast<std::string>()); // default
                         EXPECT_EQ("std_string_default_std", f->operator()().cast<std::string>()); // default
                     }
-                });
+
+                    if (auto const& f = program_root.try_find_callable("+", types3.begin(), types3.end()); f) {
+                        auto result = program_root.get_converters().call_with_conversions(f, types3);
+                        print(result.m_casted_type.name());
+                    }
+                    if (auto const& f = program_root.try_find_callable("+", types4.begin(), types4.end()); f) {
+                        auto result = program_root.get_converters().call_with_conversions(f, types4);
+                        print(result.m_casted_type.name());
+                    }
+                    if (auto const& f = program_root.try_find_callable("+2", types3.begin(), types3.end()); f) {
+                        auto result = program_root.get_converters().call_with_conversions(f, types3);
+                        print(result.m_casted_type.name());
+                    }
+                    if (auto const& f = program_root.try_find_callable("+2", types4.begin(), types4.end()); f) {
+                        auto result = program_root.get_converters().call_with_conversions(f, types4);
+                        print(result.m_casted_type.name());
+                    }
+                    if (auto const& f = program_root.try_find_callable("+2", types5.begin(), types5.end()); f) {
+                        auto result = program_root.get_converters().call_with_conversions(f, types5);
+                        print(result.m_casted_type.name()); // returned 'foot', meaning it called the foot version. Technically allowable, but was not as preferred as the int version.
+                    }
+
+
+
+                } // );
 
                 std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));              
                 std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());

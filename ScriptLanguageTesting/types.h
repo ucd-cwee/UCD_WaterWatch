@@ -697,7 +697,7 @@ namespace GL {
     };
 
     // atomic wrapper for any object that can store and share shared_ptrs. Handles automatic casting to nearly all variants of qualified types. 
-    class any {
+    class /*alignas(CACHE_LINE_SIZE)*/ any {
     public:
         class fast_any;
     protected:

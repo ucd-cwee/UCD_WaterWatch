@@ -1402,8 +1402,8 @@ public:
                 static_assert(0 < sizeof(T), "can't delete an incomplete type");
                 auto* ptr = (void*)((::byte*)p - sizeof(block_type));
                 auto* alloced = *(block_type**)(::byte*)(ptr);
-                unsigned int N = (alloced->length - sizeof(block_type)) / sizeof(T);
-                if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < N; ++i) (&p[i])->~T();         
+                unsigned __int64 N = (alloced->length - sizeof(block_type)) / sizeof(T);
+                if constexpr (!std::is_pod_v<T>) for (unsigned __int64 i = 0; i < N; ++i) (&p[i])->~T();
                 cpu_allocator().Free(alloced);
             }
         };
@@ -2425,8 +2425,8 @@ namespace GL {
 #if 1 // should result in better quality, but is performed on the CPU rather than the GPU. 
                 matrix out(X, Y, Z);
                 if (auto w = out.write()) {
-                    for (int i = 0; i < out.size(); ++i) {
-                        w[i] = GL::util::rand_fast(0, 1);
+                    for (unsigned int i = 0; i < out.size(); ++i) {
+                        w[i] = (T)(GL::util::rand_fast(0, 1));
                     }
                 }
                 return out;
@@ -2500,16 +2500,16 @@ namespace GL {
             return out;
         };
         template <typename T> matrix<T> matrix<T>::from_vector(const std::vector<T>& parameters) {
-            unsigned int count = parameters.size();
-            matrix out(GL::GPU::dimensions{ count, 1, 1 });
+            unsigned long long count = parameters.size();
+            matrix out(GL::GPU::dimensions{ (unsigned int)count, 1, 1 });
             count = 0;
             if (auto W = out.write())
                 std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));
             return out;
         };
         template <typename T> matrix<T> matrix<T>::from_vector(const std::vector<T>& parameters, unsigned int LenX) {
-            unsigned int count = parameters.size();
-            matrix out(GL::GPU::dimensions{ LenX, count / LenX, 1 });
+            unsigned long long count = parameters.size();
+            matrix out(GL::GPU::dimensions{ LenX, (unsigned int)(count / LenX), 1 });
             count = 0;
             if (auto W = out.write())
                 std::memcpy((T*)(&W[0]), (T*)(&parameters[0]), parameters.size() * sizeof(T));
@@ -3539,7 +3539,7 @@ namespace GL {
                 0.341f * 2.0f,
                 (1.0f - (0.341f * 2.0f)) / 2.0f
             };
-            static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 3, y = 1
+            static matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, (unsigned int)kernel.size())); // x = 3, y = 1
             static matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 3
             if constexpr (std::is_same_v<float, T>) {
                 return convolve(static_matrix_kernel<float>{ &kernel1 }).convolve(static_matrix_kernel<float>{ &kernel2 }).resize_stretch((unsigned int)std::floorf(((float)size(0) / 2.0f) + 0.5f), (unsigned int)std::floorf(((float)size(1) / 2.0f) + 0.5f), size(2));
@@ -3557,9 +3557,9 @@ namespace GL {
                 (0.341f / 2.0f) + (.186f / 2.0f),
                 (0.136f / 2.0f)
             };
-            matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, kernel.size())); // x = 5, y = 1
+            matrix_kernel<float> kernel1(matrix<float>::from_vector(kernel, (unsigned int)kernel.size())); // x = 5, y = 1
             matrix_kernel<float> kernel2(matrix<float>::from_vector(kernel, 1)); // x = 1, y = 5     
-            return cast<float>().convolve(kernel1).convolve(kernel2).resize_stretch(std::floorf(((float)size(0) / 4.0f) + 0.5f), std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
+            return cast<float>().convolve(kernel1).convolve(kernel2).resize_stretch((unsigned int)std::floorf(((float)size(0) / 4.0f) + 0.5f), (unsigned int)std::floorf(((float)size(1) / 4.0f) + 0.5f), size(2));
         };
         template <typename T> matrix<T> matrix<T>::doublesize() const {
             return resize_stretch(size(0) * 2, size(1) * 2, size(2));
@@ -3767,9 +3767,12 @@ namespace GL {
                 }
                 else {
                     slice = std::shared_ptr<T[]>(
-                        (T*)::clSVMAlloc(mem(*this)->program().get_cl_context().get(), CL_MEM_READ_WRITE,
-                            sizeof(T) * (((length + (alignment - length)) / alignment) * alignment)
-                            , alignment),
+                        (T*)::clSVMAlloc(
+                            mem(*this)->program().get_cl_context().get()
+                            , CL_MEM_READ_WRITE
+                            , (cl_uint)(sizeof(T) * (((length + (alignment - length)) / alignment) * alignment))
+                            , (cl_uint)(alignment)
+                        ),
                         [](T* p) {
                             ::clSVMFree(mem_matrix::program().get_cl_context().get(), p);
                         }
