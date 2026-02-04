@@ -107,6 +107,14 @@ namespace /* atomic_shared_ptr */ GL {
             other.data = nullptr;
         };
 
+        friend bool operator==(shared_ptr const& lhs, shared_ptr const& rhs) {
+            if (!rhs) return !lhs;
+            else if (!lhs) return false;
+            else return rhs.data == lhs.data;
+        };
+        friend bool operator!=(shared_ptr const& lhs, shared_ptr const& rhs) {
+            return !operator==(lhs, rhs);
+        };
         shared_ptr& operator=(const shared_ptr& other) {
             auto old = controlBlock;
             controlBlock = other.controlBlock;
@@ -151,7 +159,7 @@ namespace /* atomic_shared_ptr */ GL {
             return *get();
         };
         operator bool() const {
-            return (bool)controlBlock;
+            return data != nullptr;
         };
 
         control_block_base* copy_control_block() const {

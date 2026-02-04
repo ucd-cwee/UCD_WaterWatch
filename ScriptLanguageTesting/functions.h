@@ -401,7 +401,27 @@ namespace GL {
                 for (; (pos < 16) && (pos < m_signature.argument_defaults_m.size()); ++pos) {
                     inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
                 }
-                return do_call(&inputs[0]);
+
+                try {
+                    return do_call(&inputs[0]);
+                }
+                catch (std::runtime_error const& e) {
+                    auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
+                    throw std::runtime_error(err.to_string());
+                }
+                catch (std::exception const& e) {
+                    auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
+                    throw std::runtime_error(err.to_string());
+                }
+                /*catch (GL::any const& return_val) {
+                    throw return_val;
+                }
+                catch (GL::any::fast_any const& return_val) {
+                    throw return_val;
+                }*/
+                catch (...) {
+                    std::rethrow_exception(std::current_exception());
+                }
             };
             // fastest path
             any operator()() const {

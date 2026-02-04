@@ -881,7 +881,8 @@ namespace GL {
                         return *any_p.cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
                     }
                     else {
-                        throw std::runtime_error("Cannot cast to requested type");
+                        auto err = "Cannot cast from `" + any_p.m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
+                        throw std::runtime_error(err.to_string());
                     }
                 }
             };
@@ -908,7 +909,8 @@ namespace GL {
                         return *container->cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
                     }
                     else {
-                        throw std::runtime_error("Cannot cast to requested type");
+                        auto err = "Cannot cast from `" + container->m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
+                        throw std::runtime_error(err.to_string());
                     }
                 }
             };
@@ -1008,7 +1010,7 @@ namespace GL {
                             return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
                         }
                         else {
-                            auto err = "Cannot cast from void-type to " + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name();
+                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
                             throw std::runtime_error(err.to_string());
                         }
                     }
@@ -1138,7 +1140,7 @@ namespace GL {
                             return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
                         }
                         else {
-                            auto err = "Cannot cast from void-type to " + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name();
+                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
                             throw std::runtime_error(err.to_string());
                         }
                     }
@@ -1149,7 +1151,7 @@ namespace GL {
 
     public:
         template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-        decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
+        decltype(auto) cast() const { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
 
         template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
         any& cast() const noexcept { return *const_cast<any*>(this); };
@@ -1285,7 +1287,7 @@ namespace GL {
                 return any::DataCaster::DoCast<GL::shared_ptr<T>>(parent);
             };
             template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
-            operator ValueTypeT& () const noexcept { 
+            operator ValueTypeT& () const { 
                 return any::DataCaster::DoCast<ValueTypeT&>(parent);
             };
             template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
@@ -1314,7 +1316,7 @@ namespace GL {
 #pragma warning(push)
 #pragma warning(disable : 4172)
             template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
-            operator ValueTypeT& () const noexcept {
+            operator ValueTypeT& () const {
                 return any::DataCaster::DoCast<ValueTypeT&>(parent);
             };
 #pragma warning(pop)
