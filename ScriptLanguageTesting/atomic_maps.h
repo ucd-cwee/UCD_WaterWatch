@@ -282,6 +282,7 @@ namespace GL {
             objAllocator;
         atomic_epoch_allocator<_iterType>
             nodeAllocator;
+        // mutable GL::fast_shared_mutex
         mutable std::shared_mutex
             mutex;
 
@@ -1363,6 +1364,24 @@ namespace GL {
             auto g{ tree->ProtectCurrentEpoch() };
             auto iter = this->end();
             if (auto* p = this->tree->NodeFindSmallestLargerEqual(_Keyval)) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        }
+        iterator // returns an iterator to the last item in the tree
+            last() const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = tree->GetLast()) {
+                iter.state._ptr = p;
+            }
+            return iter;
+        }
+        iterator // returns an iterator to the first item in the tree
+            first() const {
+            auto g{ tree->ProtectCurrentEpoch() };
+            auto iter = this->end();
+            if (auto* p = tree->GetFirst()) {
                 iter.state._ptr = p;
             }
             return iter;

@@ -135,6 +135,14 @@ namespace GL {
         size_t hash{ 
             (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | 0x8000000000000000
         }; // e.g. int, long, std::string, or a (registered) scripted type
+        static size_t any_hash_code() {
+            static size_t out{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+            return out;
+        };
+        static size_t void_hash_code() {
+            static size_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+            return out;
+        };
 
     public:
         type() = default;
@@ -170,13 +178,13 @@ namespace GL {
         };
 
         bool is_temp() const noexcept { return ((hash & 0x4000000000000000) > 0); };
-        bool is_const() const noexcept { return is_temp() ? false : ((hash & 0x1000000000000000) > 0); };
-        bool is_ref() const noexcept { return is_temp() ? false : ((hash & 0x2000000000000000) > 0); };
-        bool is_const_ref() const noexcept { return is_temp() ? false : ((hash & 0x3000000000000000) == 0x3000000000000000); };
+        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & 0x1000000000000000) > 0); };
+        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & 0x2000000000000000) > 0); };
+        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & 0x3000000000000000) == 0x3000000000000000); };
         bool is_base() const noexcept {  return 0 == (hash & ~0x8FFFFFFFFFFFFFFF); };
-        bool is_void() const noexcept { return get_base_hash() == (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2); };
+        bool is_void() const noexcept { return get_base_hash() == void_hash_code(); };
         bool is_cpp_type() const noexcept { return (hash & 0x8000000000000000) > 0; };
-        bool is_any() const noexcept { return get_base_hash() == (util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2); };
+        bool is_any() const noexcept { return get_base_hash() == any_hash_code(); };
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
         // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
@@ -257,26 +265,28 @@ namespace GL {
                 return true;
             }
 
-            if (from.match_base_hash(to) && allow_polymorphic) {
-                // conversion uses polymorphism. 
-                // cannot be used for a base cast (requires a copy in some way)
-                if (to.is_base()) return false;
+            if (allow_polymorphic) {
+                if (from.match_base_hash(to)) {
+                    // conversion uses polymorphism. 
+                    // cannot be used for a base cast (requires a copy in some way)
+                    if (to.is_base()) return false;
 
-                if (from.is_temp()) {
-                    return to.is_temp() || to.is_const_ref();
+                    if (from.is_temp()) {
+                        return to.is_temp() || to.is_const_ref();
+                    }
+
+                    // cannot cast-away the const-ness
+                    if (from.is_const() && !to.is_const()) return false;
+
+                    // conversion is possible
+                    if (to.is_const_ref()) return true;
+
+                    // T& cannot cast to T or T&& without a conversion function
+                    if (from.is_ref() && to.is_temp()) return false;
+
+                    // Otherwise OK
+                    return true;
                 }
-
-                // cannot cast-away the const-ness
-                if (from.is_const() && !to.is_const()) return false;
-
-                // conversion is possible
-                if (to.is_const_ref()) return true;
-
-                // T& cannot cast to T or T&& without a conversion function
-                if (from.is_ref() && to.is_temp()) return false;
-
-                // Otherwise OK
-                return true;
             }
 
             if (from.is_any() || to.is_any()) {

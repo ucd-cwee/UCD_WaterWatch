@@ -841,12 +841,12 @@ int main() {
                         EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference | GL::type::Const, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
                         EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
 
-                        EXPECT_EQ(nullptr, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&>()));
-                        EXPECT_EQ(nullptr, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&>()));
-                        EXPECT_EQ(nullptr, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&>()));
-                        EXPECT_EQ(nullptr, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
-                        EXPECT_EQ(nullptr, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
-                        EXPECT_EQ(nullptr, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
+                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&>()));
+                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&>()));
+                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&>()));
+                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
+                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
+                        EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
                         });
                     catcher::allow_print() = true;
 
@@ -3364,7 +3364,7 @@ int main() {
         }
     });
 
-#if 1
+#if 0
     // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
     if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 

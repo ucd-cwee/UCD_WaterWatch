@@ -224,6 +224,8 @@ namespace GL {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
                 using ResultType = GL::atomic_shared_ptr<T>;
                 using ResultForInputType = ResultType; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
+                //GL::epoch_search_tree<std::array<ResultForInputType, numCategories>, size_t>
+                    //_current_cache;
                 GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
                     _current_cache; // cache uses atomic_map since it may delete items as well as append items. Needs to be sorted since we "pop" the first item frequently. 
                 std::atomic<long>
@@ -268,13 +270,11 @@ namespace GL {
                 };
 
                 // Try to copy an item from the cache.
-                template<int category> __declspec(noinline) GL::shared_ptr<T> TryGetCache(size_t cache_version) {
-                    GL::shared_ptr<T> out{};
+                template<int category> __declspec(noinline) GL::fast_shared_ptr<T> TryGetCache(size_t cache_version) {
+                    GL::fast_shared_ptr<T> out{};
                     _current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
                         if (curr_version >= cache_version) {
-                            if (auto& p = cache[category]; p) {
-                                out = p.load();
-                            }
+                            out = cache[category].load_fast();                            
                         }
                     });
                     return out;
@@ -365,6 +365,7 @@ namespace GL {
                     ignore_templates = 1,
                     only_templates = 2,
                     free_cast_only = 4,
+                    no_polymorphism = 8,
                 };
                 template<typename iter> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter from_iter, iter const& from_end, int search_mode = 0) const {
                     return for_each(name, [&](GL::Proxy_Function const& f)->bool {
@@ -471,7 +472,7 @@ namespace GL {
 
                 template<typename iter> GL::Proxy_Function const& try_find_callable(GL::type const& return_type, iter from_iter, iter const& from_end, int search_mode = 0) const {
                     return for_each([&](GL::Proxy_Function const& f)->bool {
-                        if (!f->m_signature.returns_m.can_free_cast(return_type)) {
+                        if (!f->m_signature.returns_m.can_free_cast(return_type, (search_mode & no_polymorphism) == 0 )) {
                             return false;
                         }
 
@@ -532,11 +533,17 @@ namespace GL {
                             if (this_t.can_free_cast(t)) {
                                 this_t = t;
                             }
+                            else if (auto& x = srce.try_find_callable(t, &this_t, &this_t + 1, free_cast_only | no_polymorphism); x) { // was originally "free_cast_only" only, and did not perform second loop
+                                converters.push_back(&x);
+                                this_t = t;
+                                state &= x->m_signature.state_m;
+                            }
                             else if (auto& x = srce.try_find_callable(t, &this_t, &this_t + 1, free_cast_only); x) {
                                 converters.push_back(&x);
                                 this_t = t;
                                 state &= x->m_signature.state_m;
                             }
+
  /*                           else if (auto& x = srce.try_find_callable("", &this_t, &this_t + 1, 0); x) {
                                 converters.push_back(&x);
                                 this_t = t;
@@ -729,7 +736,7 @@ namespace GL {
 
                             // for each neighbor of the extracted vertex... 
                             for (auto& x : AllConversions) {                                
-                                if (smallestDistanceNode->thisVertexType.can_free_cast(x.first)) {
+                                if (smallestDistanceNode->thisVertexType.can_free_cast(x.first, false)) { // was originally "true" 
                                     for (auto fSecondIter = x.second.cbegin(), fSecondEnd = x.second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
                                         auto& connection = *fSecondIter;
                                         if (connection.second != nullptr) {
@@ -780,15 +787,13 @@ namespace GL {
                         temp_alloc;
                     auto converters
                         = CreateConversionPaths(temp_alloc, From);
+                    GL::type t;
                     for (auto& To : converters) 
                         if (To.second) {
                             if (auto p = To.second->bestPath->make_converter(From, *this)) {
-                                // out[To.first] = p;
-                                out[p->m_signature.returns_m] = p;
+                                t = p->m_signature.returns_m;
+                                out[t] = std::move(p);
                             }
-                            //else {
-                                //p = To.second->bestPath->make_converter(From, *this);
-                            //}
                         }
                     return out;
                 };
@@ -817,7 +822,7 @@ namespace GL {
                 Converter& operator=(Converter&&) = default;
                 ~Converter() = default;
 
-                GL::shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false) {
+                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false) {
                     if (depth >= 2) return {};
                     if (auto cached = converters.TryGetCache<0>(constructors_version.load()); cached) {
                         if (auto f1 = cached->find(from), e1 = cached->end(); f1 != e1) {
@@ -835,13 +840,13 @@ namespace GL {
                                 if (auto f2 = f1->second.find(to), e2 = f1->second.end(); f2 != e2) {
                                     // we have made (or tried to make) the converter for this before. 
                                     if (f2->second) {
-                                        return f2->second.load();
+                                        return f2->second.load_fast();
                                     }
                                     else if (in_function && (to.is_base() || to.is_const_ref())) {
                                         return try_get_converter(from, to | GL::type::Temporary, 0, true);
                                     }
                                     else {
-                                        return GL::shared_ptr<GL::details::Proxy_Function_Base>{ nullptr };
+                                        return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>{};
                                     }
                                 }
                                 else {
@@ -854,8 +859,8 @@ namespace GL {
                                             GL::any casted = From;
                                             casted.m_casted_type = To;
                                             return casted;
-                                            }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
-                                        return f1->second[to].load();
+                                        }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                        return f1->second[to].load_fast();
                                     }
 
                                     // next-best-case scenario, we are perfect forwarding a temp-type to a base type. 
@@ -865,8 +870,8 @@ namespace GL {
                                                 GL::any casted = From;
                                                 casted.m_casted_type = To;
                                                 return casted;
-                                                }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
-                                            return f1->second[to].load();
+                                            }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                            return f1->second[to].load_fast();
                                         }
                                     }
 
@@ -879,7 +884,7 @@ namespace GL {
 
                                                 if (func->m_signature.returns_m.can_free_cast(to, false)) {
                                                     f1->second[to] = std::move(func);
-                                                    return f1->second[to].load();
+                                                    return f1->second[to].load_fast();
                                                 }
 
                                                 if (func->m_signature.returns_m.can_free_cast(to)) {
@@ -910,7 +915,7 @@ namespace GL {
                                     }
                                     if (options.size() > 0) {
                                         f1->second[to] = std::move(options.begin()->second);
-                                        return f1->second[to].load();
+                                        return f1->second[to].load_fast();
                                     }
                                 }
 
@@ -934,7 +939,7 @@ namespace GL {
                                             input.m_casted_type = To;
                                             return input;
                                             }, GL::function_signature::Cached | p->m_signature.state_m, {}, { { "From", from } }, to);
-                                        return f1->second[to].load();
+                                        return f1->second[to].load_fast();
                                     }
                                 }
 #if 0
@@ -972,7 +977,7 @@ namespace GL {
                                 return try_get_converter(from, to | GL::type::Temporary, 0, true);
                             }
                             else {
-                                return GL::shared_ptr<GL::details::Proxy_Function_Base>{ nullptr };
+                                return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>{};
                             }
                             
                         }
@@ -994,9 +999,9 @@ namespace GL {
                     }
                 };
                 bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false) {
-                    if (try_get_converter(from, to, 0, in_function) != nullptr) { return true; }
+                    if (try_get_converter(from, to, 0, in_function)) { return true; }
                     if (in_function && (to.is_base() || to.is_const_ref())) {
-                        if (try_get_converter(from, to | GL::type::Temporary, 0, true) != nullptr) {
+                        if (try_get_converter(from, to | GL::type::Temporary, 0, true)) {
                             return true;
                         }
                     }
@@ -1035,7 +1040,7 @@ namespace GL {
                         params.reserve(16);
                         for (; (begin != end) && (pos < 16); ++begin, ++pos) {
                             if (!const_cast<any::fast_any*>(&*begin)->can_free_cast(func->m_signature.argument_types_m[pos])) {
-                                GL::shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) };
+                                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) };
                                 if (conversion_func) {
                                     //std::cout << "converting from " << const_cast<any::fast_any*>(&*begin)->m_casted_type.name() << " to " << func->m_signature.argument_types_m[pos].name() << " using " << conversion_func->m_signature.display() << std::endl;
                                     params.push_back(conversion_func->operator()(const_cast<any::fast_any*>(&*begin), const_cast<any::fast_any*>(&*begin) + 1).fast());
@@ -2213,7 +2218,7 @@ namespace GL {
                     return Converter(constructors, converters, converter_lock, constructors_version);
                 };
 
-                GL::shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, bool in_function = false) {
+                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, bool in_function = false) {
                     return get_converters().try_get_converter(from, to, 0, in_function);
                 };
                 bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false) {
