@@ -496,7 +496,7 @@ int main() {
 
                     if (1) {
                         GL::any::fast_any cu_ft = program_root.call("*", { GL::any(GL::foot(100)).fast(), program_root.call("*", { GL::any(GL::foot(100)).fast(), GL::any(GL::foot(100)).fast() }).fast() }).fast();
-                        print(program_root.call("pow", { cu_ft, GL::any(1.0/3.0).fast() }).cast<GL::value>()); // note that it says m^1.0000 instead of m or ft. The cubic-root was imperfect though very, very close.
+                        //print(program_root.call("pow", { cu_ft, GL::any(1.0/3.0).fast() }).cast<GL::value>()); // note that it says m^1.0000 instead of m or ft. The cubic-root was imperfect though very, very close.
                     }
 
                     if (1) {
@@ -531,7 +531,7 @@ int main() {
                             d
                         }).fast();
                         
-                        print(program_root.call("to_string", { x }).cast<GL::string>());
+                        //print(program_root.call("to_string", { x }).cast<GL::string>());
                     }
                 }
 
@@ -3364,9 +3364,9 @@ int main() {
         }
     });
 
-#if 0
+#if 1
     // Conway's Game of Life, using the GPU. Many times faster than previous approach. From 20-30 fps to 1000-1800 fps. 
-    if (0) {
+    if (1) {
         // reduces the size requirement of the arena memory pool. In exchange though, the largest single allocation is reduced to this same number. Application-dependant decision. 
         // GL::GPU::matrix<float>::maximum_allocation_size() /= 16; // = 1; // /= 16; // 16
         while (0) {
