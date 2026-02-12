@@ -2912,6 +2912,7 @@ namespace GL {
 		}
 
 
+
 #if 0
 		std::pair<epoch_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
 			NodeFindLargestSmallerEqual(keyType key) {
@@ -3020,11 +3021,113 @@ namespace GL {
 				else return nullptr;
 			}
 		};
-		size_t size() const {
+		static epoch_search_treeNode*
+			GetPrevLeaf(epoch_search_treeNode* node, locker& locking) {
+			if (!node) return nullptr;
+			epoch_search_treeNode*
+				prev;
+			if (node->lastChild()) {
+				while (true) {
+					if (prev = node->lastChild(); prev) {
+						node = prev;
+					}
+					else {
+						break;
+					}					
+				}
+				return node;
+			}
+			else {
+				while (node && (node->prev() == nullptr)) {
+					node = node->parent;
+				}
+				if (node) {
+					node = node->prev();
+					while (true) {
+						if (prev = node->lastChild(); prev) {
+							node = prev;
+						}
+						else {
+							break;
+						}
+					}
+					return node;
+				}
+				else {
+					return nullptr;
+				}
+			}
+		};	// goes through all leaf nodes of the tree;
+
+		size_t 
+			size() const {
 			auto locked{ std::shared_lock(mut) };
 			return (size_t)count;
 		};
+		void
+			clear() {
+			while (true) {
+				auto [node, locked] = this->GetRoot();
+				if (!node) { break; }
+				node = GetNextLeaf(node, locked);
+				if (!node) { break; }
+				Remove(node, locked);
+			}
+		};
+		template <typename Func> epoch_search_treeNode* // same as operator[], except it will call the provided function to initialize the value if no value was found. 
+			get_or_make(const keyType& time, Func const& func, bool* ExistedAlready = nullptr) {
+			auto g{ ProtectCurrentEpoch() };
+			if (auto [node, locked] = NodeFind(time, false); node) {
+				if (ExistedAlready) *ExistedAlready = true;
+				return node;
+			}
+			if (ExistedAlready) *ExistedAlready = false;
+			return this->Add(func(), time);
+		};
+		template <typename Func> __declspec(noinline) bool // removes the first (smallest key) node in the map if func(key, object) returns true
+			pop_front_if(Func const& func) {
+			auto g{ ProtectCurrentEpoch() };
 
+			if (1) {
+				auto locked = lock_shared();
+				if (epoch_search_treeNode* node = GetNextLeaf(GetRoot(locked), locked)) {
+					if (func(node->key, *node->object())) {
+						// need to do removal
+					}
+					else {
+						return false;
+					}
+				}
+			}
+			
+			if (1) {
+				auto locked = lock();
+				if (epoch_search_treeNode* node = GetNextLeaf(GetRoot(locked), locked)) {
+					if (func(node->key, *node->object())) {
+						Remove(node, locked);
+						return true;
+					}
+					else {
+						return false;
+					}
+				}
+			}
+
+			return false;
+		};
+		template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
+			do_at_end(Func const& func) {
+			auto g{ ProtectCurrentEpoch() };
+
+			auto locked = lock_shared();
+			if (epoch_search_treeNode* p = GetPrevLeaf(GetRoot(locked), locked); p) {
+				func(p->key, *p->object());
+				return true;
+			}
+			else {
+				return false;
+			}
+		};
 	private:
 		epoch_search_treeNode*
 			AllocNode(bool is_leaf) {

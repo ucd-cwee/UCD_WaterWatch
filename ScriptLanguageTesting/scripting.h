@@ -224,10 +224,10 @@ namespace GL {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
                 using ResultType = GL::atomic_shared_ptr<T>;
                 using ResultForInputType = ResultType; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
-                //GL::epoch_search_tree<std::array<ResultForInputType, numCategories>, size_t>
-                    //_current_cache;
-                GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
+                GL::epoch_search_tree<std::array<ResultForInputType, numCategories>, size_t>
                     _current_cache; // cache uses atomic_map since it may delete items as well as append items. Needs to be sorted since we "pop" the first item frequently. 
+                //GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
+                    //_current_cache; 
                 std::atomic<long>
                     _working{ 0 };
             public:
@@ -239,7 +239,6 @@ namespace GL {
                 ~TypedCache() = default;
 
                 void unsafe_unload() {                    
-                    _current_cache.unsafe_unload();
                     _current_cache.clear();
                 };
 
@@ -256,10 +255,10 @@ namespace GL {
                         //    }
                         //});
                         //if (!success) {
-                            std::array<ResultForInputType, numCategories>& got = _current_cache.get_or_make(cache_version, [&]()->std::array<ResultForInputType, numCategories> {
+                            std::array<ResultForInputType, numCategories>& got = *_current_cache.get_or_make(cache_version, [&]()->std::array<ResultForInputType, numCategories> {
                                 std::array<ResultForInputType, numCategories> out;                                
                                 return out;
-                            });
+                            })->object();
                             got[category] = std::move(result);
                             _current_cache.pop_front_if([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) -> bool {
                                 return curr_version < cache_version;
