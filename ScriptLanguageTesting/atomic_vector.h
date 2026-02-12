@@ -4,8 +4,6 @@
 #include <array>
 #include <ShlDisp.h>
 #include <winnt.h>
-// #include "../GpuProgramming/matrix.h"
-// #include <exception>
 #include <stdexcept>
 
 // Atomic Vector

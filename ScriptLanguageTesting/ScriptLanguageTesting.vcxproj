@@ -149,11 +149,12 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <StringPooling>true</StringPooling>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -174,6 +175,7 @@
     <ClCompile Include="atomic_shared_ptr.cpp" />
     <ClCompile Include="datetime.cpp" />
     <ClCompile Include="Parallel.cpp" />
+    <ClCompile Include="scripting.cpp" />
     <ClCompile Include="ScriptLanguageTesting.cpp" />
     <ClCompile Include="shared_ptr.cpp" />
     <ClCompile Include="Source.cpp" />

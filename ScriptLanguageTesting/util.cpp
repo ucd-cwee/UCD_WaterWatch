@@ -1,12 +1,14 @@
-#include "util.h"
-#include "atomic_vector.h"
-#include "ticket_dispensor.h"
-#include "Stopwatch.h"
+#pragma once
+#pragma hdrstop
 #include <chrono>
 #include <memory>
 #include <thread>
 #include <random>
 #include <execution>
+#include "util.h"
+#include "atomic_vector.h"
+#include "ticket_dispensor.h"
+#include "stopwatch.h"
 
 namespace GL {
     namespace util {
@@ -18,7 +20,7 @@ namespace GL {
             })};
             return ticket;
         };
-
+#if 0
         template <void (*Func)(void)> class Taskable {
             std::atomic<bool>
                 alive;
@@ -64,8 +66,9 @@ namespace GL {
                 wakeCondition.notify_one();
             };
         };
+#endif
         long long get_current_epoch() {
-#if 1
+#if 0
             static std::atomic<long long> _epoch{ clock::ms() };
             struct Wrap {
                 __declspec(noinline) static void UpdateEpoch(void) {
@@ -95,11 +98,10 @@ namespace GL {
          * debugging, and should not be used to derive the template argument
          */
         size_t get_hardware_thread_count() {
-            // return ::__std_parallel_algorithms_hw_threads();
             return std::thread::hardware_concurrency();
         }
 
-
+#if 1
         static auto& rand_impl() {
             class impl_rand {
             public:
@@ -263,27 +265,20 @@ namespace GL {
             static impl_rand random_generator;
             return random_generator;
         };
+#endif
         // 0..1
         double rand() {
             return rand_impl().Random(0.0, 1.0);
         };
         // 0..max or max..0
         double rand(double max) {
-            if (max >= 0) {
-                return rand_impl().Random(0.0, max);
-            }
-            else {
-                return rand_impl().Random(max, 0.0);
-            }
+            if (max >= 0) return rand_impl().Random(0.0, max);            
+            else return rand_impl().Random(max, 0.0);            
         };
         // min..max or max..min
         double rand(double min, double max) {
-            if (max >= min) {
-                return rand_impl().Random(min, max);
-            }
-            else {
-                return rand_impl().Random(max, min);
-            }
+            if (max >= min) return rand_impl().Random(min, max);            
+            else return rand_impl().Random(max, min);            
         };
 
         // 0..1
@@ -292,21 +287,13 @@ namespace GL {
         };
         // 0..max or max..0
         double rand_fast(double max) {
-            if (max >= 0) {
-                return rand_impl().FastRandom(0.0, max);
-            }
-            else {
-                return rand_impl().FastRandom(max, 0.0);
-            }
+            if (max >= 0) return rand_impl().FastRandom(0.0, max);            
+            else return rand_impl().FastRandom(max, 0.0);            
         };
         // min..max or max..min
         double rand_fast(double min, double max) {
-            if (max >= min) {
-                return rand_impl().FastRandom(min, max);
-            }
-            else {
-                return rand_impl().FastRandom(max, min);
-            }
+            if (max >= min) return rand_impl().FastRandom(min, max);            
+            else return rand_impl().FastRandom(max, min);            
         };
 
     };

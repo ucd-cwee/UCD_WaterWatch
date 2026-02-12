@@ -162,6 +162,10 @@ namespace GL {
         };
         // atomicly swaps this type with a new hash and qualifier(s)
         void set_qualifiers(size_t qualifiers) {
+            if ((qualifiers & Temporary) > 0) {
+                qualifiers &= ~Const;
+                qualifiers &= ~Reference;
+            }
             InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 60) & impl::cached_type::MAGIC_MASK1));
         };
 
@@ -230,7 +234,7 @@ namespace GL {
 
     private:
         // Returns true if the types are similar enough to be casted for free (0 cost)
-        __declspec(noinline) static bool can_free_cast(type const& from, type const& to) {
+        __declspec(noinline) static bool can_free_cast(type const& from, type const& to, bool allow_polymorphic = true) {
             if (from.hash == to.hash) return true;
 
             if (from.get_base_hash() == to.get_base_hash()) {
@@ -253,7 +257,7 @@ namespace GL {
                 return true;
             }
 
-            if (from.match_base_hash(to)) {
+            if (from.match_base_hash(to) && allow_polymorphic) {
                 // conversion uses polymorphism. 
                 // cannot be used for a base cast (requires a copy in some way)
                 if (to.is_base()) return false;
@@ -283,8 +287,8 @@ namespace GL {
         };
     public:
         // Returns true if the types are similar enough to be casted for free (0 cost)
-        bool can_free_cast(type const& to) const { 
-            return can_free_cast(*this, to); 
+        bool can_free_cast(type const& to, bool allow_polymorphic = true) const {
+            return can_free_cast(*this, to, allow_polymorphic);
         };
         // Returns true if the types are the same foundational type (may not be zero cost to convert)
         bool can_cast(type const& to) const {
@@ -327,13 +331,18 @@ namespace GL {
     };
 
     // get the type information for a c++ type.
-    template<typename T> __forceinline static GL::type type_of() noexcept {
-        using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
-        static constexpr size_t temp_modifier{ std::is_rvalue_reference<T>::value ? type::Qualifiers::Temporary : 0 };
-        static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
-        static constexpr size_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
-        static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | temp_modifier | type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
-        return Base;
+    template<typename T> /*__forceinline*/__declspec(noinline) static GL::type type_of() noexcept {
+        using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*        
+        if constexpr (std::is_rvalue_reference<T>::value) {
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((size_t)((size_t)type::Qualifiers::Temporary | (size_t)type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
+            return Base;
+        }
+        else {
+            static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
+            static constexpr size_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (size_t)type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
+            return Base;
+        }
     };
 
     namespace type_erasure {

@@ -473,7 +473,7 @@ namespace GL {
     typedef GL::shared_ptr<details::Proxy_Function_Base> Proxy_Function;
 
     namespace details {        
-        auto cast_any(any::fast_any* const& p) { return p->cast(); }
+        __forceinline auto cast_any(any::fast_any* const& p) { return p->cast(); }
         template <typename F, std::size_t... Is> auto unpack_and_call_helper_returns(F const& func, any::fast_any** arr_ptr, std::index_sequence<Is...>) {
             return func(cast_any(arr_ptr[Is])...);
         };
@@ -1531,7 +1531,7 @@ namespace GL {
     };
 
     // Convert nearly any function or function pointer to a callable, generic proxy function. 
-    template<typename Func> __forceinline Proxy_Function make_callable(
+    template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         std::vector<any>&& defaults = {}
@@ -1594,7 +1594,7 @@ namespace GL {
     };
 
     // Convert nearly any function or function pointer to a callable, generic proxy function. 
-    template<typename Func> __forceinline Proxy_Function make_callable(
+    template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
         Func&& func, 
         size_t stateModifier, 
@@ -1605,7 +1605,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> __forceinline Proxy_Function make_callable(
+    template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         size_t stateModifier,
@@ -1626,7 +1626,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> __forceinline Proxy_Function make_callable(
+    template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         size_t stateModifier,
@@ -1649,24 +1649,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> __forceinline Proxy_Function make_callable(
-        GL::string const& name,
-        Func&& func,
-        size_t stateModifier,
-        std::vector<any>&& defaults,
-        std::vector<GL::string> const& argument_names
-    ) {
-        auto out = make_callable(name, std::move(func), stateModifier, std::move(defaults));
-
-        if (argument_names.size() > 0) {
-            for (int i = 0; (i < argument_names.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
-                out->m_signature.argument_names_m[i] = argument_names[i];
-            }
-        }
-        return out;
-    };
-
-    template<typename Func> __forceinline Proxy_Function make_callable(
+    template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         std::vector<any>&& defaults,
@@ -1686,7 +1669,7 @@ namespace GL {
         return out;
     };
 
-    template<typename Func> __forceinline Proxy_Function make_callable(
+    template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
         Func&& func,
         std::vector<any>&& defaults,
@@ -1704,22 +1687,6 @@ namespace GL {
             }
             out->m_signature.returns_m = returnType;
             out->m_signature.evaluate_if_template_function();
-        }
-        return out;
-    };
-
-    template<typename Func> __forceinline Proxy_Function make_callable(
-        GL::string const& name,
-        Func&& func,
-        std::vector<any>&& defaults,
-        std::vector<GL::string> const& argument_names
-    ) {
-        auto out = make_callable(name, std::move(func), std::move(defaults));
-
-        if (argument_names.size() > 0) {
-            for (int i = 0; (i < argument_names.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
-                out->m_signature.argument_names_m[i] = argument_names[i];
-            }
         }
         return out;
     };
@@ -1763,7 +1730,7 @@ namespace GL {
     // Creates a Proxy_Function whose job is to convert from "From" types to "To" types. 
     // Supports static conversions (e.g. double to int) and polymorphic conversions (e.g. GL::foot& to GL::value&)
     template<typename From_Requested, typename To_Requested>
-    __forceinline Proxy_Function make_converter() {
+    __declspec(noinline) Proxy_Function make_converter() {
         using From = typename std::decay< From_Requested >::type;
         using To = typename std::decay< To_Requested >::type;
 
@@ -1788,8 +1755,8 @@ namespace GL {
             if constexpr (is_convertable) {
                 out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                     return static_cast<To>(from);
-                }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
-                out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                }, {}, { { "From", GL::type_of< From const&>() } }, GL::type_of<To>() | GL::type::Temporary);
+                out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                 out->m_signature.state_m |= GL::function_signature::NoCost;
             }
             else {
@@ -1814,14 +1781,14 @@ namespace GL {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return To((float)from);
                         }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
-                        out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                        out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
                     else {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return static_cast<To>(from);
-                        }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference }}, GL::type_of<To>() | GL::type::Temporary);
-                        out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
+                        }, {}, { { "From", GL::type_of<From const&>() }}, GL::type_of<To>() | GL::type::Temporary);
+                        out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
                 }

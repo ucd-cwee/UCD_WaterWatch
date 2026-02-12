@@ -1,4 +1,5 @@
 #pragma once
+#pragma hdrstop
 
 #ifndef NOMINMAX 
 #define NOMINMAX
@@ -14,8 +15,8 @@
 namespace GL {
     // utilities
     namespace util {
-        inline static void hash(size_t& seed) { };
-        template <typename T, typename... Rest> inline static void hash(size_t& seed, T const& v, Rest const&... rest) {
+        __forceinline static void hash(size_t& seed) { };
+        template <typename T, typename... Rest> __forceinline static void hash(size_t& seed, T const& v, Rest const&... rest) {
             if constexpr (std::is_same_v<size_t, typename std::remove_reference_t<typename std::decay<T>>>) {
                 seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
             }
@@ -28,7 +29,7 @@ namespace GL {
             }
             hash(seed, rest...);
         };
-        template <typename T, typename... Rest> inline static size_t inline_hash(T const& v, Rest const&... rest) {
+        template <typename T, typename... Rest> __forceinline static size_t inline_hash(T const& v, Rest const&... rest) {
             size_t seed{ 0 };
             hash(seed, v, rest...);
             return seed;

@@ -1,3 +1,4 @@
+#if 0
 // see: https://github.com/elbeno/constexpr/tree/master/src/include
 #pragma region constexpr math
 
@@ -1265,3 +1266,4 @@ namespace cx
 }
 
 #pragma endregion
+#endif
