@@ -222,7 +222,7 @@ namespace GL {
             // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
             template <typename T, int numCategories = 4> class TypedCache {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
-                using ResultForInputType = GL::atomic_shared_ptr<T>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
+                using ResultForInputType = GL::shared_ptr<T>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
                 GL::epoch_search_tree<std::array<ResultForInputType, numCategories>, size_t>
                 // GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
                     _current_cache; 
@@ -244,21 +244,25 @@ namespace GL {
                     _current_cache.get_or_make(cache_version, [&]()->std::array<ResultForInputType, numCategories> {
                         std::array<ResultForInputType, numCategories> out;                                
                         return out;
-                    })->object()->operator[](category) = std::move(result); // .compare_exchange(nullptr, std::move(result)); //
+                    })->object()->operator[](category).compare_exchange(nullptr, result.release_control_block()); // .compare_exchange(nullptr, std::move(result)); //
                     _current_cache.pop_front_if([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) -> bool {
                         return curr_version < cache_version;
                     });
                 };
 
                 // Try to copy an item from the cache.
-                template<int category> __declspec(noinline) GL::fast_shared_ptr<T> TryGetCache(size_t cache_version) {
-                    GL::fast_shared_ptr<T> out{};
+                template<int category> __declspec(noinline) GL::shared_ptr<T>& TryGetCache(size_t cache_version) {
+                    GL::shared_ptr<T>* out{ nullptr };
                     _current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
                         if (curr_version >= cache_version) {
-                            out = cache[category].load_fast();                            
+                            out = &cache[category];                            
                         }
                     });
-                    return out;
+                    if (out) return *out;
+                    else {
+                        static GL::shared_ptr<T> temp{ nullptr };
+                        return temp;
+                    }
                 };
 
             };
@@ -805,7 +809,7 @@ namespace GL {
 
                 GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false) {
                     if (depth >= 2) return {};
-                    if (auto cached = converters.TryGetCache<0>(constructors_version.load()); cached) {
+                    if (auto& cached = converters.TryGetCache<0>(constructors_version.load()); cached) {
                         if (auto f1 = cached->find(from), e1 = cached->end(); f1 != e1) {
                             for (int attemptN = 0; attemptN < 2; ++attemptN) {
                                 if (attemptN == 1) {

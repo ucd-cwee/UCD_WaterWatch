@@ -3,6 +3,8 @@
 #include <functional>
 #include <atomic>
 #include <memory>
+#include <ShlDisp.h>
+#include <winnt.h>
 #include "../GpuProgramming/matrix.h"
 
 namespace /* atomic_shared_ptr */ GL {
@@ -82,15 +84,17 @@ namespace /* atomic_shared_ptr */ GL {
         };
 
         bool compare_exchange(control_block_base* const expected, control_block_base* released_control_block) {
-            control_block_base* oldP = InterlockedCompareExchangePointer(reinterpret_cast<PVOID*>(&controlBlock), released_control_block, expected);
+            control_block_base* oldP = reinterpret_cast<control_block_base*>(InterlockedCompareExchangePointer(reinterpret_cast<PVOID*>(&controlBlock), released_control_block, expected));
             if (oldP == expected) {
                 // exchange was successful
                 if (oldP) control_block_base::DeferredDeletion(oldP);   
-                data = released_control_block ? released_control_block->data : nullptr;
+                data = reinterpret_cast<T*>(released_control_block ? released_control_block->data : nullptr);
+                return true;
             }
             else {
                 // exchange failed
                 if (released_control_block) control_block_base::DeferredDeletion(released_control_block);
+                return false;
             }
         };
 
