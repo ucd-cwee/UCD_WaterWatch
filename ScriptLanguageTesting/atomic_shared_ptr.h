@@ -80,6 +80,20 @@ namespace /* atomic_shared_ptr */ GL {
             out.data = reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr);
             return out;
         };
+
+        bool compare_exchange(control_block_base* const expected, control_block_base* released_control_block) {
+            control_block_base* oldP = InterlockedCompareExchangePointer(reinterpret_cast<PVOID*>(&controlBlock), released_control_block, expected);
+            if (oldP == expected) {
+                // exchange was successful
+                if (oldP) control_block_base::DeferredDeletion(oldP);   
+                data = released_control_block ? released_control_block->data : nullptr;
+            }
+            else {
+                // exchange failed
+                if (released_control_block) control_block_base::DeferredDeletion(released_control_block);
+            }
+        };
+
         shared_ptr(const shared_ptr& other) {
             controlBlock = other.controlBlock;
             data = other.data;

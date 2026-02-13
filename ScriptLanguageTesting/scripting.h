@@ -222,14 +222,10 @@ namespace GL {
             // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
             template <typename T, int numCategories = 4> class TypedCache {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
-                using ResultType = GL::atomic_shared_ptr<T>;
-                using ResultForInputType = ResultType; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
+                using ResultForInputType = GL::atomic_shared_ptr<T>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
                 GL::epoch_search_tree<std::array<ResultForInputType, numCategories>, size_t>
-                    _current_cache; // cache uses atomic_map since it may delete items as well as append items. Needs to be sorted since we "pop" the first item frequently. 
-                //GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
-                    //_current_cache; 
-                std::atomic<long>
-                    _working{ 0 };
+                // GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
+                    _current_cache; 
             public:
                 TypedCache() = default;
                 TypedCache(TypedCache const&) = delete;
@@ -245,27 +241,13 @@ namespace GL {
                 // Insert an item into the cache.
                 template<int category> __declspec(noinline) void EmplaceCache(size_t cache_version, GL::shared_ptr<T> result) {
                     auto g{ _current_cache.ProtectCurrentEpoch() };
-                    //bool success = false;
-                    ++_working;
-                    //while (!success) {
-                        //(void)_current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
-                        //    if (curr_version > cache_version) {
-                        //        cache[category] = std::move(result);
-                        //        success = true;
-                        //    }
-                        //});
-                        //if (!success) {
-                            std::array<ResultForInputType, numCategories>& got = *_current_cache.get_or_make(cache_version, [&]()->std::array<ResultForInputType, numCategories> {
-                                std::array<ResultForInputType, numCategories> out;                                
-                                return out;
-                            })->object();
-                            got[category] = std::move(result);
-                            _current_cache.pop_front_if([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) -> bool {
-                                return curr_version < cache_version;
-                            });
-                        //}
-                    //}
-                    --_working;
+                    _current_cache.get_or_make(cache_version, [&]()->std::array<ResultForInputType, numCategories> {
+                        std::array<ResultForInputType, numCategories> out;                                
+                        return out;
+                    })->object()->operator[](category) = std::move(result); // .compare_exchange(nullptr, std::move(result)); //
+                    _current_cache.pop_front_if([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) -> bool {
+                        return curr_version < cache_version;
+                    });
                 };
 
                 // Try to copy an item from the cache.
