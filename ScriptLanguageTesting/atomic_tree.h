@@ -2248,7 +2248,7 @@ namespace GL {
 	template< class objType, class keyType, int maxChildrenPerNode = 10>
 	class epoch_search_tree {
 	public:
-		using lock_type = std::shared_mutex; // fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; //  
+		using lock_type = fast_shared_mutex; // std::shared_mutex; //  std::shared_mutex; // fast_shared_mutex; //  
 		struct epoch_search_treeNode {
 			std::variant<std::unique_ptr<objType>, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
 				data;

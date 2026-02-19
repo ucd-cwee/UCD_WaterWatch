@@ -1044,13 +1044,13 @@ namespace GL {
                     return false;
                 };
 
-                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func) {
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func) {
                     if (func) {
                         return func->operator()();
                     }
                     return {};
                 };
-                template <typename iter_type> GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type begin, iter_type const& end) {
+                template <typename iter_type> GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type begin, iter_type const& end) {
                     if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
                         static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
                     }
@@ -1097,23 +1097,23 @@ namespace GL {
                     }
                 };
                 // fast path
-                any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {
                     return call_with_conversions(func, params.begin(), params.end());
                 };
                 // convenience path, requires casting to any::fast_any
-                any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params) {
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params) {
                     std::vector<any::fast_any> Params;
                     Params.resize(params.size());
                     std::transform(params.begin(), params.end(), Params.begin(), [](any const& from) { return from.fast(); });
                     return call_with_conversions(func, Params.begin(), Params.end());
                 };
                 // convenience path, requires casting to any::fast_any
-                any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param) {
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param) {
                     any::fast_any p = param.fast();
                     return call_with_conversions(func, &p, &p + 1);
                 };
                 // fast path
-                any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param) {
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param) {
                     return call_with_conversions(func, &param, &param + 1);
                 };
 
@@ -2088,13 +2088,13 @@ namespace GL {
                                 if (o->can_free_cast(GL::type_of<GL::details::Proxy_Function_Base const&>())) {
                                     if ((search_state & Functions::search_conditions::free_cast_only) > 0) {
                                         if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {          
-                                            search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)o->cast<GL::Proxy_Function>();
+                                            search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)o->cast<GL::Proxy_Function>() });
                                             return o->cast<GL::Proxy_Function>();
                                         }
                                     }
                                     else {
                                         if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_cast(from_iter, from_end)) {
-                                            search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)o->cast<GL::Proxy_Function>();
+                                            search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)o->cast<GL::Proxy_Function>() });
                                             return o->cast<GL::Proxy_Function>();
                                         }
                                     }
@@ -2103,11 +2103,11 @@ namespace GL {
 
                             // re-do the search
                             if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state); f) {
-                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)f;
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)f });
                                 return f;
                             }
                             else {
-                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)nullptr });
                                 return nullptr;
                             }
                         }
@@ -2125,11 +2125,11 @@ namespace GL {
                         }, nullptr, SkipChildren)) {
                             // re-do the search
                             if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, from_iter, from_end, Functions::search_conditions::ignore_templates | search_state, this->GetRoot()->get_converters()); f) {
-                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)f;
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)f });
                                 return (GL::Proxy_Function)f;
                             }
                             else {
-                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)nullptr });
                                 return nullptr;
                             }
                         }
@@ -2147,18 +2147,18 @@ namespace GL {
                                 }, nullptr, SkipChildren)) {
                                 // re-do the search
                                 if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, from_iter, from_end, Functions::search_conditions::only_templates | search_state); f) {
-                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)f;
+                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)f });
                                     return (GL::Proxy_Function)f;
                                 }
                                 else {
-                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
+                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)nullptr });
                                     return nullptr;
                                 }
                             }
                         }
 
                         // failure
-                        search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
+                        search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert({ search_hash, (GL::Proxy_Function)nullptr });
                         return nullptr;
                     }
                     else {
@@ -2186,7 +2186,7 @@ namespace GL {
                     }
                 };
 
-                template<typename iter_type> GL::any call(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
+                template<typename iter_type> GL::any::fast_any call(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
                     if (auto f = try_find_callable(PossiblyScopedName, from_iter, from_end); f) {
                         return this->GetRoot()->get_converters().call_with_conversions(&*f, from_iter, from_end);
                     }
@@ -2220,7 +2220,7 @@ namespace GL {
                         throw std::runtime_error(err.to_string());
                     }
                 };
-                GL::any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
+                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
                     return call(PossiblyScopedName, params.begin(), params.end());
                 };
 

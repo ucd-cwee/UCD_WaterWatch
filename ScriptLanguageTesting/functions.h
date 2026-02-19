@@ -390,7 +390,7 @@ namespace GL {
                 m_signature;
 
             // fast path
-            template <typename iter_type> any operator()(iter_type begin, iter_type const& end) const {
+            template <typename iter_type> GL::any::fast_any operator()(iter_type begin, iter_type const& end) const {
                 if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
                     static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
                 }
@@ -427,7 +427,7 @@ namespace GL {
                 }
             };
             // fastest path
-            any operator()() const {
+            GL::any::fast_any operator()() const {
                 if (m_signature.argument_types_m.size() > 0) {
                     static thread_local std::array<any::fast_any*, 16> inputs;
                     std::memset(&inputs[0], 0, sizeof(inputs));
@@ -442,30 +442,30 @@ namespace GL {
                 }
             };
             // fast path
-            any operator()(std::vector<any::fast_any>& params) const {
+            GL::any::fast_any operator()(std::vector<any::fast_any>& params) const {
                 return operator()(params.begin(), params.end());
             };
             // convenience path, requires casting to any::fast_any
-            any operator()(const std::vector<any>& params) const {
+            GL::any::fast_any operator()(const std::vector<any>& params) const {
                 std::vector<any::fast_any> Params;
                 Params.resize(params.size());
                 std::transform(params.begin(), params.end(), Params.begin(), [](any const& from) { return from.fast(); });
                 return operator()(Params.begin(), Params.end());
             };
             // convenience path, requires casting to any::fast_any
-            any operator()(any& param) const {
+            GL::any::fast_any operator()(any& param) const {
                 any::fast_any p = param.fast();
                 return operator()(&p, &p + 1);
             };
             // fast path
-            any operator()(any::fast_any& param) const {
+            GL::any::fast_any operator()(any::fast_any& param) const {
                 return operator()(&param, &param + 1);
             };
 
             virtual GL::shared_ptr<details::Proxy_Function_Base> duplicate() const = 0;
 
         protected:
-            virtual any do_call(any::fast_any** begin) const {
+            virtual GL::any::fast_any do_call(any::fast_any** begin) const {
                 return {};
             };
             Proxy_Function_Base(function_signature&& p_signature) : m_signature(std::move(p_signature)) {}
@@ -542,13 +542,13 @@ namespace GL {
             };
 
         protected:
-            virtual any do_call(any::fast_any** begin) const override {
+            virtual GL::any::fast_any do_call(any::fast_any** begin) const override {
                 if constexpr (std::is_same_v<returnType, void>) {
                     unpack_and_call<Callable, false, numArgs>(F_m, begin);
-                    return any{};                    
+                    return {};
                 }
                 else {
-                    return unpack_and_call<Callable, true, numArgs>(F_m, begin);
+                    return any::fast_any::instance(unpack_and_call<Callable, true, numArgs>(F_m, begin));
                 }
             };
             Callable F_m;
@@ -586,16 +586,16 @@ namespace GL {
             };
 
         protected:
-            __declspec(noinline) virtual any do_call(any::fast_any** begin) const override {
+            __declspec(noinline) virtual GL::any::fast_any do_call(any::fast_any** begin) const override {
                 if constexpr (std::is_same_v<T, void>) {
-                    return any{};
+                    return {};
                 }
                 else if constexpr (std::is_same_v<any, T>) {
                     if (begin[0]->m_casted_type.is_const()) {
-                        return GL::any(begin[0]->cast<Class*>()->*m_attr) + (GL::type::Const | GL::type::Reference);
+                        return any::fast_any::instance(begin[0]->cast<Class*>()->*m_attr) + (GL::type::Const | GL::type::Reference);
                     }
                     else {
-                        return GL::any(begin[0]->cast<Class*>()->*m_attr) + GL::type::Reference;
+                        return any::fast_any::instance(begin[0]->cast<Class*>()->*m_attr) + GL::type::Reference;
                     }                    
                 }
                 else if constexpr (std::is_pointer<T>::value) {
@@ -603,10 +603,10 @@ namespace GL {
                     auto out = GL::shared_ptr<actualT>(GL::shared_ptr<void>(ptr));
                     out.set_pointer_without_modifying_control_block((*ptr).*m_attr);
                     if (begin[0]->m_casted_type.is_const()) {
-                        return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                        return any::fast_any::instance(out) + (GL::type::Const | GL::type::Reference);
                     }
                     else {
-                        return GL::any(out) + GL::type::Reference;
+                        return any::fast_any::instance(out) + GL::type::Reference;
                     }
                 }
                 else {
@@ -614,10 +614,10 @@ namespace GL {
                     auto out = GL::shared_ptr<actualT>(GL::shared_ptr<void>(ptr));
                     out.set_pointer_without_modifying_control_block(&(ptr.get()->*m_attr));
                     if (begin[0]->m_casted_type.is_const()) {
-                        return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                        return any::fast_any::instance(out) + (GL::type::Const | GL::type::Reference);
                     }
                     else {
-                        return GL::any(out) + GL::type::Reference;
+                        return any::fast_any::instance(out) + GL::type::Reference;
                     }
                 }
             };
@@ -678,13 +678,13 @@ namespace GL {
             };
 
         protected:
-            virtual any do_call(any::fast_any** begin) const override {
+            virtual GL::any::fast_any do_call(any::fast_any** begin) const override {
                 if constexpr (std::is_same_v<returnType, void>) {
                     unpack_and_call<R(*)(T...), false, numArgs>(F_m, begin);
-                    return any{};
+                    return {};
                 }
                 else {
-                    return unpack_and_call<R(*)(T...), true, numArgs>(F_m, begin);
+                    return any::fast_any::instance(unpack_and_call<R(*)(T...), true, numArgs>(F_m, begin));
                 }
             };
             R(*F_m)(T...);
@@ -883,13 +883,13 @@ namespace GL {
                 throw std::runtime_error("Cannot call member function on a null object.");
             };
 
-            virtual any do_call(any::fast_any** begin) const override {
+            virtual GL::any::fast_any do_call(any::fast_any** begin) const override {
                 if (Class* parent = begin[0]->cast<Class*>()) {
                     if constexpr (std::is_same_v<returnType, void>)
                         do_call_impl(begin);
                     else {
                         if constexpr (std::is_same_v<any, returnType>) {
-                            return do_call_impl(begin);
+                            return any::fast_any::instance(do_call_impl(begin));
                         }
                         else if constexpr (std::is_reference_v<R>) {
                             decltype(auto) ref = do_call_impl(begin);
@@ -898,10 +898,10 @@ namespace GL {
                             auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
                             out.set_pointer_without_modifying_control_block(const_cast<returnType*>(&ref));
                             if (begin[0]->m_casted_type.is_const()) {
-                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                                return any::fast_any::instance(out) + (GL::type::Const | GL::type::Reference);
                             }
                             else {
-                                return GL::any(out) + GL::type::Reference;
+                                return any::fast_any::instance(out) + GL::type::Reference;
                             }
                         }
                         else if constexpr (std::is_pointer_v<R>) {
@@ -911,18 +911,18 @@ namespace GL {
                             auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
                             out.set_pointer_without_modifying_control_block(const_cast<returnType*>(ref));
                             if (begin[0]->m_casted_type.is_const()) {
-                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                                return any::fast_any::instance(out) + (GL::type::Const | GL::type::Reference);
                             }
                             else {
-                                return GL::any(out) + GL::type::Reference;
+                                return any::fast_any::instance(out) + GL::type::Reference;
                             }
                         }
                         else {
-                            return do_call_impl(begin);
+                            return any::fast_any::instance(do_call_impl(begin));
                         }
                     }
                 }
-                return any{};                
+                return {};
             };
 
             R(Class::* m_attr)(T...);
@@ -1121,13 +1121,13 @@ namespace GL {
                 throw std::runtime_error("Cannot call member function on a null object.");
             };
 
-            virtual any do_call(any::fast_any** begin) const override {
+            virtual GL::any::fast_any do_call(any::fast_any** begin) const override {
                 if (const Class* parent = begin[0]->cast<const Class*>()) {
                     if constexpr (std::is_same_v<returnType, void>)
                         do_call_impl(begin);
                     else {
                         if constexpr (std::is_same_v<any, returnType>) {
-                            return do_call_impl(begin);
+                            return any::fast_any::instance(do_call_impl(begin));
                         }
                         else if constexpr (std::is_reference_v<R>) {
                             decltype(auto) ref = do_call_impl(begin);
@@ -1136,10 +1136,10 @@ namespace GL {
                             auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
                             out.set_pointer_without_modifying_control_block(const_cast<returnType*>(&ref));
                             if (begin[0]->m_casted_type.is_const()) {
-                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                                return any::fast_any::instance(out) + (GL::type::Const | GL::type::Reference);
                             }
                             else {
-                                return GL::any(out) + GL::type::Reference;
+                                return any::fast_any::instance(out) + GL::type::Reference;
                             }
                         }
                         else if constexpr (std::is_pointer_v<R>) {
@@ -1149,18 +1149,18 @@ namespace GL {
                             auto out = GL::shared_ptr<returnType>(GL::shared_ptr<void>(ptr));
                             out.set_pointer_without_modifying_control_block(const_cast<returnType*>(ref));
                             if (begin[0]->m_casted_type.is_const()) {
-                                return GL::any(out) + (GL::type::Const | GL::type::Reference);
+                                return any::fast_any::instance(out) + (GL::type::Const | GL::type::Reference);
                             }
                             else {
-                                return GL::any(out) + GL::type::Reference;
+                                return any::fast_any::instance(out) + GL::type::Reference;
                             }
                         }
                         else {
-                            return do_call_impl(begin);
+                            return any::fast_any::instance(do_call_impl(begin));
                         }
                     }
                 }
-                return any{};
+                return {};
             };
 
             R(Class::* m_attr)(T...) const;

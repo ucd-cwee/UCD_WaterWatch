@@ -1194,8 +1194,8 @@ namespace GL {
                 m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
 
         private:
-            explicit fast_any(GL::atomic_shared_ptr< type_erasure::any_data >& p_ptr, GL::type const& p_type)
-                : m_ptr{ p_ptr.load() }, m_casted_type{ p_type }
+            explicit fast_any(GL::shared_ptr< type_erasure::any_data >&& p_ptr, GL::type const& p_type)
+                : m_ptr{ std::move(p_ptr) }, m_casted_type{ p_type }
             {}
 
         public:
@@ -1206,6 +1206,19 @@ namespace GL {
             fast_any& operator=(fast_any const&) = default;
             fast_any& operator=(fast_any&&) noexcept = default;
             ~fast_any() = default;
+
+            template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static fast_any instance(const ValueType& value) noexcept {
+                return fast_any(type_erasure::wrap(value), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
+            };
+            template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static fast_any instance(ValueType&& value) noexcept {
+                return fast_any(type_erasure::wrap(std::move(value)), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
+            };    
+            static fast_any instance(const any& value) noexcept {
+                return value.fast();
+            };
+            static fast_any instance(const fast_any& value) noexcept {
+                return value;
+            };
 
             operator bool() const noexcept {
                 return m_ptr.operator bool();
@@ -1219,6 +1232,31 @@ namespace GL {
             friend bool operator<=(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr <= b.m_ptr; };
             friend bool operator>(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr > b.m_ptr; };
             friend bool operator>=(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr >= b.m_ptr; };
+
+            bool operator&(int p_modifiers) const {
+                return m_casted_type & p_modifiers;
+            };
+            fast_any operator|(int p_modifiers) const {
+                return fast_any((GL::shared_ptr< type_erasure::any_data >)m_ptr, m_casted_type | p_modifiers);
+            };
+            fast_any operator+(int p_modifiers) const {
+                return fast_any((GL::shared_ptr< type_erasure::any_data >)m_ptr, m_casted_type + p_modifiers);
+            };
+            fast_any operator-(int p_modifiers) const {
+                return fast_any((GL::shared_ptr< type_erasure::any_data >)m_ptr, m_casted_type - p_modifiers);
+            };
+            fast_any& operator|=(int p_modifiers) {
+                m_casted_type |= p_modifiers;
+                return *this;
+            };
+            fast_any& operator+=(int p_modifiers) {
+                m_casted_type += p_modifiers;
+                return *this;
+            };
+            fast_any& operator-=(int p_modifiers) {
+                m_casted_type -= p_modifiers;
+                return *this;
+            };
 
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const {
@@ -1234,6 +1272,8 @@ namespace GL {
                 if (m_ptr) return m_ptr->m_actual_type.can_cast(to);
                 return false;
             };
+
+            fast_any fast() const { return *this; };
 
         private:
             void* ptr() const {
@@ -1272,7 +1312,7 @@ namespace GL {
             friend class any;
         };
 
-        fast_any fast() const { return fast_any(this->m_ptr, this->m_casted_type); };
+        fast_any fast() const { return fast_any(this->m_ptr.load(), this->m_casted_type); };
 
         any(fast_any const& rhs) noexcept : m_ptr{ GL::shared_ptr< type_erasure::any_data >{ rhs.m_ptr } }, m_casted_type{ rhs.m_casted_type } { };
         any& operator=(fast_any const& rhs) noexcept {
