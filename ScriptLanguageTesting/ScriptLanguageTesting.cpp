@@ -572,11 +572,11 @@ int main() {
                     program_root.add_function(GL::make_callable("value", [](GL::any::fast_any const& from) -> GL::value {
                         return GL::meter();
                         }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", custom_unit_type.load() | GL::type::Const | GL::type::Reference } }, GL::type_of< GL::value>()));
-                    program_root.add_function(GL::make_callable("custom_unit_type", [x = custom_unit_type.load()](GL::meter from)->GL::any {
+                    program_root.add_function(GL::make_callable("custom_unit_type", [x = custom_unit_type.load()](GL::meter const& from)->GL::any {
                         GL::any out;
                         out.m_casted_type = x;
                         return out;
-                    }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", GL::type_of<GL::meter>() } }, custom_unit_type.load()));
+                    }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", GL::type_of<GL::meter const&>() } }, custom_unit_type.load()));
 
 
                     std_string_namespace.add_function(GL::decl_func(&std::string::length));
@@ -594,7 +594,6 @@ int main() {
                     program_root.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }));
                     program_root.add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }));
 
-                    program_root.add_function(GL::make_callable("+", [](GL::foot const& a, GL::foot const& b) -> GL::foot { return a + b; }));
                     program_root.add_function(GL::make_callable("+2", [](GL::foot const& a, GL::foot const& b) -> GL::foot { return a + b; }));
                     program_root.add_function(GL::make_callable("+2", [](GL::meter const& a, GL::meter const& b) -> GL::meter { return a + b; }));
                     program_root.add_function(GL::make_callable("+2", [](int const& a, int const& b) -> int { return a + b; }));
@@ -796,7 +795,6 @@ int main() {
                         }
                     }
 
-                    catcher::allow_print() = false;
                     GL::parallel::For(0, 1000000, [&](size_t i) {
                         EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double>()));
                         EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double&&>()));
@@ -847,8 +845,7 @@ int main() {
                         EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
                         EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
                         EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
-                        });
-                    catcher::allow_print() = true;
+                    });
 
                     // for (int i = 0; i < 1000000; ++i) {
                     GL::parallel::For(0, 1000000, [&](size_t i) {
@@ -898,9 +895,11 @@ int main() {
                         }
                         if (auto f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                             EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
+                            //print(f->operator()(types).cast<std::string>() + " @ 898");
                         }
                         if (auto f = program_root.try_find_callable("std::string::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                             EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
+                            //print(f->operator()(types).cast<std::string>() + " @ 902");
                         }
                         if (auto f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), GL::scope::impl::Functions::free_cast_only); f) {
                             EXPECT_EQ(false, program_root.get_converters().can_convert(types2[0].m_casted_type, GL::type_of<std::string>()));
@@ -914,14 +913,6 @@ int main() {
                             EXPECT_EQ("std_string_default_std", f->operator()(empty_types).cast<std::string>()); // default
                             EXPECT_EQ("std_string_default_std", f->operator()().cast<std::string>()); // default
                         }
-                        if (auto f = program_root.try_find_callable("+", types3.begin(), types3.end()); f) {
-                            auto result = program_root.get_converters().call_with_conversions(&*f, types3); // will not perform any cast ('foot' was ok already) then call the function, returning a 'foot'
-                            EXPECT_EQ("foot", result.m_casted_type.name());
-                        }
-                        if (auto f = program_root.try_find_callable("+", types4.begin(), types4.end()); f) {
-                            auto result = program_root.get_converters().call_with_conversions(&*f, types4); // will cast from 'int' to 'foot', then call the function, returning a 'foot'
-                            EXPECT_EQ("foot", result.m_casted_type.name());
-                        }
                         if (auto f = program_root.try_find_callable("+2", types3.begin(), types3.end()); f) {
                             auto result = program_root.get_converters().call_with_conversions(&*f, types3); // will not perform any cast ('foot' was ok already) then call the function, returning a 'foot'
                             EXPECT_EQ("foot", result.m_casted_type.name());
@@ -932,9 +923,10 @@ int main() {
                         }
                         if (auto f = program_root.try_find_callable("+2", types5.begin(), types5.end()); f) {
                             auto result = program_root.get_converters().call_with_conversions(&*f, types5); // 'char' is convertable to either 'foot' or 'int' or 'float', etc., therefore no guarrantee what is selected. 
-                            EXPECT_NE("void", result.m_casted_type.name()); // returned 'foot', meaning it called the foot version. Technically allowable, but was not as preferred as the int version.
+                            // print(result.m_casted_type.name());
+                            EXPECT_NE("void", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. 
                         }
-                        });
+                    });
 
                     std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));
                     std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());
@@ -950,9 +942,7 @@ int main() {
                         EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
                         EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
                     }
-                    else {
-                        EXPECT_EQ(true, false);
-                    }
+                    else EXPECT_EQ(true, false);                    
 
                     if (auto* p = std_namespace.find_object("string::npos")) {
                         auto f = p->fast();
@@ -963,9 +953,7 @@ int main() {
                         EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
                         EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
                     }
-                    else {
-                        EXPECT_EQ(true, false);
-                    }
+                    else EXPECT_EQ(true, false);                    
 
                     if (auto* p = program_root.find_object("std::string::npos")) {
                         auto f = p->fast();
@@ -976,9 +964,7 @@ int main() {
                         EXPECT_EQ(f.m_casted_type.can_free_cast(GL::type_of<size_t&>()), false);
                         EXPECT_EQ(f.m_casted_type.can_cast(GL::type_of<size_t>()), true);
                     }
-                    else {
-                        EXPECT_EQ(true, false);
-                    }
+                    else EXPECT_EQ(true, false);                    
 
                     EXPECT_EQ(program_root.find_object("npos"), nullptr);
 

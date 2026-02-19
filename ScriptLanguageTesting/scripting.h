@@ -265,6 +265,17 @@ namespace GL {
                     }
                 };
 
+                template<int category> __declspec(noinline) GL::shared_ptr<T>& at(size_t cache_version) {
+                    while (true) {
+                        if (GL::shared_ptr<T>& out = TryGetCache<category>(cache_version); out) {
+                            return out;
+                        }
+                        else {
+                            EmplaceCache<category>(cache_version, GL::make_shared<T>());
+                        }
+                    }
+                };
+
             };
 
             class Converter;
@@ -352,7 +363,7 @@ namespace GL {
                     free_cast_only = 4,
                     no_polymorphism = 8,
                 };
-                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter from_iter, iter const& from_end, int search_mode = 0) const {
+                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter const& from_iter, iter const& from_end, int search_mode = 0) const {
                     return for_each(name, [&](GL::Proxy_Function const& f)->bool {
                         if ((search_mode & only_templates) > 0) {
                             if ((f->m_signature.state_m & GL::function_signature::Template) == 0)
@@ -369,8 +380,10 @@ namespace GL {
                             return f->m_signature.can_call_with_cast(from_iter, from_end);
                     });
                 };
-                template<typename iter_type> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter_type iter, iter_type const& end, int search_mode, Converter converters) const {
-                    return for_each(name, [&](GL::Proxy_Function const& f)->bool {
+                template<typename iter_type> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter_type const& from_iter, iter_type const& end, int search_mode, Converter converters) const {
+                    std::map<int, GL::Proxy_Function const*> options;
+                    /*return*/ (void)for_each(name, [&](GL::Proxy_Function const& f)->bool {
+                        iter_type iter = from_iter;
                         if ((search_mode & Functions::only_templates) > 0) {
                             if ((f->m_signature.state_m & GL::function_signature::Template) == 0)
                                 return false;
@@ -394,7 +407,11 @@ namespace GL {
                                         return false;
                                     }
                                 }
-                                return iter == end;
+                                if (iter == end) {
+                                    options[0] = &f;
+                                    return true;
+                                }
+                                return false;
                             }
                             else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*> || std::is_same_v<iter_type, GL::any*> || std::is_same_v<iter_type::value_type, GL::any::fast_any> || std::is_same_v<iter_type::value_type, GL::any>) {
                                 size_t i = 0;
@@ -408,40 +425,26 @@ namespace GL {
                                         return false;
                                     }
                                 }
-                                return iter == end;
+                                if (iter == end) {
+                                    options[0] = &f;
+                                    return true;
+                                }
+                                return false;
                             }
                         }
                         else {
                             auto& sig = f->m_signature;
                             if constexpr (std::is_same_v<iter_type, GL::type*> || std::is_same_v<iter_type::value_type, GL::type>) {
                                 size_t i = 0;
+                                int cost = 0;
                                 for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
                                     if (!iter->can_cast(sig.argument_types_m[i])) {
-                                        return false;
-                                    }
-                                }
-                                for (; i < sig.argument_defaults_m.size(); ++i) {
-                                    if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
-                                        return false;
-                                    }
-                                }
-                                return iter == end;
-                            }
-                            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*> || std::is_same_v<iter_type, GL::any*> || std::is_same_v<iter_type::value_type, GL::any::fast_any> || std::is_same_v<iter_type::value_type, GL::any>) {
-                                size_t i = 0;
-                                for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
-                                    if (!iter->can_cast(sig.argument_types_m[i])) {
-                                        //std::cout << "attempting cast from " << iter->m_casted_type.name() << " to " << sig.argument_types_m[i].name() << "\n";
-                                        if (auto f = converters.try_get_converter(iter->m_casted_type, sig.argument_types_m[i], 0, true); f) {
-                                            //std::cout << "found cast using" << f->m_signature.display() << std::endl;
+                                        if (auto f = converters.try_get_converter(*iter, sig.argument_types_m[i], 0, true); f) {
+                                            cost += f->m_signature.numConversions;
                                         }
                                         else {
                                             return false;
                                         }
-
-                                        //if (!converters.can_convert(iter->m_casted_type, sig.argument_types_m[i], true)) {
-                                        //    return false;
-                                        //}
                                     }
                                 }
                                 for (; i < sig.argument_defaults_m.size(); ++i) {
@@ -449,13 +452,48 @@ namespace GL {
                                         return false;
                                     }
                                 }
-                                return iter == end;
+                                if (iter == end) {
+                                    options[cost] = &f;
+                                    return cost == 0; // stops looking if true
+                                }
+                                return false;
+                            }
+                            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*> || std::is_same_v<iter_type, GL::any*> || std::is_same_v<iter_type::value_type, GL::any::fast_any> || std::is_same_v<iter_type::value_type, GL::any>) {
+                                size_t i = 0;
+                                int cost = 0;
+                                for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
+                                    if (!iter->can_cast(sig.argument_types_m[i])) {                                        
+                                        if (auto f = converters.try_get_converter(iter->m_casted_type, sig.argument_types_m[i], 0, true); f) {
+                                            cost += f->m_signature.numConversions;
+                                        }
+                                        else {
+                                            return false;
+                                        }
+                                    }
+                                }
+                                for (; i < sig.argument_defaults_m.size(); ++i) {
+                                    if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
+                                        return false;
+                                    }
+                                }
+                                if (iter == end) {                                    
+                                    options[cost] = &f;
+                                    return cost == 0; // stops looking if true
+                                }
+                                return false;
                             }
                         }
                         });
+                    if (options.size() > 0) {
+                        return *options.begin()->second;
+                    }
+                    else {
+                        static GL::Proxy_Function temp{ nullptr };
+                        return temp;
+                    }
                 };
 
-                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::type const& return_type, iter from_iter, iter const& from_end, int search_mode = 0) const {
+                template<typename iter> GL::Proxy_Function const& try_find_callable(GL::type const& return_type, iter const& from_iter, iter const& from_end, int search_mode = 0) const {
                     return for_each([&](GL::Proxy_Function const& f)->bool {
                         if (!f->m_signature.returns_m.can_free_cast(return_type, (search_mode & no_polymorphism) == 0 )) {
                             return false;
@@ -542,11 +580,14 @@ namespace GL {
                         // no conversion function is necessary
                         if (converters.size() == 0) {
                             this_t = thisNodePath;
-                            return GL::make_callable("`static_cast " + (this_t).name() + "`", [converters, this_t](GL::any::fast_any& from) -> GL::any::fast_any {
+                            auto temp = GL::make_callable("`static_cast " + (this_t).name() + "`", [converters, this_t](GL::any::fast_any& from) -> GL::any::fast_any {
                                 GL::any::fast_any out{ from };
                                 out.m_casted_type = this_t;
                                 return out;
                             }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Constructor | GL::function_signature::NoCost | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
+                            temp->m_signature.numConversions = 0;
+                            return temp;
+
                         }
                         // use a user-provided function exactly
                         else if (converters.size() == 1) {
@@ -556,13 +597,16 @@ namespace GL {
                         else {
                             // generic function that casts "from"-type objects to "this"-type by iteratively making the inner-type casts. 
                             // e.g. int->ldouble might take the path of int->long->float->double->ldouble, for a total of 4 casts hidden as a single cast or a single call to this Proxy_Function. 
-                            return GL::make_callable( "`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any {
+                            auto temp = GL::make_callable( "`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any {
                                 GL::any out;
                                 int pos{ 0 };                                
                                 for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(&from, &from + 1);                                
                                 for (; pos < converters.size(); ++pos) out = (*converters[pos])->operator()(out);                          
                                 return out;
                             }, state | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
+                            temp->m_signature.numConversions = 0;
+                            for (auto& x : converters) temp->m_signature.numConversions += (*x)->m_signature.numConversions;
+                            return temp;
                         }
                     };
                     void get(std::vector<GL::type>& out) const {
@@ -840,22 +884,26 @@ namespace GL {
 
                                     // best-case scenario, we can free-cast to the requested type. 
                                     if (from.can_free_cast(to)) {
-                                        f1->second[to] = GL::make_callable("`static_cast " + to.name() + "`", [To = to](GL::any::fast_any const& From) -> GL::any {
+                                        auto temp = GL::make_callable("`static_cast " + to.name() + "`", [To = to](GL::any::fast_any const& From) -> GL::any {
                                             GL::any casted = From;
                                             casted.m_casted_type = To;
                                             return casted;
                                         }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                        temp->m_signature.numConversions = 0;
+                                        f1->second[to] = std::move(temp);
                                         return f1->second[to].load_fast();
                                     }
 
                                     // next-best-case scenario, we are perfect forwarding a temp-type to a base type. 
                                     if (from.can_cast(to)) {
                                         if (from.is_temp() && to.is_base()) {
-                                            f1->second[to] = GL::make_callable("`forward_cast" + to.name() + "`", [To = to](GL::any::fast_any const& From) -> GL::any {
+                                            auto temp = GL::make_callable("`forward_cast" + to.name() + "`", [To = to](GL::any::fast_any const& From) -> GL::any {
                                                 GL::any casted = From;
                                                 casted.m_casted_type = To;
                                                 return casted;
                                             }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                            temp->m_signature.numConversions = 0;
+                                            f1->second[to] = std::move(temp);
                                             return f1->second[to].load_fast();
                                         }
                                     }
@@ -890,6 +938,7 @@ namespace GL {
                                                                 casted.m_casted_type = To;
                                                                 return casted;
                                                             }, func->m_signature.state_m | GL::function_signature::Cached | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                                            options[1]->m_signature.numConversions = func->m_signature.numConversions;
                                                         }
                                                         // return f1->second[to].load();
                                                         continue;
@@ -910,7 +959,7 @@ namespace GL {
                                     // then also try the base type
                                     auto try_type = from.is_cpp_type() ? (GL::type(from.get_base_hash()) + GL::type::CppType) : GL::type(from.get_base_hash());
                                     if (auto p = try_get_converter(try_type, to, depth + 1, in_function)) {
-                                        f1->second[to] = GL::make_callable("`forward_cast " + to.name() + "`", [To = to, FromT = try_type, inF = in_function, this](GL::any::fast_any const& From) -> GL::any {
+                                        auto temp = GL::make_callable("`forward_cast " + to.name() + "`", [To = to, FromT = try_type, inF = in_function, this](GL::any::fast_any const& From) -> GL::any {
                                             GL::any::fast_any input = From;
                                             input.m_casted_type = FromT;
 
@@ -923,7 +972,9 @@ namespace GL {
 
                                             input.m_casted_type = To;
                                             return input;
-                                            }, GL::function_signature::Cached | p->m_signature.state_m, {}, { { "From", from } }, to);
+                                        }, GL::function_signature::Cached | p->m_signature.state_m, {}, { { "From", from } }, to);
+                                        temp->m_signature.numConversions = p->m_signature.numConversions;
+                                        f1->second[to] = std::move(temp);
                                         return f1->second[to].load_fast();
                                     }
                                 }
@@ -1108,7 +1159,7 @@ namespace GL {
                         if (scope->this_m.is_namespace()) {
                             if (auto f = using_m.find(scope); f == using_m.end()) {
                                 using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, GL::callback<NamespaceScope>::ScopedListener() });
-                                // this->GetNamespace()->invalidate_cache();
+                                this->GetNamespace()->invalidate_cache();
                                 return true;
                             }
                         }
@@ -1417,11 +1468,11 @@ namespace GL {
             public:
                 BasicScope() = delete;
                 virtual ~BasicScope() {
-                    //if (!this->is_namespace()) {
-                        //if (using_m.size() > 0) {
-                            //this->GetNamespace()->invalidate_cache();
-                        //}
-                    //}
+                    if (!this->is_namespace()) {
+                        if (using_m.size() > 0) {
+                            this->GetNamespace()->invalidate_cache();
+                        }
+                    }
                 };
 
                 /// <summary>
@@ -1470,14 +1521,14 @@ namespace GL {
                             if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
                                 if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
                                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                //namespacePtr->this_m.scope->invalidate_cache();
+                                namespacePtr->this_m.scope->invalidate_cache();
                                 return SearchResult::Failure;
                             }, nullptr, SearchState::SkipParent)) {};
                         }
                         else if (this->is_namespace()) {
                             if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
                                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                //namespacePtr->this_m.scope->invalidate_cache();
+                                namespacePtr->this_m.scope->invalidate_cache();
                                 return SearchResult::Failure;
                                 }, nullptr, 0)) {
                             };
@@ -1500,7 +1551,7 @@ namespace GL {
                             if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
                                 if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
                                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                //namespacePtr->this_m.scope->invalidate_cache();
+                                namespacePtr->this_m.scope->invalidate_cache();
                                 return SearchResult::Failure;
                                 }, nullptr, SearchState::SkipParent)) {
                             };
@@ -1508,7 +1559,7 @@ namespace GL {
                         else if (this->is_namespace()) {
                             if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
                                 if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                //namespacePtr->this_m.scope->invalidate_cache();
+                                namespacePtr->this_m.scope->invalidate_cache();
                                 return SearchResult::Failure;
                                 }, nullptr, 0)) {
                             };
@@ -1676,7 +1727,7 @@ namespace GL {
                     functions;
 
             protected:
-                // Cache<4> search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
+                mutable TypedCache<concurrency::concurrent_unordered_map<size_t, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>, 1> search_cache; // while thread-safe, it does seem to singificantly decrease the performance of creating new BasicScope's, hence moving it here. 
 
             protected:
                 GL::callback<NamespaceScope> sockets_for_cache_versions; // socket(s) for others to connect to for listening to changes to THIS scope. Thread-safe. 
@@ -1695,7 +1746,7 @@ namespace GL {
                         if (scope->this_m.is_namespace()) {
                             if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
                                 using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
-                                //invalidate_cache();
+                                invalidate_cache();
                                 return true;
                             }
                         }
@@ -1708,7 +1759,7 @@ namespace GL {
                 NamespaceScope(GL::string&& name, int scope_type_p = ScopeType::Basic | ScopeType::Namespace, Breadcrumb* parent = nullptr)
                     : BasicScope(std::move(name), scope_type_p, parent)
                     , children{}
-                    //, search_cache{}
+                    , search_cache{}
                     , sockets_for_cache_versions(&NamespaceScope::invalidate_cache)
                     , connection_for_cache_version{}
                     , cache_version{ 0 }
@@ -1973,7 +2024,7 @@ namespace GL {
                         return *f->second;
                     }
                     else {
-                        // this->invalidate_cache();
+                        this->invalidate_cache();
                         return *children.insert(
                             { name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((GL::string)name, ScopeType::Basic | ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m))) }
                         ).first->second;
@@ -1984,6 +2035,30 @@ namespace GL {
                 // searches for object-lambdas (lambda or not), non-template-functions, and template-functions, in that order of preference. 
                 template<typename iter> const GL::Proxy_Function try_find_callable(GL::string const& PossiblyScopedName, iter const& from_iter, iter const& from_end, int search_state = 0, Breadcrumb* search_from = nullptr) const {
                     if (search_from) {
+                        auto total_hash = GL::util::inline_hash(search_from->this_m.scope->GetNamespace()->cache_version, search_from->this_m.scope->GetRoot()->constructors_version.load());
+
+                        size_t search_hash = PossiblyScopedName.hash();
+                        if (from_iter != from_end) {
+                            if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
+                                for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
+                                    GL::util::hash(search_hash, _iter->get_hash());
+                                }
+                            }
+                            else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
+                                for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
+                                    GL::util::hash(search_hash, _iter->m_casted_type.get_hash());
+                                }
+                            }
+                        }        
+
+                        if (auto& cache = search_from->this_m.scope->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                            // cache exists for this moment - no new constructor or function or object has been added recently. 
+                            if (auto f = cache->find(search_hash), e = cache->end(); f != e) {
+                                // previous search result exists
+                                return f->second.load();
+                            }
+                        }
+
                         // search for exact match?
                         if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
                             if (auto* o = namespacePtr->this_m.scope->find_object_here(PossiblyScopedName)) {
@@ -2012,12 +2087,14 @@ namespace GL {
                             if (auto* o = BC->this_m.scope->find_object_here(PossiblyScopedName)) {
                                 if (o->can_free_cast(GL::type_of<GL::details::Proxy_Function_Base const&>())) {
                                     if ((search_state & Functions::search_conditions::free_cast_only) > 0) {
-                                        if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {
+                                        if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_free_cast(from_iter, from_end)) {          
+                                            search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)o->cast<GL::Proxy_Function>();
                                             return o->cast<GL::Proxy_Function>();
                                         }
                                     }
                                     else {
                                         if (o->cast<GL::details::Proxy_Function_Base const&>().m_signature.can_call_with_cast(from_iter, from_end)) {
+                                            search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)o->cast<GL::Proxy_Function>();
                                             return o->cast<GL::Proxy_Function>();
                                         }
                                     }
@@ -2026,9 +2103,11 @@ namespace GL {
 
                             // re-do the search
                             if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state); f) {
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)f;
                                 return f;
                             }
                             else {
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
                                 return nullptr;
                             }
                         }
@@ -2046,9 +2125,11 @@ namespace GL {
                         }, nullptr, SkipChildren)) {
                             // re-do the search
                             if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, from_iter, from_end, Functions::search_conditions::ignore_templates | search_state, this->GetRoot()->get_converters()); f) {
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)f;
                                 return (GL::Proxy_Function)f;
                             }
                             else {
+                                search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
                                 return nullptr;
                             }
                         }
@@ -2066,15 +2147,18 @@ namespace GL {
                                 }, nullptr, SkipChildren)) {
                                 // re-do the search
                                 if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, from_iter, from_end, Functions::search_conditions::only_templates | search_state); f) {
+                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)f;
                                     return (GL::Proxy_Function)f;
                                 }
                                 else {
+                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
                                     return nullptr;
                                 }
                             }
                         }
 
                         // failure
+                        search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->operator[](search_hash) = (GL::Proxy_Function)nullptr;
                         return nullptr;
                     }
                     else {
@@ -2143,10 +2227,10 @@ namespace GL {
                 // insert a function into the storage
                 void add_function(GL::Proxy_Function const& func) {
                     functions.add_function(func);
-                    if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                        // this->invalidate_cache();
+                    if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {                        
                         this->GetRoot()->add_constructor(func);
                     }
+                    this->invalidate_cache();
                 };
 
 

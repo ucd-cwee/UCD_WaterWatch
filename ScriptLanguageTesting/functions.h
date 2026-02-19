@@ -38,6 +38,8 @@ namespace GL {
             name_m;
         GL::type
             returns_m;
+        short
+            numConversions;
 
     public:
         static size_t eval_hash(std::vector<GL::type> const& types) {
@@ -88,6 +90,7 @@ namespace GL {
             , returns_m{ returns }
             , state_m(function_state::Normal)
             , hash_m{ 0 }
+            , numConversions{ 0 }
         {
             for (auto& x : defaults)
                 argument_defaults_m.push_back(x.fast());
@@ -1750,6 +1753,7 @@ namespace GL {
             }, {}, { { "From", GL::type_of<From>() | GL::type::Reference } }, GL::type_of<To>() | GL::type::Reference);
             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
             out->m_signature.state_m |= GL::function_signature::NoCost;
+            out->m_signature.numConversions = 0;
         }
         else {
             if constexpr (is_convertable) {
@@ -1758,6 +1762,7 @@ namespace GL {
                 }, {}, { { "From", GL::type_of< From const&>() } }, GL::type_of<To>() | GL::type::Temporary);
                 out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                 out->m_signature.state_m |= GL::function_signature::NoCost;
+                out->m_signature.numConversions = 1;
             }
             else {
                 if constexpr (details::is_numeric_type<From>() && details::is_numeric_type<To>()) {
@@ -1791,6 +1796,7 @@ namespace GL {
                         out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
+                    out->m_signature.numConversions = 1;
                 }
                 else {
                     out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
@@ -1798,6 +1804,7 @@ namespace GL {
                     }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                     out->m_signature.state_m |= GL::function_signature::Static;
                     out->m_signature.state_m |= GL::function_signature::NoCost;
+                    out->m_signature.numConversions = 1;
                 }
             }
         }
