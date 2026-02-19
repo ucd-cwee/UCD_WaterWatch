@@ -2503,6 +2503,10 @@ namespace GL {
 			mut; // global tree lock. Should only be held temporarily if at all possible. 
 		epoch_search_treeNode*
 			root;
+		epoch_search_treeNode*
+			first;
+		epoch_search_treeNode*
+			last;
 		GL::atomic_epoch_allocator< epoch_search_treeNode, atomic_allocator< epoch_search_treeNode, 256, true, false >, 4>
 			nodeAllocator;
 		long
@@ -2624,6 +2628,8 @@ namespace GL {
 		epoch_search_tree()
 			: nodeAllocator()
 			, root{ nullptr }
+			, first{ nullptr }
+			, last{ nullptr }
 			, mut()
 			, count{ 0 }
 		{
@@ -2695,6 +2701,9 @@ namespace GL {
 						node->add_child_at(newNode, child->parent_index + 1);
 					}
 
+					if (!first || (first->key > newNode->key)) first = newNode;
+					if (!last || (last->key < newNode->key)) last = newNode;
+
 					++count;
 					return newNode;
 				}
@@ -2706,6 +2715,9 @@ namespace GL {
 
 			// we only end up here if the root node is empty
 			root->add_child(newNode);
+
+			if (!first || (first->key > newNode->key)) first = newNode;
+			if (!last || (last->key < newNode->key)) last = newNode;
 
 			++count;
 			return newNode;
@@ -2722,6 +2734,9 @@ namespace GL {
 
 			// acquire all relevant locks before we perform the deletion
 			if (locking.size() == 0) locking.push_back(mut); // get the global tree lock		
+
+			if (first == node) first = GetNextLeaf(node, locking);
+			if (last == node) last = GetPrevLeaf(node, locking);
 
 			// unlink the node from it's parent
 			parent = node->parent;
@@ -3089,8 +3104,7 @@ namespace GL {
 			auto g{ ProtectCurrentEpoch() };
 
 			if (1) {
-				auto locked = lock_shared();
-				if (epoch_search_treeNode* node = GetNextLeaf(GetRoot(locked), locked)) {
+				if (epoch_search_treeNode* node = first; node != nullptr) {
 					if (func(node->key, *node->object())) {
 						// need to do removal
 					}
@@ -3098,11 +3112,12 @@ namespace GL {
 						return false;
 					}
 				}
+
 			}
-			
+
 			if (1) {
 				auto locked = lock();
-				if (epoch_search_treeNode* node = GetNextLeaf(GetRoot(locked), locked)) {
+				if (epoch_search_treeNode* node = first; node) {
 					if (func(node->key, *node->object())) {
 						Remove(node, locked);
 						return true;
@@ -3118,15 +3133,22 @@ namespace GL {
 		template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
 			do_at_end(Func const& func) {
 			auto g{ ProtectCurrentEpoch() };
-
-			auto locked = lock_shared();
-			if (epoch_search_treeNode* p = GetPrevLeaf(GetRoot(locked), locked); p) {
-				func(p->key, *p->object());
+			if (auto* L = last; L != nullptr) {
+				func(L->key, *L->object());
 				return true;
 			}
 			else {
 				return false;
 			}
+
+			//auto locked = lock_shared();
+			//if (last) {
+			//	func(last->key, *last->object());
+			//	return true;
+			//}
+			//else {
+			//	return false;
+			//}
 		};
 	private:
 		epoch_search_treeNode*

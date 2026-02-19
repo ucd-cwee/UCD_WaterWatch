@@ -224,7 +224,6 @@ namespace GL {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
                 using ResultForInputType = GL::shared_ptr<T>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
                 GL::epoch_search_tree<std::array<ResultForInputType, numCategories>, size_t>
-                // GL::atomic_map<size_t, std::array<ResultForInputType, numCategories>>
                     _current_cache; 
             public:
                 TypedCache() = default;
