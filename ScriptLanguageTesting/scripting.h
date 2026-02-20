@@ -1056,44 +1056,25 @@ namespace GL {
 
                     if (!func) return {};
 
-                    //std::cout << "trying to call function: " << func->m_signature.display() << " using: { ";
-
-                    short pos{ 0 };
-                    for (iter_type begin_2 = begin; (begin_2 != end) && (pos < 16); ++begin_2, ++pos) {
-                        if (!const_cast<any::fast_any*>(&*begin_2)->can_free_cast(func->m_signature.argument_types_m[pos])) {
-                            pos = 32;
-                            // break;
-                        }
-                        //std::cout << const_cast<any::fast_any*>(&*begin_2)->m_casted_type.name() << " ";
-                    }
-                    //std::cout << " }\n";
-
-                    if (pos >= 32) {
-                        // requires casting
-                        pos = 0;
-                        std::vector<GL::any::fast_any> params;
-                        params.reserve(16);
-                        for (; (begin != end) && (pos < 16); ++begin, ++pos) {
-                            if (!const_cast<any::fast_any*>(&*begin)->can_free_cast(func->m_signature.argument_types_m[pos])) {
-                                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) };
-                                if (conversion_func) {
-                                    //std::cout << "converting from " << const_cast<any::fast_any*>(&*begin)->m_casted_type.name() << " to " << func->m_signature.argument_types_m[pos].name() << " using " << conversion_func->m_signature.display() << std::endl;
-                                    params.push_back(conversion_func->operator()(const_cast<any::fast_any*>(&*begin), const_cast<any::fast_any*>(&*begin) + 1));
-                                }
-                                else {
-                                    throw std::runtime_error("Could not make the cast happen");
-                                }
+                    short pos = 0;
+                    std::vector<GL::any::fast_any> params;
+                    params.reserve(16);
+                    for (; (begin != end) && (pos < 16); ++begin, ++pos) {
+                        if (!const_cast<any::fast_any*>(&*begin)->can_free_cast(func->m_signature.argument_types_m[pos])) {
+                            GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) };
+                            if (conversion_func) {
+                                params.push_back(conversion_func->operator()(const_cast<any::fast_any&>(*begin)));
                             }
                             else {
-                                params.push_back(*const_cast<any::fast_any*>(&*begin));
+                                throw std::runtime_error("Could not make the cast happen");
                             }
                         }
-                        return func->operator()(params.begin(), params.end());
+                        else {
+                            params.push_back(*const_cast<any::fast_any*>(&*begin));
+                        }
                     }
-                    else {
-                        // no cast required
-                        return func->operator()(begin, end);
-                    }
+                    return func->operator()(params.begin(), params.end());
+
                 };
                 // fast path
                 GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {

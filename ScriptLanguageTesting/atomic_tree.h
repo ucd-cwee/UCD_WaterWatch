@@ -440,7 +440,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = fast_shared_mutex; // fast_shared_mutex; // std::shared_mutex; // std::shared_mutex; // 
+		using lock_type = fast_shared_mutex; // std::shared_mutex; // std::shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;
@@ -515,10 +515,8 @@ namespace GL{
 					// shift everything forward
 
 	#if 0
-					for (j = numChildren; j > i; --j) {
-						ch[j] = ch[j - 1];
-						ch[j]->parent_index = j;
-					}
+					for (j = numChildren; j > i; --j) ch[j] = ch[j - 1];					
+					for (j = numChildren; j > i; --j) ch[j]->parent_index = j;					
 					ch[i] = p;
 	#else
 					std::memmove(&ch[i + 1], &ch[i], sizeof(parallel_binary_search_treeNode*) * (numChildren - i));
@@ -621,15 +619,6 @@ namespace GL{
 				}
 				return child;
 	#else
-				//if (K >= children()[numChildren - 1]->key) {
-				//	// it will be one of the final children
-				//	for (int i = numChildren - 2; i >= 0; --i) {
-				//		if (children()[i]->key < K) return children()[i + 1];
-				//	}
-				//	// worst-case we searched them all...
-				//	return children()[0];
-				//}
-				//else {
 				int
 					len,
 					mid,
@@ -665,7 +654,6 @@ namespace GL{
 				mid = offset + (int)res;
 				if (mid == numChildren) return children()[offset];
 				else return children()[mid];
-				//}
 	#endif
 			};
 
@@ -2248,7 +2236,7 @@ namespace GL {
 	template< class objType, class keyType, int maxChildrenPerNode = 10>
 	class epoch_search_tree {
 	public:
-		using lock_type = fast_shared_mutex; // std::shared_mutex; //  std::shared_mutex; // fast_shared_mutex; //  
+		using lock_type = fast_shared_mutex; // std::shared_mutex; // fast_shared_mutex; //  
 		struct epoch_search_treeNode {
 			std::variant<std::unique_ptr<objType>, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
 				data;
