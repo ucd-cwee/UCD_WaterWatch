@@ -440,7 +440,7 @@ namespace GL{
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class parallel_binary_search_tree {
 	public:
-		using lock_type = fast_shared_mutex; //  std::shared_mutex; // fast_shared_mutex; // std::shared_mutex; // 
+		using lock_type = fast_shared_mutex; // fast_shared_mutex; // std::shared_mutex; // std::shared_mutex; // 
 		struct parallel_binary_search_treeNode {
 			keyType	// key used for sorting						
 				key;

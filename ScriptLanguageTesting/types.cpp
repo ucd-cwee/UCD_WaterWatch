@@ -7,7 +7,23 @@
 namespace GL {
     namespace impl {
         // boost::type_info hashes are unpredictable and therefore we must use a map.
-        static concurrency::concurrent_unordered_map< size_t, impl::cached_type > builtin_cpp_types;
+        template<unsigned int N> struct right_shift
+        {
+            // This actually makes sense for N = 2 or N = 3, since the low 3 bits
+            // are always zero, for larger N this only discards entropy.
+            // Surprisingly, this is not at all a bad hash, most of the time
+            // among the fastest three!
+            constexpr size_t operator()(size_t k) const
+            {
+                return k >> N;
+            }
+        };
+
+        static 
+        //  GL::bTree< impl::cached_type, size_t, 10>
+        //  concurrency::concurrent_unordered_map< size_t, impl::cached_type, right_shift<4> > builtin_cpp_types;
+            std::unordered_map< size_t, impl::cached_type/*, right_shift<4>*/ > 
+            builtin_cpp_types;
         // atomic_vector because ticket system will prefer small values. 
         static GL::atomic_vector< impl::cached_type > scripted_types; 
         // ticket system helps ensure values remain small. 
@@ -49,11 +65,29 @@ namespace GL {
                 return scripted_types[hash];
             } 
             else {
+#if 1
                 return builtin_cpp_types[hash];
+#else
+                if (auto* p = builtin_cpp_types.NodeFind(hash); p) {
+                    return *p->object;
+                }
+                else {
+                    return *builtin_cpp_types.Add(new impl::cached_type(), hash)->object;
+                }
+#endif
             }
         };
         cached_type& get_impl(size_t hash) {
+#if 1
             return builtin_cpp_types[hash];
+#else
+            if (auto* p = builtin_cpp_types.NodeFind(hash); p) {
+                return *p->object;
+            }
+            else {
+                return *builtin_cpp_types.Add(new impl::cached_type(), hash)->object;
+            }
+#endif
         };
         bool cached_type::is_derived_from(size_t base) const {
             if (this->base_hash == base) {

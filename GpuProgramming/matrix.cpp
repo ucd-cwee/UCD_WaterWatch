@@ -1411,11 +1411,11 @@ public:
             auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type));
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type));
-            if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;            
-            return out;
+            if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;
+            return out;           
         };
         template <typename... U> static T* create_single(U&&... args) {
-            unsigned int N = 1;
+            constexpr unsigned int N = 1;
             auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type));
             *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
             T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type));

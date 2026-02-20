@@ -1213,7 +1213,7 @@ namespace GL {
             template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static fast_any instance(ValueType&& value) noexcept {
                 return fast_any(type_erasure::wrap(std::move(value)), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
             };    
-            static fast_any instance(const any& value) noexcept {
+            static fast_any instance(any&& value) noexcept {
                 return value.fast();
             };
             static fast_any instance(const fast_any& value) noexcept {

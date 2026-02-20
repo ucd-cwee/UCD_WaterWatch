@@ -500,37 +500,36 @@ int main() {
                     }
 
                     if (1) {
-                        auto x0 = program_root.call("foot", { GL::any(100.0).fast() }).fast();
+                        auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
                         auto v0 = program_root.call("/", { 
-                            program_root.call("foot", { GL::any(10).fast() }).fast(), 
-                            program_root.call("second", { GL::any(1).fast() }).fast() 
-                        }).fast();
+                            program_root.call("foot", { GL::any::fast_any::instance(10) }), 
+                            program_root.call("second", { GL::any::fast_any::instance(1) })
+                        });
                         auto a0 = program_root.call("/", { 
                             v0, 
-                            program_root.call("second", { GL::any(1).fast() }).fast() 
-                        }).fast();
-                        auto t = program_root.call("second", { GL::any(5).fast() }).fast();
+                            program_root.call("second", { GL::any::fast_any::instance(1) })
+                        });
+                        auto t = program_root.call("second", { GL::any::fast_any::instance(5) });
                         auto d = program_root.call("+", { 
                             program_root.call("*", { 
                                 v0, 
                                 t
-                            }).fast(),
+                            }),
                             program_root.call("*", { 
                                 program_root.call("*", { 
                                     program_root.call("pow", {
                                         t, 
-                                        GL::any(2).fast()
-                                    }).fast(), 
+                                        GL::any::fast_any::instance(2)
+                                    }), 
                                     a0
-                                }).fast(), 
-                                GL::any(0.5).fast() 
-                            }).fast() 
-                        }).fast();
+                                }), 
+                                GL::any::fast_any::instance(0.5)
+                            }) 
+                        });
                         auto x = program_root.call("+", { 
                             x0, 
                             d
-                        }).fast();
-                        
+                        });                        
                         //print(program_root.call("to_string", { x }).cast<GL::string>());
                     }
                 }
@@ -563,8 +562,8 @@ int main() {
 
                     program_root.perform_builtins();
 
-                    program_root.add_function(GL::make_callable("ref_cast", [](GL::any::fast_any const& from) -> GL::any {
-                        GL::any out(from);
+                    program_root.add_function(GL::make_callable("ref_cast", [](GL::any::fast_any const& from) -> GL::any::fast_any {
+                        GL::any::fast_any out(from);
                         out.m_casted_type = GL::type_of<float&>();
                         return out;
                         }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", GL::type_of<int&>() } }, GL::type_of<float&>()));
@@ -572,8 +571,8 @@ int main() {
                     program_root.add_function(GL::make_callable("value", [](GL::any::fast_any const& from) -> GL::value {
                         return GL::meter();
                         }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", custom_unit_type.load() | GL::type::Const | GL::type::Reference } }, GL::type_of< GL::value>()));
-                    program_root.add_function(GL::make_callable("custom_unit_type", [x = custom_unit_type.load()](GL::meter const& from)->GL::any {
-                        GL::any out;
+                    program_root.add_function(GL::make_callable("custom_unit_type", [x = custom_unit_type.load()](GL::meter const& from)->GL::any::fast_any {
+                        GL::any::fast_any out;
                         out.m_casted_type = x;
                         return out;
                     }, GL::function_signature::Constructor | GL::function_signature::Async | GL::function_signature::NoCost, {}, { { "From", GL::type_of<GL::meter const&>() } }, custom_unit_type.load()));
@@ -587,7 +586,7 @@ int main() {
 
                     program_root.add_function(GL::make_callable(
                         "print"
-                        , [](GL::any const& any_type) -> std::string { return any_type.cast<std::string>() + "_root"; }
+                        , [](GL::any::fast_any const& any_type) -> std::string { return any_type.cast<std::string>() + "_root"; }
                         , { std::string{ "root_default" } }
                     ));
                     program_root.add_function(GL::make_callable("type_name", [](GL::any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }));
@@ -603,7 +602,7 @@ int main() {
 
                     std_string_namespace.add_function(GL::make_callable(
                         "print"
-                        , [](GL::any const& any_type) -> std::string {
+                        , [](GL::any::fast_any const& any_type) -> std::string {
                             if (any_type.can_cast(GL::type_of<std::string>())) {
                                 return any_type.cast<std::string>() + "_std";
                             }
@@ -795,6 +794,40 @@ int main() {
                         }
                     }
 
+                    GL::parallel::For(0, 1000000, [&](size_t i) {
+                        auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
+                        auto v0 = program_root.call("/", {
+                            program_root.call("foot", { GL::any::fast_any::instance(10) }),
+                            program_root.call("second", { GL::any::fast_any::instance(1) })
+                        });
+                        auto a0 = program_root.call("/", {
+                            v0,
+                            program_root.call("second", { GL::any::fast_any::instance(1) })
+                        });
+                        auto t = program_root.call("second", { GL::any::fast_any::instance(5) });
+                        auto d = program_root.call("+", {
+                            program_root.call("*", {
+                                v0,
+                                t
+                            }),
+                            program_root.call("*", {
+                                program_root.call("*", {
+                                    program_root.call("pow", {
+                                        t,
+                                        GL::any::fast_any::instance(2)
+                                    }),
+                                    a0
+                                }),
+                                GL::any::fast_any::instance(0.5)
+                            })
+                        });
+                        auto x = program_root.call("+", {
+                            x0,
+                            d
+                        });                        
+                    });
+
+                    // for (int i = 0; i < 1000000; ++i) {
                     GL::parallel::For(0, 1000000, [&](size_t i) {
                         EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double>()));
                         EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double&&>()));
