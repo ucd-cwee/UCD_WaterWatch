@@ -34,7 +34,7 @@ namespace GL {
         string& operator=(string&&) = default;
         virtual ~string() = default;
 
-        template <size_t N> __forceinline string(const char(&r)[N]) : data(r) {};
+        template <size_t N> string(const char(&r)[N]) : data(r) {};
         string(std::string&& _Copy) : _data(std::make_shared<std::string>(std::move(_Copy))) {
             data = *_data;
         };

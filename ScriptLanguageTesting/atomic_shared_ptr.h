@@ -201,7 +201,9 @@ namespace /* atomic_shared_ptr */ GL {
     template<typename T> class /*alignas(CACHE_LINE_SIZE)*/ fast_shared_ptr {
         template<typename A> friend class atomic_shared_ptr;
     public:
-        fast_shared_ptr() : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {}
+        explicit fast_shared_ptr(shared_ptr<T>&& Data);
+        fast_shared_ptr() : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {};
+        fast_shared_ptr(std::nullptr_t) : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {};
         fast_shared_ptr(fast_shared_ptr<T>&& other)
             : knownValue(other.knownValue)
             , foreignPackedPtr(other.foreignPackedPtr)
@@ -230,8 +232,17 @@ namespace /* atomic_shared_ptr */ GL {
             destroy();
         };
 
-        T* get() { return data; }
-        T* operator->() { return data; }
+        friend bool operator==(fast_shared_ptr const& lhs, fast_shared_ptr const& rhs) {
+            if (!rhs) return !lhs;
+            else if (!lhs) return false;
+            else return rhs.data == lhs.data;
+        };
+        friend bool operator!=(fast_shared_ptr const& lhs, fast_shared_ptr const& rhs) {
+            return !operator==(lhs, rhs);
+        };
+
+        T* get() const { return data; }
+        T* operator->() const { return data; }
         template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
         decltype(auto) operator*() {
             return *get();
@@ -456,6 +467,10 @@ namespace /* atomic_shared_ptr */ GL {
     template<typename To, typename From> static _NODISCARD shared_ptr<To> static_pointer_cast(shared_ptr<From> && from) {
         return shared_ptr<To>(from);
     };
+    template<typename T> __forceinline fast_shared_ptr<T>::fast_shared_ptr(shared_ptr<T>&& Data) : knownValue(reinterpret_cast<size_t>(Data.release_control_block()) << MAGIC_LEN), foreignPackedPtr(nullptr), data(nullptr) {
+        data = reinterpret_cast<T*>(get_control_block()->data);
+    };
+
 
 };
 namespace /* hash */ std {

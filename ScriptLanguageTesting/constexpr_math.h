@@ -1,4 +1,4 @@
-#if 0
+#if 1
 // see: https://github.com/elbeno/constexpr/tree/master/src/include
 #pragma region constexpr math
 

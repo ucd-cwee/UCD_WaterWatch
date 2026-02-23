@@ -3,6 +3,7 @@
 #include "Parallel.h"
 #include "units.h"
 #include "../GpuProgramming/matrix.h"
+#include "constexpr_math.h"
 
 // GL::Proxy_Functions, which wrap other functions into a shareable interface
 namespace GL {
@@ -1762,7 +1763,21 @@ namespace GL {
                 }, {}, { { "From", GL::type_of< From const&>() } }, GL::type_of<To>() | GL::type::Temporary);
                 out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                 out->m_signature.state_m |= GL::function_signature::NoCost;
-                out->m_signature.numConversions = 1;
+                if constexpr ((std::is_pod<From>::value || details::is_numeric_type<From>()) && (std::is_pod<To>::value || details::is_numeric_type<To>())) {
+                    constexpr short sz_diff = cx::abs((float)(short)sizeof(From) - (float)(short)sizeof(To));
+                    if constexpr (sz_diff >= 6) {
+                        out->m_signature.numConversions = 3;
+                    }
+                    else if constexpr (sz_diff >= 4) {
+                        out->m_signature.numConversions = 2;
+                    }
+                    else {
+                        out->m_signature.numConversions = 1;
+                    }
+                }
+                else {
+                    out->m_signature.numConversions = 1;
+                }                
             }
             else {
                 if constexpr (details::is_numeric_type<From>() && details::is_numeric_type<To>()) {

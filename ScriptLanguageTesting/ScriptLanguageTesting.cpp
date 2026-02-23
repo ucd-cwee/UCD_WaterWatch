@@ -794,172 +794,177 @@ int main() {
                         }
                     }
 
-                    GL::parallel::For(0, 1000000, [&](size_t i) {
-                        auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
-                        auto v0 = program_root.call("/", {
-                            program_root.call("foot", { GL::any::fast_any::instance(10) }),
-                            program_root.call("second", { GL::any::fast_any::instance(1) })
-                        });
-                        auto a0 = program_root.call("/", {
-                            v0,
-                            program_root.call("second", { GL::any::fast_any::instance(1) })
-                        });
-                        auto t = program_root.call("second", { GL::any::fast_any::instance(5) });
-                        auto d = program_root.call("+", {
-                            program_root.call("*", {
+                    if (auto timer = sw.debug_timer("example calc")) {
+                        GL::parallel::For(0, 1000000, [&](size_t i) {
+                            auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
+                            auto v0 = program_root.call("/", {
+                                program_root.call("foot", { GL::any::fast_any::instance(10) }),
+                                program_root.call("second", { GL::any::fast_any::instance(1) })
+                                });
+                            auto a0 = program_root.call("/", {
                                 v0,
-                                t
-                            }),
-                            program_root.call("*", {
+                                program_root.call("second", { GL::any::fast_any::instance(1) })
+                                });
+                            auto t = program_root.call("second", { GL::any::fast_any::instance(5) });
+                            auto d = program_root.call("+", {
                                 program_root.call("*", {
-                                    program_root.call("pow", {
-                                        t,
-                                        GL::any::fast_any::instance(2)
-                                    }),
-                                    a0
+                                    v0,
+                                    t
                                 }),
-                                GL::any::fast_any::instance(0.5)
-                            })
+                                program_root.call("*", {
+                                    program_root.call("*", {
+                                        program_root.call("pow", {
+                                            t,
+                                            GL::any::fast_any::instance(2)
+                                        }),
+                                        a0
+                                    }),
+                                    GL::any::fast_any::instance(0.5)
+                                })
+                                });
+                            auto x = program_root.call("+", {
+                                x0,
+                                d
+                                });
+                            });
+                    }
+
+                    if (auto timer = sw.debug_timer("try_get_converter")) {
+                        // for (int i = 0; i < 1000000; ++i) {
+                        GL::parallel::For(0, 1000000, [&](size_t i) {
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<double>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<double const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<GL::value>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&>(), GL::type_of<GL::value&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<GL::value&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), GL::type_of<GL::value const&>()));
+
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), custom_unit_type));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), custom_unit_type));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), custom_unit_type.load() | GL::type::Temporary));
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), custom_unit_type)); // requires a copy operation, but since it's going to a base type, that's OK
+                            EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), custom_unit_type.load() | GL::type::Temporary)); // requires a copy operation, but since it's going to a temp type, that's OK
+                            EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type, GL::type_of<GL::value>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type, GL::type_of<GL::meter const&>()));
+                            EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference));
+                            EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference | GL::type::Const, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
+                            EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
+
+                            EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&>()));
+                            EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&>()));
+                            EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&>()));
+                            EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
+                            EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
+                            EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
+                            });
+                    }
+
+                    if (auto timer = sw.debug_timer("try_find_callable")) {
+                        // for (int i = 0; i < 1000000; ++i) {
+                        GL::parallel::For(0, 1000000, [&](size_t i) {
+                            using namespace GL::literals;
+                            using namespace std::literals::string_literals;
+
+                            std::vector < GL::any > types{ GL::any{ "test"s } };
+                            std::vector < GL::any > types2{ GL::any{ 100_ft } };
+                            std::vector < GL::any > types3{ GL::any{ 100_ft }, GL::any{ 100_ft } };
+                            std::vector < GL::any > types4{ GL::any{ 100 }, GL::any{ 100 } };
+                            std::vector < GL::any > types5{ GL::any{ 'a' }, GL::any{ 'b' } };
+                            std::vector < GL::any > empty_types;
+
+                            EXPECT_EQ(nullptr, program_root.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                            EXPECT_EQ(nullptr, program_root.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only)); // finds an object
+                            EXPECT_NE(nullptr, program_root.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                            EXPECT_NE(nullptr, program_root.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+
+                            EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                            EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
+                            EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                            EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+
+                            if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("std_string", f->operator()(types).cast<GL::type>().name()); // std_string
+                            }
+                            if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ(4, f->operator()(types).cast<size_t>()); // 4
+                            }
+
+                            // finds the ProxyFunction object. objects are preferred over functions if that object is a compatable function. Note that template-function-objects are preferred over free-cast namespaced-functions! 
+                            if (auto f = std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ(std::numeric_limits<size_t>::max(), f->operator()(types).cast<size_t>());
+                            }
+                            if (auto f = program_root.try_find_callable("::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
+                            }
+                            if (auto f = program_root.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
+                            }
+                            if (auto f = program_root.try_find_callable("print", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("root_default_root", f->operator()(empty_types).cast<std::string>()); // default
+                                EXPECT_EQ("root_default_root", f->operator()().cast<std::string>()); // default
+                            }
+                            if (auto f = std_string_namespace.try_find_callable("::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
+                            }
+                            if (auto f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
+                                //print(f->operator()(types).cast<std::string>() + " @ 898");
+                            }
+                            if (auto f = program_root.try_find_callable("std::string::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
+                                //print(f->operator()(types).cast<std::string>() + " @ 902");
+                            }
+                            if (auto f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ(false, program_root.get_converters().can_convert(types2[0].m_casted_type, GL::type_of<std::string>()));
+                                EXPECT_EQ("any_std", f->operator()(types2).cast<std::string>()); // test
+                            }
+                            if (auto f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end()); f) {
+                                auto result = program_root.get_converters().call_with_conversions(&*f, types2);
+                                EXPECT_EQ("any_std", result.cast<std::string>()); // test
+                            }
+                            if (auto f = std_string_namespace.try_find_callable("print", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
+                                EXPECT_EQ("std_string_default_std", f->operator()(empty_types).cast<std::string>()); // default
+                                EXPECT_EQ("std_string_default_std", f->operator()().cast<std::string>()); // default
+                            }
+                            if (auto f = program_root.try_find_callable("+2", types3.begin(), types3.end()); f) {
+                                auto result = program_root.get_converters().call_with_conversions(&*f, types3); // will not perform any cast ('foot' was ok already) then call the function, returning a 'foot'
+                                EXPECT_EQ("foot", result.m_casted_type.name());
+                            }
+                            if (auto f = program_root.try_find_callable("+2", types4.begin(), types4.end()); f) {
+                                auto result = program_root.get_converters().call_with_conversions(&*f, types4); // will not perform any cast ('int' was ok already) then call the function, returning a 'int'
+                                EXPECT_EQ("int", result.m_casted_type.name());
+                            }
+                            if (auto f = program_root.try_find_callable("+2", types5.begin(), types5.end()); f) {
+                                auto result = program_root.get_converters().call_with_conversions(&*f, types5); // 'char' is convertable to either 'foot' or 'int' or 'float', etc., therefore no guarrantee what is selected. 
+                                EXPECT_EQ("int", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. 
+                            }
                         });
-                        auto x = program_root.call("+", {
-                            x0,
-                            d
-                        });                        
-                    });
-
-                    // for (int i = 0; i < 1000000; ++i) {
-                    GL::parallel::For(0, 1000000, [&](size_t i) {
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<double const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<double const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&>(), GL::type_of<double const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int>(), GL::type_of<int&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<double>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<double const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<GL::value>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&>(), GL::type_of<GL::value&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), GL::type_of<GL::value&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), GL::type_of<GL::value const&>()));
-
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter>(), custom_unit_type));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), custom_unit_type));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter&&>(), custom_unit_type.load() | GL::type::Temporary));
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), custom_unit_type)); // requires a copy operation, but since it's going to a base type, that's OK
-                        EXPECT_EQ(true, program_root.try_get_converter(GL::type_of<GL::meter const&>(), custom_unit_type.load() | GL::type::Temporary)); // requires a copy operation, but since it's going to a temp type, that's OK
-                        EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type, GL::type_of<GL::value>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type, GL::type_of<GL::meter const&>()));
-                        EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference));
-                        EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference | GL::type::Const, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
-                        EXPECT_EQ(true, program_root.try_get_converter(custom_unit_type.load() | GL::type::Reference, custom_unit_type_base.load() | GL::type::Reference | GL::type::Const));
-
-                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<double&>()));
-                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int&&>(), GL::type_of<int&>()));
-                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<int const&>(), GL::type_of<int&>()));
-                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
-                        EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
-                        EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
-                    });
-
-                    // for (int i = 0; i < 1000000; ++i) {
-                    GL::parallel::For(0, 1000000, [&](size_t i) {
-                        using namespace GL::literals;
-                        using namespace std::literals::string_literals;
-
-                        std::vector < GL::any > types{ GL::any{ "test"s } };
-                        std::vector < GL::any > types2{ GL::any{ 100_ft } };
-                        std::vector < GL::any > types3{ GL::any{ 100_ft }, GL::any{ 100_ft } };
-                        std::vector < GL::any > types4{ GL::any{ 100 }, GL::any{ 100 } };
-                        std::vector < GL::any > types5{ GL::any{ 'a' }, GL::any{ 'b' } };
-                        std::vector < GL::any > empty_types;
-
-                        EXPECT_EQ(nullptr, program_root.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
-                        EXPECT_EQ(nullptr, program_root.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only)); // finds an object
-                        EXPECT_NE(nullptr, program_root.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
-                        EXPECT_NE(nullptr, program_root.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
-
-                        EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
-                        EXPECT_NE(nullptr, std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only));
-                        EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
-                        EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
-
-                        if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("std_string", f->operator()(types).cast<GL::type>().name()); // std_string
-                        }
-                        if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ(4, f->operator()(types).cast<size_t>()); // 4
-                        }
-
-                        // finds the ProxyFunction object. objects are preferred over functions if that object is a compatable function. Note that template-function-objects are preferred over free-cast namespaced-functions! 
-                        if (auto f = std_string_namespace.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ(std::numeric_limits<size_t>::max(), f->operator()(types).cast<size_t>());
-                        }
-                        if (auto f = program_root.try_find_callable("::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
-                        }
-                        if (auto f = program_root.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
-                        }
-                        if (auto f = program_root.try_find_callable("print", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("root_default_root", f->operator()(empty_types).cast<std::string>()); // default
-                            EXPECT_EQ("root_default_root", f->operator()().cast<std::string>()); // default
-                        }
-                        if (auto f = std_string_namespace.try_find_callable("::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("test_root", f->operator()(types).cast<std::string>()); // default
-                        }
-                        if (auto f = std_string_namespace.try_find_callable("print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
-                            //print(f->operator()(types).cast<std::string>() + " @ 898");
-                        }
-                        if (auto f = program_root.try_find_callable("std::string::print", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("test_std_string", f->operator()(types).cast<std::string>()); // test
-                            //print(f->operator()(types).cast<std::string>() + " @ 902");
-                        }
-                        if (auto f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ(false, program_root.get_converters().can_convert(types2[0].m_casted_type, GL::type_of<std::string>()));
-                            EXPECT_EQ("any_std", f->operator()(types2).cast<std::string>()); // test
-                        }
-                        if (auto f = std_string_namespace.try_find_callable("print", types2.begin(), types2.end()); f) {
-                            auto result = program_root.get_converters().call_with_conversions(&*f, types2);
-                            EXPECT_EQ("any_std", result.cast<std::string>()); // test
-                        }
-                        if (auto f = std_string_namespace.try_find_callable("print", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                            EXPECT_EQ("std_string_default_std", f->operator()(empty_types).cast<std::string>()); // default
-                            EXPECT_EQ("std_string_default_std", f->operator()().cast<std::string>()); // default
-                        }
-                        if (auto f = program_root.try_find_callable("+2", types3.begin(), types3.end()); f) {
-                            auto result = program_root.get_converters().call_with_conversions(&*f, types3); // will not perform any cast ('foot' was ok already) then call the function, returning a 'foot'
-                            EXPECT_EQ("foot", result.m_casted_type.name());
-                        }
-                        if (auto f = program_root.try_find_callable("+2", types4.begin(), types4.end()); f) {
-                            auto result = program_root.get_converters().call_with_conversions(&*f, types4); // will not perform any cast ('int' was ok already) then call the function, returning a 'int'
-                            EXPECT_EQ("int", result.m_casted_type.name());
-                        }
-                        if (auto f = program_root.try_find_callable("+2", types5.begin(), types5.end()); f) {
-                            auto result = program_root.get_converters().call_with_conversions(&*f, types5); // 'char' is convertable to either 'foot' or 'int' or 'float', etc., therefore no guarrantee what is selected. 
-                            // print(result.m_casted_type.name());
-                            EXPECT_NE("void", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. 
-                        }
-                    });
+                    }
 
                     std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));
                     std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());
@@ -1085,6 +1090,10 @@ int main() {
                         EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
                     }
                     EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
+
+
+
+
                 // }
             }
 
