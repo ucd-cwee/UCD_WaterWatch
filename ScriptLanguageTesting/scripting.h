@@ -1106,6 +1106,7 @@ namespace GL {
             /// </summary>
             class BasicScope {
                 friend class NamespaceScope;
+                friend class ClassScope;
                 friend class RootScope;
                 friend class Breadcrumb;
             protected:
@@ -1699,6 +1700,7 @@ namespace GL {
             /// </summary>
             class NamespaceScope : public BasicScope {
                 friend class BasicScope;
+                friend class ClassScope;
                 friend class RootScope;
                 friend class Breadcrumb;
             protected:
@@ -2016,6 +2018,30 @@ namespace GL {
                     }
                 };
 
+                /// <summary>
+                /// Finds or creates a new class scope as a child of this one, and keeps it in memory. 
+                /// The created class scope will survive for the life of this parent scope. 
+                /// If a namespace already exists with the provided name or type, it will return the existing namespace without creating a new one or overwritting the existing one.
+                /// </summary>
+                /// <returns>NamespaceScope</returns>
+                ClassScope& make_class(GL::type class_type) {
+                    class_type -= GL::type::Const;
+                    class_type -= GL::type::Reference;
+                    class_type -= GL::type::Temporary;
+
+                    if (auto f = children.find(class_type.name().hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {                        
+                        return *std::dynamic_pointer_cast<ClassScope>(f->second);
+                    }
+                    else {
+                        this->invalidate_cache();
+                        auto new_class = std::dynamic_pointer_cast<ClassScope>(children.insert(
+                            { class_type.name().hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
+                        ).first->second);
+                        this->GetRoot()->classes.insert({ class_type.get_base_hash(), &new_class->breadcrumb_m });
+                        return *new_class;
+                    }
+                };
+
                 // attempts to find a suitable function from this set that is callable with the given parameters. 
                 // searches for object-lambdas (lambda or not), non-template-functions, and template-functions, in that order of preference. 
                 template<typename iter> const GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_find_callable(GL::string const& PossiblyScopedName, iter const& from_iter, iter const& from_end, int search_state = 0, Breadcrumb* search_from = nullptr) const {
@@ -2141,6 +2167,7 @@ namespace GL {
 
                         // failure
                         search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert(search_hash, (GL::Proxy_Function)nullptr);
+
                         return nullptr;
                     }
                     else {
@@ -2148,7 +2175,32 @@ namespace GL {
                         const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
                         if (optionalName.length() == 0) {
                             // We only have an object name -- just do the normal search from here.
-                            return try_find_callable(optionalScope, from_iter, from_end, search_state, &const_cast<NamespaceScope*>(this)->breadcrumb_m);
+                            if (auto f = try_find_callable(optionalScope, from_iter, from_end, search_state, &const_cast<NamespaceScope*>(this)->breadcrumb_m); f) {
+                                return std::move(f);
+                            }
+                            else {
+                                if (from_iter != from_end) {
+                                    if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
+                                        if (auto search = this->GetRoot()->classes.find(from_iter->get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
+                                            return try_find_callable(PossiblyScopedName, from_iter, from_end, search_state, search->second);
+                                        }
+                                        else {
+                                            return nullptr;
+                                        }
+                                    }
+                                    else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
+                                        if (auto search = this->GetRoot()->classes.find(from_iter->m_casted_type.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
+                                            return try_find_callable(PossiblyScopedName, from_iter, from_end, search_state, search->second);
+                                        }
+                                        else {
+                                            return nullptr;
+                                        }
+                                    }
+                                }
+                                else {
+                                    return nullptr;
+                                }
+                            }
                         }
                         else {
                             Breadcrumb* closest_scope{ nullptr };
@@ -2215,7 +2267,23 @@ namespace GL {
                     this->invalidate_cache();
                 };
 
+            };
 
+            class ClassScope : public NamespaceScope {
+                friend class BasicScope;
+                friend class NamespaceScope;
+                friend class RootScope;
+                friend class Breadcrumb;
+            public:
+                // instancing a child namespace should only be done from an existing namespace
+                ClassScope(GL::type class_type, int scope_type_p = ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, Breadcrumb* parent = nullptr)
+                    : NamespaceScope(class_type.name(), scope_type_p, parent)
+                    , this_type{ class_type }
+                {};
+                ClassScope() = delete;
+                virtual ~ClassScope() {};
+            public:
+                const GL::type this_type;
 
             };
 
@@ -2225,6 +2293,7 @@ namespace GL {
             class RootScope : public NamespaceScope {
                 friend class BasicScope;
                 friend class NamespaceScope;
+                friend class ClassScope;
                 friend class Breadcrumb;
             protected:
                 // When a scope is born it will get the smallest-possible unique index for itself. 
@@ -2233,6 +2302,7 @@ namespace GL {
                     scope_indexs;
                 GL::atomic_vector<Breadcrumb*>
                     scopes; // namespaces and classes may add themselves to this list (order not guarranteed) to help with debugging or other activities. 
+
             public:
                 Functions
                     constructors;
@@ -2244,6 +2314,8 @@ namespace GL {
                     converter_lock{};
                 std::atomic<long long>
                     constructors_version{ 0 };
+                concurrency::concurrent_unordered_map<size_t, Breadcrumb*>
+                    classes; // list of all unique classes, which cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
 
             public:
                 RootScope()
@@ -2279,7 +2351,9 @@ namespace GL {
                 std::vector<GL::type> all_convertable_types() const;
                 void perform_builtins();
                 void preload_conversions();
+
             };
+
 
         };
 

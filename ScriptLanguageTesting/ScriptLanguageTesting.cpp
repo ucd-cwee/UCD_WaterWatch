@@ -534,7 +534,29 @@ int main() {
                     }
                 }
 
-                //if (1) {
+                // demonstrate calling a function from a class-scope implicitely. 
+                if (1) {
+                    std::vector<GL::any::fast_any> params{ GL::any::fast_any::instance(GL::string{ "TEST" }) };
+
+                    GL::scope::impl::RootScope
+                        program_root;
+                    program_root.perform_builtins();
+
+                    auto& utility_namespace
+                        = program_root.make_namespace("utility_functions");
+                    utility_namespace.add_function(GL::make_callable("length", [](GL::string const& r) { return r.length(); }));
+                    EXPECT_EQ(nullptr, program_root.try_find_callable("length", params.begin(), params.end()));
+
+                    auto& string_class
+                        = program_root.make_class(GL::type_of<GL::string>());
+                    EXPECT_EQ(string_class.this_type, GL::type_of<GL::string>());
+                    string_class.add_function(GL::make_callable("length", [](GL::string const& r) { return r.length(); }));
+                    EXPECT_NE(nullptr, string_class.try_find_callable("length", params.begin(), params.end()));
+                    EXPECT_NE(nullptr, program_root.try_find_callable("length", params.begin(), params.end()));
+                    EXPECT_EQ(4, program_root.call("length", params.begin(), params.end()).cast<GL::string::size_type>());                    
+                }
+
+                if (1) {
                     GL::script_type custom_unit_type_base("custom_unit_type_base");
                     GL::script_type custom_unit_type("custom_unit_type");
                     EXPECT_EQ(false, custom_unit_type.load().add_base(GL::type_of<GL::value>()));
@@ -1094,7 +1116,7 @@ int main() {
 
 
 
-                // }
+                }
             }
 
 
