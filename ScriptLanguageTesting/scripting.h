@@ -2038,6 +2038,7 @@ namespace GL {
                             { class_type.name().hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
                         ).first->second);
                         this->GetRoot()->classes.insert({ class_type.get_base_hash(), &new_class->breadcrumb_m });
+                        this->GetRoot()->classes_by_name.insert({ class_type.name(), &new_class->breadcrumb_m });
                         return *new_class;
                     }
                 };
@@ -2181,25 +2182,71 @@ namespace GL {
                             else {
                                 if (from_iter != from_end) {
                                     if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
-                                        if (auto search = this->GetRoot()->classes.find(from_iter->get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
-                                            return try_find_callable(PossiblyScopedName, from_iter, from_end, search_state, search->second);
+                                        std::queue< GL::type > types_to_try;
+                                        types_to_try.push(*from_iter);
+                                        std::set<GL::type> attempted_types;
+                                        while (types_to_try.size() > 0) {
+                                            GL::type this_t = types_to_try.front();
+                                            types_to_try.pop();
+                                            if (attempted_types.find(this_t) == attempted_types.end()) {
+                                                attempted_types.insert(this_t);
+
+                                                if (auto search = this->GetRoot()->classes.find(this_t.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
+                                                    if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
+                                                        return std::move(ff);
+                                                    }
+                                                }
+
+                                                for (GL::type const& base_type : this_t.all_base_types()) { types_to_try.push(base_type); }
+                                            }
                                         }
-                                        else {
-                                            return nullptr;
-                                        }
+
+                                        //if (auto search = this->GetRoot()->classes.find(from_iter->get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
+                                        //    if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
+                                        //        return std::move(ff);
+                                        //    }
+                                        //}
                                     }
                                     else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
-                                        if (auto search = this->GetRoot()->classes.find(from_iter->m_casted_type.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
-                                            return try_find_callable(PossiblyScopedName, from_iter, from_end, search_state, search->second);
+                                        std::queue< GL::type > types_to_try;
+                                        types_to_try.push(from_iter->m_casted_type);
+                                        std::set<GL::type> attempted_types;
+                                        while (types_to_try.size() > 0) {
+                                            GL::type this_t = types_to_try.front();
+                                            types_to_try.pop();
+                                            if (attempted_types.find(this_t) == attempted_types.end()) {
+                                                attempted_types.insert(this_t);
+
+                                                if (auto search = this->GetRoot()->classes.find(this_t.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
+                                                    if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
+                                                        return std::move(ff);
+                                                    }
+                                                }
+
+                                                for (GL::type const& base_type : this_t.all_base_types()) { types_to_try.push(base_type); }
+                                            }
                                         }
-                                        else {
-                                            return nullptr;
-                                        }
+
+                                        //if (auto search = this->GetRoot()->classes.find(from_iter->m_casted_type.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
+                                        //    if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
+                                        //        return std::move(ff);
+                                        //    }
+                                        //}
                                     }
                                 }
-                                else {
-                                    return nullptr;
+                                // is the "optionalScope" name an exact match for a class name? They may be trying to invoke a class... 
+                                if (auto search = this->GetRoot()->classes_by_name.find(optionalScope), end = this->GetRoot()->classes_by_name.end(); search != end) {
+                                    if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int) -> int {
+                                        if (!namespacePtr->this_m.is_class()) return SearchResult::Failure;
+                                        if (namespacePtr->this_m.scope_name == optionalScope) return SearchResult::Success;
+                                        return SearchResult::Failure;
+                                        })) {
+                                        if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
+                                            return std::move(ff);
+                                        }
+                                    };
                                 }
+                                return nullptr;                                
                             }
                         }
                         else {
@@ -2315,7 +2362,9 @@ namespace GL {
                 std::atomic<long long>
                     constructors_version{ 0 };
                 concurrency::concurrent_unordered_map<size_t, Breadcrumb*>
-                    classes; // list of all unique classes, which cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
+                    classes; // list of all unique classes, which cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option.  
+                concurrency::concurrent_unordered_multimap<GL::string, Breadcrumb*>
+                    classes_by_name; // list of all unique classes, which cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option.  
 
             public:
                 RootScope()

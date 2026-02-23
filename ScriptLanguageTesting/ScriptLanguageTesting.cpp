@@ -443,10 +443,10 @@ int main() {
                     program_root.perform_builtins();                    
 
                     if (1) {
-                        GL::any instance;
+                        GL::any::fast_any instance;
                         std::vector<GL::any::fast_any> empty_params;
                         instance = program_root.call("char", {});
-                        GL::any instance_ref = program_root.call("=", { instance.fast(), GL::any('A').fast() });
+                        GL::any::fast_any instance_ref = program_root.call("=", { instance, GL::any::fast_any::instance('A') });
                         EXPECT_EQ(instance_ref.cast<char>(), instance.cast<char>());
                         EXPECT_EQ(&instance_ref.cast<char&>(), &instance.cast<char&>());
                     }
@@ -483,19 +483,19 @@ int main() {
 
 
                     if (1) {                        
-                        GL::any::fast_any len_ft = program_root.call("foot", { GL::any(100.0).fast() }).fast();
-                        GL::any::fast_any len_m = program_root.call("meter", { GL::any(GL::foot(100)).fast() }).fast();
+                        GL::any::fast_any len_ft = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
+                        GL::any::fast_any len_m = program_root.call("meter", { GL::any::fast_any::instance(GL::foot(100)) });
                         EXPECT_EQ(true, program_root.call("==", { len_ft, len_m }).cast<bool>());
                     }
 
                     if (1) {
-                        GL::any::fast_any cu_ft = program_root.call("*", { GL::any(GL::foot(100)).fast(), program_root.call("*", { GL::any(GL::foot(100)).fast(), GL::any(GL::foot(100)).fast() }).fast() }).fast();
-                        EXPECT_EQ("1000000 cu_ft", program_root.call("to_string", {cu_ft}).cast<GL::string>());
+                        GL::any::fast_any cu_ft = program_root.call("*", { GL::any::fast_any::instance(GL::foot(100)), program_root.call("*", { GL::any::fast_any::instance(GL::foot(100)), GL::any::fast_any::instance(GL::foot(100)) }) });
+                        EXPECT_EQ("1000000 cu_ft", program_root.call("to_string", { cu_ft }).cast<GL::string>());
                         EXPECT_EQ(GL::gallon(GL::cubic_foot(1000000)), program_root.call("gallon", { cu_ft }).cast<GL::gallon>());
                     }
 
                     if (1) {
-                        GL::any::fast_any cu_ft = program_root.call("*", { GL::any(GL::foot(100)).fast(), program_root.call("*", { GL::any(GL::foot(100)).fast(), GL::any(GL::foot(100)).fast() }).fast() }).fast();
+                        GL::any::fast_any cu_ft = program_root.call("*", { GL::any::fast_any::instance(GL::foot(100)), program_root.call("*", { GL::any::fast_any::instance(GL::foot(100)), GL::any::fast_any::instance(GL::foot(100)) }) });
                         //print(program_root.call("pow", { cu_ft, GL::any(1.0/3.0).fast() }).cast<GL::value>()); // note that it says m^1.0000 instead of m or ft. The cubic-root was imperfect though very, very close.
                     }
 
