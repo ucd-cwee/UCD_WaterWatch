@@ -61,6 +61,21 @@ namespace /* atomic_shared_ptr */ GL {
         std::function<void(T*)> delete_func;
     };
 
+    // specialized, derived class for control blocks with specialized types.
+    template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ embedded_control_block final : public control_block_base {
+        template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : obj(_STD forward<_Types>(_Args)...), control_block_base(static_cast<void*>(&obj)) {}
+        ~embedded_control_block() = default;
+
+        void Delete() override {};
+        void DeleteSelf(control_block_base* p) override {
+            GL::arena_memory_pool::destroy_and_free(reinterpret_cast<embedded_control_block<T>*>(p));
+        };
+
+        
+        T 
+            obj;
+    };
+
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
     template<typename T> class shared_ptr {
         template<typename A> friend class shared_ptr;
@@ -69,6 +84,7 @@ namespace /* atomic_shared_ptr */ GL {
     public:
         shared_ptr() : controlBlock(nullptr), data{ nullptr } {}
         shared_ptr(std::nullptr_t) : controlBlock(nullptr), data{ nullptr } {}
+
         template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<U>>(Data))), data{ Data } {}
         template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<deleter_control_block<U>>(Data, std::move(deleter)))), data{ Data } {}
 
@@ -456,10 +472,17 @@ namespace /* atomic_shared_ptr */ GL {
         static_assert(sizeof(T*) == sizeof(size_t));
     };
 
+    
+
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
-        return shared_ptr<_Ty>(GL::arena_memory_pool::instance<_Ty>(_STD forward<_Types>(_Args)...), [](_Ty* p) {
-            GL::arena_memory_pool::destroy_and_free(p);
-        });
+        //if constexpr (std::is_move_constructible_v < _Ty>) {
+            return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<embedded_control_block<_Ty>>(_STD forward<_Types>(_Args)...)), true);
+        //}
+        //else {
+        //    return shared_ptr<_Ty>(GL::arena_memory_pool::instance<_Ty>(_STD forward<_Types>(_Args)...), [](_Ty* p) {
+        //        GL::arena_memory_pool::destroy_and_free(p);
+        //    });
+        //}
     };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
