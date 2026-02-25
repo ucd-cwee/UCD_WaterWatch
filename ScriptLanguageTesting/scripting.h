@@ -600,7 +600,7 @@ namespace GL {
                             auto temp = GL::make_callable("`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any::fast_any {
                                 GL::any::fast_any out;
                                 int pos{ 0 };
-                                for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(&from, &from + 1);
+                                for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(from);
                                 for (; pos < converters.size(); ++pos) out = (*converters[pos])->operator()(out);
                                 return out;
                                 }, state | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
@@ -2156,7 +2156,7 @@ namespace GL {
                             }
                         }
 
-                        // search for match that leverages the type-cast system
+                        // search for match that leverages the type-cast system on normally-accessable function calls
                         if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
                             // skip the object search -- that was already done. 
                             if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
@@ -2197,6 +2197,57 @@ namespace GL {
                                 else {
                                     search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert_fast(search_hash, (GL::Proxy_Function)nullptr);
                                     return nullptr;
+                                }
+                            }
+                        }
+
+                        // search for a match that leverages the type-cast system on the first argument to search alternative classes or namespaces
+                        if (from_iter != from_end) {
+                            auto* this_root = this->GetRoot();
+                            GL::type this_t;
+
+                            if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
+                                this_t = *from_iter;                                
+                            }
+                            else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
+                                this_t = from_iter->m_casted_type;                                
+                            }                
+
+                            (void)this_root->get_converters().try_get_converter(this_t, this_t + GL::type::Const + GL::type::Reference);
+                            if (auto conversions = this_root->converters.TryGetCache<0>(this->GetRoot()->constructors_version.load()); conversions) {
+                                if (auto f = conversions->find(this_t), e = conversions->end(); f != e) {
+                                    std::multimap<int, GL::type> cast_options;
+                                    for (auto& conversion_option : f->second) {
+                                        if (conversion_option.first.get_base_hash() != this_t.get_base_hash()) {
+                                            if (auto converter = conversion_option.second.load_fast(); converter) {
+                                                cast_options.insert({ converter->m_signature.numConversions, conversion_option.first });
+                                            }
+                                        }
+                                    }
+
+                                    for (auto& conversion_option : cast_options) {
+                                        if (auto potential_class = this_root->classes.find(conversion_option.second.get_base_hash()), e2 = this_root->classes.end(); potential_class != e2) {
+                                            if (Breadcrumb* BC = potential_class->second->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
+                                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
+                                                if (auto const& f = namespacePtr->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, from_iter, from_end, Functions::search_conditions::ignore_templates | search_state, this_root->get_converters()); f) {
+                                                    return SearchResult::Success;
+                                                }
+                                                else {
+                                                    return SearchResult::Failure;
+                                                }
+                                                }, nullptr, SkipChildren); BC) {
+                                                // re-do the search
+                                                if (auto const& f = BC->this_m.scope->GetNamespace()->functions.try_find_callable(PossiblyScopedName, (iter)from_iter, from_end, Functions::search_conditions::ignore_templates | search_state, this_root->get_converters()); f) {
+                                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert_fast(search_hash, (GL::Proxy_Function)f);
+                                                    return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>((Proxy_Function)f);
+                                                }
+                                                else {
+                                                    search_from->this_m.scope->GetNamespace()->search_cache.at<0>(total_hash)->insert_fast(search_hash, (GL::Proxy_Function)nullptr);
+                                                    return nullptr;
+                                                }
+                                            };
+                                        }
+                                    }
                                 }
                             }
                         }

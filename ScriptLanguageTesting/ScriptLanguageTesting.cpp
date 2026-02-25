@@ -556,6 +556,15 @@ int main() {
                     EXPECT_EQ(4, program_root.call("length", params.begin(), params.end()).cast<GL::string::size_type>());                    
                 }
 
+                // demonstrate the implicit-cast system works with calling a function from nowhere... 
+                if (1) {
+                    GL::scope::impl::RootScope
+                        program_root;
+                    program_root.perform_builtins();
+                    EXPECT_EQ(2.0f, program_root.call("log10", { GL::any::fast_any::instance(100.0) }).cast<float&>());
+                    EXPECT_EQ(100, program_root.call("abs", { GL::any::fast_any::instance(-100) }).cast<GL::value&>());
+                }
+
                 if (1) {
                     GL::script_type custom_unit_type_base("custom_unit_type_base");
                     GL::script_type custom_unit_type("custom_unit_type");
@@ -911,6 +920,9 @@ int main() {
                         GL::parallel::For(0, 1000000, [&](size_t i) {
                             using namespace GL::literals;
                             using namespace std::literals::string_literals;
+
+                            EXPECT_EQ(2.0f, program_root.call("log10", { GL::any::fast_any::instance(100.0) }).cast<float&>());
+                            EXPECT_EQ(100, program_root.call("abs", { GL::any::fast_any::instance(-100) }).cast<GL::value&>());
 
                             std::vector < GL::any > types{ GL::any{ "test"s } };
                             std::vector < GL::any > types2{ GL::any{ 100_ft } };
