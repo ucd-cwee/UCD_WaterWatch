@@ -63,17 +63,24 @@ namespace /* atomic_shared_ptr */ GL {
 
     // specialized, derived class for control blocks with specialized types.
     template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ embedded_control_block final : public control_block_base {
-        template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : obj(_STD forward<_Types>(_Args)...), control_block_base(static_cast<void*>(&obj)) {}
+        template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : control_block_base(static_cast<void*>(reinterpret_cast<T*>(&obj[0]))) {
+            if constexpr ((sizeof...(_Args) > 0) || !std::is_pod<T>::value) {
+                new (reinterpret_cast<T*>(&obj[0])) T(_STD forward<_Types>(_Args)...);
+            }
+        }
         ~embedded_control_block() = default;
 
-        void Delete() override {};
+        void Delete() override {
+            if constexpr (!std::is_pod_v<T>) {
+                reinterpret_cast<T*>(&obj[0])->~T();
+            }
+        };
         void DeleteSelf(control_block_base* p) override {
             GL::arena_memory_pool::destroy_and_free(reinterpret_cast<embedded_control_block<T>*>(p));
         };
 
-        
-        T 
-            obj;
+        unsigned char
+            obj[sizeof(T)];
     };
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 

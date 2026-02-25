@@ -488,17 +488,23 @@ namespace GL {
         public:
             template <typename... TArgs>
             instanced_data(TArgs &&... a) noexcept
-                : m_obj(std::forward<TArgs>(a)...)
-                , any_data(GL::type_of<T>())
-            {                
-                this->m_data = &m_obj;
+                : any_data(GL::type_of<T>())
+            {       
+                if constexpr ((sizeof...(TArgs) > 0) || !std::is_pod<T>::value) {
+                    new (reinterpret_cast<T*>(&m_obj[0])) T(_STD forward<TArgs>(a)...);
+                }
+                this->m_data = reinterpret_cast<T*>(&m_obj[0]);
             };
-            virtual ~instanced_data() = default;
+            virtual ~instanced_data() {
+                if constexpr (!std::is_pod_v<T>) {
+                    reinterpret_cast<T*>(&m_obj[0])->~T();
+                }
+            };
 
             GL::shared_ptr<void> get(GL::shared_ptr<any_data>&& parent_ptr) override {
                 if (parent_ptr) {
                     GL::shared_ptr<T> out(parent_ptr.release_control_block(), true);
-                    out.set_pointer_without_modifying_control_block(&m_obj);
+                    out.set_pointer_without_modifying_control_block(reinterpret_cast<T*>(&m_obj[0]));
                     return out;
                 }
                 return nullptr;
@@ -552,8 +558,8 @@ namespace GL {
             };
 
         public:
-            T
-                m_obj;
+            unsigned char
+                m_obj[sizeof(T)];
         };
 
         template <typename T>
