@@ -1038,21 +1038,25 @@ namespace GL {
                     }
                     return {};
                 };
-                template <typename iter_type> GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type begin, iter_type const& end) {
+                template <typename iter_type> __declspec(noinline) GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type begin, iter_type const& end) {
                     if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
                         static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
                     }
 
                     if (!func) return {};
-                    
-                    std::array<GL::any::fast_any, 16> raw_params;
-                    std::array<GL::any::fast_any*, 16> params;
+
+                    thread_local std::array<GL::any::fast_any, 16> raw_params;
+                    thread_local std::array<GL::any::fast_any*, 16> params;
                     short pos = 0;
+                    short raw_pos = 0;
+                    bool did_conversions = false;
                     for (; (begin != end) && (pos < 16); ++begin, ++pos) {
                         if (!get_type_of(begin).can_free_cast(func->m_signature.argument_types_m[pos])) {
                             if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) }; conversion_func) {
-                                raw_params[pos] = conversion_func->operator()(const_cast<any::fast_any&>(*begin));
-                                params[pos] = &raw_params[pos];
+                                did_conversions = true;
+                                raw_params[raw_pos] = conversion_func->operator()(const_cast<any::fast_any&>(*begin));
+                                params[pos] = &raw_params[raw_pos];
+                                ++raw_pos;
                             }
                             else {
                                 throw std::runtime_error("Could not make the cast happen");
@@ -1062,7 +1066,9 @@ namespace GL {
                             params[pos] = const_cast<any::fast_any*>(&*begin);
                         }
                     }
-                    return func->operator()(&params[0], pos);
+                    GL::any::fast_any out{ func->operator()(&params[0], pos) };
+                    if (did_conversions) for (pos = 0; pos < raw_pos; ++pos) raw_params[pos] = nullptr;
+                    return out;
                 };
                 // fast path
                 GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {
@@ -1142,38 +1148,39 @@ namespace GL {
             protected:
                 Breadcrumb
                     breadcrumb_m;
-                concurrency::concurrent_unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>
+                GL::deferred<concurrency::concurrent_unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>>
                     using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-                GL::epoch_map<GL::any, GL::string> // concurrency::concurrent_unordered_map
+                GL::deferred<GL::epoch_map<GL::any, GL::string>> // concurrency::concurrent_unordered_map
                     objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
                 virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
                 template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any&& Obj) {
                     if constexpr (overwriteIfExists) {
-                        objects_m.insert_fast(sv, std::move(Obj));
+                        objects_m->insert_fast(sv, std::move(Obj));
                     }
                     else {
-                        if (auto* f = objects_m.try_at(sv)) return false;
+                        if (auto* f = objects_m->try_at(sv)) return false;
                         else {
-                            objects_m.insert_fast(sv, std::move(Obj));
+                            objects_m->insert_fast(sv, std::move(Obj));
                         }
                     }
                     return true;
                 };
                 GL::any* GetObject_Impl(GL::string const& sv) {
-                    if (auto* f = objects_m.try_at(sv))
-                        return f;
-                    else
-                        return nullptr;
+                    if (objects_m) {
+                        if (auto* f = objects_m->try_at(sv))
+                            return f;
+                    }
+                    return nullptr;
                 };
                 virtual bool AddUsing_Impl(Breadcrumb* scope) {
                     if (scope) {
                         if (scope->this_m.is_namespace()) {
-                            if (auto f = using_m.find(scope); f == using_m.end()) {
-                                using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, GL::callback<NamespaceScope>::ScopedListener() });
+                            if (auto f = using_m->find(scope); f == using_m->end()) {
+                                using_m->insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, GL::callback<NamespaceScope>::ScopedListener() });
                                 this->GetNamespace()->invalidate_cache();
                                 return true;
-                            }
+                            }                            
                         }
                     }
                     return false;
@@ -1293,11 +1300,13 @@ namespace GL {
                     }
 
                     // test my personal "using" namespaces completely
-                    if (using_m.size() > 0ull) {
-                        for (auto& childNamespace : using_m) {
-                            if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
-                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                return finalResult;
+                    if (using_m) {
+                        if (using_m->size() > 0ull) {
+                            for (auto& childNamespace : *using_m) {
+                                if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
+                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                    return finalResult;
+                                }
                             }
                         }
                     }
@@ -1332,12 +1341,14 @@ namespace GL {
                                 }
                             }
                             // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag2 & CheckFlagState::all) > 0) continue;
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag2 & CheckFlagState::all) > 0) continue;
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -1367,12 +1378,14 @@ namespace GL {
                             }
 
                             // test my personal "using" namespaces completely
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag & CheckFlagState::all) > 0) { continue; }
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag & CheckFlagState::all) > 0) { continue; }
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -1404,12 +1417,14 @@ namespace GL {
                                 }
                             }
                             // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag2 & CheckFlagState::all) > 0) continue;
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag2 & CheckFlagState::all) > 0) continue;
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -1500,9 +1515,11 @@ namespace GL {
                 BasicScope() = delete;
                 virtual ~BasicScope() {
                     //if (!is_namespace()) {
-                        if (using_m.size() > 0) {
+                    if (using_m) {
+                        if (using_m->size() > 0) {
                             GetNamespace()->invalidate_cache();
                         }
+                    }
                     //}
                 };
 
@@ -2092,9 +2109,9 @@ namespace GL {
                     if (scope) {
                         if (scope->this_m.is_namespace()) {
                             if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
-                                using_m.insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
+                                using_m->insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
                                 invalidate_cache();
-                                return true;
+                                return true;                                
                             }
                         }
                     }
@@ -2121,7 +2138,9 @@ namespace GL {
                 // unloads the connections to other namespaces before deletion, which can prevent a memory-access crash. 
                 void unload() {
                     this->connection_for_cache_version = {};
-                    for (auto& x : this->using_m) x.second = {};
+                    if (using_m) {
+                        for (auto& x : *using_m) x.second = {};
+                    }
                     for (auto& child : this->children) child.second->unload();
                     this->children.clear();
                 };
@@ -2173,11 +2192,13 @@ namespace GL {
                     }
 
                     // test my personal "using" namespaces completely
-                    if (using_m.size() > 0ull) {
-                        for (auto& childNamespace : using_m) {
-                            if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
-                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                return finalResult;
+                    if (using_m) {
+                        if (using_m->size() > 0ull) {
+                            for (auto& childNamespace : *using_m) {
+                                if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
+                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                    return finalResult;
+                                }
                             }
                         }
                     }
@@ -2212,12 +2233,14 @@ namespace GL {
                                 }
                             }
                             // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag2 & CheckFlagState::all) > 0) continue;
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag2 & CheckFlagState::all) > 0) continue;
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -2247,12 +2270,14 @@ namespace GL {
                             }
 
                             // test my personal "using" namespaces completely
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag & CheckFlagState::all) > 0) { continue; }
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag & CheckFlagState::all) > 0) { continue; }
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -2284,12 +2309,14 @@ namespace GL {
                                 }
                             }
                             // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag2 & CheckFlagState::all) > 0) continue;
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag2 & CheckFlagState::all) > 0) continue;
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -2477,11 +2504,13 @@ namespace GL {
                     }
 
                     // test my personal "using" namespaces completely
-                    if (using_m.size() > 0ull) {
-                        for (auto& childNamespace : using_m) {
-                            if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
-                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                return finalResult;
+                    if (using_m) {
+                        if (using_m->size() > 0ull) {
+                            for (auto& childNamespace : *using_m) {
+                                if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
+                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                    return finalResult;
+                                }
                             }
                         }
                     }
@@ -2516,12 +2545,14 @@ namespace GL {
                                 }
                             }
                             // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag2 & CheckFlagState::all) > 0) continue;
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag2 & CheckFlagState::all) > 0) continue;
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -2561,16 +2592,17 @@ namespace GL {
                                         }
                                     }
                                     // check the using statements of the parent.
-                                    if (thisParent->this_m.scope->using_m.size() > 0) {
-                                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                            if ((flag2 & CheckFlagState::all) > 0) continue;
-                                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                                return finalResult;
+                                    if (thisParent->this_m.scope->using_m) {
+                                        if (thisParent->this_m.scope->using_m->size() > 0) {
+                                            for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                                auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                                if ((flag2 & CheckFlagState::all) > 0) continue;
+                                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                                    return finalResult;
+                                                }
                                             }
                                         }
                                     }
-
                                     thisParent = thisParent->parent_m;
                                 }
                             }
@@ -2600,12 +2632,14 @@ namespace GL {
                             }
 
                             // test my personal "using" namespaces completely
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag & CheckFlagState::all) > 0) { continue; }
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag & CheckFlagState::all) > 0) { continue; }
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -2637,12 +2671,14 @@ namespace GL {
                                 }
                             }
                             // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m.size() > 0) {
-                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                    if ((flag2 & CheckFlagState::all) > 0) continue;
-                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                        return finalResult;
+                            if (thisParent->this_m.scope->using_m) {
+                                if (thisParent->this_m.scope->using_m->size() > 0) {
+                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                        if ((flag2 & CheckFlagState::all) > 0) continue;
+                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                            return finalResult;
+                                        }
                                     }
                                 }
                             }
@@ -2723,12 +2759,14 @@ namespace GL {
                                         }
                                     }
                                     // check the using statements of the parent.
-                                    if (thisParent->this_m.scope->using_m.size() > 0) {
-                                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
-                                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                            if ((flag2 & CheckFlagState::all) > 0) continue;
-                                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                                return finalResult;
+                                    if (thisParent->this_m.scope->using_m) {
+                                        if (thisParent->this_m.scope->using_m->size() > 0) {
+                                            for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
+                                                auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                                if ((flag2 & CheckFlagState::all) > 0) continue;
+                                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                                    return finalResult;
+                                                }
                                             }
                                         }
                                     }

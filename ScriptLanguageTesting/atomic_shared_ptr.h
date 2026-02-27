@@ -30,18 +30,35 @@ namespace /* atomic_shared_ptr */ GL {
 
         // slight optimization by defering deletion of shared pointers to a specialized thread. 
         static void DeferredDeletion(control_block_base* to_delete);
-    };
 
+        template <size_t sz> static auto& Allocator() {
+            static GL::atomic_parallel_allocator<unsigned char[sz], 128, false, false> out;
+            return out;
+        };
+
+    };
+    
     // specialized, derived class for control blocks with specialized types.
     template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ control_block final : public control_block_base {
         explicit control_block() = delete;
         explicit control_block(T* _data) : control_block_base(reinterpret_cast<void*>(_data)) {}
         ~control_block() = default;
+
         void Delete() override {
             delete static_cast<T*>(this->data);
         };
         void DeleteSelf(control_block_base* p) override {
-            GL::arena_memory_pool::destroy_and_free(reinterpret_cast<control_block*>(p));
+            using t_ty = unsigned char[sizeof(control_block<T>)];
+            // reinterpret_cast<embedded_control_block*>(p)->~embedded_control_block();
+            return Allocator<sizeof(control_block<T>)>().Free(reinterpret_cast<t_ty*>(p));
+        };
+
+    public:
+        template<class... _Types> static control_block<T>* AllocateSelf(T* _data) {
+            using t_ty = unsigned char[sizeof(control_block<T>)];
+            auto* p = Allocator<sizeof(control_block<T>)>().Alloc();
+            new (reinterpret_cast<control_block<T>*>(&(*p)[0])) control_block<T>(_data);
+            return reinterpret_cast<control_block<T>*>(p);
         };
 
     };
@@ -52,14 +69,25 @@ namespace /* atomic_shared_ptr */ GL {
         explicit deleter_control_block(T* data, std::function<void(T*)>&& deleter) : control_block_base(static_cast<void*>(data)), delete_func(std::move(deleter)) {}
         ~deleter_control_block() = default;
 
+        std::function<void(T*)> 
+            delete_func;
+
         void Delete() override {
             delete_func(static_cast<T*>(this->data));
         };
         void DeleteSelf(control_block_base* p) override {
-            GL::arena_memory_pool::destroy_and_free(reinterpret_cast<deleter_control_block*>(p));
+            using t_ty = unsigned char[sizeof(deleter_control_block<T>)];
+            reinterpret_cast<deleter_control_block*>(p)->~deleter_control_block();
+            return Allocator<sizeof(deleter_control_block<T>)>().Free(reinterpret_cast<t_ty*>(p));
         };
 
-        std::function<void(T*)> delete_func;
+    public:
+        template<class... _Types> static deleter_control_block<T>* AllocateSelf(T* data, std::function<void(T*)>&& deleter) {
+            using t_ty = unsigned char[sizeof(deleter_control_block<T>)];
+            auto* p = Allocator<sizeof(deleter_control_block<T>)>().Alloc();
+            new (reinterpret_cast<deleter_control_block<T>*>(&(*p)[0])) deleter_control_block<T>(data, std::move(deleter));
+            return reinterpret_cast<deleter_control_block<T>*>(p);
+        };
     };
 
     // specialized, derived class for control blocks with specialized types.
@@ -82,25 +110,16 @@ namespace /* atomic_shared_ptr */ GL {
                 reinterpret_cast<T*>(&obj[0])->~T();
             }
         };
-        static auto& Allocator() {
-            using t_ty = unsigned char[sizeof(embedded_control_block<T>)];
-            static GL::atomic_parallel_allocator<t_ty, 128, false, false> out;
-            return out;
-        };
 
         void DeleteSelf(control_block_base* p) override {
             using t_ty = unsigned char[sizeof(embedded_control_block<T>)];
-            // reinterpret_cast<embedded_control_block*>(p)->~embedded_control_block();
-            return Allocator().Free(reinterpret_cast<t_ty*>(p));
-
-            // delete reinterpret_cast<embedded_control_block<T>*>(p);
-            // GL::arena_memory_pool::destroy_and_free(reinterpret_cast<embedded_control_block<T>*>(p));
+            return Allocator<sizeof(embedded_control_block<T>)>().Free(reinterpret_cast<t_ty*>(p));
         };
 
     public:
         template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
             using t_ty = unsigned char[sizeof(embedded_control_block<T>)];
-            auto* p = Allocator().Alloc();
+            auto* p = Allocator<sizeof(embedded_control_block<T>)>().Alloc();
             new (reinterpret_cast<embedded_control_block<T>*>(&(*p)[0])) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
             return reinterpret_cast<embedded_control_block<T>*>(p);
             
@@ -118,15 +137,15 @@ namespace /* atomic_shared_ptr */ GL {
         shared_ptr() : controlBlock(nullptr), data{ nullptr } {}
         shared_ptr(std::nullptr_t) : controlBlock(nullptr), data{ nullptr } {}
 
-        template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<U>>(Data))), data{ Data } {}
-        template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<deleter_control_block<U>>(Data, std::move(deleter)))), data{ Data } {}
+        template<class U> explicit shared_ptr(U* Data) : controlBlock(dynamic_cast<control_block_base*>(control_block<U>::AllocateSelf(Data))), data{ Data } {}
+        template<class U> explicit shared_ptr(U* Data, std::function<void(T*)>&& deleter) : controlBlock(dynamic_cast<control_block_base*>(deleter_control_block<U>::AllocateSelf(Data, std::move(deleter)))), data{ Data } {}
 
         explicit shared_ptr(control_block_base* ControlBlock, bool) : controlBlock(ControlBlock), data{ reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr) } {}
         static shared_ptr clone_from_control_block(control_block_base* ControlBlock) {
             shared_ptr out;
             out.controlBlock = ControlBlock;            
             if (out.controlBlock != nullptr) {
-                out.controlBlock->refCount.fetch_add(1);
+                out.controlBlock->refCount.fetch_add(1, std::memory_order_relaxed);
             }
             out.data = reinterpret_cast<T*>(ControlBlock ? ControlBlock->data : nullptr);
             return out;
@@ -151,7 +170,7 @@ namespace /* atomic_shared_ptr */ GL {
             controlBlock = other.controlBlock;
             data = other.data;
             if (controlBlock != nullptr) {
-                controlBlock->refCount.fetch_add(1);
+                controlBlock->refCount.fetch_add(1, std::memory_order_relaxed);
             }
         };
         shared_ptr(shared_ptr&& other) noexcept {
@@ -164,7 +183,7 @@ namespace /* atomic_shared_ptr */ GL {
             controlBlock = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).controlBlock;
             data = const_cast<shared_ptr<T>&>(reinterpret_cast<const shared_ptr<T>&>(other)).data;
             if (controlBlock != nullptr) {
-                controlBlock->refCount.fetch_add(1);
+                controlBlock->refCount.fetch_add(1, std::memory_order_relaxed);
             }
         };
         template<class U> shared_ptr(shared_ptr<U>&& other) {
@@ -179,7 +198,7 @@ namespace /* atomic_shared_ptr */ GL {
             controlBlock = other.controlBlock;
             data = other.data;
             if (controlBlock != nullptr) {
-                controlBlock->refCount.fetch_add(1);
+                controlBlock->refCount.fetch_add(1, std::memory_order_relaxed);
             }
             control_block_base::DeferredDeletion(old);
             return *this;
@@ -318,12 +337,12 @@ namespace /* atomic_shared_ptr */ GL {
             auto block = get_control_block();
             int diff = knownValue & MAGIC_MASK;
             while (diff > 1000 && block == get_control_block()) {
-                block->refCount.fetch_add(diff);
+                block->refCount.fetch_add(diff, std::memory_order_relaxed);
                 if (packedPtr->compare_exchange_strong(knownValue, knownValue - diff)) {
                     foreignPackedPtr = nullptr;
                     break;
                 }
-                block->refCount.fetch_sub(diff);
+                block->refCount.fetch_sub(diff, std::memory_order_relaxed);
                 diff = knownValue & MAGIC_MASK;
             }
         };
@@ -337,7 +356,7 @@ namespace /* atomic_shared_ptr */ GL {
     template<typename T> class /*alignas(CACHE_LINE_SIZE)*/ atomic_shared_ptr {
     public:
         atomic_shared_ptr(shared_ptr<T> && data) {
-            control_block_base* block = dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<T>>(nullptr));
+            control_block_base* block = dynamic_cast<control_block_base*>(control_block<T>::AllocateSelf(nullptr));
             packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
             while (true) {
                 auto holder = this->load_fast();
@@ -347,7 +366,7 @@ namespace /* atomic_shared_ptr */ GL {
             }
         };
         atomic_shared_ptr(T* data = nullptr) {
-            control_block_base* block = dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<control_block<T>>(data));
+            control_block_base* block = dynamic_cast<control_block_base*>(control_block<T>::AllocateSelf(data));
             packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
         };
         explicit atomic_shared_ptr(control_block_base* controlBlock, bool) {
@@ -360,7 +379,7 @@ namespace /* atomic_shared_ptr */ GL {
                 auto block = reinterpret_cast<control_block<T>*>(packedPtrCopy >> MAGIC_LEN);
                 size_t diff = packedPtrCopy & MAGIC_MASK;
                 if (diff != 0) {
-                    block->refCount.fetch_add(diff);
+                    block->refCount.fetch_add(diff, std::memory_order_relaxed);
                 }
                 control_block_base::DeferredDeletion(block);
             }
@@ -387,7 +406,7 @@ namespace /* atomic_shared_ptr */ GL {
             // taking copy and notifying about read in progress
             size_t packedPtrCopy = packedPtr.fetch_add(1);
             auto block = reinterpret_cast<control_block<T>*>(packedPtrCopy >> MAGIC_LEN);
-            block->refCount.fetch_add(1);
+            block->refCount.fetch_add(1, std::memory_order_relaxed);
             // copy is completed
 
             // notifying about completed copy
@@ -399,11 +418,11 @@ namespace /* atomic_shared_ptr */ GL {
                 }
 
                 // if control block pointer just changed, then
-                // handling object's refcount is not our responsibility
+                // handling object's ref count is not our responsibility
                 if (((expected >> MAGIC_LEN) != (packedPtrCopy >> MAGIC_LEN)) ||
                     ((expected & MAGIC_MASK) == 0)) // >20 hours wasted here
                 {
-                    block->refCount.fetch_sub(1);
+                    block->refCount.fetch_sub(1, std::memory_order_relaxed);
                     break;
                 }
 
@@ -434,9 +453,9 @@ namespace /* atomic_shared_ptr */ GL {
                 while (holdedPtr == (expectedPackedPtr >> MAGIC_LEN)) {
                     if (expectedPackedPtr & MAGIC_MASK) {
                         int diff = expectedPackedPtr & MAGIC_MASK;
-                        control->refCount.fetch_add(diff);
+                        control->refCount.fetch_add(diff, std::memory_order_relaxed);
                         if (!packedPtr.compare_exchange_weak(expectedPackedPtr, expectedPackedPtr & ~MAGIC_MASK)) {
-                            control->refCount.fetch_sub(diff);
+                            control->refCount.fetch_sub(diff, std::memory_order_relaxed);
                         }
                         continue;
                     }
@@ -464,9 +483,9 @@ namespace /* atomic_shared_ptr */ GL {
                 while (holdedPtr == (expectedPackedPtr >> MAGIC_LEN)) {
                     if (expectedPackedPtr & MAGIC_MASK) {
                         int diff = expectedPackedPtr & MAGIC_MASK;
-                        holder.get_control_block()->refCount.fetch_add(diff);
+                        holder.get_control_block()->refCount.fetch_add(diff, std::memory_order_relaxed);
                         if (!packedPtr.compare_exchange_weak(expectedPackedPtr, expectedPackedPtr & ~MAGIC_MASK)) {
-                            holder.get_control_block()->refCount.fetch_sub(diff);
+                            holder.get_control_block()->refCount.fetch_sub(diff, std::memory_order_relaxed);
                         }
                         continue;
                     }
@@ -499,7 +518,7 @@ namespace /* atomic_shared_ptr */ GL {
 
     private:
         /* first 48 bit - pointer to control block
-         * last 16 bit - local refcount if anyone is accessing control block
+         * last 16 bit - local ref count if anyone is accessing control block
          * through current atomic_shared_ptr instance right now */
         std::atomic<size_t> packedPtr;
         static_assert(sizeof(T*) == sizeof(size_t));
@@ -507,7 +526,6 @@ namespace /* atomic_shared_ptr */ GL {
 
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
         return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(embedded_control_block<_Ty>::AllocateSelf(_STD forward<_Types>(_Args)...)), true);
-        // return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<embedded_control_block<_Ty>>(_STD forward<_Types>(_Args)...)), true);
     };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));

@@ -918,6 +918,22 @@ int main() {
                         }
                     }
 
+                    if (auto timer = sw.debug_timer("1 million scopes with 10 sub-scopes")) {
+                        GL::parallel::For(0, 1000000, [&](size_t) {
+                            auto a = program_root.make_scope();
+                            auto b = a.make_scope();
+                            auto c = b.make_scope();
+                            auto d = c.make_scope();
+                            auto e = d.make_scope();
+                            auto f = e.make_scope();
+                            auto g = f.make_scope();
+                            auto h = g.make_scope();
+                            auto i = h.make_scope();
+                            auto j = i.make_scope();
+                            auto k = j.make_scope();   
+                        });
+                    }
+
                     if (auto timer = sw.debug_timer("example calc")) {
                         GL::parallel::For(0, 1000000, [&](size_t i) {
                             auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
@@ -1022,6 +1038,45 @@ int main() {
                             temp_scope.find_object("d")
                         }));
                     }
+
+                    if (auto timer = sw.debug_timer("example calc 2 (once only, from scratch)")) {
+                        GL::scope::impl::RootScope
+                            program;
+                        program.perform_builtins();
+
+                        auto temp_scope = program.make_scope();
+                        temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
+                        temp_scope.insert_object_here("v0", temp_scope.call("/", {
+                            temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
+                            temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                        }));
+                        temp_scope.insert_object_here("a0", temp_scope.call("/", {
+                            temp_scope.find_object("v0"),
+                            temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                        }));
+                        temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
+                        temp_scope.insert_object_here("d", temp_scope.call("+", {
+                            temp_scope.call("*", {
+                                temp_scope.find_object("v0"),
+                                temp_scope.find_object("t")
+                            }),
+                            temp_scope.call("*", {
+                                temp_scope.call("*", {
+                                    temp_scope.call("pow", {
+                                        temp_scope.find_object("t"),
+                                        GL::any::fast_any::instance(2)
+                                    }),
+                                    temp_scope.find_object("a0")
+                                }),
+                                GL::any::fast_any::instance(0.5)
+                            })
+                        }));
+                        temp_scope.insert_object_here("x", temp_scope.call("+", {
+                            temp_scope.find_object("x0"),
+                            temp_scope.find_object("d")
+                        }));
+                    }
+
 
                     if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)")) {
                         for (size_t i = 0; i < 1000000; ++i) {
