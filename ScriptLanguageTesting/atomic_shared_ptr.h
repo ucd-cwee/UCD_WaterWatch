@@ -6,6 +6,7 @@
 #include <ShlDisp.h>
 #include <winnt.h>
 #include "../GpuProgramming/matrix.h"
+#include "atomic_allocator.h"
 
 namespace /* atomic_shared_ptr */ GL {
     constexpr size_t MAGIC_LEN = 16;
@@ -62,7 +63,7 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     // specialized, derived class for control blocks with specialized types.
-    template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ embedded_control_block final : public control_block_base {
+    template<typename T> struct /*alignas(CACHE_LINE_SIZE)*/ embedded_control_block final : public control_block_base {        
         template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : control_block_base(static_cast<void*>(reinterpret_cast<T*>(&obj[0]))) {
             if constexpr ((sizeof...(_Args) > 0) || !std::is_pod<T>::value) {
                 new (reinterpret_cast<T*>(&obj[0])) T(_STD forward<_Types>(_Args)...);
@@ -73,17 +74,39 @@ namespace /* atomic_shared_ptr */ GL {
         }
         ~embedded_control_block() = default;
 
+        unsigned char
+            obj[sizeof(T)];
+
         void Delete() override {
             if constexpr (!std::is_pod_v<T>) {
                 reinterpret_cast<T*>(&obj[0])->~T();
             }
         };
-        void DeleteSelf(control_block_base* p) override {
-            GL::arena_memory_pool::destroy_and_free(reinterpret_cast<embedded_control_block<T>*>(p));
+        static auto& Allocator() {
+            using t_ty = unsigned char[sizeof(embedded_control_block<T>)];
+            static GL::atomic_parallel_allocator<t_ty, 128, false, false> out;
+            return out;
         };
 
-        unsigned char
-            obj[sizeof(T)];
+        void DeleteSelf(control_block_base* p) override {
+            using t_ty = unsigned char[sizeof(embedded_control_block<T>)];
+            // reinterpret_cast<embedded_control_block*>(p)->~embedded_control_block();
+            return Allocator().Free(reinterpret_cast<t_ty*>(p));
+
+            // delete reinterpret_cast<embedded_control_block<T>*>(p);
+            // GL::arena_memory_pool::destroy_and_free(reinterpret_cast<embedded_control_block<T>*>(p));
+        };
+
+    public:
+        template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
+            using t_ty = unsigned char[sizeof(embedded_control_block<T>)];
+            auto* p = Allocator().Alloc();
+            new (reinterpret_cast<embedded_control_block<T>*>(&(*p)[0])) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
+            return reinterpret_cast<embedded_control_block<T>*>(p);
+            
+            // return new embedded_control_block<T>(_STD forward<_Types>(_Args)...);
+        };
+
     };
 
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
@@ -483,7 +506,8 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
-        return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<embedded_control_block<_Ty>>(_STD forward<_Types>(_Args)...)), true);
+        return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(embedded_control_block<_Ty>::AllocateSelf(_STD forward<_Types>(_Args)...)), true);
+        // return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<embedded_control_block<_Ty>>(_STD forward<_Types>(_Args)...)), true);
     };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
