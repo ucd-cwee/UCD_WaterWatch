@@ -391,6 +391,38 @@ namespace GL {
                 m_signature;
 
             // fast path
+            GL::any::fast_any operator()(GL::any::fast_any** inputs_rhs, size_t num_inputs) const {
+                static thread_local std::array<any::fast_any*, 16> inputs;
+                // std::memset(&inputs[0], 0, sizeof(inputs));
+                short pos{ 0 };
+                for (; (pos < 16) && (pos < num_inputs); ++pos) {
+                    inputs[pos] = inputs_rhs[pos];
+                }
+                for (; (pos < 16) && (pos < m_signature.argument_defaults_m.size()); ++pos) {
+                    inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
+                }
+
+                try {
+                    return do_call(&inputs[0]);
+                }
+                catch (std::runtime_error const& e) {
+                    auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
+                    throw std::runtime_error(err.to_string());
+                }
+                catch (std::exception const& e) {
+                    auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
+                    throw std::runtime_error(err.to_string());
+                }
+                /*catch (GL::any const& return_val) {
+                    throw return_val;
+                }
+                catch (GL::any::fast_any const& return_val) {
+                    throw return_val;
+                }*/
+                catch (...) {
+                    std::rethrow_exception(std::current_exception());
+                }
+            }
             template <typename iter_type> GL::any::fast_any operator()(iter_type begin, iter_type const& end) const {
                 if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
                     static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
@@ -460,6 +492,10 @@ namespace GL {
             };
             // fast path
             GL::any::fast_any operator()(any::fast_any& param) const {
+                return operator()(&param, &param + 1);
+            };
+            // fast path
+            GL::any::fast_any operator()(any::fast_any&& param) const {
                 return operator()(&param, &param + 1);
             };
 
