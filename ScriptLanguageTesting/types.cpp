@@ -3,6 +3,7 @@
 #include "ticket_dispensor.h"
 #include "atomic_vector.h"
 #include "atomic_tree.h"
+#include <queue>
 
 namespace GL {
     namespace impl {
@@ -199,21 +200,38 @@ namespace GL {
         //    return false;
         //}
     };
-    std::set<type> type::all_base_types() const {
-        std::set<type> out;
-        if (this->is_cpp_type()) {
-            for (auto& x : get_base(*this).base_classes) {
-                auto& Base = impl::get_impl(x);
-                out.insert(type(Base.base_hash) + GL::type::CppType);
+    std::set<type> type::all_base_types(bool local_only) const {
+        if (local_only) {
+            std::set<type> out;
+            if (this->is_cpp_type()) {
+                for (auto& x : get_base(*this).base_classes) {
+                    auto& Base = impl::get_impl(x);
+                    out.insert(type(Base.base_hash) + GL::type::CppType);
+                }
             }
+            else {
+                for (auto& x : get_base(*this).base_classes) {
+                    auto& Base = impl::get_scripted_type(x);
+                    out.insert(type(Base.base_hash));
+                }
+            }
+            return out;
         }
         else {
-            for (auto& x : get_base(*this).base_classes) {
-                auto& Base = impl::get_scripted_type(x);
-                out.insert(type(Base.base_hash));
+            std::queue< GL::type > types_to_try;
+            types_to_try.push(*this);
+            std::set<GL::type> attempted_types;
+            while (types_to_try.size() > 0) {
+                GL::type this_t = types_to_try.front();
+                types_to_try.pop();
+                if (attempted_types.find(this_t) == attempted_types.end()) {
+                    attempted_types.insert(this_t);
+                    for (GL::type const& base_type : this_t.all_base_types(true)) { types_to_try.push(base_type); }
+                }
             }
+            attempted_types.erase(*this);
+            return attempted_types;
         }
-        return out;
     };
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 
     bool type::is_derived_from(type const& base) const {

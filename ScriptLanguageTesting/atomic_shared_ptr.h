@@ -67,6 +67,9 @@ namespace /* atomic_shared_ptr */ GL {
             if constexpr ((sizeof...(_Args) > 0) || !std::is_pod<T>::value) {
                 new (reinterpret_cast<T*>(&obj[0])) T(_STD forward<_Types>(_Args)...);
             }
+            else {
+                std::memset(&obj[0], 0, sizeof(obj));
+            }
         }
         ~embedded_control_block() = default;
 
@@ -148,14 +151,6 @@ namespace /* atomic_shared_ptr */ GL {
             other.data = nullptr;
         };
 
-        friend bool operator==(shared_ptr const& lhs, shared_ptr const& rhs) {
-            if (!rhs) return !lhs;
-            else if (!lhs) return false;
-            else return rhs.data == lhs.data;
-        };
-        friend bool operator!=(shared_ptr const& lhs, shared_ptr const& rhs) {
-            return !operator==(lhs, rhs);
-        };
         shared_ptr& operator=(const shared_ptr& other) {
             auto old = controlBlock;
             controlBlock = other.controlBlock;
@@ -202,6 +197,13 @@ namespace /* atomic_shared_ptr */ GL {
         operator bool() const {
             return data != nullptr;
         };
+
+        friend bool operator==(const shared_ptr& a, const shared_ptr& b) noexcept { return a.data == b.data; };
+        friend bool operator!=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.data != b.data; };
+        friend bool operator<(const shared_ptr& a, const shared_ptr& b) noexcept { return a.data < b.data; };
+        friend bool operator<=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.data <= b.data; };
+        friend bool operator>(const shared_ptr& a, const shared_ptr& b) noexcept { return a.data > b.data; };
+        friend bool operator>=(const shared_ptr& a, const shared_ptr& b) noexcept { return a.data >= b.data; };
 
         control_block_base* copy_control_block() const {
             return controlBlock;
@@ -255,15 +257,6 @@ namespace /* atomic_shared_ptr */ GL {
             destroy();
         };
 
-        friend bool operator==(fast_shared_ptr const& lhs, fast_shared_ptr const& rhs) {
-            if (!rhs) return !lhs;
-            else if (!lhs) return false;
-            else return rhs.data == lhs.data;
-        };
-        friend bool operator!=(fast_shared_ptr const& lhs, fast_shared_ptr const& rhs) {
-            return !operator==(lhs, rhs);
-        };
-
         T* get() const { return data; }
         T* operator->() const { return data; }
         template <class _Ty2 = T, std::enable_if_t<!std::disjunction_v<std::is_array<_Ty2>, std::is_void<_Ty2>>, int> = 0>
@@ -273,6 +266,12 @@ namespace /* atomic_shared_ptr */ GL {
         operator bool() const {
             return (bool)(data);
         };
+        friend bool operator==(const fast_shared_ptr& a, const fast_shared_ptr& b) noexcept { return a.data == b.data; };
+        friend bool operator!=(const fast_shared_ptr& a, const fast_shared_ptr& b) noexcept { return a.data != b.data; };
+        friend bool operator<(const fast_shared_ptr& a, const fast_shared_ptr& b) noexcept { return a.data < b.data; };
+        friend bool operator<=(const fast_shared_ptr& a, const fast_shared_ptr& b) noexcept { return a.data <= b.data; };
+        friend bool operator>(const fast_shared_ptr& a, const fast_shared_ptr& b) noexcept { return a.data > b.data; };
+        friend bool operator>=(const fast_shared_ptr& a, const fast_shared_ptr& b) noexcept { return a.data >= b.data; };
 
     private:
         control_block_base* get_control_block() { return reinterpret_cast<control_block_base*>(knownValue >> MAGIC_LEN); }
@@ -398,9 +397,6 @@ namespace /* atomic_shared_ptr */ GL {
         fast_shared_ptr<T> load_fast() {
             return fast_shared_ptr<T>(&packedPtr);
         };
-        operator bool() const noexcept {
-            return const_cast<atomic_shared_ptr&>(*this).load_fast().operator bool();
-        };
 
     private:
         // set the atomic_shared_ptr if the expected value is found in-place. returns true if successful. 
@@ -471,6 +467,13 @@ namespace /* atomic_shared_ptr */ GL {
             }
         };
 
+        friend bool operator==(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return reinterpret_cast<control_block<T>*>(a.packedPtr.load() >> MAGIC_LEN) == reinterpret_cast<control_block<T>*>(b.packedPtr.load() >> MAGIC_LEN); };
+        friend bool operator!=(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return reinterpret_cast<control_block<T>*>(a.packedPtr.load() >> MAGIC_LEN) != reinterpret_cast<control_block<T>*>(b.packedPtr.load() >> MAGIC_LEN); };
+        friend bool operator<(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return reinterpret_cast<control_block<T>*>(a.packedPtr.load() >> MAGIC_LEN) < reinterpret_cast<control_block<T>*>(b.packedPtr.load() >> MAGIC_LEN); };
+        friend bool operator<=(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return reinterpret_cast<control_block<T>*>(a.packedPtr.load() >> MAGIC_LEN) <= reinterpret_cast<control_block<T>*>(b.packedPtr.load() >> MAGIC_LEN); };
+        friend bool operator>(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return reinterpret_cast<control_block<T>*>(a.packedPtr.load() >> MAGIC_LEN) > reinterpret_cast<control_block<T>*>(b.packedPtr.load() >> MAGIC_LEN); };
+        friend bool operator>=(const atomic_shared_ptr& a, const atomic_shared_ptr& b) noexcept { return reinterpret_cast<control_block<T>*>(a.packedPtr.load() >> MAGIC_LEN) >= reinterpret_cast<control_block<T>*>(b.packedPtr.load() >> MAGIC_LEN); };
+
     private:
         /* first 48 bit - pointer to control block
          * last 16 bit - local refcount if anyone is accessing control block
@@ -479,17 +482,8 @@ namespace /* atomic_shared_ptr */ GL {
         static_assert(sizeof(T*) == sizeof(size_t));
     };
 
-    
-
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
-        //if constexpr (std::is_move_constructible_v < _Ty>) {
-            return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<embedded_control_block<_Ty>>(_STD forward<_Types>(_Args)...)), true);
-        //}
-        //else {
-        //    return shared_ptr<_Ty>(GL::arena_memory_pool::instance<_Ty>(_STD forward<_Types>(_Args)...), [](_Ty* p) {
-        //        GL::arena_memory_pool::destroy_and_free(p);
-        //    });
-        //}
+        return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(GL::arena_memory_pool::instance<embedded_control_block<_Ty>>(_STD forward<_Types>(_Args)...)), true);
     };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
@@ -500,7 +494,6 @@ namespace /* atomic_shared_ptr */ GL {
     template<typename T> __forceinline fast_shared_ptr<T>::fast_shared_ptr(shared_ptr<T>&& Data) : knownValue(reinterpret_cast<size_t>(Data.release_control_block()) << MAGIC_LEN), foreignPackedPtr(nullptr), data(nullptr) {
         data = reinterpret_cast<T*>(get_control_block()->data);
     };
-
 
 };
 namespace /* hash */ std {

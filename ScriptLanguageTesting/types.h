@@ -135,11 +135,11 @@ namespace GL {
         size_t hash{ 
             (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | 0x8000000000000000
         }; // e.g. int, long, std::string, or a (registered) scripted type
-        static size_t any_hash_code() {
+        static size_t const& any_hash_code() {
             static size_t out{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
-        static size_t void_hash_code() {
+        static size_t const& void_hash_code() {
             static size_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
@@ -159,7 +159,7 @@ namespace GL {
         };
         ~type() = default;
 
-        std::set<type> all_base_types() const;
+        std::set<type> all_base_types(bool local_only = true) const;
         // removes the qualifiers and returns only the base hash value
         size_t get_base_hash() const {
             return hash & impl::cached_type::MAGIC_MASK2;
@@ -182,9 +182,15 @@ namespace GL {
         bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & 0x2000000000000000) > 0); };
         bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & 0x3000000000000000) == 0x3000000000000000); };
         bool is_base() const noexcept {  return 0 == (hash & ~0x8FFFFFFFFFFFFFFF); };
-        bool is_void() const noexcept { return get_base_hash() == void_hash_code(); };
+        bool is_void() const noexcept {
+            thread_local size_t const h{ void_hash_code() };
+            return get_base_hash() == h;
+        };
         bool is_cpp_type() const noexcept { return (hash & 0x8000000000000000) > 0; };
-        bool is_any() const noexcept { return get_base_hash() == any_hash_code(); };
+        bool is_any() const noexcept { 
+            thread_local size_t const h{ any_hash_code() };
+            return get_base_hash() == h; 
+        };
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
         // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
@@ -493,6 +499,9 @@ namespace GL {
                 if constexpr ((sizeof...(TArgs) > 0) || !std::is_pod<T>::value) {
                     new (reinterpret_cast<T*>(&m_obj[0])) T(_STD forward<TArgs>(a)...);
                 }
+                else {
+                    std::memset(&m_obj[0], 0, sizeof(m_obj));
+                }
                 this->m_data = reinterpret_cast<T*>(&m_obj[0]);
             };
             virtual ~instanced_data() {
@@ -794,7 +803,8 @@ namespace GL {
         };
 
         operator bool() const noexcept {
-            return m_ptr.operator bool();
+            if (auto f = m_ptr.load_fast(); f) return true;
+            return false;
         };
         template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static any ref(ValueType& value) {
             auto base_t = type_of<ValueType>();
