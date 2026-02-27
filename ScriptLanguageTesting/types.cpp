@@ -219,18 +219,31 @@ namespace GL {
         }
         else {
             std::queue< GL::type > types_to_try;
-            types_to_try.push(*this);
+            types_to_try.push(*this - GL::type::Reference - GL::type::Const - GL::type::Temporary);
             std::set<GL::type> attempted_types;
             while (types_to_try.size() > 0) {
                 GL::type this_t = types_to_try.front();
                 types_to_try.pop();
                 if (attempted_types.find(this_t) == attempted_types.end()) {
                     attempted_types.insert(this_t);
-                    for (GL::type const& base_type : this_t.all_base_types(true)) { types_to_try.push(base_type); }
+                    for (GL::type const& base_type : this_t.all_base_types()) { types_to_try.push(base_type); }
                 }
             }
-            attempted_types.erase(*this);
             return attempted_types;
+
+            //std::queue< GL::type > types_to_try;
+            //types_to_try.push(*this);
+            //std::set<GL::type> attempted_types;
+            //while (types_to_try.size() > 0) {
+            //    GL::type this_t = types_to_try.front();
+            //    types_to_try.pop();
+            //    if (attempted_types.find(this_t) == attempted_types.end()) {
+            //        attempted_types.insert(this_t);
+            //        for (GL::type const& base_type : this_t.all_base_types(true)) { types_to_try.push(base_type); }
+            //    }
+            //}
+            //attempted_types.erase(*this);
+            //return attempted_types;
         }
     };
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 

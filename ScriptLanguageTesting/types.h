@@ -187,10 +187,7 @@ namespace GL {
             return get_base_hash() == h;
         };
         bool is_cpp_type() const noexcept { return (hash & 0x8000000000000000) > 0; };
-        bool is_any() const noexcept { 
-            thread_local size_t const h{ any_hash_code() };
-            return get_base_hash() == h; 
-        };
+        bool is_any() const noexcept;
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
         // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
@@ -1409,6 +1406,12 @@ namespace GL {
     };
     __forceinline type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
         return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
+    };
+    __forceinline bool GL::type::is_any() const noexcept {
+        static size_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        static size_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        size_t this_h{ get_base_hash() };
+        return (this_h == h) || (this_h == h2);
     };
 
     namespace type_erasure {

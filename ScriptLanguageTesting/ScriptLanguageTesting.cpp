@@ -552,6 +552,9 @@ int main() {
                     EXPECT_EQ(string_class.this_type, GL::type_of<GL::string>());
                     string_class.add_function(GL::make_callable("length", [](GL::string const& r) { return r.length(); }));
                     EXPECT_NE(nullptr, string_class.try_find_callable("length", params.begin(), params.end()));
+
+                    // I
+
                     EXPECT_NE(nullptr, program_root.try_find_callable("length", params.begin(), params.end()));
                     EXPECT_EQ(4, program_root.call("length", params.begin(), params.end()).cast<GL::string::size_type>());                    
                 }
@@ -561,9 +564,75 @@ int main() {
                     GL::scope::impl::RootScope
                         program_root;
                     program_root.perform_builtins();
-                    EXPECT_EQ(2.0f, program_root.call("log10", { GL::any::fast_any::instance(100.0) }).cast<float&>());
-                    EXPECT_EQ(100, program_root.call("abs", { GL::any::fast_any::instance(-100) }).cast<GL::value&>());
+                    EXPECT_EQ(2.0f, program_root.call("log10", { GL::any::fast_any::instance(100.0) }).cast<float&>()); // double can cast to GL::value, which has access to "log10", therefore this call works OK. 
+                    EXPECT_EQ(100, program_root.call("abs", { GL::any::fast_any::instance(-100) }).cast<GL::value&>()); // int can cast to GL::value, which has access to "abs", therefore this call works OK. 
+
+                    // custom base class...
+                    GL::script_type custom_unit_type_base("custom_unit_type_base");
+                    // custom class that impliments base...
+                    GL::script_type custom_unit_type("custom_unit_type");
+                    // set-up the relationship
+                    EXPECT_EQ(false, custom_unit_type.load().add_base(GL::type_of<GL::value>())); // won't work since a cpp-type cannot be tied to a script type. 
+                    EXPECT_EQ(true, custom_unit_type.load().add_base(custom_unit_type_base)); // this sets-up the relationship.
+                    EXPECT_EQ(true, custom_unit_type_base.load().is_base_of(custom_unit_type)); // simply confirms the relationship was set-up correctly.
+                    
+                    GL::any::fast_any stand_in = GL::any::fast_any::instance(100);
+                    stand_in.m_casted_type = custom_unit_type.load();
+
+                    auto& base_class_scope = program_root.make_class(custom_unit_type_base);
+                    auto& impl_class_scope = program_root.make_class(custom_unit_type);
+
+                    base_class_scope.add_function(GL::make_callable("hidden_function", [](GL::any::fast_any const& Any) -> std::string { return "success"; }, 0, {}, { { "a", custom_unit_type.load() + GL::type::Const + GL::type::Reference } }, GL::type_of<std::string>()));
+                    EXPECT_EQ("success", base_class_scope.call("hidden_function", { stand_in }).cast<std::string>());
+                    EXPECT_EQ("success", impl_class_scope.call("hidden_function", { stand_in }).cast<std::string>());
+                    EXPECT_EQ("success", program_root.call("hidden_function", { stand_in }).cast<std::string>());
+
+                    auto func = GL::make_callable("hidden_function_2", [](GL::any::fast_any const& Any) -> std::string { return "success"; });
+                    EXPECT_EQ(true, func->m_signature.can_call_with_cast(&stand_in, &stand_in + 1));                    
+                    EXPECT_EQ("success", func->operator()(stand_in).cast<std::string>());
+                    base_class_scope.add_function(func);
+                    EXPECT_NE(nullptr, base_class_scope.try_find_callable("hidden_function_2", &stand_in, &stand_in + 1));
+                    EXPECT_EQ("success", base_class_scope.call("hidden_function_2", { stand_in }).cast<std::string>());
+                    EXPECT_EQ("success", impl_class_scope.call("hidden_function_2", { stand_in }).cast<std::string>());
+                    EXPECT_EQ("success", program_root.call("hidden_function_2", { stand_in }).cast<std::string>());
+
+                    stand_in = GL::any::fast_any::instance(100);
+                    EXPECT_EQ("success", base_class_scope.call("hidden_function_2", { stand_in }).cast<std::string>()); // base class has the function directly
+                    EXPECT_EQ("success", impl_class_scope.call("hidden_function_2", { stand_in }).cast<std::string>()); // searches the impl, then the base, and find it. 
+                    EXPECT_EQ(nullptr, program_root.try_find_callable("hidden_function_2", &stand_in, &stand_in + 1)); // searches the root (not its children) and searches the "int" class, but fails to find the function.
+                    stand_in.m_casted_type = custom_unit_type.load(); 
+                    EXPECT_EQ("success", program_root.call("hidden_function_2", { stand_in }).cast<std::string>()); // searches the root (not its children) but fails to find the function. Searches the impl_class_scope, then its base, and finally succeeds in its search.
                 }
+
+                // demonstrate an extension to an existing class
+                if (1) {
+                    GL::scope::impl::RootScope
+                        program_root;
+                    program_root.perform_builtins();
+
+                    // 
+                    if (auto* BC = program_root.try_find_class(GL::type_of<int>()); BC != nullptr) {
+                        if (BC->this_m.is_class()) {
+                            if (auto* Class = dynamic_cast<GL::scope::impl::ClassScope*>(BC->this_m.scope); Class != nullptr) {
+                                Class->add_function(GL::make_callable("print", [](GL::any::fast_any const& o) -> void { print(o.cast<int>()); }, 0, {}, { { "srce", GL::type_of<int const&>() } }, GL::type_of<void>()));
+                            }
+                        }                        
+                    }
+
+                    program_root.call("print", { GL::any::fast_any::instance(100) }); // will print 100
+                    program_root.call("print", { GL::any::fast_any::instance(200.0) }); // will print 200
+                    program_root.call("print", { GL::any::fast_any::instance(300.0f) }); // will print 300
+                    program_root.call("print", { GL::any::fast_any::instance(GL::foot(400)) }); // will print 400
+
+                    //if (auto temp_scope = program_root.make_scope(); !temp_scope.is_namespace()) {
+                    //    temp_scope.call("print", { GL::any::fast_any::instance(100) }); // will print 100
+                    //    temp_scope.call("print", { GL::any::fast_any::instance(200.0) }); // will print 200
+                    //    temp_scope.call("print", { GL::any::fast_any::instance(300.0f) }); // will print 300
+                    //    temp_scope.call("print", { GL::any::fast_any::instance(GL::foot(400)) }); // will print 400
+                    //}
+
+                }
+
 
                 if (1) {
                     GL::script_type custom_unit_type_base("custom_unit_type_base");
@@ -995,7 +1064,7 @@ int main() {
                             }
                             if (auto f = program_root.try_find_callable("+2", types5.begin(), types5.end()); f) {
                                 auto result = program_root.get_converters().call_with_conversions(&*f, types5); // 'char' is convertable to either 'foot' or 'int' or 'float', etc., therefore no guarrantee what is selected. 
-                                EXPECT_EQ("int", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. 
+                                EXPECT_EQ("int", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. In this case, int is closest to 'char' and is selected. 
                             }
                         });
                     }

@@ -12,6 +12,28 @@ namespace GL {
         static __forceinline GL::string make_scope_name(GL::string const& x) {
             return (GL::string::namespace_colons() + x.remove_leading_and_trailing(':') + GL::string::namespace_colons()).replace("::::", GL::string::empty_string());
         };
+        template <typename iter_type>
+        static __forceinline GL::type const& get_type_of(iter_type const& rhs) {
+            if constexpr (std::is_same_v<iter_type, GL::type*>) {
+                return *rhs;
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+                return rhs->m_casted_type;
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any*>) {
+                return rhs->m_casted_type;
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
+                return *rhs;
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+                return rhs->m_casted_type;
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
+                return rhs->m_casted_type;
+            }
+        };
+        
         enum ScopeType {
             Basic = 1,
             Namespace = 2,
@@ -395,95 +417,50 @@ namespace GL {
 
                         if ((search_mode & free_cast_only) > 0) {
                             auto& sig = f->m_signature;
-                            if constexpr (std::is_same_v<iter_type, GL::type*> || std::is_same_v<iter_type::value_type, GL::type>) {
-                                size_t i = 0;
-                                for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
-                                    if (!iter->can_free_cast(sig.argument_types_m[i])) {
-                                        return false;
-                                    }
+                            size_t i = 0;
+                            for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
+                                if (!get_type_of(iter).can_free_cast(sig.argument_types_m[i])) {
+                                    return false;
                                 }
-                                for (; i < sig.argument_defaults_m.size(); ++i) {
-                                    if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
-                                        return false;
-                                    }
-                                }
-                                if (iter == end) {
-                                    options[0] = &f;
-                                    return true;
-                                }
-                                return false;
                             }
-                            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*> || std::is_same_v<iter_type, GL::any*> || std::is_same_v<iter_type::value_type, GL::any::fast_any> || std::is_same_v<iter_type::value_type, GL::any>) {
-                                size_t i = 0;
-                                for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
-                                    if (!iter->can_free_cast(sig.argument_types_m[i])) {
-                                        return false;
-                                    }
+                            for (; i < sig.argument_defaults_m.size(); ++i) {
+                                if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
+                                    return false;
                                 }
-                                for (; i < sig.argument_defaults_m.size(); ++i) {
-                                    if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
-                                        return false;
-                                    }
-                                }
-                                if (iter == end) {
-                                    options[0] = &f;
-                                    return true;
-                                }
-                                return false;
                             }
+                            if (iter == end) {
+                                options[0] = &f;
+                                return true;
+                            }
+                            return false;
                         }
                         else {
                             auto& sig = f->m_signature;
-                            if constexpr (std::is_same_v<iter_type, GL::type*> || std::is_same_v<iter_type::value_type, GL::type>) {
-                                size_t i = 0;
-                                int cost = 0;
-                                for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
-                                    if (!iter->can_cast(sig.argument_types_m[i])) {
-                                        if (auto f = converters.try_get_converter(*iter, sig.argument_types_m[i], 0, true); f) {
-                                            cost += f->m_signature.numConversions;
-                                        }
-                                        else {
-                                            return false;
-                                        }
+
+                            size_t i = 0;
+                            int cost = 0;
+                            for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
+                                if (!get_type_of(iter).can_cast(sig.argument_types_m[i])) {
+                                    if (auto f = converters.try_get_converter(get_type_of(iter), sig.argument_types_m[i], 0, true); f) {
+                                        cost += f->m_signature.numConversions;
                                     }
-                                }
-                                for (; i < sig.argument_defaults_m.size(); ++i) {
-                                    if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
+                                    else {
                                         return false;
                                     }
                                 }
-                                if (iter == end) {
-                                    options[cost] = &f;
-                                    return cost == 0; // stops looking if true
-                                }
-                                return false;
                             }
-                            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*> || std::is_same_v<iter_type, GL::any*> || std::is_same_v<iter_type::value_type, GL::any::fast_any> || std::is_same_v<iter_type::value_type, GL::any>) {
-                                size_t i = 0;
-                                int cost = 0;
-                                for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
-                                    if (!iter->can_cast(sig.argument_types_m[i])) {
-                                        if (auto f = converters.try_get_converter(iter->m_casted_type, sig.argument_types_m[i], 0, true); f) {
-                                            cost += f->m_signature.numConversions;
-                                        }
-                                        else {
-                                            return false;
-                                        }
-                                    }
+                            for (; i < sig.argument_defaults_m.size(); ++i) {
+                                if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
+                                    return false;
                                 }
-                                for (; i < sig.argument_defaults_m.size(); ++i) {
-                                    if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
-                                        return false;
-                                    }
-                                }
-                                if (iter == end) {
-                                    options[cost] = &f;
-                                    return cost == 0; // stops looking if true
-                                }
-                                return false;
                             }
+                            if (iter == end) {
+                                options[cost] = &f;
+                                return cost == 0; // stops looking if true
+                            }
+                            return false;
                         }
-                        });
+                    });
                     if (options.size() > 0) {
                         return *options.begin()->second;
                     }
@@ -868,8 +845,8 @@ namespace GL {
 
                                 if (auto f2 = f1->second.find(to), e2 = f1->second.end(); f2 != e2) {
                                     // we have made (or tried to make) the converter for this before. 
-                                    if (f2->second) {
-                                        return f2->second.load_fast();
+                                    if (auto f3 = f2->second.load_fast(); f3) {
+                                        return std::move(f3);
                                     }
                                     else if (in_function && (to.is_base() || to.is_const_ref())) {
                                         return try_get_converter(from, to | GL::type::Temporary, 0, true);
@@ -911,40 +888,38 @@ namespace GL {
                                     // We need to make the cast from the available cast for this same type. Sort options by preference? 
                                     std::map<int, GL::Proxy_Function> options;
                                     for (auto& potential_conversion : f1->second) {
-                                        if (potential_conversion.second) {
-                                            if (auto func = potential_conversion.second.load(); func.get() != nullptr) {
-                                                if ((func->m_signature.state_m & GL::function_signature::Cached) > 0) continue;
+                                        if (auto func = potential_conversion.second.load(); func) {
+                                            if ((func->m_signature.state_m & GL::function_signature::Cached) > 0) continue;
 
-                                                if (func->m_signature.returns_m.can_free_cast(to, false)) {
-                                                    f1->second[to] = std::move(func);
-                                                    return f1->second[to].load_fast();
-                                                }
-
-                                                if (func->m_signature.returns_m.can_free_cast(to)) {
-                                                    if (options.count(0) == 0) {
-                                                        options[0] = std::move(func);
-                                                    }
-                                                    continue;
-                                                    //f1->second[to] = std::move(func);
-                                                    //return f1->second[to].load();
-                                                }
-
-                                                if (func->m_signature.returns_m.can_cast(to)) {
-                                                    if (func->m_signature.returns_m.is_temp() && to.is_base()) {
-                                                        if (options.count(1) == 0) {
-                                                            options[1] = GL::make_callable("`call_and_cast " + func->m_signature.name_m + "`", [To = to, caster = func](GL::any::fast_any const& From) -> GL::any {
-                                                                GL::any::fast_any _from = From;
-                                                                GL::any casted = caster->operator()(&_from, &_from + 1);
-                                                                casted.m_casted_type = To;
-                                                                return casted;
-                                                                }, func->m_signature.state_m | GL::function_signature::Cached | GL::function_signature::Explicit, {}, { { "From", from } }, to);
-                                                            options[1]->m_signature.numConversions = func->m_signature.numConversions;
-                                                        }
-                                                        // return f1->second[to].load();
-                                                        continue;
-                                                    }
-                                                }
+                                            if (func->m_signature.returns_m.can_free_cast(to, false)) {
+                                                f1->second[to] = std::move(func);
+                                                return f1->second[to].load_fast();
                                             }
+
+                                            if (func->m_signature.returns_m.can_free_cast(to)) {
+                                                if (options.count(0) == 0) {
+                                                    options[0] = std::move(func);
+                                                }
+                                                continue;
+                                                //f1->second[to] = std::move(func);
+                                                //return f1->second[to].load();
+                                            }
+
+                                            if (func->m_signature.returns_m.can_cast(to)) {
+                                                if (func->m_signature.returns_m.is_temp() && to.is_base()) {
+                                                    if (options.count(1) == 0) {
+                                                        options[1] = GL::make_callable("`call_and_cast " + func->m_signature.name_m + "`", [To = to, caster = func](GL::any::fast_any const& From) -> GL::any {
+                                                            GL::any::fast_any _from = From;
+                                                            GL::any casted = caster->operator()(&_from, &_from + 1);
+                                                            casted.m_casted_type = To;
+                                                            return casted;
+                                                            }, func->m_signature.state_m | GL::function_signature::Cached | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                                        options[1]->m_signature.numConversions = func->m_signature.numConversions;
+                                                    }
+                                                    // return f1->second[to].load();
+                                                    continue;
+                                                }
+                                            }                                            
                                         }
                                     }
                                     if (options.size() > 0) {
@@ -2068,7 +2043,8 @@ namespace GL {
                         return *std::dynamic_pointer_cast<ClassScope>(f->second);
                     }
                     else {
-                        this->invalidate_cache();
+                        this->GetRoot()->invalidate_cache();
+                        ++this->GetRoot()->constructors_version;
                         auto new_class = std::dynamic_pointer_cast<ClassScope>(children.insert(
                             { class_type.name().hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
                         ).first->second);
@@ -2086,15 +2062,8 @@ namespace GL {
 
                         size_t search_hash = PossiblyScopedName.hash();
                         if (from_iter != from_end) {
-                            if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
-                                for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
-                                    GL::util::hash(search_hash, _iter->get_hash());
-                                }
-                            }
-                            else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
-                                for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
-                                    GL::util::hash(search_hash, _iter->m_casted_type.get_hash());
-                                }
+                            for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
+                                GL::util::hash(search_hash, get_type_of(_iter).get_hash());
                             }
                         }
 
@@ -2204,14 +2173,7 @@ namespace GL {
                         // search for a match that leverages the type-cast system on the first argument to search alternative classes or namespaces
                         if (from_iter != from_end) {
                             auto* this_root = this->GetRoot();
-                            GL::type this_t;
-
-                            if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
-                                this_t = *from_iter;                                
-                            }
-                            else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
-                                this_t = from_iter->m_casted_type;                                
-                            }                
+                            GL::type this_t = get_type_of(from_iter);
 
                             (void)this_root->get_converters().try_get_converter(this_t, this_t + GL::type::Const + GL::type::Reference);
                             if (auto conversions = this_root->converters.TryGetCache<0>(this->GetRoot()->constructors_version.load()); conversions) {
@@ -2223,6 +2185,9 @@ namespace GL {
                                                 cast_options.insert({ converter->m_signature.numConversions, conversion_option.first });
                                             }
                                         }
+                                    }
+                                    for (auto& conversion_option : this_t.all_base_types(false)) {
+                                        cast_options.insert({ 0, conversion_option });
                                     }
 
                                     for (auto& conversion_option : cast_options) {
@@ -2269,16 +2234,9 @@ namespace GL {
                                 //auto total_hash = GL::util::inline_hash(this->GetNamespace()->cache_version, this->GetRoot()->constructors_version.load());
                                 //size_t search_hash = optionalScope.hash();
                                 //if (from_iter != from_end) {
-                                //    if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
-                                //        for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
-                                //            GL::util::hash(search_hash, _iter->get_hash());
-                                //        }
-                                //    }
-                                //    else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
-                                //        for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
-                                //            GL::util::hash(search_hash, _iter->m_casted_type.get_hash());
-                                //        }
-                                //    }
+                                //      for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
+                                //          GL::util::hash(search_hash, get_type_of(_iter).get_hash());
+                                //      }
                                 //}                                
                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
                                 //    // cache exists for this moment - no new constructor or function or object has been added recently. 
@@ -2289,51 +2247,15 @@ namespace GL {
                                 //}
 
                                 if (from_iter != from_end) {
-                                    if constexpr (std::is_same_v<iter, GL::type*> || std::is_same_v<iter::value_type, GL::type>) {
-                                        std::queue< GL::type > types_to_try;
-                                        types_to_try.push(*from_iter);
-                                        std::set<GL::type> attempted_types;
-                                        while (types_to_try.size() > 0) {
-                                            GL::type this_t = types_to_try.front();
-                                            types_to_try.pop();
-                                            if (attempted_types.find(this_t) == attempted_types.end()) {
-                                                attempted_types.insert(this_t);
-
-                                                if (auto search = this->GetRoot()->classes.find(this_t.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
-                                                    if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
-                                                        //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                                        //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                                        //}
-                                                        return std::move(ff);
-                                                    }
-                                                }
-
-                                                for (GL::type const& base_type : this_t.all_base_types()) { types_to_try.push(base_type); }
+                                    for (auto& this_t : get_type_of(from_iter).all_base_types(false)) {
+                                        if (auto* BC = this->GetRoot()->try_find_class(this_t); BC) {
+                                            if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
+                                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                //}
+                                                return std::move(ff);
                                             }
-                                        }                                        
-                                    }
-                                    else if constexpr (std::is_same_v<iter, GL::any::fast_any*> || std::is_same_v<iter, GL::any*> || std::is_same_v<iter::value_type, GL::any::fast_any> || std::is_same_v<iter::value_type, GL::any>) {
-                                        std::queue< GL::type > types_to_try;
-                                        types_to_try.push(from_iter->m_casted_type);
-                                        std::set<GL::type> attempted_types;
-                                        while (types_to_try.size() > 0) {
-                                            GL::type this_t = types_to_try.front();
-                                            types_to_try.pop();
-                                            if (attempted_types.find(this_t) == attempted_types.end()) {
-                                                attempted_types.insert(this_t);
-
-                                                if (auto search = this->GetRoot()->classes.find(this_t.get_base_hash()), e = this->GetRoot()->classes.end(); search != e) {
-                                                    if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
-                                                        //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                                        //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                                        //}
-                                                        return std::move(ff);
-                                                    }
-                                                }
-
-                                                for (GL::type const& base_type : this_t.all_base_types()) { types_to_try.push(base_type); }
-                                            }
-                                        }                                        
+                                        }
                                     }
                                 }
                                 // is the "optionalScope" name an exact match for a class name? They may be trying to invoke a class... 
@@ -2395,29 +2317,8 @@ namespace GL {
                     else {
                         GL::string params;
                         for (iter_type i = from_iter; i != from_end; ++i) {
-                            if constexpr (std::is_same_v<iter_type, GL::type*>) {
-                                params = params.add_to_delim(i->name(), ", ");
-                            }
-                            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
-                                params = params.add_to_delim(i->m_casted_type.name(), ", ");
-                            }
-                            else if constexpr (std::is_same_v<iter_type, GL::any*>) {
-                                params = params.add_to_delim(i->m_casted_type.name(), ", ");
-                            }
-                            else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
-                                params = params.add_to_delim(i->name(), ", ");
-                            }
-                            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
-                                params = params.add_to_delim(i->m_casted_type.name(), ", ");
-                            }
-                            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
-                                params = params.add_to_delim(i->m_casted_type.name(), ", ");
-                            }
-                            else {
-                                static_assert("iter_type not allowed");
-                            }
+                            params = params.add_to_delim(get_type_of(i).name(), ", ");
                         }
-
                         GL::string err = GL::string("Could not find callable matching `") + PossiblyScopedName + "`(" + params + ").";
                         throw std::runtime_error(err.to_string());
                     }
@@ -2432,7 +2333,7 @@ namespace GL {
                     if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                         this->GetRoot()->add_constructor(func);
                     }
-                    this->invalidate_cache();
+                    this->invalidate_cache(); 
                 };
 
             };
@@ -2452,6 +2353,331 @@ namespace GL {
                 virtual ~ClassScope() {};
             public:
                 const GL::type this_type;
+
+                __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
+                    std::function<int(Breadcrumb*, int)> const& func,
+                    Breadcrumb* SecondaryPriortyScope = nullptr,
+                    int searchState = 0,
+                    check_cache& check_flags = GetCheckMap(),
+                    int depth = 0
+                ) const {
+                    auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
+                    Breadcrumb* finalResult = nullptr;
+                    if (depth == 0) {
+                        if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
+                            check_flags.resize(numTickets + 1);
+                        }
+                        for (auto& x : check_flags) x = CheckFlagState::none;
+                    }
+
+                    // Prevent Duplication
+                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) > 0) {
+                        finalResult = nullptr;
+                        return finalResult;
+                    }
+                    if (searchState & SkipChildren) {
+                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
+                    }
+
+                    // test myself directly	
+                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self) == 0) {
+                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
+
+                        auto res = func(&selfPtr, searchState);
+                        if ((res & SearchResult::Success) > 0) {
+                            finalResult = &selfPtr;
+                            return finalResult;
+                        }
+                        else if ((res & SearchResult::StaticFailure) > 0) {
+                            finalResult = nullptr;
+                            return finalResult;
+                        }
+                    }
+
+                    bool RequestedSkipChildren = check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all;
+                    if (!(searchState & SkipChildren)) {
+                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
+                    }
+
+                    // test my personal "using" namespaces completely
+                    if (using_m.size() > 0ull) {
+                        for (auto& childNamespace : using_m) {
+                            if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
+                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                    }
+
+                    // test all of my parents directly -- hoping to quickly find "it"
+                    if (!(searchState & SkipParent)) {
+                        Breadcrumb* thisParent = &selfPtr;
+                        while (thisParent = thisParent->parent_m) {
+                            auto& flag = check_flags[thisParent->GetScopeIndex()];
+                            if ((flag & CheckFlagState::self) > 0) break;
+                            else {
+                                flag |= CheckFlagState::self;
+                            }
+                            if (thisParent->this_m.is_namespace()) {
+                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                                if ((res & SearchResult::Success) > 0) {
+                                    finalResult = thisParent;
+                                    return finalResult;
+                                }
+                                else if ((res & SearchResult::StaticFailure) > 0) {
+                                    flag |= CheckFlagState::all;
+                                }
+                            }
+                            else {
+                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                                if ((res & SearchResult::Success) > 0) {
+                                    finalResult = thisParent;
+                                    return finalResult;
+                                }
+                                else if ((res & SearchResult::StaticFailure) > 0) {
+                                    flag |= CheckFlagState::all;
+                                }
+                            }
+                            // check the using statements of the parent.
+                            if (thisParent->this_m.scope->using_m.size() > 0) {
+                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
+                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                    if ((flag2 & CheckFlagState::all) > 0) continue;
+                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                        return finalResult;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // test my "base" classes directly -- hoping to quickly find "it"
+                    if (!(searchState & SkipParent)) {
+                        if (selfPtr.this_m.is_class()) {
+                            auto* p = reinterpret_cast<ClassScope*>(selfPtr.this_m.scope);
+                            for (auto& this_t : p->this_type.all_base_types(false)) {
+                                auto* thisParent = this->GetRoot()->try_find_class(this_t);
+                                while (thisParent) {
+                                    auto& flag = check_flags[thisParent->GetScopeIndex()];
+                                    if ((flag & CheckFlagState::self) > 0) break;
+                                    else {
+                                        flag |= CheckFlagState::self;
+                                    }
+                                    if (thisParent->this_m.is_namespace()) {
+                                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                                        if ((res & SearchResult::Success) > 0) {
+                                            finalResult = thisParent;
+                                            return finalResult;
+                                        }
+                                        else if ((res & SearchResult::StaticFailure) > 0) {
+                                            flag |= CheckFlagState::all;
+                                        }
+                                    }
+                                    else {
+                                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                                        if ((res & SearchResult::Success) > 0) {
+                                            finalResult = thisParent;
+                                            return finalResult;
+                                        }
+                                        else if ((res & SearchResult::StaticFailure) > 0) {
+                                            flag |= CheckFlagState::all;
+                                        }
+                                    }
+                                    // check the using statements of the parent.
+                                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
+                                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                            if ((flag2 & CheckFlagState::all) > 0) continue;
+                                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                                return finalResult;
+                                            }
+                                        }
+                                    }
+
+                                    thisParent = thisParent->parent_m;
+                                }
+                            }
+                        }
+                    }
+
+                    // test the SecondaryPriortyScope, often the class of the first param provided in a function call
+                    if ((depth == 0) && SecondaryPriortyScope) {
+                        Breadcrumb* thisParent = SecondaryPriortyScope;
+                        if (thisParent) {
+                            auto& flag1 = check_flags[thisParent->GetScopeIndex()];
+                            flag1 = CheckFlagState::none;
+
+                            // test myself directly
+                            if ((flag1 & CheckFlagState::self) == 0) {
+                                flag1 |= CheckFlagState::self;
+
+                                auto res = func(thisParent, searchState);
+                                if ((res & SearchResult::Success) > 0) {
+                                    finalResult = thisParent;
+                                    return finalResult;
+                                }
+                                else if ((res & SearchResult::StaticFailure) > 0) {
+                                    finalResult = nullptr;
+                                    return finalResult;
+                                }
+                            }
+
+                            // test my personal "using" namespaces completely
+                            if (thisParent->this_m.scope->using_m.size() > 0) {
+                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
+                                    auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
+                                    if ((flag & CheckFlagState::all) > 0) { continue; }
+                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                        return finalResult;
+                                    }
+                                }
+                            }
+                        }
+                        while (thisParent = thisParent->parent_m) {
+                            auto& flag = check_flags[thisParent->GetScopeIndex()];
+                            if ((flag & CheckFlagState::self) > 0) break;
+                            else {
+                                flag |= CheckFlagState::self;
+                            }
+                            if (thisParent->this_m.is_namespace()) {
+                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
+                                if ((res & SearchResult::Success) > 0) {
+                                    finalResult = thisParent;
+                                    return finalResult;
+                                }
+                                else if ((res & SearchResult::StaticFailure) > 0) {
+                                    flag |= CheckFlagState::all;
+                                }
+                            }
+                            else {
+                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
+                                if ((res & SearchResult::Success) > 0) {
+                                    finalResult = thisParent;
+                                    return finalResult;
+                                }
+                                else if ((res & SearchResult::StaticFailure) > 0) {
+                                    flag |= CheckFlagState::all;
+                                }
+                            }
+                            // check the using statements of the parent.
+                            if (thisParent->this_m.scope->using_m.size() > 0) {
+                                for (auto& childNamespace : thisParent->this_m.scope->using_m) {
+                                    auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                    if ((flag2 & CheckFlagState::all) > 0) continue;
+                                    if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                        return finalResult;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Test my children themselves. 
+                    if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && (this->children.size() > 0ull)) {
+                        for (auto& child : this->children) {
+                            auto* child_bc = &child.second->breadcrumb_m;
+                            auto& flag = check_flags[child_bc->GetScopeIndex()];
+
+                            if ((flag & CheckFlagState::self) > 0) continue;
+
+                            flag |= CheckFlagState::self;
+
+                            auto res = func(child_bc, searchState | SearchingChildren | SkipChildren | SkipParent);
+                            if ((res & SearchResult::Success) > 0) {
+                                finalResult = child_bc;
+                                return finalResult;
+                            }
+                            else if ((res & SearchResult::StaticFailure) > 0) {
+                                flag |= CheckFlagState::all;
+                            }
+                        }
+                    }
+
+                    // Test my parent completely.
+                    if ((searchState & SkipParent) == 0) {
+                        if (selfPtr.parent_m) {
+                            auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
+                            if ((flag & CheckFlagState::all) == 0) {
+                                if (selfPtr.parent_m->this_m.is_namespace()) {
+                                    if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
+                                        return finalResult;
+                                    }
+                                }
+                                else {
+                                    if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents, check_flags, depth + 1)) {
+                                        return finalResult;
+                                    }
+                                }
+
+                            }
+                        }
+                    }
+
+                    // test my "base" classes directly -- hoping to quickly find "it"
+                    if (!(searchState & SkipParent)) {
+                        if (selfPtr.this_m.is_class()) {
+                            auto* p = reinterpret_cast<ClassScope*>(selfPtr.this_m.scope);
+                            for (auto& this_t : p->this_type.all_base_types(false)) {
+                                auto* thisParent = this->GetRoot()->try_find_class(this_t);
+                                while (thisParent) {
+                                    auto& flag = check_flags[thisParent->GetScopeIndex()];
+                                    if ((flag & CheckFlagState::self) > 0) break;
+                                    else {
+                                        flag |= CheckFlagState::self;
+                                    }
+                                    if (thisParent->this_m.is_namespace()) {
+                                        auto res = func(thisParent, searchState | SearchingParents | SearchUpHitNamespace);
+                                        if ((res & SearchResult::Success) > 0) {
+                                            finalResult = thisParent;
+                                            return finalResult;
+                                        }
+                                        else if ((res & SearchResult::StaticFailure) > 0) {
+                                            flag |= CheckFlagState::all;
+                                        }
+                                    }
+                                    else {
+                                        auto res = func(thisParent, searchState | SearchingParents);
+                                        if ((res & SearchResult::Success) > 0) {
+                                            finalResult = thisParent;
+                                            return finalResult;
+                                        }
+                                        else if ((res & SearchResult::StaticFailure) > 0) {
+                                            flag |= CheckFlagState::all;
+                                        }
+                                    }
+                                    // check the using statements of the parent.
+                                    if (thisParent->this_m.scope->using_m.size() > 0) {
+                                        for (auto& childNamespace : thisParent->this_m.scope->using_m) {
+                                            auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
+                                            if ((flag2 & CheckFlagState::all) > 0) continue;
+                                            if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
+                                                return finalResult;
+                                            }
+                                        }
+                                    }
+
+                                    thisParent = thisParent->parent_m;
+                                }
+                            }
+                        }
+                    }
+
+                    // Test my children completely. 
+                    if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && this->children.size() > 0ull) {
+                        for (auto& child : this->children) {
+                            auto* child_bc = &child.second->breadcrumb_m;
+                            auto& flag = check_flags[child_bc->GetScopeIndex()];
+
+                            if ((flag & CheckFlagState::all) > 0) continue;
+
+                            if (finalResult = child_bc->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingChildren | SkipParent, check_flags, depth + 1)) {
+                                return finalResult;
+                            }
+                        }
+                    }
+
+                    return finalResult;
+                };
 
             };
 
@@ -2522,6 +2748,14 @@ namespace GL {
                 void perform_builtins();
                 void preload_conversions();
 
+                Breadcrumb* try_find_class(GL::type this_t) const {
+                    if (auto search = this->classes.find(this_t.get_base_hash()), e = this->classes.end(); search != e) {
+                        return search->second;
+                    }
+                    else {
+                        return nullptr;
+                    }
+                };
             };
 
 
