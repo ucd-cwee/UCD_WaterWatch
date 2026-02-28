@@ -23,12 +23,12 @@ namespace GL {
         static 
         //  GL::bTree< impl::cached_type, size_t, 10>
         //  concurrency::concurrent_unordered_map< size_t, impl::cached_type, right_shift<4> > builtin_cpp_types;
-            std::unordered_map< size_t, impl::cached_type/*, right_shift<4>*/ > 
+        
+        std::unordered_map< unsigned int, impl::cached_type> // if there are conflicts, upgrade to size_t
             builtin_cpp_types;
-        // atomic_vector because ticket system will prefer small values. 
-        static GL::atomic_vector< impl::cached_type > scripted_types; 
-        // ticket system helps ensure values remain small. 
-        static GL::ticket_dispensor scripted_types_ticket_dispensor; 
+        
+        static GL::atomic_vector< impl::cached_type > scripted_types; // atomic_vector because ticket system will prefer small values.         
+        static GL::ticket_dispensor scripted_types_ticket_dispensor; // ticket system helps ensure values remain small. 
 
         size_t checkout_scripted_type(GL::string type_name) {
             size_t ticket = scripted_types_ticket_dispensor.get_ticket() - 1;
@@ -67,6 +67,7 @@ namespace GL {
             } 
             else {
 #if 1
+                hash = right_shift<4>()(hash); // if there are conflicts, comment out.
                 return builtin_cpp_types[hash];
 #else
                 if (auto* p = builtin_cpp_types.NodeFind(hash); p) {
@@ -80,6 +81,7 @@ namespace GL {
         };
         cached_type& get_impl(size_t hash) {
 #if 1
+            hash = right_shift<4>()(hash); // if there are conflicts, comment out.
             return builtin_cpp_types[hash];
 #else
             if (auto* p = builtin_cpp_types.NodeFind(hash); p) {
