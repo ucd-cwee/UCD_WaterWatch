@@ -675,7 +675,7 @@ int main() {
                         = std_namespace.make_namespace("map");
                     auto& std_numeric_limits_namespace
                         = std_namespace.make_namespace("numeric_limits");
-                    
+
                     /*program_root.add_function(GL::make_converter<GL::foot, GL::meter>());
                     program_root.add_function(GL::make_converter<GL::meter, GL::foot>());
                     program_root.add_function(GL::make_converter<GL::meter, GL::value>());
@@ -930,8 +930,8 @@ int main() {
                             auto h = g.make_scope();
                             auto i = h.make_scope();
                             auto j = i.make_scope();
-                            auto k = j.make_scope();   
-                        });
+                            auto k = j.make_scope();
+                            });
                     }
 
                     if (auto timer = sw.debug_timer("example calc")) {
@@ -969,18 +969,18 @@ int main() {
                             });
                     }
 
-                    if (auto timer = sw.debug_timer("example calc 2")) {                        
+                    if (auto timer = sw.debug_timer("example calc 2")) {
                         GL::parallel::For(0, 1000000, [&](size_t i) {
                             auto temp_scope = program_root.make_scope();
                             temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
                             temp_scope.insert_object_here("v0", temp_scope.call("/", {
                                 temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
                                 temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                            }));
+                                }));
                             temp_scope.insert_object_here("a0", temp_scope.call("/", {
                                 temp_scope.find_object("v0"),
                                 temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                            }));
+                                }));
                             temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
                             temp_scope.insert_object_here("d", temp_scope.call("+", {
                                 temp_scope.call("*", {
@@ -997,12 +997,12 @@ int main() {
                                     }),
                                     GL::any::fast_any::instance(0.5)
                                 })
-                            }));
+                                }));
                             temp_scope.insert_object_here("x", temp_scope.call("+", {
                                 temp_scope.find_object("x0"),
                                 temp_scope.find_object("d")
-                            }));
-                        });
+                                }));
+                            });
                     }
 
                     if (auto timer = sw.debug_timer("example calc 2 (once only)")) {
@@ -1011,11 +1011,11 @@ int main() {
                         temp_scope.insert_object_here("v0", temp_scope.call("/", {
                             temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
                             temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                        }));
+                            }));
                         temp_scope.insert_object_here("a0", temp_scope.call("/", {
                             temp_scope.find_object("v0"),
                             temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                        }));
+                            }));
                         temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
                         temp_scope.insert_object_here("d", temp_scope.call("+", {
                             temp_scope.call("*", {
@@ -1032,11 +1032,11 @@ int main() {
                                 }),
                                 GL::any::fast_any::instance(0.5)
                             })
-                        }));
+                            }));
                         temp_scope.insert_object_here("x", temp_scope.call("+", {
                             temp_scope.find_object("x0"),
                             temp_scope.find_object("d")
-                        }));
+                            }));
                     }
 
                     if (auto timer = sw.debug_timer("example calc 2 (once only, from scratch)")) {
@@ -1049,11 +1049,11 @@ int main() {
                         temp_scope.insert_object_here("v0", temp_scope.call("/", {
                             temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
                             temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                        }));
+                            }));
                         temp_scope.insert_object_here("a0", temp_scope.call("/", {
                             temp_scope.find_object("v0"),
                             temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                        }));
+                            }));
                         temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
                         temp_scope.insert_object_here("d", temp_scope.call("+", {
                             temp_scope.call("*", {
@@ -1070,11 +1070,11 @@ int main() {
                                 }),
                                 GL::any::fast_any::instance(0.5)
                             })
-                        }));
+                            }));
                         temp_scope.insert_object_here("x", temp_scope.call("+", {
                             temp_scope.find_object("x0"),
                             temp_scope.find_object("d")
-                        }));
+                            }));
                     }
 
 
@@ -1085,11 +1085,11 @@ int main() {
                             temp_scope.insert_object_here("v0", temp_scope.call("/", {
                                 temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
                                 temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                            }));
+                                }));
                             temp_scope.insert_object_here("a0", temp_scope.call("/", {
                                 temp_scope.find_object("v0"),
                                 temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                            }));
+                                }));
                             temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
                             temp_scope.insert_object_here("d", temp_scope.call("+", {
                                 temp_scope.call("*", {
@@ -1106,11 +1106,11 @@ int main() {
                                     }),
                                     GL::any::fast_any::instance(0.5)
                                 })
-                            }));
+                                }));
                             temp_scope.insert_object_here("x", temp_scope.call("+", {
                                 temp_scope.find_object("x0"),
                                 temp_scope.find_object("d")
-                            }));
+                                }));
                         };
                     }
 
@@ -1251,9 +1251,54 @@ int main() {
                                 auto result = program_root.get_converters().call_with_conversions(&*f, types5); // 'char' is convertable to either 'foot' or 'int' or 'float', etc., therefore no guarrantee what is selected. 
                                 EXPECT_EQ("int", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. In this case, int is closest to 'char' and is selected. 
                             }
-                        });
+                            });
                     }
 
+                    if (auto timer = sw.debug_timer("Polymorphism test")) {
+                        GL::scope::impl::RootScope
+                            root;
+                        root.perform_builtins();
+
+                        // declare a custom namespace
+                        auto& Example = root.make_namespace("Example");
+
+                        // within that namespace is an Animal interface class
+                        auto Animal_t = GL::script_type("Animal");
+                        auto& Animal = Example.make_class(Animal_t);
+                        Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t.load() }}, GL::type_of<std::string>()));
+
+                        // within that namespace is an Dog impl class
+                        auto Dog_t = GL::script_type("Dog");
+                        Dog_t.load().add_base(Animal_t);
+                        EXPECT_EQ(true, Animal_t.load().is_base_of(Dog_t));
+                        auto& Dog = Example.make_class(Dog_t);
+                        Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t.load() } }, GL::type_of<std::string>()));
+
+                        // within that namespace is an Cat impl class
+                        auto Cat_t = GL::script_type("Cat");
+                        Cat_t.load().add_base(Animal_t);
+                        EXPECT_EQ(true, Animal_t.load().is_base_of(Cat_t));
+                        auto& Cat = Example.make_class(Cat_t);
+                        Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t.load() } }, GL::type_of<std::string>()));
+
+                        if (1) {
+                            auto script_scope = root.make_scope();
+
+                            if (1) {
+                                GL::any::fast_any dog_impl = GL::any::fast_any::instance(10);
+                                dog_impl.m_casted_type = Dog_t;
+                                script_scope.insert_object_here("dog_impl", dog_impl);
+                            }
+                            if (1) {
+                                GL::any::fast_any cat_impl = GL::any::fast_any::instance(10);
+                                cat_impl.m_casted_type = Cat_t;
+                                script_scope.insert_object_here("cat_impl", cat_impl);
+                            }
+                            EXPECT_EQ("bark", script_scope.call("speak", {script_scope.find_object("dog_impl")}).cast<std::string>());
+                            EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+                        }
+                    }
+                
                     std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));
                     std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());
                     std_numeric_limits_namespace.insert_object_here("max", std::numeric_limits<double>::max());

@@ -844,7 +844,10 @@ namespace GL {
             if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_cast(to);
             return false;
         };
-
+        GL::type get_actual_type() const {
+            if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type;
+            return GL::type();
+        };
     private:
         void* ptr() const {
             if (auto p = m_ptr.load_fast())
@@ -1284,6 +1287,10 @@ namespace GL {
                 if (m_casted_type.can_cast(to)) return true;
                 if (m_ptr) return m_ptr->m_actual_type.can_cast(to);
                 return false;
+            };
+            GL::type get_actual_type() const {
+                if (m_ptr) return m_ptr->m_actual_type;
+                return GL::type();
             };
 
             fast_any fast() const { return *this; };

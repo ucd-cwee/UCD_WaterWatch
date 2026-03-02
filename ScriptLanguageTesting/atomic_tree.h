@@ -1634,8 +1634,6 @@ namespace GL{
 		};
 		binary_search_treeNode* // find an object using the given key
 			NodeFind(keyType key, bool for_removal = false) {
-			binary_search_treeNode
-				* nxt;
 			binary_search_treeNode*
 				node;
 

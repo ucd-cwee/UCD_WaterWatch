@@ -33,7 +33,28 @@ namespace GL {
                 return rhs->m_casted_type;
             }
         };
-        
+        template <typename iter_type>
+        static __forceinline GL::type const& get_actual_type_of(iter_type const& rhs) {
+            if constexpr (std::is_same_v<iter_type, GL::type*>) {
+                return *rhs;
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+                return rhs->get_actual_type();
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any*>) {
+                return rhs->get_actual_type();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
+                return *rhs;
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+                return rhs->get_actual_type();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
+                return rhs->get_actual_type();
+            }
+        };
+
         enum ScopeType {
             Basic = 1,
             Namespace = 2,
@@ -1923,8 +1944,16 @@ namespace GL {
                                             }
                                         }
                                     }
+                                    if (GL::type actual_t = get_actual_type_of(from_iter); actual_t != this_t) {
+                                        cast_options.insert({ -2, actual_t });
+                                    }
                                     for (auto& conversion_option : this_t.all_base_types(false)) {
-                                        cast_options.insert({ 0, conversion_option });
+                                        if (conversion_option.get_base_hash() == this_t.get_base_hash()) {
+                                            cast_options.insert({ -1, conversion_option });
+                                        }
+                                        else {
+                                            cast_options.insert({ 0, conversion_option });
+                                        }                                        
                                     }
 
                                     for (auto& conversion_option : cast_options) {
@@ -1984,6 +2013,16 @@ namespace GL {
                                 //}
 
                                 if (from_iter != from_end) {
+                                    if (auto actual_t = get_actual_type_of(from_iter), casted_t = get_type_of(from_iter); casted_t != actual_t) {
+                                        if (auto* BC = this->GetRoot()->try_find_class(actual_t); BC) {
+                                            if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
+                                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                //}
+                                                return std::move(ff);
+                                            }
+                                        }
+                                    }
                                     for (auto& this_t : get_type_of(from_iter).all_base_types(false)) {
                                         if (auto* BC = this->GetRoot()->try_find_class(this_t); BC) {
                                             if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
