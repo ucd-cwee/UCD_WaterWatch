@@ -312,6 +312,7 @@ namespace GL {
         GL::type_of<GL::any>().try_update_name("any");
         GL::type_of<GL::any::fast_any>().try_update_name("fast_any");
         GL::type_of<GL::type>().try_update_name("type");
+        GL::type_of<GL::var>().try_update_name("var");
         GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition. 
 
         return true;

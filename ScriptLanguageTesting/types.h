@@ -714,7 +714,7 @@ namespace GL {
     class var {
     public:
         var() = default;
-        explicit var(GL::shared_ptr<any> && data_f) : p_data(std::move(data_f)) {};
+        explicit var(GL::shared_ptr<any>&& data_f);
         var(var const&) = default;
         var(var&&) = default;
         var& operator=(var const&) = default;
@@ -722,9 +722,18 @@ namespace GL {
         ~var() = default;
 
     public:
+        GL::type const& get_type() const;
+        GL::type const& get_actual_type();
+        GL::fast_shared_ptr<GL::any> get_data() {
+            return p_data.load_fast();
+        };
+        void set_data(GL::shared_ptr<GL::any>&& rhs);
+    
+    private:
         GL::atomic_shared_ptr<any> 
             p_data; // may be "updated" at any time and therefore should be thread-safe. 
-
+        GL::type
+            p_type;
     };
 
     // atomic wrapper for any object that can store and share shared_ptrs. Handles automatic casting to nearly all variants of qualified types. 
@@ -739,9 +748,23 @@ namespace GL {
             m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
 
     private:
+        void correct_type_information() {
+            if (auto f = m_ptr.load_fast(); f) {
+                if (f->can_cast_var()) {
+                    if (auto* V = f->cast<var>()) {
+                        m_casted_type = V->get_type();
+                        if (m_casted_type.is_void()) {
+                            m_casted_type = GL::type_of<GL::var>();
+                        }
+                    }
+                }
+            }
+        }
         explicit any(GL::atomic_shared_ptr< type_erasure::any_data > const& p_ptr, GL::type&& p_type)
             : m_ptr{ p_ptr }, m_casted_type{ std::move(p_type) }
-        {}
+        {
+            correct_type_information();
+        }
 
     public:
         any() = default;
@@ -766,11 +789,13 @@ namespace GL {
         template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> any& operator=(const ValueType& rhs) noexcept {
             m_ptr = type_erasure::wrap(rhs);
             m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
+            correct_type_information();
             return *this;
         };
         template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> any& operator=(ValueType&& rhs) noexcept {
             m_ptr = type_erasure::wrap(std::move(rhs));
             m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
+            correct_type_information();
             return *this;
         };
         
@@ -841,12 +866,18 @@ namespace GL {
         // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
         bool can_cast(type const& to) const {
             if (m_casted_type.can_cast(to)) return true;
-            if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type.can_cast(to);
+            if (auto ptr = m_ptr.load_fast()) {
+                if (ptr->m_actual_type.can_cast(to)) return true;
+                if (ptr->can_cast_var() && (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash())) { return true; }
+            }
             return false;
         };
-        GL::type get_actual_type() const {
+        GL::type const& get_actual_type() const {
             if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type;
-            return GL::type();
+            else {
+                static GL::type out{};
+                return out;
+            }
         };
     private:
         void* ptr() const {
@@ -984,7 +1015,7 @@ namespace GL {
                                 else {
                                     if (container->can_cast_var()) {
                                         var* ptr = container->cast<var>();
-                                        if (auto f = ptr->p_data.load_fast()) {
+                                        if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
                                             continue;
                                         }
@@ -1007,7 +1038,7 @@ namespace GL {
                                 else {
                                     if (container->can_cast_var()) {
                                         var* ptr = container->cast<var>();
-                                        if (auto f = ptr->p_data.load_fast()) {
+                                        if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
                                             continue;
                                         }
@@ -1023,7 +1054,7 @@ namespace GL {
                                 else {
                                     if (container->can_cast_var()) {
                                         var* ptr = container->cast<var>();
-                                        if (auto f = ptr->p_data.load_fast()) {
+                                        if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
                                             continue;
                                         }
@@ -1114,7 +1145,7 @@ namespace GL {
                                 else {
                                     if (container->can_cast_var()) {
                                         var* ptr = container->cast<var>();
-                                        if (auto f = ptr->p_data.load_fast()) {
+                                        if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
                                             continue;
                                         }
@@ -1137,7 +1168,7 @@ namespace GL {
                                 else {
                                     if (container->can_cast_var()) {
                                         var* ptr = container->cast<var>();
-                                        if (auto f = ptr->p_data.load_fast()) {
+                                        if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
                                             continue;
                                         }
@@ -1153,7 +1184,7 @@ namespace GL {
                                 else {
                                     if (container->can_cast_var()) {
                                         var* ptr = container->cast<var>();
-                                        if (auto f = ptr->p_data.load_fast()) {
+                                        if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
                                             continue;
                                         }
@@ -1210,9 +1241,23 @@ namespace GL {
                 m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
 
         private:
+            void correct_type_information() {
+                if (m_ptr) {
+                    if (m_ptr->can_cast_var()) {
+                        if (auto* V = m_ptr->cast<var>()) {
+                            m_casted_type = V->get_type();
+                            if (m_casted_type.is_void()) {
+                                m_casted_type = GL::type_of<GL::var>();
+                            }
+                        }
+                    }
+                }
+            }
             explicit fast_any(GL::shared_ptr< type_erasure::any_data >&& p_ptr, GL::type const& p_type)
                 : m_ptr{ std::move(p_ptr) }, m_casted_type{ p_type }
-            {}
+            {
+                correct_type_information();
+            }
 
         public:
             fast_any() = default;
@@ -1285,12 +1330,18 @@ namespace GL {
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const {
                 if (m_casted_type.can_cast(to)) return true;
-                if (m_ptr) return m_ptr->m_actual_type.can_cast(to);
+                if (m_ptr) {
+                    if (m_ptr->m_actual_type.can_cast(to)) return true;
+                    if (m_ptr->can_cast_var() && (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash())) { return true; }
+                }
                 return false;
             };
-            GL::type get_actual_type() const {
+            GL::type const& get_actual_type() const {
                 if (m_ptr) return m_ptr->m_actual_type;
-                return GL::type();
+                else {
+                    static GL::type out{};
+                    return out;
+                }
             };
 
             fast_any fast() const { return *this; };
@@ -1346,6 +1397,29 @@ namespace GL {
             m_casted_type = std::move(rhs.m_casted_type);
             return *this;
         };
+    };
+
+    __forceinline var::var(GL::shared_ptr<any>&& data_f) : p_data(std::move(data_f)) {
+        if (auto f = p_data.load_fast(); f)
+            p_type = f->m_casted_type;
+    };
+    __forceinline GL::type const& var::get_type() const {
+        return p_type;
+    };
+    __forceinline GL::type const& var::get_actual_type() {
+        if (auto f = p_data.load_fast(); f)
+            return f->get_actual_type();
+        return p_type;
+    };
+    __forceinline void var::set_data(GL::shared_ptr<GL::any>&& rhs) {
+        if (rhs) {
+            p_type = rhs->m_casted_type;
+            p_data.store(std::move(rhs));
+        }
+        else {
+            p_type = GL::type{};
+            p_data.store(nullptr);
+        }
     };
 
     namespace type_erasure {

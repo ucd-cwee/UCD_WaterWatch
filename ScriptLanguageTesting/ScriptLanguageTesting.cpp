@@ -1263,23 +1263,23 @@ int main() {
                         auto& Example = root.make_namespace("Example");
 
                         // within that namespace is an Animal interface class
-                        auto Animal_t = GL::script_type("Animal");
-                        auto& Animal = Example.make_class(Animal_t);
-                        Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t.load() }}, GL::type_of<std::string>()));
+                        auto& Animal = Example.make_class("Animal");
+                        auto Animal_t = Animal.this_type;
+                        Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t }}, GL::type_of<std::string>()));
 
                         // within that namespace is an Dog impl class
-                        auto Dog_t = GL::script_type("Dog");
-                        Dog_t.load().add_base(Animal_t);
-                        EXPECT_EQ(true, Animal_t.load().is_base_of(Dog_t));
-                        auto& Dog = Example.make_class(Dog_t);
-                        Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t.load() } }, GL::type_of<std::string>()));
+                        auto& Dog = Example.make_class("Dog");
+                        auto Dog_t = Dog.this_type;
+                        Dog_t.add_base(Animal_t);
+                        EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
+                        Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t } }, GL::type_of<std::string>()));
 
                         // within that namespace is an Cat impl class
-                        auto Cat_t = GL::script_type("Cat");
-                        Cat_t.load().add_base(Animal_t);
-                        EXPECT_EQ(true, Animal_t.load().is_base_of(Cat_t));
-                        auto& Cat = Example.make_class(Cat_t);
-                        Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t.load() } }, GL::type_of<std::string>()));
+                        auto& Cat = Example.make_class("Cat");
+                        auto Cat_t = Cat.this_type;
+                        Cat_t.add_base(Animal_t);
+                        EXPECT_EQ(true, Animal_t.is_base_of(Cat_t));
+                        Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t } }, GL::type_of<std::string>()));
 
                         if (1) {
                             auto script_scope = root.make_scope();
@@ -1294,11 +1294,160 @@ int main() {
                                 cat_impl.m_casted_type = Cat_t;
                                 script_scope.insert_object_here("cat_impl", cat_impl);
                             }
-                            EXPECT_EQ("bark", script_scope.call("speak", {script_scope.find_object("dog_impl")}).cast<std::string>());
+                            EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
                             EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
                         }
                     }
                 
+                    if (auto timer = sw.debug_timer("Var tests")) {
+                        GL::scope::impl::RootScope
+                            root;
+                        root.perform_builtins();
+
+                        if (auto script_scope = root.make_scope()) {
+                            GL::any::fast_any x = GL::any::fast_any::instance(100);
+                            GL::any::fast_any y = GL::any::fast_any::instance(100);
+
+                            script_scope.call("+=", { x, y });
+                            EXPECT_EQ(x.cast<int>(), 200);
+                        }
+
+                        if (auto script_scope = root.make_scope()) {
+                            GL::var x = GL::var(GL::make_shared<GL::any>(100));
+                            GL::var y = GL::var(GL::make_shared<GL::any>(100));
+
+                            EXPECT_EQ(x.get_type(), GL::type_of<int>());
+
+                            script_scope.call("+=", { x.get_data()->fast(), y.get_data()->fast() });
+                            EXPECT_EQ(x.get_data()->cast<int>(), 200);
+
+                            script_scope.call("+=", { x.get_data()->fast(), y.get_data()->fast() });
+                            EXPECT_EQ(x.get_data()->cast<int>(), 300);
+                        }
+
+                        if (auto script_scope = root.make_scope()) {
+                            script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(100)));
+                            script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+
+                            script_scope.call("+=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                            EXPECT_EQ(script_scope.find_object("x").cast<int>(), 200);
+                        }
+                                                
+                        if (auto script_scope = root.make_scope()) {
+                            script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(0)));
+                            script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+
+                            script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                            EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                        }
+
+                        if (auto script_scope = root.make_scope()) {
+                            script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(0)));
+                            script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+                            script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                            EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                        }
+                        if (auto script_scope = root.make_scope()) {
+                            script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>()));
+                            script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+                            script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                            EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                        }
+                        if (auto script_scope = root.make_scope()) {
+                            script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(100)));
+                            script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(200)));
+                            script_scope.insert_object_here("z", GL::var(GL::make_shared<GL::any>()));
+                            EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                            
+                            script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                            EXPECT_EQ(script_scope.find_object("x").cast<int>(), 200);
+
+                            EXPECT_EQ(true, script_scope.find_object("x").can_cast(GL::type_of<GL::var&>()));
+
+                            script_scope.call(":=", { script_scope.find_object("x"), script_scope.find_object("z") });
+                            EXPECT_EQ(script_scope.find_object("x").m_casted_type, GL::type_of<GL::var>());
+                        }
+                        if (auto script_scope = root.make_scope()) {
+                            auto empty_var = script_scope.call("var", {  });
+                            auto initialized_var = script_scope.call("var", { GL::any::fast_any::instance(100) });
+                            auto copied_var = script_scope.call("var", { initialized_var });
+                            auto assigned_var = script_scope.call("=", { script_scope.call("var", {  }), initialized_var });
+
+                            EXPECT_EQ(empty_var.m_casted_type, GL::type_of<GL::var>());
+                            EXPECT_EQ(initialized_var.m_casted_type, GL::type_of<int>());
+                            EXPECT_EQ(copied_var.m_casted_type, GL::type_of<int>());
+                            EXPECT_EQ(assigned_var.m_casted_type, GL::type_of<int&>());
+                            EXPECT_EQ(initialized_var.cast<int>(), 100);
+                            EXPECT_EQ(copied_var.cast<int>(), 100);
+                            EXPECT_EQ(assigned_var.cast<int>(), 100);
+
+                            script_scope.call("+=", { initialized_var, GL::any::fast_any::instance(25) });
+                            script_scope.call("+=", { copied_var, GL::any::fast_any::instance(25) });
+                            script_scope.call("+=", { assigned_var, GL::any::fast_any::instance(25) });
+
+                            EXPECT_EQ(initialized_var.cast<int>(), 175);
+                            EXPECT_EQ(copied_var.cast<int>(), 175);
+                            EXPECT_EQ(assigned_var.cast<int>(), 175);
+                        }
+                    }
+
+                    if (auto timer = sw.debug_timer("Polymorphism Var test")) {
+                        GL::scope::impl::RootScope
+                            root;
+                        root.perform_builtins();
+
+                        // declare a custom namespace
+                        auto& Example = root.make_namespace("Example");
+
+                        // within that namespace is an Animal interface class
+                        auto& Animal = Example.make_class("Animal");
+                        auto Animal_t = Animal.this_type;
+                        Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t } }, GL::type_of<std::string>()));
+
+                        // within that namespace is an Dog impl class
+                        auto& Dog = Example.make_class("Dog");
+                        auto Dog_t = Dog.this_type;
+                        Dog_t.add_base(Animal_t);
+                        EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
+                        Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t } }, GL::type_of<std::string>()));
+                        Dog.add_function(GL::make_callable(Dog_t.name(), [Dog_t]() -> GL::any::fast_any {
+                            GL::any::fast_any out = GL::any::fast_any::instance(10);
+                            out.m_casted_type = Dog_t;
+                            return out;
+                        }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Dog_t));
+
+                        // within that namespace is an Cat impl class
+                        auto& Cat = Example.make_class("Cat");
+                        auto Cat_t = Cat.this_type;
+                        Cat_t.add_base(Animal_t);
+                        EXPECT_EQ(true, Animal_t.is_base_of(Cat_t));
+                        Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t } }, GL::type_of<std::string>()));
+                        Cat.add_function(GL::make_callable(Cat_t.name(), [Cat_t]() -> GL::any::fast_any {
+                            GL::any::fast_any out = GL::any::fast_any::instance(10);
+                            out.m_casted_type = Cat_t;
+                            return out;
+                        }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Cat_t));
+
+
+                        if (1) {
+                            auto script_scope = root.make_scope();
+                            script_scope.insert_object_here("dog_impl", script_scope.call("var", { script_scope.call("Dog", {  }) }));
+                            script_scope.insert_object_here("cat_impl", script_scope.call("var", { script_scope.call("Cat", {  }) }));
+                            EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
+                            EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+
+                            // To-Do, test for polymorphism with the casted-down type, having lost its identity. 
+                            //auto found_impl = script_scope.find_object("dog_impl");
+                            //found_impl.m_casted_type = Animal_t;
+                            //print(script_scope.call("speak", { found_impl }).cast<std::string>());
+                        }
+
+
+                    }
+
+
+
+
                     std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));
                     std_numeric_limits_namespace.insert_object_here("min", std::numeric_limits<double>::lowest());
                     std_numeric_limits_namespace.insert_object_here("max", std::numeric_limits<double>::max());

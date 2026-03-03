@@ -216,7 +216,57 @@ namespace GL {
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("get_base_hash", [](GL::type const& a) -> size_t { return a.get_base_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
             }
 
-            // 
+            // var (generic "variable" container, for wrapping assignment of any type within the script language. Effectively the scripting language's version of 'any')
+            if (1) {
+                auto& var_class = this->make_class(GL::type_of< GL::var >());
+                // default constructor
+                var_class.add_function(GL::make_callable(GL::type_of< GL::var >().name(), []() -> GL::var { return {}; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< GL::var >()));
+                // copy constructor
+                var_class.add_function(GL::make_callable(GL::type_of< GL::var >().name(), [](GL::var const& rhs) -> GL::var { return rhs; }, GL::function_signature::Constructor | GL::function_signature::Async));
+                // template constructor, create a var from anything
+                var_class.add_function(GL::make_callable(GL::type_of< GL::var >().name(), [](GL::any::fast_any const& rhs) -> GL::var {
+                    if (rhs.can_cast(GL::type_of<GL::var&>())) {
+                        return rhs.cast<GL::var&>();
+                    }
+                    else {
+                        return GL::var(GL::make_shared<GL::any>(rhs));
+                    }
+                    
+                }, GL::function_signature::Constructor | GL::function_signature::Async, {}, { { "rhs", GL::type_of<GL::any>() } }, GL::type_of<GL::var>()));
+                // assignment operator. Anything can be assigned to an empty var object.
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                    
+                    if (rhs.can_cast(GL::type_of<GL::var&>())) {
+                        lhs.cast<GL::var&>() = rhs.cast<GL::var&>();                        
+                    }
+                    else {
+                        lhs.cast<GL::var&>() = GL::var(GL::make_shared<GL::any>(rhs));
+                    }
+                    GL::any::fast_any out = lhs;
+                    out.m_casted_type = rhs.m_casted_type | GL::type::Reference;
+                    return out;
+                }, GL::function_signature::Async, {}, { { "lhs",GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }/*, GL::type_of<GL::var&>()*/));
+                // forced assignment operator. Anything can be assigned to an var object using this operator. If something was already assigned, it is over-written. 
+                this->add_function(GL::make_callable(":=", [](GL::any::fast_any& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                    if (rhs.can_cast(GL::type_of<GL::var&>())) {
+                        lhs.cast<GL::var&>() = rhs.cast<GL::var&>();
+                    }
+                    else {
+                        lhs.cast<GL::var&>() = GL::var(GL::make_shared<GL::any>(rhs));
+                    }
+                    GL::any::fast_any out = lhs;
+                    out.m_casted_type = rhs.m_casted_type | GL::type::Reference;
+                    return out;
+                }, GL::function_signature::Async, {}, { { "lhs",GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }/*, GL::type_of<GL::var&>()*/));                
+                // boolean test for vars, to ensure they are "valid"
+                this->make_class(GL::type_of< bool >()).add_function(GL::make_callable(GL::type_of< bool >().name(), [](GL::var const& rhs) -> bool {
+                    return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash();
+                }));
+                // boolean test for vars, to ensure they are "valid"
+                var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
+            }
+
+
 
 
 

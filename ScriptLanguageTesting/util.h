@@ -225,6 +225,7 @@ namespace GL {
 
     public:
         deferred() = default;
+        deferred(T* data) : ptr(data) {};
         deferred(T const& data) : ptr(new T(data)) {};
         deferred(T&& data) : ptr(new T(std::move(data))) {};
         deferred(deferred const& rhs) : ptr(rhs.ptr ? (new T(*rhs.ptr)) : (T*)nullptr) {};
@@ -243,12 +244,18 @@ namespace GL {
         bool valid() const {
             return ptr;
         };
-        T* operator->() const {
+        T* operator->() const {            
             if (!ptr) {
-                if (auto* newPtr = new T()) {
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
-                        delete newPtr;
+                if constexpr (std::is_constructible_v<T>) {
+                    if (auto* newPtr = new T()) {
+                        if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
+                            delete newPtr;
+                        }
                     }
+                }
+                else {
+                    std::string error = std::string("Cannot construct type \"") + typeid(T).name() + "\"";
+                    throw std::runtime_error(error);
                 }
             }
             return ptr;
