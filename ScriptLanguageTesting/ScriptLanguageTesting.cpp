@@ -1428,13 +1428,16 @@ int main() {
                             return out;
                         }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Cat_t));
 
-
                         if (1) {
                             auto script_scope = root.make_scope();
                             script_scope.insert_object_here("dog_impl", script_scope.call("var", { script_scope.call("Dog", {  }) }));
                             script_scope.insert_object_here("cat_impl", script_scope.call("var", { script_scope.call("Cat", {  }) }));
                             EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
                             EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+
+                            EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("dog_impl") }).cast < GL::type>(), Dog_t);
+                            EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
+                            EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
 
                             // To-Do, test for polymorphism with the casted-down type, having lost its identity. 
                             //auto found_impl = script_scope.find_object("dog_impl");

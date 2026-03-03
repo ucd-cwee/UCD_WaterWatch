@@ -266,7 +266,7 @@ namespace GL {
                 var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
             }
 
-
+            
 
 
 
