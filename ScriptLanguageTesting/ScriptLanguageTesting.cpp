@@ -1457,7 +1457,9 @@ int main() {
 
                         // within that namespace is an Animal interface class
                         auto& Animal = Example.make_class("Animal");
-                        auto Animal_t = Animal.this_type;
+                        auto Animal_t = Animal.this_type;                        
+                        Animal.add_member_object("is_pet", GL::type_of<bool>(), GL::any::fast_any::instance(bool{ true }));
+                        Animal.initialize_basic_member_functions();
                         Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t | GL::type::Reference } }, GL::type_of<std::string>()));
 
                         // within that namespace is an Dog impl class
@@ -1465,60 +1467,21 @@ int main() {
                         auto Dog_t = Dog.this_type;
                         Dog_t.add_base(Animal_t);
                         EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
+                        Dog.add_member_object("name", GL::type_of<std::string>(), GL::any::fast_any::instance(std::string("Ozzy")));
+                        Dog.add_member_object("weight", GL::type_of<double>(), GL::any::fast_any::instance(24.0));
+                        Dog.initialize_basic_member_functions();
                         Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t | GL::type::Reference } }, GL::type_of<std::string>()));
-                        // member object reference function (&)
-                        Dog.add_function(GL::make_callable("name", [member_name = GL::string("name")](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), GL::type_of<std::string&>());
-                        }, 0, {}, { { "rhs", Dog_t | GL::type::Reference } }, GL::type_of<std::string&>()));
-                        // member object reference function (const&)
-                        Dog.add_function(GL::make_callable("name", [member_name = GL::string("name")](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), GL::type_of<std::string const&>());
-                        }, 0, {}, { { "rhs", Dog_t | GL::type::Reference | GL::type::Const } }, GL::type_of<std::string const&>()));
-
-                        // member object reference function (&)
-                        Dog.add_function(GL::make_callable("weight", [member_name = GL::string("weight")](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), GL::type_of<double&>());
-                        }, 0, {}, { { "rhs", Dog_t | GL::type::Reference } }, GL::type_of<double&>()));
-                        // member object reference function (const&)
-                        Dog.add_function(GL::make_callable("weight", [member_name = GL::string("weight")](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), GL::type_of<double const&>());
-                        }, 0, {}, { { "rhs", Dog_t | GL::type::Reference | GL::type::Const } }, GL::type_of<double const&>()));
-                        Dog.add_function(GL::make_callable(Dog_t.name(), [Dog_t]() -> GL::any::fast_any {
-                            auto temp = GL::dynamic_object(Dog_t);
-                            temp.m_objects["name"] = GL::make_shared<GL::any>(GL::any(std::string("Ozzy")) | GL::type::Reference);
-                            temp.m_objects["weight"] = GL::make_shared<GL::any>(GL::any(24.0) | GL::type::Reference);
-                            auto out = GL::any::fast_any::instance(temp);
-                            out.m_casted_type = Dog_t;
-                            return out;
-                        }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Dog_t));
 
                         // within that namespace is an Cat impl class
                         auto& Cat = Example.make_class("Cat");
                         auto Cat_t = Cat.this_type;
                         Cat_t.add_base(Animal_t);
                         EXPECT_EQ(true, Animal_t.is_base_of(Cat_t));
-
-                        Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t | GL::type::Reference } }, GL::type_of<std::string>()));
                         Cat.add_member_object("name", GL::type_of<std::string>(), GL::any::fast_any::instance(std::string("Goosie")));
                         Cat.initialize_basic_member_functions();
+                        Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t | GL::type::Reference } }, GL::type_of<std::string>()));
 
-                        
-                        //// member object reference function (&)
-                        //Cat.add_function(GL::make_callable("name", [member_name = GL::string("name")](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                        //    return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), GL::type_of<std::string&>());
-                        //}, 0, {}, { { "rhs", Cat_t | GL::type::Reference } }, GL::type_of<std::string&>()));
-                        //// member object reference function (const&)
-                        //Cat.add_function(GL::make_callable("name", [member_name = GL::string("name")](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                        //    return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), GL::type_of<std::string const&>());
-                        //}, 0, {}, { { "rhs", Cat_t | GL::type::Reference | GL::type::Const } }, GL::type_of<std::string const&>()));
-                        //Cat.add_function(GL::make_callable(Cat_t.name(), [Cat_t]() -> GL::any::fast_any {
-                        //    auto temp = GL::dynamic_object(Cat_t);
-                        //    temp.m_objects["name"] = GL::make_shared<GL::any>(GL::any(std::string("Goosie")) | GL::type::Reference);
-                        //    auto out = GL::any::fast_any::instance(temp);
-                        //    out.m_casted_type = Cat_t;
-                        //    return out;
-                        //}, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Cat_t));
-
+                        // normal
                         if (1) {
                             auto script_scope = root.make_scope();
                             script_scope.insert_object_here("dog_impl", script_scope.call("Dog", {}));
@@ -1528,6 +1491,7 @@ int main() {
 
                             EXPECT_EQ("Ozzy", script_scope.call("name", { script_scope.find_object("dog_impl") }).cast<std::string&>());
                             EXPECT_EQ("Goosie", script_scope.call("name", { script_scope.find_object("cat_impl") }).cast<std::string&>());
+                            EXPECT_EQ(true, script_scope.call("is_pet", { script_scope.find_object("cat_impl") }).cast<bool>());
 
                             EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_impl") }).cast<double&>());
                             script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(100.0) });
@@ -1538,6 +1502,7 @@ int main() {
                             EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
                         }
 
+                        // as `var`
                         if (1) {
                             auto script_scope = root.make_scope();
                             script_scope.insert_object_here("dog_impl", script_scope.call("var", { script_scope.call("Dog", {  }) }));
@@ -1547,6 +1512,7 @@ int main() {
 
                             EXPECT_EQ("Ozzy", script_scope.call("name", { script_scope.find_object("dog_impl") }).cast<std::string&>());
                             EXPECT_EQ("Goosie", script_scope.call("name", { script_scope.find_object("cat_impl") }).cast<std::string&>());
+                            EXPECT_EQ(true, script_scope.call("is_pet", { script_scope.find_object("cat_impl") }).cast<bool>());
 
                             EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_impl") }).cast<double&>());
                             script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(100.0) });

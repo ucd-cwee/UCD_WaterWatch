@@ -2585,50 +2585,95 @@ namespace GL {
             private:
                 GL::deferred<GL::script_type> 
                     type_ownership;
+            protected:
                 concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
-                    member_objects;
+                    member_objects;            
+                void default_construct(GL::dynamic_object& destination) {
+                    for (auto& member_object : this->member_objects) {
+                        if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first)) {
+                            if (member_object.second.second) {
+                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), { member_object.second.second })) });
+                            }
+                            else {
+                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), {  })) });
+                            }
+                        }
+                        else {
+                            GL::any f = member_object.second.second;
+                            f.m_casted_type = member_object.second.first;
+                            destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(f | GL::type::Reference) });
+                        }
+                    }
+                };
+
             public:
                 const GL::type this_type;
                 
                 void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {}) {
                     member_objects.insert({ member_name, { member_type, default_value } });
                 };
+                
                 void initialize_basic_member_functions() {
+                    // default constructor
                     this->add_function(GL::make_callable(this_type.name(), [this]() -> GL::any::fast_any {
                         auto temp = GL::dynamic_object(this->this_type);
-                        for (auto& member_object : this->member_objects) {
-                            if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first)) {
-                                if (member_object.second.second) {
-                                    temp.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), { member_object.second.second })) });
-                                }
-                                else {
-                                    temp.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), {  })) });
-                                }
+                        for (auto& base_type : this->this_type.all_base_types(false)) {
+                            if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
+                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
                             }
-                            else {
-                                GL::any f = member_object.second.second;
-                                f.m_casted_type = member_object.second.first;
-                                temp.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(f | GL::type::Reference) });
-                            }                        
                         }
-                        auto out = GL::any::fast_any::instance(temp);
+                        auto out = GL::any::fast_any::instance(std::move(temp));
                         out.m_casted_type = this->this_type;
                         return out;
                     }, GL::function_signature::Constructor, {}, {}, this->this_type));
-                    
+                   
+                    // copy constructor
+                    this->add_function(GL::make_callable(this_type.name(), [this](GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                        auto temp = GL::dynamic_object(this->this_type);
+                        for (auto& base_type : this->this_type.all_base_types(false)) {
+                            if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
+                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
+                            }
+                        }
+                        
+                        for (auto& x : rhs.cast<GL::dynamic_object>().m_objects) {
+                            if (auto f = temp.m_objects.find(x.first), e = temp.m_objects.end(); f != e) {
+                                this->call("=", { GL::any::fast_any::instance(f->second), GL::any::fast_any::instance(x.second) });
+                            }
+                        }
+
+                        auto out = GL::any::fast_any::instance(std::move(temp));
+                        out.m_casted_type = this->this_type;
+                        return out;
+                    }, GL::function_signature::Constructor, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, this->this_type));
+
+                    // assignment operator
+                    this->GetRoot()->add_function(GL::make_callable("=", [this](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                        auto& LHS = lhs.cast<GL::dynamic_object>();
+                        auto& RHS = rhs.cast<GL::dynamic_object>();
+                        
+                        for (auto& x : RHS.m_objects) {
+                            if (auto f = LHS.m_objects.find(x.first), e = LHS.m_objects.end(); f != e) {
+                                this->call("=", { GL::any::fast_any::instance(f->second), GL::any::fast_any::instance(x.second) });
+                            }
+                        }
+
+                        GL::any::fast_any out = lhs;
+                        out.m_casted_type |= GL::type::Reference;
+                        return out;
+                    }, GL::function_signature::Constructor, {}, { { "lhs", this->this_type | GL::type::Reference } , { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, this->this_type | GL::type::Reference));
+
+                    // member access functions. Note that it does not include member access functions for base classes -- that is assumed to be picked up automatically through polymorphic casting. 
                     for (auto& member_object : member_objects) {
+                        // non-const reference access to member objects
                         this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
                             return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
                         }, 0, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
+                        // const reference access to member objects
                         this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
                             return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
                         }, 0, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
                     }
-                    
-
-
-
-
 
                 };
 
