@@ -2583,10 +2583,56 @@ namespace GL {
                 virtual ~ClassScope() {};
             
             private:
-                GL::deferred<GL::script_type> type_ownership;
+                GL::deferred<GL::script_type> 
+                    type_ownership;
+                concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
+                    member_objects;
             public:
                 const GL::type this_type;
                 
+                void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {}) {
+                    member_objects.insert({ member_name, { member_type, default_value } });
+                };
+                void initialize_basic_member_functions() {
+                    this->add_function(GL::make_callable(this_type.name(), [this]() -> GL::any::fast_any {
+                        auto temp = GL::dynamic_object(this->this_type);
+                        for (auto& member_object : this->member_objects) {
+                            if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first)) {
+                                if (member_object.second.second) {
+                                    temp.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), { member_object.second.second })) });
+                                }
+                                else {
+                                    temp.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), {  })) });
+                                }
+                            }
+                            else {
+                                GL::any f = member_object.second.second;
+                                f.m_casted_type = member_object.second.first;
+                                temp.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(f | GL::type::Reference) });
+                            }                        
+                        }
+                        auto out = GL::any::fast_any::instance(temp);
+                        out.m_casted_type = this->this_type;
+                        return out;
+                    }, GL::function_signature::Constructor, {}, {}, this->this_type));
+                    
+                    for (auto& member_object : member_objects) {
+                        this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
+                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
+                        }, 0, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
+                        this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
+                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
+                        }, 0, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
+                    }
+                    
+
+
+
+
+
+                };
+
+
                 __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,
                     Breadcrumb* SecondaryPriortyScope = nullptr,

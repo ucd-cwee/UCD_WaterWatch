@@ -10,6 +10,8 @@
 namespace GL {
     class any;
     class var;
+    class dynamic_object;
+
     namespace type_erasure {
         struct any_cast;
         struct fast_any_cast;
@@ -412,6 +414,8 @@ namespace GL {
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             virtual bool can_cast(type const& to) const = 0;
             virtual bool can_cast_var() const = 0;
+            virtual bool can_cast_dynamic_object() const = 0;
+            virtual GL::type get_type() const = 0;
 
         public:
             GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
@@ -444,32 +448,35 @@ namespace GL {
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const override {
                 static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                if (to.get_base_hash() == var_hash_code) {
-                    if constexpr (std::is_same_v<T, var>) {
+                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
+                if constexpr (std::is_same_v<T, var>) {
+                    if (to.get_base_hash() == var_hash_code) {
                         return true;
                     }
-                    else {
-                        return false;
+                }
+                else if constexpr (std::is_same_v<T, dynamic_object>) {
+                    if (to.get_base_hash() == dynamic_object_hash_code) {
+                        return true;
                     }
                 }
-                else {
-                    return GL::type_of<T>().can_free_cast(to);
-                }
+                return GL::type_of<T>().can_free_cast(to);                
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const override {
                 static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                if (to.get_base_hash() == var_hash_code) {
-                    if constexpr (std::is_same_v<T, var>) {
+                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
+
+                if constexpr (std::is_same_v<T, var>) {
+                    if (to.get_base_hash() == var_hash_code) {
                         return true;
                     }
-                    else {
-                        return false;
+                }
+                else if constexpr (std::is_same_v<T, dynamic_object>) {
+                    if (to.get_base_hash() == dynamic_object_hash_code) {
+                        return true;
                     }
-                }
-                else {
-                    return GL::type_of<T>().can_cast(to);
-                }
+                }                
+                return GL::type_of<T>().can_cast(to);                
             };
             // returns true if this type is of the same foundational type as a var
             bool can_cast_var() const override {
@@ -479,6 +486,17 @@ namespace GL {
                 else {
                     return false;
                 }
+            };
+            bool can_cast_dynamic_object() const override {
+                if constexpr (std::is_same_v<T, dynamic_object>) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            };
+            GL::type get_type() const override {
+                return GL::type_of<T>();
             };
 
         public:
@@ -526,32 +544,35 @@ namespace GL {
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const override {
                 static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                if (to.get_base_hash() == var_hash_code) {
-                    if constexpr (std::is_same_v<T, var>) {
+                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
+                if constexpr (std::is_same_v<T, var>) {
+                    if (to.get_base_hash() == var_hash_code) {
                         return true;
                     }
-                    else {
-                        return false;
+                }
+                else if constexpr (std::is_same_v<T, dynamic_object>) {
+                    if (to.get_base_hash() == dynamic_object_hash_code) {
+                        return true;
                     }
                 }
-                else {
-                    return GL::type_of<T>().can_free_cast(to);
-                }                
+                return GL::type_of<T>().can_free_cast(to);
+                            
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const override {
                 static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                if (to.get_base_hash() == var_hash_code) {
-                    if constexpr (std::is_same_v<T, var>) {
+                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
+                if constexpr (std::is_same_v<T, var>) {
+                    if (to.get_base_hash() == var_hash_code) {
                         return true;
                     }
-                    else {
-                        return false;
+                }
+                else if constexpr (std::is_same_v<T, dynamic_object>) {
+                    if (to.get_base_hash() == dynamic_object_hash_code) {
+                        return true;
                     }
                 }
-                else {
-                    return GL::type_of<T>().can_cast(to);
-                }
+                return GL::type_of<T>().can_cast(to);                
             };
             // returns true if this type is of the same foundational type as a var
             bool can_cast_var() const override {
@@ -561,6 +582,17 @@ namespace GL {
                 else {
                     return false;
                 }
+            };
+            bool can_cast_dynamic_object() const override {
+                if constexpr (std::is_same_v<T, dynamic_object>) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            };
+            GL::type get_type() const override {
+                return GL::type_of<T>();
             };
 
         public:
@@ -595,32 +627,34 @@ namespace GL {
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             bool can_free_cast(type const& to) const override {
                 static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                if (to.get_base_hash() == var_hash_code) {
-                    if constexpr (std::is_same_v<T, var>) {
+                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
+                if constexpr (std::is_same_v<T, var>) {
+                    if (to.get_base_hash() == var_hash_code) {
                         return true;
                     }
-                    else {
-                        return false;
+                }
+                else if constexpr (std::is_same_v<T, dynamic_object>) {
+                    if (to.get_base_hash() == dynamic_object_hash_code) {
+                        return true;
                     }
                 }
-                else {
-                    return GL::type_of<T>().can_free_cast(to);
-                }
+                return GL::type_of<T>().can_free_cast(to);                
             };
             // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
             bool can_cast(type const& to) const override {
                 static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                if (to.get_base_hash() == var_hash_code) {
-                    if constexpr (std::is_same_v<T, var>) {
+                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
+                if constexpr (std::is_same_v<T, var>) {
+                    if (to.get_base_hash() == var_hash_code) {
                         return true;
                     }
-                    else {
-                        return false;
+                }
+                else if constexpr (std::is_same_v<T, dynamic_object>) {
+                    if (to.get_base_hash() == dynamic_object_hash_code) {
+                        return true;
                     }
                 }
-                else {
-                    return GL::type_of<T>().can_cast(to);
-                }
+                return GL::type_of<T>().can_cast(to);                
             };
             // returns true if this type is of the same foundational type as a var
             bool can_cast_var() const override {
@@ -630,6 +664,17 @@ namespace GL {
                 else {
                     return false;
                 }
+            };
+            bool can_cast_dynamic_object() const override {
+                if constexpr (std::is_same_v<T, dynamic_object>) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            };
+            GL::type get_type() const override {
+                return GL::type_of<T>();
             };
 
         public:
@@ -707,6 +752,71 @@ namespace GL {
 
     };
 
+    /* class "dynamic_object" is a generic container for any custom, scripting-language class or struct, which may itself contain objects that it carrys with it. */
+    class dynamic_object {
+    public:
+        dynamic_object() = default;
+        dynamic_object(GL::type const& type)
+            : m_type(type)
+            , m_objects()
+        {};
+        dynamic_object(dynamic_object const&) = default;
+        dynamic_object(dynamic_object&&) = default;
+        dynamic_object& operator=(dynamic_object const&) = default;
+        dynamic_object& operator=(dynamic_object&&) = default;
+        ~dynamic_object() = default;
+
+        GL::type
+            m_type;
+        concurrency::concurrent_unordered_map<GL::string, GL::shared_ptr<GL::any>>
+            m_objects;
+
+        GL::shared_ptr<GL::any>& operator[](GL::string const& sv) {
+            return m_objects[sv];
+        };
+        GL::shared_ptr<GL::any> const& operator[](GL::string const& sv) const {
+            return m_objects.at(sv);
+        };
+        GL::shared_ptr<GL::any>* try_at(GL::string const& sv) {
+            if (m_objects.count(sv) > 0) {
+                return &m_objects.at(sv);
+            }
+            else {
+                return nullptr;
+            }
+        };
+        const GL::shared_ptr<GL::any>* try_at(GL::string const& sv) const {
+            if (m_objects.count(sv) > 0) {
+                return &m_objects.at(sv);
+            }
+            else {
+                return nullptr;
+            }
+        };
+
+        template <typename T>
+        static GL::shared_ptr<type_erasure::any_data> object_access(GL::string const& member_name, T const& rhs) {
+            if constexpr (std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>) {
+                if (rhs.can_cast(GL::type_of<GL::dynamic_object&>())) {
+                    if (auto* p = rhs.cast<GL::dynamic_object>().try_at(member_name); p) {
+                        return (*p)->m_ptr.load();
+                    }
+                    else {
+                        GL::string err = GL::string("Could not find object \"") + member_name + "\" within " + rhs.m_casted_type.name();
+                        throw std::runtime_error(err.to_string());
+                    }
+                }
+                GL::string err = GL::string("Could not cast from ") + rhs.m_casted_type.name() + " to " + GL::type_of< GL::dynamic_object&>().name();
+                throw std::runtime_error(err.to_string());
+            }
+            else {
+                static_assert(std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>, "Must be an Any or Any::Fast_Any");
+            }
+        };
+
+
+    };
+
     /* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
     It defers from "Any" because Any objects are for use in C++ to contain statically typed objects.
     "Var" objects are wrappers for Anys that allow the scripting language to process them as
@@ -736,10 +846,14 @@ namespace GL {
             p_type;
     };
 
+
+
+
     // atomic wrapper for any object that can store and share shared_ptrs. Handles automatic casting to nearly all variants of qualified types. 
     class /*alignas(CACHE_LINE_SIZE)*/ any {
     public:
         class fast_any;
+        friend class dynamic_object;
     protected:
         mutable GL::atomic_shared_ptr< type_erasure::any_data >
             m_ptr; // atomic shared-ptr for the type-erased underlying data. 
@@ -756,6 +870,11 @@ namespace GL {
                         if (m_casted_type.is_void()) {
                             m_casted_type = GL::type_of<GL::var>();
                         }
+                    }
+                }
+                if (f->can_cast_dynamic_object()) {
+                    if (auto* V = f->cast<dynamic_object>()) {
+                        m_casted_type = V->m_type;
                     }
                 }
             }
@@ -868,7 +987,13 @@ namespace GL {
             if (m_casted_type.can_cast(to)) return true;
             if (auto ptr = m_ptr.load_fast()) {
                 if (ptr->m_actual_type.can_cast(to)) return true;
-                if (ptr->can_cast_var() && (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash())) { return true; }
+                if (ptr->can_cast_dynamic_object() && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
+                if (ptr->can_cast_var()) {
+                    if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
+                    if (auto f = ptr->cast<GL::var>()->get_data(); f) {
+                        return f->can_cast(to);
+                    }
+                }
             }
             return false;
         };
@@ -1233,6 +1358,7 @@ namespace GL {
 
         // version of 'any' that is NOT thread-safe, but is faster as a result.
         class fast_any {
+            friend class dynamic_object;
         protected:
             mutable GL::shared_ptr< type_erasure::any_data >
                 m_ptr; // atomic shared-ptr for the type-erased underlying data. 
@@ -1251,8 +1377,14 @@ namespace GL {
                             }
                         }
                     }
+                    if (m_ptr->can_cast_dynamic_object()) {
+                        if (auto* V = m_ptr->cast<dynamic_object>()) {
+                            m_casted_type = V->m_type;
+                        }
+                    }
                 }
             }
+        public:
             explicit fast_any(GL::shared_ptr< type_erasure::any_data >&& p_ptr, GL::type const& p_type)
                 : m_ptr{ std::move(p_ptr) }, m_casted_type{ p_type }
             {
@@ -1332,7 +1464,13 @@ namespace GL {
                 if (m_casted_type.can_cast(to)) return true;
                 if (m_ptr) {
                     if (m_ptr->m_actual_type.can_cast(to)) return true;
-                    if (m_ptr->can_cast_var() && (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash())) { return true; }
+                    if (m_ptr->can_cast_dynamic_object() && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
+                    if (m_ptr->can_cast_var()) {
+                        if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
+                        if (auto f = m_ptr->cast<GL::var>()->get_data(); f) {
+                            return f->can_cast(to);
+                        }
+                    }
                 }
                 return false;
             };
@@ -1516,74 +1654,6 @@ namespace GL {
         __forceinline GL::shared_ptr<any_data> wrapper::get(const fast_any_cast* t) {
             return get(*t);
         };
-    };
-
-    // serves as an instance of a customizable class
-    class dynamic_object {
-    public:
-        dynamic_object() = default;
-        dynamic_object(GL::type const& type)
-            : m_type(type)
-            , m_objects()
-        {
-            if (type.is_cpp_type()) {
-                throw std::runtime_error("Should not use a cpp-type with a dynamic object.");
-            }
-        };
-        // Cast from one class to another (e.g. from class C : public A {} to class A {})
-        dynamic_object(GL::type const& castedType, dynamic_object const& parent)
-            : m_type(castedType)
-            , m_objects(parent.m_objects)
-        {
-            if (castedType == parent.m_type) {
-                // we are casting to the existing type, which is OK
-            }
-            else if (castedType.is_derived_from(parent.m_type)) {
-                // we are casting from a parent (inherited) type to a derived (child) type, which is OK.                
-            }
-            else if (parent.m_type.is_derived_from(castedType)) {
-                // we are casting from a derived (child) type to a parent (inherited) type, which is OK.
-            }
-            else {
-                // cast was not viable!
-                m_type = GL::type_of<void>();
-                m_objects.clear();
-            }
-        };
-        dynamic_object(dynamic_object const&) = default;
-        dynamic_object(dynamic_object&&) = default;
-        dynamic_object& operator=(dynamic_object const&) = default;
-        dynamic_object& operator=(dynamic_object&&) = default;
-        ~dynamic_object() = default;
-
-        GL::type
-            m_type;
-        concurrency::concurrent_unordered_map<GL::string, GL::any>
-            m_objects;
-
-        any& operator[](GL::string const& sv) {
-            return m_objects[sv];
-        };
-        any const& operator[](GL::string const& sv) const {
-            return m_objects.at(sv);
-        };
-        any* try_at(GL::string const& sv) {
-            if (m_objects.count(sv) > 0) {
-                return &m_objects.at(sv);
-            }
-            else {
-                return nullptr;
-            }
-        };
-        const any* try_at(GL::string const& sv) const {
-            if (m_objects.count(sv) > 0) {
-                return &m_objects.at(sv);
-            }
-            else {
-                return nullptr;
-            }
-        };
-
     };
 
     namespace impl {
