@@ -13,11 +13,11 @@ namespace GL {
     private:
         struct element_t {
             unsigned char
-                data[sizeof(T)];
-            bool
-                initialized;
+                data[(((sizeof(T) + sizeof(element_t*) + sizeof(bool)) + 15) & ~15) - sizeof(element_t*) - sizeof(bool)]; // wrapped to 16-byte blocks for the entire element_t
             element_t*
                 m_pNext;
+            bool
+                initialized;
         };
         struct block_t {
             element_t
@@ -26,9 +26,16 @@ namespace GL {
                 m_pNext;
         };
 
+        block_t* PushBlock() {
+            return new block_t();
+        };
+        void PopBlock(block_t* p) {
+            delete p;
+        };
+
         // Allocate one new block of contiguous elements
         __declspec(noinline) void AllocBlock() {
-            auto* new_block_ptr = new block_t();
+            block_t* new_block_ptr = PushBlock();
             aba_problem::Stack_Push(blocks, new_block_ptr);
             block_t& block = *new_block_ptr;
 
@@ -69,7 +76,7 @@ namespace GL {
                         }
                     }
                 }
-                delete ptr;
+                PopBlock(ptr);
             }
         };
 

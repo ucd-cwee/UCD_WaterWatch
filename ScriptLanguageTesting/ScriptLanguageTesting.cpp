@@ -1500,6 +1500,13 @@ int main() {
                             EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("dog_impl") }).cast < GL::type>(), Dog_t);
                             EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
                             EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
+
+                            script_scope.insert_object_here("talk_to", GL::make_callable("", [RootScope = script_scope.GetRoot()](GL::any::fast_any const& rhs) {
+                                auto temp_scope = RootScope->make_scope();
+                                return temp_scope.call("speak", { rhs });
+                            }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const }}));
+                            EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("dog_impl") }).cast<std::string>(), "bark");
+
                         }
 
                         // as `var`
@@ -1522,10 +1529,12 @@ int main() {
                             EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
                             EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
 
-                            // To-Do, test for polymorphism with the casted-down type, having lost its identity. 
-                            //auto found_impl = script_scope.find_object("dog_impl");
-                            //found_impl.m_casted_type = Animal_t;
-                            //print(script_scope.call("speak", { found_impl }).cast<std::string>());
+                            script_scope.insert_object_here("talk_to", GL::make_callable("", [RootScope = script_scope.GetRoot()](GL::any::fast_any const& rhs) {
+                                auto temp_scope = RootScope->make_scope();
+                                return temp_scope.call("speak", { rhs });
+                            }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const } }));
+                            EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("dog_impl") }).cast<std::string>(), "bark");
+
                         }
 
 

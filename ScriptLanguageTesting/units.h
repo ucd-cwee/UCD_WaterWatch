@@ -692,8 +692,8 @@ namespace GL {
 
     public:      
         static 
-            // const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
-            const GL::epoch_map< value::si_unit, uint16_t>&
+            const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
+            // const GL::epoch_map< value::si_unit, uint16_t>&
             all_known_unit_types();
 
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       

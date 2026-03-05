@@ -2623,6 +2623,7 @@ namespace GL {
                             }
                         }
                         auto out = GL::any::fast_any::instance(std::move(temp));
+                        const_cast<GL::type&>(out.get_actual_type()) = this->this_type;
                         out.m_casted_type = this->this_type;
                         return out;
                     }, GL::function_signature::Constructor, {}, {}, this->this_type));
@@ -2644,6 +2645,7 @@ namespace GL {
 
                         auto out = GL::any::fast_any::instance(std::move(temp));
                         out.m_casted_type = this->this_type;
+                        const_cast<GL::type&>(out.get_actual_type()) = this->this_type;
                         return out;
                     }, GL::function_signature::Constructor, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, this->this_type));
 

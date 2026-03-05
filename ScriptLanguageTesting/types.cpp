@@ -7,7 +7,7 @@
 
 namespace GL {
     namespace impl {
-#define use_btree_for_cpp_types
+// #define use_btree_for_cpp_types
 
         static 
 #ifdef use_btree_for_cpp_types
@@ -167,8 +167,7 @@ namespace GL {
     };
 
     GL::string type::name() const {
-        auto& Base = get_base(*this);
-        GL::string out = Base.name;
+        GL::string out = get_base(*this).name;
         if (is_const()) out = "const " + out;
         if (is_ref()) out = out + "&";
         if (is_temp()) out = out + "&&";
@@ -182,14 +181,8 @@ namespace GL {
         //else return Base.name;
     };
     bool type::try_update_name(GL::string const& new_name) {
-        //if (this->is_cpp_type()) {
-            auto& Base = get_base(*this);
-            Base.name = new_name;
-            return true;
-        //}
-        //else {
-        //    return false;
-        //}
+        get_base(*this).name = new_name;
+        return true;
     };
     std::set<type> type::all_base_types(bool local_only) const {
         if (local_only) {
@@ -221,39 +214,21 @@ namespace GL {
                 }
             }
             return attempted_types;
-
-            //std::queue< GL::type > types_to_try;
-            //types_to_try.push(*this);
-            //std::set<GL::type> attempted_types;
-            //while (types_to_try.size() > 0) {
-            //    GL::type this_t = types_to_try.front();
-            //    types_to_try.pop();
-            //    if (attempted_types.find(this_t) == attempted_types.end()) {
-            //        attempted_types.insert(this_t);
-            //        for (GL::type const& base_type : this_t.all_base_types(true)) { types_to_try.push(base_type); }
-            //    }
-            //}
-            //attempted_types.erase(*this);
-            //return attempted_types;
         }
     };
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 
     bool type::is_derived_from(type const& base) const {
-        return get_base(*this).is_derived_from(get_base(base).base_hash);
+        return get_base(*this).is_derived_from(base.get_base_hash());        
+
     };
     // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
     bool type::is_base_of(type const& derived) const {
-        //if (this->is_cpp_type() == derived.is_cpp_type()) {
-            return get_base(*this).is_base_of(get_base(derived).base_hash);
-        //}
-        //else {
-        //    return false;
-        //}
+        return get_base(*this).is_base_of(derived.get_base_hash());
     };
     // attempts to include the specified hash as a base of this class.
     bool type::add_base(type const& base) {
         if (this->is_cpp_type() == base.is_cpp_type()) {
-            return get_base(*this).add_base(get_base(base).base_hash);
+            return get_base(*this).add_base(base.get_base_hash());
         }
         else {
             return false;
@@ -261,33 +236,26 @@ namespace GL {
     };
 
     bool type::match_base_hash(type const& to_match) const {
-        auto& this_base = get_base(*this);
-        auto& that_base = get_base(to_match);
-        return this_base.match_base_hash(that_base.base_hash);
+        return get_base(*this).match_base_hash(to_match.get_base_hash());
     };
     size_t type::size() const {
-        auto& this_base = get_base(*this);
-        return this_base.T_size;
+        return get_base(*this).T_size;
     };
     // const value_t& to This&&
     GL::any type::instance_by_value(GL::any const& rhs) const {
-        auto& this_base = get_base(*this);
-        return this_base.instance_by_value(rhs);
+        return get_base(*this).instance_by_value(rhs);
     };
     // const This& to This&&
     GL::any type::instance_by_copy(GL::any const& rhs) const {
-        auto& this_base = get_base(*this);
-        return this_base.instance_by_copy(rhs);
+        return get_base(*this).instance_by_copy(rhs);
     };
     // This&&
     GL::any type::instance() const {
-        auto& this_base = get_base(*this);
-        return this_base.instance();
+        return  get_base(*this).instance();
     };
     // This&&
     void type::destroy(void* p) const {
-        auto& this_base = get_base(*this);
-        this_base.destroy(p);
+        get_base(*this).destroy(p);
     };
 
     static auto precompiled_cpp_names = []() -> bool {

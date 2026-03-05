@@ -128,7 +128,7 @@ namespace GL{
 
 	public:
 		bTree() {
-			root = AllocNode();
+			// root = AllocNode();
 		};
 		~bTree() {
 			root = nullptr;
@@ -626,11 +626,13 @@ namespace GL{
 				bool
 					res;
 				parallel_binary_search_treeNode
+					** _childs = children();
+				parallel_binary_search_treeNode
 					* sample;
 				if (numChildren == 0)
 					return nullptr;
-				if (numChildren == 1)
-					return children()[0];
+				else if (numChildren == 1)
+					return _childs[0];
 
 				len = numChildren;
 				mid = len;
@@ -639,7 +641,7 @@ namespace GL{
 
 				while (mid > 0) {
 					mid = len >> 1;
-					sample = children()[offset + mid];
+					sample = _childs[offset + mid];
 					if (K >= sample->key) {
 						offset += mid;
 						len -= mid;
@@ -652,8 +654,8 @@ namespace GL{
 					}
 				}
 				mid = offset + (int)res;
-				if (mid == numChildren) return children()[offset];
-				else return children()[mid];
+				if (mid == numChildren) return _childs[offset];
+				else return _childs[mid];
 	#endif
 			};
 
@@ -782,7 +784,7 @@ namespace GL{
 			, mut()
 			, count{ 0 }
 		{
-			root = AllocNode(false);
+			// root = AllocNode(false);
 		};
 		parallel_binary_search_tree(parallel_binary_search_tree const&)
 			= delete;
@@ -1501,7 +1503,7 @@ namespace GL{
 			, root{ nullptr }
 			, count{ 0 }
 		{
-			root = AllocNode(false);
+			// root = AllocNode(false);
 		};
 		binary_search_tree(binary_search_tree const&)
 			= delete;
@@ -2619,8 +2621,8 @@ namespace GL {
 			, mut()
 			, count{ 0 }
 		{
-			root = AllocNode(false);
-			ProtectCurrentEpoch_Fast();
+			// root = AllocNode(false);
+			// ProtectCurrentEpoch_Fast();
 		};
 		epoch_search_tree(epoch_search_tree const&)
 			= delete;
@@ -3283,15 +3285,19 @@ namespace GL {
 			(void)tree.Add(std::move(value), time);
 		};
 		objType& // throws if the key is not found. 
-			at(const keyType& time) const {
-			ProtectCurrentEpoch_Fast();
-			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();			
+			at(const keyType& time) const {			
+			if (auto [node, locker] = tree.NodeFind(time); node) {
+				ProtectCurrentEpoch_Fast();
+				return *node->object();
+			}
 			throw std::range_error("Could not find key");			
 		};
 		objType* // returns nullptr if the key is not found. 
-			try_at(const keyType& time) const {
-			ProtectCurrentEpoch_Fast();
-			if (auto [node, locker] = tree.NodeFind(time); node) return node->object();			
+			try_at(const keyType& time) const {			
+			if (auto [node, locker] = tree.NodeFind(time); node) {
+				ProtectCurrentEpoch_Fast();
+				return node->object();
+			}
 			return nullptr;
 		};
 		objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
@@ -3303,9 +3309,9 @@ namespace GL {
 			else throw std::range_error("Could not find key");			
 		};
 		bool // optionally get a copy of the object being deleted. 
-			erase(const keyType& time, objType* out = nullptr) const {
-			ProtectCurrentEpoch_Fast();
+			erase(const keyType& time, objType* out = nullptr) const {			
 			if (auto [node, locker] = tree.NodeFind(time, true); node) {
+				ProtectCurrentEpoch_Fast();
 				if (out) *out = *node->object();
 				return tree.Remove(node, locker);
 			}

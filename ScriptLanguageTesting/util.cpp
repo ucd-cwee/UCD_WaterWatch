@@ -12,12 +12,21 @@
 
 namespace GL {
     namespace util {
+        class ticket_return {
+        private:
+            GL::ticket_dispensor<false>& parent;
+            size_t ticket;
+        public:
+            ticket_return(GL::ticket_dispensor<false>& p, size_t t) : parent{ p }, ticket{ t }  {}
+            ~ticket_return() {
+                parent.return_ticket(ticket);
+            };
+        };
+
         size_t get_thread_id() {
-            static ticket_dispensor tickets;
+            static ticket_dispensor<false> tickets;
             thread_local auto ticket{ tickets.get_ticket() };
-            thread_local auto scoped_alive{ std::shared_ptr<size_t>(reinterpret_cast<size_t*>(ticket), [](size_t* p) -> void {
-                if (p) tickets.return_ticket(reinterpret_cast<size_t&>(p));                
-            })};
+            thread_local ticket_return r(tickets, ticket);
             return ticket;
         };
 #if 1
