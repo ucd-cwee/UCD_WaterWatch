@@ -161,7 +161,7 @@ namespace GL {
         };
         ~type() = default;
 
-        std::set<type> all_base_types(bool local_only = true) const;
+        std::vector<type> all_base_types(bool local_only = true) const;
         // removes the qualifiers and returns only the base hash value
         size_t get_base_hash() const {
             return hash & impl::cached_type::MAGIC_MASK2;

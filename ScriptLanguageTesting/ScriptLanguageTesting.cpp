@@ -931,7 +931,7 @@ int main() {
                             auto i = h.make_scope();
                             auto j = i.make_scope();
                             auto k = j.make_scope();
-                            });
+                        });
                     }
 
                     if (auto timer = sw.debug_timer("example calc")) {
@@ -966,7 +966,7 @@ int main() {
                                 x0,
                                 d
                                 });
-                            });
+                        });
                     }
 
                     if (auto timer = sw.debug_timer("example calc 2")) {
@@ -1002,7 +1002,7 @@ int main() {
                                 temp_scope.find_object("x0"),
                                 temp_scope.find_object("d")
                                 }));
-                            });
+                        });
                     }
 
                     if (auto timer = sw.debug_timer("example calc 2 (once only)")) {
@@ -1011,11 +1011,11 @@ int main() {
                         temp_scope.insert_object_here("v0", temp_scope.call("/", {
                             temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
                             temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                            }));
+                        }));
                         temp_scope.insert_object_here("a0", temp_scope.call("/", {
                             temp_scope.find_object("v0"),
                             temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                            }));
+                        }));
                         temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
                         temp_scope.insert_object_here("d", temp_scope.call("+", {
                             temp_scope.call("*", {
@@ -1032,11 +1032,11 @@ int main() {
                                 }),
                                 GL::any::fast_any::instance(0.5)
                             })
-                            }));
+                        }));
                         temp_scope.insert_object_here("x", temp_scope.call("+", {
                             temp_scope.find_object("x0"),
                             temp_scope.find_object("d")
-                            }));
+                        }));
                     }
 
                     if (auto timer = sw.debug_timer("example calc 2 (once only, from scratch)")) {
@@ -1165,7 +1165,7 @@ int main() {
                             EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<double>(), GL::type_of<GL::meter&>()));
                             EXPECT_EQ(false, program_root.try_get_converter(GL::type_of<GL::meter&&>(), GL::type_of<GL::value&>()));
                             EXPECT_EQ(false, program_root.try_get_converter(custom_unit_type_base.load() | GL::type::Reference, custom_unit_type.load() | GL::type::Reference));
-                            });
+                        });
                     }
 
                     if (auto timer = sw.debug_timer("try_find_callable")) {
@@ -1250,7 +1250,7 @@ int main() {
                                 auto result = program_root.get_converters().call_with_conversions(&*f, types5); // 'char' is convertable to either 'foot' or 'int' or 'float', etc., therefore no guarrantee what is selected. 
                                 EXPECT_EQ("int", result.m_casted_type.name()); // should return one of the options with fewest conversion -- e.g. int, float, double would all meet that definition. In this case, int is closest to 'char' and is selected. 
                             }
-                            });
+                        });
                     }
 
                     if (auto timer = sw.debug_timer("Polymorphism test")) {

@@ -4,6 +4,7 @@
 #include "atomic_vector.h"
 #include "atomic_tree.h"
 #include <queue>
+#include <map>
 
 namespace GL {
     namespace impl {
@@ -184,36 +185,45 @@ namespace GL {
         get_base(*this).name = new_name;
         return true;
     };
-    std::set<type> type::all_base_types(bool local_only) const {
+    std::vector<type> type::all_base_types(bool local_only) const {
         if (local_only) {
-            std::set<type> out;
+            std::vector<type> out;
             if (this->is_cpp_type()) {
                 for (auto& x : get_base(*this).base_classes) {
                     auto& Base = impl::get_impl(x);
-                    out.insert(type(Base.base_hash) + GL::type::CppType);
+                    out.push_back(type(Base.base_hash) + GL::type::CppType);
                 }
             }
             else {
                 for (auto& x : get_base(*this).base_classes) {
                     auto& Base = impl::get_scripted_type(x);
-                    out.insert(type(Base.base_hash));
+                    out.push_back(type(Base.base_hash));
                 }
             }
             return out;
         }
         else {
-            std::queue< GL::type > types_to_try;
-            types_to_try.push(*this - GL::type::Reference - GL::type::Const - GL::type::Temporary);
+            std::map<int, std::vector<type>> collection;
+            std::queue< std::pair<int, GL::type> > types_to_try;
             std::set<GL::type> attempted_types;
+            types_to_try.push({ 0, *this - GL::type::Reference - GL::type::Const - GL::type::Temporary });
             while (types_to_try.size() > 0) {
-                GL::type this_t = types_to_try.front();
+                std::pair<int, GL::type> this_t = types_to_try.front();
                 types_to_try.pop();
-                if (attempted_types.find(this_t) == attempted_types.end()) {
-                    attempted_types.insert(this_t);
-                    for (GL::type const& base_type : this_t.all_base_types()) { types_to_try.push(base_type); }
+                if (attempted_types.find(this_t.second) == attempted_types.end()) {
+                    attempted_types.insert(this_t.second);
+                    collection[this_t.first].push_back(this_t.second);
+                    for (GL::type const& base_type : this_t.second.all_base_types()) {
+                        types_to_try.push({ this_t.first + 1, base_type });
+                    }
                 }
             }
-            return attempted_types;
+            std::vector<GL::type> out;
+            out.reserve(attempted_types.size() + 16);
+            for (auto& x : collection) {
+                out.insert(out.end(), x.second.begin(), x.second.end());
+            }
+            return out;
         }
     };
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 
