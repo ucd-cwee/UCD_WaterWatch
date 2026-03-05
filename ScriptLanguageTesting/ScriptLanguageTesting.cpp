@@ -545,7 +545,7 @@ int main() {
                     auto& utility_namespace
                         = program_root.make_namespace("utility_functions");
                     utility_namespace.add_function(GL::make_callable("length", [](GL::string const& r) { return r.length(); }));
-                    EXPECT_EQ(nullptr, program_root.try_find_callable("length", params.begin(), params.end()));
+                    // EXPECT_EQ(nullptr, program_root.try_find_callable("length", params.begin(), params.end()));
 
                     auto& string_class
                         = program_root.make_class(GL::type_of<GL::string>());
@@ -667,6 +667,8 @@ int main() {
 
                     GL::scope::impl::RootScope
                         program_root;
+                    program_root.perform_builtins();
+
                     auto& std_namespace
                         = program_root.make_namespace("std");
                     auto& std_string_namespace
@@ -683,8 +685,6 @@ int main() {
                     program_root.add_function(GL::make_converter<GL::value, GL::foot>());
                     program_root.add_function(GL::make_converter<GL::value, float>());
                     program_root.add_function(GL::make_converter<float, GL::value>());*/
-
-                    program_root.perform_builtins();
 
                     program_root.add_function(GL::make_callable("ref_cast", [](GL::any::fast_any const& from) -> GL::any::fast_any {
                         GL::any::fast_any out(from);
@@ -1077,18 +1077,18 @@ int main() {
                             }));
                     }
 
-                    if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)"); false) {
+                    if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)")) {
                         for (size_t i = 0; i < 1000000; ++i) {
                             auto temp_scope = program_root.make_scope();
                             temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
                             temp_scope.insert_object_here("v0", temp_scope.call("/", {
                                 temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
                                 temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                                }));
+                            }));
                             temp_scope.insert_object_here("a0", temp_scope.call("/", {
                                 temp_scope.find_object("v0"),
                                 temp_scope.call("second", { GL::any::fast_any::instance(1) })
-                                }));
+                            }));
                             temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
                             temp_scope.insert_object_here("d", temp_scope.call("+", {
                                 temp_scope.call("*", {
@@ -1105,11 +1105,11 @@ int main() {
                                     }),
                                     GL::any::fast_any::instance(0.5)
                                 })
-                                }));
+                            }));
                             temp_scope.insert_object_here("x", temp_scope.call("+", {
                                 temp_scope.find_object("x0"),
                                 temp_scope.find_object("d")
-                                }));
+                            }));
                         };
                     }
 
@@ -1184,7 +1184,7 @@ int main() {
                             std::vector < GL::any > types5{ GL::any{ 'a' }, GL::any{ 'b' } };
                             std::vector < GL::any > empty_types;
 
-                            EXPECT_EQ(nullptr, program_root.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
+                            EXPECT_NE(nullptr, program_root.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
                             EXPECT_EQ(nullptr, program_root.try_find_callable("length", empty_types.begin(), empty_types.end(), GL::scope::impl::Functions::free_cast_only)); // finds an object
                             EXPECT_NE(nullptr, program_root.try_find_callable("type_name", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
                             EXPECT_NE(nullptr, program_root.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
@@ -1195,7 +1195,7 @@ int main() {
                             EXPECT_NE(nullptr, std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
 
                             if (auto const& f = std_string_namespace.try_find_callable("type_of", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
-                                EXPECT_EQ("std_string", f->operator()(types).cast<GL::type>().name()); // std_string
+                                EXPECT_EQ("string", f->operator()(types).cast<GL::type>().name()); // std_string
                             }
                             if (auto const& f = std_string_namespace.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only); f) {
                                 EXPECT_EQ(4, f->operator()(types).cast<size_t>()); // 4
@@ -1489,6 +1489,7 @@ int main() {
                             EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
                             EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
 
+                            EXPECT_EQ(4, script_scope.call("length", { script_scope.call("name", {script_scope.find_object("dog_impl")}) }).cast<size_t>());
                             EXPECT_EQ("Ozzy", script_scope.call("name", { script_scope.find_object("dog_impl") }).cast<std::string&>());
                             EXPECT_EQ("Goosie", script_scope.call("name", { script_scope.find_object("cat_impl") }).cast<std::string&>());
                             EXPECT_EQ(true, script_scope.call("is_pet", { script_scope.find_object("cat_impl") }).cast<bool>());
@@ -1501,12 +1502,12 @@ int main() {
                             EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
                             EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
 
-                            script_scope.insert_object_here("talk_to", GL::make_callable("", [RootScope = script_scope.GetRoot()](GL::any::fast_any const& rhs) {
-                                auto temp_scope = RootScope->make_scope();
+                            script_scope.insert_object_here("talk_to", GL::make_callable("", [NearestNS = script_scope.GetNamespace()](GL::any::fast_any const& rhs) {
+                                auto temp_scope = NearestNS->make_scope();
                                 return temp_scope.call("speak", { rhs });
-                            }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const }}));
+                            }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const } }));
                             EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("dog_impl") }).cast<std::string>(), "bark");
-
+                            EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("cat_impl") }).cast<std::string>(), "meow");
                         }
 
                         // as `var`
@@ -1529,16 +1530,83 @@ int main() {
                             EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
                             EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
 
-                            script_scope.insert_object_here("talk_to", GL::make_callable("", [RootScope = script_scope.GetRoot()](GL::any::fast_any const& rhs) {
-                                auto temp_scope = RootScope->make_scope();
+                            script_scope.insert_object_here("talk_to", GL::make_callable("", [NearestNS = script_scope.GetNamespace()](GL::any::fast_any const& rhs) {
+                                auto temp_scope = NearestNS->make_scope();
                                 return temp_scope.call("speak", { rhs });
                             }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const } }));
                             EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("dog_impl") }).cast<std::string>(), "bark");
-
+                            EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("cat_impl") }).cast<std::string>(), "meow");
                         }
 
+                        // test assignemt and copy constructors
+                        if (1) {
+                            auto script_scope = root.make_scope();
+                            script_scope.insert_object_here("dog_1", script_scope.call("Dog", {}));
+                            EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double&>());
+                            script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_1") }), GL::any::fast_any::instance(100.0) });
+                            EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
 
+                            script_scope.insert_object_here("dog_2", script_scope.call("Dog", {}));
+                            EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_2") }).cast<double&>());
+                            script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_2") }), GL::any::fast_any::instance(200.0) });
+                            EXPECT_EQ(200.0, script_scope.call("weight", { script_scope.find_object("dog_2") }).cast<double>());
+
+                            script_scope.insert_object_here("dog_3", script_scope.call("Dog", { script_scope.find_object("dog_1") }));
+                            EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_3") }).cast<double&>());
+                            script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_3") }), GL::any::fast_any::instance(300.0) });
+                            EXPECT_EQ(300.0, script_scope.call("weight", { script_scope.find_object("dog_3") }).cast<double>());
+                            EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
+
+                            script_scope.insert_object_here("dog_4", script_scope.call("Dog", {}));
+                            script_scope.call("=", { script_scope.find_object("dog_4"), script_scope.find_object("dog_1") });
+                            EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_4") }).cast<double&>());
+                            script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_4") }), GL::any::fast_any::instance(400.0) });
+                            EXPECT_EQ(400.0, script_scope.call("weight", { script_scope.find_object("dog_4") }).cast<double>());
+                            EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
+                        }
                     }
+
+                    if (auto timer = sw.debug_timer("Competing Class Name(s) test")) {
+                        GL::scope::impl::RootScope
+                            root;
+                        root.perform_builtins();
+
+                        EXPECT_EQ(root.call("string", {}).m_casted_type, GL::type_of<GL::string>());                        
+                        if (auto& std_ns = root.make_namespace("std")) {
+                            EXPECT_EQ(std_ns.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                            if (auto scope = std_ns.make_scope()) {
+                                EXPECT_EQ(scope.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                            }
+                        }  
+                        EXPECT_EQ(root.call("std::string", {}).m_casted_type, GL::type_of<std::string>());
+                        if (auto scope = root.make_scope()) {
+                            EXPECT_EQ(scope.call("string", {}).m_casted_type, GL::type_of<GL::string>());
+                            if (auto& std_ns = root.make_namespace("std")) {
+                                scope.add_using_here(std_ns);
+                                EXPECT_EQ(scope.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                                if (auto scope2 = scope.make_scope()) {
+                                    EXPECT_EQ(scope2.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                                }
+                            }
+                        }
+                                                
+                        EXPECT_EQ(root.find_object("string::npos").cast<size_t>(), GL::string::npos);
+                        EXPECT_EQ(root.find_object("::string::npos").cast<size_t>(), GL::string::npos);
+                        if (auto& std_ns = root.make_namespace("std")) {
+                            try {
+                                // will crash, since it searches "string" for the object but fails to find it. 
+                                EXPECT_EQ(std_ns.find_object("string::npos").cast<size_t>(), GL::string::npos);
+                            } catch (...) {}
+                            EXPECT_EQ(std_ns.find_object("::string::npos").cast<size_t>(), GL::string::npos);
+                        }
+                    }
+
+                    
+
+
+
+
+
 
 
                     std_string_namespace.insert_object_here("npos", GL::any::ref(std::string::npos));

@@ -31,7 +31,7 @@ namespace GL {
             if (1) {
 #define add_a(type) \
                 this->make_class(GL::type_of< type >()).add_function(GL::make_callable(GL::type_of< type >().name(), []() -> type { return 0; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< type >())); \
-                /*this->make_class(GL::type_of< type >()).*/add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, type const& rhs) -> GL::any::fast_any { lhs.cast<type &>() = rhs; return lhs; }, 0, {}, { { "lhs", GL::type_of<type &>() }, { "rhs", GL::type_of<type const&>() }}, GL::type_of< type& >())); \
+                add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, type const& rhs) -> GL::any::fast_any { lhs.cast<type &>() = rhs; return lhs; }, 0, {}, { { "lhs", GL::type_of<type &>() }, { "rhs", GL::type_of<type const&>() }}, GL::type_of< type& >())); \
                 this->make_class(GL::type_of< bool >()).add_function(GL::make_converter<type, bool>()); \
                 this->make_class(GL::type_of< char >()).add_function(GL::make_converter<type, char>()); \
                 this->make_class(GL::type_of< unsigned char >()).add_function(GL::make_converter<type, unsigned char>()); \
@@ -266,9 +266,79 @@ namespace GL {
                 var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
             }
 
-            
+            // std::string functions
+            if (1) {
+                using class_t = std::string;
+                auto& std_ns = this->make_namespace("std");
+                auto& Class = std_ns.make_class(GL::type_of<class_t>());
+                // default constructor
+                Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type));
+                // copy constructor
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor));
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GL::string const& rhs) -> class_t { return rhs.to_string(); }, GL::function_signature::Constructor));
+                // assignment operator
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));                               
+            }
 
+            // string functions
+            if (1) {
+                using class_t = GL::string;
+                auto& Class = this->make_class(GL::type_of<class_t>());
+                // default constructor
+                Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type));
+                // copy constructor
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor));
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](std::string const& rhs) -> class_t { return class_t((std::string)rhs); }, GL::function_signature::Constructor));
+                // assignment operator
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                this->add_function(GL::make_callable("==", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs == rhs; }));
+                this->add_function(GL::make_callable("!=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs != rhs; }));
+                this->add_function(GL::make_callable(">", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs > rhs; }));
+                this->add_function(GL::make_callable(">=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs >= rhs; }));
+                this->add_function(GL::make_callable("<", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs < rhs; }));
+                this->add_function(GL::make_callable("<=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs <= rhs; }));
+                this->add_function(GL::make_callable("+", [](class_t const& lhs, class_t const& rhs) -> class_t { return lhs + rhs; }));
 
+                Class.add_function(GL::decl_func(&class_t::add_to_delim));
+                Class.add_function(GL::decl_func(&class_t::at));
+                Class.add_function(GL::decl_func(&class_t::back));
+                Class.add_function(GL::decl_func(&class_t::begins_with));
+                Class.add_function(GL::make_callable("distance", [](class_t const& lhs, class_t const& rhs, bool case_sensitive) -> size_t { return lhs.distance(rhs, case_sensitive); }, GL::function_signature::Async | GL::function_signature::Constant, { true }, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const}, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const }, { "case_sensitive", GL::type_of<bool const&>() } }, GL::type_of<size_t>()));
+                Class.add_function(GL::decl_func(&class_t::empty));
+                Class.add_function(GL::decl_func(&class_t::empty_string));
+                Class.add_function(GL::decl_func(&class_t::ends_with));
+                Class.add_function(GL::make_callable("find", [](class_t const& lhs, class_t const& rhs, bool case_sensitive, long long start, long long end) -> size_t { return lhs.find(rhs, case_sensitive, start, end); }, { true, 0ll, -1ll }));
+                Class.add_function(GL::decl_func(&class_t::front));
+                Class.add_function(GL::decl_func(&class_t::hash));
+                Class.add_function(GL::decl_func(&class_t::has_lower));
+                Class.add_function(GL::decl_func(&class_t::has_upper));
+                Class.add_function(GL::decl_func(&class_t::left));
+                // Class.add_function(GL::decl_func(&class_t::left_and_right_of)); // needs conversion to std::pair<var, var> or equivalent...
+                // Class.add_function(GL::decl_func(&class_t::left_and_right_of_last)); // needs conversion to std::pair<var, var> or equivalent...
+                Class.add_function(GL::decl_func(&class_t::left_of));
+                Class.add_function(GL::decl_func(&class_t::left_of_last));
+                Class.add_function(GL::decl_func(&class_t::length));
+                Class.add_function(GL::decl_func(&class_t::namespace_colons));
+                Class.insert_object_here("npos", GL::any::ref(class_t::npos));
+                Class.add_function(GL::decl_func(&class_t::remove_leading));
+                Class.add_function(GL::decl_func(&class_t::remove_leading_and_trailing));                
+                Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<size_t const&>() } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::make_callable("remove_suffix", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_suffix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::make_callable("remove_suffix", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_suffix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<size_t const&>() } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::decl_func(&class_t::remove_trailing));
+                Class.add_function(GL::decl_func(&class_t::replace));
+                Class.add_function(GL::decl_func(&class_t::rfind));
+                Class.add_function(GL::decl_func(&class_t::right));
+                Class.add_function(GL::decl_func(&class_t::right_of));
+                Class.add_function(GL::decl_func(&class_t::right_of_last));
+                Class.add_function(GL::decl_func(&class_t::size));
+                // Class.add_function(GL::decl_func(&class_t::split)); // needs conversion to std::vector<var> or equivalent...
+                Class.add_function(GL::make_callable("substr", [](class_t const& lhs, size_t _off, size_t _count) -> class_t { return lhs.substr(_off, _count); }, GL::function_signature::Async | GL::function_signature::Constant, { 0ull, class_t::npos }, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const}, { "_Off", GL::type_of<size_t const&>() }, { "_Count", GL::type_of<size_t const&>() } }, Class.this_type));
+                Class.add_function(GL::decl_func(&class_t::to_lower));                
+                Class.add_function(GL::decl_func(&class_t::to_number));
+                Class.add_function(GL::decl_func(&class_t::to_upper));
+            }
 
 
 		};

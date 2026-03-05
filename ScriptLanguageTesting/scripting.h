@@ -1731,6 +1731,10 @@ namespace GL {
                 };
             private:
                 Breadcrumb* FindNamespaceImpl(GL::string const& Name, Breadcrumb*& nearest_scope) const {
+                    if ((Name.length() > 0) && (Name.front() == ':')) {
+                        return this->GetRoot()->FindNamespaceImpl(Name.remove_leading(':'), nearest_scope);
+                    }
+
                     if (auto* out = find_namespace(Name)) {
                         nearest_scope = out;
                         return out;
@@ -2132,7 +2136,7 @@ namespace GL {
                                 return try_find_callable(optionalName, from_iter, from_end, search_state, this->breadcrumb_m.root_m);
                             }
                             else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {
-                                return dynamic_cast<NamespaceScope*>(nameSpace->this_m.scope)->try_find_callable(optionalName, from_iter, from_end, search_state, nameSpace);
+                                return dynamic_cast<NamespaceScope*>(nameSpace->this_m.scope)->try_find_callable(optionalName, from_iter, from_end, search_state/*, nameSpace*/);
                             }
                             else if (closest_scope) { // namespace was not found                        
                                 return nullptr;
@@ -2494,11 +2498,14 @@ namespace GL {
                     if (auto f = children.find(name.hash()); f != children.end()) {
                         return *f->second;
                     }
-                    else {
+                    if (1) {
                         this->invalidate_cache();
-                        return *children.insert(
-                            { name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((GL::string)name, ScopeType::Basic | ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m))) }
-                        ).first->second;
+                        while (true) {
+                            children.insert({ name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((GL::string)name, ScopeType::Basic | ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m))) });
+                            if (auto f = children.find(name.hash()); f != children.end()) {
+                                return *f->second;
+                            }
+                        }
                     }
                 };
 
@@ -2516,15 +2523,18 @@ namespace GL {
                     if (auto f = children.find(class_type.name().hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {                        
                         return *std::dynamic_pointer_cast<ClassScope>(f->second);
                     }
-                    else {
+                    if (1) {
                         this->GetRoot()->invalidate_cache();
-                        ++this->GetRoot()->constructors_version;
-                        auto new_class = std::dynamic_pointer_cast<ClassScope>(children.insert(
-                            { class_type.name().hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
-                        ).first->second);
-                        this->GetRoot()->classes.insert({ class_type.get_base_hash(), &new_class->breadcrumb_m });
-                        this->GetRoot()->classes_by_name.insert({ class_type.name(), &new_class->breadcrumb_m });
-                        return *new_class;
+                        ++this->GetRoot()->constructors_version;                        
+                        while (true) {
+                            children.insert({ class_type.name().hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) });
+                            if (auto f = children.find(class_type.name().hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
+                                auto new_class = std::dynamic_pointer_cast<ClassScope>(f->second);
+                                this->GetRoot()->classes.insert({ class_type.get_base_hash(), &new_class->breadcrumb_m });
+                                this->GetRoot()->classes_by_name.insert({ class_type.name(), &new_class->breadcrumb_m });
+                                return *new_class;
+                            }
+                        }
                     }
                 };
 
@@ -2538,15 +2548,20 @@ namespace GL {
                     if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
                         return *std::dynamic_pointer_cast<ClassScope>(f->second);
                     }
-                    else {
+                    if (1) {
                         this->GetRoot()->invalidate_cache();
                         ++this->GetRoot()->constructors_version;
-                        auto new_class = std::dynamic_pointer_cast<ClassScope>(children.insert(
-                            { class_type.hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
-                        ).first->second);
-                        this->GetRoot()->classes.insert({ new_class->this_type.get_base_hash(), &new_class->breadcrumb_m });
-                        this->GetRoot()->classes_by_name.insert({ class_type, &new_class->breadcrumb_m });
-                        return *new_class;
+                        while (true) {
+                            children.insert(
+                                { class_type.hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
+                            );
+                            if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
+                                auto new_class = std::dynamic_pointer_cast<ClassScope>(f->second);
+                                this->GetRoot()->classes.insert({ new_class->this_type.get_base_hash(), &new_class->breadcrumb_m });
+                                this->GetRoot()->classes_by_name.insert({ class_type, &new_class->breadcrumb_m });
+                                return *new_class;
+                            }
+                        }
                     }
                 };
 
@@ -2639,7 +2654,7 @@ namespace GL {
                         
                         for (auto& x : rhs.cast<GL::dynamic_object>().m_objects) {
                             if (auto f = temp.m_objects.find(x.first), e = temp.m_objects.end(); f != e) {
-                                this->call("=", { GL::any::fast_any::instance(f->second), GL::any::fast_any::instance(x.second) });
+                                this->call("=", { f->second->fast(), x.second->fast() });
                             }
                         }
 
@@ -2656,7 +2671,7 @@ namespace GL {
                         
                         for (auto& x : RHS.m_objects) {
                             if (auto f = LHS.m_objects.find(x.first), e = LHS.m_objects.end(); f != e) {
-                                this->call("=", { GL::any::fast_any::instance(f->second), GL::any::fast_any::instance(x.second) });
+                                this->call("=", { f->second->fast(), x.second->fast() });
                             }
                         }
 

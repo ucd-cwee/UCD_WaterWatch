@@ -285,7 +285,7 @@ namespace GL {
         GL::type_of<double>().try_update_name("double");
         GL::type_of<long double>().try_update_name("ldouble");
 
-        GL::type_of<std::string>().try_update_name("std_string");
+        GL::type_of<std::string>().try_update_name("string");
         GL::type_of<GL::string>().try_update_name("string");        
         GL::type_of<GL::any>().try_update_name("any");
         GL::type_of<GL::any::fast_any>().try_update_name("fast_any");

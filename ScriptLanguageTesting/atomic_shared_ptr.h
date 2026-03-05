@@ -358,12 +358,13 @@ namespace /* atomic_shared_ptr */ GL {
         atomic_shared_ptr(shared_ptr<T> && data) {
             control_block_base* block = dynamic_cast<control_block_base*>(control_block<T>::AllocateSelf(nullptr));
             packedPtr.store(reinterpret_cast<size_t>(block) << MAGIC_LEN);
-            while (true) {
-                auto holder = this->load_fast();
-                if (compare_exchange(holder.get(), holder.get_control_block(), std::move(data))) {
-                    break;
-                }
-            }
+            this->compare_exchange(nullptr, std::move(data));            
+            //while (true) {
+            //    auto holder = this->load_fast();
+            //    if (compare_exchange(holder.get(), holder.get_control_block(), std::move(data))) {
+            //        break;
+            //    }
+            //}
         };
         atomic_shared_ptr(T* data = nullptr) {
             control_block_base* block = dynamic_cast<control_block_base*>(control_block<T>::AllocateSelf(data));
