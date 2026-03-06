@@ -196,12 +196,12 @@ namespace GL {
 
             // types
             if (1) {
-                add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                add_function(GL::make_callable("type_of", [](GL::any::fast_any const& any_type) -> GL::type { return any_type.m_casted_type; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("size", [](GL::type const& any_type) -> size_t { return any_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                add_function(GL::make_callable("type_name", [](GL::any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                add_function(GL::make_callable("type_name", [](GL::any::fast_any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                add_function(GL::make_callable("size_of", [](GL::any const& any_type) -> size_t { return any_type.m_casted_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                add_function(GL::make_callable("size_of", [](GL::any::fast_any const& any_type) -> size_t { return any_type.m_casted_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_void", [](GL::type const& any_type) -> bool { return any_type.is_void(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_any", [](GL::type const& any_type) -> bool { return any_type.is_any(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_const", [](GL::type const& any_type) -> bool { return any_type.is_const(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));

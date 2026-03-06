@@ -3,6 +3,9 @@
 #pragma once
 #include <memory>
 #include <set>
+#include <atomic>
+#include <array>
+#include <thread>
 #include "atomic_allocator.h"
 #include "Strings.h"
 // #include "atomic_maps.h"
@@ -98,6 +101,127 @@ namespace GL {
 		};
 
 	};
+
+	/*
+	*	bucketed_shared_mutex (C) 2017 E. Oriani, ema <AT> fastwebnet <DOT> it
+	*
+	*	This file is part of bucketed_shared_mutex.
+	*
+	*	bucketed_shared_mutex is free software: you can redistribute it and/or modify
+	*	it under the terms of the GNU Lesser General Public License as published by
+	*	the Free Software Foundation, either version 3 of the License, or
+	*	(at your option) any later version.
+	*
+	*	bucketed_shared_mutex is distributed in the hope that it will be useful,
+	*	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	*	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	*	GNU General Public License for more details.
+	*
+	*	You should have received a copy of the GNU General Public License
+	*	along with nettop.  If not, see <http://www.gnu.org/licenses/>.
+	*/
+	template<size_t N = 4>
+	class bucketed_shared_mutex {
+		// purpose of this structure is to hold
+		// status of each individual bucket-mutex
+		// object
+		// Ideally each thread should be mapped to
+		// one entry only of 'el_' during its
+		// lifetime
+		struct entry_lock {
+			const static uint64_t 
+				W_MASK = 0x8000000000000000,
+				R_MASK = ~W_MASK;
+
+			// purpose ot this variable is to hold
+			// in the first bit (W_MASK) if we're locking
+			// in exclusive mode, otherwise use the
+			// reamining 63 bits to count how many R/O
+			// locks we share in this very bucket
+			std::atomic<uint64_t>	wr_lock;
+
+			entry_lock() : wr_lock(0) {
+			}
+		} alignas(64);
+		// array holding all the buckets
+		std::array<entry_lock, N> el_;
+
+		// get index for given thread
+		// could hav used something like std::hash<std::thread::id>()(std::this_thread::get_id())
+		// but honestly using a controlled idx_hint_
+		// seems to be better in terms of putting threads
+		// into buckets evenly
+		// note - thread_local is supposed to be static...
+		inline static size_t get_thread_idx(void) {
+			const thread_local size_t rv = GL::util::get_thread_id() % N;
+			return rv;
+		}
+	public:
+		bucketed_shared_mutex() {}
+
+		void lock_shared(void) {
+			// try to replace the wr_lock with current value incremented by one
+			while (true) {
+				size_t	cur_rw_lock = el_[get_thread_idx()].wr_lock.load();
+				if (entry_lock::W_MASK & cur_rw_lock) {
+					// if someone has got W access yield and retry...
+					std::this_thread::yield();
+					continue;
+				}
+				if (el_[get_thread_idx()].wr_lock.compare_exchange_weak(cur_rw_lock, cur_rw_lock + 1))
+					break;
+			}
+		}
+
+		void unlock_shared(void) {
+			// try to decrement the count
+			while (true) {
+				size_t	cur_rw_lock = el_[get_thread_idx()].wr_lock.load();
+#ifndef _RELEASE
+				if (entry_lock::W_MASK & cur_rw_lock)
+					throw std::runtime_error("Fatal: unlock_shared but apparently this entry is W_MASK locked!");
+#endif //_RELEASE
+				if (el_[get_thread_idx()].wr_lock.compare_exchange_weak(cur_rw_lock, cur_rw_lock - 1))
+					break;
+			}
+		}
+
+		void lock(void) {
+			for (size_t i = 0; i < N; ++i) {
+				// acquire all locks from all buckets
+				while (true) {
+					size_t	cur_rw_lock = el_[i].wr_lock.load();
+					if (cur_rw_lock != 0) {
+						std::this_thread::yield();
+						continue;
+					}
+					// if cur_rw_lock is 0 then proceed
+					if (el_[i].wr_lock.compare_exchange_weak(cur_rw_lock, entry_lock::W_MASK))
+						break;
+				}
+			}
+		}
+
+		void unlock(void) {
+			for (size_t i = 0; i < N; ++i) {
+				// release all locks
+				while (true) {
+					size_t	cur_rw_lock = el_[i].wr_lock.load();
+#ifndef _RELEASE
+					if (cur_rw_lock != entry_lock::W_MASK)
+						throw std::runtime_error("Fatal: unlock but apparently this entry is shared locked or uninitialized!");
+#endif //_RELEASE
+					// then proceed resetting to 0
+					if (el_[i].wr_lock.compare_exchange_weak(cur_rw_lock, 0))
+						break;
+				}
+			}
+		}
+
+		~bucketed_shared_mutex() {
+		}
+	};
+	
 };
 
 
@@ -2233,12 +2357,15 @@ namespace GL {
 
 	// Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
     // Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
-	template< class objType, class keyType, int maxChildrenPerNode = 10>
+	template< class objType, class keyType, int maxChildrenPerNode = sizeof(objType) / sizeof(sizeof(objType*)) < 5 ? 5 : sizeof(objType) / sizeof(sizeof(objType*)) >
 	class epoch_search_tree {
 	public:
 		using lock_type = fast_shared_mutex; // std::shared_mutex; // fast_shared_mutex; //  
-		struct epoch_search_treeNode {
-			std::variant<std::unique_ptr<objType>, std::array<epoch_search_treeNode*, maxChildrenPerNode>>
+		class epoch_search_treeNode {
+		public:
+			using char_array_t = unsigned char[(sizeof(objType) > (sizeof(epoch_search_treeNode*) * maxChildrenPerNode)) ? sizeof(objType) : (sizeof(epoch_search_treeNode*) * maxChildrenPerNode)];
+		public:
+			char_array_t
 				data;
 			epoch_search_treeNode // parent node
 				* parent;
@@ -2250,14 +2377,22 @@ namespace GL {
 				parent_index;
 			bool
 				is_leaf;
+
+			epoch_search_treeNode() = default;
+			~epoch_search_treeNode() {
+				if (is_leaf) {
+					reinterpret_cast<objType*>(&data[0])->~objType();
+				}
+			};
+
 			objType*
 				object() {
 				if (numChildren > 0 || !is_leaf) return nullptr;
-				return std::get<std::unique_ptr<objType>>(data).get();
+				return reinterpret_cast<objType*>(&data[0]);
 			};
 			epoch_search_treeNode**
 				children() {
-				return &std::get<std::array<epoch_search_treeNode*, maxChildrenPerNode>>(data)[0];
+				return reinterpret_cast<epoch_search_treeNode**>(&data[0]);
 			};
 
 			epoch_search_treeNode* // next sibling
@@ -2495,7 +2630,7 @@ namespace GL {
 			first;
 		epoch_search_treeNode*
 			last;
-		GL::atomic_epoch_allocator< epoch_search_treeNode, atomic_allocator< epoch_search_treeNode, 256, true, false >, 4>
+		GL::atomic_epoch_allocator< epoch_search_treeNode, atomic_allocator< epoch_search_treeNode, 256, false, false >, 4>
 			nodeAllocator;
 		long
 			count;
@@ -2644,11 +2779,9 @@ namespace GL {
 			locker&
 				locking = const_cast<locker&>(Locking);
 			newNode
-				= AllocNode(true);
+				= AllocNode(true, std::move(object));
 			newNode->key
 				= key;
-			newNode->data
-				= std::make_unique<objType>(std::move(object));
 
 			if (!locking) {
 				locking.push_back(mut); // locked
@@ -3139,19 +3272,20 @@ namespace GL {
 			//}
 		};
 	private:
+		template <typename... TArgs>
 		epoch_search_treeNode*
-			AllocNode(bool is_leaf) {
+			AllocNode(bool is_leaf, TArgs &&... args) {
 			epoch_search_treeNode
 				* node;
 
 			node = nodeAllocator.Alloc();
 			if (is_leaf) {
-				node->is_leaf = true;
-				node->data = std::make_unique<objType>();
+				node->is_leaf = true;				
+				new (reinterpret_cast<void*>(&node->data[0])) objType(std::forward<TArgs>(args)...);
 			}
 			else {
 				node->is_leaf = false;
-				node->data = std::array<epoch_search_treeNode*, maxChildrenPerNode>{};
+				std::memset(&node->data[0], 0, sizeof(epoch_search_treeNode::char_array_t));
 				for (int i = 0; i < maxChildrenPerNode; ++i) node->children()[i] = nullptr;
 			}
 
@@ -3213,7 +3347,7 @@ namespace GL {
 	template< class objType, class keyType>
 	class epoch_map{
 	private:
-		mutable epoch_search_tree<objType, keyType, 10>
+		mutable epoch_search_tree<objType, keyType, sizeof(objType) / sizeof(sizeof(objType*)) < 5 ? 5 : sizeof(objType) / sizeof(sizeof(objType*)) >
 			tree;
 		using GuardType = typename decltype(tree)::GuardType;
 

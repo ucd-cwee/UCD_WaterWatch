@@ -196,8 +196,8 @@ namespace GL {
             }
             return (_type_*)(out);
         };
-        __declspec(noinline) void Free(const _type_* t) {
-            innerType* impl = static_cast<innerType*>(static_cast<void*>(const_cast<_type_*>(t)));
+        __declspec(noinline) void Free(void* t) {
+            innerType* impl = static_cast<innerType*>(t);
             TLS[impl->threadID].Free(impl);
             if constexpr (support_count) InterlockedDecrement(reinterpret_cast<volatile long*>(&count));
         };
