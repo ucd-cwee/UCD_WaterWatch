@@ -369,14 +369,20 @@ namespace GL {
 
             class Converter;
             class Functions {
-            public:
-                GL::deferred<GL::epoch_map< GL::deferred<GL::epoch_map<GL::Proxy_Function, size_t>>, GL::string>>
+            private:
+                GL::deferred<GL::epoch_map< GL::shared_lockable<std::map<size_t, GL::Proxy_Function>>, GL::string>>
                     functions;
-
+            public:
+                Functions() = default;
+                Functions(Functions const&) = delete;
+                Functions(Functions &&) = delete;
+                Functions& operator=(Functions const&) = delete;
+                Functions& operator=(Functions&&) = delete;
+                ~Functions() = default;
             public:
                 // insert a function into the storage
-                GL::Proxy_Function const& add_function(GL::Proxy_Function const& func) {
-                    return functions->operator[](func->m_signature.name_m)->insert(func->m_signature.get_hash(), (GL::Proxy_Function)func).second;
+                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func) {
+                    return functions->operator[](func->m_signature.name_m).lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
                 };
 
                 // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
@@ -390,9 +396,9 @@ namespace GL {
                     if (functions.valid()) {
                         for (auto& funcs_by_name : *functions) {
                             if (*funcs_by_name.second) {
-                                GL::string const& name = *funcs_by_name.first;
-                                for (auto& funcs : funcs_by_name.second->operator*()) {
-                                    GL::Proxy_Function const& func = *funcs.second;
+                                GL::string const& name = *funcs_by_name.first;                                
+                                for (auto& funcs : *funcs_by_name.second->lock_shared()) {
+                                    GL::Proxy_Function const& func = funcs.second;
                                     if (to_do(func)) {
                                         return func;
                                     }
@@ -412,9 +418,9 @@ namespace GL {
 
                     static GL::Proxy_Function temp{ nullptr };
                     if (functions.valid()) {
-                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && funcs_by_name->valid()) {
-                            for (auto& funcs : funcs_by_name->operator*()) {
-                                GL::Proxy_Function const& func = *funcs.second;
+                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && *funcs_by_name) {
+                            for (auto& funcs : *funcs_by_name->lock_shared()) {
+                                GL::Proxy_Function const& func = funcs.second;
                                 if (to_do(func)) {
                                     return func;
                                 }
@@ -432,9 +438,9 @@ namespace GL {
                     static_assert(function_header::Param_Types::numArgs <= 1);
 
                     if (functions.valid()) {
-                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && funcs_by_name->valid()) {
-                            for (auto& funcs : funcs_by_name->operator*()) {
-                                GL::Proxy_Function const& func = *funcs.second;
+                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && *funcs_by_name) {
+                            for (auto& funcs : *funcs_by_name->lock_shared()) {
+                                GL::Proxy_Function const& func = funcs.second;
                                 if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                                     if (to_do(func)) {
                                         return func;
@@ -724,7 +730,7 @@ namespace GL {
                     GL::type const& From
                 ) {
                     std::unordered_set<GL::type> AllTypes;
-                    std::unordered_map<GL::type, std::unordered_map<GL::type, GL::Proxy_Function const*>> AllConversions; // all built-in conversions, e.g. int->float, float->double, etc.
+                    std::map<GL::type, std::map<GL::type, GL::Proxy_Function const*>> AllConversions; // all built-in conversions, e.g. int->float, float->double, etc.
                     (void)this->for_each([&AllConversions, &AllTypes](GL::Proxy_Function const& func)->bool {
                         AllTypes.insert(func->m_signature.returns_m);
                         for (auto& x : func->m_signature.argument_types_m) AllTypes.insert(x);
@@ -750,15 +756,17 @@ namespace GL {
                                     GL::any from = inherited;
                                     from.m_casted_type = base | GL::type::Reference;
                                     return from;
-                                    }, /*GL::function_signature::NoCost | */GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Reference } }, base_type | GL::type::Reference);
-
-
-                                if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
-                                    this->add_function(temp_func);
+                                }, /*GL::function_signature::NoCost | */GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Reference } }, base_type | GL::type::Reference);
+                                auto first_arg_t = temp_func->m_signature.argument_types_m[0];
+                                auto returns_t = temp_func->m_signature.returns_m;
+                                auto hash_v = temp_func->m_signature.get_hash();
+                                auto funcs = functions->operator[](temp_func->m_signature.name_m).lock_shared();
+                                if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
+                                    funcs.unlock_shared();
+                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func));
                                 }
-
-                                if (auto* func = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); func != nullptr) {
-                                    AllConversions[func->operator->()->m_signature.argument_types_m[0]][func->operator->()->m_signature.returns_m] = func;
+                                else {
+                                    AllConversions[first_arg_t][returns_t] = &f->second;
                                 }
                             }
                             if (0) {
@@ -766,14 +774,17 @@ namespace GL {
                                     GL::any from = inherited;
                                     from.m_casted_type = base | GL::type::Reference | GL::type::Const;
                                     return from;
-                                    }, /*GL::function_signature::NoCost | */GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type } }, base_type | GL::type::Reference | GL::type::Const);
-
-                                if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
-                                    this->add_function(temp_func);
+                                }, /*GL::function_signature::NoCost | */GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type } }, base_type | GL::type::Reference | GL::type::Const);
+                                auto first_arg_t = temp_func->m_signature.argument_types_m[0];
+                                auto returns_t = temp_func->m_signature.returns_m;
+                                auto hash_v = temp_func->m_signature.get_hash();
+                                auto funcs = functions->operator[](temp_func->m_signature.name_m).lock_shared();
+                                if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
+                                    funcs.unlock_shared();
+                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func));
                                 }
-
-                                if (auto* func = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); func != nullptr) {
-                                    AllConversions[func->operator->()->m_signature.argument_types_m[0]][func->operator->()->m_signature.returns_m] = func;
+                                else {
+                                    AllConversions[first_arg_t][returns_t] = &f->second;
                                 }
                             }
                             if (1) {
@@ -781,14 +792,17 @@ namespace GL {
                                     GL::any from = inherited;
                                     from.m_casted_type = base | GL::type::Temporary;
                                     return from;
-                                    }, /*GL::function_signature::NoCost |*/ GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Temporary } }, base_type | GL::type::Temporary);
-
-                                if (auto* p = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); p == nullptr) {
-                                    this->add_function(temp_func);
+                                }, /*GL::function_signature::NoCost |*/ GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Temporary } }, base_type | GL::type::Temporary);
+                                auto first_arg_t = temp_func->m_signature.argument_types_m[0];
+                                auto returns_t = temp_func->m_signature.returns_m;
+                                auto hash_v = temp_func->m_signature.get_hash();
+                                auto funcs = functions->operator[](temp_func->m_signature.name_m).lock_shared();
+                                if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
+                                    funcs.unlock_shared();
+                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func));
                                 }
-
-                                if (auto* func = functions->operator[](temp_func->m_signature.name_m)->try_at(temp_func->m_signature.get_hash()); func != nullptr) {
-                                    AllConversions[func->operator->()->m_signature.argument_types_m[0]][func->operator->()->m_signature.returns_m] = func;
+                                else {
+                                    AllConversions[first_arg_t][returns_t] = &f->second;
                                 }
                             }
                         }
@@ -825,8 +839,8 @@ namespace GL {
                                 if (smallestDistanceNode->thisVertexType.can_free_cast(x.first, false)) { // was originally "true" 
                                     for (auto fSecondIter = x.second.cbegin(), fSecondEnd = x.second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
                                         auto& connection = *fSecondIter;
-                                        if (connection.second != nullptr) {
-                                            if (auto& func = *connection.second) {
+                                        if (connection.second) {
+                                            if (auto& func = *connection.second; func) {
                                                 //conversionCost = GoodLang::details::TypeConversionBaselineCost;
                                                 //if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
                                                 conversionCost = ((func->m_signature.state_m & GL::function_signature::NoCost) > 0) ? 0.01 : 1.0;
@@ -1226,26 +1240,31 @@ namespace GL {
                     breadcrumb_m;
                 GL::deferred<concurrency::concurrent_unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>>
                     using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-                GL::deferred<GL::epoch_map<GL::any, GL::string>> // concurrency::concurrent_unordered_map
+                GL::shared_lockable<std::map<GL::string, GL::any>> // concurrency::concurrent_unordered_map
                     objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
                 virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
                 template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any&& Obj) {
                     if constexpr (overwriteIfExists) {
-                        objects_m->insert_fast(sv, std::move(Obj));
+                        auto locked = objects_m.lock();
+                        locked->operator[](sv) = std::move(Obj);
                     }
                     else {
-                        if (auto* f = objects_m->try_at(sv)) return false;
-                        else {
-                            objects_m->insert_fast(sv, std::move(Obj));
+                        if (1) {
+                            auto locked = objects_m.lock_shared();
+                            if (auto f = locked->find(sv), e = locked->end(); f != e) return false;
+                        }
+                        if (1) {
+                            auto locked = objects_m.lock();
+                            locked->operator[](sv) = std::move(Obj);
                         }
                     }
                     return true;
                 };
                 GL::any* GetObject_Impl(GL::string const& sv) {
                     if (objects_m) {
-                        if (auto* f = objects_m->try_at(sv))
-                            return f;
+                        auto locked = objects_m.lock_shared();
+                        if (auto f = locked->find(sv), e = locked->end(); f != e) return &f->second;
                     }
                     return nullptr;
                 };
@@ -1265,6 +1284,8 @@ namespace GL {
             protected:
                 BasicScope(GL::string&& name, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
                     : breadcrumb_m(std::move(name), scope_type_p, parent)
+                    , using_m()
+                    , objects_m()
                 {
                     breadcrumb_m.this_m.scope = this;
                 };
@@ -1550,10 +1571,10 @@ namespace GL {
                         }
                     }
 
-                    static thread_local size_t len;
+                    /*static thread_local */size_t len;
                     len = Name.length();
-                    static thread_local std::set< size_t> target_hash; {
-                        target_hash.clear();
+                    /*static thread_local */std::set< size_t> target_hash; {
+                        // target_hash.clear();
                         target_hash.insert(Name.hash());
                         auto temp = Name.remove_leading(':');
                         auto* BC = start;
@@ -1566,7 +1587,7 @@ namespace GL {
                     if (target_hash.count(GL::string::namespace_colons().hash()) > 0) {
                         return start->root_m;
                     }
-                    else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([stringified = GL::string(Name)](Breadcrumb* namespacePtr, int search_state)-> int {
+                    else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([stringified = GL::string(Name), &target_hash, &len](Breadcrumb* namespacePtr, int search_state)-> int {
                         if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
                         GL::string const& currNS{ namespacePtr->GetCurrentNamespace() };
                         if (target_hash.count(currNS.hash()) > 0) return SearchResult::Success;
@@ -1598,6 +1619,9 @@ namespace GL {
                         if (using_m->size() > 0) {
                             GetNamespace()->invalidate_cache();
                         }
+                    }
+                    if (objects_m) {
+                        objects_m.lock()->clear();
                     }
                     //}
                 };
@@ -2161,8 +2185,13 @@ namespace GL {
                         throw std::runtime_error(err.to_string());
                     }
                 };
-                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
-                    return call(PossiblyScopedName, params.begin(), params.end());
+                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any>&& params) const {
+                    std::vector<GL::any::fast_any> temp(std::move(params));
+                    GL::any::fast_any out = call(PossiblyScopedName, temp.begin(), temp.end());
+                    for (auto& x : temp) {
+                        x = nullptr;
+                    }
+                    return out;
                 };
 
             };
@@ -2222,12 +2251,14 @@ namespace GL {
             public:
                 // instancing a child namespace should only be done from an existing namespace
                 NamespaceScope(GL::string&& name, int scope_type_p = ScopeType::Basic | ScopeType::Namespace, Breadcrumb* parent = nullptr)
-                    : BasicScope(std::move(name), scope_type_p, parent)
-                    , children{}
-                    , search_cache{}
+                    : children()
+                    , functions()
+                    , namespace_search_cache()
+                    , search_cache()
                     , sockets_for_cache_versions(&NamespaceScope::invalidate_cache)
                     , connection_for_cache_version{}
                     , cache_version{ 0 }
+                    , BasicScope(std::move(name), scope_type_p, parent)
                 {
                     if (this->breadcrumb_m.parent_m) {
                         if (auto* p = dynamic_cast<NamespaceScope*>(this->breadcrumb_m.parent_m->namespace_m->this_m.scope)) {
@@ -2566,10 +2597,11 @@ namespace GL {
                 };
 
                 // insert a function into the storage
-                void add_function(GL::Proxy_Function const& func) {
-                    functions.add_function(func);
+                void add_function(GL::Proxy_Function && func) {
+                    GL::Proxy_Function copy = func;
+                    functions.add_function(std::move(copy));
                     if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                        this->GetRoot()->add_constructor(func);
+                        this->GetRoot()->add_constructor(std::move(func));
                     }
                     this->invalidate_cache(); 
                 };
@@ -2595,7 +2627,9 @@ namespace GL {
                     const_cast<GL::type&>(this_type) = type_ownership->load();
                 };
                 ClassScope() = delete;
-                virtual ~ClassScope() {};
+                virtual ~ClassScope() {
+
+                };
             
             private:
                 GL::deferred<GL::script_type> 
@@ -3057,9 +3091,9 @@ namespace GL {
                 TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>
                     converters;
                 std::mutex // GL::fast_shared_mutex
-                    converter_lock{};
+                    converter_lock;
                 std::atomic<long long>
-                    constructors_version{ 0 };
+                    constructors_version;
                 concurrency::concurrent_unordered_map<size_t, Breadcrumb*>
                     classes; // list of all unique classes, which cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option.  
                 concurrency::concurrent_unordered_multimap<GL::string, Breadcrumb*>
@@ -3067,7 +3101,14 @@ namespace GL {
 
             public:
                 RootScope()
-                    : NamespaceScope("::", ScopeType::Basic | ScopeType::Namespace | ScopeType::Root, nullptr)
+                    : scope_indexs()
+                    , scopes()
+                    , constructors()
+                    , converter_lock()
+                    , constructors_version{0}
+                    , classes()
+                    , classes_by_name()
+                    , NamespaceScope("::", ScopeType::Basic | ScopeType::Namespace | ScopeType::Root, nullptr)
                 {};
                 virtual ~RootScope() {
                     this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
@@ -3080,8 +3121,8 @@ namespace GL {
 
                     // constructors.clear();
                 };
-                void add_constructor(GL::Proxy_Function const& func) {
-                    constructors.add_function(func);
+                void add_constructor(GL::Proxy_Function && func) {
+                    constructors.add_function(std::move(func));
                     ++constructors_version;
                 };
 

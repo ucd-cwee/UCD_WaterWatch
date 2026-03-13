@@ -134,9 +134,7 @@ namespace GL {
 
     protected:
         // combination of the base hash and the qualifiers. Limited to four qualifier types with the current magic mask set-up. 
-        size_t hash{ 
-            (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | 0x8000000000000000
-        }; // e.g. int, long, std::string, or a (registered) scripted type
+        size_t hash; // e.g. int, long, std::string, or a (registered) scripted type
         static size_t const& any_hash_code() {
             static size_t out{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
@@ -145,9 +143,13 @@ namespace GL {
             static size_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
+        static size_t const& default_hash_code() {
+            static size_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | 0x8000000000000000 };
+            return out;
+        };
 
     public:
-        type() = default;
+        type() : hash(default_hash_code()) {};
         explicit type(size_t _hash) : hash(_hash) {};
         type(type const&) = default;
         type(type &&) = default;

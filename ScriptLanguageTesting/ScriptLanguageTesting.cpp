@@ -404,6 +404,290 @@ int main() {
         SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
 
         while (true) {
+#if 0
+
+            // GL::atomic_map is leak-free. No doubt. Issue is that it scales poorly (memory-wise) after 1 thread, and also struggles to perform in multi-threaded cases. 
+#if 0
+            // atomic_epoch_allocator<std::string> == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_epoch_allocator<std::string>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->ProtectCurrentEpoch_Fast(); 
+                auto* p = shared_obj->Alloc("TEST");
+                shared_obj->Free(p);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<atomic_epoch_allocator<std::string>> == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::deferred<GL::atomic_epoch_allocator<std::string>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->ProtectCurrentEpoch_Fast();
+                auto* p = (*shared_obj)->Alloc("TEST");
+                (*shared_obj)->Free(p);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::atomic_btree<std::string, size_t> (adding only) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_btree<std::string, size_t>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->Add("TEST", (size_t)GL::util::rand_fast(1000000));
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::atomic_btree<std::string, size_t>> (adding only) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::deferred<GL::atomic_btree<std::string, size_t>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->Add("TEST", (size_t)GL::util::rand_fast(1000000));
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::atomic_btree<std::string, size_t> (adding THEN removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_btree<std::string, size_t>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->Add("TEST", i);
+            })) {
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, GL::shared_ptr<GL::atomic_btree<std::string, size_t>>& shared_obj) {
+                    if (auto* p = shared_obj->NodeFind(i)) {
+                        shared_obj->Remove(p);
+                    }                    
+                }) = nullptr;
+            }
+            
+            // GL::deferred<GL::atomic_btree<std::string, size_t>> (adding THEN removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::deferred<GL::atomic_btree<std::string, size_t>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->Add("TEST", (size_t)GL::util::rand_fast(1000000));
+            })) {
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, GL::shared_ptr<GL::deferred<GL::atomic_btree<std::string, size_t>>>& shared_obj) {
+                    if (auto* p = (*shared_obj)->NodeFind(i)) {
+                        (*shared_obj)->Remove(p);
+                    }
+                }) = nullptr;
+            }
+
+            // GL::atomic_btree<std::string, size_t> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_btree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::atomic_btree<std::string, size_t>>& shared_obj) {
+                shared_obj->Add("TEST", i);
+                if (auto* p = shared_obj->NodeFind(i)) {
+                    shared_obj->Remove(p);
+                }
+            })) {
+                allocator = nullptr;
+            }
+            
+            // GL::deferred<GL::atomic_btree<std::string, size_t>> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::deferred<GL::atomic_btree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr<GL::deferred<GL::atomic_btree<std::string, size_t>>>& shared_obj) {
+                (*shared_obj)->Add("TEST", (size_t)GL::util::rand_fast(1000000));
+                if (auto* p = (*shared_obj)->NodeFind(i)) {
+                    (*shared_obj)->Remove(p);
+                }
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::atomic_map<std::string, size_t> (adding THEN removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_map<size_t, std::string>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->operator[](i);
+                
+            })) {
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                    shared_obj->erase(i);
+                }) = nullptr;
+            }
+
+            // GL::deferred<GL::atomic_map<std::string, size_t>> (adding THEN removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::atomic_map<size_t, std::string>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->operator[](i);
+            })) {
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                    (*shared_obj)->erase(i);
+                }) = nullptr;
+            }
+
+            // GL::atomic_map<std::string, size_t> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_map<size_t, std::string>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->operator[](i);
+                shared_obj->erase(i);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::atomic_map<std::string, size_t>> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::atomic_map<size_t, std::string>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->operator[](i);
+                (*shared_obj)->erase(i);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::atomic_map<size_t, GL::atomic_map<std::string, size_t>> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_map<size_t, GL::atomic_map<std::string, size_t>>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->operator[](i);
+                shared_obj->erase(i);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::atomic_map<size_t, GL::atomic_map<std::string, size_t>>> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::atomic_map<size_t, GL::atomic_map<std::string, size_t>>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->operator[](i);
+                (*shared_obj)->erase(i);
+                })) {
+                allocator = nullptr;
+            }
+
+            // GL::atomic_map<size_t, GL::deferred<GL::atomic_map<std::string, size_t>>> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<std::string, size_t>>>>(), [](size_t i, auto& shared_obj) {
+                shared_obj->operator[](i);
+                shared_obj->erase(i);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<std::string, size_t>>>> (adding AND removal) == no leak
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<std::string, size_t>>>>>(), [](size_t i, auto& shared_obj) {
+                (*shared_obj)->operator[](i);
+                (*shared_obj)->erase(i);
+            })) {
+                allocator = nullptr;
+            }
+#endif
+
+            // this code snippet demonstrates the poor scaling of GL::atomic_map. :(
+#if 0
+            // GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<std::string, size_t>>>> (adding AND removal) == 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<size_t, GL::value>>>>>(), [](size_t i, GL::shared_ptr<GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<size_t, GL::value>>>>>& shared_obj) {
+                auto index = i % 10;
+
+                auto& map1 = *(*shared_obj);
+                map1.ProtectCurrentEpoch_Fast(); // guarrantee the protections during this scope...
+                auto& map2 = *map1[i];
+
+                map2[index] = GL::foot((float)index);
+
+                map1.erase(i); // erases while others may be accessing it... 
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<std::string, size_t>>>> (adding AND removal) == 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<size_t, GL::value>>>>>(), [](size_t i, GL::shared_ptr<GL::deferred<GL::atomic_map<size_t, GL::deferred<GL::atomic_map<size_t, GL::value>>>>>& shared_obj) {
+                auto index = i % 10;
+
+                auto& map1 = *(*shared_obj);
+                // map1.ProtectCurrentEpoch(); // guarrantee the protections during this scope...
+                auto& map2 = *map1[i];
+
+                map2[index] = GL::foot((float)index);
+
+                map1.erase(i); // erases while others may be accessing it... 
+                })) {
+                allocator = nullptr;
+            }
+#endif
+
+            // epoch_search_tree scales MUCH better in heavy multi-threaded cases. However, it seems to have a memory leak, which may be releated. :/
+            // Also, epoch_search_tree seemed to perform random crashes that were difficult to predict or prevent. 
+            
+            // GL::epoch_search_tree<std::string, size_t> (adding ONLY) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+                shared_obj->Add("TEST", i);
+            })) {
+                allocator = nullptr;
+            }
+
+
+
+#if 1
+            // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (heavy contention on a parallel creation) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
+                (*shared_obj)->operator[](0);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding ONLY) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
+                (*shared_obj)->Add("TEST", i);
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::epoch_search_tree<std::string, size_t> (adding THEN removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+                shared_obj->Add("TEST", i);
+            })) {
+                //try {
+                    GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                        if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
+                            shared_obj->Remove(node, locking);
+                        }
+                    }) = nullptr;
+                //}
+                //catch (std::exception& e) {
+                //    print(e.what());
+                //}
+            }
+
+            // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding THEN removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
+                (*shared_obj)->Add("TEST", i);
+            })) {
+                //try {
+                    GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                        if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
+                            (*shared_obj)->Remove(node, locking);
+                        }
+                    }) = nullptr;
+                //}
+                //catch (std::exception& e) {
+                //    print(e.what());
+                //}
+            }
+
+            // GL::epoch_search_tree<std::string, size_t> (adding AND removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+                shared_obj->Add("TEST", i);                
+                if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
+                    shared_obj->Remove(node, locking);
+                }
+            })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding AND removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
+                (*shared_obj)->Add("TEST", i);
+                if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
+                    (*shared_obj)->Remove(node, locking);
+                }
+            })) {
+                allocator = nullptr;
+            }
+
+
+
+            // GL::epoch_search_tree<std::string, size_t> (adding AND removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<GL::epoch_search_tree<std::string, size_t>, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<GL::epoch_search_tree<std::string, size_t>, size_t>>& shared_obj) {
+                shared_obj->operator[](i).operator[](i) = "TEST";
+                if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
+                    shared_obj->Remove(node, locking);
+                }
+                })) {
+                allocator = nullptr;
+            }
+
+            // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding AND removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<GL::deferred<GL::epoch_search_tree<std::string, size_t>>, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<GL::deferred<GL::epoch_search_tree<std::string, size_t>>, size_t>>>& shared_obj) {
+                (*shared_obj)->operator[](i)->operator[](i) = "TEST";
+                if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
+                    (*shared_obj)->Remove(node, locking);
+                }
+                })) {
+                allocator = nullptr;
+            }
+
+
+#endif
+
+#else
             loop_sw.reset();
 
             EXPECT_EQ(GL::type_of<size_t>().is_cpp_type(), true);
@@ -437,6 +721,7 @@ int main() {
             EXPECT_EQ(GL::type_of<size_t&&>().is_ref(), (GL::type_of<size_t const&>() | GL::type::Temporary).is_ref());
 
             while (1) {
+#if 0
                 if (1) {
                     GL::scope::impl::RootScope
                         program_root;
@@ -656,7 +941,6 @@ int main() {
                         EXPECT_EQ(200, temp_scope.call("print", { GL::any::fast_any::instance(GL::foot(400)) }).cast<int>());
                     }
                 }
-
 
                 if (1) {
                     GL::script_type custom_unit_type_base("custom_unit_type_base");
@@ -931,7 +1215,7 @@ int main() {
                         });
                     }
 
-                    if (auto timer = sw.debug_timer("example calc")) {
+                    if (auto timer = sw.debug_timer("example calc"); false) {
                         GL::parallel::For(0, 1000000, [&](size_t i) {
                             auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
                             auto v0 = program_root.call("/", {
@@ -966,7 +1250,7 @@ int main() {
                         });
                     }
 
-                    if (auto timer = sw.debug_timer("example calc 2")) {
+                    if (auto timer = sw.debug_timer("example calc 2"); false) {
                         GL::parallel::For(0, 1000000, [&](size_t i) {
                             auto temp_scope = program_root.make_scope();
                             temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
@@ -1074,7 +1358,7 @@ int main() {
                             }));
                     }
 
-                    if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)")) {
+                    if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)"); false) {
                         for (size_t i = 0; i < 1000000; ++i) {
                             auto temp_scope = program_root.make_scope();
                             temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
@@ -1727,6 +2011,561 @@ int main() {
                     }
                     //EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
                 }
+#else
+            if (auto timer = sw.debug_timer("1 million scopes with 10 sub-scopes")) {
+                GL::scope::impl::RootScope program_root;
+                program_root.perform_builtins();
+                GL::parallel::For(0, 1000000, [&](size_t) {
+                    auto a = program_root.make_scope();
+                    auto b = a.make_scope();
+                    auto c = b.make_scope();
+                    auto d = c.make_scope();
+                    auto e = d.make_scope();
+                    auto f = e.make_scope();
+                    auto g = f.make_scope();
+                    auto h = g.make_scope();
+                    auto i = h.make_scope();
+                    auto j = i.make_scope();
+                    auto k = j.make_scope();
+                });
+            }
+
+            if (auto timer = sw.debug_timer("example calc")) {
+                GL::scope::impl::RootScope program_root;
+                program_root.perform_builtins();
+                GL::parallel::For(0, 1000000, [&](size_t i) {
+                    auto x0 = program_root.call("foot", { GL::any::fast_any::instance(100.0) });
+                    auto v0 = program_root.call("/", {
+                        program_root.call("foot", { GL::any::fast_any::instance(10) }),
+                        program_root.call("second", { GL::any::fast_any::instance(1) })
+                        });
+                    auto a0 = program_root.call("/", {
+                        v0,
+                        program_root.call("second", { GL::any::fast_any::instance(1) })
+                        });
+                    auto t = program_root.call("second", { GL::any::fast_any::instance(5) });
+                    auto d = program_root.call("+", {
+                        program_root.call("*", {
+                            v0,
+                            t
+                        }),
+                        program_root.call("*", {
+                            program_root.call("*", {
+                                program_root.call("pow", {
+                                    t,
+                                    GL::any::fast_any::instance(2)
+                                }),
+                                a0
+                            }),
+                            GL::any::fast_any::instance(0.5)
+                        })
+                        });
+                    auto x = program_root.call("+", {
+                        x0,
+                        d
+                        });
+                    });
+            }
+
+            if (auto timer = sw.debug_timer("example calc 2"); false) {
+                GL::scope::impl::RootScope program_root;
+                program_root.perform_builtins();
+                GL::parallel::For(0, 1000000, [&](size_t i) {
+                    auto temp_scope = program_root.make_scope();
+                    temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
+                    temp_scope.insert_object_here("v0", temp_scope.call("/", {
+                        temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
+                        temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                        }));
+                    temp_scope.insert_object_here("a0", temp_scope.call("/", {
+                        temp_scope.find_object("v0"),
+                        temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                        }));
+                    temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
+                    temp_scope.insert_object_here("d", temp_scope.call("+", {
+                        temp_scope.call("*", {
+                            temp_scope.find_object("v0"),
+                            temp_scope.find_object("t")
+                        }),
+                        temp_scope.call("*", {
+                            temp_scope.call("*", {
+                                temp_scope.call("pow", {
+                                    temp_scope.find_object("t"),
+                                    GL::any::fast_any::instance(2)
+                                }),
+                                temp_scope.find_object("a0")
+                            }),
+                            GL::any::fast_any::instance(0.5)
+                        })
+                        }));
+                    temp_scope.insert_object_here("x", temp_scope.call("+", {
+                        temp_scope.find_object("x0"),
+                        temp_scope.find_object("d")
+                        }));
+                    });
+            }
+
+            if (auto timer = sw.debug_timer("example calc 2 (once only)"); false) {
+                GL::scope::impl::RootScope program_root;
+                program_root.perform_builtins();
+                auto temp_scope = program_root.make_scope();
+                temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
+                temp_scope.insert_object_here("v0", temp_scope.call("/", {
+                    temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
+                    temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                    }));
+                temp_scope.insert_object_here("a0", temp_scope.call("/", {
+                    temp_scope.find_object("v0"),
+                    temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                    }));
+                temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
+                temp_scope.insert_object_here("d", temp_scope.call("+", {
+                    temp_scope.call("*", {
+                        temp_scope.find_object("v0"),
+                        temp_scope.find_object("t")
+                    }),
+                    temp_scope.call("*", {
+                        temp_scope.call("*", {
+                            temp_scope.call("pow", {
+                                temp_scope.find_object("t"),
+                                GL::any::fast_any::instance(2)
+                            }),
+                            temp_scope.find_object("a0")
+                        }),
+                        GL::any::fast_any::instance(0.5)
+                    })
+                    }));
+                temp_scope.insert_object_here("x", temp_scope.call("+", {
+                    temp_scope.find_object("x0"),
+                    temp_scope.find_object("d")
+                    }));
+            }
+
+            if (auto timer = sw.debug_timer("example calc 2 (once only, from scratch)"); false) {
+                GL::scope::impl::RootScope
+                    program;
+                program.perform_builtins();
+
+                auto temp_scope = program.make_scope();
+                temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
+                temp_scope.insert_object_here("v0", temp_scope.call("/", {
+                    temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
+                    temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                    }));
+                temp_scope.insert_object_here("a0", temp_scope.call("/", {
+                    temp_scope.find_object("v0"),
+                    temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                    }));
+                temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
+                temp_scope.insert_object_here("d", temp_scope.call("+", {
+                    temp_scope.call("*", {
+                        temp_scope.find_object("v0"),
+                        temp_scope.find_object("t")
+                    }),
+                    temp_scope.call("*", {
+                        temp_scope.call("*", {
+                            temp_scope.call("pow", {
+                                temp_scope.find_object("t"),
+                                GL::any::fast_any::instance(2)
+                            }),
+                            temp_scope.find_object("a0")
+                        }),
+                        GL::any::fast_any::instance(0.5)
+                    })
+                    }));
+                temp_scope.insert_object_here("x", temp_scope.call("+", {
+                    temp_scope.find_object("x0"),
+                    temp_scope.find_object("d")
+                    }));
+            }
+
+            if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)"); false) {
+                GL::scope::impl::RootScope program_root;
+                program_root.perform_builtins();
+                for (size_t i = 0; i < 1000000; ++i) {
+                    auto temp_scope = program_root.make_scope();
+                    temp_scope.insert_object_here("x0", temp_scope.call("foot", { GL::any::fast_any::instance(100.0) }));
+                    temp_scope.insert_object_here("v0", temp_scope.call("/", {
+                        temp_scope.call("foot", { GL::any::fast_any::instance(10) }),
+                        temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                        }));
+                    temp_scope.insert_object_here("a0", temp_scope.call("/", {
+                        temp_scope.find_object("v0"),
+                        temp_scope.call("second", { GL::any::fast_any::instance(1) })
+                        }));
+                    temp_scope.insert_object_here("t", temp_scope.call("second", { GL::any::fast_any::instance(5) }));
+                    temp_scope.insert_object_here("d", temp_scope.call("+", {
+                        temp_scope.call("*", {
+                            temp_scope.find_object("v0"),
+                            temp_scope.find_object("t")
+                        }),
+                        temp_scope.call("*", {
+                            temp_scope.call("*", {
+                                temp_scope.call("pow", {
+                                    temp_scope.find_object("t"),
+                                    GL::any::fast_any::instance(2)
+                                }),
+                                temp_scope.find_object("a0")
+                            }),
+                            GL::any::fast_any::instance(0.5)
+                        })
+                        }));
+                    temp_scope.insert_object_here("x", temp_scope.call("+", {
+                        temp_scope.find_object("x0"),
+                        temp_scope.find_object("d")
+                        }));
+                };
+            }
+
+            if (auto timer = sw.debug_timer("Polymorphism test"); false) {
+                GL::scope::impl::RootScope
+                    root;
+                root.perform_builtins();
+
+                // declare a custom namespace
+                auto& Example = root.make_namespace("Example");
+
+                // within that namespace is an Animal interface class
+                auto& Animal = Example.make_class("Animal");
+                auto Animal_t = Animal.this_type;
+                Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t } }, GL::type_of<std::string>()));
+
+                // within that namespace is an Dog impl class
+                auto& Dog = Example.make_class("Dog");
+                auto Dog_t = Dog.this_type;
+                Dog_t.add_base(Animal_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
+                Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t } }, GL::type_of<std::string>()));
+
+                // within that namespace is an Cat impl class
+                auto& Cat = Example.make_class("Cat");
+                auto Cat_t = Cat.this_type;
+                Cat_t.add_base(Animal_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Cat_t));
+                Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t } }, GL::type_of<std::string>()));
+
+                if (1) {
+                    auto script_scope = root.make_scope();
+
+                    if (1) {
+                        GL::any::fast_any dog_impl = GL::any::fast_any::instance(10);
+                        dog_impl.m_casted_type = Dog_t;
+                        script_scope.insert_object_here("dog_impl", dog_impl);
+                    }
+                    if (1) {
+                        GL::any::fast_any cat_impl = GL::any::fast_any::instance(10);
+                        cat_impl.m_casted_type = Cat_t;
+                        script_scope.insert_object_here("cat_impl", cat_impl);
+                    }
+                    EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
+                    EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+                }
+            }
+
+            if (auto timer = sw.debug_timer("Var tests"); false) {
+                GL::scope::impl::RootScope
+                    root;
+                root.perform_builtins();
+
+                if (auto script_scope = root.make_scope()) {
+                    GL::any::fast_any x = GL::any::fast_any::instance(100);
+                    GL::any::fast_any y = GL::any::fast_any::instance(100);
+
+                    script_scope.call("+=", { x, y });
+                    EXPECT_EQ(x.cast<int>(), 200);
+                }
+
+                if (auto script_scope = root.make_scope()) {
+                    GL::var x = GL::var(GL::make_shared<GL::any>(100));
+                    GL::var y = GL::var(GL::make_shared<GL::any>(100));
+
+                    EXPECT_EQ(x.get_type(), GL::type_of<int>());
+
+                    script_scope.call("+=", { x.get_data()->fast(), y.get_data()->fast() });
+                    EXPECT_EQ(x.get_data()->cast<int>(), 200);
+
+                    script_scope.call("+=", { x.get_data()->fast(), y.get_data()->fast() });
+                    EXPECT_EQ(x.get_data()->cast<int>(), 300);
+                }
+
+                if (auto script_scope = root.make_scope()) {
+                    script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(100)));
+                    script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+
+                    script_scope.call("+=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                    EXPECT_EQ(script_scope.find_object("x").cast<int>(), 200);
+                }
+
+                if (auto script_scope = root.make_scope()) {
+                    script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(0)));
+                    script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+
+                    script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                    EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                }
+
+                if (auto script_scope = root.make_scope()) {
+                    script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(0)));
+                    script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+                    script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                    EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                }
+                if (auto script_scope = root.make_scope()) {
+                    script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>()));
+                    script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(100)));
+                    script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                    EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+                }
+                if (auto script_scope = root.make_scope()) {
+                    script_scope.insert_object_here("x", GL::var(GL::make_shared<GL::any>(100)));
+                    script_scope.insert_object_here("y", GL::var(GL::make_shared<GL::any>(200)));
+                    script_scope.insert_object_here("z", GL::var(GL::make_shared<GL::any>()));
+                    EXPECT_EQ(script_scope.find_object("x").cast<int>(), 100);
+
+                    script_scope.call("=", { script_scope.find_object("x"), script_scope.find_object("y") });
+                    EXPECT_EQ(script_scope.find_object("x").cast<int>(), 200);
+
+                    EXPECT_EQ(true, script_scope.find_object("x").can_cast(GL::type_of<GL::var&>()));
+
+                    script_scope.call(":=", { script_scope.find_object("x"), script_scope.find_object("z") });
+                    EXPECT_EQ(script_scope.find_object("x").m_casted_type, GL::type_of<GL::var>());
+                }
+                if (auto script_scope = root.make_scope()) {
+                    auto empty_var = script_scope.call("var", {  });
+                    auto initialized_var = script_scope.call("var", { GL::any::fast_any::instance(100) });
+                    auto copied_var = script_scope.call("var", { initialized_var });
+                    auto assigned_var = script_scope.call("=", { script_scope.call("var", {  }), initialized_var });
+
+                    EXPECT_EQ(empty_var.m_casted_type, GL::type_of<GL::var>());
+                    EXPECT_EQ(initialized_var.m_casted_type, GL::type_of<int>());
+                    EXPECT_EQ(copied_var.m_casted_type, GL::type_of<int>());
+                    EXPECT_EQ(assigned_var.m_casted_type, GL::type_of<int&>());
+                    EXPECT_EQ(initialized_var.cast<int>(), 100);
+                    EXPECT_EQ(copied_var.cast<int>(), 100);
+                    EXPECT_EQ(assigned_var.cast<int>(), 100);
+
+                    script_scope.call("+=", { initialized_var, GL::any::fast_any::instance(25) });
+                    script_scope.call("+=", { copied_var, GL::any::fast_any::instance(25) });
+                    script_scope.call("+=", { assigned_var, GL::any::fast_any::instance(25) });
+
+                    EXPECT_EQ(initialized_var.cast<int>(), 175);
+                    EXPECT_EQ(copied_var.cast<int>(), 175);
+                    EXPECT_EQ(assigned_var.cast<int>(), 175);
+                }
+            }
+
+            if (auto timer = sw.debug_timer("Polymorphism var test"); false) {
+                GL::scope::impl::RootScope
+                    root;
+                root.perform_builtins();
+
+                // declare a custom namespace
+                auto& Example = root.make_namespace("Example");
+
+                // within that namespace is an Animal interface class
+                auto& Animal = Example.make_class("Animal");
+                auto Animal_t = Animal.this_type;
+                Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t } }, GL::type_of<std::string>()));
+
+                // within that namespace is an Dog impl class
+                auto& Dog = Example.make_class("Dog");
+                auto Dog_t = Dog.this_type;
+                Dog_t.add_base(Animal_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
+                Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t } }, GL::type_of<std::string>()));
+                Dog.add_function(GL::make_callable(Dog_t.name(), [Dog_t]() -> GL::any::fast_any {
+                    GL::any::fast_any out = GL::any::fast_any::instance(10);
+                    out.m_casted_type = Dog_t;
+                    return out;
+                    }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Dog_t));
+
+                // within that namespace is an Cat impl class
+                auto& Cat = Example.make_class("Cat");
+                auto Cat_t = Cat.this_type;
+                Cat_t.add_base(Animal_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Cat_t));
+                Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t } }, GL::type_of<std::string>()));
+                Cat.add_function(GL::make_callable(Cat_t.name(), [Cat_t]() -> GL::any::fast_any {
+                    GL::any::fast_any out = GL::any::fast_any::instance(10);
+                    out.m_casted_type = Cat_t;
+                    return out;
+                    }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Cat_t));
+
+                if (1) {
+                    auto script_scope = root.make_scope();
+                    script_scope.insert_object_here("dog_impl", script_scope.call("var", { script_scope.call("Dog", {  }) }));
+                    script_scope.insert_object_here("cat_impl", script_scope.call("var", { script_scope.call("Cat", {  }) }));
+                    EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
+                    EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+
+                    EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("dog_impl") }).cast < GL::type>(), Dog_t);
+                    EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
+                    EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
+
+                    // To-Do, test for polymorphism with the casted-down type, having lost its identity. 
+                    //auto found_impl = script_scope.find_object("dog_impl");
+                    //found_impl.m_casted_type = Animal_t;
+                    //print(script_scope.call("speak", { found_impl }).cast<std::string>());
+                }
+
+
+            }
+
+            if (auto timer = sw.debug_timer("Polymorphism dynamic_object var test"); false) {
+                GL::scope::impl::RootScope
+                    root;
+                root.perform_builtins();
+
+                // declare a custom namespace
+                auto& Example = root.make_namespace("Example");
+
+                // within that namespace is an Animal interface class
+                auto& Animal = Example.make_class("Animal");
+                auto Animal_t = Animal.this_type;
+                Animal.add_member_object("is_pet", GL::type_of<bool>(), GL::any::fast_any::instance(bool{ true }));
+                Animal.initialize_basic_member_functions();
+                Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t | GL::type::Reference } }, GL::type_of<std::string>()));
+
+                // within that namespace is an Dog impl class
+                auto& Dog = Example.make_class("Dog");
+                auto Dog_t = Dog.this_type;
+                Dog_t.add_base(Animal_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
+                Dog.add_member_object("name", GL::type_of<std::string>(), GL::any::fast_any::instance(std::string("Ozzy")));
+                Dog.add_member_object("weight", GL::type_of<double>(), GL::any::fast_any::instance(24.0));
+                Dog.initialize_basic_member_functions();
+                Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t | GL::type::Reference } }, GL::type_of<std::string>()));
+
+                // within that namespace is an Cat impl class
+                auto& Cat = Example.make_class("Cat");
+                auto Cat_t = Cat.this_type;
+                Cat_t.add_base(Animal_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Cat_t));
+                Cat.add_member_object("name", GL::type_of<std::string>(), GL::any::fast_any::instance(std::string("Goosie")));
+                Cat.initialize_basic_member_functions();
+                Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t | GL::type::Reference } }, GL::type_of<std::string>()));
+
+                // normal
+                if (1) {
+                    auto script_scope = root.make_scope();
+                    script_scope.insert_object_here("dog_impl", script_scope.call("Dog", {}));
+                    script_scope.insert_object_here("cat_impl", script_scope.call("Cat", {}));
+                    EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
+                    EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+
+                    EXPECT_EQ(4, script_scope.call("length", { script_scope.call("name", {script_scope.find_object("dog_impl")}) }).cast<size_t>());
+                    EXPECT_EQ("Ozzy", script_scope.call("name", { script_scope.find_object("dog_impl") }).cast<std::string&>());
+                    EXPECT_EQ("Goosie", script_scope.call("name", { script_scope.find_object("cat_impl") }).cast<std::string&>());
+                    EXPECT_EQ(true, script_scope.call("is_pet", { script_scope.find_object("cat_impl") }).cast<bool>());
+
+                    EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_impl") }).cast<double&>());
+                    script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(100.0) });
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_impl") }).cast<double>());
+
+                    EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("dog_impl") }).cast < GL::type>(), Dog_t);
+                    EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
+                    EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
+
+                    script_scope.insert_object_here("talk_to", GL::make_callable("", [NearestNS = script_scope.GetNamespace()](GL::any::fast_any const& rhs) {
+                        auto temp_scope = NearestNS->make_scope();
+                        return temp_scope.call("speak", { rhs });
+                    }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const } }));
+                    EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("dog_impl") }).cast<std::string>(), "bark");
+                    EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("cat_impl") }).cast<std::string>(), "meow");
+                }
+
+                // as `var`
+                if (1) {
+                    auto script_scope = root.make_scope();
+                    script_scope.insert_object_here("dog_impl", script_scope.call("var", { script_scope.call("Dog", {  }) }));
+                    script_scope.insert_object_here("cat_impl", script_scope.call("var", { script_scope.call("Cat", {  }) }));
+                    EXPECT_EQ("bark", script_scope.call("speak", { script_scope.find_object("dog_impl") }).cast<std::string>());
+                    EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
+
+                    EXPECT_EQ("Ozzy", script_scope.call("name", { script_scope.find_object("dog_impl") }).cast<std::string&>());
+                    EXPECT_EQ("Goosie", script_scope.call("name", { script_scope.find_object("cat_impl") }).cast<std::string&>());
+                    EXPECT_EQ(true, script_scope.call("is_pet", { script_scope.find_object("cat_impl") }).cast<bool>());
+
+                    EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_impl") }).cast<double&>());
+                    script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(100.0) });
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_impl") }).cast<double>());
+
+                    EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("dog_impl") }).cast < GL::type>(), Dog_t);
+                    EXPECT_EQ(script_scope.call("type_of", { script_scope.find_object("cat_impl") }).cast < GL::type>(), Cat_t);
+                    EXPECT_EQ(script_scope.call("is_derived_from", { script_scope.call("type_of", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(Animal_t) }).cast<bool>(), true);
+
+                    script_scope.insert_object_here("talk_to", GL::make_callable("", [NearestNS = script_scope.GetNamespace()](GL::any::fast_any const& rhs) {
+                        auto temp_scope = NearestNS->make_scope();
+                        return temp_scope.call("speak", { rhs });
+                    }, 0, {}, { { "", Animal_t | GL::type::Reference | GL::type::Const } }));
+                    EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("dog_impl") }).cast<std::string>(), "bark");
+                    EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("cat_impl") }).cast<std::string>(), "meow");
+                }
+
+                // test assignemt and copy constructors
+                if (1) {
+                    auto script_scope = root.make_scope();
+                    script_scope.insert_object_here("dog_1", script_scope.call("Dog", {}));
+                    EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double&>());
+                    script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_1") }), GL::any::fast_any::instance(100.0) });
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
+
+                    script_scope.insert_object_here("dog_2", script_scope.call("Dog", {}));
+                    EXPECT_EQ(24.0, script_scope.call("weight", { script_scope.find_object("dog_2") }).cast<double&>());
+                    script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_2") }), GL::any::fast_any::instance(200.0) });
+                    EXPECT_EQ(200.0, script_scope.call("weight", { script_scope.find_object("dog_2") }).cast<double>());
+
+                    script_scope.insert_object_here("dog_3", script_scope.call("Dog", { script_scope.find_object("dog_1") }));
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_3") }).cast<double&>());
+                    script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_3") }), GL::any::fast_any::instance(300.0) });
+                    EXPECT_EQ(300.0, script_scope.call("weight", { script_scope.find_object("dog_3") }).cast<double>());
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
+
+                    script_scope.insert_object_here("dog_4", script_scope.call("Dog", {}));
+                    script_scope.call("=", { script_scope.find_object("dog_4"), script_scope.find_object("dog_1") });
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_4") }).cast<double&>());
+                    script_scope.call("=", { script_scope.call("weight", { script_scope.find_object("dog_4") }), GL::any::fast_any::instance(400.0) });
+                    EXPECT_EQ(400.0, script_scope.call("weight", { script_scope.find_object("dog_4") }).cast<double>());
+                    EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
+                }
+            }
+
+            if (auto timer = sw.debug_timer("Competing Class Name(s) test"); false) {
+                GL::scope::impl::RootScope
+                    root;
+                root.perform_builtins();
+
+                EXPECT_EQ(root.call("string", {}).m_casted_type, GL::type_of<GL::string>());
+                if (auto& std_ns = root.make_namespace("std")) {
+                    EXPECT_EQ(std_ns.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                    if (auto scope = std_ns.make_scope()) {
+                        EXPECT_EQ(scope.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                    }
+                }
+                EXPECT_EQ(root.call("std::string", {}).m_casted_type, GL::type_of<std::string>());
+                if (auto scope = root.make_scope()) {
+                    EXPECT_EQ(scope.call("string", {}).m_casted_type, GL::type_of<GL::string>());
+                    if (auto& std_ns = root.make_namespace("std")) {
+                        scope.add_using_here(std_ns);
+                        EXPECT_EQ(scope.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                        if (auto scope2 = scope.make_scope()) {
+                            EXPECT_EQ(scope2.call("string", {}).m_casted_type, GL::type_of<std::string>());
+                        }
+                    }
+                }
+
+                EXPECT_EQ(root.find_object("string::npos").cast<size_t>(), GL::string::npos);
+                EXPECT_EQ(root.find_object("::string::npos").cast<size_t>(), GL::string::npos);
+                if (auto& std_ns = root.make_namespace("std")) {
+                    try {
+                        // will crash, since it searches "string" for the object but fails to find it. 
+                        EXPECT_EQ(std_ns.find_object("string::npos").cast<size_t>(), GL::string::npos);
+                    }
+                    catch (...) {}
+                    EXPECT_EQ(std_ns.find_object("::string::npos").cast<size_t>(), GL::string::npos);
+                }
+            }
+#endif
             }
 
 
@@ -4020,8 +4859,9 @@ int main() {
             //auto this_frame = (float)(1.0 / sw.stop());
             //SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
             //print(std::to_string(this_frame) + " this fps. \t" + GL::arena_memory_pool::debug() + "        \t");
-
+#endif
         }
+
     });
 
 #if 0

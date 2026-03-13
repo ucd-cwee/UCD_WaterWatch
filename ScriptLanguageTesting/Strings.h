@@ -7,6 +7,7 @@
 #include <cstdarg>
 #include <ShlDisp.h>
 #include <winnt.h>
+#include "atomic_shared_ptr.h"
 
 // Good Language namespace
 namespace GL {
@@ -17,14 +18,14 @@ namespace GL {
         static constexpr const auto npos = std::string_view::npos;
 
     protected:
-        std::shared_ptr<std::string>
+        GL::shared_ptr<std::string>
             _data; // maintains ownership of the data if necessary
         std::string_view
             data;
         size_type
             _hash{ npos };
 
-        string(std::shared_ptr<std::string> _d, std::string_view d) : _data(std::move(_d)), data(std::move(d)) {};
+        string(GL::shared_ptr<std::string> _d, std::string_view d) : _data(std::move(_d)), data(std::move(d)) {};
 
     public:
         string() {};
@@ -32,10 +33,10 @@ namespace GL {
         string(string&&) = default;
         string& operator=(string const&) = default;
         string& operator=(string&&) = default;
-        virtual ~string() = default;
+        ~string() = default;
 
         template <size_t N> string(const char(&r)[N]) : data(r) {};
-        string(std::string&& _Copy) : _data(std::make_shared<std::string>(std::move(_Copy))) {
+        string(std::string&& _Copy) : _data(GL::make_shared<std::string>(std::move(_Copy))) {
             data = *_data;
         };
         string(std::string_view&& _Copy) : data(_Copy) {};
@@ -64,7 +65,15 @@ namespace GL {
             os << obj.data;
             return os;
         };
-        friend string operator+(string const& A, string const& B) { return string(std::string(A.data) + std::string(B.data)); };
+        friend string operator+(string const& A, string const& B) { 
+            if (A.size() == 0) return B;
+            else if (B.size() == 0) return A;
+            else {
+                std::string temp1(A.data);
+                std::string temp2(A.data);
+                return string(temp1 + temp2);
+            }
+        };
 
     private:
         static size_type	        FindString(std::string_view const& str, std::string_view const& text, bool casesensitive = true, long long start = 0, long long end = -1) {

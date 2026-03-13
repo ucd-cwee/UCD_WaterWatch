@@ -93,9 +93,12 @@ namespace GL {
             , hash_m{ 0 }
             , numConversions{ 0 }
         {
+            argument_defaults_m.reserve(defaults.size() + 1);
             for (auto& x : defaults)
                 argument_defaults_m.push_back(x.fast());
 
+            argument_names_m.reserve(args.size() + 1);
+            argument_types_m.reserve(args.size() + 1);
             for (auto& arg : args) {
                 argument_names_m.push_back(arg.first);
                 argument_types_m.push_back(arg.second);
@@ -559,7 +562,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature("", GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
             };
         public:
             Explicit_Function_Impl(Explicit_Function_Impl const& from)
@@ -602,7 +605,7 @@ namespace GL {
                 std::vector<std::pair<GL::string, GL::type>>
                     args;
                 args.push_back({ "parent", GL::type_of<const Class&>() });
-                return function_signature("", GL::type_of<actualT&>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<actualT&>(), args, std::move(defaults));
             };
 
         public:
@@ -696,7 +699,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature("", GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
             };
         public:
             Static_Function_Impl(Static_Function_Impl const& from)
@@ -757,7 +760,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature("", GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
             };
         public:
             Default_Member_Function_Impl(Default_Member_Function_Impl const& from)
@@ -995,7 +998,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature("", GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
             };
         public:
             Const_Member_Function_Impl(Const_Member_Function_Impl const& from)

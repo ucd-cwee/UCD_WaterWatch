@@ -3,230 +3,14 @@
 #pragma once
 #include <memory>
 #include <set>
-#include <atomic>
-#include <array>
-#include <thread>
 #include "atomic_allocator.h"
 #include "Strings.h"
 // #include "atomic_maps.h"
 #include "ticket_dispensor.h"
 #include "atomic_shared_ptr.h"
 
-// a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
-namespace GL {
-	class fast_shared_mutex {
-	private:
-		mutable std::atomic<long long> mut{ 0 }; // Read, Write
-
-	public:
-		__declspec(noinline) bool try_lock() const {
-			thread_local long long read, planned;
-			read = planned = mut.load(std::memory_order::memory_order_relaxed);
-			if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
-				if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
-					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-						return true; // success!
-					}
-				}
-			}
-			return false;
-		};
-		__declspec(noinline) void unlock() const {
-			thread_local long long read, planned;
-			int i = 0;
-			while (true) {
-				if (++i > 40) std::this_thread::yield();
-				read = planned = mut.load(std::memory_order::memory_order_relaxed);
-				--reinterpret_cast<short*>(&planned)[1];
-				if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-					break; // success!
-				}
-			}
-		};
-		__declspec(noinline) void lock() const {
-			int i = 0;
-			while (!try_lock()) {
-				if (++i > 40) std::this_thread::yield();
-			}
-		};
-
-		__declspec(noinline) bool try_lock_shared() const {
-			thread_local long long read;
-			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
-			if (
-				(reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
-				&& (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
-				) {
-				return true;
-			}
-			else {
-				mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
-				return false;
-			}
-		};
-		__declspec(noinline) void unlock_shared() const {
-			mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
-		};
-		__declspec(noinline) void lock_shared() const {
-			thread_local long long read;
-			read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
-			while (reinterpret_cast<long*>(&read)[1] != 0) {
-				read = mut.load();
-			}
-		};
-
-		// if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
-		// Returns true if this ideal scenario was successful. Returns false otherwise.
-		__declspec(noinline) bool upgrade_lock() const {
-			thread_local long long read, planned;
-			// increment the write count and decrement our read count...
-			//for (int i = 0; i < 40; ++i) {
-			planned = read = mut.load(std::memory_order::memory_order_relaxed);
-			if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
-				if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
-					if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-						return true;
-					}
-				}
-			}
-			//else {
-			//	break;
-			//}
-		//}
-
-			unlock_shared();
-			lock();
-
-			return false;
-		};
-
-	};
-
-	/*
-	*	bucketed_shared_mutex (C) 2017 E. Oriani, ema <AT> fastwebnet <DOT> it
-	*
-	*	This file is part of bucketed_shared_mutex.
-	*
-	*	bucketed_shared_mutex is free software: you can redistribute it and/or modify
-	*	it under the terms of the GNU Lesser General Public License as published by
-	*	the Free Software Foundation, either version 3 of the License, or
-	*	(at your option) any later version.
-	*
-	*	bucketed_shared_mutex is distributed in the hope that it will be useful,
-	*	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	*	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	*	GNU General Public License for more details.
-	*
-	*	You should have received a copy of the GNU General Public License
-	*	along with nettop.  If not, see <http://www.gnu.org/licenses/>.
-	*/
-	template<size_t N = 4>
-	class bucketed_shared_mutex {
-		// purpose of this structure is to hold
-		// status of each individual bucket-mutex
-		// object
-		// Ideally each thread should be mapped to
-		// one entry only of 'el_' during its
-		// lifetime
-		struct entry_lock {
-			const static uint64_t 
-				W_MASK = 0x8000000000000000,
-				R_MASK = ~W_MASK;
-
-			// purpose ot this variable is to hold
-			// in the first bit (W_MASK) if we're locking
-			// in exclusive mode, otherwise use the
-			// reamining 63 bits to count how many R/O
-			// locks we share in this very bucket
-			std::atomic<uint64_t>	wr_lock;
-
-			entry_lock() : wr_lock(0) {
-			}
-		} alignas(64);
-		// array holding all the buckets
-		std::array<entry_lock, N> el_;
-
-		// get index for given thread
-		// could hav used something like std::hash<std::thread::id>()(std::this_thread::get_id())
-		// but honestly using a controlled idx_hint_
-		// seems to be better in terms of putting threads
-		// into buckets evenly
-		// note - thread_local is supposed to be static...
-		inline static size_t get_thread_idx(void) {
-			const thread_local size_t rv = GL::util::get_thread_id() % N;
-			return rv;
-		}
-	public:
-		bucketed_shared_mutex() {}
-
-		void lock_shared(void) {
-			// try to replace the wr_lock with current value incremented by one
-			while (true) {
-				size_t	cur_rw_lock = el_[get_thread_idx()].wr_lock.load();
-				if (entry_lock::W_MASK & cur_rw_lock) {
-					// if someone has got W access yield and retry...
-					std::this_thread::yield();
-					continue;
-				}
-				if (el_[get_thread_idx()].wr_lock.compare_exchange_weak(cur_rw_lock, cur_rw_lock + 1))
-					break;
-			}
-		}
-
-		void unlock_shared(void) {
-			// try to decrement the count
-			while (true) {
-				size_t	cur_rw_lock = el_[get_thread_idx()].wr_lock.load();
-#ifndef _RELEASE
-				if (entry_lock::W_MASK & cur_rw_lock)
-					throw std::runtime_error("Fatal: unlock_shared but apparently this entry is W_MASK locked!");
-#endif //_RELEASE
-				if (el_[get_thread_idx()].wr_lock.compare_exchange_weak(cur_rw_lock, cur_rw_lock - 1))
-					break;
-			}
-		}
-
-		void lock(void) {
-			for (size_t i = 0; i < N; ++i) {
-				// acquire all locks from all buckets
-				while (true) {
-					size_t	cur_rw_lock = el_[i].wr_lock.load();
-					if (cur_rw_lock != 0) {
-						std::this_thread::yield();
-						continue;
-					}
-					// if cur_rw_lock is 0 then proceed
-					if (el_[i].wr_lock.compare_exchange_weak(cur_rw_lock, entry_lock::W_MASK))
-						break;
-				}
-			}
-		}
-
-		void unlock(void) {
-			for (size_t i = 0; i < N; ++i) {
-				// release all locks
-				while (true) {
-					size_t	cur_rw_lock = el_[i].wr_lock.load();
-#ifndef _RELEASE
-					if (cur_rw_lock != entry_lock::W_MASK)
-						throw std::runtime_error("Fatal: unlock but apparently this entry is shared locked or uninitialized!");
-#endif //_RELEASE
-					// then proceed resetting to 0
-					if (el_[i].wr_lock.compare_exchange_weak(cur_rw_lock, 0))
-						break;
-				}
-			}
-		}
-
-		~bucketed_shared_mutex() {
-		}
-	};
-	
-};
-
-
 #define CONST_MAX( x, y ) ( (x) > (y) ? (x) : (y) )
-namespace GL{
+namespace GL {
 	// Single-threaded version of the B-Tree. Fastest version, but is not thread-safe. Nodes are invalidated if removed.
 	template< class objType, class keyType, int maxChildrenPerNode >
 	class bTree {
@@ -638,11 +422,11 @@ namespace GL{
 					p->parent_index = i;
 					// shift everything forward
 
-	#if 0
-					for (j = numChildren; j > i; --j) ch[j] = ch[j - 1];					
-					for (j = numChildren; j > i; --j) ch[j]->parent_index = j;					
+#if 0
+					for (j = numChildren; j > i; --j) ch[j] = ch[j - 1];
+					for (j = numChildren; j > i; --j) ch[j]->parent_index = j;
 					ch[i] = p;
-	#else
+#else
 					std::memmove(&ch[i + 1], &ch[i], sizeof(parallel_binary_search_treeNode*) * (numChildren - i));
 					ch[i] = p;
 					ch = &ch[i];
@@ -650,7 +434,7 @@ namespace GL{
 						++ch;
 						(*ch)->parent_index = j;
 					}
-	#endif
+#endif
 					++numChildren;
 				}
 			}
@@ -698,7 +482,7 @@ namespace GL{
 					int
 						j = numChildren - 1;
 
-	#if 0
+#if 0
 					for (; i < (numChildren - 1); ++i) {
 						ch[i] = ch[i + 1];
 						ch[i]->parent_index = i;
@@ -706,7 +490,7 @@ namespace GL{
 					ch[i] = nullptr;
 					--numChildren;
 					if (numChildren > 0) this->key = ch[numChildren - 1]->key;
-	#else
+#else
 					std::memmove(&ch[i], &ch[i + 1], sizeof(parallel_binary_search_treeNode*) * ((numChildren - i) - 1));
 					if (numChildren > 1) this->key = ch[numChildren - 2]->key;
 					ch[j] = nullptr;
@@ -716,7 +500,7 @@ namespace GL{
 						++ch;
 					}
 					--numChildren;
-	#endif
+#endif
 					return out;
 				}
 			}
@@ -735,14 +519,14 @@ namespace GL{
 			};
 			parallel_binary_search_treeNode*
 				binomial_search_smallest_greater_equal_to(keyType K) {
-	#if 0
+#if 0
 				parallel_binary_search_treeNode* child = this->firstChild();
 				for (; child->next(); child = child->next()) {
 					if (K <= child->key)
 						break;
 				}
 				return child;
-	#else
+#else
 				int
 					len,
 					mid,
@@ -780,7 +564,7 @@ namespace GL{
 				mid = offset + (int)res;
 				if (mid == numChildren) return _childs[offset];
 				else return _childs[mid];
-	#endif
+#endif
 			};
 
 		};
@@ -1188,7 +972,7 @@ namespace GL{
 		}
 
 
-	#if 0
+#if 0
 		std::pair<parallel_binary_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
 			NodeFindLargestSmallerEqual(keyType key) {
 			parallel_binary_search_treeNode
@@ -1238,7 +1022,7 @@ namespace GL{
 			locking.clear();
 			return out;
 		};
-	#endif
+#endif
 		std::pair<parallel_binary_search_treeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 			GetRoot() {
 			std::pair<parallel_binary_search_treeNode*, locker> out;
@@ -1250,7 +1034,7 @@ namespace GL{
 			GetRoot(locker const& locked) {
 			return root;
 		};
-	#if 0
+#if 0
 		static parallel_binary_search_treeNode* // goes through all nodes of the tree		
 			GetNext(parallel_binary_search_treeNode* node, locker& locking) {
 			if (node->firstChild) {
@@ -1264,7 +1048,7 @@ namespace GL{
 			}
 
 		};
-	#endif
+#endif
 		static parallel_binary_search_treeNode* // goes through all leaf nodes of the tree		
 			GetNextLeaf(parallel_binary_search_treeNode* node, locker& locking) {
 			if (!node) return nullptr;
@@ -1454,13 +1238,13 @@ namespace GL{
 					p->parent_index = i;
 					// shift everything forward
 
-	#if 0
+#if 0
 					for (j = numChildren; j > i; --j) {
 						ch[j] = ch[j - 1];
 						ch[j]->parent_index = j;
 					}
 					ch[i] = p;
-	#else
+#else
 					std::memmove(&ch[i + 1], &ch[i], sizeof(binary_search_treeNode*) * (numChildren - i));
 					ch[i] = p;
 					ch = &ch[i];
@@ -1468,7 +1252,7 @@ namespace GL{
 						++ch;
 						(*ch)->parent_index = j;
 					}
-	#endif
+#endif
 					++numChildren;
 				}
 			}
@@ -1516,7 +1300,7 @@ namespace GL{
 					int
 						j = numChildren - 1;
 
-	#if 0
+#if 0
 					for (; i < (numChildren - 1); ++i) {
 						ch[i] = ch[i + 1];
 						ch[i]->parent_index = i;
@@ -1524,7 +1308,7 @@ namespace GL{
 					ch[i] = nullptr;
 					--numChildren;
 					if (numChildren > 0) this->key = ch[numChildren - 1]->key;
-	#else
+#else
 					std::memmove(&ch[i], &ch[i + 1], sizeof(binary_search_treeNode*) * ((numChildren - i) - 1));
 					if (numChildren > 1) this->key = ch[numChildren - 2]->key;
 					ch[j] = nullptr;
@@ -1534,7 +1318,7 @@ namespace GL{
 						++ch;
 					}
 					--numChildren;
-	#endif
+#endif
 					return out;
 				}
 			}
@@ -1553,14 +1337,14 @@ namespace GL{
 			};
 			binary_search_treeNode*
 				binomial_search_smallest_greater_equal_to(keyType K) {
-	#if 0
+#if 0
 				binary_search_treeNode* child = this->firstChild();
 				for (; child->next(); child = child->next()) {
 					if (K <= child->key)
 						break;
 				}
 				return child;
-	#else
+#else
 				//if (K >= children()[numChildren - 1]->key) {
 				//	// it will be one of the final children
 				//	for (int i = numChildren - 2; i >= 0; --i) {
@@ -1606,7 +1390,7 @@ namespace GL{
 				if (mid == numChildren) return children()[offset];
 				else return children()[mid];
 				//}
-	#endif
+#endif
 			};
 
 		};
@@ -1795,7 +1579,7 @@ namespace GL{
 			return nullptr;
 		};
 
-	#if 0
+#if 0
 		std::pair<binary_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
 			NodeFindLargestSmallerEqual(keyType key) {
 			binary_search_treeNode
@@ -1845,12 +1629,12 @@ namespace GL{
 			locking.clear();
 			return out;
 		};
-	#endif
+#endif
 		binary_search_treeNode* // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 			GetRoot() {
 			return root;
 		};
-	#if 0
+#if 0
 		static binary_search_treeNode* // goes through all nodes of the tree		
 			GetNext(binary_search_treeNode* node, locker& locking) {
 			if (node->firstChild) {
@@ -1864,7 +1648,7 @@ namespace GL{
 			}
 
 		};
-	#endif
+#endif
 		static binary_search_treeNode* // goes through all leaf nodes of the tree		
 			GetNextLeaf(binary_search_treeNode* node) {
 			if (!node) return nullptr;
@@ -2083,7 +1867,7 @@ namespace GL {
 												free_block->sub_buffer = nullptr;
 												this->free_parent_block(this->allocations[free_block->parent_buffer]);
 												this->allocations[free_block->parent_buffer] = nullptr;
-												allocation_tickets.return_ticket(free_block->parent_buffer);												
+												allocation_tickets.return_ticket(free_block->parent_buffer);
 												free_tree.Remove(tree_node, tree_locked);
 												//free_block->in_tree = false;
 												free_block->unlock();
@@ -2111,7 +1895,7 @@ namespace GL {
 												//}
 
 												break;
-											}											
+											}
 											free_tree.Remove(tree_node, tree_locked); // invalidates the tree
 											//free_block->in_tree = false;
 											break;
@@ -2189,7 +1973,7 @@ namespace GL {
 			//if (!free_block->in_tree) {
 				//free_block->in_tree = true;
 				//free_block->unlock();
-				free_tree.Add(free_block, free_block->length);
+			free_tree.Add(free_block, free_block->length);
 			//}
 			//else {
 			//	free_block->unlock();
@@ -2288,24 +2072,24 @@ namespace GL {
 		using dynamic_block = typename dynamic_allocator< buffer_type >::dynamic_block;
 		using unique_ptr = typename dynamic_allocator< buffer_type >::unique_ptr;
 		using shared_ptr = typename dynamic_allocator< buffer_type >::shared_ptr;
-		
+
 		size_t size() {
 			size_t out = 0;
 			allocator.for_each([&out](auto& alloc) {
 				out += alloc.size();
-			});
+				});
 			return out;
 		};
 		size_t num_threads() {
 			size_t out = 0;
 			allocator.for_each([&out](auto& alloc) {
 				out += 1;
-			});
+				});
 			return out;
 		};
 		parallel_dynamic_allocator(
-			std::function<buffer_type(unsigned long long)> && _alloc_block,
-			std::function<void(buffer_type&)> && _free_block
+			std::function<buffer_type(unsigned long long)>&& _alloc_block,
+			std::function<void(buffer_type&)>&& _free_block
 		)
 			: allocator{}
 			, alloc_block{ std::move(_alloc_block) }
@@ -2340,7 +2124,7 @@ namespace GL {
 			if (N > 0) {
 				return shared_ptr(this->Alloc(N), [this](dynamic_block* p) {
 					this->Free(p);
-			    });
+					});
 			}
 			else {
 				return nullptr;
@@ -2354,18 +2138,28 @@ namespace GL {
 #include <variant>
 
 namespace GL {
-
 	// Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
     // Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
-	template< class objType, class keyType, int maxChildrenPerNode = sizeof(objType) / sizeof(sizeof(objType*)) < 5 ? 5 : sizeof(objType) / sizeof(sizeof(objType*)) >
+	template< class objType, class keyType, int maxChildrenPerNode = 10>
 	class epoch_search_tree {
+	private:
+		GL::atomic_epoch_allocator< objType >
+			objAllocator;
+
 	public:
 		using lock_type = fast_shared_mutex; // std::shared_mutex; // fast_shared_mutex; //  
 		class epoch_search_treeNode {
 		public:
-			using char_array_t = unsigned char[(sizeof(objType) > (sizeof(epoch_search_treeNode*) * maxChildrenPerNode)) ? sizeof(objType) : (sizeof(epoch_search_treeNode*) * maxChildrenPerNode)];
-		public:
-			char_array_t
+			epoch_search_treeNode() = default;
+			epoch_search_treeNode(epoch_search_treeNode const&) = delete;
+			epoch_search_treeNode(epoch_search_treeNode&&) = delete;
+			epoch_search_treeNode& operator=(epoch_search_treeNode const&) = delete;
+			epoch_search_treeNode& operator=(epoch_search_treeNode&&) = delete;
+			~epoch_search_treeNode() = default;
+
+			objType
+				* ptr;
+			std::array<epoch_search_treeNode*, maxChildrenPerNode>
 				data;
 			epoch_search_treeNode // parent node
 				* parent;
@@ -2375,24 +2169,22 @@ namespace GL {
 				numChildren;
 			int
 				parent_index;
+
 			bool
-				is_leaf;
-
-			epoch_search_treeNode() = default;
-			~epoch_search_treeNode() {
-				if (is_leaf) {
-					reinterpret_cast<objType*>(&data[0])->~objType();
-				}
+				is_leaf() const {
+				return ptr;
 			};
-
+			template <typename... Args>
+			void instantiate_object(epoch_search_tree* Parent, Args&&... args) {
+				ptr = Parent->objAllocator.Alloc(std::move(args)...);
+			};
 			objType*
 				object() {
-				if (numChildren > 0 || !is_leaf) return nullptr;
-				return reinterpret_cast<objType*>(&data[0]);
+				return ptr;
 			};
 			epoch_search_treeNode**
 				children() {
-				return reinterpret_cast<epoch_search_treeNode**>(&data[0]);
+				return &data[0];
 			};
 
 			epoch_search_treeNode* // next sibling
@@ -2543,7 +2335,7 @@ namespace GL {
 				}
 			};
 			__declspec(noinline) epoch_search_treeNode*
-				binomial_search_smallest_greater_equal_to(keyType K) {
+				binomial_search_smallest_greater_equal_to(keyType const& K) {
 #if 0
 				epoch_search_treeNode* child = this->firstChild();
 				for (; child->next(); child = child->next()) {
@@ -2740,23 +2532,39 @@ namespace GL {
 			};
 		};
 	public:
-		using GuardType = typename decltype(nodeAllocator)::GuardType;
+		class EpochGuard {
+		private:
+			typename typename decltype(nodeAllocator)::GuardType guard_1;
+			typename typename decltype(objAllocator)::GuardType guard_2;
+
+		public:
+			EpochGuard(epoch_search_tree const* parent) : guard_1{ parent->nodeAllocator.ProtectCurrentEpoch() }, guard_2{ parent->objAllocator.ProtectCurrentEpoch() } {};
+			EpochGuard(EpochGuard const&) = delete;
+			EpochGuard(EpochGuard&& rhs) = delete;
+			EpochGuard& operator=(EpochGuard const&) = delete;
+			EpochGuard& operator=(EpochGuard&&) = delete;
+			~EpochGuard() = default;
+		};
+
+		using GuardType = typename EpochGuard;
 		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
-			return nodeAllocator.ProtectCurrentEpoch();
+			return EpochGuard(this);
 		};
 		void ProtectCurrentEpoch_Fast() const {
 			nodeAllocator.ProtectCurrentEpoch_Fast();
+			objAllocator.ProtectCurrentEpoch_Fast();
 		};
 
 		epoch_search_tree()
-			: nodeAllocator()
+			: objAllocator()
+			, nodeAllocator()
 			, root{ nullptr }
 			, first{ nullptr }
 			, last{ nullptr }
 			, mut()
 			, count{ 0 }
 		{
-			// root = AllocNode(false);
+			root = AllocNode(false);
 			// ProtectCurrentEpoch_Fast();
 		};
 		epoch_search_tree(epoch_search_tree const&)
@@ -2771,7 +2579,94 @@ namespace GL {
 			= default;
 
 		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
-			Add(objType&& object, keyType key, locker const& Locking = locker(), bool unique = true) {
+			GetOrInstance(keyType const& key) {
+			if (auto [try_found, locked] = NodeFindSmallestLargerEqual(key, false); try_found) {
+				return try_found;
+			}
+			else {
+				epoch_search_treeNode
+					* node,
+					* child,
+					* newNode;
+				locker
+					locking;
+				newNode
+					= AllocNode(true);
+				newNode->key
+					= key;
+				// newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+
+				if (!locking) {
+					locking.push_back(mut); // locked
+				}
+
+				if (root == nullptr) root = AllocNode(false); // start fresh
+				if (root == nullptr) throw std::runtime_error("Root should not have been nullptr");
+
+				if (root->numChildren >= maxChildrenPerNode) { // make a new root and split
+					node = AllocNode(false);
+					node->key = root->key;
+					node->add_child(root);
+					SplitNode(root);
+					root = node;
+					node = nullptr;
+				}
+
+				for (node = root; node->numChildren > 0; node = child) {
+					if (key > node->key) node->key = key; // in prep for the insertion
+
+					// find the first child with a key larger equal to the key of the new node
+					child = node->binomial_search_smallest_greater_equal_to(key);
+
+					// we are inside of a branch of leafs -- we will do the insert.
+					if (child->object()) {
+						if (key <= child->key) {
+							if (key == child->key) {
+								// *child->object() = std::move(*newNode->object());
+								FreeNode(newNode);
+								return child;
+							}
+
+							// insert new node before child
+							newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+							node->add_child_at(newNode, child->parent_index);
+						}
+						else {
+							// insert new node after child
+							newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+							node->add_child_at(newNode, child->parent_index + 1);
+						}
+
+						if (!first || (first->key > newNode->key)) first = newNode;
+						if (!last || (last->key < newNode->key)) last = newNode;
+
+						++count;
+						return newNode;
+					}
+					else if (child->numChildren >= maxChildrenPerNode) {
+						SplitNode(child);
+						if (key <= child->prev()->key) child = child->prev();
+					}
+				}
+
+				// we only end up here if the root node is empty
+				newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+				root->add_child(newNode);
+
+				if (!first || (first->key > newNode->key)) first = newNode;
+				if (!last || (last->key < newNode->key)) last = newNode;
+
+				++count;
+				return newNode;
+			}
+		};
+		objType& operator[](keyType const& key) {
+			return *GetOrInstance(key)->object();
+		};
+
+
+		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
+			Add(objType&& object, keyType const& key, locker const& Locking = locker(), bool unique = true) {
 			epoch_search_treeNode
 				* node,
 				* child,
@@ -2779,9 +2674,10 @@ namespace GL {
 			locker&
 				locking = const_cast<locker&>(Locking);
 			newNode
-				= AllocNode(true, std::move(object));
+				= AllocNode(true);
 			newNode->key
 				= key;
+			newNode->instantiate_object(const_cast<epoch_search_tree*>(this), std::move(object));
 
 			if (!locking) {
 				locking.push_back(mut); // locked
@@ -2914,7 +2810,7 @@ namespace GL {
 			return true;
 		};
 		std::pair<epoch_search_treeNode*, locker> // find an object using the given key
-			NodeFind(keyType key, bool for_removal = false) {
+			NodeFind(keyType const& key, bool for_removal = false) {
 			std::pair<epoch_search_treeNode*, locker>
 				out;
 			epoch_search_treeNode*&
@@ -2951,7 +2847,7 @@ namespace GL {
 			return out;
 		};
 		std::pair<epoch_search_treeNode*, locker> // find an object using the given key
-			NodeFind_ForRemoval(keyType key) {
+			NodeFind_ForRemoval(keyType const& key) {
 			return NodeFind(key, true);
 		};
 		locker
@@ -2981,7 +2877,7 @@ namespace GL {
 		};
 
 		std::pair<epoch_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
-			NodeFindSmallestLargerEqual(keyType key, bool for_removal = false) {
+			NodeFindSmallestLargerEqual(keyType const& key, bool for_removal = false) {
 			std::pair<epoch_search_treeNode*, locker>
 				out;
 			epoch_search_treeNode*&
@@ -3017,7 +2913,7 @@ namespace GL {
 			return out;
 		};
 		epoch_search_treeNode* // find an object with the smallest key larger equal the given key
-			NodeFindSmallestLargerEqual_Locked(keyType key, locker const& locked) {
+			NodeFindSmallestLargerEqual_Locked(keyType const& key, locker const& locked) {
 			epoch_search_treeNode*
 				node = nullptr;
 
@@ -3043,11 +2939,9 @@ namespace GL {
 			return node;
 		};
 		std::pair<epoch_search_treeNode*, locker> // find an object with the smallest key larger equal the given key
-			NodeFindSmallestLargerEqual_ForRemoval(keyType key) {
+			NodeFindSmallestLargerEqual_ForRemoval(keyType const& key) {
 			return NodeFindSmallestLargerEqual(key, true);
 		}
-
-
 
 #if 0
 		std::pair<epoch_search_treeNode*, locker> // find an object with the largest key smaller equal the given key
@@ -3107,10 +3001,18 @@ namespace GL {
 			out.first = root;
 			return out;
 		};
+		std::pair<epoch_search_treeNode*, locker> // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
+			GetRootShared() {
+			std::pair<epoch_search_treeNode*, locker> out;
+			out.second.push_back_shared(mut);
+			out.first = root;
+			return out;
+		};
 		epoch_search_treeNode* // returns the root node of the tree, with a locker that can be used for iteration. The locker has already locked the root. 
 			GetRoot(locker const& locked) {
 			return root;
 		};
+
 #if 0
 		static epoch_search_treeNode* // goes through all nodes of the tree		
 			GetNext(epoch_search_treeNode* node, locker& locking) {
@@ -3126,6 +3028,7 @@ namespace GL {
 
 		};
 #endif
+
 		static epoch_search_treeNode* // goes through all leaf nodes of the tree		
 			GetNextLeaf(epoch_search_treeNode* node, locker& locking) {
 			if (!node) return nullptr;
@@ -3169,7 +3072,7 @@ namespace GL {
 					}
 					else {
 						break;
-					}					
+					}
 				}
 				return node;
 			}
@@ -3195,7 +3098,7 @@ namespace GL {
 			}
 		};	// goes through all leaf nodes of the tree;
 
-		size_t 
+		size_t
 			size() const {
 			auto locked{ std::shared_lock(mut) };
 			return (size_t)count;
@@ -3272,20 +3175,16 @@ namespace GL {
 			//}
 		};
 	private:
-		template <typename... TArgs>
 		epoch_search_treeNode*
-			AllocNode(bool is_leaf, TArgs &&... args) {
+			AllocNode(bool is_leaf) {
 			epoch_search_treeNode
 				* node;
 
 			node = nodeAllocator.Alloc();
 			if (is_leaf) {
-				node->is_leaf = true;				
-				new (reinterpret_cast<void*>(&node->data[0])) objType(std::forward<TArgs>(args)...);
+
 			}
 			else {
-				node->is_leaf = false;
-				std::memset(&node->data[0], 0, sizeof(epoch_search_treeNode::char_array_t));
 				for (int i = 0; i < maxChildrenPerNode; ++i) node->children()[i] = nullptr;
 			}
 
@@ -3299,7 +3198,8 @@ namespace GL {
 		__declspec(noinline) void
 			FreeNode(epoch_search_treeNode* node) {
 			if (node) {
-				nodeAllocator.Free(node);
+				if (node->is_leaf()) objAllocator.Free(node->ptr);
+				nodeAllocator.Free(node);				
 			}
 		};
 		void // will split node by creating a neighbor next to it in the parent node and sharing half its children
@@ -3345,9 +3245,9 @@ namespace GL {
 	};
 
 	template< class objType, class keyType>
-	class epoch_map{
+	class epoch_map {
 	private:
-		mutable epoch_search_tree<objType, keyType, sizeof(objType) / sizeof(sizeof(objType*)) < 5 ? 5 : sizeof(objType) / sizeof(sizeof(objType*)) >
+		mutable epoch_search_tree<objType, keyType, 10>
 			tree;
 		using GuardType = typename decltype(tree)::GuardType;
 
@@ -3370,8 +3270,8 @@ namespace GL {
 				second;
 
 			WrappedReference(
-				const keyType& _first, 
-				objType& _second, 
+				const keyType& _first,
+				objType& _second,
 				const epoch_map* _parent)
 				: first{ _first }
 				, second{ _second }
@@ -3389,7 +3289,7 @@ namespace GL {
 				first;
 			objType&
 				second;
-			
+
 			WrappedReferenceFast(const keyType* _first, objType* _second)
 				: first{ *_first }
 				, second{ *_second }
@@ -3419,15 +3319,15 @@ namespace GL {
 			(void)tree.Add(std::move(value), time);
 		};
 		objType& // throws if the key is not found. 
-			at(const keyType& time) const {			
+			at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
 				ProtectCurrentEpoch_Fast();
 				return *node->object();
 			}
-			throw std::range_error("Could not find key");			
+			throw std::range_error("Could not find key");
 		};
 		objType* // returns nullptr if the key is not found. 
-			try_at(const keyType& time) const {			
+			try_at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
 				ProtectCurrentEpoch_Fast();
 				return node->object();
@@ -3438,12 +3338,12 @@ namespace GL {
 			operator[](const keyType& time) {
 			ProtectCurrentEpoch_Fast();
 			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();
-			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();			
-			else if (node = tree.Add({}, time, locker); node) return *node->object();			
-			else throw std::range_error("Could not find key");			
+			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();
+			else if (node = tree.Add({}, time, locker); node) return *node->object();
+			else throw std::range_error("Could not find key");
 		};
 		bool // optionally get a copy of the object being deleted. 
-			erase(const keyType& time, objType* out = nullptr) const {			
+			erase(const keyType& time, objType* out = nullptr) const {
 			if (auto [node, locker] = tree.NodeFind(time, true); node) {
 				ProtectCurrentEpoch_Fast();
 				if (out) *out = *node->object();
@@ -3451,7 +3351,7 @@ namespace GL {
 			}
 			return false;
 		};
-		void 
+		void
 			clear() {
 			ProtectCurrentEpoch_Fast();
 			auto locked = tree.lock();
@@ -3506,7 +3406,7 @@ namespace GL {
 				else {
 					_data = { nullptr, nullptr };
 				}
-				return *this; 
+				return *this;
 			}
 			inline Iterator operator++(int) { Iterator tmp(*this); this->operator++(); return tmp; }
 
@@ -3524,7 +3424,7 @@ namespace GL {
 				if (!rhs._ptr) return true;
 				return _ptr->key >= rhs._ptr->key;
 			};
-			inline bool operator<(const Iterator& rhs) const { return !operator>=(rhs); };			
+			inline bool operator<(const Iterator& rhs) const { return !operator>=(rhs); };
 			inline bool operator<=(const Iterator& rhs) const { return !operator>(rhs); };
 
 		protected:
@@ -3541,11 +3441,11 @@ namespace GL {
 		using iterator = Iterator;
 		using const_iterator = iterator;
 
-		auto begin() { 
+		auto begin() {
 			auto locked = this->tree.lock_shared();
 			return Iterator(this, this->tree.GetNextLeaf(this->tree.GetRoot(locked), locked));
 		};
-		auto end() { 
+		auto end() {
 			return Iterator(nullptr, nullptr);
 		};
 		auto cbegin() const { return const_cast<epoch_map*>(this)->begin(); };

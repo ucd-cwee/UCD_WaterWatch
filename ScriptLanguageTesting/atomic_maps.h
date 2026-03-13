@@ -184,7 +184,7 @@ namespace GL {
         atomic_epoch_allocator(atomic_epoch_allocator&&) = delete;
         atomic_epoch_allocator& operator=(atomic_epoch_allocator const&) = delete;
         atomic_epoch_allocator& operator=(atomic_epoch_allocator&&) = delete;
-        ~atomic_epoch_allocator() = default;
+        ~atomic_epoch_allocator() {};
 
         void unsafe_unload() {
             _alloc.unsafe_unload();
@@ -200,6 +200,7 @@ namespace GL {
         };
         void ProtectCurrentEpoch_Fast() const {
             if (const_cast<TLS*>(&*_TLS)->_scope_count == 0) {
+                const_cast<atomic_epoch_allocator*>(this)->RunGC();
                 const_cast<TLS*>(&*_TLS)->ForwardEpoch(GL::util::get_current_epoch());
             }
         };
@@ -476,6 +477,10 @@ namespace GL {
     public:
         using GuardType = typename EpochGuard;
         EpochGuard ProtectCurrentEpoch() const { return EpochGuard(this); };
+        void ProtectCurrentEpoch_Fast() const { 
+            const_cast<atomic_btree*>(this)->objAllocator->ProtectCurrentEpoch_Fast();
+            const_cast<atomic_btree*>(this)->nodeAllocator.ProtectCurrentEpoch_Fast();
+        };
 
         atomic_btree()
             : Num(0)
@@ -1128,6 +1133,10 @@ namespace GL {
             ProtectCurrentEpoch() const {
             return tree->ProtectCurrentEpoch();
         };
+        auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
+            ProtectCurrentEpoch_Fast() const {
+            return tree->ProtectCurrentEpoch_Fast();
+        };
         size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
             size() const {
             return tree->GetNodeCount();
@@ -1291,7 +1300,7 @@ namespace GL {
         };
         bool // erase the value pair at the specified key. Optionally, can copy the value at the key before erasure.
             erase(const KeyType& time, ValueType* out = nullptr) {
-            auto g{ tree->ProtectCurrentEpoch() };
+            auto g{ tree->ProtectCurrentEpoch_fast() };
             return tree->RemoveAt(time, out);
         };
         void // clear the map

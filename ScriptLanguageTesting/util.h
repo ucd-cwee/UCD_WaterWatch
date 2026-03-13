@@ -10,6 +10,8 @@
 #include <tuple>
 #include <ShlDisp.h>
 #include <winnt.h>
+#include <mutex>
+#include <shared_mutex>
 
 // Good Language namespace
 namespace GL {
@@ -117,7 +119,7 @@ namespace GL {
 		Iterator cend() const { return end(); };
 #pragma endregion 
 
-// Sequences
+// Good Language namespace
 namespace GL {
     /// <summary>
     /// Iterator that steps through a list, without needing to instance the whole list. 
@@ -215,8 +217,9 @@ namespace GL {
     };
 };
 
-// Deferred Objects (instantiate when needed or used)
+// Good Language namespace
 namespace GL {
+    // Deferred Objects (instantiate when needed or used)
     // Thread-safe wrapper that only initializes an object when actually used. May simply never initialize an object if never used. 
     template <typename T>
     class deferred {
@@ -267,6 +270,219 @@ namespace GL {
     };
 };
 
+// Good Language namespace
+namespace GL {
+    // a fast alternative to the GoodLang::fast_shared_mutex when prioritizing readers over writers. 
+    class fast_shared_mutex {
+    private:
+        mutable std::atomic<long long> mut; // Read, Write
+
+    public:
+        fast_shared_mutex() : mut{ 0 } {};
+        fast_shared_mutex(fast_shared_mutex const&) : mut{ 0 } {};
+        fast_shared_mutex(fast_shared_mutex&&) : mut{ 0 } {};
+        fast_shared_mutex& operator=(fast_shared_mutex const&) { return *this; };
+        fast_shared_mutex& operator=(fast_shared_mutex&&) { return *this; };
+        ~fast_shared_mutex() = default;
+
+        __declspec(noinline) bool try_lock() const {
+            thread_local long long read, planned;
+            read = planned = mut.load(std::memory_order::memory_order_relaxed);
+            if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
+                if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
+                    if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                        return true; // success!
+                    }
+                }
+            }
+            return false;
+        };
+        __declspec(noinline) void unlock() const {
+            thread_local long long read, planned;
+            int i = 0;
+            while (true) {
+                if (++i > 40) std::this_thread::yield();
+                read = planned = mut.load(std::memory_order::memory_order_relaxed);
+                --reinterpret_cast<short*>(&planned)[1];
+                if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                    break; // success!
+                }
+            }
+        };
+        __declspec(noinline) void lock() const {
+            int i = 0;
+            while (!try_lock()) {
+                if (++i > 40) std::this_thread::yield();
+            }
+        };
+
+        __declspec(noinline) bool try_lock_shared() const {
+            thread_local long long read;
+            read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+            if (
+                (reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
+                && (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
+                ) {
+                return true;
+            }
+            else {
+                mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+                return false;
+            }
+        };
+        __declspec(noinline) void unlock_shared() const {
+            mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
+        };
+        __declspec(noinline) void lock_shared() const {
+            thread_local long long read;
+            read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+            while (reinterpret_cast<long*>(&read)[1] != 0) {
+                read = mut.load();
+            }
+        };
+
+        // if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
+        // Returns true if this ideal scenario was successful. Returns false otherwise.
+        __declspec(noinline) bool upgrade_lock() const {
+            thread_local long long read, planned;
+            // increment the write count and decrement our read count...
+            //for (int i = 0; i < 40; ++i) {
+            planned = read = mut.load(std::memory_order::memory_order_relaxed);
+            if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
+                if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
+                    if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                        return true;
+                    }
+                }
+            }
+            //else {
+            //	break;
+            //}
+        //}
+
+            unlock_shared();
+            lock();
+
+            return false;
+        };
+
+    };
+};
+
+// Good Language namespace
+namespace GL {
+    // Thread-safe wrapper that only initializes an object when actually used. Allows locking the object (shared or exclusive)
+    template <class T> 
+    class shared_lockable {
+    private:
+        deferred<T> obj;
+        fast_shared_mutex mut;
+
+    public:
+        class locked {
+        private:
+            T& obj;
+            fast_shared_mutex* mut;
+        public: 
+            locked(T& _obj, fast_shared_mutex& _mut) : obj(_obj), mut(&_mut) {
+                mut->lock();
+            };
+            locked(locked const&) = delete;
+            locked(locked&&) = delete;
+            locked& operator=(locked const&) = delete;
+            locked& operator=(locked&&) = delete;
+            ~locked() {
+                if (mut) mut->unlock();
+            };
+
+            void unlock() {
+                if (mut) {
+                    mut->unlock();
+                    mut = nullptr;
+                }
+            };
+            T* operator->() {
+                return &obj;
+            };
+            T& operator*() {
+                return obj;
+            };
+            const T* operator->() const {
+                return &obj;
+            };
+            const T& operator*() const {
+                return obj;
+            };
+
+        };
+        class shared_locked {
+        private:
+            T& obj;
+            fast_shared_mutex* mut;
+        public:
+            shared_locked(T& _obj, fast_shared_mutex& _mut) : obj(_obj), mut(&_mut) {
+                mut->lock_shared();
+            };
+            shared_locked(shared_locked const&) = delete;
+            shared_locked(shared_locked&&) = delete;
+            shared_locked& operator=(shared_locked const&) = delete;
+            shared_locked& operator=(shared_locked&&) = delete;
+            ~shared_locked() {
+                if (mut) mut->unlock_shared();
+            };
+            void unlock_shared() {
+                if (mut) {
+                    mut->unlock_shared();
+                    mut = nullptr;
+                }
+            };
+            T* operator->() {
+                return &obj;
+            };
+            T& operator*() {
+                return obj;
+            };
+            const T* operator->() const {
+                return &obj;
+            };
+            const T& operator*() const {
+                return obj;
+            };
+        };
+
+        shared_lockable() = default;
+        shared_lockable(shared_lockable const& rhs) {
+            auto locked1 = std::shared_lock(rhs.mut);
+            obj = rhs.obj;
+        };
+        shared_lockable(shared_lockable && rhs) {
+            auto locked1 = std::scoped_lock(rhs.mut);
+            obj = std::move(rhs.obj);
+        };
+        shared_lockable& operator=(shared_lockable const& rhs) {
+            auto locked1 = std::shared_lock(rhs.mut);
+            auto locked2 = std::scoped_lock(mut);
+            obj = rhs.obj;
+            return *this;
+        };
+        shared_lockable& operator=(shared_lockable&& rhs) {
+            auto locked1 = std::scoped_lock(rhs.mut);
+            auto locked2 = std::scoped_lock(mut);
+            obj = std::move(rhs.obj);
+            return *this;
+        };
+        ~shared_lockable() = default;
+
+    public:
+        locked lock() const {
+            return locked(*const_cast<shared_lockable*>(this)->obj, const_cast<shared_lockable*>(this)->mut);
+        };
+        shared_locked lock_shared() const {
+            return shared_locked(*const_cast<shared_lockable*>(this)->obj, const_cast<shared_lockable*>(this)->mut);
+        };
+        operator bool() const { return (bool)obj; };
+    };
+};
 
 
 

@@ -168,7 +168,8 @@
     <PreBuildEvent>
       <Command>
       </Command>
-      <Message>xcopy /y /d "$(SolutionDir)arrayfire\lib\*.dll" "$(OutDir)"</Message>
+      <Message>
+      </Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

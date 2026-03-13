@@ -163,7 +163,8 @@
       <AdditionalDependencies>OpenCL.lib;</AdditionalDependencies>
     </Lib>
     <PreBuildEvent>
-      <Command>xcopy /y /d "$(SolutionDir)arrayfire\lib\*.dll" "$(OutDir)"</Command>
+      <Command>
+      </Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
