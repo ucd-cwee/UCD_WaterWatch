@@ -27,6 +27,13 @@ namespace GL {
             return out;
         };
 		void impl::RootScope::perform_builtins() {
+            // type-casting or language support
+            if (1) {
+                // this->add_function(GL::make_callable("reference_cast", [](GL::any::fast_any const& any_type) -> GL::any::fast_any { return any_type | GL::type::Reference; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                // this->add_function(GL::make_callable("reinterpret_cast", [](GL::any::fast_any from, GL::type const& to_type) -> GL::any::fast_any { from.m_casted_type = to_type; return from; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                // this->add_function(GL::make_callable("const_cast", [](GL::any::fast_any const& any_type) -> GL::any::fast_any { return any_type - GL::type::Const; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+            }
+
             // basic numbers
             if (1) {
 #define add_a(type) \
@@ -196,24 +203,32 @@ namespace GL {
 
             // types
             if (1) {
-                add_function(GL::make_callable("type_of", [](GL::any::fast_any const& any_type) -> GL::type { return any_type.m_casted_type; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("size", [](GL::type const& any_type) -> size_t { return any_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                add_function(GL::make_callable("type_name", [](GL::any::fast_any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                add_function(GL::make_callable("size_of", [](GL::any::fast_any const& any_type) -> size_t { return any_type.m_casted_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_void", [](GL::type const& any_type) -> bool { return any_type.is_void(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_any", [](GL::type const& any_type) -> bool { return any_type.is_any(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_const", [](GL::type const& any_type) -> bool { return any_type.is_const(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_cpp_type", [](GL::type const& any_type) -> bool { return any_type.is_cpp_type(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_ref", [](GL::type const& any_type) -> bool { return any_type.is_ref(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_temp", [](GL::type const& any_type) -> bool { return any_type.is_temp(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_const_ref", [](GL::type const& any_type) -> bool { return any_type.is_const_ref(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_base", [](GL::type const& any_type) -> bool { return any_type.is_base(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_base_of", [](GL::type const& a, GL::type const& b) -> bool { return a.is_base_of(b); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("is_derived_from", [](GL::type const& a, GL::type const& b) -> bool { return a.is_derived_from(b); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("get_hash", [](GL::type const& a) -> size_t { return a.get_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
-                this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("get_base_hash", [](GL::type const& a) -> size_t { return a.get_base_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                using class_t = GL::type;
+                auto& Class = this->make_class(GL::type_of<class_t>());
+                /* default constructor */ Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return {}; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< class_t >()));
+                /* copy constructor */    Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor | GL::function_signature::Async));
+                /* assignment operator */ this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, GL::function_signature::Async, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+
+                this->add_function(GL::make_callable("type_of", [](GL::any::fast_any const& any_type) -> GL::type { return any_type.m_casted_type; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("size", [](GL::type const& any_type) -> size_t { return any_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                this->add_function(GL::make_callable("type_name", [](GL::any::fast_any const& any_type) -> GL::string { 
+                    return any_type.m_casted_type.name(); 
+                }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                this->add_function(GL::make_callable("size_of", [](GL::any::fast_any const& any_type) -> size_t { return any_type.m_casted_type.size(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_void", [](GL::type const& any_type) -> bool { return any_type.is_void(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_any", [](GL::type const& any_type) -> bool { return any_type.is_any(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_const", [](GL::type const& any_type) -> bool { return any_type.is_const(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_cpp_type", [](GL::type const& any_type) -> bool { return any_type.is_cpp_type(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_ref", [](GL::type const& any_type) -> bool { return any_type.is_ref(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_temp", [](GL::type const& any_type) -> bool { return any_type.is_temp(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_const_ref", [](GL::type const& any_type) -> bool { return any_type.is_const_ref(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_base", [](GL::type const& any_type) -> bool { return any_type.is_base(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_base_of", [](GL::type const& a, GL::type const& b) -> bool { return a.is_base_of(b); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("is_derived_from", [](GL::type const& a, GL::type const& b) -> bool { return a.is_derived_from(b); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("get_hash", [](GL::type const& a) -> size_t { return a.get_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+                Class.add_function(GL::make_callable("get_base_hash", [](GL::type const& a) -> size_t { return a.get_base_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
             }
 
             // var (generic "variable" container, for wrapping assignment of any type within the script language. Effectively the scripting language's version of 'any')
@@ -234,39 +249,40 @@ namespace GL {
                     
                 }, GL::function_signature::Constructor | GL::function_signature::Async, {}, { { "rhs", GL::type_of<GL::any>() } }, GL::type_of<GL::var>()));
                 // assignment operator. Anything can be assigned to an empty var object.
-                this->add_function(GL::make_callable("=", [](GL::any::fast_any& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
-                    
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {                    
+                    GL::any::fast_any& out = lhs;
                     if (rhs.can_cast(GL::type_of<GL::var&>())) {
-                        lhs.cast<GL::var&>() = rhs.cast<GL::var&>();                        
+                        lhs.cast<GL::var&>() = rhs.cast<GL::var&>();   
+                        out.m_casted_type = rhs.m_casted_type | GL::type::Reference;
                     }
                     else {
                         lhs.cast<GL::var&>() = GL::var(GL::make_shared<GL::any>(rhs));
+                        
                     }
-                    GL::any::fast_any out = lhs;
-                    out.m_casted_type = rhs.m_casted_type | GL::type::Reference;
                     return out;
                 }, GL::function_signature::Async, {}, { { "lhs",GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }/*, GL::type_of<GL::var&>()*/));
                 // forced assignment operator. Anything can be assigned to an var object using this operator. If something was already assigned, it is over-written. 
                 this->add_function(GL::make_callable(":=", [](GL::any::fast_any& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                    GL::any::fast_any& out = lhs; 
                     if (rhs.can_cast(GL::type_of<GL::var&>())) {
                         lhs.cast<GL::var&>() = rhs.cast<GL::var&>();
+                        out.m_casted_type = rhs.m_casted_type | GL::type::Reference;
                     }
                     else {
                         lhs.cast<GL::var&>() = GL::var(GL::make_shared<GL::any>(rhs));
+                        out.m_casted_type = rhs.m_casted_type;
                     }
-                    GL::any::fast_any out = lhs;
-                    out.m_casted_type = rhs.m_casted_type | GL::type::Reference;
                     return out;
-                }, GL::function_signature::Async, {}, { { "lhs",GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }/*, GL::type_of<GL::var&>()*/));                
-                // boolean test for vars, to ensure they are "valid"
-                this->make_class(GL::type_of< bool >()).add_function(GL::make_callable(GL::type_of< bool >().name(), [](GL::var const& rhs) -> bool {
-                    return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash();
-                }));
+                }, GL::function_signature::Async, {}, { { "lhs",GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }, GL::type_of<GL::var&>()));                
+                // boolean test for vars, to ensure they are "valid". Note that this may actually call the conversion on the stored object, so this has been cut (for now)
+                //this->make_class(GL::type_of< bool >()).add_function(GL::make_callable(GL::type_of< bool >().name(), [](GL::var const& rhs) -> bool {
+                //    return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash();
+                //}, GL::function_signature::Explicit | GL::function_signature::Constructor, {}, {}, GL::type_of<bool>()));
                 // boolean test for vars, to ensure they are "valid"
                 var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
             }
 
-            // std::string functions
+            // std::string support
             if (1) {
                 using class_t = std::string;
                 auto& std_ns = this->make_namespace("std");
@@ -339,6 +355,7 @@ namespace GL {
                 Class.add_function(GL::decl_func(&class_t::to_number));
                 Class.add_function(GL::decl_func(&class_t::to_upper));
             }
+
 
 
 		};

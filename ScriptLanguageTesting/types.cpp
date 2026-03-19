@@ -31,6 +31,7 @@ namespace GL {
                     out.name = type_name;
                     out.T_size = std::numeric_limits<size_t>::max();
                     out.base_classes = {};
+                    out.base_classes_ordered = {};
                     out.instance_by_copy = [](GL::any const& orig) -> GL::any {
                         return orig;
                     };
@@ -49,6 +50,7 @@ namespace GL {
             out.name = "";
             out.T_size = std::numeric_limits<size_t>::max();            
             out.base_classes = {};
+            out.base_classes_ordered = {};
             out.base_hash = 0;
             scripted_types_ticket_dispensor.return_ticket(ticket + 1);
         };
@@ -88,7 +90,7 @@ namespace GL {
             }
             else {
                 if (this->base_classes.find(base) != this->base_classes.end()) return true;
-                for (auto& x : this->base_classes) {
+                for (auto& x : this->base_classes_ordered) {
                     if (this->is_cpp_type()) {
                         auto& Base = get_impl(x);
                         if (Base.is_derived_from(base)) {
@@ -122,7 +124,9 @@ namespace GL {
                     if (this->is_derived_from(base) || Base.is_derived_from(this->base_hash))
                         return false;
                     else {
-                        this->base_classes.insert(base);
+                        if (this->base_classes.insert(base).second) {
+                            this->base_classes_ordered.push_back(base);
+                        }
                         return true;
                     }
                 }
@@ -133,7 +137,9 @@ namespace GL {
                     if (this->is_derived_from(base) || Base.is_derived_from(this->base_hash))
                         return false;
                     else {
-                        this->base_classes.insert(base);
+                        if (this->base_classes.insert(base).second) {
+                            this->base_classes_ordered.push_back(base);
+                        }
                         return true;
                     }
                 }
@@ -143,7 +149,7 @@ namespace GL {
         bool cached_type::match_base_hash(size_t to_match) const {
             if (base_hash == to_match) return true;
             if (this->base_classes.find(to_match) != this->base_classes.end()) return true;
-            for (auto& x : base_classes) {
+            for (auto& x : base_classes_ordered) {
                 if (this->is_cpp_type()) {
                     auto& base = get_impl(x);
                     if (base.match_base_hash(to_match)) return true;
@@ -189,13 +195,13 @@ namespace GL {
         if (local_only) {
             std::vector<type> out;
             if (this->is_cpp_type()) {
-                for (auto& x : get_base(*this).base_classes) {
+                for (auto& x : get_base(*this).base_classes_ordered) {
                     auto& Base = impl::get_impl(x);
                     out.push_back(type(Base.base_hash) + GL::type::CppType);
                 }
             }
             else {
-                for (auto& x : get_base(*this).base_classes) {
+                for (auto& x : get_base(*this).base_classes_ordered) {
                     auto& Base = impl::get_scripted_type(x);
                     out.push_back(type(Base.base_hash));
                 }
@@ -285,7 +291,7 @@ namespace GL {
         GL::type_of<double>().try_update_name("double");
         GL::type_of<long double>().try_update_name("ldouble");
 
-        GL::type_of<std::string>().try_update_name("string");
+        GL::type_of<std::string>().try_update_name("string"); // on-purpose, this is a stress test for the system to handle classes that share the same name in alternative namespaces. 
         GL::type_of<GL::string>().try_update_name("string");        
         GL::type_of<GL::any>().try_update_name("any");
         GL::type_of<GL::any::fast_any>().try_update_name("fast_any");

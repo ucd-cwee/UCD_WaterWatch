@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <set>
 #include "Strings.h"
 #include "atomic_shared_ptr.h"
@@ -46,6 +47,8 @@ namespace GL {
                 name{ "void" };
             std::set<size_t> // hashes to the underlying base classes to this type
                 base_classes{};
+            std::vector<size_t> // hashes to the underlying base classes to this type
+                base_classes_ordered{};
             size_t // without const, ref, etc. 
                 base_hash{ 0 };
             size_t
@@ -770,7 +773,7 @@ namespace GL {
 
         GL::type
             m_type;
-        concurrency::concurrent_unordered_map<GL::string, GL::shared_ptr<GL::any>>
+        concurrency::concurrent_unordered_map<GL::string, GL::shared_ptr<GL::any>> // GL::shared_ptr<GL::any> instead of GL::any simply due to compilation order
             m_objects;
 
         GL::shared_ptr<GL::any>& operator[](GL::string const& sv) {

@@ -70,7 +70,7 @@ namespace GL {
             else if (B.size() == 0) return A;
             else {
                 std::string temp1(A.data);
-                std::string temp2(A.data);
+                std::string temp2(B.data);
                 return string(temp1 + temp2);
             }
         };

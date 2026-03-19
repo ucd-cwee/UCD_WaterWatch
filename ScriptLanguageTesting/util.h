@@ -12,6 +12,7 @@
 #include <winnt.h>
 #include <mutex>
 #include <shared_mutex>
+#include "basic_atomic_allocator.h"
 
 // Good Language namespace
 namespace GL {
@@ -224,24 +225,28 @@ namespace GL {
     template <typename T>
     class deferred {
     private:
-        T* ptr{ nullptr };
-
+        //static auto& shared_allocator() {
+        //    static GL::atomic_allocator<T> alloc;
+        //    return alloc;
+        //};
+        T* ptr;
+        std::unique_ptr<T> p;
     public:
-        deferred() = default;
-        deferred(T* data) : ptr(data) {};
-        deferred(T const& data) : ptr(new T(data)) {};
-        deferred(T&& data) : ptr(new T(std::move(data))) {};
-        deferred(deferred const& rhs) : ptr(rhs.ptr ? (new T(*rhs.ptr)) : (T*)nullptr) {};
-        deferred(deferred&& rhs) : ptr(std::move(rhs.ptr)) { rhs.ptr = nullptr; };
+        deferred() : ptr{ nullptr } {};
+        //deferred(T* data) : ptr{ data } {};
+        deferred(deferred const& rhs) = delete; 
+        deferred(deferred&& rhs) = delete; 
         deferred& operator=(deferred const&) = delete;
-        deferred& operator=(deferred&& rhs) {
-            if (ptr) delete ptr;
-            ptr = std::move(rhs.ptr);
-            rhs.ptr = nullptr;
-            return *this;
-        };
-        ~deferred() {
-            if (ptr) delete ptr;
+        deferred& operator=(deferred&& rhs) = delete;
+        __declspec(noinline) ~deferred() noexcept {
+            ptr = nullptr;
+            p.reset(nullptr);
+
+            //if (ptr != nullptr) {
+            //    //shared_allocator().Free(ptr);
+
+            //    ptr = nullptr;
+            //}
         };
 
         bool valid() const {
@@ -250,10 +255,15 @@ namespace GL {
         T* operator->() const {            
             if (!ptr) {
                 if constexpr (std::is_constructible_v<T>) {
-                    if (auto* newPtr = new T()) {
-                        if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
-                            delete newPtr;
-                        }
+                    //auto* newPtr = shared_allocator().Alloc();
+                    auto pTemp = std::make_unique<T>();
+                    auto* newPtr = pTemp.get();
+                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
+
+                        //shared_allocator().Free(newPtr);
+                    }
+                    else {
+                        const_cast<deferred*>(this)->p = std::move(pTemp);
                     }
                 }
                 else {
@@ -419,8 +429,9 @@ namespace GL {
         private:
             T& obj;
             fast_shared_mutex* mut;
+            bool upgraded;
         public:
-            shared_locked(T& _obj, fast_shared_mutex& _mut) : obj(_obj), mut(&_mut) {
+            shared_locked(T& _obj, fast_shared_mutex& _mut) : obj(_obj), mut(&_mut), upgraded(false) {
                 mut->lock_shared();
             };
             shared_locked(shared_locked const&) = delete;
@@ -428,12 +439,19 @@ namespace GL {
             shared_locked& operator=(shared_locked const&) = delete;
             shared_locked& operator=(shared_locked&&) = delete;
             ~shared_locked() {
-                if (mut) mut->unlock_shared();
+                unlock_shared();
             };
             void unlock_shared() {
                 if (mut) {
-                    mut->unlock_shared();
+                    if (upgraded) mut->unlock(); 
+                    else mut->unlock_shared();
                     mut = nullptr;
+                }
+            };
+            void upgrade_lock() {
+                if (mut && !upgraded) {
+                    upgraded = true;
+                    mut->upgrade_lock();
                 }
             };
             T* operator->() {
@@ -453,25 +471,25 @@ namespace GL {
         shared_lockable() = default;
         shared_lockable(shared_lockable const& rhs) {
             auto locked1 = std::shared_lock(rhs.mut);
-            obj = rhs.obj;
+            *obj = *rhs.obj;
         };
         shared_lockable(shared_lockable && rhs) {
             auto locked1 = std::scoped_lock(rhs.mut);
-            obj = std::move(rhs.obj);
+            *obj = std::move(*rhs.obj);
         };
         shared_lockable& operator=(shared_lockable const& rhs) {
             auto locked1 = std::shared_lock(rhs.mut);
             auto locked2 = std::scoped_lock(mut);
-            obj = rhs.obj;
+            *obj = *rhs.obj;
             return *this;
         };
         shared_lockable& operator=(shared_lockable&& rhs) {
             auto locked1 = std::scoped_lock(rhs.mut);
             auto locked2 = std::scoped_lock(mut);
-            obj = std::move(rhs.obj);
+            *obj = std::move(*rhs.obj);
             return *this;
         };
-        ~shared_lockable() = default;
+        __declspec(noinline) ~shared_lockable() noexcept = default;
 
     public:
         locked lock() const {

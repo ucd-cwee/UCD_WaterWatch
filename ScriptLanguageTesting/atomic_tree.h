@@ -2143,7 +2143,7 @@ namespace GL {
 	template< class objType, class keyType, int maxChildrenPerNode = 10>
 	class epoch_search_tree {
 	private:
-		GL::atomic_epoch_allocator< objType >
+		GL::atomic_allocator< objType >
 			objAllocator;
 
 	public:
@@ -2155,7 +2155,12 @@ namespace GL {
 			epoch_search_treeNode(epoch_search_treeNode&&) = delete;
 			epoch_search_treeNode& operator=(epoch_search_treeNode const&) = delete;
 			epoch_search_treeNode& operator=(epoch_search_treeNode&&) = delete;
-			~epoch_search_treeNode() = default;
+			__declspec(noinline) ~epoch_search_treeNode() noexcept {
+				if (is_leaf()) {
+					father->objAllocator.Free(ptr);
+					ptr = nullptr;
+				}
+			};
 
 			objType
 				* ptr;
@@ -2163,6 +2168,8 @@ namespace GL {
 				data;
 			epoch_search_treeNode // parent node
 				* parent;
+			epoch_search_tree
+				* father;
 			keyType	// key used for sorting						
 				key;
 			int	// number of children							
@@ -2175,8 +2182,8 @@ namespace GL {
 				return ptr;
 			};
 			template <typename... Args>
-			void instantiate_object(epoch_search_tree* Parent, Args&&... args) {
-				ptr = Parent->objAllocator.Alloc(std::move(args)...);
+			void instantiate_object(Args&&... args) {
+				ptr = father->objAllocator.Alloc(std::move(args)...);
 			};
 			objType*
 				object() {
@@ -2535,10 +2542,9 @@ namespace GL {
 		class EpochGuard {
 		private:
 			typename typename decltype(nodeAllocator)::GuardType guard_1;
-			typename typename decltype(objAllocator)::GuardType guard_2;
 
 		public:
-			EpochGuard(epoch_search_tree const* parent) : guard_1{ parent->nodeAllocator.ProtectCurrentEpoch() }, guard_2{ parent->objAllocator.ProtectCurrentEpoch() } {};
+			EpochGuard(epoch_search_tree const* parent) : guard_1{ parent->nodeAllocator.ProtectCurrentEpoch() } {};
 			EpochGuard(EpochGuard const&) = delete;
 			EpochGuard(EpochGuard&& rhs) = delete;
 			EpochGuard& operator=(EpochGuard const&) = delete;
@@ -2549,10 +2555,6 @@ namespace GL {
 		using GuardType = typename EpochGuard;
 		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
 			return EpochGuard(this);
-		};
-		void ProtectCurrentEpoch_Fast() const {
-			nodeAllocator.ProtectCurrentEpoch_Fast();
-			objAllocator.ProtectCurrentEpoch_Fast();
 		};
 
 		epoch_search_tree()
@@ -2565,7 +2567,6 @@ namespace GL {
 			, count{ 0 }
 		{
 			root = AllocNode(false);
-			// ProtectCurrentEpoch_Fast();
 		};
 		epoch_search_tree(epoch_search_tree const&)
 			= delete;
@@ -2575,8 +2576,10 @@ namespace GL {
 			= delete;
 		epoch_search_tree& operator=(epoch_search_tree&&) noexcept
 			= delete;
-		~epoch_search_tree()
-			= default;
+		__declspec(noinline) ~epoch_search_tree() noexcept {
+			nodeAllocator.unsafe_unload();
+			objAllocator.unsafe_unload();
+		};
 
 		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
 			GetOrInstance(keyType const& key) {
@@ -2628,12 +2631,12 @@ namespace GL {
 							}
 
 							// insert new node before child
-							newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+							newNode->instantiate_object();
 							node->add_child_at(newNode, child->parent_index);
 						}
 						else {
 							// insert new node after child
-							newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+							newNode->instantiate_object();
 							node->add_child_at(newNode, child->parent_index + 1);
 						}
 
@@ -2650,7 +2653,7 @@ namespace GL {
 				}
 
 				// we only end up here if the root node is empty
-				newNode->instantiate_object(const_cast<epoch_search_tree*>(this));
+				newNode->instantiate_object();
 				root->add_child(newNode);
 
 				if (!first || (first->key > newNode->key)) first = newNode;
@@ -2677,7 +2680,7 @@ namespace GL {
 				= AllocNode(true);
 			newNode->key
 				= key;
-			newNode->instantiate_object(const_cast<epoch_search_tree*>(this), std::move(object));
+			newNode->instantiate_object(std::move(object));
 
 			if (!locking) {
 				locking.push_back(mut); // locked
@@ -3190,6 +3193,7 @@ namespace GL {
 
 			node->key = {};
 			node->parent = nullptr;
+			node->father = this;
 			node->parent_index = 0;
 			node->numChildren = 0;
 
@@ -3198,7 +3202,6 @@ namespace GL {
 		__declspec(noinline) void
 			FreeNode(epoch_search_treeNode* node) {
 			if (node) {
-				if (node->is_leaf()) objAllocator.Free(node->ptr);
 				nodeAllocator.Free(node);				
 			}
 		};
@@ -3255,9 +3258,6 @@ namespace GL {
 		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
 			return tree.ProtectCurrentEpoch();
 		};
-		void ProtectCurrentEpoch_Fast() const {
-			tree.ProtectCurrentEpoch_Fast();
-		};
 
 		class WrappedReference {
 		private:
@@ -3310,7 +3310,7 @@ namespace GL {
 
 		WrappedReference
 			insert(const keyType& time, objType&& value) {
-			ProtectCurrentEpoch_Fast();
+			auto g = ProtectCurrentEpoch();
 			auto* node_ptr = tree.Add(std::move(value), time);
 			return WrappedReference(node_ptr->key, *node_ptr->object(), this);
 		};
@@ -3321,7 +3321,7 @@ namespace GL {
 		objType& // throws if the key is not found. 
 			at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
-				ProtectCurrentEpoch_Fast();
+				auto g = ProtectCurrentEpoch();
 				return *node->object();
 			}
 			throw std::range_error("Could not find key");
@@ -3329,23 +3329,28 @@ namespace GL {
 		objType* // returns nullptr if the key is not found. 
 			try_at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
-				ProtectCurrentEpoch_Fast();
+				auto g = ProtectCurrentEpoch();
 				return node->object();
 			}
 			return nullptr;
 		};
 		objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
 			operator[](const keyType& time) {
-			ProtectCurrentEpoch_Fast();
+			auto g = ProtectCurrentEpoch();
 			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();
 			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();
-			else if (node = tree.Add({}, time, locker); node) return *node->object();
-			else throw std::range_error("Could not find key");
+			else {
+				if constexpr (std::is_copy_constructible_v< objType > && std::is_constructible_v< objType >) {
+					if (node = tree.Add({}, time, locker); node)
+						return *node->object();
+				}
+			}
+			throw std::range_error("Could not find key");
 		};
 		bool // optionally get a copy of the object being deleted. 
 			erase(const keyType& time, objType* out = nullptr) const {
 			if (auto [node, locker] = tree.NodeFind(time, true); node) {
-				ProtectCurrentEpoch_Fast();
+				auto g = ProtectCurrentEpoch();
 				if (out) *out = *node->object();
 				return tree.Remove(node, locker);
 			}
@@ -3353,7 +3358,7 @@ namespace GL {
 		};
 		void
 			clear() {
-			ProtectCurrentEpoch_Fast();
+			auto g = ProtectCurrentEpoch();
 			auto locked = tree.lock();
 			while (true) {
 				if (auto* p = tree.GetRoot(locked)) {

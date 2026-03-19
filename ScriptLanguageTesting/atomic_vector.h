@@ -5,6 +5,7 @@
 #include <ShlDisp.h>
 #include <winnt.h>
 #include <stdexcept>
+#include "basic_atomic_allocator.h"
 
 // Atomic Vector
 namespace GL {
@@ -63,8 +64,10 @@ namespace GL {
         };
 
         using element_t = T;
+        GL::atomic_allocator< std::vector< element_t >, max_num_buckets + 1, false, false >
+            alloc;
         std::array< std::vector< element_t >*, max_num_buckets >
-            blocks;
+            blocks;        
         std::atomic<size_t>
             current_pos;
         size_t
@@ -77,13 +80,12 @@ namespace GL {
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    auto* new_ptr = new std::vector< element_t >();
-                    new_ptr->resize(block_to_allocsize(blockN));
+                    auto* new_ptr = alloc.Alloc(block_to_allocsize(blockN));
                     if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
                         out = true;
                     }
                     else {
-                        delete new_ptr;
+                        alloc.Free(new_ptr);
                     }
                 }
             }
@@ -91,17 +93,17 @@ namespace GL {
         };
         bool grow_to_at_least_blocksN(short blockN) noexcept { return EnsureBlockExists(blockN); };
     public:
-        atomic_vector() noexcept : blocks{}, current_pos{ 0 }, valid_pos{ 0 }, current_blockN{ -1 } {};
-        ~atomic_vector() noexcept {
-            for (auto& block : blocks) {
-                if (block) {
-                    delete block;
-                }
-                else {
-                    break;
-                }
-            }
+        atomic_vector() noexcept : alloc(), blocks(), current_pos{ 0 }, valid_pos{ 0 }, current_blockN{ -1 } {
+            std::memset(&blocks[0], 0, sizeof(blocks));
         };
+        atomic_vector(atomic_vector const&) = delete;
+        atomic_vector(atomic_vector &&) = delete;
+        atomic_vector& operator=(atomic_vector const&) = delete;
+        atomic_vector& operator=(atomic_vector&&) = delete;
+        ~atomic_vector() {
+            alloc.unsafe_unload();
+        };
+
         element_t& at(size_t index) noexcept {
             auto block_i = global_index_to_block(index);
             auto block_j = global_index_to_local_index(index, block_i);

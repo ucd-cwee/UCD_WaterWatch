@@ -127,7 +127,7 @@ namespace GL {
         auto& InitTLS(Args&&... args) const {
             auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
             auto _tl_unique_id = actual_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
-
+            
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
                 (void)_tls.grow_to_at_least(_tl_index + 1);
@@ -220,7 +220,7 @@ namespace GL {
 
     public:
         thread_object_no_default() : _tls{}, _tls_size{ 0 } {};
-        thread_object_no_default(thread_object_no_default const& rhs) : _tls{}, _tls_size{ 0 } {
+        thread_object_no_default(thread_object_no_default const& rhs) = delete; /* : _tls{}, _tls_size{0} {
             size_t index = 0;
             for (auto& x : rhs._tls) {
                 _tls.grow_to_at_least(index + 1);
@@ -230,12 +230,25 @@ namespace GL {
                 }
                 ++index;
             }
-        };
-        thread_object_no_default(thread_object_no_default&& rhs) : _tls{ std::move(rhs._tls) }, _tls_size{ rhs._tls_size } { rhs._tls.clear(); };
+        };*/
+        thread_object_no_default(thread_object_no_default&& rhs) : _tls{ std::move(rhs._tls) }, _tls_size{ rhs._tls_size } { rhs._tls.clear(); rhs._tls_size = 0; };
         thread_object_no_default& operator=(thread_object_no_default const&) = delete;
         thread_object_no_default& operator=(thread_object_no_default&&) = delete;
         ~thread_object_no_default() {
-            for (auto& x : _tls) if (x.second) delete x.second;
+            for (int i = 0; i < _tls_size + 1; ++i) {
+                if (_tls.size() < i) {
+                    if (auto* p = _tls.at(i).second; p) {
+                        delete p;
+                    }
+                    _tls.at(i).second = nullptr;
+                }
+            }
+
+            for (auto& x : _tls) {
+                if (x.second) 
+                    delete x.second;
+                x.second = nullptr;
+            }
         };
 
         T* operator->() { return &GetTLS(); };
@@ -262,39 +275,23 @@ namespace GL {
                 return (T*)nullptr;
             }
         };
-        template <typename T> bool for_each_cancellable(T const& func) {
-            const auto index = GL::util::get_thread_id();
-            size_t i;
-            for (i = index; i < _tls_size; ++i) {
-                auto& x = _tls[i];
-                if (x.second) {
-                    if (func(*x.second)) { return true; }
-                }
-            }
-            for (i = 0; (i < index) && (i < _tls_size); ++i) {
-                auto& x = _tls[i];
-                if (x.second) {
-                    if (func(*x.second)) { return true; }
-                }
-            }
-            return false;
-        };
         template <typename T> bool for_each_cancellable(const size_t index, T const& func) {
             size_t i;
             for (i = index; i < _tls_size; ++i) {
-                auto& x = _tls[i];
-                if (x.second) {
-                    if (func(*x.second)) { return true; }
+                if (auto* x = try_get(i); x) {
+                    if (func(*x)) { return true; }
                 }
             }
             for (i = 0; (i < index) && (i < _tls_size); ++i) {
-                auto& x = _tls[i];
-                if (x.second) {
-                    if (func(*x.second)) { return true; }
+                if (auto* x = try_get(i); x) {
+                    if (func(*x)) { return true; }
                 }
             }
             return false;
         };
+        template <typename T> bool for_each_cancellable(T const& func) {
+            return for_each_cancellable(GL::util::get_thread_id(), func);
+        };        
         template <typename T> void for_each(T const& func) {
             (void)for_each_cancellable([&func](auto& x) -> bool {
                 func(x);

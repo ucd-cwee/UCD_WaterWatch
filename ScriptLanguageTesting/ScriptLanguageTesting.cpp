@@ -585,65 +585,84 @@ int main() {
 
             // epoch_search_tree scales MUCH better in heavy multi-threaded cases. However, it seems to have a memory leak, which may be releated. :/
             // Also, epoch_search_tree seemed to perform random crashes that were difficult to predict or prevent. 
-            
-            // GL::epoch_search_tree<std::string, size_t> (adding ONLY) 
-            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
-                shared_obj->Add("TEST", i);
-            })) {
-                allocator = nullptr;
-            }
+            //print(__LINE__);
+            //// GL::epoch_search_tree<std::string, size_t> (adding ONLY) 
+            //if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+            //    shared_obj->Add("TEST", i);
+            //})) {
+            //    allocator = nullptr;
+            //}
 
 
 
 #if 1
+            print(__LINE__);
             // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (heavy contention on a parallel creation) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
                 (*shared_obj)->operator[](0);
             })) {
                 allocator = nullptr;
             }
-
+            print(__LINE__);
             // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding ONLY) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
                 (*shared_obj)->Add("TEST", i);
             })) {
                 allocator = nullptr;
             }
-
+            print(__LINE__);
+            // GL::epoch_search_tree<std::string, size_t> (adding THEN removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+                // auto g = shared_obj->ProtectCurrentEpoch();
+                shared_obj->Add("TEST", i);
+            })) {                
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                    auto g = shared_obj->ProtectCurrentEpoch();
+                    if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
+                        shared_obj->Remove(node, locking);
+                    }
+                }) = nullptr;
+            } // crashes here... because allocator died before the guard did??
+            print(__LINE__);
             // GL::epoch_search_tree<std::string, size_t> (adding THEN removal) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
                 shared_obj->Add("TEST", i);
             })) {
-                //try {
-                    GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
-                        if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
-                            shared_obj->Remove(node, locking);
-                        }
-                    }) = nullptr;
-                //}
-                //catch (std::exception& e) {
-                //    print(e.what());
-                //}
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                    auto g = shared_obj->ProtectCurrentEpoch();
+                    if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
+                        shared_obj->Remove(node, locking);
+                    }
+                }) = nullptr;
             }
-
+            print(__LINE__);
+            // GL::epoch_search_tree<std::string, size_t> (adding THEN removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+                shared_obj->Add("TEST", i);
+            })) {
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                    auto g = shared_obj->ProtectCurrentEpoch();
+                    if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
+                        shared_obj->Remove(node, locking);
+                    }
+                }) = nullptr;
+            }
+            print(__LINE__);
             // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding THEN removal) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
                 (*shared_obj)->Add("TEST", i);
             })) {
-                //try {
-                    GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
-                        if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
-                            (*shared_obj)->Remove(node, locking);
-                        }
-                    }) = nullptr;
-                //}
-                //catch (std::exception& e) {
-                //    print(e.what());
-                //}
+                GL::parallel::Dispatch(1000000, allocator, [](size_t i, auto& shared_obj) {
+                    auto g = (*shared_obj)->ProtectCurrentEpoch();
+                    if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
+                        (*shared_obj)->Remove(node, locking);
+                    }
+                }) = nullptr;
             }
-
+            print(__LINE__);
             // GL::epoch_search_tree<std::string, size_t> (adding AND removal) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<std::string, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<std::string, size_t>>& shared_obj) {
+                auto g = shared_obj->ProtectCurrentEpoch();
                 shared_obj->Add("TEST", i);                
                 if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
                     shared_obj->Remove(node, locking);
@@ -651,9 +670,10 @@ int main() {
             })) {
                 allocator = nullptr;
             }
-
+            print(__LINE__);
             // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding AND removal) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<std::string, size_t>>>& shared_obj) {
+                auto g = (*shared_obj)->ProtectCurrentEpoch();
                 (*shared_obj)->Add("TEST", i);
                 if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
                     (*shared_obj)->Remove(node, locking);
@@ -662,28 +682,41 @@ int main() {
                 allocator = nullptr;
             }
 
-
-
-            // GL::epoch_search_tree<std::string, size_t> (adding AND removal) 
-            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<GL::epoch_search_tree<std::string, size_t>, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<GL::epoch_search_tree<std::string, size_t>, size_t>>& shared_obj) {
-                shared_obj->operator[](i).operator[](i) = "TEST";
-                if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i); node) {
-                    shared_obj->Remove(node, locking);
-                }
-                })) {
-                allocator = nullptr;
-            }
-
+            print(__LINE__);
             // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding AND removal) 
             if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::deferred<GL::epoch_search_tree<GL::deferred<GL::epoch_search_tree<std::string, size_t>>, size_t>>>(), [](size_t i, GL::shared_ptr< GL::deferred<GL::epoch_search_tree<GL::deferred<GL::epoch_search_tree<std::string, size_t>>, size_t>>>& shared_obj) {
-                (*shared_obj)->operator[](i)->operator[](i) = "TEST";
-                if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i); node) {
+                auto g = (*shared_obj)->ProtectCurrentEpoch();
+                (*shared_obj)->operator[](i % 100)->operator[](i % 100) = "TEST";
+                if (auto [node, locking] = (*shared_obj)->NodeFind_ForRemoval(i % 100); node) {
                     (*shared_obj)->Remove(node, locking);
                 }
-                })) {
+            })) {
                 allocator = nullptr;
             }
 
+            print(__LINE__);
+            // GL::deferred<GL::epoch_search_tree<std::string, size_t>> (adding AND removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared< GL::epoch_search_tree<GL::epoch_search_tree<std::string, size_t>, size_t>>(), [](size_t i, GL::shared_ptr< GL::epoch_search_tree<GL::epoch_search_tree<std::string, size_t>, size_t>>& shared_obj) {
+                auto g = shared_obj->ProtectCurrentEpoch();
+                shared_obj->operator[](i % 100)[i % 100] = "TEST";
+                if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i % 100); node) {
+                    shared_obj->Remove(node, locking);
+                }
+            })) {
+                allocator = nullptr;
+            }
+
+            print(__LINE__);
+            // GL::epoch_search_tree<std::string, size_t> (adding AND removal) 
+            if (auto allocator = GL::parallel::Dispatch(1000000, GL::make_shared<GL::epoch_search_tree<GL::deferred<GL::epoch_search_tree<std::string, size_t>>, size_t>>(), [](size_t i, GL::shared_ptr<GL::epoch_search_tree<GL::deferred<GL::epoch_search_tree<std::string, size_t>>, size_t>>& shared_obj) {
+                auto g = shared_obj->ProtectCurrentEpoch();
+                shared_obj->operator[](i % 100)->operator[](i % 100) = "TEST";                
+                if (auto [node, locking] = shared_obj->NodeFind_ForRemoval(i % 100); node) {
+                    shared_obj->Remove(node, locking);
+                }
+            })) {
+                allocator = nullptr;
+            }
 
 #endif
 
@@ -2029,7 +2062,6 @@ int main() {
                     auto k = j.make_scope();
                 });
             }
-
             if (auto timer = sw.debug_timer("example calc")) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
@@ -2066,8 +2098,7 @@ int main() {
                         });
                     });
             }
-
-            if (auto timer = sw.debug_timer("example calc 2"); false) {
+            if (auto timer = sw.debug_timer("example calc 2")) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
                 GL::parallel::For(0, 1000000, [&](size_t i) {
@@ -2104,8 +2135,7 @@ int main() {
                         }));
                     });
             }
-
-            if (auto timer = sw.debug_timer("example calc 2 (once only)"); false) {
+            if (auto timer = sw.debug_timer("example calc 2 (once only)")) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
                 auto temp_scope = program_root.make_scope();
@@ -2140,8 +2170,7 @@ int main() {
                     temp_scope.find_object("d")
                     }));
             }
-
-            if (auto timer = sw.debug_timer("example calc 2 (once only, from scratch)"); false) {
+            if (auto timer = sw.debug_timer("example calc 2 (once only, from scratch)")) {
                 GL::scope::impl::RootScope
                     program;
                 program.perform_builtins();
@@ -2178,7 +2207,6 @@ int main() {
                     temp_scope.find_object("d")
                     }));
             }
-
             if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)"); false) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
@@ -2216,8 +2244,7 @@ int main() {
                         }));
                 };
             }
-
-            if (auto timer = sw.debug_timer("Polymorphism test"); false) {
+            if (auto timer = sw.debug_timer("Polymorphism test")) {
                 GL::scope::impl::RootScope
                     root;
                 root.perform_builtins();
@@ -2261,8 +2288,7 @@ int main() {
                     EXPECT_EQ("meow", script_scope.call("speak", { script_scope.find_object("cat_impl") }).cast<std::string>());
                 }
             }
-
-            if (auto timer = sw.debug_timer("Var tests"); false) {
+            if (auto timer = sw.debug_timer("Var tests")) {
                 GL::scope::impl::RootScope
                     root;
                 root.perform_builtins();
@@ -2351,10 +2377,20 @@ int main() {
                     EXPECT_EQ(initialized_var.cast<int>(), 175);
                     EXPECT_EQ(copied_var.cast<int>(), 175);
                     EXPECT_EQ(assigned_var.cast<int>(), 175);
+
+                    // handling type-changes when keeping variables locally...
+                    assigned_var = script_scope.call(":=", { assigned_var, GL::any::fast_any::instance(std::string("TEST"))});
+                    EXPECT_EQ(assigned_var.cast<std::string>(), "TEST");
+                    EXPECT_EQ(script_scope.call("type_name", { assigned_var }).cast< GL::string>(), "string");
+
+                    // type-changes are automatically handled when handled 100% in-script. 
+                    script_scope.emplace_object_here("x", GL::var(GL::make_shared<GL::any>(100.0f)));
+                    EXPECT_EQ(script_scope.call("type_name", { script_scope.find_object("x") }).cast< GL::string>(), "float");
+                    script_scope.call(":=", { script_scope.find_object("x"), GL::any::fast_any::instance(std::string("TEST")) });
+                    EXPECT_EQ(script_scope.call("type_name", { script_scope.find_object("x") }).cast< GL::string>(), "string");
                 }
             }
-
-            if (auto timer = sw.debug_timer("Polymorphism var test"); false) {
+            if (auto timer = sw.debug_timer("Polymorphism var test")) {
                 GL::scope::impl::RootScope
                     root;
                 root.perform_builtins();
@@ -2410,33 +2446,51 @@ int main() {
 
 
             }
-
-            if (auto timer = sw.debug_timer("Polymorphism dynamic_object var test"); false) {
+            if (auto timer = sw.debug_timer("Polymorphism dynamic_object var test")) {
                 GL::scope::impl::RootScope
                     root;
                 root.perform_builtins();
 
+                EXPECT_EQ(true, root.can_convert(GL::type_of<std::string>(), GL::type_of<GL::string>(), false));
+                EXPECT_EQ(true, root.can_convert(GL::type_of<std::string>(), GL::type_of<GL::string>(), true));
+                EXPECT_EQ(true, root.can_convert(GL::type_of<std::string const&>(), GL::type_of<GL::string>(), false));
+                EXPECT_EQ(true, root.can_convert(GL::type_of<std::string const&>(), GL::type_of<GL::string>(), true));
+                EXPECT_EQ(true, root.can_convert(GL::type_of<std::string const&>(), GL::type_of<GL::string const&>(), false));
+                EXPECT_EQ(true, root.can_convert(GL::type_of<std::string const&>(), GL::type_of<GL::string const&>(), true));
+
                 // declare a custom namespace
                 auto& Example = root.make_namespace("Example");
 
-                // within that namespace is an Animal interface class
-                auto& Animal = Example.make_class("Animal");
-                auto Animal_t = Animal.this_type;
-                Animal.add_member_object("is_pet", GL::type_of<bool>(), GL::any::fast_any::instance(bool{ true }));
-                Animal.initialize_basic_member_functions();
+                // class Animal {
+                //      bool is_pet = true;
+                //      value& counter = value(0);
+                //      std::string speak() { return "unspecified"; };
+                // };
+                auto& Animal = Example.make_class("Animal");                
+                auto Animal_t = Animal.this_type;                
+                Animal.add_member_object("is_pet", GL::type_of<bool>(), GL::any::fast_any::instance(bool{ true }));                
+                Animal.add_member_object("counter", GL::type_of<GL::value&>(), /*Example.call("reference_cast", { */GL::any::fast_any::instance(GL::value(0.0f)) /*})*/);
+                Animal.initialize_basic_member_functions();                
                 Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "unspecified"; }, 0, {}, { { "rhs", Animal_t | GL::type::Reference } }, GL::type_of<std::string>()));
-
-                // within that namespace is an Dog impl class
+                   
+                // class Dog : Animal { // inherits the member objects and functions from Animal
+                //      std::string name = "Ozzy";
+                //      double weight = 24.0;
+                //      std::string speak() { return "bark"; };
+                // };
                 auto& Dog = Example.make_class("Dog");
                 auto Dog_t = Dog.this_type;
                 Dog_t.add_base(Animal_t);
                 EXPECT_EQ(true, Animal_t.is_base_of(Dog_t));
                 Dog.add_member_object("name", GL::type_of<std::string>(), GL::any::fast_any::instance(std::string("Ozzy")));
-                Dog.add_member_object("weight", GL::type_of<double>(), GL::any::fast_any::instance(24.0));
+                Dog.add_member_object("weight", GL::type_of<double>(), GL::any::fast_any::instance(24.0));                
                 Dog.initialize_basic_member_functions();
                 Dog.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "bark"; }, 0, {}, { { "rhs", Dog_t | GL::type::Reference } }, GL::type_of<std::string>()));
 
-                // within that namespace is an Cat impl class
+                // class Cat : Animal { // inherits the member objects and functions from Animal
+                //      std::string name = "Goosie";
+                //      std::string speak() { return "meow"; }; 
+                // };
                 auto& Cat = Example.make_class("Cat");
                 auto Cat_t = Cat.this_type;
                 Cat_t.add_base(Animal_t);
@@ -2444,6 +2498,19 @@ int main() {
                 Cat.add_member_object("name", GL::type_of<std::string>(), GL::any::fast_any::instance(std::string("Goosie")));
                 Cat.initialize_basic_member_functions();
                 Cat.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "meow"; }, 0, {}, { { "rhs", Cat_t | GL::type::Reference } }, GL::type_of<std::string>()));
+
+                // class Lion : Cat, Dog { // inherits the member objects and functions from Cat, Dog, and (implied) Animal. Order matters with inheritance. 
+                //      std::string speak() { return "MEOW"; }; 
+                // };
+                auto& Lion = Example.make_class("Lion");
+                auto Lion_t = Lion.this_type;
+                Lion_t.add_base(Cat_t);
+                Lion_t.add_base(Dog_t);
+                EXPECT_EQ(true, Animal_t.is_base_of(Lion_t));
+                EXPECT_EQ(true, Dog_t.is_base_of(Lion_t));
+                EXPECT_EQ(true, Cat_t.is_base_of(Lion_t));
+                Lion.initialize_basic_member_functions();
+                Lion.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { return "MEOW"; }, 0, {}, { { "rhs", Lion_t | GL::type::Reference } }, GL::type_of<std::string>()));
 
                 // normal
                 if (1) {
@@ -2502,7 +2569,7 @@ int main() {
                     EXPECT_EQ(script_scope.call("talk_to", { script_scope.find_object("cat_impl") }).cast<std::string>(), "meow");
                 }
 
-                // test assignemt and copy constructors
+                // test assignment and copy constructors
                 if (1) {
                     auto script_scope = root.make_scope();
                     script_scope.insert_object_here("dog_1", script_scope.call("Dog", {}));
@@ -2528,9 +2595,33 @@ int main() {
                     EXPECT_EQ(400.0, script_scope.call("weight", { script_scope.find_object("dog_4") }).cast<double>());
                     EXPECT_EQ(100.0, script_scope.call("weight", { script_scope.find_object("dog_1") }).cast<double>());
                 }
-            }
+                
+                // test a reference-type member object...
+                if (1) {
+                    int i = 1000000;
+                    GL::parallel::For(0, i, [&root](int) {
+                        auto script_scope = root.make_scope();
+                        script_scope.insert_object_here("dog_impl", script_scope.call("Dog", {}));
+                        script_scope.call("+=", { script_scope.call("counter", { script_scope.find_object("dog_impl") }), GL::any::fast_any::instance(5) });
+                    });
+                    if (1) {
+                        auto script_scope = root.make_scope();
+                        script_scope.insert_object_here("dog_impl", script_scope.call("Dog", {}));
+                        EXPECT_EQ((float)(i * 5), (float)script_scope.call("counter", {script_scope.find_object("dog_impl")}).cast<GL::value>());
+                    }
+                };
 
-            if (auto timer = sw.debug_timer("Competing Class Name(s) test"); false) {
+                // test the double-inheritor of Lion...
+                if (1) {
+                    auto script_scope = root.make_scope();
+                    script_scope.insert_object_here("lion_impl", script_scope.call("Example::Lion", {}));
+                    EXPECT_EQ("Goosie", script_scope.call("name", { script_scope.find_object("lion_impl") }).cast<std::string&>());
+                    EXPECT_EQ("MEOW", script_scope.call("speak", { script_scope.find_object("lion_impl") }).cast<std::string>());
+                    EXPECT_EQ(true, script_scope.call("is_pet", { script_scope.find_object("lion_impl") }).cast<bool>());
+
+                }
+            }
+            if (auto timer = sw.debug_timer("Competing Class Name(s) test")) {
                 GL::scope::impl::RootScope
                     root;
                 root.perform_builtins();
@@ -2565,6 +2656,7 @@ int main() {
                     EXPECT_EQ(std_ns.find_object("::string::npos").cast<size_t>(), GL::string::npos);
                 }
             }
+
 #endif
             }
 

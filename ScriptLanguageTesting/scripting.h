@@ -243,7 +243,7 @@ namespace GL {
                         root_ptr->scopes[scope_index._index] = nullptr;
                 }
             };
-
+#if 0
             // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
             template <int numCategories = 4> class Cache {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
@@ -308,7 +308,7 @@ namespace GL {
                 };
 
             };
-
+#endif
             // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
             template <typename T, int numCategories = 4> class TypedCache {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
@@ -370,7 +370,7 @@ namespace GL {
             class Converter;
             class Functions {
             private:
-                GL::deferred<GL::epoch_map< GL::shared_lockable<std::map<size_t, GL::Proxy_Function>>, GL::string>>
+                GL::epoch_map< GL::shared_lockable<std::map<size_t, GL::Proxy_Function>>, GL::string>
                     functions;
             public:
                 Functions() = default;
@@ -382,9 +382,17 @@ namespace GL {
             public:
                 // insert a function into the storage
                 GL::Proxy_Function const& add_function(GL::Proxy_Function&& func) {
-                    return functions->operator[](func->m_signature.name_m).lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
+                    return functions[func->m_signature.name_m].lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
+                };
+                // insert a function into the storage
+                GL::Proxy_Function const& add_function(GL::string name_m, GL::Proxy_Function&& func) {
+                    return functions[name_m].lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
                 };
 
+                // insert a function into the storage
+                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func, std::remove_pointer_t<typename decltype(functions)::Iterator::value_type::second_type>::shared_locked& locked) {
+                    return locked->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
+                };
                 // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
                 template<typename Func> GL::Proxy_Function const& for_each(Func const& to_do) const {
                     typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
@@ -393,19 +401,17 @@ namespace GL {
                     static_assert(function_header::Param_Types::numArgs <= 1);
 
                     static GL::Proxy_Function temp{ nullptr };
-                    if (functions.valid()) {
-                        for (auto& funcs_by_name : *functions) {
-                            if (*funcs_by_name.second) {
-                                GL::string const& name = *funcs_by_name.first;                                
-                                for (auto& funcs : *funcs_by_name.second->lock_shared()) {
-                                    GL::Proxy_Function const& func = funcs.second;
-                                    if (to_do(func)) {
-                                        return func;
-                                    }
+                    for (auto& funcs_by_name : functions) {
+                        if (*funcs_by_name.second) {
+                            GL::string const& name = *funcs_by_name.first;                                
+                            for (auto& funcs : *funcs_by_name.second->lock_shared()) {
+                                GL::Proxy_Function const& func = funcs.second;
+                                if (to_do(func)) {
+                                    return func;
                                 }
                             }
                         }
-                    }
+                    }                    
                     return temp;
                 };
 
@@ -417,10 +423,28 @@ namespace GL {
                     static_assert(function_header::Param_Types::numArgs <= 1);
 
                     static GL::Proxy_Function temp{ nullptr };
-                    if (functions.valid()) {
-                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && *funcs_by_name) {
-                            for (auto& funcs : *funcs_by_name->lock_shared()) {
-                                GL::Proxy_Function const& func = funcs.second;
+                    if (auto* funcs_by_name = functions.try_at(name); funcs_by_name && *funcs_by_name) {
+                        for (auto& funcs : *funcs_by_name->lock_shared()) {
+                            GL::Proxy_Function const& func = funcs.second;
+                            if (to_do(func)) {
+                                return func;
+                            }
+                        }
+                    }                    
+                    return temp;
+                };
+
+                // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
+                template<typename Func> GL::Proxy_Function const& for_each_constructor(GL::string const& name, Func const& to_do) const {
+                    typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
+                    static_assert(std::is_same_v<bool, function_header::Return_Type>);
+                    static_assert(std::is_same_v< GL::Proxy_Function const&, std::tuple_element_t<0, function_header::Param_Types::argType>>);
+                    static_assert(function_header::Param_Types::numArgs <= 1);
+                    static GL::Proxy_Function temp{ nullptr };
+                    if (auto* funcs_by_name = functions.try_at(name); funcs_by_name && *funcs_by_name) {
+                        for (auto& funcs : *funcs_by_name->lock_shared()) {
+                            GL::Proxy_Function const& func = funcs.second;
+                            if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                                 if (to_do(func)) {
                                     return func;
                                 }
@@ -428,27 +452,6 @@ namespace GL {
                         }
                     }
                     return temp;
-                };
-
-                // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
-                template<typename Func> void for_each_constructor(GL::string const& name, Func const& to_do) const {
-                    typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
-                    static_assert(std::is_same_v<bool, function_header::Return_Type>);
-                    static_assert(std::is_same_v< GL::Proxy_Function const&, std::tuple_element_t<0, function_header::Param_Types::argType>>);
-                    static_assert(function_header::Param_Types::numArgs <= 1);
-
-                    if (functions.valid()) {
-                        if (auto* funcs_by_name = functions->try_at(name); funcs_by_name && *funcs_by_name) {
-                            for (auto& funcs : *funcs_by_name->lock_shared()) {
-                                GL::Proxy_Function const& func = funcs.second;
-                                if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                                    if (to_do(func)) {
-                                        return func;
-                                    }
-                                }
-                            }
-                        }
-                    }
                 };
 
                 // attempts to find a suitable function from this set that is callable with the given parameters. 
@@ -563,12 +566,6 @@ namespace GL {
                         else
                             return f->m_signature.can_call_with_cast(from_iter, from_end);
                         });
-                };
-
-                void clear() {
-                    if (functions.valid()) {
-                        functions->clear();
-                    }
                 };
 
             public:
@@ -737,13 +734,15 @@ namespace GL {
 
                         if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                             if (func->m_signature.argument_types_m.size() == 1) {
-                                auto& from = func->m_signature.argument_types_m[0];
-                                auto& to = func->m_signature.returns_m;
-                                AllConversions[from][to] = &func;
+                                if ((func->m_signature.state_m & GL::function_signature::Explicit) == 0) {
+                                    auto& from = func->m_signature.argument_types_m[0];
+                                    auto& to = func->m_signature.returns_m;
+                                    AllConversions[from][to] = &func;
+                                }
                             }
                         }
                         return false;
-                        });
+                    });
 
 #if 1 // allow polymorphic/dynamic casts
                     // Also, we should add the conversions for "inherited& -> base&", "inherited -> base const&", "inherited&& -> base&&".
@@ -760,10 +759,10 @@ namespace GL {
                                 auto first_arg_t = temp_func->m_signature.argument_types_m[0];
                                 auto returns_t = temp_func->m_signature.returns_m;
                                 auto hash_v = temp_func->m_signature.get_hash();
-                                auto funcs = functions->operator[](temp_func->m_signature.name_m).lock_shared();
+                                auto funcs = functions[temp_func->m_signature.name_m].lock_shared();
                                 if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
-                                    funcs.unlock_shared();
-                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func));
+                                    funcs.upgrade_lock();
+                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func), funcs);
                                 }
                                 else {
                                     AllConversions[first_arg_t][returns_t] = &f->second;
@@ -778,10 +777,10 @@ namespace GL {
                                 auto first_arg_t = temp_func->m_signature.argument_types_m[0];
                                 auto returns_t = temp_func->m_signature.returns_m;
                                 auto hash_v = temp_func->m_signature.get_hash();
-                                auto funcs = functions->operator[](temp_func->m_signature.name_m).lock_shared();
+                                auto funcs = functions[temp_func->m_signature.name_m].lock_shared();
                                 if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
-                                    funcs.unlock_shared();
-                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func));
+                                    funcs.upgrade_lock();
+                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func), funcs);
                                 }
                                 else {
                                     AllConversions[first_arg_t][returns_t] = &f->second;
@@ -796,10 +795,10 @@ namespace GL {
                                 auto first_arg_t = temp_func->m_signature.argument_types_m[0];
                                 auto returns_t = temp_func->m_signature.returns_m;
                                 auto hash_v = temp_func->m_signature.get_hash();
-                                auto funcs = functions->operator[](temp_func->m_signature.name_m).lock_shared();
+                                auto funcs = functions[temp_func->m_signature.name_m].lock_shared();
                                 if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
-                                    funcs.unlock_shared();
-                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func));
+                                    funcs.upgrade_lock();
+                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func), funcs);
                                 }
                                 else {
                                     AllConversions[first_arg_t][returns_t] = &f->second;
@@ -876,6 +875,26 @@ namespace GL {
                             }
                         }
                     }
+
+                    // Insert the "explicit" conversions, overriding any "implicit" ones. 
+                    (void)this->for_each([&](GL::Proxy_Function const& func)->bool {
+                        if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
+                            if (func->m_signature.argument_types_m.size() == 1) {
+                                if ((func->m_signature.state_m & GL::function_signature::Explicit) > 0) {
+                                    if (From.can_free_cast(func->m_signature.argument_types_m[0])) {
+                                        auto& to = func->m_signature.returns_m;
+                                        vertices[to] = &std::get<UniformCostSearchNode>(*alloc.Alloc(UniformCostSearchNode{ 
+                                            From, 
+                                            ((func->m_signature.state_m & GL::function_signature::NoCost) > 0) ? 0.01 : 1.0, 
+                                            &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ nullptr, to })) // From or to?
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        return false;
+                    });
+
                     return vertices;
                 };
 
@@ -889,7 +908,7 @@ namespace GL {
                         = CreateConversionPaths(temp_alloc, From);
                     GL::type t;
                     for (auto& To : converters)
-                        if (To.second) {
+                        if (To.second && To.second->bestPath) {
                             if (auto p = To.second->bestPath->make_converter(From, *this)) {
                                 t = p->m_signature.returns_m;
                                 out[t] = std::move(p);
@@ -2601,7 +2620,7 @@ namespace GL {
                     GL::Proxy_Function copy = func;
                     functions.add_function(std::move(copy));
                     if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                        this->GetRoot()->add_constructor(std::move(func));
+                        this->GetRoot()->add_constructor(&this->breadcrumb_m, std::move(func));
                     }
                     this->invalidate_cache(); 
                 };
@@ -2622,7 +2641,7 @@ namespace GL {
                 // instancing a child namespace should only be done from an existing namespace
                 ClassScope(GL::string const& class_type, int scope_type_p = ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, Breadcrumb* parent = nullptr)
                     : NamespaceScope((GL::string)class_type, scope_type_p, parent)
-                    , type_ownership(new GL::script_type(class_type))
+                    , type_ownership(std::make_unique<GL::script_type>(class_type))
                 {
                     const_cast<GL::type&>(this_type) = type_ownership->load();
                 };
@@ -2632,26 +2651,36 @@ namespace GL {
                 };
             
             private:
-                GL::deferred<GL::script_type> 
+                std::unique_ptr<GL::script_type> 
                     type_ownership;
             protected:
                 concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
                     member_objects;            
                 void default_construct(GL::dynamic_object& destination) {
                     for (auto& member_object : this->member_objects) {
-                        if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first)) {
-                            if (member_object.second.second) {
-                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), { member_object.second.second })) });
+                        if (member_object.second.second && // default provided...
+                            member_object.second.first.is_ref() && // ... and the user is requesting a reference...
+                            member_object.second.second.can_cast(member_object.second.first) // ... and the correct type was provided for use as a reference.
+                        ) { 
+                            destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(member_object.second.second) });                            
+                        }
+                        else if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first); BC && BC->this_m.is_class()) {
+                            auto* Class = dynamic_cast<ClassScope*>(BC->this_m.scope);
+                            if (member_object.second.second) { // default provided
+                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(Class->call(Class->this_type.name(), { member_object.second.second })) });                                
                             }
-                            else {
-                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(this->call(member_object.second.first.name(), {  })) });
+                            else { // no default. Attempt to construct the member object. 
+                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(Class->call(Class->this_type.name(), {})) });
                             }
                         }
                         else {
+                            // not a reference, and class was not found. We have no choice but to accept the provided data as-is. 
                             GL::any f = member_object.second.second;
                             f.m_casted_type = member_object.second.first;
                             destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(f | GL::type::Reference) });
                         }
+
+                        
                     }
                 };
 
@@ -3121,8 +3150,8 @@ namespace GL {
 
                     // constructors.clear();
                 };
-                void add_constructor(GL::Proxy_Function && func) {
-                    constructors.add_function(std::move(func));
+                void add_constructor(Breadcrumb* BC, GL::Proxy_Function && func) {
+                    constructors.add_function(BC->GetCurrentNamespace() + "::" + func->m_signature.name_m, std::move(func));
                     ++constructors_version;
                 };
 

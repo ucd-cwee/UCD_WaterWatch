@@ -67,10 +67,15 @@ namespace GL {
 
         class TLS {
         public:
+            TLS() : EpochLimit(GL::util::get_current_epoch()), _scope_count(0), epochs() {
+                for (size_t i = 0; i < deferment_size; ++i) epochs.push(EpochLimit);
+            };
+            ~TLS() {};
+
             long long
                 _scope_count;
             long long
-                EpochLimit{ -1 };
+                EpochLimit/*{ -1 }*/;
             fast_circular_queue<long long, deferment_size>
                 epochs;
 
@@ -126,14 +131,13 @@ namespace GL {
                 };
             };
 
-
         };
         // Allocator means larger memory footprint, but faster when multiple threads are in use. 
         AllocatorType // Allocator<_type_, 32> // , 32 // ABA_Problem::BlockAlloc<_type_, 32> // 
             _alloc;
         atomic_parallel_priority_queue<DeleteType>
             _delete_list; // note that these are NOT available for re-use yet -- these may still be being used by certain threads. 
-        GL::thread_object_no_default<TLS>
+        GL::thread_object_no_default<GL::deferred<TLS>>
             _TLS;
         long long
             _lastGC;
@@ -144,27 +148,32 @@ namespace GL {
         // Performs the actual garbage collection. OK to call this over-and-over again, as it'll space itself out in time to prevent over-ambitous GC calls. 
         void RunGC() {
             static constexpr long long duration_ms{ 2 };
-
             long long curr_epoch{ GL::util::get_current_epoch() };
             long long previous_epoch{ _lastGC };
             long long _EpochLimit{ std::numeric_limits<long long>::max() };
             DeleteType out;
-
-            if (((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch)) {
-                _TLS.for_each([&_EpochLimit](TLS& _tls) {
-                    if (long long L = _tls.EpochLimit; L >= 0 && L < _tls.epochs.front()) {
-                        _EpochLimit = std::min<long long>(_EpochLimit, L);
-                    }
-                });
-
-                if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
-                    while (_delete_list.try_pop(out)) {
-                        if (out.epoch < _EpochLimit) { // deemed safe to delete
-                            _alloc.Free(out.ptr);
+            unsigned long long num_for_deletion = _delete_list.size();
+            if (num_for_deletion > 0) {
+                bool timeout = ((curr_epoch - previous_epoch) > duration_ms) && (InterlockedCompareExchange64(reinterpret_cast<volatile long long*>(&_lastGC), curr_epoch, previous_epoch) == previous_epoch);
+                if (timeout || ((num_for_deletion * sizeof(_type_)) > 1e9)) {
+                    _TLS.for_each([&_EpochLimit](GL::deferred<TLS>& _tls) {
+                        if (_tls) {
+                            //if (long long L = _tls->EpochLimit; L >= 0 && L < _tls->epochs.front()) {
+                            //    _EpochLimit = std::min<long long>(_EpochLimit, L);
+                            //}
+                            _EpochLimit = std::min<long long>(_EpochLimit, _tls->EpochLimit);
                         }
-                        else { // deemed unsafe to delete just yet
-                            _delete_list.push(out);
-                            break;
+                    });
+
+                    if ((_EpochLimit > 0) && (_EpochLimit < std::numeric_limits<long long>::max())) {
+                        while (_delete_list.try_pop(out)) {
+                            if (out.epoch < _EpochLimit) { // deemed safe to delete
+                                _alloc.Free(out.ptr);
+                            }
+                            else { // deemed unsafe to delete just yet
+                                _delete_list.push(out);
+                                break;
+                            }
                         }
                     }
                 }
@@ -184,9 +193,11 @@ namespace GL {
         atomic_epoch_allocator(atomic_epoch_allocator&&) = delete;
         atomic_epoch_allocator& operator=(atomic_epoch_allocator const&) = delete;
         atomic_epoch_allocator& operator=(atomic_epoch_allocator&&) = delete;
-        ~atomic_epoch_allocator() {};
+        __declspec(noinline) ~atomic_epoch_allocator() noexcept {
+            unsafe_unload();
+        };
 
-        void unsafe_unload() {
+        __declspec(noinline) void unsafe_unload() noexcept {
             _alloc.unsafe_unload();
         };
 
@@ -194,26 +205,21 @@ namespace GL {
         [[nodiscard]] GuardType ProtectCurrentEpoch() const {
             return TLS::EpochGuard(
                 const_cast<atomic_epoch_allocator*>(this),
-                const_cast<TLS*>(&*_TLS),
+                const_cast<TLS*>(&**_TLS),
                 GL::util::get_current_epoch()
             );
-        };
-        void ProtectCurrentEpoch_Fast() const {
-            if (const_cast<TLS*>(&*_TLS)->_scope_count == 0) {
-                const_cast<atomic_epoch_allocator*>(this)->RunGC();
-                const_cast<TLS*>(&*_TLS)->ForwardEpoch(GL::util::get_current_epoch());
-            }
         };
 
         // Request a new memory pointer
         template <typename... TArgs> _type_* Alloc(TArgs &&... a) {
+            (void)_TLS->operator->();
             return _alloc.Alloc(std::forward<TArgs>(a)...);
         };
 
         // Frees the memory pointer
         void Free(const _type_* element) {
             _delete_list.push({ GL::util::get_current_epoch(), const_cast<_type_*>(element) });
-            if (_TLS->EpochCheck(GL::util::get_current_epoch())) {
+            if (_TLS->operator*().EpochCheck(GL::util::get_current_epoch())) {
                 // will only succeed if we are in scope-level 0, which only happens if this thread has not made any protecting guards.
                 RunGC();
             }
@@ -231,6 +237,8 @@ namespace GL {
 
 };
 
+// these are thread-safe, and fairly fast in single-threaded mode, but blow-up in terms of memory use in multi-threaded cases.
+#if 0
 // Atomic Maps
 namespace GL {
     // Thread-safe ordered B-Tree, which guarrantees valid and safe access to
@@ -477,10 +485,6 @@ namespace GL {
     public:
         using GuardType = typename EpochGuard;
         EpochGuard ProtectCurrentEpoch() const { return EpochGuard(this); };
-        void ProtectCurrentEpoch_Fast() const { 
-            const_cast<atomic_btree*>(this)->objAllocator->ProtectCurrentEpoch_Fast();
-            const_cast<atomic_btree*>(this)->nodeAllocator.ProtectCurrentEpoch_Fast();
-        };
 
         atomic_btree()
             : Num(0)
@@ -1133,10 +1137,6 @@ namespace GL {
             ProtectCurrentEpoch() const {
             return tree->ProtectCurrentEpoch();
         };
-        auto // Protect future member function calls from deleting node or object pointers until some time after this object expires.
-            ProtectCurrentEpoch_Fast() const {
-            return tree->ProtectCurrentEpoch_Fast();
-        };
         size_t // returns the current number of objects in the container. Thread-safe, but out-of-date immediately after the call is made. 
             size() const {
             return tree->GetNodeCount();
@@ -1608,3 +1608,4 @@ namespace GL {
     };
 
 };
+#endif

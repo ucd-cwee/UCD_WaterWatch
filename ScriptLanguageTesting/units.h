@@ -144,10 +144,17 @@ namespace GL {
                 RADIANS{ 0 }; // si unit for angle
             uint32_t
                 hash{ std::numeric_limits< uint32_t>::max() };
-            GL::deferred<concurrency::concurrent_unordered_map<uint16_t, impl_unit>>
-                implimented_units{};
-            GL::deferred<GL::atomic_map<double, impl_unit*>>
-                sorted_units{};
+            concurrency::concurrent_unordered_map<uint16_t, impl_unit>
+                implimented_units;
+            GL::epoch_search_tree<impl_unit* , double>
+                sorted_units;
+
+            si_unit() = default;
+            si_unit(si_unit const&) : si_unit() {};
+            si_unit(si_unit &&) : si_unit() {};
+            si_unit& operator=(si_unit const&) { return *this; };
+            si_unit& operator=(si_unit&&) { return *this; };
+            ~si_unit() = default;
 
             static uint16_t calc_si_hash(double meters, double kilograms, double seconds, double amperes, double celsius, double radians) {
                 if ((meters == 0) && (kilograms == 0) && (seconds == 0) && (amperes == 0) && (celsius == 0) && (radians == 0)) {
@@ -174,7 +181,7 @@ namespace GL {
             };
             impl_unit* try_get_impl_unit(double ratio) {
                 uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
-                if (auto F = implimented_units->find(impl_hash); F != implimented_units->end()) {
+                if (auto F = implimented_units.find(impl_hash); F != implimented_units.end()) {
                     return &F->second;
                 }
                 else {
@@ -182,8 +189,8 @@ namespace GL {
                 }
             };
             impl_unit* try_get_nearest_impl_unit(double ratio) {
-                if (auto F = sorted_units->find_less_or_equal(ratio); F != sorted_units->end()) {
-                    return F->second;
+                if (auto [node, locking] = sorted_units.NodeFindSmallestLargerEqual(ratio, false); node) {
+                    return *node->object();
                 }
                 else {
                     return nullptr;
@@ -191,7 +198,7 @@ namespace GL {
             };
             impl_unit& get_impl_unit(double ratio, GL::string const& name, GL::string const& abbreviation) {
                 uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
-                auto& out = implimented_units->operator[](impl_hash);
+                auto& out = implimented_units.operator[](impl_hash);
                 if (out.hash == std::numeric_limits< uint32_t>::max()) {
                     package default_bits;
                     default_bits.m_n64 = 0;
@@ -205,14 +212,14 @@ namespace GL {
                         out.name = name;
                         out.abbreviation = abbreviation;
                         out.default_bits = default_bits;
-                        sorted_units->insert_fast(ratio, &out);
+                        sorted_units.Add(&out, ratio);
                     }
                 }
                 return out;
             };
             impl_unit& get_impl_unit(double ratio, double translation, GL::string const& name, GL::string const& abbreviation) {
                 uint16_t impl_hash = (((hash == 0) || ((ratio + translation) == 0)) ? 0 : si_unit::calc_impl_hash(ratio + translation));
-                auto& out = implimented_units->operator[](impl_hash);
+                auto& out = implimented_units.operator[](impl_hash);
                 if (out.hash == std::numeric_limits< uint32_t>::max()) {
                     package default_bits;
                     default_bits.m_n64 = 0;
@@ -226,7 +233,7 @@ namespace GL {
                         out.name = name;
                         out.abbreviation = abbreviation;
                         out.default_bits = default_bits;
-                        sorted_units->insert_fast(ratio, &out);
+                        sorted_units.Add(&out, ratio);
                     }
                 }
                 return out;
@@ -325,11 +332,11 @@ namespace GL {
 
         // return the SI ratio of the current type. 
         static impl_unit const& impl(package const& pkg) {
-            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit);
+            return get_si_unit(pkg.m_bits.si_unit).implimented_units.operator[](pkg.m_bits.impl_unit);
         };
         // return the abbreviation for the current type. 
         static GL::string const& abbreviation(package const& pkg) {
-            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).abbreviation;
+            return get_si_unit(pkg.m_bits.si_unit).implimented_units.operator[](pkg.m_bits.impl_unit).abbreviation;
         };
         // return true if the type is a scalar.
         static bool is_scalar(package const& pkg) {
@@ -526,8 +533,8 @@ namespace GL {
                     , lhs_si_units.CELSIUS + rhs_si_units.CELSIUS
                     , lhs_si_units.RADIANS + rhs_si_units.RADIANS
                 );
-                auto& lhs_impl = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit);
-                auto& rhs_impl = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit);
+                auto& lhs_impl = lhs_si_units.implimented_units.operator[](lhs.m_bits.impl_unit);
+                auto& rhs_impl = rhs_si_units.implimented_units.operator[](rhs.m_bits.impl_unit);
                 double desired_ratio = (lhs_impl.translation + lhs_impl.ratio) * (rhs_impl.translation + rhs_impl.ratio);
 
                 auto* _impl_unit = new_si_units.try_get_impl_unit(desired_ratio);
@@ -562,8 +569,8 @@ namespace GL {
                     , lhs_si_units.CELSIUS - rhs_si_units.CELSIUS
                     , lhs_si_units.RADIANS - rhs_si_units.RADIANS
                 );
-                auto& lhs_impl = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit);
-                auto& rhs_impl = rhs_si_units.implimented_units->operator[](rhs.m_bits.impl_unit);
+                auto& lhs_impl = lhs_si_units.implimented_units.operator[](lhs.m_bits.impl_unit);
+                auto& rhs_impl = rhs_si_units.implimented_units.operator[](rhs.m_bits.impl_unit);
                 double desired_ratio = (lhs_impl.translation + lhs_impl.ratio) / (rhs_impl.translation + rhs_impl.ratio);
                 auto* _impl_unit = new_si_units.try_get_impl_unit(desired_ratio);
 
@@ -613,7 +620,7 @@ namespace GL {
                     , lhs_si_units.RADIANS * rhs
                 );
 
-                auto& lhs_impl = lhs_si_units.implimented_units->operator[](lhs.m_bits.impl_unit);
+                auto& lhs_impl = lhs_si_units.implimented_units.operator[](lhs.m_bits.impl_unit);
                 double desired_ratio = std::pow(lhs_impl.translation + lhs_impl.ratio, rhs);
                 if (auto* _impl_unit = new_si_units.try_get_nearest_impl_unit(desired_ratio)) {
                     // found or found nearby
@@ -692,8 +699,8 @@ namespace GL {
 
     public:      
         static 
-            const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
-            // const GL::epoch_map< value::si_unit, uint16_t>&
+            // const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
+            const GL::epoch_map< value::si_unit, uint16_t>&
             all_known_unit_types();
 
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       
@@ -723,11 +730,11 @@ namespace GL {
         };
         GL::string const& name() const {
             auto pkg = load();
-            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).name;
+            return get_si_unit(pkg.m_bits.si_unit).implimented_units.operator[](pkg.m_bits.impl_unit).name;
         };
         GL::string const& abbreviation() const {
             auto pkg = load();
-            return get_si_unit(pkg.m_bits.si_unit).implimented_units->operator[](pkg.m_bits.impl_unit).abbreviation;
+            return get_si_unit(pkg.m_bits.si_unit).implimented_units.operator[](pkg.m_bits.impl_unit).abbreviation;
         };
         bool is_scalar() const {
             auto pkg = load();

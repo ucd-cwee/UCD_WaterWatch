@@ -29,7 +29,7 @@ namespace GL {
             thread_local ticket_return r(tickets, ticket);
             return ticket;
         };
-#if 1
+#if 0
         template <void (*Func)(void)> class Taskable {
             std::atomic<bool>
                 alive;
@@ -77,7 +77,7 @@ namespace GL {
         };
 #endif
         long long get_current_epoch() {
-#if 1
+#if 0
             static std::atomic<long long> _epoch{ clock::ms() };
             struct Wrap {
                 __declspec(noinline) static void UpdateEpoch(void) {
