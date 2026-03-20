@@ -523,11 +523,14 @@ namespace /* atomic_shared_ptr */ GL {
     template <class _Ty, class... _Types> _NODISCARD shared_ptr<_Ty> make_shared(_Types&&... _Args) {
         return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(embedded_control_block<_Ty>::AllocateSelf(_STD forward<_Types>(_Args)...)), true);
     };
+    template <class _Ty> _NODISCARD shared_ptr<_Ty> make_shared_forwarded(_Ty&& _Args) {
+        return shared_ptr<_Ty>(dynamic_cast<control_block_base*>(embedded_control_block<_Ty>::AllocateSelf(_STD forward<_Ty>(_Args))), true);
+    };
     template<typename To, typename From> static _NODISCARD atomic_shared_ptr<To> static_pointer_cast(atomic_shared_ptr<From> && from) {
         return atomic_shared_ptr<To>(shared_ptr<To>(from.load()));
     };
     template<typename To, typename From> static _NODISCARD shared_ptr<To> static_pointer_cast(shared_ptr<From> && from) {
-        return shared_ptr<To>(from);
+        return shared_ptr<To>(std::move(from));
     };
     template<typename T> __forceinline fast_shared_ptr<T>::fast_shared_ptr(shared_ptr<T>&& Data) : knownValue(reinterpret_cast<size_t>(Data.release_control_block()) << MAGIC_LEN), foreignPackedPtr(nullptr), data(nullptr) {
         data = reinterpret_cast<T*>(get_control_block()->data);

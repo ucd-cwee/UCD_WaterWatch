@@ -52,19 +52,20 @@ namespace GL {
                 : mat{ nullptr }, sum{ T{} } 
             {};
             matrix_kernel(matrix_kernel const&) = delete;
-            matrix_kernel(matrix<T>&& rhs) noexcept
-                : mat{ std::make_unique<matrix<T>>(std::move(rhs)) }
-                , sum{ T{} }
-            {
-                sum = mat->sum();
-            };
             matrix_kernel& operator=(matrix_kernel const&) = delete;
+            matrix_kernel(matrix_kernel &&) = default;            
             matrix_kernel& operator=(matrix_kernel&& rhs) noexcept {
                 mat = std::move(rhs.mat);
                 rhs.mat = nullptr;
                 sum = rhs.sum;
                 rhs.sum = T{};
                 return *this;
+            };
+            matrix_kernel(matrix<T>&& rhs) noexcept
+                : mat{ std::make_unique<matrix<T>>(std::move(rhs)) }
+                , sum{ T{} }
+            {
+                sum = mat->sum();
             };
             ~matrix_kernel() = default;
         };
@@ -161,19 +162,34 @@ namespace GL {
             matrix& operator-=(matrix const& rhs);
             matrix& operator*=(matrix const& rhs);
             matrix& operator/=(matrix const& rhs);
+        
+        private:
+            matrix Add(matrix const& rhs) const;
+            matrix Minus(matrix const& rhs) const;
+            matrix Multiply(matrix const& rhs) const;
+            matrix Divide(matrix const& rhs) const;
+            matrix Add(T rhs) const;
+            matrix Minus(T rhs) const;
+            matrix Multiply(T rhs) const;
+            matrix Divide(T rhs) const;
+            matrix Add_Rhs(T rhs) const;
+            matrix Minus_Rhs(T rhs) const;
+            matrix Multiply_Rhs(T rhs) const;
+            matrix Divide_Rhs(T rhs) const;
 
-            template <typename U> friend matrix<U> operator+(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<U> operator-(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<U> operator*(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<U> operator/(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<U> operator+(matrix<U> const& lhs, U rhs);
-            template <typename U> friend matrix<U> operator-(matrix<U> const& lhs, U rhs);
-            template <typename U> friend matrix<U> operator*(matrix<U> const& lhs, U rhs);
-            template <typename U> friend matrix<U> operator/(matrix<U> const& lhs, U rhs);
-            template <typename U> friend matrix<U> operator+(U rhs, matrix<U> const& lhs);
-            template <typename U> friend matrix<U> operator-(U rhs, matrix<U> const& lhs);
-            template <typename U> friend matrix<U> operator*(U rhs, matrix<U> const& lhs);
-            template <typename U> friend matrix<U> operator/(U rhs, matrix<U> const& lhs);
+        public:
+            friend matrix operator+(matrix const& lhs, matrix const& rhs) { return lhs.Add(rhs); };
+            friend matrix operator-(matrix const& lhs, matrix const& rhs) { return lhs.Minus(rhs); };
+            friend matrix operator*(matrix const& lhs, matrix const& rhs) { return lhs.Multiply(rhs); };
+            friend matrix operator/(matrix const& lhs, matrix const& rhs) { return lhs.Divide(rhs); };
+            friend matrix operator+(matrix const& lhs, T rhs) { return lhs.Add(rhs); };
+            friend matrix operator-(matrix const& lhs, T rhs) { return lhs.Add(rhs); };
+            friend matrix operator*(matrix const& lhs, T rhs) { return lhs.Add(rhs); };
+            friend matrix operator/(matrix const& lhs, T rhs) { return lhs.Add(rhs); };
+            friend matrix operator+(T rhs, matrix const& lhs) { return lhs.Add_Rhs(rhs); };
+            friend matrix operator-(T rhs, matrix const& lhs) { return lhs.Minus_Rhs(rhs); };
+            friend matrix operator*(T rhs, matrix const& lhs) { return lhs.Multiply_Rhs(rhs); };
+            friend matrix operator/(T rhs, matrix const& lhs) { return lhs.Divide_Rhs(rhs); };
 
             // cast from the current type to the requested type. E.g. from int to float, or char to unsigned long, etc.
             template<typename G> matrix<G> cast() const;
@@ -248,8 +264,12 @@ namespace GL {
             // return this % rhs
             matrix mod(matrix const& rhs) const;
 
-            template <typename U> friend matrix<U> operator%(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<U> operator%(matrix<U> const& lhs, U rhs);
+            friend matrix operator%(matrix const& lhs, matrix const& rhs) {
+                return lhs.mod(rhs);
+            };
+            friend matrix operator%(matrix const& lhs, T rhs) {
+                return lhs.mod(rhs);
+            };
             // returns the max of the two arrays (item-by-item, as an array)
             matrix max(matrix const& rhs) const;
             // returns the max of the two arrays (item-by-item, as an array)
@@ -265,12 +285,34 @@ namespace GL {
             matrix<unsigned int> operator<=(T rhs) const;
             matrix<unsigned int> operator>(T rhs) const;
             matrix<unsigned int> operator>=(T rhs) const;
-            template <typename U> friend matrix<unsigned int> operator==(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<unsigned int> operator!=(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<unsigned int> operator<(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<unsigned int> operator<=(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<unsigned int> operator>(matrix<U> const& lhs, matrix<U> const& rhs);
-            template <typename U> friend matrix<unsigned int> operator>=(matrix<U> const& lhs, matrix<U> const& rhs);
+        
+        private:
+            matrix<unsigned int> Equals(matrix const& rhs) const;
+            matrix<unsigned int> NotEquals(matrix const& rhs) const;
+            matrix<unsigned int> LessThan(matrix const& rhs) const;
+            matrix<unsigned int> LessThanOrEquals(matrix const& rhs) const;
+            matrix<unsigned int> GreaterThan(matrix const& rhs) const;
+            matrix<unsigned int> GreaterThanOrEquals(matrix const& rhs) const;
+
+        public:
+            friend matrix<unsigned int> operator==(matrix const& lhs, matrix const& rhs) {
+                return lhs.Equals(rhs);
+            };
+            friend matrix<unsigned int> operator!=(matrix const& lhs, matrix const& rhs) {
+                return lhs.NotEquals(rhs);
+            };
+            friend matrix<unsigned int> operator<(matrix const& lhs, matrix const& rhs) {
+                return lhs.LessThan(rhs);
+            };
+            friend matrix<unsigned int> operator<=(matrix const& lhs, matrix const& rhs) {
+                return lhs.LessThanOrEquals(rhs);
+            };
+            friend matrix<unsigned int> operator>(matrix const& lhs, matrix const& rhs) {
+                return lhs.GreaterThan(rhs);
+            };
+            friend matrix<unsigned int> operator>=(matrix const& lhs, matrix const& rhs) {
+                return lhs.GreaterThanOrEquals(rhs);
+            };
             matrix<unsigned int> operator&&(T rhs) const;
             matrix<unsigned int> operator&&(matrix const& rhs) const;
             matrix<unsigned int> operator||(T rhs) const;
@@ -315,8 +357,8 @@ namespace GL {
             T max() const;
             T min() const;
 
-            matrix convolve(matrix_kernel<T> const& K) const;
-            matrix convolve(static_matrix_kernel<T> const& K) const;
+            matrix convolve(matrix_kernel<float> const& K) const;
+            matrix convolve(static_matrix_kernel<float> const& K) const;
             static matrix_kernel<float> guassian_kernel(unsigned int X, unsigned int Y);
             template <unsigned int X, unsigned int Y>
             static static_matrix_kernel<float> guassian_kernel() {
@@ -327,7 +369,7 @@ namespace GL {
             };
 
             matrix<char> ASCII() const;
-            matrix resize(unsigned int X, unsigned int Y, unsigned Z) const;
+            matrix resize(unsigned int X, unsigned int Y, unsigned int Z) const;
             matrix resize_stretch(unsigned int X, unsigned int Y, unsigned Z) const;
             matrix subsample_1D(matrix<float> const& FloatingPointIndexes) const;
             matrix<unsigned int> binomial_search_smallest_gre(matrix const& find) const;
@@ -348,7 +390,10 @@ namespace GL {
         public:
             // y-axis are columns, x-axis are rows. Z-axis is ignored (for now). 
             std::string to_string(std::vector<std::string> column_titles = {}, bool doNotSkip = false) const;
-            template <typename U> friend std::ostream& operator<<(std::ostream& os, matrix<U> const& obj);
+            friend std::ostream& operator<<(std::ostream& os, matrix const& obj) {
+                os << obj.to_string();
+                return os;
+            };
 
         public:
             std::shared_ptr<T[]> slice(size_t offset = 0, size_t length = std::numeric_limits<size_t>::max()) const;

@@ -2657,6 +2657,22 @@ int main() {
                 }
             }
 
+            //if (auto timer = sw.debug_timer("GPU matrix test")) {
+            //    GL::scope::impl::RootScope
+            //        root;
+            //    root.perform_builtins();
+
+            //    if (auto this_scope = root.make_scope()) {
+            //        auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(10), GL::any::fast_any::instance(10), GL::any::fast_any::instance(1) });
+            //        auto state = this_scope.call("uint_matrix", { this_scope.call(">", {mat, GL::any::fast_any::instance(0.4)}) });
+            //        print(this_scope.call("to_string", { state }).cast<std::string>());
+            //    }
+
+
+
+
+            //}
+
 #endif
             }
 

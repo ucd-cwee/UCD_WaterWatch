@@ -2204,13 +2204,8 @@ namespace GL {
                         throw std::runtime_error(err.to_string());
                     }
                 };
-                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any>&& params) const {
-                    std::vector<GL::any::fast_any> temp(std::move(params));
-                    GL::any::fast_any out = call(PossiblyScopedName, temp.begin(), temp.end());
-                    for (auto& x : temp) {
-                        x = nullptr;
-                    }
-                    return out;
+                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
+                    return call(PossiblyScopedName, params.begin(), params.end());
                 };
 
             };

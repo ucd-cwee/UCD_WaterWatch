@@ -290,10 +290,10 @@ namespace GL {
     public:
         fast_shared_mutex() : mut{ 0 } {};
         fast_shared_mutex(fast_shared_mutex const&) : mut{ 0 } {};
-        fast_shared_mutex(fast_shared_mutex&&) : mut{ 0 } {};
+        fast_shared_mutex(fast_shared_mutex&&) noexcept : mut{ 0 } {};
         fast_shared_mutex& operator=(fast_shared_mutex const&) { return *this; };
-        fast_shared_mutex& operator=(fast_shared_mutex&&) { return *this; };
-        ~fast_shared_mutex() = default;
+        fast_shared_mutex& operator=(fast_shared_mutex&&) noexcept { return *this; };
+        ~fast_shared_mutex() noexcept = default;
 
         __declspec(noinline) bool try_lock() const {
             thread_local long long read, planned;
@@ -336,18 +336,18 @@ namespace GL {
                 return true;
             }
             else {
-                mut.fetch_add(-1, std::memory_order::memory_order_acq_rel); // failure -- undo our mistake.
+                mut.fetch_add(-1, std::memory_order::memory_order_relaxed); // failure -- undo our mistake.
                 return false;
             }
         };
         __declspec(noinline) void unlock_shared() const {
-            mut.fetch_add(-1, std::memory_order::memory_order_acq_rel);
+            mut.fetch_add(-1, std::memory_order::memory_order_relaxed);
         };
         __declspec(noinline) void lock_shared() const {
             thread_local long long read;
             read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
             while (reinterpret_cast<long*>(&read)[1] != 0) {
-                read = mut.load();
+                read = mut.load(std::memory_order::memory_order_relaxed);
             }
         };
 
@@ -360,7 +360,7 @@ namespace GL {
             planned = read = mut.load(std::memory_order::memory_order_relaxed);
             if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...					
                 if (--reinterpret_cast<short*>(&planned)[0] == 0) { // we're the only reader...		
-                    if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
+                    if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_relaxed)) {
                         return true;
                     }
                 }

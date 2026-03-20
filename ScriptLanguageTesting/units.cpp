@@ -1,23 +1,25 @@
 #include "units.h"
 #include <concurrent_unordered_map.h>
 #include "types.h"
+#include <map>
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
 namespace GL {
 	// boost::type_info hashes are unpredictable and therefore we must use a map.
 
-	static GL::epoch_map< value::si_unit, uint16_t> si_unit_types;
-	// static concurrency::concurrent_unordered_map<uint16_t, value::si_unit> si_unit_types;
+	// static std::map<uint16_t, value::si_unit> si_unit_types;
+	// static GL::epoch_map< value::si_unit, uint16_t> si_unit_types;
+	static concurrency::concurrent_unordered_map<uint16_t, value::si_unit> si_unit_types;
 	
 	// get the cached si unit for this type
 	value::si_unit& value::get_si_unit(uint16_t hash) {
 		return si_unit_types[hash];
 	};
 	// const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
-    const GL::epoch_map< value::si_unit, uint16_t>&
-		value::all_known_unit_types() {
-		return si_unit_types;
-	};
+ //   const GL::epoch_map< value::si_unit, uint16_t>&
+	//	value::all_known_unit_types() {
+	//	return si_unit_types;
+	//};
 
 #ifdef DECL_UNIT_LITERALS
 #define DerivedUnitType(type, category, abbreviation, Ratio) \

@@ -64,28 +64,40 @@ namespace GL {
         };
 
         using element_t = T;
-        GL::atomic_allocator< std::vector< element_t >, max_num_buckets + 1, false, false >
-            alloc;
-        std::array< std::vector< element_t >*, max_num_buckets >
-            blocks;        
-        std::atomic<size_t>
-            current_pos;
+        std::array< element_t*, max_num_buckets >
+            blocks{ 0 };
         size_t
-            valid_pos;
+            current_pos{ 0 };
+        size_t
+            valid_pos{ 0 };
         short
-            current_blockN;
+            current_blockN{ -1 };
 
-        bool EnsureBlockExists(short block_n) noexcept {
+        __declspec(noinline) bool EnsureBlockExists(short block_n) noexcept {
             bool out = false;
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    auto* new_ptr = alloc.Alloc(block_to_allocsize(blockN));
+                    element_t* new_ptr = (element_t*)(::_aligned_malloc(block_to_allocsize(blockN) * sizeof(element_t), 16));
+                    if constexpr (!std::is_pod_v<T>) {
+                        for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                            new (new_ptr + i) element_t();
+                        }
+                    }
+                    else {
+                        // some users expect the POD-types to be zero'd when the requested index has been initialized.
+                        std::memset(new_ptr, 0, block_to_allocsize(blockN) * sizeof(element_t));
+                    }
                     if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
                         out = true;
                     }
                     else {
-                        alloc.Free(new_ptr);
+                        if constexpr (!std::is_pod_v<element_t>) {
+                            for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                                (new_ptr + i)->~element_t();
+                            }
+                        }
+                        ::_aligned_free(new_ptr);
                     }
                 }
             }
@@ -93,27 +105,34 @@ namespace GL {
         };
         bool grow_to_at_least_blocksN(short blockN) noexcept { return EnsureBlockExists(blockN); };
     public:
-        atomic_vector() noexcept : alloc(), blocks(), current_pos{ 0 }, valid_pos{ 0 }, current_blockN{ -1 } {
-            std::memset(&blocks[0], 0, sizeof(blocks));
-        };
+        atomic_vector() noexcept = default;
         atomic_vector(atomic_vector const&) = delete;
         atomic_vector(atomic_vector &&) = delete;
         atomic_vector& operator=(atomic_vector const&) = delete;
         atomic_vector& operator=(atomic_vector&&) = delete;
-        ~atomic_vector() {
-            alloc.unsafe_unload();
+        __declspec(noinline) ~atomic_vector() noexcept {
+            for (int blockN = 0; blockN < max_num_buckets; ++blockN) {
+                if (blocks[blockN]) {
+                    if constexpr (!std::is_pod_v<T>) {
+                        for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                            (blocks[blockN] + i)->~element_t();
+                        }
+                    }
+                    ::_aligned_free(blocks[blockN]);
+                }
+            }
         };
 
         element_t& at(size_t index) noexcept {
             auto block_i = global_index_to_block(index);
             auto block_j = global_index_to_local_index(index, block_i);
-            return blocks[block_i]->operator[](block_j);
+            return blocks[block_i][block_j];
         };
         element_t& operator[](size_t index) noexcept { return at(index); };
         const element_t& at(size_t index) const noexcept {
             auto block_i = global_index_to_block(index);
             auto block_j = global_index_to_local_index(index, block_i);
-            return blocks[block_i]->operator[](block_j);
+            return blocks[block_i][block_j];
         };
         const element_t& operator[](size_t index) const noexcept { return at(index); };
         bool grow_to_at_least(size_t index) noexcept {
@@ -135,26 +154,26 @@ namespace GL {
             size_t position;
             short blockN;
 
-            position = current_pos++;
+            position = InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&current_pos)) - 1;
             blockN = global_index_to_block(position);
             if (current_blockN < blockN) {
                 grow_to_at_least_blocksN(blockN);
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
-            blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = srce;
+            blocks[blockN][global_index_to_local_index(position, blockN)] = srce;
             return position;
         };
         size_t push_back(element_t&& srce) noexcept {
             size_t position;
             short blockN;
 
-            position = current_pos++;
+            position = InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&current_pos)) - 1;
             blockN = global_index_to_block(position);
             if (current_blockN < blockN) {
                 grow_to_at_least_blocksN(blockN);
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
-            blocks[blockN]->operator[](global_index_to_local_index(position, blockN)) = std::move(srce);
+            blocks[blockN][global_index_to_local_index(position, blockN)] = std::move(srce);
             return position;
         };
         size_t size() const {
@@ -212,19 +231,19 @@ namespace GL {
                 return *this;
             }
             /*inline*/ reference operator*() {
-                return parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+                return parent->blocks[_block_outer_n][_block_inner_n];
             }
             /*inline*/ pointer operator->() {
-                return &parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+                return &parent->blocks[_block_outer_n][_block_inner_n];
             }
             /*inline*/ reference operator[](difference_type rhs) {
                 return parent->at(rhs); 
             }
             /*inline*/ const reference operator*() const {
-                return parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+                return parent->blocks[_block_outer_n][_block_inner_n];
             }
             /*inline*/ const pointer operator->() const {
-                return &parent->blocks[_block_outer_n]->operator[](_block_inner_n);
+                return &parent->blocks[_block_outer_n][_block_inner_n];
             }
             /*inline*/ const reference operator[](difference_type rhs) const { return parent->at(rhs); }
 

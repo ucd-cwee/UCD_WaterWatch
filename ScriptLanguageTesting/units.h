@@ -698,10 +698,10 @@ namespace GL {
         };
 
     public:      
-        static 
-            // const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
-            const GL::epoch_map< value::si_unit, uint16_t>&
-            all_known_unit_types();
+        //static 
+        //    // const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
+        //    const GL::epoch_map< value::si_unit, uint16_t>&
+        //    all_known_unit_types();
 
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       
         explicit value(impl_unit const& from) : packed(from.default_bits) {};
@@ -1489,6 +1489,7 @@ namespace GL {
 
 #pragma warning(push)
 #pragma warning(disable : 4244) // suppressing warning on casting size_t to double, etc.
+#pragma warning(disable : 4267) // suppressing warning on casting size_t to unsigned int, etc.
     // Allow casting from a GL::value, double, etc. to a GL::value, double, etc.
     // If the types do not work, it will return an empty container. User must double-check the return type is non-void before use. 
     template <typename T> __forceinline GL::any GL::impl::instance_funcs<T>::instance_by_value(GL::any const& from) {

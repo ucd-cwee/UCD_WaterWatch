@@ -388,6 +388,10 @@ namespace GL {
         class Proxy_Function_Base {
         public:
             Proxy_Function_Base() = default;
+            Proxy_Function_Base(Proxy_Function_Base const&) = default;
+            Proxy_Function_Base(Proxy_Function_Base &&) = default;
+            Proxy_Function_Base& operator=(Proxy_Function_Base const&) = default;
+            Proxy_Function_Base& operator=(Proxy_Function_Base&&) = default;
             virtual ~Proxy_Function_Base() = default;
 
             function_signature 
@@ -1556,20 +1560,16 @@ namespace GL {
 
         template<typename Ret, typename Class, typename... Param>
         Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) const, std::vector<any>&& defaults) {
-            auto g = Const_Member_Function_Impl(f, {});
-            auto* function_impl = new decltype(g)(f, std::move(defaults));
-            function_impl->m_signature.state_m |= function_signature::Constant;
-            // function_impl->m_signature.state_m |= function_signature::Async; // const member functions (e.g. std::string::length) are assumed to be async-friendly. 
-            auto ptr{ GL::static_pointer_cast<Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
-            return ptr;
+            auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Const_Member_Function_Impl(f, std::move(defaults))));
+            out->m_signature.state_m |= function_signature::Constant;
+            // out->m_signature.state_m |= function_signature::Async; // const member functions (e.g. std::string::length) are assumed to be async-friendly. 
+            return out;
         };
         
         template<typename Ret, typename Class, typename... Param>
         Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...), std::vector<any>&& defaults) {
-            auto g = Default_Member_Function_Impl(f, {});
-            auto* function_impl = new decltype(g)(f, std::move(defaults));
-            auto ptr{ GL::static_pointer_cast<Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl)) };
-            return ptr;
+            auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Default_Member_Function_Impl(f, std::move(defaults))));
+            return out;
         };
     };
 
@@ -1586,33 +1586,24 @@ namespace GL {
         Proxy_Function out;
         typedef decltype(details::detail::function_signature(func)) function_header;
         if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
-            auto* function_impl = new details::Explicit_Function_Impl<Func>(std::move(func), std::move(defaults));
-            function_impl->m_signature.state_m |= function_signature::Static;
-            function_impl->m_signature.state_m |= function_signature::Constant;
-            //function_impl->m_signature.state |= FunctionState::Async; // static functions are assumed to be async-friendly. 
-            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
-
-            //if constexpr (function_header::is_stateless_object) {
-            //    function_impl->m_signature.state_m |= function_signature::Static;
-            //}
+            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared< details::Explicit_Function_Impl<Func> >(std::move(func), std::move(defaults)));
+            out->m_signature.state_m |= function_signature::Static;
+            out->m_signature.state_m |= function_signature::Constant;
+            // out->m_signature.state |= function_signature::Async; // static functions are assumed to be async-friendly. 
         }
         else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
-            auto f = details::Attribute_Access_Impl(func, {});
-            auto* function_impl = new decltype(f)(std::move(func), std::move(defaults));
-            function_impl->m_signature.state_m |= function_signature::Constant; // accessing a member object is assumed to be constant -- it does not necessarily change anything just to "look".
-            function_impl->m_signature.state_m |= function_signature::Async; // accessing a member object is assumed to be async-friendly.
-            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(details::Attribute_Access_Impl(std::move(func), std::move(defaults))));
+            out->m_signature.state_m |= function_signature::Constant; // accessing a member object is assumed to be constant -- it does not necessarily change anything just to "look".
+            out->m_signature.state_m |= function_signature::Async; // accessing a member object is assumed to be async-friendly.            
         }
         else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
             out = details::Member_Function_Impl(std::move(func), std::move(defaults));
         }
         else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};        
-            auto f = details::Static_Function_Impl(func, {});
-            auto* function_impl = new decltype(f)(std::move(func), std::move(defaults));
-            function_impl->m_signature.state_m |= function_signature::Static;
-            function_impl->m_signature.state_m |= function_signature::Constant;
-            //function_impl->m_signature.state_m |= function_signature::Async; // static functions are assumed to be async-friendly. 
-            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::shared_ptr<typename std::remove_pointer<decltype(function_impl)>::type>(function_impl));
+            out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(details::Static_Function_Impl(std::move(func), std::move(defaults))));
+            out->m_signature.state_m |= function_signature::Static;
+            out->m_signature.state_m |= function_signature::Constant;
+            //out->m_signature.state_m |= function_signature::Async; // static functions are assumed to be async-friendly. 
         }
         else {
             throw std::runtime_error("Did not handle conversion of provided function to a PROXY_FUNCTION.");

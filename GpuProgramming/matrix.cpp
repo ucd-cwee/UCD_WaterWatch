@@ -2284,127 +2284,139 @@ namespace GL {
             return *this;
         };
 
-        template <typename U> GL::GPU::matrix<U> operator+(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("add") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Add(matrix const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("add") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), mem(rhs), mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator-(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("sub") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Minus(matrix const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("sub") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), mem(rhs), mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator*(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("mult") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Multiply(matrix const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("mult") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), mem(rhs), mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator/(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("divide") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Divide(matrix const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("divide") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), mem(rhs), mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator+(GL::GPU::matrix<U> const& lhs, U rhs) {
-            static auto func_name{ GL::string("add_single") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Add(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("add_single") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator-(GL::GPU::matrix<U> const& lhs, U rhs) {
-            static auto func_name{ GL::string("sub_single") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Minus(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("sub_single") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator*(GL::GPU::matrix<U> const& lhs, U rhs) {
-            static auto func_name{ GL::string("mult_single") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Multiply(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("mult_single") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator/(GL::GPU::matrix<U> const& lhs, U rhs) {
-            static auto func_name{ GL::string("divide_single") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Divide(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("divide_single") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator+(U rhs, GL::GPU::matrix<U> const& lhs) {
-            static auto func_name{ GL::string("add_single") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Add_Rhs(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("add_single") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator-(U rhs, GL::GPU::matrix<U> const& lhs) {
-            static auto func_name{ GL::string("sub_single_inv") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Minus_Rhs(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("sub_single_inv") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator*(U rhs, GL::GPU::matrix<U> const& lhs) {
-            static auto func_name{ GL::string("mult_single") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Multiply_Rhs(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("mult_single") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator/(U rhs, GL::GPU::matrix<U> const& lhs) {
-            static auto func_name{ GL::string("divide_single_inv") + GL::string(opencl_impl::type_name<U>()) };
+        template <typename T> matrix<T> matrix<T>::Divide_Rhs(T rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("divide_single_inv") + GL::string(opencl_impl::type_name<T>()) };
 
-            auto out = GL::GPU::matrix<U>(lhs.dim);
+            auto out = GL::GPU::matrix<T>(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
                 out.size(),
                 mem(lhs), rhs, mem(out)
             );
             return out;
         };
-
+        
         template <typename T> template<typename G> matrix<G> matrix<T>::cast() const {
             if constexpr (std::is_same_v<G, T>) {
                 return *this; // makes an implicit copy
@@ -2842,12 +2854,6 @@ namespace GL {
             );
             return out;
         };
-        template <typename U> GL::GPU::matrix<U> operator%(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            return lhs.mod(rhs);
-        };
-        template <typename U> GL::GPU::matrix<U> operator%(GL::GPU::matrix<U> const& lhs, U rhs) {
-            return lhs.mod(rhs);
-        };
         template <typename T> matrix<T> matrix<T>::mod(T rhs) const {
             static auto func_name{ GL::string("Mod_single") + GL::string(opencl_impl::type_name<T>()) };
 
@@ -2979,18 +2985,9 @@ namespace GL {
             return out;
         };
 
-        template<typename U> static GL::GPU::matrix<unsigned int> operator==(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("item_eq") + GL::string(opencl_impl::type_name<U>()) };
-            
-            GL::GPU::matrix<unsigned int> out(lhs.dim);
-            mem_matrix::queue_gpu_work(func_name,
-                out.size(),
-                mem(lhs), mem(rhs), mem(out)
-            );
-            return out;
-        };
-        template<typename U> static GL::GPU::matrix<unsigned int> operator!=(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("item_neq") + GL::string(opencl_impl::type_name<U>()) };
+        template<typename T> GL::GPU::matrix<unsigned int> matrix<T>::Equals(matrix<T> const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("item_eq") + GL::string(opencl_impl::type_name<T>()) };
 
             GL::GPU::matrix<unsigned int> out(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
@@ -2999,8 +2996,9 @@ namespace GL {
             );
             return out;
         };
-        template<typename U> static GL::GPU::matrix<unsigned int> operator<(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("item_ls") + GL::string(opencl_impl::type_name<U>()) };
+        template<typename T> GL::GPU::matrix<unsigned int> matrix<T>::NotEquals(matrix<T> const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("item_neq") + GL::string(opencl_impl::type_name<T>()) };
 
             GL::GPU::matrix<unsigned int> out(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
@@ -3009,8 +3007,9 @@ namespace GL {
             );
             return out;
         };
-        template<typename U> static GL::GPU::matrix<unsigned int> operator<=(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("item_lse") + GL::string(opencl_impl::type_name<U>()) };
+        template<typename T> GL::GPU::matrix<unsigned int> matrix<T>::LessThan(matrix<T> const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("item_ls") + GL::string(opencl_impl::type_name<T>()) };
 
             GL::GPU::matrix<unsigned int> out(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
@@ -3019,8 +3018,9 @@ namespace GL {
             );
             return out;
         };
-        template<typename U> static GL::GPU::matrix<unsigned int> operator>(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("item_gr") + GL::string(opencl_impl::type_name<U>()) };
+        template<typename T> GL::GPU::matrix<unsigned int> matrix<T>::LessThanOrEquals(matrix<T> const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("item_lse") + GL::string(opencl_impl::type_name<T>()) };
 
             GL::GPU::matrix<unsigned int> out(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
@@ -3029,8 +3029,20 @@ namespace GL {
             );
             return out;
         };
-        template<typename U> static GL::GPU::matrix<unsigned int> operator>=(GL::GPU::matrix<U> const& lhs, GL::GPU::matrix<U> const& rhs) {
-            static auto func_name{ GL::string("item_gre") + GL::string(opencl_impl::type_name<U>()) };
+        template<typename T> GL::GPU::matrix<unsigned int> matrix<T>::GreaterThan(matrix<T> const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("item_gr") + GL::string(opencl_impl::type_name<T>()) };
+
+            GL::GPU::matrix<unsigned int> out(lhs.dim);
+            mem_matrix::queue_gpu_work(func_name,
+                out.size(),
+                mem(lhs), mem(rhs), mem(out)
+            );
+            return out;
+        };
+        template<typename T> GL::GPU::matrix<unsigned int> matrix<T>::GreaterThanOrEquals(matrix<T> const& rhs) const {
+            const auto& lhs = *this;
+            static auto func_name{ GL::string("item_gre") + GL::string(opencl_impl::type_name<T>()) };
 
             GL::GPU::matrix<unsigned int> out(lhs.dim);
             mem_matrix::queue_gpu_work(func_name,
@@ -3418,34 +3430,44 @@ namespace GL {
                 return out;
             //}
         };
-        template <typename T> matrix<T> matrix<T>::convolve(matrix_kernel<T> const& K) const {
-            static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
-            if (this->dim.num_dimensions() == 2) {
-                matrix out(this->dim);
-                float kernel_tot = (float)K.sum;
-                mem_matrix::queue_gpu_work(func_name,
-                    this->size(),
-                    mem(out), mem(*this), mem(*K.mat), this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
-                );
-                return out;
+        template <typename T> matrix<T> matrix<T>::convolve(matrix_kernel<float> const& K) const {
+            if constexpr (std::is_same_v<T, float>) {
+                static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
+                if (this->dim.num_dimensions() == 2) {
+                    matrix out(this->dim);
+                    float kernel_tot = (float)K.sum;
+                    mem_matrix::queue_gpu_work(func_name,
+                        this->size(),
+                        mem(out), mem(*this), mem(*K.mat), this->size(0), this->size(1), K.mat->size(0), K.mat->size(1), kernel_tot
+                    );
+                    return out;
+                }
+                else {
+                    return *this;
+                }
             }
             else {
-                return *this;
+                return this->cast<float>().convolve(K).cast<T>();
             }
         };
-        template <typename T> matrix<T> matrix<T>::convolve(static_matrix_kernel<T> const& K) const {
-            static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
-            if (this->dim.num_dimensions() == 2) {
-                matrix out(this->dim);
-                float kernel_tot = (float)K.ptr->sum;
-                mem_matrix::queue_gpu_work(func_name,
-                    this->size(),
-                    mem(out), mem(*this), static_mem_matrix{ &(*mem(*K.ptr->mat)) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
-                );
-                return out;
+        template <typename T> matrix<T> matrix<T>::convolve(static_matrix_kernel<float> const& K) const {
+            if constexpr (std::is_same_v<T, float>) {
+                static auto func_name{ GL::string("convolve") + GL::string(opencl_impl::type_name<T>()) };
+                if (this->dim.num_dimensions() == 2) {
+                    matrix out(this->dim);
+                    float kernel_tot = (float)K.ptr->sum;
+                    mem_matrix::queue_gpu_work(func_name,
+                        this->size(),
+                        mem(out), mem(*this), static_mem_matrix{ &(*mem(*K.ptr->mat)) }, this->size(0), this->size(1), K.ptr->mat->size(0), K.ptr->mat->size(1), kernel_tot
+                    );
+                    return out;
+                }
+                else {
+                    return *this;
+                }
             }
             else {
-                return *this;
+                return this->cast<float>().convolve(K).cast<T>();
             }
         };
         template <typename T> matrix_kernel<float> matrix<T>::guassian_kernel(unsigned int X, unsigned int Y) {
@@ -3488,7 +3510,7 @@ namespace GL {
             return out;
             //}
         };
-        template <typename T> matrix<T> matrix<T>::resize(unsigned int X, unsigned int Y, unsigned Z) const {
+        template <typename T> matrix<T> matrix<T>::resize(unsigned int X, unsigned int Y, unsigned int Z) const {
             static auto func_name{ GL::string("copy_resize") + GL::string(opencl_impl::type_name<T>()) };
             auto out = matrix(GL::GPU::dimensions{ X, Y, Z });
             mem_matrix::queue_gpu_work(func_name,
@@ -3738,10 +3760,6 @@ namespace GL {
                 out = "3 dims";
             }
             return out;
-        };
-        template <typename U> static std::ostream& operator<<(std::ostream& os, GL::GPU::matrix<U> const& obj) {
-            os << obj.to_string();
-            return os;
         };
         template <typename T> std::shared_ptr<T[]> matrix<T>::slice(size_t offset, size_t length) const {
             length = std::min<size_t>(length, this->size() - offset);
@@ -4002,8 +4020,8 @@ namespace GL {
             matrix<T>(10).max();
             matrix<T>(10).min();
 
-            matrix<T>(10).convolve(GL::GPU::matrix_kernel<T>());
-            matrix<T>(10).convolve(GL::GPU::static_matrix_kernel<T>());
+            matrix<T>(10).convolve(GL::GPU::matrix_kernel<float>());
+            matrix<T>(10).convolve(GL::GPU::static_matrix_kernel<float>());
             matrix<T>::guassian_kernel(3, 3);
 
             matrix<T>(10).ASCII();

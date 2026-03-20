@@ -1,5 +1,6 @@
 #pragma once
 #include "scripting.h"
+#include "../GpuProgramming/matrix.h"
 
 namespace GL {
 	namespace scope {
@@ -77,7 +78,9 @@ namespace GL {
                 add_d(char);
                 add_c(unsigned char);
                 add_d(int);
+                add_c(unsigned int);
                 add_d(long);
+                add_c(unsigned long);
                 add_d(long long);
                 add_c(size_t);
                 add_d(float);
@@ -356,8 +359,154 @@ namespace GL {
                 Class.add_function(GL::decl_func(&class_t::to_upper));
             }
 
+            // GPU-accelerated arrays
+            if (1) {
+                // initialize the classes and their names
+#define add_matrix(TypeT) if (1) { \
+                GL::type_of<GPU::matrix<TypeT>>().try_update_name(GL::type_of<TypeT>().name() + "_matrix"); \
+                using class_t = GPU::matrix<TypeT>; \
+                auto& Class = this->make_class(GL::type_of<class_t>()); \
+                }
 
+                add_matrix(float);
+                add_matrix(unsigned long);
+                add_matrix(long);
+                add_matrix(int);
+                add_matrix(unsigned int);
+                add_matrix(char);
+                add_matrix(unsigned char);
+#undef add_matrix
+                GL::type_of<GPU::matrix_kernel<float>>().try_update_name("matrix_kernel"); 
+                this->make_class(GL::type_of<GPU::matrix_kernel<float>>());
 
+#define add_matrix(TypeT) if (1) { \
+                using class_t = GPU::matrix<TypeT>; \
+                auto& Class = this->make_class(GL::type_of<class_t>()); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type)); \
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<float> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned long> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<long> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<int> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned int> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<char> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned char> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::decl_func(&class_t::abs)); \
+                Class.add_function(GL::decl_func(&class_t::acos)); \
+                Class.add_function(GL::decl_func(&class_t::acosh)); \
+                Class.add_function(GL::decl_func(&class_t::adjoint)); \
+                Class.add_function(GL::decl_func(&class_t::ASCII)); \
+                Class.add_function(GL::decl_func(&class_t::asin)); \
+                Class.add_function(GL::decl_func(&class_t::asinh)); \
+                Class.add_function(GL::decl_func(&class_t::atan)); \
+                Class.add_function(GL::decl_func(&class_t::atanh)); \
+                Class.add_function(GL::decl_func(&class_t::avg)); \
+                Class.add_function(GL::decl_func(&class_t::binomial_search_smallest_gre)); \
+                Class.add_function(GL::decl_func(&class_t::ceil)); \
+                Class.add_function(GL::decl_func(&class_t::cofactor)); \
+                Class.add_function(GL::decl_func(&class_t::constant)); \
+                Class.add_function(GL::make_callable("convolve", [](class_t const& parent, GPU::matrix_kernel<float> const& rhs) -> class_t { return parent.convolve(rhs); })); \
+                Class.add_function(GL::decl_func(&class_t::cos)); \
+                Class.add_function(GL::decl_func(&class_t::cosh)); \
+                Class.add_function(GL::decl_func(&class_t::determinant)); \
+                Class.add_function(GL::decl_func(&class_t::diagonal)); \
+                Class.add_function(GL::decl_func(&class_t::doublesize)); \
+                Class.add_function(GL::decl_func(&class_t::exp)); \
+                Class.add_function(GL::decl_func(&class_t::exp10)); \
+                Class.add_function(GL::decl_func(&class_t::exp2)); \
+                Class.add_function(GL::decl_func(&class_t::expm1)); \
+                Class.add_function(GL::decl_func(&class_t::floor)); \
+                Class.add_function(GL::decl_func(&class_t::fma)); \
+                Class.add_function(GL::decl_func(&class_t::grow_by_wrapping)); \
+                Class.add_function(GL::make_callable("guassian_kernel", [](unsigned int X, unsigned int Y) { return GPU::matrix<float>::guassian_kernel(X, Y); })); \
+                Class.add_function(GL::decl_func(&class_t::halfsize)); \
+                Class.add_function(GL::decl_func(&class_t::identity)); \
+                Class.add_function(GL::decl_func(&class_t::inverse)); \
+                Class.add_function(GL::decl_func(&class_t::is_colinear)); \
+                Class.add_function(GL::decl_func(&class_t::join)); \
+                Class.add_function(GL::decl_func(&class_t::lgamma)); \
+                Class.add_function(GL::decl_func(&class_t::linear)); \
+                Class.add_function(GL::decl_func(&class_t::log)); \
+                Class.add_function(GL::decl_func(&class_t::log10)); \
+                Class.add_function(GL::decl_func(&class_t::log1p)); \
+                Class.add_function(GL::decl_func(&class_t::log2)); \
+                Class.add_function(GL::decl_func(&class_t::make_square)); \
+                Class.add_function(GL::decl_func(&class_t::matrix_multiply)); \
+                Class.add_function(GL::make_callable("max", [](class_t const& parent, class_t const& rhs) -> class_t { return parent.max(rhs); })); \
+                Class.add_function(GL::make_callable("max", [](class_t const& parent, typename class_t::type const& rhs) -> class_t { return parent.max(rhs); })); \
+                Class.add_function(GL::make_callable("min", [](class_t const& parent, class_t const& rhs) -> class_t { return parent.min(rhs); })); \
+                Class.add_function(GL::make_callable("min", [](class_t const& parent, typename class_t::type const& rhs) -> class_t { return parent.min(rhs); })); \
+                Class.add_function(GL::make_callable("mod", [](class_t const& parent, class_t const& rhs) -> class_t { return parent.mod(rhs); })); \
+                Class.add_function(GL::make_callable("mod", [](class_t const& parent, typename class_t::type const& rhs) -> class_t { return parent.mod(rhs); })); \
+                Class.add_function(GL::make_callable("pow", [](class_t const& parent, class_t const& rhs) -> class_t { return parent.pow(rhs); })); \
+                Class.add_function(GL::make_callable("pow", [](class_t const& parent, typename class_t::type const& rhs) -> class_t { return parent.pow(rhs); })); \
+                Class.add_function(GL::make_callable("pown", [](class_t const& parent, GPU::matrix<int> const& rhs) -> class_t { return parent.pown(rhs); })); \
+                Class.add_function(GL::make_callable("pown", [](class_t const& parent, int const& rhs) -> class_t { return parent.pown(rhs); })); \
+                Class.add_function(GL::decl_func(&class_t::quadruplesize)); \
+                Class.add_function(GL::decl_func(&class_t::quartersize)); \
+                Class.add_function(GL::decl_func(&class_t::random)); \
+                Class.add_function(GL::decl_func(&class_t::random_between)); \
+                Class.add_function(GL::decl_func(&class_t::resample)); \
+                Class.add_function(GL::make_callable("resize", [](class_t const& lhs, unsigned int x, unsigned int y, unsigned int z) { return lhs.resize(x, y, z); })); \
+                Class.add_function(GL::decl_func(&class_t::resize_stretch)); \
+                Class.add_function(GL::decl_func(&class_t::round)); \
+                Class.add_function(GL::decl_func(&class_t::row)); \
+                Class.add_function(GL::decl_func(&class_t::sin)); \
+                Class.add_function(GL::decl_func(&class_t::sinh)); \
+                Class.add_function(GL::make_callable("size", [](class_t const& lhs) { return lhs.size(); })); \
+                Class.add_function(GL::make_callable("size", [](class_t const& lhs, unsigned int d) { return lhs.size(d); })); \
+                Class.add_function(GL::decl_func(&class_t::sqrt)); \
+                Class.add_function(GL::decl_func(&class_t::subsample_1D)); \
+                Class.add_function(GL::decl_func(&class_t::subsample_pat)); \
+                Class.add_function(GL::decl_func(&class_t::sum)); \
+                Class.add_function(GL::decl_func(&class_t::tan)); \
+                Class.add_function(GL::decl_func(&class_t::tanh)); \
+                Class.add_function(GL::decl_func(&class_t::transpose)); \
+                Class.add_function(GL::make_callable("to_string", [](class_t const& lhs) { return lhs.to_string(); })); \
+                this->add_function(GL::make_callable("[]", [](class_t const& lhs, unsigned int x, unsigned int y, unsigned int z) -> typename class_t::type { return lhs.operator()(x,y,z); })); \
+                this->add_function(GL::make_callable("[]", [](class_t const& lhs, unsigned int x) -> typename class_t::type { return lhs.operator[](x); })); \
+                this->add_function(GL::make_callable("+", [](class_t const& lhs, class_t const& rhs) { return lhs + rhs; })); \
+                this->add_function(GL::make_callable("-", [](class_t const& lhs, class_t const& rhs) { return lhs - rhs; })); \
+                this->add_function(GL::make_callable("*", [](class_t const& lhs, class_t const& rhs) { return lhs * rhs; })); \
+                this->add_function(GL::make_callable("/", [](class_t const& lhs, class_t const& rhs) { return lhs / rhs; })); \
+                this->add_function(GL::make_callable("+", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs + rhs; })); \
+                this->add_function(GL::make_callable("-", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs - rhs; })); \
+                this->add_function(GL::make_callable("*", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs * rhs; })); \
+                this->add_function(GL::make_callable("/", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs / rhs; })); \
+                this->add_function(GL::make_callable("+=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() += rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("-=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() -= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("*=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() *= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("/=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() /= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("+=", [](GL::any::fast_any const& lhs, typename class_t::type const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() += rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("-=", [](GL::any::fast_any const& lhs, typename class_t::type const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() -= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("*=", [](GL::any::fast_any const& lhs, typename class_t::type const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() *= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("/=", [](GL::any::fast_any const& lhs, typename class_t::type const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() /= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
+                this->add_function(GL::make_callable("%", [](class_t const& lhs, class_t const& rhs) { return lhs % rhs; })); \
+                this->add_function(GL::make_callable("%", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs % rhs; })); \
+                this->add_function(GL::make_callable("&&", [](class_t const& lhs, class_t const& rhs) { return lhs && rhs; })); \
+                this->add_function(GL::make_callable("&&", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs && rhs; })); \
+                this->add_function(GL::make_callable("||", [](class_t const& lhs, class_t const& rhs) { return lhs || rhs; })); \
+                this->add_function(GL::make_callable("||", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs || rhs; })); \
+                this->add_function(GL::make_callable("!", [](class_t const& lhs) { return !lhs; })); \
+                this->add_function(GL::make_callable("==", [](class_t const& lhs, class_t const& rhs) { return lhs == rhs; })); \
+                this->add_function(GL::make_callable("!=", [](class_t const& lhs, class_t const& rhs) { return lhs != rhs; })); \
+                this->add_function(GL::make_callable(">", [](class_t const& lhs, class_t const& rhs) { return lhs > rhs; })); \
+                this->add_function(GL::make_callable(">=", [](class_t const& lhs, class_t const& rhs) { return lhs >= rhs; })); \
+                this->add_function(GL::make_callable("<", [](class_t const& lhs, class_t const& rhs) { return lhs < rhs; })); \
+                this->add_function(GL::make_callable("<=", [](class_t const& lhs, class_t const& rhs) { return lhs <= rhs; })); \
+                }
+
+                add_matrix(float);
+                add_matrix(unsigned long);
+                add_matrix(long);
+                add_matrix(int);
+                add_matrix(unsigned int);
+                add_matrix(char);
+                add_matrix(unsigned char);
+#undef add_matrix
+
+                this->make_class(GL::type_of<GPU::matrix<float>>()).add_function(GL::make_callable("random", &GPU::matrix<float>::random));
+            }
 		};
         void impl::RootScope::preload_conversions() {
             for (auto& _type : all_convertable_types()) {
