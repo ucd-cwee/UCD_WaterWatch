@@ -51,7 +51,6 @@ namespace GL {
 
 			if (root == nullptr) root = AllocNode();
 
-
 			if (root->numChildren >= maxChildrenPerNode) {
 				newNode = AllocNode();
 				newNode->key = root->key;
@@ -157,6 +156,7 @@ namespace GL {
 		};
 		// find an object using the given key
 		bTreeNode* NodeFind(keyType key) const {
+			if (!root) return nullptr;
 			for (bTreeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
 				while (node->next) {
 					if (node->key >= key) break;

@@ -2657,21 +2657,37 @@ int main() {
                 }
             }
 
-            //if (auto timer = sw.debug_timer("GPU matrix test")) {
-            //    GL::scope::impl::RootScope
-            //        root;
-            //    root.perform_builtins();
+            if (auto timer = sw.debug_timer("GPU matrix test")) {
+                GL::scope::impl::RootScope
+                    root;
+                root.perform_builtins();
 
-            //    if (auto this_scope = root.make_scope()) {
-            //        auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(10), GL::any::fast_any::instance(10), GL::any::fast_any::instance(1) });
-            //        auto state = this_scope.call("uint_matrix", { this_scope.call(">", {mat, GL::any::fast_any::instance(0.4)}) });
-            //        print(this_scope.call("to_string", { state }).cast<std::string>());
-            //    }
+                /*
+                auto state = float_matrix::random(20, 20, 1) > 0.4; // will be a uint_matrix
+                auto kernel = float_matrix::guassian_kernel(3, 3); // will be a float_matrix
+                auto nHood = float_matrix(state).convolve(kernel); 
+                */
+                if (auto this_scope = root.make_scope()) {
+                    // auto fmatx = this_scope.call("float_matrix", {  }); // success
+                    auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(20), GL::any::fast_any::instance(20), GL::any::fast_any::instance(1) });
+                    auto state = this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) });
+                    print(this_scope.call("to_string", { state }).cast<std::string>());
+
+                    auto kernel = this_scope.call("float_matrix::guassian_kernel", { GL::any::fast_any::instance(3), GL::any::fast_any::instance(3) });
+                    auto nHood = this_scope.call("convolve", { this_scope.call("float_matrix", { state }), kernel });
+
+                    print("");
+                    print(this_scope.call("to_string", { nHood }).cast<std::string>());
+
+
+                    //print(this_scope.call("to_string", { state }).cast<std::string>());
+                    //print(this_scope.call("[]", { state, GL::any::fast_any::instance(0) }).cast<unsigned int>());
+                }
 
 
 
 
-            //}
+            }
 
 #endif
             }

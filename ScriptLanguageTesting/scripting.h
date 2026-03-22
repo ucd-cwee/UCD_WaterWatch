@@ -479,7 +479,7 @@ namespace GL {
                         });
                 };
                 template<typename iter_type> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter_type const& from_iter, iter_type const& end, int search_mode, Converter converters) const {
-                    std::map<int, GL::Proxy_Function const*> options;
+                    std::map<double, GL::Proxy_Function const*> options;
                     /*return*/ (void)for_each(name, [&](GL::Proxy_Function const& f)->bool {
                         iter_type iter = from_iter;
                         if ((search_mode & Functions::only_templates) > 0) {
@@ -514,8 +514,14 @@ namespace GL {
                             auto& sig = f->m_signature;
 
                             size_t i = 0;
-                            int cost = 0;
+                            double cost = 0;
                             for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
+                                if (i == 0) {
+                                    if (can_free_cast(iter, sig.argument_types_m[i])) {
+                                        cost -= 0.01;
+                                        // this option should be preferred over others.
+                                    }
+                                }
                                 if (!can_cast(iter, sig.argument_types_m[i])) {
                                     if (auto f = converters.try_get_converter(get_type_of(iter), sig.argument_types_m[i], 0, true); f) {
                                         cost += f->m_signature.numConversions;
@@ -532,7 +538,7 @@ namespace GL {
                             }
                             if (iter == end) {
                                 options[cost] = &f;
-                                return cost == 0; // stops looking if true
+                                return cost <= 0.0; // stops looking if true
                             }
                             return false;
                         }
@@ -2118,6 +2124,8 @@ namespace GL {
                                 //}
 
                                 if (from_iter != from_end) {
+                                    auto incremented_once = from_iter;
+                                    ++incremented_once;
                                     if (auto actual_t = get_actual_type_of(from_iter), casted_t = get_type_of(from_iter); casted_t != actual_t) {
                                         if (auto* BC = this->GetRoot()->try_find_class(actual_t); BC) {
                                             if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
@@ -2126,6 +2134,9 @@ namespace GL {
                                                 //}
                                                 return std::move(ff);
                                             }
+                                            //if (auto ff = try_find_callable(optionalScope, incremented_once, from_end, search_state, BC); (ff && ((ff->m_signature.state_m & GL::function_signature::Static) > 0))) {
+                                            //    return std::move(ff);
+                                            //}
                                         }
                                     }
                                     for (auto& this_t : get_type_of(from_iter).all_base_types(false)) {
@@ -2136,6 +2147,9 @@ namespace GL {
                                                 //}
                                                 return std::move(ff);
                                             }
+                                            //if (auto ff = try_find_callable(optionalScope, incremented_once, from_end, search_state, BC); (ff && ((ff->m_signature.state_m & GL::function_signature::Static) > 0))) {
+                                            //    return std::move(ff);
+                                            //}
                                         }
                                     }
                                 }
@@ -2620,6 +2634,10 @@ namespace GL {
                     this->invalidate_cache(); 
                 };
 
+                // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
+                template <typename Func> bool for_each_function(Func const& to_do) const {
+                    return this->functions.for_each(to_do);
+                };
             };
 
             class ClassScope : public NamespaceScope {

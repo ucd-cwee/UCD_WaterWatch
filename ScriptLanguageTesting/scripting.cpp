@@ -44,7 +44,9 @@ namespace GL {
                 this->make_class(GL::type_of< char >()).add_function(GL::make_converter<type, char>()); \
                 this->make_class(GL::type_of< unsigned char >()).add_function(GL::make_converter<type, unsigned char>()); \
                 this->make_class(GL::type_of< int >()).add_function(GL::make_converter<type, int>()); \
+                this->make_class(GL::type_of< unsigned int >()).add_function(GL::make_converter<type, unsigned int>()); \
                 this->make_class(GL::type_of< long >()).add_function(GL::make_converter<type, long>()); \
+                this->make_class(GL::type_of< unsigned long >()).add_function(GL::make_converter<type, unsigned long>()); \
                 this->make_class(GL::type_of< long long >()).add_function(GL::make_converter<type, long long>()); \
                 this->make_class(GL::type_of< size_t >()).add_function(GL::make_converter<type, size_t>()); \
                 this->make_class(GL::type_of< float >()).add_function(GL::make_converter<type, float>()); \
@@ -368,13 +370,14 @@ namespace GL {
                 auto& Class = this->make_class(GL::type_of<class_t>()); \
                 }
 
-                add_matrix(float);
-                add_matrix(unsigned long);
-                add_matrix(long);
-                add_matrix(int);
-                add_matrix(unsigned int);
                 add_matrix(char);
                 add_matrix(unsigned char);
+                add_matrix(int);
+                add_matrix(unsigned int);
+                add_matrix(long);
+                add_matrix(unsigned long);
+                add_matrix(float);
+
 #undef add_matrix
                 GL::type_of<GPU::matrix_kernel<float>>().try_update_name("matrix_kernel"); 
                 this->make_class(GL::type_of<GPU::matrix_kernel<float>>());
@@ -384,13 +387,13 @@ namespace GL {
                 auto& Class = this->make_class(GL::type_of<class_t>()); \
                 Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type)); \
                 this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<float> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned long> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<long> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<int> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned int> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<char> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned char> const& rhs) -> class_t { return rhs.cast<TypeT>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<char> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned char> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<int> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned int> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<long> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<unsigned long> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<float> const& rhs) { return rhs.cast<typename class_t::type>(); }, GL::function_signature::Constructor)); \
                 Class.add_function(GL::decl_func(&class_t::abs)); \
                 Class.add_function(GL::decl_func(&class_t::acos)); \
                 Class.add_function(GL::decl_func(&class_t::acosh)); \
@@ -494,15 +497,22 @@ namespace GL {
                 this->add_function(GL::make_callable(">=", [](class_t const& lhs, class_t const& rhs) { return lhs >= rhs; })); \
                 this->add_function(GL::make_callable("<", [](class_t const& lhs, class_t const& rhs) { return lhs < rhs; })); \
                 this->add_function(GL::make_callable("<=", [](class_t const& lhs, class_t const& rhs) { return lhs <= rhs; })); \
+                this->add_function(GL::make_callable("==", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs == rhs; })); \
+                this->add_function(GL::make_callable("!=", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs != rhs; })); \
+                this->add_function(GL::make_callable(">", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs > rhs; })); \
+                this->add_function(GL::make_callable(">=", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs >= rhs; })); \
+                this->add_function(GL::make_callable("<", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs < rhs; })); \
+                this->add_function(GL::make_callable("<=", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs <= rhs; })); \
                 }
 
-                add_matrix(float);
-                add_matrix(unsigned long);
-                add_matrix(long);
-                add_matrix(int);
-                add_matrix(unsigned int);
                 add_matrix(char);
                 add_matrix(unsigned char);
+                add_matrix(int);
+                add_matrix(unsigned int);
+                add_matrix(long);
+                add_matrix(unsigned long);
+                add_matrix(float);
+
 #undef add_matrix
 
                 this->make_class(GL::type_of<GPU::matrix<float>>()).add_function(GL::make_callable("random", &GPU::matrix<float>::random));
