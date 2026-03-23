@@ -369,7 +369,6 @@ namespace GL {
                 using class_t = GPU::matrix<TypeT>; \
                 auto& Class = this->make_class(GL::type_of<class_t>()); \
                 }
-
                 add_matrix(char);
                 add_matrix(unsigned char);
                 add_matrix(int);
@@ -377,11 +376,21 @@ namespace GL {
                 add_matrix(long);
                 add_matrix(unsigned long);
                 add_matrix(float);
-
 #undef add_matrix
-                GL::type_of<GPU::matrix_kernel<float>>().try_update_name("matrix_kernel"); 
-                this->make_class(GL::type_of<GPU::matrix_kernel<float>>());
 
+                // matrix kernel is always a float-type, so keep it simple.
+                if (1) {
+                    using class_t = GPU::matrix_kernel<float>;
+                    GL::type_of<class_t>().try_update_name("matrix_kernel");
+                    auto& Class = this->make_class(GL::type_of<class_t>());
+                    Class.add_function(GL::make_callable("to_string", [](class_t const& lhs) -> std::string {
+                        if (lhs.mat) return lhs.mat->to_string();                        
+                        throw std::runtime_error("kernel was uninitialized");                        
+                    }));
+                    Class.add_function(GL::make_callable(Class.this_type.name(), [](GPU::matrix<float> const& matrix) -> class_t { return class_t((GPU::matrix<float>)matrix); }, GL::function_signature::Constructor | GL::function_signature::Async));
+                }
+
+                // most matrix functions
 #define add_matrix(TypeT) if (1) { \
                 using class_t = GPU::matrix<TypeT>; \
                 auto& Class = this->make_class(GL::type_of<class_t>()); \
@@ -503,8 +512,9 @@ namespace GL {
                 this->add_function(GL::make_callable(">=", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs >= rhs; })); \
                 this->add_function(GL::make_callable("<", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs < rhs; })); \
                 this->add_function(GL::make_callable("<=", [](class_t const& lhs, typename class_t::type const& rhs) { return lhs <= rhs; })); \
+                this->add_function(GL::make_callable("read", [](class_t const& lhs) -> typename class_t::reader { return lhs.read(); })); \
+                this->add_function(GL::make_callable("write", [](class_t& lhs) -> typename class_t::writer { return lhs.write(false); })); \
                 }
-
                 add_matrix(char);
                 add_matrix(unsigned char);
                 add_matrix(int);
@@ -512,10 +522,44 @@ namespace GL {
                 add_matrix(long);
                 add_matrix(unsigned long);
                 add_matrix(float);
-
 #undef add_matrix
 
-                this->make_class(GL::type_of<GPU::matrix<float>>()).add_function(GL::make_callable("random", &GPU::matrix<float>::random));
+                // writer
+#define add_matrix(TypeT) if (1) { \
+                using class_t = typename GPU::matrix<TypeT>::writer; \
+                GL::type_of<class_t>().try_update_name(GL::type_of<TypeT>().name() + "_matrix_writer"); \
+                auto& Class = this->make_class(GL::type_of<class_t>()); \
+                this->make_class(GL::type_of<bool>()).add_function(GL::make_callable(GL::type_of<bool>().name(), [](class_t const& lhs) -> bool { return (bool)lhs; })); \
+                this->add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, unsigned int x, unsigned int y, unsigned int z) -> GL::any::fast_any { return GL::any::fast_any::wrap_member(lhs, lhs.cast<class_t&>()(x,y,z)); }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "parent", GL::type_of<class_t const&>() }, { "x", GL::type_of<unsigned int const&>() }, { "y", GL::type_of<unsigned int const&>() }, { "z", GL::type_of<unsigned int const&>() } }, GL::type_of<TypeT &>() )); \
+                this->add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, unsigned int x) -> GL::any::fast_any { return GL::any::fast_any::wrap_member(lhs, lhs.cast<class_t&>()[x]); }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "parent", GL::type_of<class_t const&>() }, { "x", GL::type_of<unsigned int const&>() } }, GL::type_of<TypeT &>() )); \
+                }
+                add_matrix(char);
+                add_matrix(unsigned char);
+                add_matrix(int);
+                add_matrix(unsigned int);
+                add_matrix(long);
+                add_matrix(unsigned long);
+                add_matrix(float);
+#undef add_matrix
+
+                // reader
+#define add_matrix(TypeT) if (1) { \
+                using class_t = typename GPU::matrix<TypeT>::reader; \
+                GL::type_of<class_t>().try_update_name(GL::type_of<TypeT>().name() + "_matrix_reader"); \
+                auto& Class = this->make_class(GL::type_of<class_t>()); \
+                this->make_class(GL::type_of<bool>()).add_function(GL::make_callable(GL::type_of<bool>().name(), [](class_t const& lhs) -> bool { return (bool)lhs; })); \
+                this->add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, unsigned int x, unsigned int y, unsigned int z) -> GL::any::fast_any { return GL::any::fast_any::wrap_member(lhs, lhs.cast<class_t&>()(x,y,z)); }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "parent", GL::type_of<class_t const&>() }, { "x", GL::type_of<unsigned int const&>() }, { "y", GL::type_of<unsigned int const&>() }, { "z", GL::type_of<unsigned int const&>() } }, GL::type_of<TypeT const &>() )); \
+                this->add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, unsigned int x) -> GL::any::fast_any { return GL::any::fast_any::wrap_member(lhs, lhs.cast<class_t&>()[x]); }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "parent", GL::type_of<class_t const&>() }, { "x", GL::type_of<unsigned int const&>() } }, GL::type_of<TypeT const &>() )); \
+                }
+                add_matrix(char);
+                add_matrix(unsigned char);
+                add_matrix(int);
+                add_matrix(unsigned int);
+                add_matrix(long);
+                add_matrix(unsigned long);
+                add_matrix(float);
+#undef add_matrix
+
             }
 		};
         void impl::RootScope::preload_conversions() {

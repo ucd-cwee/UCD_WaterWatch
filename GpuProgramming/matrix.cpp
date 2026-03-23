@@ -2094,7 +2094,7 @@ namespace GL {
                 data = std::shared_ptr<T[]>(mem(copy)->cpu_data<T>(), [](T*) { /* do nothing */ });
             }
         };
-        template <typename T> matrix<T>::reader::reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
+        // template <typename T> matrix<T>::reader::reader(reader&& rhs) noexcept : data(rhs.data), dim(rhs.dim) {};
         template <typename T> matrix<T>::reader::operator bool() const {
             return data.get() ? true : false;
         };
@@ -2138,13 +2138,13 @@ namespace GL {
                 }
             }
         };
-        template <typename T> matrix<T>::writer::writer(writer&& rhs) noexcept : gpu_cpu_data{ rhs.gpu_cpu_data }, cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
-            rhs.gpu_cpu_data = nullptr;
-            rhs.data = nullptr;
-            rhs.cpu_data = nullptr;
-            rhs.dim = GL::GPU::dimensions{ 0,0,0 };
-            rhs._cpu_only = false;
-        };
+        //template <typename T> matrix<T>::writer::writer(writer&& rhs) noexcept : gpu_cpu_data{ rhs.gpu_cpu_data }, cpu_data{ rhs.cpu_data }, data(rhs.data), dim(rhs.dim), _cpu_only(rhs._cpu_only) {
+        //    rhs.gpu_cpu_data = nullptr;
+        //    rhs.data = nullptr;
+        //    rhs.cpu_data = nullptr;
+        //    rhs.dim = GL::GPU::dimensions{ 0,0,0 };
+        //    rhs._cpu_only = false;
+        //};
         template <typename T> matrix<T>::writer::~writer() {
             static auto func_name{ GL::string("copy_slice") + GL::string(opencl_impl::type_name<T>()) };
             if (data) {
@@ -3898,10 +3898,12 @@ namespace GL {
                 r[0];
                 r(0);
                 r.get();
+                r = matrix<T>(10).read();
             }
             if (auto r = matrix<T>(10).write()) {
                 r[0];
                 r(0);
+                r = matrix<T>(10).write();
             }
             if (1) {
                 matrix<T> a;

@@ -689,6 +689,34 @@ namespace GL {
 
         struct wrapper {
             template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, GL::shared_ptr<S>>>>
+            static GL::shared_ptr<any_data> get_v(H<S> obj) {
+                if (obj) {
+                    if constexpr (std::is_same<GL::any, S>::value) {
+                        // return self
+                        return obj->m_ptr.load();
+                    }
+                    else if constexpr (std::is_same<GL::any::fast_any, S>::value) {
+                        // return self
+                        return obj->m_ptr;
+                    }
+                    else {
+                        if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) {
+                            return GL::static_pointer_cast<any_data>(GL::make_shared<shared_data<S>>(std::move(obj)));
+                        }
+                        else if constexpr (std::is_same<std::shared_ptr<S>, H<S>>::value) {
+                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));
+                        }
+                        else {
+                            return nullptr;
+                        }
+                    }
+                }
+                else {
+                    return nullptr; // return null if incoming is null
+                }
+            };
+
+            template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, GL::shared_ptr<S>>>>
             static GL::shared_ptr<any_data> get(H<S> obj) {
                 if (obj) {
                     if constexpr (std::is_same<GL::any, S>::value) {
@@ -971,6 +999,23 @@ namespace GL {
             }            
             return out;
         };
+
+        template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) {
+            GL::shared_ptr<T> out = GL::shared_ptr<T>(parent.shared_ptr());
+            out.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
+            return any(out) + (GL::type::Const | GL::type::Reference);
+        };
+        template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) {
+            GL::shared_ptr<T> out = GL::shared_ptr<T>(parent.shared_ptr());
+            out.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
+            if (parent.m_casted_type.is_const()) {
+                return any(out) + (GL::type::Const | GL::type::Reference);
+            }
+            else {
+                return any(out) + GL::type::Reference;
+            }
+        };
+
         bool empty() const noexcept {
             return !operator bool();
         };
@@ -1530,6 +1575,22 @@ namespace GL {
             friend struct type_erasure::fast_any_cast;
             friend struct type_erasure::wrapper;
             friend class any;
+
+            template <typename T> __declspec(noinline) static any::fast_any wrap_member(any::fast_any const& parent, T const& ref) {
+                GL::shared_ptr<T> out = GL::shared_ptr<T>(parent.shared_ptr());
+                out.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
+                return any(out).fast() + (GL::type::Const | GL::type::Reference);
+            };
+            template <typename T> __declspec(noinline) static any::fast_any wrap_member(any::fast_any const& parent, T& ref) {
+                GL::shared_ptr<T> out = GL::shared_ptr<T>(parent.shared_ptr());
+                out.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
+                if (parent.m_casted_type.is_const()) {
+                    return any(out).fast() + (GL::type::Const | GL::type::Reference);
+                }
+                else {
+                    return any(out).fast() + GL::type::Reference;
+                }
+            };
         };
 
         fast_any fast() const { return fast_any(this->m_ptr.load(), this->m_casted_type); };

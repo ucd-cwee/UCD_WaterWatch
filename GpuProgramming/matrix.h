@@ -120,9 +120,9 @@ namespace GL {
             public:
                 reader(matrix<T>& copy, GL::GPU::dimensions const& D);
                 reader(reader const&) = delete;
-                reader(reader&& rhs) noexcept;
+                reader(reader&& rhs) noexcept = default;
                 reader& operator=(reader const&) = delete;
-                reader& operator=(reader&&) = delete;
+                reader& operator=(reader&&) noexcept = default;
                 ~reader() = default;
                 operator bool() const;
                 T const& operator[](unsigned int X) const;
@@ -141,9 +141,9 @@ namespace GL {
             public:
                 writer(matrix<T>& copy, GL::GPU::dimensions const& D, bool cpu_only = false);
                 writer(writer const&) = delete;
-                writer(writer&& rhs) noexcept;
+                writer(writer&& rhs) noexcept = default;
                 writer& operator=(writer const&) = delete;
-                writer& operator=(writer&&) noexcept = delete;
+                writer& operator=(writer&&) noexcept = default;
                 ~writer();
                 operator bool() const;
                 T& operator[](unsigned int X) const;

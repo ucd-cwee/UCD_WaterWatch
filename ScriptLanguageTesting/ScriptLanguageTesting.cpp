@@ -2662,32 +2662,77 @@ int main() {
                     root;
                 root.perform_builtins();
 
-                /*
-                auto state = float_matrix::random(20, 20, 1) > 0.4; // will be a uint_matrix
-                auto kernel = float_matrix::guassian_kernel(3, 3); // will be a float_matrix
-                auto nHood = float_matrix(state).convolve(kernel); 
-                */
-                if (auto this_scope = root.make_scope()) {
-                    // auto fmatx = this_scope.call("float_matrix", {  }); // success
-                    auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(20), GL::any::fast_any::instance(20), GL::any::fast_any::instance(1) });
-                    auto state = this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) });
-                    print(this_scope.call("to_string", { state }).cast<std::string>());
+                //GL::parallel::For(0, 1000000, [&root](int) {
+                    /*
+                    auto state = float_matrix::random(20, 20, 1) > 0.4; // will be a uint_matrix
+                    auto kernel = float_matrix::constant(1.0f, 3, 3, 1); // will be a float_matrix
+                    if (auto writer = kernel.write()) {
+                        writer[4] = 0;
+                    }
+                    auto nHood = float_matrix(state).convolve(kernel);
+                    auto C0 = (nHood == 2);
+                    auto C1 = (nHood == 3);
+                    state *= C0.cast<unsigned int>();
+                    state += C1.cast<unsigned int>();
+                    */
+                    if (auto this_scope = root.make_scope()) {
+                        auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(90), GL::any::fast_any::instance(60), GL::any::fast_any::instance(1) });
+                        this_scope.emplace_object_here("state", this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) }));
 
-                    auto kernel = this_scope.call("float_matrix::guassian_kernel", { GL::any::fast_any::instance(3), GL::any::fast_any::instance(3) });
-                    auto nHood = this_scope.call("convolve", { this_scope.call("float_matrix", { state }), kernel });
+                        auto kernel = this_scope.call("float_matrix::constant", { GL::any::fast_any::instance(1.0f), GL::any::fast_any::instance(3), GL::any::fast_any::instance(3), GL::any::fast_any::instance(1) });                        
+                        if (auto if_scope = root.make_scope()) {
+                            if_scope.emplace_object_here("writer", if_scope.call("write", { kernel }));
+                            if_scope.call("=", { if_scope.call("[]", { if_scope.find_object("writer"), GL::any::fast_any::instance(4) }), GL::any::fast_any::instance(0.0f) });
+                        }
 
-                    print("");
-                    print(this_scope.call("to_string", { nHood }).cast<std::string>());
+                        GL::stopwatch sw;
+                        std::deque<float> framerates;
+                        for (;;) {
+                            sw.reset();
 
+                            if (auto for_scope = this_scope.make_scope()) {
+                                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+                                for_scope.emplace_object_here("nHood", for_scope.call("convolve", { for_scope.call("float_matrix", { for_scope.find_object("state") }), kernel }));
+                                for_scope.emplace_object_here("C0", for_scope.call("==", { for_scope.find_object("nHood"), GL::any::fast_any::instance(2) }));
+                                for_scope.emplace_object_here("C1", for_scope.call("==", { for_scope.find_object("nHood"), GL::any::fast_any::instance(3) }));
+                                for_scope.call("*=", { for_scope.find_object("state"), for_scope.find_object("C0") });
+                                for_scope.call("+=", { for_scope.find_object("state"), for_scope.find_object("C1") });
+                                print(this_scope.call("to_string", { for_scope.find_object("state") }).cast<std::string>());
+                            }
 
-                    //print(this_scope.call("to_string", { state }).cast<std::string>());
-                    //print(this_scope.call("[]", { state, GL::any::fast_any::instance(0) }).cast<unsigned int>());
-                }
+                            auto this_frame = (float)(1.0 / sw.stop());
+                            framerates.push_back(this_frame);
 
+                            if (framerates.size() > 10000) framerates.pop_front();
+                            std::deque<float> copy(framerates);
+                            std::sort(copy.begin(), copy.end());
+                            float q0 = 0;
+                            float q1 = 0;
+                            float q2 = 0;
+                            float q3 = 0;
+                            float q4 = 0;
+                            if (copy.size() >= 4) {
+                                q0 = copy.at(0);
+                                q1 = copy.at(copy.size() / 4);
+                                q2 = copy.at(2 * copy.size() / 4);
+                                q3 = copy.at(3 * copy.size() / 4);
+                                q4 = copy.at(copy.size() - 1);
+                            }
 
+                            print(GL::printf("min{ %f }  q1{ %f }  median{ %f }  q2{ %f }  max{ %f }  ", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t");
 
+                            std::cout << std::flush;
+                            while (sw.stop() < (1.0 / 60.0)) {
+                                std::this_thread::yield();
+                            }
+                        }
 
+                    }
+                //});
             }
+
+
+
 
 #endif
             }
