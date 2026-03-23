@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <set>
+#include <map>
 #include "Strings.h"
 #include "atomic_shared_ptr.h"
 #include <boost/type_index.hpp>
@@ -1769,6 +1770,34 @@ namespace GL {
             reinterpret_cast<T*>(p)->~T();
         };
     }
+    class undefined {};
+    template<int index> class template_parameter {};    
+    class is_template {
+        static std::map<GL::type, int>& list_of_template_parameter() {
+            static std::map<GL::type, int> out{ 
+                { GL::type_of<template_parameter<0>>(), 0}, { GL::type_of<template_parameter<1>>(), 1}, 
+                { GL::type_of<template_parameter<2>>(), 2}, { GL::type_of<template_parameter<3>>(), 3}, 
+                { GL::type_of<template_parameter<4>>(), 4}, { GL::type_of<template_parameter<5>>(), 5},
+                { GL::type_of<template_parameter<6>>(), 6}, { GL::type_of<template_parameter<7>>(), 7},
+                { GL::type_of<template_parameter<8>>(), 8}, { GL::type_of<template_parameter<9>>(), 9},
+                { GL::type_of<template_parameter<10>>(), 10}, { GL::type_of<template_parameter<11>>(), 11},
+                { GL::type_of<template_parameter<12>>(), 12}, { GL::type_of<template_parameter<13>>(), 13},
+                { GL::type_of<template_parameter<14>>(), 14}, { GL::type_of<template_parameter<15>>(), 15}
+            };
+            return out;
+        };
+    public:
+        static int index(GL::type const& what) {
+            auto& out = list_of_template_parameter();
+            if (auto f = out.find(what - GL::type::Reference - GL::type::Const - GL::type::Temporary), e = out.end(); f != e) {
+                return f->second;
+            }
+            else {
+                return -1;
+            }
+        };
+    };
+
 };
 
 namespace std {

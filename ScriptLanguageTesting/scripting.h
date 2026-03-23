@@ -7,6 +7,8 @@
 
 
 namespace GL {
+    
+
     namespace scope {
         // "" becomes "::", "::UI" becomes "::UI::", "std::string" becomes "::std::string::"
         static __forceinline GL::string make_scope_name(GL::string const& x) {
@@ -2603,7 +2605,7 @@ namespace GL {
                 /// If a namespace already exists with the provided name or type, it will return the existing namespace without creating a new one or overwritting the existing one.
                 /// </summary>
                 /// <returns>NamespaceScope</returns>
-                ClassScope& make_class(GL::string class_type) {
+                ClassScope& make_class(GL::string const& class_type) {
                     if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
                         return *std::dynamic_pointer_cast<ClassScope>(f->second);
                     }
@@ -2650,19 +2652,19 @@ namespace GL {
                 ClassScope(GL::type class_type, int scope_type_p = ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, Breadcrumb* parent = nullptr)
                     : NamespaceScope(class_type.name(), scope_type_p, parent)
                     , this_type{ class_type }
+                    , template_types()
                 {};
                 // instancing a child namespace should only be done from an existing namespace
                 ClassScope(GL::string const& class_type, int scope_type_p = ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, Breadcrumb* parent = nullptr)
                     : NamespaceScope((GL::string)class_type, scope_type_p, parent)
                     , type_ownership(std::make_unique<GL::script_type>(class_type))
+                    , template_types()
                 {
                     const_cast<GL::type&>(this_type) = type_ownership->load();
                 };
                 ClassScope() = delete;
-                virtual ~ClassScope() {
-
-                };
-            
+                virtual ~ClassScope() {};
+                
             private:
                 std::unique_ptr<GL::script_type> 
                     type_ownership;
@@ -2699,7 +2701,8 @@ namespace GL {
 
             public:
                 const GL::type this_type;
-                
+                std::vector< GL::type > template_types;
+
                 void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {}) {
                     member_objects.insert({ member_name, { member_type, default_value } });
                 };
@@ -2770,6 +2773,61 @@ namespace GL {
 
                 };
 
+                ClassScope& make_inherited_template_class(std::vector< GL::type > const& templates) {
+                    GL::string name; for (auto& x : templates) name = name.add_to_delim(x.name(), ",");
+                    name = this->this_type.name() + "<" + name + ">"; // vector<int>
+                    
+                    auto _parent = dynamic_cast<NamespaceScope*>(this->GetParent());
+                    if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
+                        return *dynamic_cast<ClassScope*>(f->second.get());
+                    }
+                    if (1) {
+                        this->GetRoot()->invalidate_cache();
+                        ++this->GetRoot()->constructors_version;
+                        while (true) {
+                            auto new_class = new ClassScope(name, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m));
+                            new_class->template_types = templates;
+                            const_cast<GL::type&>(new_class->this_type).add_base(this->this_type);
+
+                            this->for_each_function([&](GL::Proxy_Function const& f)->bool {
+                                auto new_f = f->duplicate();
+                                bool necessary = false;
+                                for (auto& x : new_f->m_signature.argument_types_m) {
+                                    if (auto template_index = GL::is_template::index(x); template_index >= 0) {
+                                        x = new_class->template_types[template_index] | (x.get_qualifiers() - GL::type::CppType);
+                                        necessary = true;
+                                    }
+                                }
+                                if (auto template_index = GL::is_template::index(new_f->m_signature.returns_m); template_index >= 0) {
+                                    new_f->m_signature.returns_m = new_class->template_types[template_index] | (new_f->m_signature.returns_m.get_qualifiers() - GL::type::CppType);
+                                    necessary = true;
+                                }
+
+                                if (necessary) {
+                                    new_f->m_signature.evaluate_if_template_function();
+                                    new_class->add_function(std::move(new_f));
+                                }
+
+                                return false;
+                            });
+                            for (auto& member_o : this->member_objects) {
+                                if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
+                                    new_class->add_member_object(member_o.first, new_class->template_types[template_index]);
+                                }
+                            }
+
+                            _parent->children.insert(
+                                { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new_class)) }
+                            );
+                            if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
+                                auto newclass = std::dynamic_pointer_cast<ClassScope>(f->second);
+                                this->GetRoot()->classes.insert({ newclass->this_type.get_base_hash(), &newclass->breadcrumb_m });
+                                this->GetRoot()->classes_by_name.insert({ name, &newclass->breadcrumb_m });
+                                return *newclass;
+                            }
+                        }
+                    }
+                };
 
                 __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,

@@ -298,7 +298,23 @@ namespace GL {
         GL::type_of<GL::type>().try_update_name("type");
         GL::type_of<GL::var>().try_update_name("var");
         GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition. 
-
+        GL::type_of<GL::undefined>().try_update_name("undefined");
+        GL::type_of<GL::template_parameter<0>>().try_update_name("{0}");
+        GL::type_of<GL::template_parameter<1>>().try_update_name("{1}");
+        GL::type_of<GL::template_parameter<2>>().try_update_name("{2}");
+        GL::type_of<GL::template_parameter<3>>().try_update_name("{3}");
+        GL::type_of<GL::template_parameter<4>>().try_update_name("{4}");
+        GL::type_of<GL::template_parameter<5>>().try_update_name("{5}");
+        GL::type_of<GL::template_parameter<6>>().try_update_name("{6}");
+        GL::type_of<GL::template_parameter<7>>().try_update_name("{7}");
+        GL::type_of<GL::template_parameter<8>>().try_update_name("{8}");
+        GL::type_of<GL::template_parameter<9>>().try_update_name("{9}");
+        GL::type_of<GL::template_parameter<10>>().try_update_name("{10}");
+        GL::type_of<GL::template_parameter<11>>().try_update_name("{11}");
+        GL::type_of<GL::template_parameter<12>>().try_update_name("{12}");
+        GL::type_of<GL::template_parameter<13>>().try_update_name("{13}");
+        GL::type_of<GL::template_parameter<14>>().try_update_name("{14}");
+        GL::type_of<GL::template_parameter<15>>().try_update_name("{15}");
 
         return true;
     }();
