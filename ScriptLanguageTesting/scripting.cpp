@@ -474,7 +474,7 @@ namespace GL {
                 Class.add_function(GL::decl_func(&class_t::tan)); \
                 Class.add_function(GL::decl_func(&class_t::tanh)); \
                 Class.add_function(GL::decl_func(&class_t::transpose)); \
-                Class.add_function(GL::make_callable("to_string", [](class_t const& lhs) { return lhs.to_string(); })); \
+                Class.add_function(GL::make_callable("to_string", [](class_t const& lhs) { return lhs.to_string({}, true); })); \
                 this->add_function(GL::make_callable("[]", [](class_t const& lhs, unsigned int x, unsigned int y, unsigned int z) -> typename class_t::type { return lhs.operator()(x,y,z); })); \
                 this->add_function(GL::make_callable("[]", [](class_t const& lhs, unsigned int x) -> typename class_t::type { return lhs.operator[](x); })); \
                 this->add_function(GL::make_callable("+", [](class_t const& lhs, class_t const& rhs) { return lhs + rhs; })); \

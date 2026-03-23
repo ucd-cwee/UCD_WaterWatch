@@ -2045,6 +2045,7 @@ int main() {
                     //EXPECT_EQ(nullptr, std_map_namespace.find_object("max"));
                 }
 #else
+#if 0
             if (auto timer = sw.debug_timer("1 million scopes with 10 sub-scopes")) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
@@ -2656,7 +2657,7 @@ int main() {
                     EXPECT_EQ(std_ns.find_object("::string::npos").cast<size_t>(), GL::string::npos);
                 }
             }
-
+#endif
             if (auto timer = sw.debug_timer("GPU matrix test")) {
                 GL::scope::impl::RootScope
                     root;
@@ -2666,30 +2667,45 @@ int main() {
                     /*
                     auto state = float_matrix::random(20, 20, 1) > 0.4; // will be a uint_matrix
                     auto kernel = float_matrix::constant(1.0f, 3, 3, 1); // will be a float_matrix
-                    if (auto writer = kernel.write()) {
-                        writer[4] = 0;
+                    kernel.write()[4] = 0; // ownership of the writer is guarranteed to follow with the float& accessor
+                    for (;;) {
+                        auto nHood = float_matrix(state).convolve(kernel);
+                        auto C0 = (nHood == 2);
+                        auto C1 = (nHood == 3);
+                        state *= C0.cast<unsigned int>();
+                        state += C1.cast<unsigned int>();
+                        print(state.ASCII());
                     }
-                    auto nHood = float_matrix(state).convolve(kernel);
-                    auto C0 = (nHood == 2);
-                    auto C1 = (nHood == 3);
-                    state *= C0.cast<unsigned int>();
-                    state += C1.cast<unsigned int>();
                     */
                     if (auto this_scope = root.make_scope()) {
-                        auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(90), GL::any::fast_any::instance(60), GL::any::fast_any::instance(1) });
-                        this_scope.emplace_object_here("state", this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) }));
-
-                        auto kernel = this_scope.call("float_matrix::constant", { GL::any::fast_any::instance(1.0f), GL::any::fast_any::instance(3), GL::any::fast_any::instance(3), GL::any::fast_any::instance(1) });                        
-                        if (auto if_scope = root.make_scope()) {
-                            if_scope.emplace_object_here("writer", if_scope.call("write", { kernel }));
-                            if_scope.call("=", { if_scope.call("[]", { if_scope.find_object("writer"), GL::any::fast_any::instance(4) }), GL::any::fast_any::instance(0.0f) });
-                        }
-
                         GL::stopwatch sw;
                         std::deque<float> framerates;
-                        for (;;) {
-                            sw.reset();
+                        std::ios_base::sync_with_stdio(false);
+                        std::cin.tie(NULL);
+                        CONSOLE_SCREEN_BUFFER_INFO screen; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+                        CONSOLE_CURSOR_INFO cursorInfo;
+                        GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+                        cursorInfo.bVisible = false;
+                        SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+                        int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
 
+                        this_scope.emplace_object_here("state", this_scope.call(">", { this_scope.call("float_matrix::random", { GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) }), GL::any::fast_any::instance(0.4) }));
+
+                        auto kernel = this_scope.call("float_matrix::constant", { GL::any::fast_any::instance(1.0f), GL::any::fast_any::instance(3), GL::any::fast_any::instance(3), GL::any::fast_any::instance(1) });
+                        this_scope.call("=", { this_scope.call("[]", { this_scope.call("write", { kernel }), GL::any::fast_any::instance(4) }), GL::any::fast_any::instance(0.0f) });
+                        
+                        for (;;) {
+                            GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+                            int game_w2 = (screen.dwSize.X / 2), game_h2 = ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1);
+                            if (game_w2 != game_w || game_h != game_h2) {
+                                game_w = game_w2;
+                                game_h = game_h2;
+
+                                this_scope.call("=", { this_scope.find_object("state"), this_scope.call("resize", { this_scope.find_object("state"), GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) }) });
+                                framerates.clear();
+                            }
+
+                            sw.reset();
                             if (auto for_scope = this_scope.make_scope()) {
                                 SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
                                 for_scope.emplace_object_here("nHood", for_scope.call("convolve", { for_scope.call("float_matrix", { for_scope.find_object("state") }), kernel }));
@@ -2697,7 +2713,14 @@ int main() {
                                 for_scope.emplace_object_here("C1", for_scope.call("==", { for_scope.find_object("nHood"), GL::any::fast_any::instance(3) }));
                                 for_scope.call("*=", { for_scope.find_object("state"), for_scope.find_object("C0") });
                                 for_scope.call("+=", { for_scope.find_object("state"), for_scope.find_object("C1") });
-                                print(this_scope.call("to_string", { for_scope.find_object("state") }).cast<std::string>());
+                                print(this_scope.call("to_string", { for_scope.call("ASCII", { for_scope.find_object("state") }) }).cast<std::string>());
+
+                                auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) });
+                                this_scope.emplace_object_here("state", this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) }));
+
+                                //if (for_scope.call("<", { for_scope.call("avg", {for_scope.call("float_matrix", {for_scope.find_object("state")})}), GL::any::fast_any::instance(0.1) }).cast<bool>()) {
+                                //    for_scope.call("+=", { for_scope.find_object("state"), this_scope.call(">", { this_scope.call("float_matrix::random", { GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) }), GL::any::fast_any::instance(0.4) }) });
+                                //}
                             }
 
                             auto this_frame = (float)(1.0 / sw.stop());
