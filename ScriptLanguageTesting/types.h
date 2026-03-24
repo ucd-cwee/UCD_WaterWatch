@@ -27,18 +27,6 @@ namespace GL {
     };
 
     namespace impl {
-        template <typename T>
-        struct instance_funcs {
-            // const value_t& to This&&
-            static GL::any instance_by_value(GL::any const&);
-            // const This& to This&&
-            static GL::any instance_by_copy(GL::any const&);
-            // This&&
-            static GL::any instance();
-            // p->~T();
-            static void destroy(void*);
-        };
-
         class cached_type {
         public:
             constexpr static size_t MAGIC_MASK1 = 0xF000'0000'0000'0000;
@@ -54,11 +42,6 @@ namespace GL {
                 base_hash{ 0 };
             size_t
                 T_size{ 0 };
-
-            GL::any(*instance_by_value)(GL::any const&); // const value_t& to This&&
-            GL::any(*instance_by_copy)(GL::any const&); // const This& to This&&
-            GL::any(*instance)(); // This&&
-            void(*destroy)(void*); // // p->~T();
 
             bool is_cpp_type() const {
                 return T_size != std::numeric_limits<size_t>::max();
@@ -101,10 +84,6 @@ namespace GL {
             if (out.base_hash == 0) {
                 if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out.base_hash), hash, 0) == 0) {
                     out.name = GL::string(std::string_view(this_type.name())).remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)");
-                    out.instance_by_value = &instance_funcs<T>::instance_by_value;
-                    out.instance_by_copy = &instance_funcs<T>::instance_by_copy;
-                    out.instance = &instance_funcs<T>::instance;
-                    out.destroy = &instance_funcs<T>::destroy;
                     if constexpr (!std::is_void_v<T>) out.T_size = sizeof(BaseType);
                     else out.T_size = 0;
                 }
@@ -323,10 +302,6 @@ namespace GL {
         };
         size_t size() const;
 
-        GL::any instance_by_value(GL::any const&) const; // const value_t& to This&&
-        GL::any instance_by_copy(GL::any const&) const; // const This& to This&&
-        GL::any instance() const; // This&&
-        void destroy(void*) const; // p->~T();
     };
 
     // owner for a scripted type. types can be generated from this to be shared / manipulated as normal. Checks-out and returns space on the heap that can be accessed outside of the type itself. 
@@ -1729,47 +1704,6 @@ namespace GL {
         };
     };
 
-    namespace impl {
-        // const This& to This&&
-        template <typename T> __forceinline GL::any instance_funcs<T>::instance_by_copy(GL::any const& from) {
-            using base_type = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
-            if constexpr (std::is_same_v<base_type, GL::any>) {
-                return from;
-            }
-            else if constexpr (std::is_copy_constructible_v<base_type>) {
-                GL::any out(base_type{ from.cast<T>() });
-                out |= GL::type::Qualifiers::Temporary;
-                return out;
-            }
-            else if constexpr (std::is_copy_assignable_v<base_type> && std::is_constructible_v< base_type>) {
-                GL::any out(base_type{  });
-                out.cast<T>() = from.cast<T>();
-                out |= GL::type::Qualifiers::Temporary;
-                return out;
-            }
-            else if constexpr (std::is_constructible_v< base_type>) {
-                GL::any out(base_type{  });
-                out |= GL::type::Qualifiers::Temporary;
-                return out;
-            }
-            return {};
-        };
-        // This&&
-        template <typename T> __forceinline GL::any instance_funcs<T>::instance() {
-            using base_type = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*
-            if constexpr (std::is_constructible_v< base_type>) {
-                GL::any out(base_type{  });
-                out |= GL::type::Qualifiers::Temporary;
-                return out;
-            }
-            return {};
-        };
-        // This&&
-        template <typename T> __forceinline void instance_funcs<T>::destroy(void* p) {
-            using base_type = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*            
-            reinterpret_cast<T*>(p)->~T();
-        };
-    }
     class undefined {};
     template<int index> class template_parameter {};    
     class is_template {

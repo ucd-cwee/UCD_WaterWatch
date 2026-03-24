@@ -2658,41 +2658,221 @@ int main() {
                 }
             }
 #endif
-            if (auto timer = sw.debug_timer("Template class?")) {
+            if (auto timer = sw.debug_timer("Template classes")) {
                 GL::scope::impl::RootScope 
                     root;
                 root.perform_builtins();
 
-                auto& BaseClass = root.make_class("vector");
-                BaseClass.add_member_object("obj", GL::type_of<GL::template_parameter<0>>());
-                BaseClass.initialize_basic_member_functions();
-                BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, unsigned int rhs) -> GL::any::fast_any {
-                    return BaseClass.GetRoot()->call("obj", { lhs });
-                }, 0, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<unsigned int>() }}, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
+                if (1) {
+                    /*
+                    class vector<T> {
+                        T obj;
+                        T& operator[](uint x){ 
+                            return obj;
+                        }
+                    }
+                    */
+                    auto& BaseClass = root.make_class("vector");
+                    BaseClass.add_member_object("obj", GL::type_of<GL::template_parameter<0>>());
+                    BaseClass.initialize_basic_member_functions();
+                    BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, unsigned int rhs) -> GL::any::fast_any {
+                        return BaseClass.GetRoot()->call("obj", { lhs });
+                    }, 0, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<unsigned int>() } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
 
-                auto& Class = BaseClass.make_inherited_template_class({ GL::type_of<int>() });
-                Class.initialize_basic_member_functions();
-                //print(Class.this_type.name());
-                //Class.for_each_function([&](GL::Proxy_Function const& f)->bool { print(f->m_signature.display()); return false; });
+                    /* vector<int> */
+                    auto& Class = BaseClass.make_inherited_template_class({ GL::type_of<int>() });
 
-                //auto& Class = root.make_class("vector_int");
-                //const_cast<GL::type&>(Class.this_type).add_base(BaseClass.this_type);
-                //Class.add_member_object("obj", GL::type_of<int>(), GL::any::fast_any::instance(0));
-                //Class.initialize_basic_member_functions();
-                //Class.add_function(GL::make_callable("[]", [&Class](GL::any::fast_any const& lhs, unsigned int rhs) -> GL::any::fast_any {
-                //    return Class.call("obj", { lhs });
-                //}, 0, {}, { { "lhs", Class.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<unsigned int>() } }, GL::type_of<int&>()));
-                
-                if (auto this_scope = root.make_scope()) {
-                    auto vec = this_scope.call("vector<int>", {});
-                    EXPECT_EQ(vec.m_casted_type, Class.this_type);
+                    /*
+                    auto vec = vector<int>();
+                    vec[0] = 10;
+                    */
+                    if (auto this_scope = root.make_scope()) {
+                        auto vec = this_scope.call("vector<int>", {});
+                        EXPECT_EQ(vec.m_casted_type, Class.this_type);
 
-                    auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(0) });
-                    EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<int&>());
-                    print(vec_obj.m_casted_type.name());
-                    this_scope.call("=", { vec_obj, GL::any::fast_any::instance(10) });
-                    EXPECT_EQ(vec.cast<GL::dynamic_object>()["obj"]->cast<int>(), 10);
+                        auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(0) });
+                        EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<int&>());
+                        this_scope.call("=", { vec_obj, GL::any::fast_any::instance(10) });
+                        EXPECT_EQ(vec.cast<GL::dynamic_object>()["obj"]->cast<int>(), 10);
+                    }
                 }
+
+                if (1) {
+                    // make template class
+                    auto& BaseClass = root.make_class("map");
+                    if (1) {
+                        // teach it how to create the generic map
+                        auto& AnyMap = BaseClass.make_class(GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>());
+                        const_cast<GL::type&>(AnyMap.this_type).try_update_name("map_impl");
+                        AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), []() -> GL::shared_ptr<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>> { return GL::make_shared<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>(); }, GL::function_signature::Constructor));
+                        AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap](GL::epoch_map<std::pair<GL::any, GL::any>, size_t> const& rhs) -> GL::shared_ptr<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>> {
+                            auto out = GL::make_shared<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
+                            for (auto& x : rhs) {
+                                out->insert_fast(*x.first, { 
+                                    [&]() -> GL::any::fast_any {
+                                        if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->first.m_casted_type)) {
+                                            return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->first.fast() });
+                                        }
+                                        return GL::any::fast_any();
+                                    }(), [&]() {
+                                        if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->second.m_casted_type)) {
+                                            return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->second.fast() });
+                                        }
+                                        return GL::any::fast_any();
+                                    }() 
+                                });
+                            }
+                            return out;
+                        }, GL::function_signature::Constructor));       
+
+                        AnyMap.GetRoot()->add_function(GL::make_callable("=", [&AnyMap](GL::any::fast_any const& Lhs, GL::epoch_map<std::pair<GL::any, GL::any>, size_t> const& rhs) -> GL::any::fast_any {
+                            auto& out = Lhs.cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>&>();
+                            for (auto& x : rhs) {
+                                auto& destination = out.get_or_make(*x.first, [&]() -> std::pair<GL::any, GL::any> { return {
+                                        [&]() -> GL::any::fast_any {
+                                            if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->first.m_casted_type)) {
+                                                return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->first.fast() });
+                                            }
+                                            return GL::any::fast_any();
+                                        }(), 
+                                        [&]() {
+                                            if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->second.m_casted_type)) {
+                                                return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->second.fast() });
+                                            }
+                                            return GL::any::fast_any();
+                                        }()
+                                    }; 
+                                });
+                                AnyMap.GetRoot()->call("=", { destination.first.fast(), x.second->first.fast() });
+                                AnyMap.GetRoot()->call("=", { destination.second.fast(), x.second->second.fast() });
+                            }
+                            return Lhs;
+                         }, 0, {}, { { "lhs", GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>&>() }, { "rhs", GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t> const&>() } }, GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>&>()));
+
+                    }
+                    BaseClass.add_member_object("impl", GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>());
+                    BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                        if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("impl"); implp && *implp) {
+                            auto& impl = (*implp)->cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
+                            auto hash = BaseClass.GetRoot()->call("to_hash", { rhs }).cast<size_t>();
+                            if (auto* p = impl.try_at(hash); p) {
+                                return p->second.fast() | GL::type::Reference | GL::type::Const;
+                            }
+                            else {
+                                throw std::range_error("Key was not found in map");
+                            }                            
+                        }
+                        throw std::runtime_error("Could not instantiate the map internals");
+                    }, GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Const | GL::type::Reference));
+                    BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                        if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("impl"); implp && *implp) {
+                            auto& impl = (*implp)->cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
+                            auto hash = BaseClass.GetRoot()->call("to_hash", { rhs }).cast<size_t>();
+                            return impl.get_or_make(hash, [&]() -> std::pair<GL::any, GL::any> {
+                                GL::any::fast_any obj_t;
+                                if (auto* impl_class = BaseClass.GetRoot()->try_find_class(lhs.m_casted_type); impl_class && impl_class->this_m.is_class()) {
+                                    auto* impl_class_p = dynamic_cast<GL::scope::impl::ClassScope*>(impl_class->this_m.scope);
+                                    if (impl_class_p->template_types.size() >= 2) {
+                                        if (auto* obj_type_class = BaseClass.GetRoot()->try_find_class(impl_class_p->template_types[1]); obj_type_class && obj_type_class->this_m.is_class()) {
+                                            auto* obj_type_class_p = dynamic_cast<GL::scope::impl::ClassScope*>(obj_type_class->this_m.scope);
+                                            obj_t = obj_type_class_p->call(obj_type_class_p->this_type.name(), {});
+                                        }
+                                    }
+                                }
+                                return { rhs, obj_t };
+                            }).second.fast() + GL::type::Reference;
+                        }
+                        throw std::runtime_error("Could not instantiate the map internals");
+                    }, GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Reference));
+                    BaseClass.initialize_basic_member_functions();
+
+                    print(root.DetermineType("map<::string,::value>").name());
+                    print(root.DetermineType("map<std::string,::value>").name());
+
+                    print(root.DetermineType("int").name());
+                    print(root.DetermineType("int const&").name());
+                    print(root.DetermineType("int&&").name());
+                    print(root.DetermineType("int const").name());
+                    print(root.DetermineType("const int").name());
+                    print(root.DetermineType("vector").name());
+                    print(root.DetermineType("vector<int>").name());
+                    print(root.DetermineType("vector<double>").name());
+                    print(root.DetermineType("vector<int> const&").name());
+                    print(root.DetermineType("vector<double> const&").name());
+                    print(root.DetermineType("vector<int&>").name());
+                    print(root.DetermineType("vector<int const&>").name());
+                    print(root.DetermineType("map").name());
+                    print(root.DetermineType("map<string,value>").name());
+                    print(root.DetermineType(" map < string , value > ").name());
+                    print(root.DetermineType("std::string").name());
+                    print(root.DetermineType("vector").name());
+                    print(root.DetermineType("vector<int>").name());
+                    print(root.DetermineType("vector<double>").name());
+                    print(root.DetermineType("map<std::string,value>").name());
+                    print(root.DetermineType("map<string,::value>").name());
+                    print(root.DetermineType("::map<std::string,::value> const&").name());
+                    print(root.DetermineType("::map< std::string, ::value> const&").name());
+                    print(root.DetermineType("::map< std::string, ::map< ::value, ::vector> > const&").name());
+
+                    //Class.for_each_function([&](GL::Proxy_Function const& f)->bool { print(f->m_signature.display()); return false; });
+
+                    GL::parallel::For(0, 1000000, [&root](int) {
+                        if (auto this_scope = root.make_scope()) {
+                            auto vec = this_scope.call("map<string,value>", {});
+                            EXPECT_EQ(vec.m_casted_type, Class.this_type);
+
+                            auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(GL::string("TEST")) }); // creates a GL::value in the map and returns it
+                            EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<GL::value&>());
+                            this_scope.call("=", { vec_obj, GL::any::fast_any::instance(10) });
+
+                            auto vec_obj_2 = this_scope.call("[]", { vec, GL::any::fast_any::instance(GL::string("TEST")) });
+                            EXPECT_EQ(true, this_scope.call("==", { vec_obj_2, GL::any::fast_any::instance(10) }).cast<bool>());
+                        }
+                    });
+                }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                //auto& BaseClass = root.make_class("vector");
+                //BaseClass.add_member_object("obj", GL::type_of<GL::template_parameter<0>>());
+                //BaseClass.initialize_basic_member_functions();
+                //BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, unsigned int rhs) -> GL::any::fast_any {
+                //    return BaseClass.GetRoot()->call("obj", { lhs });
+                //}, 0, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<unsigned int>() }}, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
+
+                //auto& Class = BaseClass.make_inherited_template_class({ GL::type_of<int>() });
+                //Class.initialize_basic_member_functions();
+                ////print(Class.this_type.name());
+                //// Class.for_each_function([&](GL::Proxy_Function const& f)->bool { print(f->m_signature.display()); return false; });
+
+                ////auto& Class = root.make_class("vector_int");
+                ////const_cast<GL::type&>(Class.this_type).add_base(BaseClass.this_type);
+                ////Class.add_member_object("obj", GL::type_of<int>(), GL::any::fast_any::instance(0));
+                ////Class.initialize_basic_member_functions();
+                ////Class.add_function(GL::make_callable("[]", [&Class](GL::any::fast_any const& lhs, unsigned int rhs) -> GL::any::fast_any {
+                ////    return Class.call("obj", { lhs });
+                ////}, 0, {}, { { "lhs", Class.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<unsigned int>() } }, GL::type_of<int&>()));
+                //
+                //if (auto this_scope = root.make_scope()) {
+                //    auto vec = this_scope.call("vector<int>", {});
+                //    EXPECT_EQ(vec.m_casted_type, Class.this_type);
+
+                //    auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(0) });
+                //    EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<int&>());
+                //    this_scope.call("=", { vec_obj, GL::any::fast_any::instance(10) });
+                //    EXPECT_EQ(vec.cast<GL::dynamic_object>()["obj"]->cast<int>(), 10);
+                //}
             }
 
             if (auto timer = sw.debug_timer("GPU matrix test")) {
@@ -2750,10 +2930,10 @@ int main() {
                                 for_scope.emplace_object_here("C1", for_scope.call("==", { for_scope.find_object("nHood"), GL::any::fast_any::instance(3) }));
                                 for_scope.call("*=", { for_scope.find_object("state"), for_scope.find_object("C0") });
                                 for_scope.call("+=", { for_scope.find_object("state"), for_scope.find_object("C1") });
-                                print(this_scope.call("to_string", { for_scope.call("ASCII", { for_scope.find_object("state") }) }).cast<std::string>());
+                                print(this_scope.call("to_string", { for_scope.call("ASCII", { for_scope.find_object("state") }) }).cast<GL::string>());
 
-                                auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) });
-                                this_scope.emplace_object_here("state", this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) }));
+                                // auto mat = this_scope.call("float_matrix::random", { GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) });
+                                // this_scope.emplace_object_here("state", this_scope.call(">", { mat, GL::any::fast_any::instance(0.4) }));
 
                                 //if (for_scope.call("<", { for_scope.call("avg", {for_scope.call("float_matrix", {for_scope.find_object("state")})}), GL::any::fast_any::instance(0.1) }).cast<bool>()) {
                                 //    for_scope.call("+=", { for_scope.find_object("state"), this_scope.call(">", { this_scope.call("float_matrix::random", { GL::any::fast_any::instance(game_h), GL::any::fast_any::instance(game_w), GL::any::fast_any::instance(1) }), GL::any::fast_any::instance(0.4) }) });

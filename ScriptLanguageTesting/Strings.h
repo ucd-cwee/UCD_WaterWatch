@@ -69,9 +69,14 @@ namespace GL {
             if (A.size() == 0) return B;
             else if (B.size() == 0) return A;
             else {
-                std::string temp1(A.data);
-                std::string temp2(B.data);
-                return string(temp1 + temp2);
+                std::string out(A.data.length() + B.data.length(), '\0');
+                std::memcpy(const_cast<char*>(out.c_str()), A.data.data(), A.data.length());
+                std::memcpy(const_cast<char*>(out.c_str()) + A.data.length(), B.data.data(), B.data.length());
+                return out;
+
+                //std::string temp1(A.data.data(), A.data.length());
+                //std::string temp2(B.data.data(), B.data.length());
+                //return string(temp1 + temp2);
             }
         };
 
@@ -125,16 +130,19 @@ namespace GL {
         };
 
     public:
-        GL::string add_to_delim(GL::string const& to_add, GL::string const& delim) const {
+        __declspec(noinline) GL::string add_to_delim(GL::string const& to_add, GL::string const& delim) const {
             if (this->length() > 0) {
-                return GL::string(*this) + delim + to_add;
+                return (*this + delim) + to_add;
             }
             else {
                 return to_add;
             }
         };
         std::string to_string() const {
-            return std::string(data);
+            std::string out(data.length(), '\0');
+            std::memcpy(const_cast<char*>(out.c_str()), data.data(), data.length());
+            return out;
+            // return std::string(data);
         };
         double to_number() const {
             const char* p = data.data();
@@ -392,7 +400,7 @@ namespace GL {
             (void)ReplaceString(out, what.data, with.data);
             return out;
         };
-        string remove_trailing(char _Right) const {
+        __declspec(noinline) string remove_trailing(char _Right) const {
             string out{ *this };
             while (
                 (out.length() > 0)
@@ -402,7 +410,7 @@ namespace GL {
             }
             return out;
         };
-        string remove_leading(char _Right) const {
+        __declspec(noinline) string remove_leading(char _Right) const {
             string out{ *this };
             while (
                 (out.length() > 0)
@@ -413,8 +421,7 @@ namespace GL {
             return out;
         };
         string remove_leading_and_trailing(char _Right) const {
-            string out{ *this };
-            return out.remove_trailing(_Right).remove_leading(_Right);
+            return remove_trailing(_Right).remove_leading(_Right);
         };
         static const string& empty_string() {
             static string out{ "" };
@@ -473,7 +480,7 @@ namespace GL {
                 return std::pair<string, string>{ substr(0, p), substr(p + what.length()) };
             }
             else {
-                return std::pair<string, string>{ *this, "" };
+                return std::pair<string, string>{ *this, GL::string::empty_string() };
             }
         };
         std::pair<string, string> left_and_right_of_last(const string& what) const {

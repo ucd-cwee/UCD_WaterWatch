@@ -5,7 +5,6 @@
 #include "functions.h"
 #include "../GpuProgramming/matrix.h"
 
-
 namespace GL {
     
 
@@ -1638,6 +1637,74 @@ namespace GL {
                     }
                 };
 
+            private:
+                static std::vector<GL::string> split_nested(const GL::string& s) {
+                    std::vector<GL::string> parts;
+                    int pos = 0;
+                    int len = 0;
+                    int depth = 0;
+                    for (char c : s) {
+                        len += 1;
+
+                        if (c == '<') depth++;
+                        else if (c == '>') depth--;
+
+                        if ((c == ',') && (depth == 0)) {
+                            if (len > 1) {
+                                parts.push_back(s.substr(pos, len - 1));
+                            }
+                            pos += len;
+                            len = 0;
+                        }                   
+                    }
+                    parts.push_back(s.substr(pos));
+                    return parts;
+                };
+            public:
+                /* Attempts to determine the type from a given string. This may include instancing a template-defined class if the string
+                 includes the appropriate type information, such as `map<int, ::value>` or `vector<std::string>`. 
+                 Will respect the use of type states, such as: `const int&`, `int&&`, `vector<std::string const>&`, etc. */
+                GL::type DetermineType(GL::string from) {
+                    from = from.remove_leading_and_trailing(' ');
+                    size_t state_modifiers = 0;
+                    if (from.begins_with("const ")) { from = from.right(from.size() - 6); state_modifiers |= GL::type::Const; }
+                    if (from.ends_with("&&")) { from = from.left(from.size() - 2); state_modifiers |= GL::type::Temporary; }
+                    if (from.ends_with("&")) { from = from.left(from.size() - 1); state_modifiers |= GL::type::Reference; }
+                    if (from.ends_with(" const")) { from = from.left(from.size() - 6); state_modifiers |= GL::type::Const; }
+                    
+                    if (auto [prefix, middle_and_postfix] = from.left_and_right_of("<"); !middle_and_postfix.empty()) {
+                        prefix = prefix.remove_leading_and_trailing(' ');
+                        middle_and_postfix = middle_and_postfix.remove_leading_and_trailing(' ');
+                        if (auto [middle, postfix] = middle_and_postfix.left_and_right_of(">"); !middle.empty()) {
+                            middle = middle.remove_leading_and_trailing(' ');
+                            postfix = postfix.remove_leading_and_trailing(' ');
+
+                            GL::type original_template_type = DetermineType(prefix) | state_modifiers;
+                            std::vector<GL::type> inner_types;
+                            for (const auto& s : split_nested(middle)) {
+                                inner_types.push_back(DetermineType(s));
+                                if (inner_types.back() == GL::type_of<GL::undefined>()) {
+                                    // could not be determined...
+                                }
+                            }
+
+                            if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
+                                return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
+                            }
+                        }
+                    }                    
+
+                    if (auto* BC = this->GetRoot()->find_namespace(from); BC && BC->this_m.is_class()) {
+                        return dynamic_cast<ClassScope*>(BC->this_m.scope)->this_type | state_modifiers;
+                    }
+
+                    if (auto f = this->GetRoot()->classes_by_name.find(from), e = this->GetRoot()->classes_by_name.end(); f != e) {
+                        return dynamic_cast<ClassScope*>(f->second->this_m.scope)->this_type | state_modifiers;
+                    }
+
+                    return GL::type_of<GL::undefined>();
+                };
+
             public:
                 BasicScope() = delete;
                 virtual ~BasicScope() {
@@ -2549,6 +2616,10 @@ namespace GL {
                     unload();
                 };
 
+                GL::string path() const {
+                    return this->breadcrumb_m.GetCurrentNamespace();
+                };
+
                 /// <summary>
                 /// Finds or creates a new namespace scope as a child of this one, and keeps it in memory. 
                 /// The created scope will survive for the life of this parent scope. 
@@ -2577,6 +2648,11 @@ namespace GL {
                 /// </summary>
                 /// <returns>NamespaceScope</returns>
                 ClassScope& make_class(GL::type class_type) {
+                    if ((class_type & GL::type::CppType) == 0) {
+                        GL::string error = "Classes defined with GL::type must be C++ built-in types. Was provided `" + class_type.name() +"` instead, which was not identified was a C++ type.";
+                        throw std::runtime_error(error.to_string());
+                    }
+
                     class_type -= GL::type::Const;
                     class_type -= GL::type::Reference;
                     class_type -= GL::type::Temporary;
@@ -2607,7 +2683,7 @@ namespace GL {
                 /// <returns>NamespaceScope</returns>
                 ClassScope& make_class(GL::string const& class_type) {
                     if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
-                        return *std::dynamic_pointer_cast<ClassScope>(f->second);
+                        return *dynamic_cast<ClassScope*>(f->second.get());
                     }
                     if (1) {
                         this->GetRoot()->invalidate_cache();
@@ -2617,7 +2693,7 @@ namespace GL {
                                 { class_type.hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
                             );
                             if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
-                                auto new_class = std::dynamic_pointer_cast<ClassScope>(f->second);
+                                auto* new_class = dynamic_cast<ClassScope*>(f->second.get());
                                 this->GetRoot()->classes.insert({ new_class->this_type.get_base_hash(), &new_class->breadcrumb_m });
                                 this->GetRoot()->classes_by_name.insert({ class_type, &new_class->breadcrumb_m });
                                 return *new_class;
@@ -2764,17 +2840,35 @@ namespace GL {
                         // non-const reference access to member objects
                         this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
                             return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
-                        }, 0, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
+                        }, GL::function_signature::MemberObject | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
                         // const reference access to member objects
                         this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
                             return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
-                        }, 0, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
+                        }, GL::function_signature::MemberObject | GL::function_signature::Constant | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
                     }
 
+                    // to_string and to_hash functions
+                    this->add_function(GL::make_callable("to_string", [](GL::any::fast_any const& lhs) -> GL::string {
+                        return "";
+                    }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::string>()));
+                    this->add_function(GL::make_callable("to_hash", [](GL::any::fast_any const& lhs) -> size_t {
+                        return 0;
+                    }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
                 };
 
                 ClassScope& make_inherited_template_class(std::vector< GL::type > const& templates) {
-                    GL::string name; for (auto& x : templates) name = name.add_to_delim(x.name(), ",");
+                    GL::string name; for (auto& x : templates) {
+                        if (auto* BC = this->GetRoot()->try_find_class(x); BC && BC->this_m.is_class()) {
+                            GL::string out = dynamic_cast<ClassScope*>(BC->this_m.scope)->path().remove_leading_and_trailing(':');
+                            if (x.is_const()) out = "const " + out;
+                            if (x.is_ref()) out = out + "&";
+                            if (x.is_temp()) out = out + "&&";
+                            name = name.add_to_delim(out, ",");
+                        }
+                        else {
+                            name = name.add_to_delim(x.name(), ",");
+                        }
+                    }
                     name = this->this_type.name() + "<" + name + ">"; // vector<int>
                     
                     auto _parent = dynamic_cast<NamespaceScope*>(this->GetParent());
@@ -2792,9 +2886,14 @@ namespace GL {
 
                                 this->for_each_function([&](GL::Proxy_Function const& f)->bool {
                                     if ((f->m_signature.state_m & GL::function_signature::Constructor) > 0) {
+                                        // assume that constructors will be unique to this invocation
                                         return false;
                                     }
-
+                                    else if ((f->m_signature.state_m & GL::function_signature::MemberObject) > 0) {
+                                        // assume that member objects will be either inherited, or converted below.
+                                        return false;
+                                    }
+                                    
                                     auto new_f = f->duplicate();
                                     bool necessary = false;
                                     //std::cout << new_f->m_signature.display() << std::endl;
@@ -2819,6 +2918,7 @@ namespace GL {
                                     //std::cout << new_f->m_signature.display() << std::endl;
                                     if (necessary) {
                                         new_f->m_signature.evaluate_if_template_function();
+                                        new_f->m_signature.reevaluate_hash();
                                         new_class->add_function(std::move(new_f));
                                     }
 
@@ -2834,9 +2934,10 @@ namespace GL {
                                 );
                             }
                             if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
-                                auto newclass = std::dynamic_pointer_cast<ClassScope>(f->second);
+                                auto newclass = std::dynamic_pointer_cast<ClassScope>(f->second);                                
                                 this->GetRoot()->classes.insert({ newclass->this_type.get_base_hash(), &newclass->breadcrumb_m });
                                 this->GetRoot()->classes_by_name.insert({ name, &newclass->breadcrumb_m });
+                                newclass->initialize_basic_member_functions();
                                 return *newclass;
                             }
                         }

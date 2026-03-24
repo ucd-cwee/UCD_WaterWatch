@@ -3347,6 +3347,20 @@ namespace GL {
 			}
 			throw std::range_error("Could not find key");
 		};
+		template <typename F>
+		objType& // if already exists, returns the value. Otherwise, creates the value (using function) and returns the value. May throw under heavy conflict. 
+			get_or_make(const keyType& time, F const& func) {
+			auto g = ProtectCurrentEpoch();
+			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();
+			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();
+			else {
+				if constexpr (std::is_copy_constructible_v< objType > && std::is_constructible_v< objType >) {
+					if (node = tree.Add(func(), time, locker); node)
+						return *node->object();
+				}
+			}
+			throw std::range_error("Could not find key");
+		};
 		bool // optionally get a copy of the object being deleted. 
 			erase(const keyType& time, objType* out = nullptr) const {
 			if (auto [node, locker] = tree.NodeFind(time, true); node) {

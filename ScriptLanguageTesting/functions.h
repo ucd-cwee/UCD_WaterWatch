@@ -23,7 +23,8 @@ namespace GL {
             Explicit = 16, // whether the function is explicit and the input params must exactly match (does not allow conversion)
             Cached = 32, // whether the function is a cache from another function, for performance reasons. 
             NoCost = 64,
-            Constructor = 128
+            Constructor = 128,
+            MemberObject = 256
         };
 
     public:
@@ -56,6 +57,9 @@ namespace GL {
         };
 
     public:
+        void reevaluate_hash() {
+            eval_hash();
+        };
         size_t get_base_hash() const {
             if (hash_m == 0) const_cast<function_signature*>(this)->eval_hash();            
             return hash_m;
@@ -330,6 +334,9 @@ namespace GL {
             }
             if ((this->state_m & Constructor) > 0) {
                 out = out.add_to_delim("[[constructor]]", " ");
+            }
+            if ((this->state_m & MemberObject) > 0) {
+                out = out.add_to_delim("[[member]]", " ");
             }
             if ((this->state_m & Cached) > 0) {
                 out = out.add_to_delim("[[cached]]", " ");
@@ -1595,6 +1602,7 @@ namespace GL {
             out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(details::Attribute_Access_Impl(std::move(func), std::move(defaults))));
             out->m_signature.state_m |= function_signature::Constant; // accessing a member object is assumed to be constant -- it does not necessarily change anything just to "look".
             out->m_signature.state_m |= function_signature::Async; // accessing a member object is assumed to be async-friendly.            
+            out->m_signature.state_m |= function_signature::MemberObject; // accessing a member object is assumed to be async-friendly.            
         }
         else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
             out = details::Member_Function_Impl(std::move(func), std::move(defaults));

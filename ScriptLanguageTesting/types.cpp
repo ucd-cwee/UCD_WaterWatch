@@ -32,15 +32,6 @@ namespace GL {
                     out.T_size = std::numeric_limits<size_t>::max();
                     out.base_classes = {};
                     out.base_classes_ordered = {};
-                    out.instance_by_copy = [](GL::any const& orig) -> GL::any {
-                        return orig;
-                    };
-                    out.instance_by_value = [](GL::any const& orig) -> GL::any {
-                        return orig;
-                    };
-                    out.instance = []() -> GL::any {
-                        return GL::any{};
-                    };
                 }
             }
             return ticket;
@@ -256,22 +247,6 @@ namespace GL {
     };
     size_t type::size() const {
         return get_base(*this).T_size;
-    };
-    // const value_t& to This&&
-    GL::any type::instance_by_value(GL::any const& rhs) const {
-        return get_base(*this).instance_by_value(rhs);
-    };
-    // const This& to This&&
-    GL::any type::instance_by_copy(GL::any const& rhs) const {
-        return get_base(*this).instance_by_copy(rhs);
-    };
-    // This&&
-    GL::any type::instance() const {
-        return  get_base(*this).instance();
-    };
-    // This&&
-    void type::destroy(void* p) const {
-        get_base(*this).destroy(p);
     };
 
     static auto precompiled_cpp_names = []() -> bool {

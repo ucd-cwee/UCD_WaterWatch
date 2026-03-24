@@ -39,6 +39,8 @@ namespace GL {
             if (1) {
 #define add_a(type) \
                 this->make_class(GL::type_of< type >()).add_function(GL::make_callable(GL::type_of< type >().name(), []() -> type { return 0; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< type >())); \
+                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_string", [](type const& rhs) -> GL::string { return std::to_string(rhs); })); \
+                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_hash", [](type const& rhs) -> size_t { return std::hash<type>()(rhs); })); \
                 add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, type const& rhs) -> GL::any::fast_any { lhs.cast<type &>() = rhs; return lhs; }, 0, {}, { { "lhs", GL::type_of<type &>() }, { "rhs", GL::type_of<type const&>() }}, GL::type_of< type& >())); \
                 this->make_class(GL::type_of< bool >()).add_function(GL::make_converter<type, bool>()); \
                 this->make_class(GL::type_of< char >()).add_function(GL::make_converter<type, char>()); \
@@ -110,7 +112,8 @@ namespace GL {
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
         this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable(GL::type_of< type >().name(), []() -> type { return type{ 0.0f }; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< type >())); \
         this->make_class(GL::type_of< GL::value >()).add_function(GL::make_converter<GL::type, GL::value>()); \
-        this->make_class(GL::type_of< GL::type >()).add_function(GL::make_converter<GL::value, GL::type>())
+        this->make_class(GL::type_of< GL::type >()).add_function(GL::make_converter<GL::value, GL::type>()); \
+        this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("to_hash", [](GL::type const& rhs) -> size_t { return std::hash<float>()((float)rhs); }))
 
 #define DerivedUnitTypeWithMetricPrefix(type, prefix) \
         DerivedUnitType(prefix ## type, 0, 0, 0)
@@ -204,6 +207,9 @@ namespace GL {
                     GL::string Num = std::to_string((float)lhs);
                     return Num.remove_trailing('0').remove_trailing('.') + " " + lhs.abbreviation();
                 }, GL::function_signature::Async | GL::function_signature::Constant));
+                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("to_hash", [](GL::value const& rhs) -> size_t { 
+                    return std::hash<float>()((float)rhs);
+                }));
             }
 
             // types
@@ -234,6 +240,9 @@ namespace GL {
                 Class.add_function(GL::make_callable("is_derived_from", [](GL::type const& a, GL::type const& b) -> bool { return a.is_derived_from(b); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 Class.add_function(GL::make_callable("get_hash", [](GL::type const& a) -> size_t { return a.get_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 Class.add_function(GL::make_callable("get_base_hash", [](GL::type const& a) -> size_t { return a.get_base_hash(); }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
+
+                Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs.name(); }));
+                Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
 
             // var (generic "variable" container, for wrapping assignment of any type within the script language. Effectively the scripting language's version of 'any')
@@ -299,6 +308,9 @@ namespace GL {
                 Class.add_function(GL::make_callable(Class.this_type.name(), [](GL::string const& rhs) -> class_t { return rhs.to_string(); }, GL::function_signature::Constructor));
                 // assignment operator
                 this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));                               
+
+                Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return (class_t)rhs; }));
+                Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
 
             // string functions
@@ -359,6 +371,9 @@ namespace GL {
                 Class.add_function(GL::decl_func(&class_t::to_lower));                
                 Class.add_function(GL::decl_func(&class_t::to_number));
                 Class.add_function(GL::decl_func(&class_t::to_upper));
+
+                Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs; }));
+                Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
 
             // GPU-accelerated arrays
@@ -474,7 +489,8 @@ namespace GL {
                 Class.add_function(GL::decl_func(&class_t::tan)); \
                 Class.add_function(GL::decl_func(&class_t::tanh)); \
                 Class.add_function(GL::decl_func(&class_t::transpose)); \
-                Class.add_function(GL::make_callable("to_string", [](class_t const& lhs) { return lhs.to_string({}, true); })); \
+                Class.add_function(GL::make_callable("to_string", [](class_t const& lhs) -> GL::string { return lhs.to_string({}, true); })); \
+                Class.add_function(GL::make_callable("to_hash", [](class_t const& lhs) -> size_t { return std::hash<GL::string>()(lhs.to_string({}, true)); })); \
                 this->add_function(GL::make_callable("[]", [](class_t const& lhs, unsigned int x, unsigned int y, unsigned int z) -> typename class_t::type { return lhs.operator()(x,y,z); })); \
                 this->add_function(GL::make_callable("[]", [](class_t const& lhs, unsigned int x) -> typename class_t::type { return lhs.operator[](x); })); \
                 this->add_function(GL::make_callable("+", [](class_t const& lhs, class_t const& rhs) { return lhs + rhs; })); \
