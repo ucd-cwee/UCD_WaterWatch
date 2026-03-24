@@ -2785,40 +2785,54 @@ namespace GL {
                         this->GetRoot()->invalidate_cache();
                         ++this->GetRoot()->constructors_version;
                         while (true) {
-                            auto new_class = new ClassScope(name, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m));
-                            new_class->template_types = templates;
-                            const_cast<GL::type&>(new_class->this_type).add_base(this->this_type);
+                            if (auto new_class = std::make_shared< ClassScope>(name, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&_parent->breadcrumb_m))) {
+                                new_class->template_types = templates;
+                                const_cast<GL::type&>(new_class->this_type).add_base(this->this_type);
+                                // std::cout << new_class->this_type.name() << std::endl;
 
-                            this->for_each_function([&](GL::Proxy_Function const& f)->bool {
-                                auto new_f = f->duplicate();
-                                bool necessary = false;
-                                for (auto& x : new_f->m_signature.argument_types_m) {
-                                    if (auto template_index = GL::is_template::index(x); template_index >= 0) {
-                                        x = new_class->template_types[template_index] | (x.get_qualifiers() - GL::type::CppType);
+                                this->for_each_function([&](GL::Proxy_Function const& f)->bool {
+                                    if ((f->m_signature.state_m & GL::function_signature::Constructor) > 0) {
+                                        return false;
+                                    }
+
+                                    auto new_f = f->duplicate();
+                                    bool necessary = false;
+                                    //std::cout << new_f->m_signature.display() << std::endl;
+                                    for (auto& x : new_f->m_signature.argument_types_m) {
+                                        if (x.get_base_hash() == this->this_type.get_base_hash()) {
+                                            x = new_class->this_type + (x - GL::type::CppType).get_qualifiers();
+                                            necessary = true;
+                                        }
+                                        if (auto template_index = GL::is_template::index(x); template_index >= 0) {
+                                            x = new_class->template_types[template_index] + (x - GL::type::CppType).get_qualifiers();
+                                            necessary = true;
+                                        }
+                                    }
+                                    if (new_f->m_signature.returns_m.get_base_hash() == this->this_type.get_base_hash()) {
+                                        new_f->m_signature.returns_m = new_class->this_type + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
                                         necessary = true;
                                     }
-                                }
-                                if (auto template_index = GL::is_template::index(new_f->m_signature.returns_m); template_index >= 0) {
-                                    new_f->m_signature.returns_m = new_class->template_types[template_index] | (new_f->m_signature.returns_m.get_qualifiers() - GL::type::CppType);
-                                    necessary = true;
-                                }
+                                    if (auto template_index = GL::is_template::index(new_f->m_signature.returns_m); template_index >= 0) {
+                                        new_f->m_signature.returns_m = new_class->template_types[template_index] + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
+                                        necessary = true;
+                                    }
+                                    //std::cout << new_f->m_signature.display() << std::endl;
+                                    if (necessary) {
+                                        new_f->m_signature.evaluate_if_template_function();
+                                        new_class->add_function(std::move(new_f));
+                                    }
 
-                                if (necessary) {
-                                    new_f->m_signature.evaluate_if_template_function();
-                                    new_class->add_function(std::move(new_f));
+                                    return false;
+                                });
+                                for (auto& member_o : this->member_objects) {
+                                    if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
+                                        new_class->add_member_object(member_o.first, new_class->template_types[template_index]);
+                                    }
                                 }
-
-                                return false;
-                            });
-                            for (auto& member_o : this->member_objects) {
-                                if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
-                                    new_class->add_member_object(member_o.first, new_class->template_types[template_index]);
-                                }
+                                _parent->children.insert(
+                                    { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(new_class) }
+                                );
                             }
-
-                            _parent->children.insert(
-                                { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new_class)) }
-                            );
                             if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
                                 auto newclass = std::dynamic_pointer_cast<ClassScope>(f->second);
                                 this->GetRoot()->classes.insert({ newclass->this_type.get_base_hash(), &newclass->breadcrumb_m });

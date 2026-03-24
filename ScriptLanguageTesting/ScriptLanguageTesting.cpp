@@ -2667,13 +2667,13 @@ int main() {
                 BaseClass.add_member_object("obj", GL::type_of<GL::template_parameter<0>>());
                 BaseClass.initialize_basic_member_functions();
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, unsigned int rhs) -> GL::any::fast_any {
-                    return BaseClass.call("obj", { lhs });
+                    return BaseClass.GetRoot()->call("obj", { lhs });
                 }, 0, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<unsigned int>() }}, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
 
                 auto& Class = BaseClass.make_inherited_template_class({ GL::type_of<int>() });
                 Class.initialize_basic_member_functions();
-                print(Class.this_type.name());
-                Class.for_each_function([&](GL::Proxy_Function const& f)->bool { print(f->m_signature.display()); return false; });
+                //print(Class.this_type.name());
+                //Class.for_each_function([&](GL::Proxy_Function const& f)->bool { print(f->m_signature.display()); return false; });
 
                 //auto& Class = root.make_class("vector_int");
                 //const_cast<GL::type&>(Class.this_type).add_base(BaseClass.this_type);
@@ -2685,6 +2685,8 @@ int main() {
                 
                 if (auto this_scope = root.make_scope()) {
                     auto vec = this_scope.call("vector<int>", {});
+                    EXPECT_EQ(vec.m_casted_type, Class.this_type);
+
                     auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(0) });
                     EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<int&>());
                     print(vec_obj.m_casted_type.name());
