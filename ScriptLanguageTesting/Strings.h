@@ -30,9 +30,9 @@ namespace GL {
     public:
         string() {};
         string(string const&) = default;
-        string(string&&) = default;
+        string(string&&) noexcept = default;
         string& operator=(string const&) = default;
-        string& operator=(string&&) = default;
+        string& operator=(string&&) noexcept = default;
         ~string() = default;
 
         template <size_t N> string(const char(&r)[N]) : data(r) {};
@@ -508,17 +508,69 @@ namespace GL {
             }
         };
 
-        std::vector<string> split(const string& what) const {
+        std::vector<string> split(const string& delim) const {
             std::vector<string> out;
-            std::pair<string, string> s = this->left_and_right_of(what);
+            std::pair<string, string> s = this->left_and_right_of(delim);
             out.push_back(s.first);
             while (s.second != "") {
-                s = s.second.left_and_right_of(what);
+                s = s.second.left_and_right_of(delim);
                 out.push_back(s.first);
             }
-            return out;
-            
+            return out;            
         };
+        std::vector<string> split_nested(char delim = ',', char nested_start = '<', char nested_end = '>') const {
+            std::vector<GL::string> parts;
+            int pos = 0;
+            int len = 0;
+            int depth = 0;
+            for (char c : *this) {
+                len += 1;
+
+                if (c == nested_start) depth++;
+                else if (c == nested_end) depth--;
+
+                if ((c == delim) && (depth == 0)) {
+                    if (len > 1) {
+                        parts.push_back(this->substr(pos, len - 1));
+                    }
+                    pos += len;
+                    len = 0;
+                }
+            }
+            parts.push_back(this->substr(pos));
+            return parts;
+        };
+        std::vector<string> split_nested(GL::string delim, GL::string nested_start = "<", GL::string nested_end = ">") const {
+            std::vector<GL::string> parts;
+            int search_pos = 0;
+            int pos = 0;
+            int len = 0;
+            int depth = 0;
+            
+            while (true) {
+                len += 1;
+                if ((search_pos + nested_start.length()) > this->length()) break;
+                if ((search_pos + nested_end.length()) > this->length()) break;
+                if ((search_pos + delim.length()) > this->length()) break;
+
+                if (this->substr(search_pos, nested_start.length()) == nested_start) depth++;
+                else if (this->substr(search_pos, nested_end.length()) == nested_end) depth--;
+                else if ((this->substr(search_pos, delim.length()) == delim) && (depth == 0)) {
+                    len += ((int)delim.length() - 1);
+                    search_pos += ((int)delim.length() - 1);
+                    if (len > 1) {
+                        parts.push_back(this->substr(pos, len - 1));
+                    }
+                    pos += len;
+                    len = 0;
+                }
+                search_pos++;
+            }            
+            parts.push_back(this->substr(pos));
+            return parts;
+        };
+
+
     };
 
 #if 0 // need to make a atomic_string_view

@@ -1637,29 +1637,6 @@ namespace GL {
                     }
                 };
 
-            private:
-                static std::vector<GL::string> split_nested(const GL::string& s) {
-                    std::vector<GL::string> parts;
-                    int pos = 0;
-                    int len = 0;
-                    int depth = 0;
-                    for (char c : s) {
-                        len += 1;
-
-                        if (c == '<') depth++;
-                        else if (c == '>') depth--;
-
-                        if ((c == ',') && (depth == 0)) {
-                            if (len > 1) {
-                                parts.push_back(s.substr(pos, len - 1));
-                            }
-                            pos += len;
-                            len = 0;
-                        }                   
-                    }
-                    parts.push_back(s.substr(pos));
-                    return parts;
-                };
             public:
                 /* Attempts to determine the type from a given string. This may include instancing a template-defined class if the string
                  includes the appropriate type information, such as `map<int, ::value>` or `vector<std::string>`. 
@@ -1681,11 +1658,11 @@ namespace GL {
 
                             GL::type original_template_type = DetermineType(prefix) | state_modifiers;
                             std::vector<GL::type> inner_types;
-                            for (const auto& s : split_nested(middle)) {
+                            for (const auto& s : middle.split_nested(",", "<", ">")) {
                                 inner_types.push_back(DetermineType(s));
-                                if (inner_types.back() == GL::type_of<GL::undefined>()) {
-                                    // could not be determined...
-                                }
+                                //if (inner_types.back() == GL::type_of<GL::undefined>()) {
+                                //    // could not be determined...
+                                //}
                             }
 
                             if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
@@ -1694,13 +1671,11 @@ namespace GL {
                         }
                     }                    
 
-                    if (auto* BC = this->GetRoot()->find_namespace(from); BC && BC->this_m.is_class()) {
-                        return dynamic_cast<ClassScope*>(BC->this_m.scope)->this_type | state_modifiers;
-                    }
+                    if (auto f = this->GetRoot()->classes_by_name.find(from), e = this->GetRoot()->classes_by_name.end(); f != e) 
+                        return dynamic_cast<ClassScope*>(f->second->this_m.scope)->this_type | state_modifiers;                    
 
-                    if (auto f = this->GetRoot()->classes_by_name.find(from), e = this->GetRoot()->classes_by_name.end(); f != e) {
-                        return dynamic_cast<ClassScope*>(f->second->this_m.scope)->this_type | state_modifiers;
-                    }
+                    if (auto* BC = this->GetRoot()->find_namespace(from); BC && BC->this_m.is_class()) 
+                        return dynamic_cast<ClassScope*>(BC->this_m.scope)->this_type | state_modifiers;                    
 
                     return GL::type_of<GL::undefined>();
                 };
@@ -1759,7 +1734,7 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                __declspec(noinline) bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
+                bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
                     if (this->EmplaceObject_Impl<false>(sv, std::move(Obj))) {
                         // check the cache to make sure we aren't changing something from "empty" to "existing"
                         if (this->is_root()) {
@@ -1790,7 +1765,7 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                __declspec(noinline) bool emplace_object_here(GL::string const& sv, GL::any&& Obj) {
+                bool emplace_object_here(GL::string const& sv, GL::any&& Obj) {
                     if (this->EmplaceObject_Impl<true>(sv, std::move(Obj))) {
                         // check the cache to make sure we aren't changing something from "empty" to "existing"
                         if (this->is_root()) {
@@ -1847,6 +1822,7 @@ namespace GL {
                         return nullptr;
                     }
                 };
+
             private:
                 Breadcrumb* FindNamespaceImpl(GL::string const& Name, Breadcrumb*& nearest_scope) const {
                     if ((Name.length() > 0) && (Name.front() == ':')) {
@@ -1875,6 +1851,7 @@ namespace GL {
                         }
                     }
                 };
+
             public:
                 // Searches for a namespace while also specifying the "closest" it was able to get to the requested namespace. Useful for debugging where the search last ended. 
                 Breadcrumb* find_namespace(GL::string const& Name, Breadcrumb*& nearest_scope) const {

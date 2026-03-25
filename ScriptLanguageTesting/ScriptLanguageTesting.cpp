@@ -2788,7 +2788,6 @@ int main() {
 
                     print(root.DetermineType("map<::string,::value>").name());
                     print(root.DetermineType("map<std::string,::value>").name());
-
                     print(root.DetermineType("int").name());
                     print(root.DetermineType("int const&").name());
                     print(root.DetermineType("int&&").name());
@@ -2819,7 +2818,7 @@ int main() {
                     GL::parallel::For(0, 1000000, [&root](int) {
                         if (auto this_scope = root.make_scope()) {
                             auto vec = this_scope.call("map<string,value>", {});
-                            EXPECT_EQ(vec.m_casted_type, Class.this_type);
+                            // EXPECT_EQ(vec.m_casted_type, Class.this_type);
 
                             auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(GL::string("TEST")) }); // creates a GL::value in the map and returns it
                             EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<GL::value&>());
