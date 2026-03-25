@@ -2813,6 +2813,35 @@ int main() {
                     print(root.DetermineType("::map< std::string, ::value> const&").name());
                     print(root.DetermineType("::map< std::string, ::map< ::value, ::vector> > const&").name());
 
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("::"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("::std::"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("::std::string::"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("std::string"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("::std::string::npos"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("::npos"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("map"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("map<int, int>"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+                    if (auto [remaining_name, BC] = root.ParsePossiblyScopedName("::map<int, int>::npos"); BC) {
+                        print(remaining_name + " @ " + dynamic_cast<GL::scope::impl::NamespaceScope*>(BC->namespace_m->this_m.scope)->path());
+                    }
+
+
                     //Class.for_each_function([&](GL::Proxy_Function const& f)->bool { print(f->m_signature.display()); return false; });
 
                     GL::parallel::For(0, 1000000, [&root](int) {

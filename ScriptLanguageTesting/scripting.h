@@ -1679,6 +1679,48 @@ namespace GL {
 
                     return GL::type_of<GL::undefined>();
                 };
+                /* 
+                returns ["final name following final `::`", nearest_found_scope*]
+                This function may initialize template classes. For example, the following call: 
+                ParsePossiblyScopedName("std::vector<int>::max_length") may initialize the template class "std::vector<int>". 
+                */
+                std::pair<GL::string, const Breadcrumb*> ParsePossiblyScopedName(GL::string const& PossiblyScopedName) const {
+                    if (PossiblyScopedName.begins_with("::"))
+                        return this->GetRoot()->ParsePossiblyScopedName(PossiblyScopedName.remove_leading(':')); // this search needs to start from the root
+                    
+                    // "std::wrapper<std::string>::npos" -> ["std", "wrapper<std::string>", "npos"]
+                    auto namespaces = PossiblyScopedName.replace(" ", "").split_nested("::", "<", ">"); // guarrantees the removal of any spaces, as well.
+                    const Breadcrumb* current_scope = &this->breadcrumb_m;
+                    Breadcrumb* closest_scope;
+                    for (int i = 0; i < (namespaces.size() - 1); ++i) {
+                        if (auto* found_scope = current_scope->this_m.scope->find_namespace(namespaces[i], closest_scope); found_scope) {
+                            current_scope = found_scope;
+                        }
+                        else {
+                            // couldn't find this scope... see if we can "instance" it. 
+                            if (namespaces[i].find("<") != GL::string::npos) {
+                                if (auto new_type = current_scope->this_m.scope->DetermineType(namespaces[i]); new_type != GL::type_of<GL::undefined>()) {
+                                    if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                        current_scope = BC;
+                                    }
+                                    else {
+                                        // cannot continue the search?
+                                        return std::pair<GL::string, const Breadcrumb*>{ std::accumulate(namespaces.begin() + i, namespaces.end(), GL::string("")), current_scope };
+                                    }
+                                }
+                                else {
+                                    // cannot continue the search?
+                                    return std::pair<GL::string, const Breadcrumb*>{ std::accumulate(namespaces.begin() + i, namespaces.end(), GL::string("")), current_scope };
+                                }                                
+                            }
+                            else {
+                                // cannot continue the search?        
+                                return std::pair<GL::string, const Breadcrumb*>{ std::accumulate(namespaces.begin() + i, namespaces.end(), GL::string("")), current_scope };
+                            }
+                        }
+                    }
+                    return { namespaces[namespaces.size() - 1], current_scope };
+                };
 
             public:
                 BasicScope() = delete;
