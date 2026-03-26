@@ -1677,6 +1677,66 @@ int main() {
 
                 }
             }
+            //if (auto timer = sw.debug_timer("Templated var test")) {
+            //    GL::scope::impl::RootScope
+            //        root;
+            //    root.perform_builtins();
+
+            //    // declare a custom namespace
+            //    auto& Shapes = root.make_namespace("Shapes"); {
+            //        auto& Circle = Shapes.make_class("Circle"); {
+            //            Circle.add_member_object("radius", GL::type_of<double>());
+            //            Circle.add_function(GL::make_callable("area", [&Circle](GL::any::fast_any const& lhs) -> double {
+            //                return (float)(GL::constants::pi() * Circle.call("radius", { lhs }).cast<double>() * 2.0);
+            //                }, GL::function_signature::Constant, {}, { { "lhs", Circle.this_type + GL::type::Const + GL::type::Reference } }, GL::type_of<double>()));
+            //            Circle.initialize_basic_member_functions();
+            //        }
+            //        auto& Square = Shapes.make_class("Square"); {
+            //            Square.add_member_object("side", GL::type_of<double>());
+            //            Square.add_function(GL::make_callable("area", [&Circle](GL::any::fast_any const& lhs) -> double {
+            //                return (float)(GL::constants::pi() * Square.call("radius", { lhs }).cast<double>() * 2.0);
+            //                }, GL::function_signature::Constant, {}, { { "lhs", Square.this_type + GL::type::Const + GL::type::Reference } }, GL::type_of<double>()));
+            //            Square.initialize_basic_member_functions();
+            //        }
+            //        auto& Rectangle = Shapes.make_class("Rectangle"); {
+            //            Rectangle.add_member_object("width", GL::type_of<double>());
+            //            Rectangle.add_member_object("height", GL::type_of<double>());
+            //            Rectangle.add_function(GL::make_callable("area", [&Circle](GL::any::fast_any const& lhs) -> double {
+            //                return (float)(GL::constants::pi() * Circle.call("radius", { lhs }).cast<double>() * 2.0);
+            //                }, GL::function_signature::Constant, {}, { { "lhs", Rectangle.this_type + GL::type::Const + GL::type::Reference } }, GL::type_of<double>()));
+            //            Rectangle.initialize_basic_member_functions();
+            //        }
+            //    }
+
+            //    auto& Shape = root.make_class("Shape"); {                    
+            //        Shape.add_function(GL::make_callable("area", [](GL::any::fast_any const& lhs) -> double {
+
+            //        }, GL::function_signature::Static, {}, { { "lhs", Shape.this_type + GL::type::Const + GL::type::Reference }}, GL::type_of<double>()));
+            //        Shape.initialize_basic_member_functions();
+            //    }
+
+
+
+
+
+
+
+
+
+            //    // declare the template object
+            //    auto& Animal = Example.make_class("Animal");
+            //    auto Animal_t = Animal.this_type;
+            //    Animal.add_member_object("is_pet", GL::type_of<bool>(), GL::any::fast_any::instance(bool{ true }));
+            //    Animal.add_member_object("counter", GL::type_of<GL::value&>(), /*Example.call("reference_cast", { */GL::any::fast_any::instance(GL::value(0.0f)) /*})*/);
+            //    Animal.add_function(GL::make_callable("speak", [](GL::any::fast_any const& rhs) -> std::string { 
+            //        return "unspecified"; 
+            //    }, 0, {}, { { "rhs", Animal_t | GL::type::Reference } }, GL::type_of<std::string>()));
+            //    Animal.initialize_basic_member_functions();
+
+
+
+            //}
+
             if (auto timer = sw.debug_timer("Competing Class Name(s) test")) {
                 GL::scope::impl::RootScope
                     root;
@@ -1747,7 +1807,7 @@ int main() {
                         auto vec_obj = this_scope.call("[]", { vec, GL::any::fast_any::instance(0) });
                         EXPECT_EQ(vec_obj.m_casted_type, GL::type_of<int&>());
                         this_scope.call("=", { vec_obj, GL::any::fast_any::instance(10) });
-                        EXPECT_EQ(vec.cast<GL::dynamic_object>()["obj"]->cast<int>(), 10);
+                        EXPECT_EQ(*vec.cast<GL::dynamic_object>()["obj"]->cast<int>(), 10);
 
                         EXPECT_EQ(this_scope.find_object("vector<int>::static_obj").m_casted_type, GL::type_of<int>());
                         EXPECT_EQ(this_scope.find_object("vector < int > :: static_obj").m_casted_type, GL::type_of<int>());
@@ -1808,7 +1868,7 @@ int main() {
                     BaseClass.add_member_object("impl", GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>());
                     BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
                         if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("impl"); implp && *implp) {
-                            auto& impl = (*implp)->cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
+                            auto& impl = *(*implp)->cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
                             auto hash = BaseClass.GetRoot()->call("to_hash", { rhs }).cast<size_t>();
                             if (auto* p = impl.try_at(hash); p) {
                                 return p->second.fast() | GL::type::Reference | GL::type::Const;
@@ -1821,7 +1881,7 @@ int main() {
                     }, GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Const | GL::type::Reference));
                     BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
                         if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("impl"); implp && *implp) {
-                            auto& impl = (*implp)->cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
+                            auto& impl = *(*implp)->cast<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();
                             auto hash = BaseClass.GetRoot()->call("to_hash", { rhs }).cast<size_t>();
                             return impl.get_or_make(hash, [&]() -> std::pair<GL::any, GL::any> {
                                 GL::any::fast_any obj_t;

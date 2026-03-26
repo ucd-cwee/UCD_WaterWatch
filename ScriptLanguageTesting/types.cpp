@@ -8,13 +8,14 @@
 
 namespace GL {
     namespace impl {
-#define use_btree_for_cpp_types
+// #define use_btree_for_cpp_types
 
         static 
 #ifdef use_btree_for_cpp_types
         GL::binary_search_tree< impl::cached_type, size_t, 32>
 #else
-        std::unordered_map< size_t, impl::cached_type> 
+        // std::unordered_map< size_t, impl::cached_type> 
+        concurrency::concurrent_unordered_map< size_t, impl::cached_type>
 #endif
             builtin_cpp_types;
         

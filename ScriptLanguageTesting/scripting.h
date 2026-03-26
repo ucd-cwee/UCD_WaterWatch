@@ -2807,22 +2807,22 @@ namespace GL {
                             member_object.second.first.is_ref() && // ... and the user is requesting a reference...
                             member_object.second.second.can_cast(member_object.second.first) // ... and the correct type was provided for use as a reference.
                         ) { 
-                            destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(member_object.second.second) });                            
+                            destination.m_objects.insert({ member_object.first, member_object.second.second.get_underlying_ptr() });
                         }
                         else if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first); BC && BC->this_m.is_class()) {
                             auto* Class = dynamic_cast<ClassScope*>(BC->this_m.scope);
                             if (member_object.second.second) { // default provided
-                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(Class->call(Class->this_type.name(), { member_object.second.second })) });                                
+                                destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), { member_object.second.second }).get_underlying_ptr() });
                             }
                             else { // no default. Attempt to construct the member object. 
-                                destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(Class->call(Class->this_type.name(), {})) });
+                                destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), {}).get_underlying_ptr() });
                             }
                         }
                         else {
                             // not a reference, and class was not found. We have no choice but to accept the provided data as-is. 
                             GL::any f = member_object.second.second;
                             f.m_casted_type = member_object.second.first;
-                            destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(f | GL::type::Reference) });
+                            destination.m_objects.insert({ member_object.first, (f | GL::type::Reference).get_underlying_ptr() });
                         }
 
                         
@@ -2863,7 +2863,7 @@ namespace GL {
                         
                         for (auto& x : rhs.cast<GL::dynamic_object>().m_objects) {
                             if (auto f = temp.m_objects.find(x.first), e = temp.m_objects.end(); f != e) {
-                                this->call("=", { f->second->fast(), x.second->fast() });
+                                this->call("=", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)f->second, f->second->m_actual_type), GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)x.second, x.second->m_actual_type) });
                             }
                         }
 
@@ -2880,7 +2880,7 @@ namespace GL {
                         
                         for (auto& x : RHS.m_objects) {
                             if (auto f = LHS.m_objects.find(x.first), e = LHS.m_objects.end(); f != e) {
-                                this->call("=", { f->second->fast(), x.second->fast() });
+                                this->call("=", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)f->second, f->second->m_actual_type), GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)x.second, x.second->m_actual_type) });
                             }
                         }
 

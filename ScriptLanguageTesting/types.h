@@ -783,16 +783,16 @@ namespace GL {
 
         GL::type
             m_type;
-        concurrency::concurrent_unordered_map<GL::string, GL::shared_ptr<GL::any>> // GL::shared_ptr<GL::any> instead of GL::any simply due to compilation order
+        concurrency::concurrent_unordered_map<GL::string, GL::shared_ptr<GL::type_erasure::any_data>> // GL::shared_ptr<GL::any> instead of GL::any simply due to compilation order
             m_objects;
 
-        GL::shared_ptr<GL::any>& operator[](GL::string const& sv) {
+        GL::shared_ptr<GL::type_erasure::any_data>& operator[](GL::string const& sv) {
             return m_objects[sv];
         };
-        GL::shared_ptr<GL::any> const& operator[](GL::string const& sv) const {
+        GL::shared_ptr<GL::type_erasure::any_data> const& operator[](GL::string const& sv) const {
             return m_objects.at(sv);
         };
-        GL::shared_ptr<GL::any>* try_at(GL::string const& sv) {
+        GL::shared_ptr<GL::type_erasure::any_data>* try_at(GL::string const& sv) {
             if (m_objects.count(sv) > 0) {
                 return &m_objects.at(sv);
             }
@@ -800,7 +800,7 @@ namespace GL {
                 return nullptr;
             }
         };
-        const GL::shared_ptr<GL::any>* try_at(GL::string const& sv) const {
+        const GL::shared_ptr<GL::type_erasure::any_data>* try_at(GL::string const& sv) const {
             if (m_objects.count(sv) > 0) {
                 return &m_objects.at(sv);
             }
@@ -814,7 +814,7 @@ namespace GL {
             if constexpr (std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>) {
                 if (rhs.can_cast(GL::type_of<GL::dynamic_object&>())) {
                     if (auto* p = rhs.cast<GL::dynamic_object>().try_at(member_name); p) {
-                        return (*p)->m_ptr.load();
+                        return *p;
                     }
                     else {
                         GL::string err = GL::string("Could not find object \"") + member_name + "\" within " + rhs.m_casted_type.name();
@@ -1036,6 +1036,10 @@ namespace GL {
                 return out;
             }
         };
+        GL::shared_ptr<type_erasure::any_data> get_underlying_ptr() const {
+            return m_ptr.load();
+        };
+
     private:
         void* ptr() const {
             if (auto p = m_ptr.load_fast())
@@ -1444,7 +1448,9 @@ namespace GL {
             static fast_any instance(const fast_any& value) noexcept {
                 return value;
             };
-
+            GL::shared_ptr<type_erasure::any_data> get_underlying_ptr() const {
+                return m_ptr;
+            };
             operator bool() const noexcept {
                 return m_ptr.operator bool();
             };
