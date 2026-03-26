@@ -8,7 +8,7 @@
 
 namespace GL {
     namespace impl {
-// #define use_btree_for_cpp_types
+#define use_btree_for_cpp_types
 
         static 
 #ifdef use_btree_for_cpp_types

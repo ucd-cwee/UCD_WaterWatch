@@ -480,7 +480,7 @@ namespace GL {
                         });
                 };
                 template<typename iter_type> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter_type const& from_iter, iter_type const& end, int search_mode, Converter converters) const {
-                    std::map<double, GL::Proxy_Function const*> options;
+                    std::multimap<double, GL::Proxy_Function const*> options;
                     /*return*/ (void)for_each(name, [&](GL::Proxy_Function const& f)->bool {
                         iter_type iter = from_iter;
                         if ((search_mode & Functions::only_templates) > 0) {
@@ -495,9 +495,15 @@ namespace GL {
                         if ((search_mode & free_cast_only) > 0) {
                             auto& sig = f->m_signature;
                             size_t i = 0;
+                            double cost = 0;
                             for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
                                 if (!can_free_cast(iter, sig.argument_types_m[i])) {
                                     return false;
+                                }
+                                else {
+                                    cost -= (sig.argument_types_m[i].is_temp() == get_type_of(iter).is_temp()) ? 0.01 : 0.0;
+                                    cost -= (sig.argument_types_m[i].is_const() == get_type_of(iter).is_const()) ? 0.01 : 0.0;
+                                    cost -= (sig.argument_types_m[i].is_ref() == get_type_of(iter).is_ref()) ? 0.01 : 0.0;
                                 }
                             }
                             for (; i < sig.argument_defaults_m.size(); ++i) {
@@ -506,8 +512,8 @@ namespace GL {
                                 }
                             }
                             if (iter == end) {
-                                options[0] = &f;
-                                return true;
+                                options.insert({ cost, &f });
+                                // return true;
                             }
                             return false;
                         }
@@ -519,8 +525,7 @@ namespace GL {
                             for (; (iter != end) && (i < sig.argument_types_m.size()); ++i, ++iter) {
                                 if (i == 0) {
                                     if (can_free_cast(iter, sig.argument_types_m[i])) {
-                                        cost -= 0.01;
-                                        // this option should be preferred over others.
+                                        cost -= 0.48;
                                     }
                                 }
                                 if (!can_cast(iter, sig.argument_types_m[i])) {
@@ -531,6 +536,10 @@ namespace GL {
                                         return false;
                                     }
                                 }
+                                // should this option be preferred over others?
+                                cost -= (sig.argument_types_m[i].is_temp() == get_type_of(iter).is_temp()) ? 0.01 : 0.0;
+                                cost -= (sig.argument_types_m[i].is_const() == get_type_of(iter).is_const()) ? 0.01 : 0.0;
+                                cost -= (sig.argument_types_m[i].is_ref() == get_type_of(iter).is_ref()) ? 0.01 : 0.0;
                             }
                             for (; i < sig.argument_defaults_m.size(); ++i) {
                                 if (sig.argument_defaults_m[i].m_casted_type.is_void()) {
@@ -538,8 +547,8 @@ namespace GL {
                                 }
                             }
                             if (iter == end) {
-                                options[cost] = &f;
-                                return cost <= 0.0; // stops looking if true
+                                options.insert({ cost, &f });
+                                // return cost <= 0.0; // stops looking if true
                             }
                             return false;
                         }
@@ -1597,10 +1606,11 @@ namespace GL {
                         }
                     }
 
-                    /*static thread_local */size_t len;
+                    static size_t colon_hash{ GL::string(GL::string::namespace_colons()).hash() };
+                    static thread_local size_t len;
                     len = Name.length();
-                    /*static thread_local */std::set< size_t> target_hash; {
-                        // target_hash.clear();
+                    static thread_local std::set< size_t> target_hash; {
+                        target_hash.clear();
                         target_hash.insert(Name.hash());
                         auto temp = Name.remove_leading(':');
                         auto* BC = start;
@@ -1610,10 +1620,10 @@ namespace GL {
                         }
                     }
 
-                    if (target_hash.count(GL::string::namespace_colons().hash()) > 0) {
+                    if (target_hash.count(colon_hash) > 0) {
                         return start->root_m;
                     }
-                    else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([stringified = GL::string(Name), &target_hash, &len](Breadcrumb* namespacePtr, int search_state)-> int {
+                    else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([stringified = GL::string(Name)/*, &target_hash, &len*/](Breadcrumb* namespacePtr, int search_state)-> int {
                         if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
                         GL::string const& currNS{ namespacePtr->GetCurrentNamespace() };
                         if (target_hash.count(currNS.hash()) > 0) return SearchResult::Success;
@@ -1624,14 +1634,18 @@ namespace GL {
                         }
                         else return SearchResult::Failure;
                     })) {
-                        if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
-                            current_cache->insert_fast(Name.hash(), (Breadcrumb*)BC);
+                        if (NS) {
+                            if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
+                                current_cache->insert_fast(Name.hash(), (Breadcrumb*)BC);
+                            }
                         }
                         return BC;
                     }
                     else {
-                        if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
-                            current_cache->insert_fast(Name.hash(), (Breadcrumb*)nullptr);
+                        if (NS) {
+                            if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
+                                current_cache->insert_fast(Name.hash(), (Breadcrumb*)nullptr);
+                            }
                         }
                         return nullptr;
                     }
@@ -1658,12 +1672,14 @@ namespace GL {
 
                             GL::type original_template_type = DetermineType(prefix) | state_modifiers;
                             std::vector<GL::type> inner_types;
-                            for (const auto& s : middle.split_nested(",", "<", ">")) {
-                                inner_types.push_back(DetermineType(s));
-                                //if (inner_types.back() == GL::type_of<GL::undefined>()) {
-                                //    // could not be determined...
-                                //}
-                            }
+                            middle.with_split_nested(",", "<", ">", [&](GL::string const& with_split, bool is_last) -> bool {
+                                auto f = DetermineType(with_split);
+                                if (f == GL::type_of<GL::undefined>()) {
+                                    return true;
+                                }
+                                inner_types.push_back(f);
+                                return false;
+                            });
 
                             if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
                                 return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
@@ -1671,8 +1687,12 @@ namespace GL {
                         }
                     }                    
 
-                    if (auto f = this->GetRoot()->classes_by_name.find(from), e = this->GetRoot()->classes_by_name.end(); f != e) 
-                        return dynamic_cast<ClassScope*>(f->second->this_m.scope)->this_type | state_modifiers;                    
+                    if (auto f = this->GetRoot()->classes_by_name.find(from), e = this->GetRoot()->classes_by_name.end(), f2 = f; f != e) {                        
+                        ++f2;
+                        if ((f2 == e) || (f2->first != f->first)) {
+                            return dynamic_cast<ClassScope*>(f->second->this_m.scope)->this_type | state_modifiers;
+                        }
+                    }
 
                     if (auto* BC = this->GetRoot()->find_namespace(from); BC && BC->this_m.is_class()) 
                         return dynamic_cast<ClassScope*>(BC->this_m.scope)->this_type | state_modifiers;                    
@@ -1685,41 +1705,77 @@ namespace GL {
                 ParsePossiblyScopedName("std::vector<int>::max_length") may initialize the template class "std::vector<int>". 
                 */
                 std::pair<GL::string, const Breadcrumb*> ParsePossiblyScopedName(GL::string const& PossiblyScopedName) const {
-                    if (PossiblyScopedName.begins_with("::"))
+                    if (PossiblyScopedName.begins_with(GL::string::namespace_colons()))
                         return this->GetRoot()->ParsePossiblyScopedName(PossiblyScopedName.remove_leading(':')); // this search needs to start from the root
-                    
+
+                    thread_local int recursion_depth{ 0 };
+                    class recursion_depth_manager {
+                    private:
+                        int& r;
+
+                    public:
+                        recursion_depth_manager(int& R) : r(R) {
+                            ++r;
+                        };
+                        ~recursion_depth_manager() {
+                            --r;
+                        };
+                    };
+                    recursion_depth_manager manager(recursion_depth);
+                    if (recursion_depth > 2) return { PossiblyScopedName, nullptr };
+
                     // "std::wrapper<std::string>::npos" -> ["std", "wrapper<std::string>", "npos"]
-                    auto namespaces = PossiblyScopedName.replace(" ", "").split_nested("::", "<", ">"); // guarrantees the removal of any spaces, as well.
                     const Breadcrumb* current_scope = &this->breadcrumb_m;
                     Breadcrumb* closest_scope;
-                    for (int i = 0; i < (namespaces.size() - 1); ++i) {
-                        if (auto* found_scope = current_scope->this_m.scope->find_namespace(namespaces[i], closest_scope); found_scope) {
-                            current_scope = found_scope;
+                    bool accumulating = false;
+                    GL::string accumulated;
+                    (void)PossiblyScopedName.replace(" ", "").with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
+                        if (accumulating) {
+                            accumulated = accumulated + this_split;
+                            return false;
                         }
-                        else {
-                            // couldn't find this scope... see if we can "instance" it. 
-                            if (namespaces[i].find("<") != GL::string::npos) {
-                                if (auto new_type = current_scope->this_m.scope->DetermineType(namespaces[i]); new_type != GL::type_of<GL::undefined>()) {
-                                    if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
-                                        current_scope = BC;
+
+                        if (!is_final) {
+                            if (auto* found_scope = current_scope->this_m.scope->find_namespace(this_split, closest_scope); found_scope) {
+                                current_scope = found_scope;
+                            }
+                            else {
+                                // couldn't find this scope... see if we can "instance" it. 
+                                if (this_split.find("<") != GL::string::npos) {
+                                    if (auto new_type = current_scope->this_m.scope->DetermineType(this_split); new_type != GL::type_of<GL::undefined>()) {
+                                        if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                            current_scope = BC;
+                                        }
+                                        else {
+                                            // cannot continue the search?
+                                            accumulating = true;
+                                            accumulated = accumulated + this_split;
+                                            return false;
+                                        }
                                     }
                                     else {
                                         // cannot continue the search?
-                                        return std::pair<GL::string, const Breadcrumb*>{ std::accumulate(namespaces.begin() + i, namespaces.end(), GL::string("")), current_scope };
+                                        accumulating = true;
+                                        accumulated = accumulated + this_split;
+                                        return false;
                                     }
                                 }
                                 else {
-                                    // cannot continue the search?
-                                    return std::pair<GL::string, const Breadcrumb*>{ std::accumulate(namespaces.begin() + i, namespaces.end(), GL::string("")), current_scope };
-                                }                                
-                            }
-                            else {
-                                // cannot continue the search?        
-                                return std::pair<GL::string, const Breadcrumb*>{ std::accumulate(namespaces.begin() + i, namespaces.end(), GL::string("")), current_scope };
+                                    // cannot continue the search?        
+                                    accumulating = true;
+                                    accumulated = accumulated + this_split;
+                                    return false;
+                                }
                             }
                         }
-                    }
-                    return { namespaces[namespaces.size() - 1], current_scope };
+                        else {
+                            accumulated = this_split;
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    return std::pair<GL::string, const Breadcrumb*>{ accumulated, current_scope };
                 };
 
             public:
@@ -1876,21 +1932,17 @@ namespace GL {
                         return out;
                     }
                     else {
+                        nearest_scope = this->breadcrumb_m.namespace_m;
+                        return nullptr;
+                        
                         if (!nearest_scope) nearest_scope = this->breadcrumb_m.root_m;
-                        const auto& [left, right] = Name.remove_leading_and_trailing(':').left_and_right_of_last("::");
-                        if (right.length() > 0) {
-                            if (auto* out = FindNamespaceImpl(left, nearest_scope)) {
-                                nearest_scope = out;
-                                return out->this_m.scope->FindNamespaceImpl(right, nearest_scope);
-                            }
-                            else {
-                                return nullptr;
-                            }
-                        }
-                        else {
-                            // no colons inside
-                            return nullptr;
-                        }
+
+                        //auto [remainder, BC] = this->ParsePossiblyScopedName(Name);
+                        //if (remainder.empty()) return const_cast<Breadcrumb*>(BC);
+                        //else {
+                        //    nearest_scope = const_cast<Breadcrumb*>(BC);
+                        //    return BC->this_m.scope->FindNamespaceImpl(remainder, nearest_scope);
+                        //}
                     }
                 };
 
@@ -1951,26 +2003,9 @@ namespace GL {
                         }
                     }
                     else {
-                        // we don't have a scope (yet)
-                        const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
-                        if (optionalName.length() == 0) {
-                            // We only have an object name -- just do the normal search from here.
-                            return find_object(optionalScope, &const_cast<BasicScope*>(this)->breadcrumb_m);
-                        }
-                        else {
-                            Breadcrumb* closest_scope{ nullptr };
-                            if (optionalScope.length() == 0) {
-                                return find_object(optionalName, this->breadcrumb_m.root_m);
-                            }
-                            else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {
-                                return nameSpace->this_m.scope->find_object(optionalName, nameSpace);
-                            }
-                            else if (closest_scope) { // namespace was not found                        
-                                //  throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s' in namespace '%s'", optionalName.c_str().data(), closest_scope->GetCurrentNamespace().c_str().data()));
-                            }
-                            else { // namespace was not found AND no nearest was discovered     
-                                // throw GoodLang::exception::not_found_error(GoodLang::printf("Could not located object '%s'", optionalName.c_str().data()));
-                            }
+                        auto [remainder, BC] = this->ParsePossiblyScopedName(PossiblyScopedName);
+                        if (!remainder.empty()) {
+                            return BC->this_m.scope->find_object(remainder, const_cast<Breadcrumb*>(BC));
                         }
                     }
                     auto err = GL::printf("Could not locate object '%s'", PossiblyScopedName.c_str().data()).to_string();
@@ -2188,109 +2223,109 @@ namespace GL {
                         return nullptr;
                     }
                     else {
-                        // we don't have a scope (yet)
-                        const auto& [optionalScope, optionalName] = PossiblyScopedName.left_and_right_of_last("::");
-                        if (optionalName.length() == 0) {
-                            // We only have an object name -- just do the normal search from here.
-                            if (auto f = try_find_callable(optionalScope, from_iter, from_end, search_state, &const_cast<BasicScope*>(this)->breadcrumb_m); f) {
-                                return std::move(f);
-                            }
-                            else {
-                                //auto total_hash = GL::util::inline_hash(this->GetNamespace()->cache_version, this->GetRoot()->constructors_version.load());
-                                //size_t search_hash = optionalScope.hash();
-                                //if (from_iter != from_end) {
-                                //      for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
-                                //          GL::util::hash(search_hash, get_type_of(_iter).get_hash());
-                                //      }
-                                //}                                
-                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                //    // cache exists for this moment - no new constructor or function or object has been added recently. 
-                                //    if (auto* node = cache->try_at(search_hash); node) return node->load_fast();
-                                //}
-                                //else {
-                                //    this->GetNamespace()->search_cache.EmplaceCache<0>(total_hash, GL::make_shared< GL::epoch_map<GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>, size_t>>());
-                                //}
+                         auto [remainder, ThisBC] = this->ParsePossiblyScopedName(PossiblyScopedName);
+                         if (!remainder.empty() && ThisBC) {
+                             // We only have an object name -- just do the normal search from here.
+                             if (auto f = ThisBC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, const_cast<Breadcrumb*>(ThisBC)); f) {
+                                 return f;
+                             }
+                             else {
+                                 //auto total_hash = GL::util::inline_hash(this->GetNamespace()->cache_version, this->GetRoot()->constructors_version.load());
+                                 //size_t search_hash = remainder.hash();
+                                 //if (from_iter != from_end) {
+                                 //      for (iter _iter = from_iter; (_iter != from_end); ++_iter) {
+                                 //          GL::util::hash(search_hash, get_type_of(_iter).get_hash());
+                                 //      }
+                                 //}                                
+                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                 //    // cache exists for this moment - no new constructor or function or object has been added recently. 
+                                 //    if (auto* node = cache->try_at(search_hash); node) return node->load_fast();
+                                 //}
+                                 //else {
+                                 //    this->GetNamespace()->search_cache.EmplaceCache<0>(total_hash, GL::make_shared< GL::epoch_map<GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>, size_t>>());
+                                 //}
 
-                                if (from_iter != from_end) {
-                                    auto incremented_once = from_iter;
-                                    ++incremented_once;
-                                    if (auto actual_t = get_actual_type_of(from_iter), casted_t = get_type_of(from_iter); casted_t != actual_t) {
-                                        if (auto* BC = this->GetRoot()->try_find_class(actual_t); BC) {
-                                            if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
-                                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                                //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                                //}
-                                                return std::move(ff);
-                                            }
-                                            //if (auto ff = try_find_callable(optionalScope, incremented_once, from_end, search_state, BC); (ff && ((ff->m_signature.state_m & GL::function_signature::Static) > 0))) {
-                                            //    return std::move(ff);
-                                            //}
-                                        }
-                                    }
-                                    for (auto& this_t : get_type_of(from_iter).all_base_types(false)) {
-                                        if (auto* BC = this->GetRoot()->try_find_class(this_t); BC) {
-                                            if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
-                                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                                //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                                //}
-                                                return std::move(ff);
-                                            }
-                                            //if (auto ff = try_find_callable(optionalScope, incremented_once, from_end, search_state, BC); (ff && ((ff->m_signature.state_m & GL::function_signature::Static) > 0))) {
-                                            //    return std::move(ff);
-                                            //}
-                                        }
-                                    }
-                                }
-                                // is the "optionalScope" name an exact match for a class name? They may be trying to invoke a class... 
-                                if (auto search = this->GetRoot()->classes_by_name.find(optionalScope), end = this->GetRoot()->classes_by_name.end(), search2 = search; search != end) {
-                                    ++search2;
-                                    if ((search2 != end) && (search2->first == search->first)) {
-                                        // handle the case where multiple classes share the same name
-                                        if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int) -> int {
-                                            if (!namespacePtr->this_m.is_class()) return SearchResult::Failure;
-                                            if (namespacePtr->this_m.scope_name == optionalScope) return SearchResult::Success;
-                                            return SearchResult::Failure;
-                                            })) {
-                                            if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, BC); ff) {
-                                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                                //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                                //}
-                                                return std::move(ff);
-                                            }
-                                        };
-                                    }
-                                    else {
-                                        // special case when there is only one class that shares this unique name.
-                                        if (auto ff = try_find_callable(optionalScope, from_iter, from_end, search_state, search->second); ff) {
-                                            //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                            //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                            //}
-                                            return std::move(ff);
-                                        }
-                                    }
-                                }
-                                //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                //    cache->insert_fast(search_hash, (GL::Proxy_Function)nullptr);
-                                //}
-                                return nullptr;
-                            }
-                        }
-                        else {
-                            Breadcrumb* closest_scope{ nullptr };
-                            if (optionalScope.length() == 0) {
-                                return try_find_callable(optionalName, from_iter, from_end, search_state, this->breadcrumb_m.root_m);
-                            }
-                            else if (auto nameSpace = find_namespace(optionalScope, closest_scope)) {
-                                return dynamic_cast<NamespaceScope*>(nameSpace->this_m.scope)->try_find_callable(optionalName, from_iter, from_end, search_state/*, nameSpace*/);
-                            }
-                            else if (closest_scope) { // namespace was not found                        
-                                return nullptr;
-                            }
-                            else { // namespace was not found AND no nearest was discovered     
-                                return nullptr;
-                            }
-                        }
+                                 if (from_iter != from_end) {
+                                     auto incremented_once = from_iter;
+                                     ++incremented_once;
+                                     if (auto actual_t = get_actual_type_of(from_iter), casted_t = get_type_of(from_iter); casted_t != actual_t) {
+                                         if (auto* BC = this->GetRoot()->try_find_class(actual_t); BC) {
+                                             if (auto ff = ThisBC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, BC); ff) {
+                                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                 //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                 //}
+                                                 return ff;
+                                             }
+                                             //if (auto ff = try_find_callable(remainder, incremented_once, from_end, search_state, BC); (ff && ((ff->m_signature.state_m & GL::function_signature::Static) > 0))) {
+                                             //    return std::move(ff);
+                                             //}
+                                         }
+                                     }
+                                     for (auto& this_t : get_type_of(from_iter).all_base_types(false)) {
+                                         if (auto* BC = this->GetRoot()->try_find_class(this_t); BC) {
+                                             if (auto ff = ThisBC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, BC); ff) {
+                                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                 //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                 //}
+                                                 return ff;
+                                             }
+                                             //if (auto ff = try_find_callable(remainder, incremented_once, from_end, search_state, BC); (ff && ((ff->m_signature.state_m & GL::function_signature::Static) > 0))) {
+                                             //    return std::move(ff);
+                                             //}
+                                         }
+                                     }
+                                 }
+                                 // is the "remainder" name an exact match for a class name? They may be trying to invoke a class... 
+                                 if (auto search = this->GetRoot()->classes_by_name.find(remainder), end = this->GetRoot()->classes_by_name.end(), search2 = search; search != end) {
+                                     ++search2;
+                                     if ((search2 != end) && (search2->first == search->first)) {
+                                         // handle the case where multiple classes share the same name
+                                         if (Breadcrumb* BC = ThisBC->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int) -> int {
+                                             if (!namespacePtr->this_m.is_class()) return SearchResult::Failure;
+                                             if (namespacePtr->this_m.scope_name == remainder) return SearchResult::Success;
+                                             return SearchResult::Failure;
+                                             })) {
+                                             if (auto ff = ThisBC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, BC); ff) {
+                                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                 //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                 //}
+                                                 return ff;
+                                             }
+                                         };
+                                     }
+                                     else {
+                                         // special case when there is only one class that shares this unique name.
+                                         if (auto ff = ThisBC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, search->second); ff) {
+                                             //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                             //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                             //}
+                                             return ff;
+                                         }
+                                     }
+                                 }
+
+                                 // perhaps it needs to be template initialized?
+                                 if (auto remainder_t = const_cast<BasicScope*>(this)->DetermineType(remainder); remainder_t != GL::type_of<GL::undefined>()) {
+                                     if (auto* BC = this->GetRoot()->try_find_class(remainder_t); BC) {
+                                         if (auto ff = BC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, BC); ff) {
+                                             //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                             //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                             //}
+                                             return ff;
+                                         }
+                                     }
+                                 }
+
+
+                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                 //    cache->insert_fast(search_hash, (GL::Proxy_Function)nullptr);
+                                 //}
+                                 return nullptr;
+                             }
+                         }
                     }
+                
+                    return nullptr;
                 };
 
                 template<typename iter_type> GL::any::fast_any call(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
@@ -2302,7 +2337,7 @@ namespace GL {
                         for (iter_type i = from_iter; i != from_end; ++i) {
                             params = params.add_to_delim(get_type_of(i).name(), ", ");
                         }
-                        GL::string err = GL::string("Could not find callable matching `") + PossiblyScopedName + "`(" + params + ").";
+                        GL::string err = GL::string("Could not find callable matching `") + PossiblyScopedName + "`(" + params + ") from " + this->breadcrumb_m.this_m.scope->GetNamespace()->path() + ".";
                         throw std::runtime_error(err.to_string());
                     }
                 };
@@ -2948,12 +2983,26 @@ namespace GL {
                                         new_class->add_member_object(member_o.first, new_class->template_types[template_index]);
                                     }
                                 }
+                                if (1) {
+                                    auto objects = this->objects_m.lock_shared();
+                                    for (auto& obj : *objects) {
+                                        if (auto template_index = GL::is_template::index(obj.second.m_casted_type); template_index >= 0) {
+                                            auto this_static_obj_type = new_class->template_types[template_index] + (obj.second.m_casted_type - GL::type::CppType).get_qualifiers();
+                                            if (auto* BC = this->GetRoot()->try_find_class(this_static_obj_type); BC) {
+                                                new_class->insert_object_here(obj.first, BC->this_m.scope->call(this_static_obj_type.name(), {}));
+                                            }
+                                            else {
+                                                new_class->insert_object_here(obj.first, this->call(this_static_obj_type.name(), {}));
+                                            }
+                                        }
+                                    }
+                                }
                                 _parent->children.insert(
                                     { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(new_class) }
                                 );
                             }
                             if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
-                                auto newclass = std::dynamic_pointer_cast<ClassScope>(f->second);                                
+                                auto* newclass = dynamic_cast<ClassScope*>(f->second.get());                                
                                 this->GetRoot()->classes.insert({ newclass->this_type.get_base_hash(), &newclass->breadcrumb_m });
                                 this->GetRoot()->classes_by_name.insert({ name, &newclass->breadcrumb_m });
                                 newclass->initialize_basic_member_functions();
@@ -3342,7 +3391,7 @@ namespace GL {
                     , constructors_version{0}
                     , classes()
                     , classes_by_name()
-                    , NamespaceScope("::", ScopeType::Basic | ScopeType::Namespace | ScopeType::Root, nullptr)
+                    , NamespaceScope((GL::string)GL::string::namespace_colons(), ScopeType::Basic | ScopeType::Namespace | ScopeType::Root, nullptr)
                 {};
                 virtual ~RootScope() {
                     this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
@@ -3356,7 +3405,7 @@ namespace GL {
                     // constructors.clear();
                 };
                 void add_constructor(Breadcrumb* BC, GL::Proxy_Function && func) {
-                    constructors.add_function(BC->GetCurrentNamespace() + "::" + func->m_signature.name_m, std::move(func));
+                    constructors.add_function(BC->GetCurrentNamespace() + GL::string::namespace_colons() + func->m_signature.name_m, std::move(func));
                     ++constructors_version;
                 };
 

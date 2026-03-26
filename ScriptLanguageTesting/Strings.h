@@ -116,7 +116,7 @@ namespace GL {
             bool ret;
 
             ret = false;
-            if (from.empty() || (from == to)) return ret;
+            if (from.empty() || (from.data() == to.data())) return ret; // "from == to" is really only here to prevent a waste of work. 
 
             startPos = FindString(String.data, from, true, 0);
             if (startPos != std::string::npos) String = string(std::string(String.data)); // make a new copy of the data
@@ -423,13 +423,11 @@ namespace GL {
         string remove_leading_and_trailing(char _Right) const {
             return remove_trailing(_Right).remove_leading(_Right);
         };
-        static const string& empty_string() {
-            static string out{ "" };
-            return out;
+        static std::string_view empty_string() {
+            return "";
         };
-        static const string& namespace_colons() {
-            static string out{ "::" };
-            return out;
+        static std::string_view namespace_colons() {
+            return "::";
         };
         string right(size_type _Count) const {
             if (_Count >= length()) return *this;
@@ -542,6 +540,8 @@ namespace GL {
         };
         std::vector<string> split_nested(GL::string delim, GL::string nested_start = "<", GL::string nested_end = ">") const {
             std::vector<GL::string> parts;
+            parts.reserve(16);
+
             int search_pos = 0;
             int pos = 0;
             int len = 0;
@@ -570,6 +570,35 @@ namespace GL {
             return parts;
         };
 
+        // f should be of the form: [](GL::string const& this_split, bool is_final) -> bool { /* return bool indicates a need to exit the search */ }
+        template <typename Func> bool with_split_nested(GL::string const& delim, GL::string const& nested_start, GL::string const& nested_end, Func const& f) {
+            int search_pos = 0;
+            int pos = 0;
+            int len = 0;
+            int depth = 0;
+
+            while (true) {
+                len += 1;
+                if ((search_pos + nested_start.length()) > this->length()) break;
+                if ((search_pos + nested_end.length()) > this->length()) break;
+                if ((search_pos + delim.length()) > this->length()) break;
+
+                if (this->substr(search_pos, nested_start.length()).begins_with(nested_start)) depth++;
+                else if (this->substr(search_pos, nested_end.length()).begins_with(nested_end)) depth--;
+                else if ((this->substr(search_pos, delim.length()).begins_with(delim)) && (depth == 0)) {
+                    len += ((int)delim.length() - 1);
+                    search_pos += ((int)delim.length() - 1);
+                    if (len > 1) {
+                        if (f(this->substr(pos, len - 1), false)) return true;
+                    }
+                    pos += len;
+                    len = 0;
+                }
+                search_pos++;
+            }
+            if (f(this->substr(pos), true)) return true;
+            return false;
+        }
 
     };
 

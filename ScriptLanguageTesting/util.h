@@ -295,40 +295,33 @@ namespace GL {
         fast_shared_mutex& operator=(fast_shared_mutex&&) noexcept { return *this; };
         ~fast_shared_mutex() noexcept = default;
 
-        __declspec(noinline) bool try_lock() const {
-            thread_local long long read, planned;
+        bool try_lock() const {
+            long long read, planned;
             read = planned = mut.load(std::memory_order::memory_order_relaxed);
             if (reinterpret_cast<short*>(&planned)[0] == 0) { // no readers...
                 if (++reinterpret_cast<short*>(&planned)[1] == 1) { // we're the only writer...
                     if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-                        return true; // success!
+                        return true; 
                     }
                 }
             }
             return false;
         };
-        __declspec(noinline) void unlock() const {
-            thread_local long long read, planned;
-            int i = 0;
+        void unlock() const {
+            long long read, planned;
             while (true) {
-                if (++i > 40) std::this_thread::yield();
                 read = planned = mut.load(std::memory_order::memory_order_relaxed);
                 --reinterpret_cast<short*>(&planned)[1];
                 if (mut.compare_exchange_weak(read, planned, std::memory_order::memory_order_acq_rel)) {
-                    break; // success!
+                    break; 
                 }
             }
         };
-        __declspec(noinline) void lock() const {
-            int i = 0;
-            while (!try_lock()) {
-                if (++i > 40) std::this_thread::yield();
-            }
+        void lock() const {
+            while (!try_lock()) {}
         };
-
-        __declspec(noinline) bool try_lock_shared() const {
-            thread_local long long read;
-            read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+        bool try_lock_shared() const {
+            long long read{ mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1 }; // immediately increments the Read count, leaves the writer count alone
             if (
                 (reinterpret_cast<short*>(&read)[0] >= 1) // we are allowed to read with other readers...
                 && (reinterpret_cast<long*>(&read)[1] == 0) // so long as there are no writers...
@@ -340,12 +333,11 @@ namespace GL {
                 return false;
             }
         };
-        __declspec(noinline) void unlock_shared() const {
+        void unlock_shared() const {
             mut.fetch_add(-1, std::memory_order::memory_order_relaxed);
         };
-        __declspec(noinline) void lock_shared() const {
-            thread_local long long read;
-            read = mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1; // immediately increments the Read count, leaves the writer count alone
+        void lock_shared() const {
+            long long read{ mut.fetch_add(1, std::memory_order::memory_order_relaxed) + 1 }; // immediately increments the Read count, leaves the writer count alone
             while (reinterpret_cast<long*>(&read)[1] != 0) {
                 read = mut.load(std::memory_order::memory_order_relaxed);
             }
@@ -353,8 +345,8 @@ namespace GL {
 
         // if you already hold a shared_lock and want to upgrade to a hard lock without releasing.
         // Returns true if this ideal scenario was successful. Returns false otherwise.
-        __declspec(noinline) bool upgrade_lock() const {
-            thread_local long long read, planned;
+        bool upgrade_lock() const {
+            long long read, planned;
             // increment the write count and decrement our read count...
             //for (int i = 0; i < 40; ++i) {
             planned = read = mut.load(std::memory_order::memory_order_relaxed);
@@ -375,7 +367,6 @@ namespace GL {
 
             return false;
         };
-
     };
 };
 
