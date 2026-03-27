@@ -1261,6 +1261,12 @@ namespace GL {
             template<typename... Param> struct Function_Params {
                 typedef std::tuple<Param...> argType;
                 static constexpr auto numArgs = std::tuple_size_v<argType>;
+
+                // Specialization to unpack the tuple's internal parameter pack
+                template <typename Ret>
+                struct to_function_pointer {
+                    using type = Ret(*)(Param...);
+                };
             };
 
             template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
@@ -1593,10 +1599,14 @@ namespace GL {
         Proxy_Function out;
         typedef decltype(details::detail::function_signature(func)) function_header;
         if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
+            constexpr bool is_static_s = std::is_convertible_v<std::decay_t<decltype(func)>, typename function_header::Param_Types::template to_function_pointer<typename function_header::Return_Type>::type>;
+
             out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared< details::Explicit_Function_Impl<Func> >(std::move(func), std::move(defaults)));
-            out->m_signature.state_m |= function_signature::Static;
-            out->m_signature.state_m |= function_signature::Constant;
-            // out->m_signature.state |= function_signature::Async; // static functions are assumed to be async-friendly. 
+            if constexpr (is_static_s){
+                out->m_signature.state_m |= function_signature::Static;
+                out->m_signature.state_m |= function_signature::Constant;
+                // out->m_signature.state |= function_signature::Async; // static functions are assumed to be async-friendly. 
+            }            
         }
         else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
             out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(details::Attribute_Access_Impl(std::move(func), std::move(defaults))));

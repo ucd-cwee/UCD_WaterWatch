@@ -2576,12 +2576,12 @@ namespace GL {
 			= delete;
 		epoch_search_tree& operator=(epoch_search_tree&&) noexcept
 			= delete;
-		__declspec(noinline) ~epoch_search_tree() noexcept {
+		~epoch_search_tree() noexcept {
 			nodeAllocator.unsafe_unload();
 			objAllocator.unsafe_unload();
 		};
 
-		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
+		epoch_search_treeNode* // add an object to the tree
 			GetOrInstance(keyType const& key) {
 			if (auto [try_found, locked] = NodeFindSmallestLargerEqual(key, false); try_found) {
 				return try_found;
@@ -2667,7 +2667,6 @@ namespace GL {
 			return *GetOrInstance(key)->object();
 		};
 
-
 		__declspec(noinline) epoch_search_treeNode* // add an object to the tree
 			Add(objType&& object, keyType const& key, locker const& Locking = locker(), bool unique = true) {
 			epoch_search_treeNode
@@ -2708,7 +2707,7 @@ namespace GL {
 				if (child->object()) {
 					if (key <= child->key) {
 						if (unique && (key == child->key)) {
-							*child->object() = std::move(*newNode->object());
+							// *child->object() = std::move(*newNode->object());
 							FreeNode(newNode);
 							return child;
 						}
@@ -3352,14 +3351,14 @@ namespace GL {
 			get_or_make(const keyType& time, F const& func) {
 			auto g = ProtectCurrentEpoch();
 			if (auto [node, locker] = tree.NodeFind(time); node) return *node->object();
-			if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();
-			else {
+			//if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return *node->object();
+			//else {
 				if constexpr (std::is_copy_constructible_v< objType > && std::is_constructible_v< objType >) {
-					if (node = tree.Add(func(), time, locker); node)
+					if (auto node = tree.Add(func(), time); node)
 						return *node->object();
 				}
-			}
-			throw std::range_error("Could not find key");
+			//}
+			throw std::range_error("Could not find key or not construct the new object");
 		};
 		bool // optionally get a copy of the object being deleted. 
 			erase(const keyType& time, objType* out = nullptr) const {
@@ -3389,7 +3388,10 @@ namespace GL {
 			}
 
 		};
-
+		size_t
+			size() const {
+			return tree.size();
+		};
 
 		class Iterator {
 		public:

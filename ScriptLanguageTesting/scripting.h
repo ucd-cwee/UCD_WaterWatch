@@ -1316,6 +1316,35 @@ namespace GL {
                     return false;
                 };
 
+            private:
+                static auto& scope_stack() {
+                    thread_local std::deque< const BasicScope* > out;
+                    return out;
+                };
+                [[nodiscard]] static auto push_back_caller(const BasicScope* p) {
+                    class handler {
+                    public:
+                        handler(const BasicScope* P) {
+                            scope_stack().push_back(P);
+                        };
+                        handler(handler const&) = delete;
+                        handler(handler&&) = delete;
+                        handler& operator=(handler const&) = delete;
+                        handler& operator=(handler&&) = delete;
+                        ~handler() {
+                            scope_stack().pop_back();
+                        };
+                    };
+                    return handler(p);
+                };
+            public:
+                static BasicScope* GetCurrentCaller() {
+                    if (scope_stack().size() > 0)
+                        return const_cast<BasicScope*>(scope_stack().back());
+                    else
+                        return nullptr;
+                };
+
             protected:
                 BasicScope(GL::string&& name, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
                     : breadcrumb_m(std::move(name), scope_type_p, parent)
@@ -1699,6 +1728,7 @@ namespace GL {
 
                     return GL::type_of<GL::undefined>();
                 };
+
                 /* 
                 returns ["final name following final `::`", nearest_found_scope*]
                 This function may initialize template classes. For example, the following call: 
@@ -1958,12 +1988,12 @@ namespace GL {
 
             public:
                 // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
-                GL::any::fast_any find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const {
+                std::pair<GL::any::fast_any, bool> try_find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const {
                     GL::any
                         * p = nullptr;
                     if (search_from) {
                         if (p = search_from->this_m.scope->find_object_here(PossiblyScopedName); p) {
-                            return p->fast();
+                            return { p->fast(), true };
                         }
 
                         auto* NS = this->GetNamespace();
@@ -1994,9 +2024,9 @@ namespace GL {
                                 p = nullptr;
                                 return SearchResult::Failure;
                             }
-                        }, nullptr, SearchState::SkipChildren)) {
+                            }, nullptr, SearchState::SkipChildren)) {
                             //NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
-                            return p->fast();
+                            return { p->fast(), true };
                         }
                         else {
                             //NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(1));
@@ -2005,9 +2035,16 @@ namespace GL {
                     else {
                         auto [remainder, BC] = this->ParsePossiblyScopedName(PossiblyScopedName);
                         if (!remainder.empty()) {
-                            return BC->this_m.scope->find_object(remainder, const_cast<Breadcrumb*>(BC));
+                            return BC->this_m.scope->try_find_object(remainder, const_cast<Breadcrumb*>(BC));
                         }
-                    }
+                    }       
+
+                    return { nullptr, false };
+                };
+
+                // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
+                GL::any::fast_any find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const {
+                    if (auto [p, success] = try_find_object(PossiblyScopedName, search_from); success) return p;
                     auto err = GL::printf("Could not locate object '%s'", PossiblyScopedName.c_str().data()).to_string();
                     throw std::runtime_error(err);
                 };
@@ -2035,6 +2072,10 @@ namespace GL {
                                                 return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(o->cast<GL::Proxy_Function>());
                                             }
                                         }
+                                    }
+                                    if (from_iter == from_end) {
+                                        // allowed to return a static object, perhaps?
+                                        return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static, {}, {}, o->m_casted_type + GL::type::Reference));
                                     }
                                 }
                                 obj_search = obj_search->parent_m;
@@ -2074,6 +2115,10 @@ namespace GL {
                                         }
                                     }
                                 }
+                                if (from_iter == from_end) {
+                                    // allowed to return a static object, perhaps?
+                                    return SearchResult::Success;
+                                }
                             }
 
                             if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
@@ -2103,6 +2148,10 @@ namespace GL {
                                             return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(o->cast<GL::Proxy_Function>());
                                         }
                                     }
+                                }
+                                if (from_iter == from_end) {
+                                    // allowed to return a static object, perhaps?
+                                    return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static, {}, {}, o->m_casted_type + GL::type::Reference));
                                 }
                             }
 
@@ -2327,8 +2376,10 @@ namespace GL {
                 
                     return nullptr;
                 };
-
+            
+            public:
                 template<typename iter_type> GL::any::fast_any call(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
+                    auto handler = push_back_caller(this);
                     if (auto f = try_find_callable(PossiblyScopedName, from_iter, from_end); f) {
                         return this->GetRoot()->get_converters().call_with_conversions(&*f, from_iter, from_end);
                     }
@@ -2801,7 +2852,8 @@ namespace GL {
             protected:
                 concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
                     member_objects;            
-                void default_construct(GL::dynamic_object& destination) {
+                /* continue here, use the Origination */
+                void default_construct(GL::dynamic_object& destination, ClassScope* Origination) {
                     for (auto& member_object : this->member_objects) {
                         if (member_object.second.second && // default provided...
                             member_object.second.first.is_ref() && // ... and the user is requesting a reference...
@@ -2812,10 +2864,20 @@ namespace GL {
                         else if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first); BC && BC->this_m.is_class()) {
                             auto* Class = dynamic_cast<ClassScope*>(BC->this_m.scope);
                             if (member_object.second.second) { // default provided
-                                destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), { member_object.second.second }).get_underlying_ptr() });
+                                if (auto f = this->try_find_callable(Class->this_type.name(), &member_object.second.second, &member_object.second.second + 1); f) {
+                                    destination.m_objects.insert({ member_object.first, f->operator()(member_object.second.second).get_underlying_ptr() });
+                                }
+                                else {
+                                    destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), { member_object.second.second }).get_underlying_ptr() });
+                                }
                             }
                             else { // no default. Attempt to construct the member object. 
-                                destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), {}).get_underlying_ptr() });
+                                if (auto f = this->try_find_callable(Class->this_type.name(), &member_object.second.second, &member_object.second.second); f) {
+                                    destination.m_objects.insert({ member_object.first, f->operator()().get_underlying_ptr() });
+                                }
+                                else {
+                                    destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), {}).get_underlying_ptr() });
+                                }
                             }
                         }
                         else {
@@ -2823,9 +2885,7 @@ namespace GL {
                             GL::any f = member_object.second.second;
                             f.m_casted_type = member_object.second.first;
                             destination.m_objects.insert({ member_object.first, (f | GL::type::Reference).get_underlying_ptr() });
-                        }
-
-                        
+                        }                        
                     }
                 };
 
@@ -2843,7 +2903,7 @@ namespace GL {
                         auto temp = GL::dynamic_object(this->this_type);
                         for (auto& base_type : this->this_type.all_base_types(false)) {
                             if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
-                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
+                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp, this);
                             }
                         }
                         auto out = GL::any::fast_any::instance(std::move(temp));
@@ -2857,7 +2917,7 @@ namespace GL {
                         auto temp = GL::dynamic_object(this->this_type);
                         for (auto& base_type : this->this_type.all_base_types(false)) {
                             if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
-                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
+                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp, this);
                             }
                         }
                         
@@ -2891,22 +2951,56 @@ namespace GL {
 
                     // member access functions. Note that it does not include member access functions for base classes -- that is assumed to be picked up automatically through polymorphic casting. 
                     for (auto& member_object : member_objects) {
-                        // non-const reference access to member objects
-                        this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
-                        }, GL::function_signature::MemberObject | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
-                        // const reference access to member objects
-                        this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                            return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
-                        }, GL::function_signature::MemberObject | GL::function_signature::Constant | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
+                        if (!member_object.first.begins_with("~")) {
+                            // non-const reference access to member objects
+                            this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
+                                return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
+                            }, GL::function_signature::MemberObject | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
+                            // const reference access to member objects
+                            this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
+                                return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
+                            }, GL::function_signature::MemberObject | GL::function_signature::Constant | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
+                        }
                     }
 
                     // to_string and to_hash functions
                     this->add_function(GL::make_callable("to_string", [](GL::any::fast_any const& lhs) -> GL::string {
-                        return "";
+                        auto& o = lhs.cast<GL::dynamic_object>();
+                        GL::any::fast_any out = GL::any::fast_any::instance(GL::string());
+                        for (auto& obj : o.m_objects) {
+                            if (obj.second) {
+                                if (!obj.first.begins_with("~")) {
+                                    auto this_pair = GetCurrentCaller()->call("+", { GL::any::fast_any::instance(GL::string(obj.first + ":")), GetCurrentCaller()->call("to_string", {
+                                        GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
+                                    }) });
+                                    out = GetCurrentCaller()->call("add_to_delim", { out, this_pair, GL::any::fast_any::instance(GL::string(", ")) });
+                                }
+                                else {
+                                    return GetCurrentCaller()->call("to_string", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference) }).cast<GL::string>();
+                                }
+                            }
+                        }
+                        return "[" + GetCurrentCaller()->GetRoot()->call("::string", { out }).cast<GL::string>() + "]";                        
                     }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::string>()));
                     this->add_function(GL::make_callable("to_hash", [](GL::any::fast_any const& lhs) -> size_t {
-                        return 0;
+                        auto& o = lhs.cast<GL::dynamic_object>();
+                        size_t out = 0;
+                        for (auto& obj : o.m_objects) {
+                            if (obj.second) {
+                                if (!obj.first.begins_with("~")) {
+                                    GL::util::hash(out, obj.first.hash());
+                                    GL::util::hash(out, GetCurrentCaller()->call("to_hash", {
+                                        GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
+                                    }).cast<size_t>());
+                                }
+                                else {
+                                    return GetCurrentCaller()->call("to_hash", {
+                                        GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
+                                    }).cast<size_t>();
+                                }
+                            }
+                        }
+                        return out;
                     }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
                 };
 
@@ -3435,6 +3529,9 @@ namespace GL {
             };
 
 
+        };
+        __forceinline static impl::BasicScope* GetCurrentCaller() {
+            return impl::BasicScope::GetCurrentCaller();
         };
 
 
