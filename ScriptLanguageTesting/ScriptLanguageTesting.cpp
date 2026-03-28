@@ -1794,8 +1794,30 @@ int main() {
 
                         this_scope.call("grow_to_at_least", { vec, GL::any::fast_any::instance(10) });
                         print(this_scope.call("to_string", { vec }).cast<GL::string>());
-                        
+                    }
+                    if (auto this_scope = root.make_scope()) {                        
+                        auto vec = this_scope.call("vector< :: foot>", {}); // calling this forcefully initializes the template class, even if it was never initialized before.
+                        // EXPECT_EQ(vec.m_casted_type, Class.this_type);
 
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(0) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(1) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(2) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(3) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(4) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(5) });
+
+                        print(this_scope.call("size", { vec }).cast<size_t>());
+                        print(this_scope.call("[]", { vec, GL::any::fast_any::instance(5) }).cast<GL::foot>());
+
+                        print(this_scope.call("to_string", { vec }).cast<GL::string>());
+                        print(this_scope.call("to_hash", { vec }).cast<size_t>());
+
+                        this_scope.call("=", { this_scope.call("[]", { vec, GL::any::fast_any::instance(5) }), GL::any::fast_any::instance(50) });
+                        print(this_scope.call("[]", { vec, GL::any::fast_any::instance(5) }).cast<GL::foot>());
+                        print(this_scope.call("to_string", { vec }).cast<GL::string>());
+
+                        this_scope.call("grow_to_at_least", { vec, GL::any::fast_any::instance(10) });
+                        print(this_scope.call("to_string", { vec }).cast<GL::string>());
                     }
                 }
 
@@ -1804,8 +1826,8 @@ int main() {
                     auto& BaseClass = root.make_class("map");
                     if (1) {
                         // teach it how to create the generic map
+                        GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>().try_update_name("map_impl");
                         auto& AnyMap = BaseClass.make_class(GL::type_of<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>());
-                        const_cast<GL::type&>(AnyMap.this_type).try_update_name("map_impl");
                         AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), []() -> GL::shared_ptr<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>> { return GL::make_shared<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>(); }, GL::function_signature::Constructor + GL::function_signature::Async));
                         AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap](GL::epoch_map<std::pair<GL::any, GL::any>, size_t> const& rhs) -> GL::shared_ptr<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>> {
                             auto out = GL::make_shared<GL::epoch_map<std::pair<GL::any, GL::any>, size_t>>();

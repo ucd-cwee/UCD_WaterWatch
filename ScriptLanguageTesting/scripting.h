@@ -1804,7 +1804,14 @@ namespace GL {
                         }
                         return false;
                     });
-
+                    // try and offer name correction for typenames
+                    if (accumulated.find("<") != GL::string::npos) {
+                        if (auto new_type = current_scope->this_m.scope->DetermineType(accumulated); new_type != GL::type_of<GL::undefined>()) {
+                            if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                accumulated = BC->this_m.scope_name; // name correction was successful
+                            }
+                        }
+                    }
                     return std::pair<GL::string, const Breadcrumb*>{ accumulated, current_scope };
                 };
 
@@ -2852,8 +2859,7 @@ namespace GL {
             protected:
                 concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
                     member_objects;            
-                /* continue here, use the Origination */
-                void default_construct(GL::dynamic_object& destination, ClassScope* Origination) {
+                void default_construct(GL::dynamic_object& destination) {
                     for (auto& member_object : this->member_objects) {
                         if (member_object.second.second && // default provided...
                             member_object.second.first.is_ref() && // ... and the user is requesting a reference...
@@ -2864,20 +2870,10 @@ namespace GL {
                         else if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first); BC && BC->this_m.is_class()) {
                             auto* Class = dynamic_cast<ClassScope*>(BC->this_m.scope);
                             if (member_object.second.second) { // default provided
-                                if (auto f = this->try_find_callable(Class->this_type.name(), &member_object.second.second, &member_object.second.second + 1); f) {
-                                    destination.m_objects.insert({ member_object.first, f->operator()(member_object.second.second).get_underlying_ptr() });
-                                }
-                                else {
-                                    destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), { member_object.second.second }).get_underlying_ptr() });
-                                }
+                                destination.m_objects.insert({ member_object.first, Class->call(Class->breadcrumb_m.this_m.scope_name, { member_object.second.second }).get_underlying_ptr() });                                
                             }
                             else { // no default. Attempt to construct the member object. 
-                                if (auto f = this->try_find_callable(Class->this_type.name(), &member_object.second.second, &member_object.second.second); f) {
-                                    destination.m_objects.insert({ member_object.first, f->operator()().get_underlying_ptr() });
-                                }
-                                else {
-                                    destination.m_objects.insert({ member_object.first, Class->call(Class->this_type.name(), {}).get_underlying_ptr() });
-                                }
+                                destination.m_objects.insert({ member_object.first, Class->call(Class->breadcrumb_m.this_m.scope_name, {}).get_underlying_ptr() });                                
                             }
                         }
                         else {
@@ -2899,11 +2895,11 @@ namespace GL {
                 
                 void initialize_basic_member_functions() {
                     // default constructor
-                    this->add_function(GL::make_callable(this_type.name(), [this]() -> GL::any::fast_any {
+                    this->add_function(GL::make_callable(breadcrumb_m.this_m.scope_name, [this]() -> GL::any::fast_any {
                         auto temp = GL::dynamic_object(this->this_type);
                         for (auto& base_type : this->this_type.all_base_types(false)) {
                             if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
-                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp, this);
+                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
                             }
                         }
                         auto out = GL::any::fast_any::instance(std::move(temp));
@@ -2913,11 +2909,11 @@ namespace GL {
                     }, GL::function_signature::Constructor, {}, {}, this->this_type));
                    
                     // copy constructor
-                    this->add_function(GL::make_callable(this_type.name(), [this](GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                    this->add_function(GL::make_callable(breadcrumb_m.this_m.scope_name, [this](GL::any::fast_any const& rhs) -> GL::any::fast_any {
                         auto temp = GL::dynamic_object(this->this_type);
                         for (auto& base_type : this->this_type.all_base_types(false)) {
                             if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
-                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp, this);
+                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
                             }
                         }
                         
@@ -3030,7 +3026,6 @@ namespace GL {
                             if (auto new_class = std::make_shared< ClassScope>(name, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&_parent->breadcrumb_m))) {
                                 new_class->template_types = templates;
                                 const_cast<GL::type&>(new_class->this_type).add_base(this->this_type);
-                                // std::cout << new_class->this_type.name() << std::endl;
 
                                 this->for_each_function([&](GL::Proxy_Function const& f)->bool {
                                     if ((f->m_signature.state_m & GL::function_signature::Constructor) > 0) {
@@ -3533,7 +3528,12 @@ namespace GL {
         __forceinline static impl::BasicScope* GetCurrentCaller() {
             return impl::BasicScope::GetCurrentCaller();
         };
-
+        __forceinline static impl::ClassScope* GetClass(GL::type const& rhs) {
+            if (auto* BC = impl::BasicScope::GetCurrentCaller()->GetRoot()->try_find_class(rhs); BC) {
+                return dynamic_cast<impl::ClassScope*>(BC->this_m.scope);
+            }
+            return nullptr;
+        };
 
 
     }
