@@ -6,15 +6,12 @@
 #include "../GpuProgramming/matrix.h"
 
 namespace GL {
-    
-
     namespace scope {
         // "" becomes "::", "::UI" becomes "::UI::", "std::string" becomes "::std::string::"
         static __forceinline GL::string make_scope_name(GL::string const& x) {
             return (GL::string::namespace_colons() + x.remove_leading_and_trailing(':') + GL::string::namespace_colons()).replace("::::", GL::string::empty_string());
         };
-        template <typename iter_type>
-        static __forceinline GL::type const& get_type_of(iter_type const& rhs) {
+        template <typename iter_type> static __forceinline GL::type const& get_type_of(iter_type const& rhs) {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return *rhs;
             }
@@ -34,9 +31,7 @@ namespace GL {
                 return rhs->m_casted_type;
             }
         };
-
-        template <typename iter_type>
-        static __forceinline bool can_free_cast(iter_type const& lhs, GL::type rhs) {
+        template <typename iter_type> static __forceinline bool can_free_cast(iter_type const& lhs, GL::type rhs) {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return lhs->can_free_cast(rhs);
             }
@@ -55,10 +50,8 @@ namespace GL {
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 return lhs->can_free_cast(rhs);
             }
-        };
-        
-        template <typename iter_type>
-        static __forceinline bool can_cast(iter_type const& lhs, GL::type rhs) {
+        };        
+        template <typename iter_type> static __forceinline bool can_cast(iter_type const& lhs, GL::type rhs) {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return lhs->can_cast(rhs);
             }
@@ -78,10 +71,7 @@ namespace GL {
                 return lhs->can_cast(rhs);
             }
         };
-
-
-        template <typename iter_type>
-        static __forceinline GL::type const& get_actual_type_of(iter_type const& rhs) {
+        template <typename iter_type> static __forceinline GL::type const& get_actual_type_of(iter_type const& rhs) {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return *rhs;
             }
@@ -138,7 +128,7 @@ namespace GL {
                     , current_namespace{ GL::string::empty_string() }
                     , scope_type{ scope_type_p }
                 {}
-                ScopeID(ScopeID&& rhs)
+                ScopeID(ScopeID&& rhs) noexcept
                     : scope_name{ std::move(rhs.scope_name) }
                     , scope{ std::move(rhs.scope) }
                     , scope_type{ rhs.scope_type }
@@ -149,15 +139,9 @@ namespace GL {
                 ScopeID& operator=(ScopeID const&) = delete;
                 ~ScopeID() = default;
 
-                bool is_namespace() const {
-                    return scope_type & ScopeType::Namespace;
-                };
-                bool is_class() const {
-                    return scope_type & ScopeType::Class;
-                };
-                bool is_root() const {
-                    return scope_type & ScopeType::Root;
-                };
+                bool is_namespace() const;
+                bool is_class() const;
+                bool is_root() const;
             };
 
             // Used to track and hash the current scope position. 
@@ -177,37 +161,8 @@ namespace GL {
                     scope_index; // unique index of this scope for check_flags
 
             public:
-                size_t GetScopeIndex() {
-                    if (scope_index._index == 0) {
-                        if (parent_m) {
-                            if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope)) {
-                                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&scope_index._parent), static_cast<PVOID>(&root_ptr->scope_indexs));
-                                auto new_index = root_ptr->scope_indexs.get_ticket();
-                                if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&scope_index._index), new_index, 0) > 0) {
-                                    root_ptr->scope_indexs.return_ticket(new_index);
-                                }
-                                else {
-                                    if (this_m.is_namespace()) {
-                                        // Since basic_scopes can be created and deleted without much notice,
-                                        // we limit the caching to namespaces to help guarrantee that looping over the list
-                                        // will likely be protected from the lifetime perspective.                                 
-                                        root_ptr->scopes.grow_to_at_least(new_index + 1);
-                                        root_ptr->scopes[new_index] = this;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return scope_index._index;
-                };
-                GL::string const& GetCurrentNamespace() const {
-                    if (this->this_m.is_namespace()) {
-                        return this->this_m.current_namespace;
-                    }
-                    else {
-                        return this->namespace_m->this_m.current_namespace;
-                    }
-                };
+                size_t GetScopeIndex();
+                GL::string const& GetCurrentNamespace() const;
 
                 Breadcrumb(GL::string&& name = {}, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
                     : this_m(std::move(name), scope_type_p)
@@ -244,72 +199,7 @@ namespace GL {
                         root_ptr->scopes[scope_index._index] = nullptr;
                 }
             };
-#if 0
-            // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
-            template <int numCategories = 4> class Cache {
-            private: // CacheVersion -> CacheCategory -> Inputs -> Result
-                using ResultType = Breadcrumb*;
-                using InputType = size_t;
-                using ResultForInputType = concurrency::concurrent_unordered_map<InputType, ResultType>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
-                GL::atomic_map<size_t, std::array<GL::deferred<ResultForInputType>, numCategories>>
-                    _current_cache; // cache uses atomic_map since it may delete items as well as append items. Needs to be sorted since we "pop" the first item frequently. 
-                std::atomic<long>
-                    _working{ 0 };
-            public:
-                Cache() = default;
-                Cache(Cache const&) = delete;
-                Cache(Cache&&) = delete;
-                Cache& operator=(Cache const&) = delete;
-                Cache& operator=(Cache&&) = delete;
-                ~Cache() = default;
 
-                void unsafe_unload() {
-                    _current_cache.unsafe_unload();
-                };
-
-                // Insert an item into the cache.
-                template<int category> __declspec(noinline) void EmplaceCache(size_t cache_version, size_t input_hash, Breadcrumb* result) {
-                    auto g{ _current_cache.ProtectCurrentEpoch() };
-                    bool success = false;
-                    ++_working;
-                    while (!success) {
-                        if (!_current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
-                            if (curr_version >= cache_version) {
-                                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&cache[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
-                                success = true;
-                            }
-                            })) {
-                        };
-                        if (!success) {
-                            (void)_current_cache.get_or_make(cache_version, [&]()->std::array<GL::deferred<ResultForInputType>, numCategories> {
-                                std::array<GL::deferred<ResultForInputType>, numCategories> out;
-                                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&out[category]->operator[](input_hash)), reinterpret_cast<PVOID>(result));
-                                return out;
-                            });
-                            // (void)_current_cache.operator[](cache_version); // default-initializes the item at the specified index if it does not already exist. 
-                            _current_cache.pop_front_if([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) -> bool {
-                                return curr_version < cache_version;
-                                });
-                        }
-                    }
-                    --_working;
-                };
-
-                // Try to copy an item from the cache.
-                template<int category> __declspec(noinline) Breadcrumb* TryGetCache(size_t cache_version, size_t input_hash) {
-                    auto g{ _current_cache.ProtectCurrentEpoch() };
-                    Breadcrumb* out{ nullptr };
-                    _current_cache.do_at_end([&](size_t curr_version, std::array<GL::deferred<ResultForInputType>, numCategories>& cache) {
-                        if (curr_version >= cache_version)
-                            if (cache[category].valid())
-                                if (auto f = cache[category]->find(input_hash); f != cache[category]->end())
-                                    out = f->second;
-                        });
-                    return out;
-                };
-
-            };
-#endif
             // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
             template <typename T, int numCategories = 4> class TypedCache {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
@@ -382,18 +272,11 @@ namespace GL {
                 ~Functions() = default;
             public:
                 // insert a function into the storage
-                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func) {
-                    return functions[func->m_signature.name_m].lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
-                };
+                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func);
                 // insert a function into the storage
-                GL::Proxy_Function const& add_function(GL::string name_m, GL::Proxy_Function&& func) {
-                    return functions[name_m].lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
-                };
-
+                GL::Proxy_Function const& add_function(GL::string name_m, GL::Proxy_Function&& func);
                 // insert a function into the storage
-                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func, std::remove_pointer_t<typename decltype(functions)::Iterator::value_type::second_type>::shared_locked& locked) {
-                    return locked->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
-                };
+                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func, std::remove_pointer_t<typename decltype(functions)::Iterator::value_type::second_type>::shared_locked& locked);
                 // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
                 template<typename Func> GL::Proxy_Function const& for_each(Func const& to_do) const {
                     typedef decltype(GL::details::detail::function_signature(to_do)) function_header;
@@ -593,9 +476,9 @@ namespace GL {
                         , thisNodePath(nextNodePath)
                     {};
                     UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath const&) = default;
-                    UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath&&) = default;
+                    UniformCostSearchNodeBestPath(UniformCostSearchNodeBestPath&&) noexcept = default;
                     UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath const&) = default;
-                    UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath&&) = default;
+                    UniformCostSearchNodeBestPath& operator=(UniformCostSearchNodeBestPath&&) noexcept = default;
                     ~UniformCostSearchNodeBestPath() = default;
 
                     UniformCostSearchNodeBestPath* previousBestPath{ nullptr };
@@ -603,103 +486,12 @@ namespace GL {
                     size_t cached_size{ 0 };
 
                 private:
-                    void get_impl(std::vector<GL::type>& out) const {
-                        if (previousBestPath) previousBestPath->get_impl(out);
-                        out.push_back(thisNodePath);
-                    };
+                    void get_impl(std::vector<GL::type>& out) const;
 
                 public:
-                    GL::Proxy_Function make_converter(GL::type const& from, Functions const& srce) const {
-                        std::vector<GL::type> path;
-                        std::vector<GL::Proxy_Function const*> converters;
-                        GL::type this_t = from;
-                        get(path);
-                        int state = std::numeric_limits<int>::max();
-                        for (auto& t : path) {
-                            if (this_t.can_free_cast(t)) {
-                                this_t = t;
-                            }
-                            else if (auto& x = srce.try_find_callable(t, &this_t, &this_t + 1, free_cast_only | no_polymorphism); x) { // was originally "free_cast_only" only, and did not perform second loop
-                                converters.push_back(&x);
-                                this_t = t;
-                                state &= x->m_signature.state_m;
-                            }
-                            else if (auto& x = srce.try_find_callable(t, &this_t, &this_t + 1, free_cast_only); x) {
-                                converters.push_back(&x);
-                                this_t = t;
-                                state &= x->m_signature.state_m;
-                            }
-
-                            /*                           else if (auto& x = srce.try_find_callable("", &this_t, &this_t + 1, 0); x) {
-                                                           converters.push_back(&x);
-                                                           this_t = t;
-                                                           state &= x->m_signature.state_m;
-                                                       }*/
-                            else {
-                                return nullptr;
-                            }
-                        }
-
-                        // no conversion function is necessary
-                        if (converters.size() == 0) {
-                            this_t = thisNodePath;
-                            auto temp = GL::make_callable("`static_cast " + (this_t).name() + "`", [converters, this_t](GL::any::fast_any& from) -> GL::any::fast_any {
-                                GL::any::fast_any out{ from };
-                                out.m_casted_type = this_t;
-                                return out;
-                                }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Constructor | GL::function_signature::NoCost | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
-                            temp->m_signature.numConversions = 0;
-                            return temp;
-
-                        }
-                        // use a user-provided function exactly
-                        else if (converters.size() == 1) {
-                            return *converters[0];
-                        }
-                        // create a daisy-chain function
-                        else {
-                            // generic function that casts "from"-type objects to "this"-type by iteratively making the inner-type casts. 
-                            // e.g. int->ldouble might take the path of int->long->float->double->ldouble, for a total of 4 casts hidden as a single cast or a single call to this Proxy_Function. 
-                            Proxy_Function temp;
-                            if (converters.size() == 2) {
-                                temp = GL::make_callable("`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any::fast_any {
-                                    return (*converters[1])->operator()((*converters[0])->operator()(from));
-                                }, state | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
-                            }
-                            else if (converters.size() == 3) {
-                                temp = GL::make_callable("`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any::fast_any {
-                                    return (*converters[2])->operator()((*converters[1])->operator()((*converters[0])->operator()(from)));
-                                }, state | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
-                            }
-                            else {
-                                temp = GL::make_callable("`operator " + (this_t - GL::type::Temporary).name() + "`", [converters](GL::any::fast_any& from) -> GL::any::fast_any {
-                                    GL::any::fast_any out;
-                                    int pos{ 0 };
-                                    for (; pos < converters.size() && pos < 1; ++pos) out = (*converters[pos])->operator()(from);
-                                    for (; pos < converters.size(); ++pos) out = (*converters[pos])->operator()(out);
-                                    return out;
-                                }, state | GL::function_signature::Explicit, {}, { { "From", from } }, this_t);
-                            }
-                            temp->m_signature.numConversions = 0;
-                            for (auto& x : converters) temp->m_signature.numConversions += (*x)->m_signature.numConversions;
-                            return temp;
-                        }
-                    };
-                    void get(std::vector<GL::type>& out) const {
-                        out.clear();
-                        get_impl(out);
-                    };
-                    size_t size() const {
-                        if (cached_size == 0) {
-                            if (previousBestPath) {
-                                const_cast<size_t&>(cached_size) = 1 + previousBestPath->size();
-                            }
-                            else {
-                                const_cast<size_t&>(cached_size) = 1;
-                            }
-                        }
-                        return cached_size;
-                    };
+                    GL::Proxy_Function make_converter(GL::type const& from, Functions const& srce) const;
+                    void get(std::vector<GL::type>& out) const;
+                    size_t size() const;
                 };
                 class UniformCostSearchNode {
                 public:
@@ -709,31 +501,20 @@ namespace GL {
                         , distanceFromTarget(std::move(b))
                         , bestPath(std::move(c))
                     {};
-                    UniformCostSearchNode(UniformCostSearchNode&&) = default;
+                    UniformCostSearchNode(UniformCostSearchNode&&) noexcept = default;
                     UniformCostSearchNode(UniformCostSearchNode const&) = default;
-                    UniformCostSearchNode& operator=(UniformCostSearchNode&&) = default;
+                    UniformCostSearchNode& operator=(UniformCostSearchNode&&) noexcept = default;
                     UniformCostSearchNode& operator=(UniformCostSearchNode const&) = default;
                     ~UniformCostSearchNode() = default;
                 public:
                     GL::type thisVertexType;
-                    double distanceFromTarget; // if not known, then we can simply guess. 
+                    double distanceFromTarget{ 0 }; // if not known, then we can simply guess. 
                     UniformCostSearchNodeBestPath* bestPath{ nullptr };
 
                 public:
-                    size_t size() const {
-                        if (bestPath) {
-                            return bestPath->size();
-                        }
-                        else {
-                            return 0;
-                        }
-                    };
-                    bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const {
-                        return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
-                    };
-                    bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const {
-                        return ((a->size() + 1) > (b->size() + 1)) || (a->distanceFromTarget > b->distanceFromTarget);
-                    };
+                    size_t size() const;
+                    bool operator()(const UniformCostSearchNode* a, const UniformCostSearchNode* b) const;
+                    bool operator()(const std::shared_ptr<UniformCostSearchNode>& a, const std::shared_ptr<UniformCostSearchNode>& b) const;
                 };
             public:
                 // Solves the Uniform Cost Search Algorithm to determine the shortest path for "From" to all available, castable types.
@@ -741,200 +522,8 @@ namespace GL {
                 std::unordered_map<GL::type, UniformCostSearchNode*> CreateConversionPaths(
                     GL::atomic_allocator<std::variant<UniformCostSearchNode, UniformCostSearchNodeBestPath>, 1024>& alloc,
                     GL::type const& From
-                ) {
-                    std::unordered_set<GL::type> AllTypes;
-                    std::map<GL::type, std::map<GL::type, GL::Proxy_Function const*>> AllConversions; // all built-in conversions, e.g. int->float, float->double, etc.
-                    (void)this->for_each([&AllConversions, &AllTypes](GL::Proxy_Function const& func)->bool {
-                        AllTypes.insert(func->m_signature.returns_m);
-                        for (auto& x : func->m_signature.argument_types_m) AllTypes.insert(x);
-
-                        if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                            if (func->m_signature.argument_types_m.size() == 1) {
-                                if ((func->m_signature.state_m & GL::function_signature::Explicit) == 0) {
-                                    auto& from = func->m_signature.argument_types_m[0];
-                                    auto& to = func->m_signature.returns_m;
-                                    AllConversions[from][to] = &func;
-                                }
-                            }
-                        }
-                        return false;
-                    });
-
-#if 1 // allow polymorphic/dynamic casts
-                    // Also, we should add the conversions for "inherited& -> base&", "inherited -> base const&", "inherited&& -> base&&".
-                    for (auto& rawType : AllTypes) {
-                        auto Type = GL::type(rawType.get_base_hash()) | (rawType.is_cpp_type() ? GL::type::CppType : 0);
-                        for (auto& base_type : Type.all_base_types()) {
-
-                            if (1) {
-                                auto temp_func = GL::make_callable("`dynamic_cast " + (base_type + GL::type::Reference).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
-                                    GL::any from = inherited;
-                                    from.m_casted_type = base | GL::type::Reference;
-                                    return from;
-                                }, /*GL::function_signature::NoCost | */GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Reference } }, base_type | GL::type::Reference);
-                                auto first_arg_t = temp_func->m_signature.argument_types_m[0];
-                                auto returns_t = temp_func->m_signature.returns_m;
-                                auto hash_v = temp_func->m_signature.get_hash();
-                                auto funcs = functions[temp_func->m_signature.name_m].lock_shared();
-                                if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
-                                    funcs.upgrade_lock();
-                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func), funcs);
-                                }
-                                else {
-                                    AllConversions[first_arg_t][returns_t] = &f->second;
-                                }
-                            }
-                            if (0) {
-                                auto temp_func = GL::make_callable("`dynamic_cast " + (base_type + GL::type::Reference + GL::type::Const).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
-                                    GL::any from = inherited;
-                                    from.m_casted_type = base | GL::type::Reference | GL::type::Const;
-                                    return from;
-                                }, /*GL::function_signature::NoCost | */GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type } }, base_type | GL::type::Reference | GL::type::Const);
-                                auto first_arg_t = temp_func->m_signature.argument_types_m[0];
-                                auto returns_t = temp_func->m_signature.returns_m;
-                                auto hash_v = temp_func->m_signature.get_hash();
-                                auto funcs = functions[temp_func->m_signature.name_m].lock_shared();
-                                if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
-                                    funcs.upgrade_lock();
-                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func), funcs);
-                                }
-                                else {
-                                    AllConversions[first_arg_t][returns_t] = &f->second;
-                                }
-                            }
-                            if (1) {
-                                auto temp_func = GL::make_callable("`dynamic_cast " + (base_type + GL::type::Temporary).name() + "`", [base = base_type](GL::any::fast_any const& inherited) -> GL::any {
-                                    GL::any from = inherited;
-                                    from.m_casted_type = base | GL::type::Temporary;
-                                    return from;
-                                }, /*GL::function_signature::NoCost |*/ GL::function_signature::Async | GL::function_signature::Constant, {}, { { "from", Type | GL::type::Temporary } }, base_type | GL::type::Temporary);
-                                auto first_arg_t = temp_func->m_signature.argument_types_m[0];
-                                auto returns_t = temp_func->m_signature.returns_m;
-                                auto hash_v = temp_func->m_signature.get_hash();
-                                auto funcs = functions[temp_func->m_signature.name_m].lock_shared();
-                                if (auto f = funcs->find(hash_v), e = funcs->end(); f == e) {
-                                    funcs.upgrade_lock();
-                                    AllConversions[first_arg_t][returns_t] = &this->add_function(std::move(temp_func), funcs);
-                                }
-                                else {
-                                    AllConversions[first_arg_t][returns_t] = &f->second;
-                                }
-                            }
-                        }
-                    }
-#endif
-
-                    // create the shortest paths from "From" to all possible vertices.
-                    std::unordered_map<GL::type, UniformCostSearchNode*> vertices;
-                    if (1) {
-                        // create an empty vertex set
-                        std::priority_queue<
-                            UniformCostSearchNode*
-                            , std::vector<UniformCostSearchNode*>
-                            , UniformCostSearchNode
-                        > vertexSet;
-
-                        // Add the source vertex into the set
-                        vertexSet.push(&std::get<UniformCostSearchNode>(*alloc.Alloc(UniformCostSearchNode{ From, 0.0, nullptr })));
-
-                        // is the vertex set empty?
-                        double conversionCost{ 0 };
-                        // conversionTreeType::iterator f;
-                        UniformCostSearchNode* smallestDistanceNode;
-                        //conversionTreeType::value_type::second_type::const_iterator fSecondIter;
-                        //conversionTreeType::value_type::second_type::const_iterator fSecondEnd;
-                        //GoodLang::details::Type_Conversion_Base* func;
-                        while (vertexSet.size() != 0) {
-                            // extract the vertex with the smallest distance value from the set
-                            smallestDistanceNode = vertexSet.top();
-                            vertexSet.pop();
-
-                            // for each neighbor of the extracted vertex... 
-                            for (auto& x : AllConversions) {
-                                if (smallestDistanceNode->thisVertexType.can_free_cast(x.first, false)) { // was originally "true" 
-                                    for (auto fSecondIter = x.second.cbegin(), fSecondEnd = x.second.cend(); fSecondIter != fSecondEnd; ++fSecondIter) {
-                                        auto& connection = *fSecondIter;
-                                        if (connection.second) {
-                                            if (auto& func = *connection.second; func) {
-                                                //conversionCost = GoodLang::details::TypeConversionBaselineCost;
-                                                //if (!func->IsDaisyChained()) // do not use daisy-chained functions as candidates for new ones, since it can be harder to determine the actual conversion chain length
-                                                conversionCost = ((func->m_signature.state_m & GL::function_signature::NoCost) > 0) ? 0.01 : 1.0;
-
-                                                if (1) {
-                                                    // Is the neighbor already in the vertex set? 
-                                                    auto& toVertex = vertices[connection.first];
-
-                                                    if (!toVertex) { // Instance it before we start working with it on an as-needed basis
-                                                        toVertex = &std::get<UniformCostSearchNode>(*alloc.Alloc(
-                                                            UniformCostSearchNode{
-                                                                connection.first,
-                                                                std::numeric_limits<double>::infinity(),
-                                                                &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ nullptr, connection.first }))
-                                                            }
-                                                        ));
-                                                    }
-                                                    if ((toVertex->size() + 1) > (smallestDistanceNode->size() + 1)) {
-                                                        toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-                                                        toVertex->bestPath = &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ smallestDistanceNode->bestPath, toVertex->thisVertexType }));
-                                                        vertexSet.push(toVertex);
-                                                    }
-                                                    else if (toVertex->distanceFromTarget > (smallestDistanceNode->distanceFromTarget + conversionCost)) {
-                                                        toVertex->distanceFromTarget = (smallestDistanceNode->distanceFromTarget + conversionCost);
-                                                        toVertex->bestPath = &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ smallestDistanceNode->bestPath, toVertex->thisVertexType }));
-                                                        vertexSet.push(toVertex);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Insert the "explicit" conversions, overriding any "implicit" ones. 
-                    (void)this->for_each([&](GL::Proxy_Function const& func)->bool {
-                        if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                            if (func->m_signature.argument_types_m.size() == 1) {
-                                if ((func->m_signature.state_m & GL::function_signature::Explicit) > 0) {
-                                    if (From.can_free_cast(func->m_signature.argument_types_m[0])) {
-                                        auto& to = func->m_signature.returns_m;
-                                        vertices[to] = &std::get<UniformCostSearchNode>(*alloc.Alloc(UniformCostSearchNode{ 
-                                            From, 
-                                            ((func->m_signature.state_m & GL::function_signature::NoCost) > 0) ? 0.01 : 1.0, 
-                                            &std::get<UniformCostSearchNodeBestPath>(*alloc.Alloc(UniformCostSearchNodeBestPath{ nullptr, to })) // From or to?
-                                        }));
-                                    }
-                                }
-                            }
-                        }
-                        return false;
-                    });
-
-                    return vertices;
-                };
-
-
-                std::unordered_map<GL::type, GL::Proxy_Function> CreateConversions(GL::type const& From) {
-                    std::unordered_map<GL::type, GL::Proxy_Function> out;
-
-                    GL::atomic_allocator<std::variant<GL::scope::impl::Functions::UniformCostSearchNode, GL::scope::impl::Functions::UniformCostSearchNodeBestPath>, 1024>
-                        temp_alloc;
-                    auto converters
-                        = CreateConversionPaths(temp_alloc, From);
-                    GL::type t;
-                    for (auto& To : converters)
-                        if (To.second && To.second->bestPath) {
-                            if (auto p = To.second->bestPath->make_converter(From, *this)) {
-                                t = p->m_signature.returns_m;
-                                out[t] = std::move(p);
-                            }
-                        }
-                    return out;
-                };
-
-
-
+                );
+                std::unordered_map<GL::type, GL::Proxy_Function> CreateConversions(GL::type const& From);
             };
             class Converter {
             private:
@@ -957,203 +546,9 @@ namespace GL {
                 Converter& operator=(Converter&&) = default;
                 ~Converter() = default;
 
-                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false) {
-                    if (depth >= 2) return {};
-                    if (auto& cached = converters.TryGetCache<0>(constructors_version.load()); cached) {
-                        if (auto f1 = cached->find(from), e1 = cached->end(); f1 != e1) {
-                            for (int attemptN = 0; attemptN < 2; ++attemptN) {
-                                if (attemptN == 1) {
-                                    // we have (potentially) never made the converters for this "from" type.                                     
-                                    if (depth == 0) {
-                                        auto locked{ std::scoped_lock(converter_lock) };
-                                        //for (auto& local_converter : constructors.CreateConversions(from))
-                                        //    cached->operator[](from)[local_converter.first] = std::move(local_converter.second);
-                                        //(void)cached->operator[](from);
-                                    }
-                                }
-
-                                if (auto f2 = f1->second.find(to), e2 = f1->second.end(); f2 != e2) {
-                                    // we have made (or tried to make) the converter for this before. 
-                                    if (auto f3 = f2->second.load_fast(); f3) {
-                                        return std::move(f3);
-                                    }
-                                    else if (in_function && (to.is_base() || to.is_const_ref())) {
-                                        return try_get_converter(from, to | GL::type::Temporary, 0, true);
-                                    }
-                                    else {
-                                        return nullptr;
-                                    }
-                                }
-                                else {
-                                    // we have not made this SPECIFIC conversion for "from" to "to", but we have called "CreateConversions" already. 
-                                    // This means we should attempt to find the lowest-cost conversion using what is already available in this list, if possible.
-
-                                    // best-case scenario, we can free-cast to the requested type. 
-                                    if (from.can_free_cast(to)) {
-                                        auto temp = GL::make_callable("`static_cast " + to.name() + "`", [To = to](GL::any::fast_any const& From) -> GL::any {
-                                            GL::any casted = From;
-                                            casted.m_casted_type = To;
-                                            return casted;
-                                            }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
-                                        temp->m_signature.numConversions = 0;
-                                        f1->second[to] = std::move(temp);
-                                        return f1->second[to].load_fast();
-                                    }
-
-                                    // next-best-case scenario, we are perfect forwarding a temp-type to a base type. 
-                                    if (from.can_cast(to)) {
-                                        if (from.is_temp() && to.is_base()) {
-                                            auto temp = GL::make_callable("`forward_cast" + to.name() + "`", [To = to](GL::any::fast_any const& From) -> GL::any {
-                                                GL::any casted = From;
-                                                casted.m_casted_type = To;
-                                                return casted;
-                                                }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
-                                            temp->m_signature.numConversions = 0;
-                                            f1->second[to] = std::move(temp);
-                                            return f1->second[to].load_fast();
-                                        }
-                                    }
-
-                                    // We need to make the cast from the available cast for this same type. Sort options by preference? 
-                                    std::map<int, GL::Proxy_Function> options;
-                                    for (auto& potential_conversion : f1->second) {
-                                        if (auto func = potential_conversion.second.load(); func) {
-                                            if ((func->m_signature.state_m & GL::function_signature::Cached) > 0) continue;
-
-                                            if (func->m_signature.returns_m.can_free_cast(to, false)) {
-                                                f1->second[to] = std::move(func);
-                                                return f1->second[to].load_fast();
-                                            }
-
-                                            if (func->m_signature.returns_m.can_free_cast(to)) {
-                                                if (options.count(0) == 0) {
-                                                    options[0] = std::move(func);
-                                                }
-                                                continue;
-                                                //f1->second[to] = std::move(func);
-                                                //return f1->second[to].load();
-                                            }
-
-                                            if (func->m_signature.returns_m.can_cast(to)) {
-                                                if (func->m_signature.returns_m.is_temp() && to.is_base()) {
-                                                    if (options.count(1) == 0) {
-                                                        options[1] = GL::make_callable("`call_and_cast " + func->m_signature.name_m + "`", [To = to, caster = func](GL::any::fast_any const& From) -> GL::any {
-                                                            GL::any::fast_any _from = From;
-                                                            GL::any casted = caster->operator()(&_from, &_from + 1);
-                                                            casted.m_casted_type = To;
-                                                            return casted;
-                                                            }, func->m_signature.state_m | GL::function_signature::Cached | GL::function_signature::Explicit, {}, { { "From", from } }, to);
-                                                        options[1]->m_signature.numConversions = func->m_signature.numConversions;
-                                                    }
-                                                    // return f1->second[to].load();
-                                                    continue;
-                                                }
-                                            }                                            
-                                        }
-                                    }
-                                    if (options.size() > 0) {
-                                        f1->second[to] = std::move(options.begin()->second);
-                                        return f1->second[to].load_fast();
-                                    }
-                                }
-
-#if 1
-                                // before we give up, we should check to see if we can try our basic, castable types. 
-                                if (from.is_temp() && (!to.is_ref() || to.is_const_ref())) {
-                                    // then also try the base type
-                                    auto try_type = from.is_cpp_type() ? (GL::type(from.get_base_hash()) + GL::type::CppType) : GL::type(from.get_base_hash());
-                                    if (auto p = try_get_converter(try_type, to, depth + 1, in_function)) {
-                                        auto temp = GL::make_callable("`forward_cast " + to.name() + "`", [To = to, FromT = try_type, inF = in_function, this](GL::any::fast_any const& From) -> GL::any {
-                                            GL::any::fast_any input = From;
-                                            input.m_casted_type = FromT;
-
-                                            if (auto p = this->try_get_converter(FromT, To, 0, inF); p) {
-                                                input = p->operator()(&input, &input + 1);
-                                            }
-                                            else {
-                                                throw std::runtime_error("Could not find converter function");
-                                            }
-
-                                            input.m_casted_type = To;
-                                            return input;
-                                            }, GL::function_signature::Cached | p->m_signature.state_m, {}, { { "From", from } }, to);
-                                        temp->m_signature.numConversions = p->m_signature.numConversions;
-                                        f1->second[to] = std::move(temp);
-                                        return f1->second[to].load_fast();
-                                    }
-                                }
-#if 0
-                                // before we give up, we should check to see if we can try our basic, castable types. 
-                                if (from.is_const_ref() && (!to.is_ref() || to.is_const_ref())) {
-                                    // then also try the base type
-                                    auto base_from_type = from.is_cpp_type() ? (GL::type(from.get_base_hash()) + GL::type::CppType) : GL::type(from.get_base_hash());
-                                    if (auto p1 = try_get_converter(from, base_from_type, depth + 1, in_function)) {
-                                        if (auto p2 = try_get_converter(base_from_type, to, depth + 1, in_function)) {
-                                            f1->second[to] = GL::make_callable("`forward_cast " + to.name() + "`", [To = to, From1 = from, From2 = base_from_type, inF = in_function, this](GL::any::fast_any const& From) -> GL::any {
-                                                GL::any::fast_any input = From;
-                                                input.m_casted_type = From1;
-                                                if (auto p1 = this->try_get_converter(From1, From2, 0, inF); p1) {
-                                                    if (auto p2 = this->try_get_converter(From2, To, 0, inF); p2) {
-                                                        input = p1->operator()(&input, &input + 1).fast();
-                                                        input = p2->operator()(&input, &input + 1).fast();
-                                                        input.m_casted_type = To;
-                                                        return input;
-                                                    }
-                                                }
-                                                throw std::runtime_error("Could not find converter function");
-                                                }, GL::function_signature::Cached | p1->m_signature.state_m | p2->m_signature.state_m, {}, { { "From", from } }, to);
-                                            return f1->second[to].load();
-                                        }
-                                    }
-                                }
-#endif
-
-#endif
-                            }
-
-                            // nothing was found
-                            (*cached)[from].insert({ to, nullptr });
-                            if (in_function && (to.is_base() || to.is_const_ref())) {
-                                return try_get_converter(from, to | GL::type::Temporary, 0, true);
-                            }
-                            else {
-                                return nullptr;
-                            }
-
-                        }
-                        else {
-                            // we have never made the converters for this "from" type.                             
-                            if (depth == 0) {
-                                auto locked{ std::scoped_lock(converter_lock) };
-                                for (auto& local_converter : constructors.CreateConversions(from))
-                                    cached->operator[](from)[local_converter.first] = std::move(local_converter.second);
-                                (void)cached->operator[](from);
-                            }
-                            return try_get_converter(from, to, depth + 1, in_function);
-                        }
-                    }
-                    else {
-                        // we need to re-make this cache.
-                        converters.EmplaceCache<0>(constructors_version.load(), GL::make_shared<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>>());
-                        return try_get_converter(from, to, depth, in_function);
-                    }
-                };
-                bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false) {
-                    if (try_get_converter(from, to, 0, in_function)) { return true; }
-                    if (in_function && (to.is_base() || to.is_const_ref())) {
-                        if (try_get_converter(from, to | GL::type::Temporary, 0, true)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func) {
-                    if (func) {
-                        return func->operator()();
-                    }
-                    return {};
-                };
+                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false);
+                bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false);
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func);
                 template <typename iter_type> __declspec(noinline) GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type begin, iter_type const& end) {
                     if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
                         static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
@@ -1196,33 +591,16 @@ namespace GL {
                     return out;
                 };
                 // fast path
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {
-                    return call_with_conversions(func, params.begin(), params.end());
-                };
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params);
                 // convenience path, requires casting to any::fast_any
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params) {
-                    std::vector<any::fast_any> Params;
-                    Params.resize(params.size());
-                    std::transform(params.begin(), params.end(), Params.begin(), [](any const& from) { return from.fast(); });
-                    return call_with_conversions(func, Params.begin(), Params.end());
-                };
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params);
                 // convenience path, requires casting to any::fast_any
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param) {
-                    any::fast_any p = param.fast();
-                    return call_with_conversions(func, &p, &p + 1);
-                };
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param);
                 // fast path
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param) {
-                    return call_with_conversions(func, &param, &param + 1);
-                };
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param);
 
 
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func) {
-                    if (func) {
-                        return true;
-                    }
-                    return false;
-                };
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func);
                 template <typename iter_type> bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type _begin, iter_type const& end) {
                     if (!func) return false;
 
@@ -1240,25 +618,13 @@ namespace GL {
                     return true;
                 };
                 // fast path
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {
-                    return can_call_with_conversions(func, params.begin(), params.end());
-                };
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params);
                 // convenience path, requires casting to any::fast_any
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params) {
-                    std::vector<any::fast_any> Params;
-                    Params.resize(params.size());
-                    std::transform(params.begin(), params.end(), Params.begin(), [](any const& from) { return from.fast(); });
-                    return can_call_with_conversions(func, Params.begin(), Params.end());
-                };
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params);
                 // convenience path, requires casting to any::fast_any
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param) {
-                    any::fast_any p = param.fast();
-                    return can_call_with_conversions(func, &p, &p + 1);
-                };
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param);
                 // fast path
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param) {
-                    return can_call_with_conversions(func, &param, &param + 1);
-                };
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param);
 
             };
 
@@ -1296,25 +662,8 @@ namespace GL {
                     }
                     return true;
                 };
-                GL::any* GetObject_Impl(GL::string const& sv) {
-                    if (objects_m) {
-                        auto locked = objects_m.lock_shared();
-                        if (auto f = locked->find(sv), e = locked->end(); f != e) return &f->second;
-                    }
-                    return nullptr;
-                };
-                virtual bool AddUsing_Impl(Breadcrumb* scope) {
-                    if (scope) {
-                        if (scope->this_m.is_namespace()) {
-                            if (auto f = using_m->find(scope); f == using_m->end()) {
-                                using_m->insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, GL::callback<NamespaceScope>::ScopedListener() });
-                                this->GetNamespace()->invalidate_cache();
-                                return true;
-                            }                            
-                        }
-                    }
-                    return false;
-                };
+                GL::any* GetObject_Impl(GL::string const& sv);
+                virtual bool AddUsing_Impl(Breadcrumb* scope);
 
             private:
                 static auto& scope_stack() {
@@ -1338,12 +687,7 @@ namespace GL {
                     return handler(p);
                 };
             public:
-                static BasicScope* GetCurrentCaller() {
-                    if (scope_stack().size() > 0)
-                        return const_cast<BasicScope*>(scope_stack().back());
-                    else
-                        return nullptr;
-                };
+                static BasicScope* GetCurrentCaller();
 
             protected:
                 BasicScope(GL::string&& name, int scope_type_p = ScopeType::Basic, Breadcrumb* parent = nullptr)
@@ -1355,48 +699,19 @@ namespace GL {
                 };
 
             public:
-                operator bool() const {
-                    return breadcrumb_m.this_m.scope;
-                };
+                operator bool() const;
                 // Returns true if this scope is a namespace scope
-                bool is_namespace() const {
-                    return this->breadcrumb_m.this_m.is_namespace();
-                };
+                bool is_namespace() const;
                 // Returns true if this scope is a class scope
-                bool is_class() const {
-                    return this->breadcrumb_m.this_m.is_class();
-                };
+                bool is_class() const;
                 // Returns true if this scope is a root scope
-                bool is_root() const {
-                    return this->breadcrumb_m.this_m.is_root();
-                };
+                bool is_root() const;
                 // Get the immediate parent, if one exists.
-                BasicScope* GetParent() const {
-                    if (this->breadcrumb_m.parent_m) {
-                        return this->breadcrumb_m.parent_m->this_m.scope;
-                    }
-                    else {
-                        return nullptr;
-                    }
-                };
+                BasicScope* GetParent() const;
                 // Get the current namespace (for inserting functions, etc)
-                NamespaceScope* GetNamespace() const {
-                    if (this->breadcrumb_m.namespace_m) {
-                        return static_cast<NamespaceScope*>(this->breadcrumb_m.namespace_m->this_m.scope);
-                    }
-                    else {
-                        return nullptr;
-                    }
-                };
+                NamespaceScope* GetNamespace() const;
                 // Get the root of the entire scope tree
-                RootScope* GetRoot() const {
-                    if (this->breadcrumb_m.root_m) {
-                        return static_cast<RootScope*>(this->breadcrumb_m.root_m->this_m.scope);
-                    }
-                    else {
-                        return nullptr;
-                    }
-                };
+                RootScope* GetRoot() const;
 
             protected:
                 enum CheckFlagState {
@@ -1418,402 +733,29 @@ namespace GL {
                     StaticFailure = 4
                 };
                 using check_cache = std::vector<short>;
-                static check_cache& GetCheckMap() {
-                    thread_local check_cache out;
-                    out.clear();
-                    return out;
-                };
-                __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
+                static check_cache& GetCheckMap();
+                virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,
                     Breadcrumb* SecondaryPriortyScope = nullptr,
                     int searchState = 0,
                     check_cache& check_flags = GetCheckMap(),
                     int depth = 0
-                ) const {
-                    auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
-                    Breadcrumb* finalResult = nullptr;
-                    if (depth == 0) {
-                        if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
-                            check_flags.resize(numTickets + 1);
-                        }
-                        for (auto& x : check_flags) x = CheckFlagState::none;
-                    }
+                ) const;
 
-                    // Prevent Duplication
-                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) > 0) {
-                        finalResult = nullptr;
-                        return finalResult;
-                    }
-                    if (searchState & SkipChildren) {
-                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
-                    }
-
-                    // test myself directly	
-                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self) == 0) {
-                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
-
-                        auto res = func(&selfPtr, searchState);
-                        if ((res & SearchResult::Success) > 0) {
-                            finalResult = &selfPtr;
-                            return finalResult;
-                        }
-                        else if ((res & SearchResult::StaticFailure) > 0) {
-                            finalResult = nullptr;
-                            return finalResult;
-                        }
-                    }
-
-                    // test my personal "using" namespaces completely
-                    if (using_m) {
-                        if (using_m->size() > 0ull) {
-                            for (auto& childNamespace : *using_m) {
-                                if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
-                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                    return finalResult;
-                                }
-                            }
-                        }
-                    }
-
-                    // test all of my parents directly -- hoping to quickly find "it"
-                    if (!(searchState & SkipParent)) {
-                        Breadcrumb* thisParent = &selfPtr;
-                        while (thisParent = thisParent->parent_m) {
-                            auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if ((flag & CheckFlagState::self) > 0) break;
-                            else {
-                                flag |= CheckFlagState::self;
-                            }
-                            if (thisParent->this_m.is_namespace()) {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            else {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m) {
-                                if (thisParent->this_m.scope->using_m->size() > 0) {
-                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                        if ((flag2 & CheckFlagState::all) > 0) continue;
-                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                            return finalResult;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // test the SecondaryPriortyScope, often the class of the first param provided in a function call
-                    if ((depth == 0) && SecondaryPriortyScope) {
-                        Breadcrumb* thisParent = SecondaryPriortyScope;
-                        if (thisParent) {
-                            auto& flag1 = check_flags[thisParent->GetScopeIndex()];
-                            flag1 = CheckFlagState::none;
-
-                            // test myself directly
-                            if ((flag1 & CheckFlagState::self) == 0) {
-                                flag1 |= CheckFlagState::self;
-
-                                auto res = func(thisParent, searchState);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    finalResult = nullptr;
-                                    return finalResult;
-                                }
-                            }
-
-                            // test my personal "using" namespaces completely
-                            if (thisParent->this_m.scope->using_m) {
-                                if (thisParent->this_m.scope->using_m->size() > 0) {
-                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                        auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                        if ((flag & CheckFlagState::all) > 0) { continue; }
-                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                            return finalResult;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        while (thisParent = thisParent->parent_m) {
-                            auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if ((flag & CheckFlagState::self) > 0) break;
-                            else {
-                                flag |= CheckFlagState::self;
-                            }
-                            if (thisParent->this_m.is_namespace()) {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            else {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m) {
-                                if (thisParent->this_m.scope->using_m->size() > 0) {
-                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                        if ((flag2 & CheckFlagState::all) > 0) continue;
-                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                            return finalResult;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Test my parent completely.
-                    if ((searchState & SkipParent) == 0) {
-                        if (selfPtr.parent_m) {
-                            auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
-                            if ((flag & CheckFlagState::all) == 0) {
-                                if (selfPtr.parent_m->this_m.is_namespace()) {
-                                    if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
-                                        return finalResult;
-                                    }
-                                }
-                                else {
-                                    if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents, check_flags, depth + 1)) {
-                                        return finalResult;
-                                    }
-                                }
-
-                            }
-                        }
-                    }
-
-                    return finalResult;
-                };
-
-                static __declspec(noinline) Breadcrumb* FindNamespace(GL::string const& Name, Breadcrumb* start) {
-                    if (!start) return nullptr;
-                    if (Name.empty()) return start->root_m;
-
-                    NamespaceScope* NS = start->this_m.scope->GetNamespace();
-                    if (NS) {
-                        auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version);
-                        if (current_cache) {
-                            if (auto** cache = current_cache->try_at(Name.hash())) {
-                                return (*cache);
-                            }
-                        }
-                        else {
-                            NS->namespace_search_cache.EmplaceCache<0>(NS->cache_version, GL::make_shared< GL::epoch_map<Breadcrumb*, size_t> >());
-                        }
-                    }
-
-                    static size_t colon_hash{ GL::string(GL::string::namespace_colons()).hash() };
-                    static thread_local size_t len;
-                    len = Name.length();
-                    static thread_local std::set< size_t> target_hash; {
-                        target_hash.clear();
-                        target_hash.insert(Name.hash());
-                        auto temp = Name.remove_leading(':');
-                        auto* BC = start;
-                        while (BC) {
-                            target_hash.insert(temp.hash(BC->GetCurrentNamespace().hash()));
-                            BC = BC->parent_m;
-                        }
-                    }
-
-                    if (target_hash.count(colon_hash) > 0) {
-                        return start->root_m;
-                    }
-                    else if (Breadcrumb* BC = start->this_m.scope->FindNearestScopeWhere([stringified = GL::string(Name)/*, &target_hash, &len*/](Breadcrumb* namespacePtr, int search_state)-> int {
-                        if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure;
-                        GL::string const& currNS{ namespacePtr->GetCurrentNamespace() };
-                        if (target_hash.count(currNS.hash()) > 0) return SearchResult::Success;
-                        else if (search_state & SearchingChildren) {
-                            if (len < currNS.length()) return SearchResult::Failure | SearchResult::StaticFailure;
-                            else if (stringified.find(currNS/*, true, stringified.length() - currNS.length()*/) == GL::string::npos) return SearchResult::Failure | SearchResult::StaticFailure;
-                            else return SearchResult::Failure;
-                        }
-                        else return SearchResult::Failure;
-                    })) {
-                        if (NS) {
-                            if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
-                                current_cache->insert_fast(Name.hash(), (Breadcrumb*)BC);
-                            }
-                        }
-                        return BC;
-                    }
-                    else {
-                        if (NS) {
-                            if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
-                                current_cache->insert_fast(Name.hash(), (Breadcrumb*)nullptr);
-                            }
-                        }
-                        return nullptr;
-                    }
-                };
+                static Breadcrumb* FindNamespace(GL::string const& Name, Breadcrumb* start);
 
             public:
                 /* Attempts to determine the type from a given string. This may include instancing a template-defined class if the string
                  includes the appropriate type information, such as `map<int, ::value>` or `vector<std::string>`. 
                  Will respect the use of type states, such as: `const int&`, `int&&`, `vector<std::string const>&`, etc. */
-                GL::type DetermineType(GL::string from) {
-                    from = from.remove_leading_and_trailing(' ');
-                    size_t state_modifiers = 0;
-                    if (from.begins_with("const ")) { from = from.right(from.size() - 6); state_modifiers |= GL::type::Const; }
-                    if (from.ends_with("&&")) { from = from.left(from.size() - 2); state_modifiers |= GL::type::Temporary; }
-                    if (from.ends_with("&")) { from = from.left(from.size() - 1); state_modifiers |= GL::type::Reference; }
-                    if (from.ends_with(" const")) { from = from.left(from.size() - 6); state_modifiers |= GL::type::Const; }
-                    
-                    if (auto [prefix, middle_and_postfix] = from.left_and_right_of("<"); !middle_and_postfix.empty()) {
-                        prefix = prefix.remove_leading_and_trailing(' ');
-                        middle_and_postfix = middle_and_postfix.remove_leading_and_trailing(' ');
-                        if (auto [middle, postfix] = middle_and_postfix.left_and_right_of(">"); !middle.empty()) {
-                            middle = middle.remove_leading_and_trailing(' ');
-                            postfix = postfix.remove_leading_and_trailing(' ');
-
-                            GL::type original_template_type = DetermineType(prefix) | state_modifiers;
-                            std::vector<GL::type> inner_types;
-                            middle.with_split_nested(",", "<", ">", [&](GL::string const& with_split, bool is_last) -> bool {
-                                auto f = DetermineType(with_split);
-                                if (f == GL::type_of<GL::undefined>()) {
-                                    return true;
-                                }
-                                inner_types.push_back(f);
-                                return false;
-                            });
-
-                            if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
-                                return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
-                            }
-                        }
-                    }                    
-
-                    if (auto f = this->GetRoot()->classes_by_name.find(from), e = this->GetRoot()->classes_by_name.end(), f2 = f; f != e) {                        
-                        ++f2;
-                        if ((f2 == e) || (f2->first != f->first)) {
-                            return dynamic_cast<ClassScope*>(f->second->this_m.scope)->this_type | state_modifiers;
-                        }
-                    }
-
-                    if (auto* BC = this->GetRoot()->find_namespace(from); BC && BC->this_m.is_class()) 
-                        return dynamic_cast<ClassScope*>(BC->this_m.scope)->this_type | state_modifiers;                    
-
-                    return GL::type_of<GL::undefined>();
-                };
+                GL::type DetermineType(GL::string from);
 
                 /* 
                 returns ["final name following final `::`", nearest_found_scope*]
                 This function may initialize template classes. For example, the following call: 
                 ParsePossiblyScopedName("std::vector<int>::max_length") may initialize the template class "std::vector<int>". 
                 */
-                std::pair<GL::string, const Breadcrumb*> ParsePossiblyScopedName(GL::string const& PossiblyScopedName) const {
-                    if (PossiblyScopedName.begins_with(GL::string::namespace_colons()))
-                        return this->GetRoot()->ParsePossiblyScopedName(PossiblyScopedName.remove_leading(':')); // this search needs to start from the root
-
-                    thread_local int recursion_depth{ 0 };
-                    class recursion_depth_manager {
-                    private:
-                        int& r;
-
-                    public:
-                        recursion_depth_manager(int& R) : r(R) {
-                            ++r;
-                        };
-                        ~recursion_depth_manager() {
-                            --r;
-                        };
-                    };
-                    recursion_depth_manager manager(recursion_depth);
-                    if (recursion_depth > 2) return { PossiblyScopedName, nullptr };
-
-                    // "std::wrapper<std::string>::npos" -> ["std", "wrapper<std::string>", "npos"]
-                    const Breadcrumb* current_scope = &this->breadcrumb_m;
-                    Breadcrumb* closest_scope;
-                    bool accumulating = false;
-                    GL::string accumulated;
-                    (void)PossiblyScopedName.replace(" ", "").with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
-                        if (accumulating) {
-                            accumulated = accumulated + this_split;
-                            return false;
-                        }
-
-                        if (!is_final) {
-                            if (auto* found_scope = current_scope->this_m.scope->find_namespace(this_split, closest_scope); found_scope) {
-                                current_scope = found_scope;
-                            }
-                            else {
-                                // couldn't find this scope... see if we can "instance" it. 
-                                if (this_split.find("<") != GL::string::npos) {
-                                    if (auto new_type = current_scope->this_m.scope->DetermineType(this_split); new_type != GL::type_of<GL::undefined>()) {
-                                        if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
-                                            current_scope = BC;
-                                        }
-                                        else {
-                                            // cannot continue the search?
-                                            accumulating = true;
-                                            accumulated = accumulated + this_split;
-                                            return false;
-                                        }
-                                    }
-                                    else {
-                                        // cannot continue the search?
-                                        accumulating = true;
-                                        accumulated = accumulated + this_split;
-                                        return false;
-                                    }
-                                }
-                                else {
-                                    // cannot continue the search?        
-                                    accumulating = true;
-                                    accumulated = accumulated + this_split;
-                                    return false;
-                                }
-                            }
-                        }
-                        else {
-                            accumulated = this_split;
-                            return true;
-                        }
-                        return false;
-                    });
-                    // try and offer name correction for typenames
-                    if (accumulated.find("<") != GL::string::npos) {
-                        if (auto new_type = current_scope->this_m.scope->DetermineType(accumulated); new_type != GL::type_of<GL::undefined>()) {
-                            if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
-                                accumulated = BC->this_m.scope_name; // name correction was successful
-                            }
-                        }
-                    }
-                    return std::pair<GL::string, const Breadcrumb*>{ accumulated, current_scope };
-                };
+                std::pair<GL::string, const Breadcrumb*> ParsePossiblyScopedName(GL::string const& PossiblyScopedName) const;
 
             public:
                 BasicScope() = delete;
@@ -1834,18 +776,14 @@ namespace GL {
                 /// Get the index that is unique to this scope, which will remain unique for the life of the scope. May be re-used after the scope ends. 
                 /// </summary>
                 /// <returns>size_t</returns>
-                size_t get_unique_index() const {
-                    return const_cast<BasicScope*>(this)->breadcrumb_m.GetScopeIndex();
-                };
+                size_t get_unique_index() const;
 
                 /// <summary>
                 /// Make a child scope from this scope. 
                 /// Thread-safe, and allowed to make many children of this scope in parallel safely. 
                 /// The created scope (and its children) are destroyed at the end of this C++ scope. 
                 /// </summary>
-                BasicScope make_scope() const {
-                    return BasicScope("", ScopeType::Basic, const_cast<Breadcrumb*>(&this->breadcrumb_m));
-                };
+                BasicScope make_scope() const;
 
                 /// <summary>
                 /// Instruct this scope to "use" the provided namespace when searching for objects, functions, or other scopes by name. 
@@ -1853,15 +791,7 @@ namespace GL {
                 /// </summary>
                 /// <param name="ptr"></param>
                 /// <returns></returns>
-                bool add_using_here(NamespaceScope const& ptr) {
-                    if (auto p = static_cast<const BasicScope*>(&ptr)) {
-                        if (this == p) return false; // may not "use" yourself.
-                        if (this->is_root()) return false; // the root may not call the using statement
-                        if (p->is_root()) return false; // the root may not be "used"
-                        return this->AddUsing_Impl(const_cast<Breadcrumb*>(&p->breadcrumb_m));
-                    }
-                    return false;
-                }
+                bool add_using_here(NamespaceScope const& ptr);
 
                 /// <summary>
                 /// Insert an object into this scope only if it does not yet exist. Does not search neighbors or review the object name.
@@ -1869,30 +799,7 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool insert_object_here(GL::string const& sv, GL::any&& Obj) {
-                    if (this->EmplaceObject_Impl<false>(sv, std::move(Obj))) {
-                        // check the cache to make sure we aren't changing something from "empty" to "existing"
-                        if (this->is_root()) {
-                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
-                                if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
-                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                namespacePtr->this_m.scope->invalidate_cache();
-                                return SearchResult::Failure;
-                                }, nullptr, SearchState::SkipParent)) {
-                            };
-                        }
-                        else if (this->is_namespace()) {
-                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
-                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                namespacePtr->this_m.scope->invalidate_cache();
-                                return SearchResult::Failure;
-                                }, nullptr, 0)) {
-                            };
-                        }
-                        return true;
-                    }
-                    return false;
-                };
+                bool insert_object_here(GL::string const& sv, GL::any&& Obj);
 
                 /// <summary>
                 /// Emplace an object into this scope whether or not it exists. Does not search neighbors or review the object name.
@@ -1900,161 +807,30 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool emplace_object_here(GL::string const& sv, GL::any&& Obj) {
-                    if (this->EmplaceObject_Impl<true>(sv, std::move(Obj))) {
-                        // check the cache to make sure we aren't changing something from "empty" to "existing"
-                        if (this->is_root()) {
-                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
-                                if (namespacePtr->this_m.is_root()) return SearchResult::Failure;
-                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                namespacePtr->this_m.scope->invalidate_cache();
-                                return SearchResult::Failure;
-                                }, nullptr, SearchState::SkipParent)) {
-                            };
-                        }
-                        else if (this->is_namespace()) {
-                            if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state) -> int {
-                                if (!namespacePtr->this_m.is_namespace()) return SearchResult::Failure | SearchResult::StaticFailure;
-                                namespacePtr->this_m.scope->invalidate_cache();
-                                return SearchResult::Failure;
-                                }, nullptr, 0)) {
-                            };
-                        }
-                        return true;
-                    }
-                    return false;
-                };
+                bool emplace_object_here(GL::string const& sv, GL::any&& Obj);
 
                 /// <summary>
                 /// Try to find an object in this scope. Does not search neighbors or review the object name. Since objects cannot be removed, it safely returns a pointer. 
                 /// </summary>
                 /// <returns>ObjectWrapper</returns>
-                GL::any* find_object_here(GL::string const& sv) const {
-                    return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
-                };
+                GL::any* find_object_here(GL::string const& sv) const;
 
                 // Searches for a namespace that best fits the provided information, starting from this scope's namespace or position.
-                Breadcrumb* find_namespace(GL::string const& Name) const {
-                    auto* NS = this->GetNamespace();
-                    //if (auto* cache = NS->search_cache.TryGetCache<0>(NS->cache_version, Name.hash())) {
-                    //    if (cache == reinterpret_cast<Breadcrumb*>(1)) {
-                    //        return nullptr;
-                    //    }
-                    //    else {
-                    //        return cache;
-                    //    }
-                    //}
-
-                    if (auto* out = FindNamespace(
-                        make_scope_name(Name), // "std" or "::std" or "::std::" -> "::std::" 
-                        &const_cast<BasicScope*>(this)->breadcrumb_m // where
-                    )) {
-                        //NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), out);
-                        return out;
-                    }
-                    else {
-                        //NS->search_cache.EmplaceCache<0>(NS->cache_version, Name.hash(), reinterpret_cast<Breadcrumb*>(1));
-                        return nullptr;
-                    }
-                };
+                Breadcrumb* find_namespace(GL::string const& Name) const;
 
             private:
-                Breadcrumb* FindNamespaceImpl(GL::string const& Name, Breadcrumb*& nearest_scope) const {
-                    if ((Name.length() > 0) && (Name.front() == ':')) {
-                        return this->GetRoot()->FindNamespaceImpl(Name.remove_leading(':'), nearest_scope);
-                    }
-
-                    if (auto* out = find_namespace(Name)) {
-                        nearest_scope = out;
-                        return out;
-                    }
-                    else {
-                        nearest_scope = this->breadcrumb_m.namespace_m;
-                        return nullptr;
-                        
-                        if (!nearest_scope) nearest_scope = this->breadcrumb_m.root_m;
-
-                        //auto [remainder, BC] = this->ParsePossiblyScopedName(Name);
-                        //if (remainder.empty()) return const_cast<Breadcrumb*>(BC);
-                        //else {
-                        //    nearest_scope = const_cast<Breadcrumb*>(BC);
-                        //    return BC->this_m.scope->FindNamespaceImpl(remainder, nearest_scope);
-                        //}
-                    }
-                };
+                Breadcrumb* FindNamespaceImpl(GL::string const& Name, Breadcrumb*& nearest_scope) const;
 
             public:
                 // Searches for a namespace while also specifying the "closest" it was able to get to the requested namespace. Useful for debugging where the search last ended. 
-                Breadcrumb* find_namespace(GL::string const& Name, Breadcrumb*& nearest_scope) const {
-                    Breadcrumb* out = FindNamespaceImpl(Name, nearest_scope);
-                    if (out) {
-                        return out->this_m.scope->find_namespace(Name);
-                    }
-                    return nullptr;
-                };
+                Breadcrumb* find_namespace(GL::string const& Name, Breadcrumb*& nearest_scope) const;
 
             public:
                 // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
-                std::pair<GL::any::fast_any, bool> try_find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const {
-                    GL::any
-                        * p = nullptr;
-                    if (search_from) {
-                        if (p = search_from->this_m.scope->find_object_here(PossiblyScopedName); p) {
-                            return { p->fast(), true };
-                        }
-
-                        auto* NS = this->GetNamespace();
-                        //if (auto* cache = NS->search_cache.TryGetCache<1>(NS->cache_version, PossiblyScopedName.hash())) {
-                        //    if (cache == reinterpret_cast<Breadcrumb*>(1)) {
-                        //        return nullptr;
-                        //    }
-                        //    else {
-                        //        p = reinterpret_cast<GL::any*>(cache);
-                        //        return p;
-                        //    }
-                        //}
-
-                        // we have a scope with a specific object name
-                        // PossiblyScopedName should NOT have colons in this case. 
-                        if (Breadcrumb* BC = search_from->this_m.scope->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int search_state)-> int {
-                            // we should not be able to find objects in children scopes
-                            if ((SearchState::SearchingChildren & search_state) > 0) {
-                                throw std::runtime_error("This should never happen");
-                                // p = nullptr;
-                                // return SearchResult::Failure | SearchResult::StaticFailure;
-                            }
-
-                            if (p = namespacePtr->this_m.scope->find_object_here(PossiblyScopedName)) {
-                                return SearchResult::Success;
-                            }
-                            else {
-                                p = nullptr;
-                                return SearchResult::Failure;
-                            }
-                            }, nullptr, SearchState::SkipChildren)) {
-                            //NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(p));
-                            return { p->fast(), true };
-                        }
-                        else {
-                            //NS->search_cache.EmplaceCache<1>(NS->cache_version, PossiblyScopedName.hash(), reinterpret_cast<Breadcrumb*>(1));
-                        }
-                    }
-                    else {
-                        auto [remainder, BC] = this->ParsePossiblyScopedName(PossiblyScopedName);
-                        if (!remainder.empty()) {
-                            return BC->this_m.scope->try_find_object(remainder, const_cast<Breadcrumb*>(BC));
-                        }
-                    }       
-
-                    return { nullptr, false };
-                };
+                std::pair<GL::any::fast_any, bool> try_find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const;
 
                 // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
-                GL::any::fast_any find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const {
-                    if (auto [p, success] = try_find_object(PossiblyScopedName, search_from); success) return p;
-                    auto err = GL::printf("Could not locate object '%s'", PossiblyScopedName.c_str().data()).to_string();
-                    throw std::runtime_error(err);
-                };
+                GL::any::fast_any find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const;
 
                 // attempts to find a suitable function from this set that is callable with the given parameters. 
                 // searches for object-lambdas (lambda or not), non-template-functions, and template-functions, in that order of preference. 
@@ -2399,9 +1175,7 @@ namespace GL {
                         throw std::runtime_error(err.to_string());
                     }
                 };
-                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
-                    return call(PossiblyScopedName, params.begin(), params.end());
-                };
+                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const;
 
             };
 
@@ -2438,24 +1212,10 @@ namespace GL {
                 size_t cache_version; // the current cache version of this scope. Thread-safe to read. Will be updated during every call to "invalidate_cache()"
 
             public:
-                virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override {
-                    InterlockedIncrement(static_cast<volatile size_t*>(&cache_version));
-                    sockets_for_cache_versions.speak(parent_alive, call_number);                    
-                };
+                virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override;
 
             protected:
-                virtual bool AddUsing_Impl(Breadcrumb* scope) override {
-                    if (scope) {
-                        if (scope->this_m.is_namespace()) {
-                            if (auto* p = dynamic_cast<NamespaceScope*>(scope->this_m.scope)) {
-                                using_m->insert(std::pair<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>{ scope, p->sockets_for_cache_versions.listener(this->breadcrumb_m.GetScopeIndex(), this) });
-                                invalidate_cache();
-                                return true;                                
-                            }
-                        }
-                    }
-                    return false;
-                };
+                virtual bool AddUsing_Impl(Breadcrumb* scope) override;
 
             public:
                 // instancing a child namespace should only be done from an existing namespace
@@ -2728,9 +1488,7 @@ namespace GL {
                     unload();
                 };
 
-                GL::string path() const {
-                    return this->breadcrumb_m.GetCurrentNamespace();
-                };
+                GL::string path() const;
 
                 /// <summary>
                 /// Finds or creates a new namespace scope as a child of this one, and keeps it in memory. 
@@ -2738,20 +1496,7 @@ namespace GL {
                 /// If a namespace already exists with the provided name, it will return the existing namespace without creating a new one or overwritting the existing one.
                 /// </summary>
                 /// <returns>NamespaceScope</returns>
-                NamespaceScope& make_namespace(GL::string const& name) {
-                    if (auto f = children.find(name.hash()); f != children.end()) {
-                        return *f->second;
-                    }
-                    if (1) {
-                        this->invalidate_cache();
-                        while (true) {
-                            children.insert({ name.hash(), std::shared_ptr<NamespaceScope>(new NamespaceScope((GL::string)name, ScopeType::Basic | ScopeType::Namespace, const_cast<Breadcrumb*>(&this->breadcrumb_m))) });
-                            if (auto f = children.find(name.hash()); f != children.end()) {
-                                return *f->second;
-                            }
-                        }
-                    }
-                };
+                NamespaceScope& make_namespace(GL::string const& name);
 
                 /// <summary>
                 /// Finds or creates a new class scope as a child of this one, and keeps it in memory. 
@@ -2759,33 +1504,7 @@ namespace GL {
                 /// If a namespace already exists with the provided name or type, it will return the existing namespace without creating a new one or overwritting the existing one.
                 /// </summary>
                 /// <returns>NamespaceScope</returns>
-                ClassScope& make_class(GL::type class_type) {
-                    if ((class_type & GL::type::CppType) == 0) {
-                        GL::string error = "Classes defined with GL::type must be C++ built-in types. Was provided `" + class_type.name() +"` instead, which was not identified was a C++ type.";
-                        throw std::runtime_error(error.to_string());
-                    }
-
-                    class_type -= GL::type::Const;
-                    class_type -= GL::type::Reference;
-                    class_type -= GL::type::Temporary;
-
-                    if (auto f = children.find(class_type.name().hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {                        
-                        return *std::dynamic_pointer_cast<ClassScope>(f->second);
-                    }
-                    if (1) {
-                        this->GetRoot()->invalidate_cache();
-                        ++this->GetRoot()->constructors_version;                        
-                        while (true) {
-                            children.insert({ class_type.name().hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) });
-                            if (auto f = children.find(class_type.name().hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
-                                auto new_class = std::dynamic_pointer_cast<ClassScope>(f->second);
-                                this->GetRoot()->classes.insert({ class_type.get_base_hash(), &new_class->breadcrumb_m });
-                                this->GetRoot()->classes_by_name.insert({ class_type.name(), &new_class->breadcrumb_m });
-                                return *new_class;
-                            }
-                        }
-                    }
-                };
+                ClassScope& make_class(GL::type class_type);
 
                 /// <summary>
                 /// Finds or creates a new class scope as a child of this one, and keeps it in memory. 
@@ -2793,36 +1512,10 @@ namespace GL {
                 /// If a namespace already exists with the provided name or type, it will return the existing namespace without creating a new one or overwritting the existing one.
                 /// </summary>
                 /// <returns>NamespaceScope</returns>
-                ClassScope& make_class(GL::string const& class_type) {
-                    if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
-                        return *dynamic_cast<ClassScope*>(f->second.get());
-                    }
-                    if (1) {
-                        this->GetRoot()->invalidate_cache();
-                        ++this->GetRoot()->constructors_version;
-                        while (true) {
-                            children.insert(
-                                { class_type.hash(), std::dynamic_pointer_cast<NamespaceScope>(std::shared_ptr<ClassScope>(new ClassScope(class_type, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&this->breadcrumb_m)))) }
-                            );
-                            if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
-                                auto* new_class = dynamic_cast<ClassScope*>(f->second.get());
-                                this->GetRoot()->classes.insert({ new_class->this_type.get_base_hash(), &new_class->breadcrumb_m });
-                                this->GetRoot()->classes_by_name.insert({ class_type, &new_class->breadcrumb_m });
-                                return *new_class;
-                            }
-                        }
-                    }
-                };
+                ClassScope& make_class(GL::string const& class_type);
 
                 // insert a function into the storage
-                void add_function(GL::Proxy_Function && func) {
-                    GL::Proxy_Function copy = func;
-                    functions.add_function(std::move(copy));
-                    if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                        this->GetRoot()->add_constructor(&this->breadcrumb_m, std::move(func));
-                    }
-                    this->invalidate_cache(); 
-                };
+                void add_function(GL::Proxy_Function&& func);
 
                 // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
                 template <typename Func> bool for_each_function(Func const& to_do) const {
@@ -2830,6 +1523,9 @@ namespace GL {
                 };
             };
 
+            /// <summary>
+            /// A special type of scope that represents C++ or script-only classes, and can include the definitions for member-objects. 
+            /// </summary>
             class ClassScope : public NamespaceScope {
                 friend class BasicScope;
                 friend class NamespaceScope;
@@ -2856,587 +1552,26 @@ namespace GL {
             private:
                 std::unique_ptr<GL::script_type> 
                     type_ownership;
+
             protected:
                 concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
                     member_objects;            
-                void default_construct(GL::dynamic_object& destination) {
-                    for (auto& member_object : this->member_objects) {
-                        if (member_object.second.second && // default provided...
-                            member_object.second.first.is_ref() && // ... and the user is requesting a reference...
-                            member_object.second.second.can_cast(member_object.second.first) // ... and the correct type was provided for use as a reference.
-                        ) { 
-                            destination.m_objects.insert({ member_object.first, member_object.second.second.get_underlying_ptr() });
-                        }
-                        else if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first); BC && BC->this_m.is_class()) {
-                            auto* Class = dynamic_cast<ClassScope*>(BC->this_m.scope);
-                            if (member_object.second.second) { // default provided
-                                destination.m_objects.insert({ member_object.first, Class->call(Class->breadcrumb_m.this_m.scope_name, { member_object.second.second }).get_underlying_ptr() });                                
-                            }
-                            else { // no default. Attempt to construct the member object. 
-                                destination.m_objects.insert({ member_object.first, Class->call(Class->breadcrumb_m.this_m.scope_name, {}).get_underlying_ptr() });                                
-                            }
-                        }
-                        else {
-                            // not a reference, and class was not found. We have no choice but to accept the provided data as-is. 
-                            GL::any f = member_object.second.second;
-                            f.m_casted_type = member_object.second.first;
-                            destination.m_objects.insert({ member_object.first, (f | GL::type::Reference).get_underlying_ptr() });
-                        }                        
-                    }
-                };
+                void default_construct(GL::dynamic_object& destination);
 
             public:
                 const GL::type this_type;
                 std::vector< GL::type > template_types;
 
-                void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {}) {
-                    member_objects.insert({ member_name, { member_type, default_value } });
-                };
-                
-                void initialize_basic_member_functions() {
-                    // default constructor
-                    this->add_function(GL::make_callable(breadcrumb_m.this_m.scope_name, [this]() -> GL::any::fast_any {
-                        auto temp = GL::dynamic_object(this->this_type);
-                        for (auto& base_type : this->this_type.all_base_types(false)) {
-                            if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
-                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
-                            }
-                        }
-                        auto out = GL::any::fast_any::instance(std::move(temp));
-                        const_cast<GL::type&>(out.get_actual_type()) = this->this_type;
-                        out.m_casted_type = this->this_type;
-                        return out;
-                    }, GL::function_signature::Constructor, {}, {}, this->this_type));
-                   
-                    // copy constructor
-                    this->add_function(GL::make_callable(breadcrumb_m.this_m.scope_name, [this](GL::any::fast_any const& rhs) -> GL::any::fast_any {
-                        auto temp = GL::dynamic_object(this->this_type);
-                        for (auto& base_type : this->this_type.all_base_types(false)) {
-                            if (auto* BC = this->GetRoot()->try_find_class(base_type); BC) {
-                                dynamic_cast<ClassScope*>(BC->this_m.scope)->default_construct(temp);
-                            }
-                        }
-                        
-                        for (auto& x : rhs.cast<GL::dynamic_object>().m_objects) {
-                            if (auto f = temp.m_objects.find(x.first), e = temp.m_objects.end(); f != e) {
-                                this->call("=", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)f->second, f->second->m_actual_type), GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)x.second, x.second->m_actual_type) });
-                            }
-                        }
-
-                        auto out = GL::any::fast_any::instance(std::move(temp));
-                        out.m_casted_type = this->this_type;
-                        const_cast<GL::type&>(out.get_actual_type()) = this->this_type;
-                        return out;
-                    }, GL::function_signature::Constructor, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, this->this_type));
-
-                    // assignment operator
-                    this->GetRoot()->add_function(GL::make_callable("=", [this](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
-                        auto& LHS = lhs.cast<GL::dynamic_object>();
-                        auto& RHS = rhs.cast<GL::dynamic_object>();
-                        
-                        for (auto& x : RHS.m_objects) {
-                            if (auto f = LHS.m_objects.find(x.first), e = LHS.m_objects.end(); f != e) {
-                                this->call("=", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)f->second, f->second->m_actual_type), GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)x.second, x.second->m_actual_type) });
-                            }
-                        }
-
-                        GL::any::fast_any out = lhs;
-                        out.m_casted_type |= GL::type::Reference;
-                        return out;
-                    }, GL::function_signature::Constructor, {}, { { "lhs", this->this_type | GL::type::Reference } , { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, this->this_type | GL::type::Reference));
-
-                    // member access functions. Note that it does not include member access functions for base classes -- that is assumed to be picked up automatically through polymorphic casting. 
-                    for (auto& member_object : member_objects) {
-                        if (!member_object.first.begins_with("~")) {
-                            // non-const reference access to member objects
-                            this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                                return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
-                            }, GL::function_signature::MemberObject | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
-                            // const reference access to member objects
-                            this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                                return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
-                            }, GL::function_signature::MemberObject | GL::function_signature::Constant | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
-                        }
-                    }
-
-                    // to_string and to_hash functions
-                    this->add_function(GL::make_callable("to_string", [](GL::any::fast_any const& lhs) -> GL::string {
-                        auto& o = lhs.cast<GL::dynamic_object>();
-                        GL::any::fast_any out = GL::any::fast_any::instance(GL::string());
-                        for (auto& obj : o.m_objects) {
-                            if (obj.second) {
-                                if (!obj.first.begins_with("~")) {
-                                    auto this_pair = GetCurrentCaller()->call("+", { GL::any::fast_any::instance(GL::string(obj.first + ":")), GetCurrentCaller()->call("to_string", {
-                                        GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
-                                    }) });
-                                    out = GetCurrentCaller()->call("add_to_delim", { out, this_pair, GL::any::fast_any::instance(GL::string(", ")) });
-                                }
-                                else {
-                                    return GetCurrentCaller()->call("to_string", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference) }).cast<GL::string>();
-                                }
-                            }
-                        }
-                        return "[" + GetCurrentCaller()->GetRoot()->call("::string", { out }).cast<GL::string>() + "]";                        
-                    }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::string>()));
-                    this->add_function(GL::make_callable("to_hash", [](GL::any::fast_any const& lhs) -> size_t {
-                        auto& o = lhs.cast<GL::dynamic_object>();
-                        size_t out = 0;
-                        for (auto& obj : o.m_objects) {
-                            if (obj.second) {
-                                if (!obj.first.begins_with("~")) {
-                                    GL::util::hash(out, obj.first.hash());
-                                    GL::util::hash(out, GetCurrentCaller()->call("to_hash", {
-                                        GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
-                                    }).cast<size_t>());
-                                }
-                                else {
-                                    return GetCurrentCaller()->call("to_hash", {
-                                        GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
-                                    }).cast<size_t>();
-                                }
-                            }
-                        }
-                        return out;
-                    }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
-                };
-
-                ClassScope& make_inherited_template_class(std::vector< GL::type > const& templates) {
-                    GL::string name; for (auto& x : templates) {
-                        if (auto* BC = this->GetRoot()->try_find_class(x); BC && BC->this_m.is_class()) {
-                            GL::string out = dynamic_cast<ClassScope*>(BC->this_m.scope)->path().remove_leading_and_trailing(':');
-                            if (x.is_const()) out = "const " + out;
-                            if (x.is_ref()) out = out + "&";
-                            if (x.is_temp()) out = out + "&&";
-                            name = name.add_to_delim(out, ",");
-                        }
-                        else {
-                            name = name.add_to_delim(x.name(), ",");
-                        }
-                    }
-                    name = this->this_type.name() + "<" + name + ">"; // vector<int>
-                    
-                    auto _parent = dynamic_cast<NamespaceScope*>(this->GetParent());
-                    if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
-                        return *dynamic_cast<ClassScope*>(f->second.get());
-                    }
-                    if (1) {
-                        this->GetRoot()->invalidate_cache();
-                        ++this->GetRoot()->constructors_version;
-                        while (true) {
-                            if (auto new_class = std::make_shared< ClassScope>(name, ScopeType::Basic | ScopeType::Namespace | ScopeType::Class, const_cast<Breadcrumb*>(&_parent->breadcrumb_m))) {
-                                new_class->template_types = templates;
-                                const_cast<GL::type&>(new_class->this_type).add_base(this->this_type);
-
-                                this->for_each_function([&](GL::Proxy_Function const& f)->bool {
-                                    if ((f->m_signature.state_m & GL::function_signature::Constructor) > 0) {
-                                        // assume that constructors will be unique to this invocation
-                                        return false;
-                                    }
-                                    else if ((f->m_signature.state_m & GL::function_signature::MemberObject) > 0) {
-                                        // assume that member objects will be either inherited, or converted below.
-                                        return false;
-                                    }
-                                    
-                                    auto new_f = f->duplicate();
-                                    bool necessary = false;
-                                    //std::cout << new_f->m_signature.display() << std::endl;
-                                    for (auto& x : new_f->m_signature.argument_types_m) {
-                                        if (x.get_base_hash() == this->this_type.get_base_hash()) {
-                                            x = new_class->this_type + (x - GL::type::CppType).get_qualifiers();
-                                            necessary = true;
-                                        }
-                                        if (auto template_index = GL::is_template::index(x); template_index >= 0) {
-                                            x = new_class->template_types[template_index] + (x - GL::type::CppType).get_qualifiers();
-                                            necessary = true;
-                                        }
-                                    }
-                                    if (new_f->m_signature.returns_m.get_base_hash() == this->this_type.get_base_hash()) {
-                                        new_f->m_signature.returns_m = new_class->this_type + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
-                                        necessary = true;
-                                    }
-                                    if (auto template_index = GL::is_template::index(new_f->m_signature.returns_m); template_index >= 0) {
-                                        new_f->m_signature.returns_m = new_class->template_types[template_index] + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
-                                        necessary = true;
-                                    }
-                                    //std::cout << new_f->m_signature.display() << std::endl;
-                                    if (necessary) {
-                                        new_f->m_signature.evaluate_if_template_function();
-                                        new_f->m_signature.reevaluate_hash();
-                                        new_class->add_function(std::move(new_f));
-                                    }
-
-                                    return false;
-                                });
-                                for (auto& member_o : this->member_objects) {
-                                    if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
-                                        new_class->add_member_object(member_o.first, new_class->template_types[template_index]);
-                                    }
-                                }
-                                if (1) {
-                                    auto objects = this->objects_m.lock_shared();
-                                    for (auto& obj : *objects) {
-                                        if (auto template_index = GL::is_template::index(obj.second.m_casted_type); template_index >= 0) {
-                                            auto this_static_obj_type = new_class->template_types[template_index] + (obj.second.m_casted_type - GL::type::CppType).get_qualifiers();
-                                            if (auto* BC = this->GetRoot()->try_find_class(this_static_obj_type); BC) {
-                                                new_class->insert_object_here(obj.first, BC->this_m.scope->call(this_static_obj_type.name(), {}));
-                                            }
-                                            else {
-                                                new_class->insert_object_here(obj.first, this->call(this_static_obj_type.name(), {}));
-                                            }
-                                        }
-                                    }
-                                }
-                                _parent->children.insert(
-                                    { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(new_class) }
-                                );
-                            }
-                            if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
-                                auto* newclass = dynamic_cast<ClassScope*>(f->second.get());                                
-                                this->GetRoot()->classes.insert({ newclass->this_type.get_base_hash(), &newclass->breadcrumb_m });
-                                this->GetRoot()->classes_by_name.insert({ name, &newclass->breadcrumb_m });
-                                newclass->initialize_basic_member_functions();
-                                return *newclass;
-                            }
-                        }
-                    }
-                };
-
-                __declspec(noinline) virtual Breadcrumb* FindNearestScopeWhere(
+                void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {});                
+                void initialize_basic_member_functions();
+                ClassScope& make_inherited_template_class(std::vector< GL::type > const& templates);
+                virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,
                     Breadcrumb* SecondaryPriortyScope = nullptr,
                     int searchState = 0,
                     check_cache& check_flags = GetCheckMap(),
                     int depth = 0
-                ) const {
-                    auto& selfPtr = const_cast<Breadcrumb&>(this->breadcrumb_m);
-                    Breadcrumb* finalResult = nullptr;
-                    if (depth == 0) {
-                        if (auto numTickets = GetRoot()->scope_indexs.num_tickets(); check_flags.size() < numTickets) {
-                            check_flags.resize(numTickets + 1);
-                        }
-                        for (auto& x : check_flags) x = CheckFlagState::none;
-                    }
-
-                    // Prevent Duplication
-                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all) > 0) {
-                        finalResult = nullptr;
-                        return finalResult;
-                    }
-                    if (searchState & SkipChildren) {
-                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
-                    }
-
-                    // test myself directly	
-                    if ((check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::self) == 0) {
-                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::self;
-
-                        auto res = func(&selfPtr, searchState);
-                        if ((res & SearchResult::Success) > 0) {
-                            finalResult = &selfPtr;
-                            return finalResult;
-                        }
-                        else if ((res & SearchResult::StaticFailure) > 0) {
-                            finalResult = nullptr;
-                            return finalResult;
-                        }
-                    }
-
-                    bool RequestedSkipChildren = check_flags[selfPtr.GetScopeIndex()] & CheckFlagState::all;
-                    if (!(searchState & SkipChildren)) {
-                        check_flags[selfPtr.GetScopeIndex()] |= CheckFlagState::all;
-                    }
-
-                    // test my personal "using" namespaces completely
-                    if (using_m) {
-                        if (using_m->size() > 0ull) {
-                            for (auto& childNamespace : *using_m) {
-                                if ((check_flags[childNamespace.first->GetScopeIndex()] & CheckFlagState::all) > 0) { continue; }
-                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                    return finalResult;
-                                }
-                            }
-                        }
-                    }
-
-                    // test all of my parents directly -- hoping to quickly find "it"
-                    if (!(searchState & SkipParent)) {
-                        Breadcrumb* thisParent = &selfPtr;
-                        while (thisParent = thisParent->parent_m) {
-                            auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if ((flag & CheckFlagState::self) > 0) break;
-                            else {
-                                flag |= CheckFlagState::self;
-                            }
-                            if (thisParent->this_m.is_namespace()) {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            else {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m) {
-                                if (thisParent->this_m.scope->using_m->size() > 0) {
-                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                        if ((flag2 & CheckFlagState::all) > 0) continue;
-                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                            return finalResult;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // test my "base" classes directly -- hoping to quickly find "it"
-                    if (!(searchState & SkipParent)) {
-                        if (selfPtr.this_m.is_class()) {
-                            auto* p = reinterpret_cast<ClassScope*>(selfPtr.this_m.scope);
-                            for (auto& this_t : p->this_type.all_base_types(false)) {
-                                auto* thisParent = this->GetRoot()->try_find_class(this_t);
-                                while (thisParent) {
-                                    auto& flag = check_flags[thisParent->GetScopeIndex()];
-                                    if ((flag & CheckFlagState::self) > 0) break;
-                                    else {
-                                        flag |= CheckFlagState::self;
-                                    }
-                                    if (thisParent->this_m.is_namespace()) {
-                                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                        if ((res & SearchResult::Success) > 0) {
-                                            finalResult = thisParent;
-                                            return finalResult;
-                                        }
-                                        else if ((res & SearchResult::StaticFailure) > 0) {
-                                            flag |= CheckFlagState::all;
-                                        }
-                                    }
-                                    else {
-                                        auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                        if ((res & SearchResult::Success) > 0) {
-                                            finalResult = thisParent;
-                                            return finalResult;
-                                        }
-                                        else if ((res & SearchResult::StaticFailure) > 0) {
-                                            flag |= CheckFlagState::all;
-                                        }
-                                    }
-                                    // check the using statements of the parent.
-                                    if (thisParent->this_m.scope->using_m) {
-                                        if (thisParent->this_m.scope->using_m->size() > 0) {
-                                            for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                                auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                                if ((flag2 & CheckFlagState::all) > 0) continue;
-                                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                                    return finalResult;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    thisParent = thisParent->parent_m;
-                                }
-                            }
-                        }
-                    }
-
-                    // test the SecondaryPriortyScope, often the class of the first param provided in a function call
-                    if ((depth == 0) && SecondaryPriortyScope) {
-                        Breadcrumb* thisParent = SecondaryPriortyScope;
-                        if (thisParent) {
-                            auto& flag1 = check_flags[thisParent->GetScopeIndex()];
-                            flag1 = CheckFlagState::none;
-
-                            // test myself directly
-                            if ((flag1 & CheckFlagState::self) == 0) {
-                                flag1 |= CheckFlagState::self;
-
-                                auto res = func(thisParent, searchState);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    finalResult = nullptr;
-                                    return finalResult;
-                                }
-                            }
-
-                            // test my personal "using" namespaces completely
-                            if (thisParent->this_m.scope->using_m) {
-                                if (thisParent->this_m.scope->using_m->size() > 0) {
-                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                        auto& flag = check_flags[childNamespace.first->GetScopeIndex()];
-                                        if ((flag & CheckFlagState::all) > 0) { continue; }
-                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                            return finalResult;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        while (thisParent = thisParent->parent_m) {
-                            auto& flag = check_flags[thisParent->GetScopeIndex()];
-                            if ((flag & CheckFlagState::self) > 0) break;
-                            else {
-                                flag |= CheckFlagState::self;
-                            }
-                            if (thisParent->this_m.is_namespace()) {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren | SearchUpHitNamespace);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            else {
-                                auto res = func(thisParent, searchState | SearchingParents | SkipChildren);
-                                if ((res & SearchResult::Success) > 0) {
-                                    finalResult = thisParent;
-                                    return finalResult;
-                                }
-                                else if ((res & SearchResult::StaticFailure) > 0) {
-                                    flag |= CheckFlagState::all;
-                                }
-                            }
-                            // check the using statements of the parent.
-                            if (thisParent->this_m.scope->using_m) {
-                                if (thisParent->this_m.scope->using_m->size() > 0) {
-                                    for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                        auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                        if ((flag2 & CheckFlagState::all) > 0) continue;
-                                        if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                            return finalResult;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Test my children themselves. 
-                    if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && (this->children.size() > 0ull)) {
-                        for (auto& child : this->children) {
-                            auto* child_bc = &child.second->breadcrumb_m;
-                            auto& flag = check_flags[child_bc->GetScopeIndex()];
-
-                            if ((flag & CheckFlagState::self) > 0) continue;
-
-                            flag |= CheckFlagState::self;
-
-                            auto res = func(child_bc, searchState | SearchingChildren | SkipChildren | SkipParent);
-                            if ((res & SearchResult::Success) > 0) {
-                                finalResult = child_bc;
-                                return finalResult;
-                            }
-                            else if ((res & SearchResult::StaticFailure) > 0) {
-                                flag |= CheckFlagState::all;
-                            }
-                        }
-                    }
-
-                    // Test my parent completely.
-                    if ((searchState & SkipParent) == 0) {
-                        if (selfPtr.parent_m) {
-                            auto& flag = check_flags[selfPtr.parent_m->GetScopeIndex()];
-                            if ((flag & CheckFlagState::all) == 0) {
-                                if (selfPtr.parent_m->this_m.is_namespace()) {
-                                    if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents | SearchUpHitNamespace, check_flags, depth + 1)) {
-                                        return finalResult;
-                                    }
-                                }
-                                else {
-                                    if (finalResult = selfPtr.parent_m->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingParents, check_flags, depth + 1)) {
-                                        return finalResult;
-                                    }
-                                }
-
-                            }
-                        }
-                    }
-
-                    // test my "base" classes directly -- hoping to quickly find "it"
-                    if (!(searchState & SkipParent)) {
-                        if (selfPtr.this_m.is_class()) {
-                            auto* p = reinterpret_cast<ClassScope*>(selfPtr.this_m.scope);
-                            for (auto& this_t : p->this_type.all_base_types(false)) {
-                                auto* thisParent = this->GetRoot()->try_find_class(this_t);
-                                while (thisParent) {
-                                    auto& flag = check_flags[thisParent->GetScopeIndex()];
-                                    if ((flag & CheckFlagState::self) > 0) break;
-                                    else {
-                                        flag |= CheckFlagState::self;
-                                    }
-                                    if (thisParent->this_m.is_namespace()) {
-                                        auto res = func(thisParent, searchState | SearchingParents | SearchUpHitNamespace);
-                                        if ((res & SearchResult::Success) > 0) {
-                                            finalResult = thisParent;
-                                            return finalResult;
-                                        }
-                                        else if ((res & SearchResult::StaticFailure) > 0) {
-                                            flag |= CheckFlagState::all;
-                                        }
-                                    }
-                                    else {
-                                        auto res = func(thisParent, searchState | SearchingParents);
-                                        if ((res & SearchResult::Success) > 0) {
-                                            finalResult = thisParent;
-                                            return finalResult;
-                                        }
-                                        else if ((res & SearchResult::StaticFailure) > 0) {
-                                            flag |= CheckFlagState::all;
-                                        }
-                                    }
-                                    // check the using statements of the parent.
-                                    if (thisParent->this_m.scope->using_m) {
-                                        if (thisParent->this_m.scope->using_m->size() > 0) {
-                                            for (auto& childNamespace : *thisParent->this_m.scope->using_m) {
-                                                auto& flag2 = check_flags[childNamespace.first->GetScopeIndex()];
-                                                if ((flag2 & CheckFlagState::all) > 0) continue;
-                                                if (finalResult = childNamespace.first->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingUsings, check_flags, depth + 1)) {
-                                                    return finalResult;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    thisParent = thisParent->parent_m;
-                                }
-                            }
-                        }
-                    }
-
-                    // Test my children completely. 
-                    if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && this->children.size() > 0ull) {
-                        for (auto& child : this->children) {
-                            auto* child_bc = &child.second->breadcrumb_m;
-                            auto& flag = check_flags[child_bc->GetScopeIndex()];
-
-                            if ((flag & CheckFlagState::all) > 0) continue;
-
-                            if (finalResult = child_bc->this_m.scope->FindNearestScopeWhere(func, SecondaryPriortyScope, searchState | SearchingChildren | SkipParent, check_flags, depth + 1)) {
-                                return finalResult;
-                            }
-                        }
-                    }
-
-                    return finalResult;
-                };
-
+                ) const;
             };
 
             /// <summary>
@@ -3458,8 +1593,6 @@ namespace GL {
             public:
                 Functions
                     constructors;
-                // TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>
-                    // converters;
                 TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>
                     converters;
                 std::mutex // GL::fast_shared_mutex
@@ -3486,55 +1619,38 @@ namespace GL {
                     this->unload(); // must call the namespace's unload function BEFORE this destroys itself, otherwise connections are unable to resolve themselves. 
                     converters.unsafe_unload();
                 };
-
-                virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override {
-                    InterlockedIncrement(static_cast<volatile size_t*>(&this->cache_version));
-                    this->sockets_for_cache_versions.speak(parent_alive, call_number);
-
-                    // constructors.clear();
-                };
-                void add_constructor(Breadcrumb* BC, GL::Proxy_Function && func) {
-                    constructors.add_function(BC->GetCurrentNamespace() + GL::string::namespace_colons() + func->m_signature.name_m, std::move(func));
-                    ++constructors_version;
-                };
-
-                Converter get_converters() {
-                    return Converter(constructors, converters, converter_lock, constructors_version);
-                };
-
-                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, bool in_function = false) {
-                    return get_converters().try_get_converter(from, to, 0, in_function);
-                };
-                bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false) {
-                    return get_converters().can_convert(from, to, in_function);
-                };
-
+                virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) override;
+                /* Explicitely adds a constructor function to this script, to support the type-conversion tools. */
+                void add_constructor(Breadcrumb* BC, GL::Proxy_Function&& func);
+                /* returns a fast wrapper for the type-conversion tools for this script. */
+                Converter get_converters();
+                /* attempts to return the function to perform the conversion for `from` into `to`. Clarify if the conversion is being requested inside of a function, to allow automatic `&&`->`base` conversion support. */
+                GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, bool in_function = false);
+                /* returns true if it is possible to convert `from` into `to`. Clarify if the conversion is being requested inside of a function, to allow automatic `&&`->`base` conversion support. */
+                bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false);
+                /* returns a list of all convertable types */
                 std::vector<GL::type> all_convertable_types() const;
+                /* Compile the built-in types and support functions to the language, such as basic numbers, units, var's, etc. */
                 void perform_builtins();
+                /* force the pre-loading of all conversions for known types, to help reduce run-time stuttering. Not necessary for normal use. */
                 void preload_conversions();
-
-                Breadcrumb* try_find_class(GL::type this_t) const {
-                    if (auto search = this->classes.find(this_t.get_base_hash()), e = this->classes.end(); search != e) {
-                        return search->second;
-                    }
-                    else {
-                        return nullptr;
-                    }
-                };
+                /* attempts to find the scripting class for the provided type. */
+                Breadcrumb* try_find_class(GL::type this_t) const;
             };
 
-
         };
+        // Get the nearest calling scope for the current thread.
         __forceinline static impl::BasicScope* GetCurrentCaller() {
             return impl::BasicScope::GetCurrentCaller();
         };
+        // attempts to find the scripting class for the provided type from the nearest script scope for the current thread.
         __forceinline static impl::ClassScope* GetClass(GL::type const& rhs) {
-            if (auto* BC = impl::BasicScope::GetCurrentCaller()->GetRoot()->try_find_class(rhs); BC) {
-                return dynamic_cast<impl::ClassScope*>(BC->this_m.scope);
+            if (auto* caller = GetCurrentCaller(); caller) {
+                if (auto* BC = caller->GetRoot()->try_find_class(rhs); BC) {
+                    return dynamic_cast<impl::ClassScope*>(BC->this_m.scope);
+                }
             }
             return nullptr;
         };
-
-
-    }
+    }        
 }
