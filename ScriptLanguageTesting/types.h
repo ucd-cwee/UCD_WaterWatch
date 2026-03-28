@@ -21,7 +21,8 @@ namespace GL {
 
     namespace util {
         template<typename T> static const auto& type_id() {
-            static auto const& typeIdOfT{ boost::typeindex::type_id<T>().type_info() };
+            // static auto const& typeIdOfT{ boost::typeindex::type_id<T>().type_info() };
+            static auto typeIdOfT{ GL::util::type_hash<T>() };
             return typeIdOfT;
         };
     };

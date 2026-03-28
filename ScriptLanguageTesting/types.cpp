@@ -7,18 +7,8 @@
 #include <map>
 
 namespace GL {
-    namespace impl {
-// #define use_btree_for_cpp_types
-
-        static 
-#ifdef use_btree_for_cpp_types
-        GL::binary_search_tree< impl::cached_type, size_t, 32>
-#else
-        // std::unordered_map< size_t, impl::cached_type> 
-        concurrency::concurrent_unordered_map< size_t, impl::cached_type>
-#endif
-            builtin_cpp_types;
-        
+    namespace impl {       
+        static GL::atomic_vector< impl::cached_type > builtin_cpp_types;
         static GL::atomic_vector< impl::cached_type > scripted_types; // atomic_vector because ticket system will prefer small values.         
         static GL::ticket_dispensor scripted_types_ticket_dispensor; // ticket system helps ensure values remain small. 
 
@@ -47,33 +37,15 @@ namespace GL {
             scripted_types_ticket_dispensor.return_ticket(ticket + 1);
         };
         cached_type& get_scripted_type(size_t hash) {
-            if (hash < scripted_types.size()) {
-                return scripted_types[hash];
-            } 
-            else {
-#ifndef use_btree_for_cpp_types
-                return builtin_cpp_types[hash];
-#else
-                if (auto* p = builtin_cpp_types.NodeFind(hash); p) {
-                    return *p->object();
-                }
-                else {
-                    return *builtin_cpp_types.Add(new impl::cached_type(), hash)->object();
-                }
-#endif
-            }
+            return scripted_types[hash];
         };
         cached_type& get_impl(size_t hash) {
-#ifndef use_btree_for_cpp_types
-            return builtin_cpp_types[hash];
-#else
-            if (auto* p = builtin_cpp_types.NodeFind(hash); p) {
-                return *p->object();
+            if (hash >= (1 << 20)) {
+                return builtin_cpp_types.get_or_make((hash - (1 << 20)));
             }
             else {
-                return *builtin_cpp_types.Add(new impl::cached_type(), hash)->object();
+                return builtin_cpp_types.get_or_make(hash);
             }
-#endif
         };
 #undef use_btree_for_cpp_types
         bool cached_type::is_derived_from(size_t base) const {

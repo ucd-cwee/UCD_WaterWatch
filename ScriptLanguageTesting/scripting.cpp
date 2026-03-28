@@ -303,13 +303,58 @@ namespace GL {
                         out.m_casted_type = rhs.m_casted_type;
                     }
                     return out;
-                }, GL::function_signature::Async, {}, { { "lhs",GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }, GL::type_of<GL::var&>()));                
+                }, GL::function_signature::Async, {}, { { "lhs", GL::type_of<GL::var&>() }, { "rhs", GL::type_of<GL::any>() } }, GL::type_of<GL::var&>()));                
                 // boolean test for vars, to ensure they are "valid". Note that this may actually call the conversion on the stored object, so this has been cut (for now)
                 //this->make_class(GL::type_of< bool >()).add_function(GL::make_callable(GL::type_of< bool >().name(), [](GL::var const& rhs) -> bool {
                 //    return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash();
                 //}, GL::function_signature::Explicit | GL::function_signature::Constructor, {}, {}, GL::type_of<bool>()));
                 // boolean test for vars, to ensure they are "valid"
                 var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
+
+                //var_class.add_function(GL::make_callable("to_string", [](GL::var const& rhs) -> GL::string {  
+                //    thread_local int recursion_depth{ 0 };
+                //    class recursion_depth_manager {
+                //    private:
+                //        int& r;
+
+                //    public:
+                //        recursion_depth_manager(int& R) : r(R) {
+                //            ++r;
+                //        };
+                //        ~recursion_depth_manager() {
+                //            --r;
+                //        };
+                //    };
+                //    recursion_depth_manager manager(recursion_depth);
+                //    if (recursion_depth > 2) return GL::string::empty_string();
+
+                //    if (GL::fast_shared_ptr<GL::any> p = const_cast<GL::var&>(rhs).get_data(); p && *p) {
+                //        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_string", { p->fast() }).cast<GL::string>();
+                //    }
+                //    return GL::string::empty_string();
+                //}, GL::function_signature::Async));
+                //var_class.add_function(GL::make_callable("to_hash", [](GL::var const& rhs) -> size_t { 
+                //    thread_local int recursion_depth{ 0 };
+                //    class recursion_depth_manager {
+                //    private:
+                //        int& r;
+
+                //    public:
+                //        recursion_depth_manager(int& R) : r(R) {
+                //            ++r;
+                //        };
+                //        ~recursion_depth_manager() {
+                //            --r;
+                //        };
+                //    };
+                //    recursion_depth_manager manager(recursion_depth);
+                //    if (recursion_depth > 2) return 0;
+
+                //    if (GL::fast_shared_ptr<GL::any> p = const_cast<GL::var&>(rhs).get_data(); p && *p) {
+                //        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_hash", { p->fast() }).cast<size_t>();
+                //    }
+                //    return 0;
+                //}, GL::function_signature::Async));
             }
 
             // std::string support

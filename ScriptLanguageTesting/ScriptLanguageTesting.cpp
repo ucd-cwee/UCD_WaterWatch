@@ -1819,6 +1819,27 @@ int main() {
                         this_scope.call("grow_to_at_least", { vec, GL::any::fast_any::instance(10) });
                         print(this_scope.call("to_string", { vec }).cast<GL::string>());
                     }
+                    if (auto this_scope = root.make_scope()) {
+                        auto vec = this_scope.call("vector<var>", {}); // calling this forcefully initializes the template class, even if it was never initialized before.
+                        // EXPECT_EQ(vec.m_casted_type, Class.this_type);
+
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(0) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(1) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(2) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(3) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(4) });
+                        this_scope.call("push_back", { vec, GL::any::fast_any::instance(5) });
+
+                        print(this_scope.call("size", { vec }).cast<size_t>());
+                        print(this_scope.call("to_string", { vec }).cast<GL::string>());
+                        print(this_scope.call("to_hash", { vec }).cast<size_t>());
+
+                        this_scope.call("=", { this_scope.call("[]", { vec, GL::any::fast_any::instance(5) }), GL::any::fast_any::instance(50) });
+                        print(this_scope.call("to_string", { vec }).cast<GL::string>());
+
+                        this_scope.call("grow_to_at_least", { vec, GL::any::fast_any::instance(10) });
+                        // print(this_scope.call("to_string", { vec }).cast<GL::string>()); // calling this on an empty var throws an error which is arguably the right call. 
+                    }
                 }
 
                 // example of a map<T0,T1> template class

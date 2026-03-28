@@ -9,6 +9,7 @@
 #include "atomic_vector.h"
 #include "ticket_dispensor.h"
 #include "stopwatch.h"
+#include <map>
 
 namespace GL {
     namespace util {
@@ -305,6 +306,16 @@ namespace GL {
             else return rand_impl().FastRandom(max, min);            
         };
 
+        size_t type_hash_impl::get_next_ticket(size_t original_hash) {
+            static GL::ticket_dispensor builtin_ticket_dispensor{};
+            static std::map<size_t, size_t> builtin_tickets{};
+
+            size_t& out = builtin_tickets[original_hash];
+            if (out == 0) {
+                InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out), builtin_ticket_dispensor.get_ticket() | (1 << 20), 0);
+            }
+            return out;
+        };
     };
 };
 

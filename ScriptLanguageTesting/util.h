@@ -13,6 +13,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include "basic_atomic_allocator.h"
+#include <boost/type_index.hpp>
 
 // Good Language namespace
 namespace GL {
@@ -57,6 +58,22 @@ namespace GL {
         double rand_fast(double max);
         // min..max or max..min (faster, but not truly random)
         double rand_fast(double min, double max);
+
+        struct type_hash_impl {
+            static size_t get_next_ticket(size_t hash);
+        };
+
+        template<typename T>
+        struct type_hash {
+            inline static std::size_t hash = type_hash_impl::get_next_ticket(boost::typeindex::type_id<T>().type_info().hash_code());
+            static size_t hash_code() {
+                return hash;
+            };
+            static const char* name() {
+                return typeid(T).name();
+            };
+        };
+
     };
 };
 
