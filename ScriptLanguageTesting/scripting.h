@@ -3,7 +3,6 @@
 #include <map>
 #include <unordered_set>
 #include "functions.h"
-#include "../GpuProgramming/matrix.h"
 
 namespace GL {
     namespace scope {
