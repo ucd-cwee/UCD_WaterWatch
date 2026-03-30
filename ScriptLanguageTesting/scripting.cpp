@@ -4,8 +4,6 @@
 
 namespace GL {
 	namespace scope {
-
-
         bool impl::ScopeID::is_namespace() const {
             return scope_type & ScopeType::Namespace;
         };
@@ -1315,22 +1313,22 @@ namespace GL {
                     member_object.second.first.is_ref() && // ... and the user is requesting a reference...
                     member_object.second.second.can_cast(member_object.second.first) // ... and the correct type was provided for use as a reference.
                     ) {
-                    destination.m_objects.insert({ member_object.first, member_object.second.second.get_underlying_ptr() });
+                    destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(member_object.second.second) });
                 }
                 else if (auto* BC = this->GetRoot()->try_find_class(member_object.second.first); BC && BC->this_m.is_class()) {
                     auto* Class = dynamic_cast<ClassScope*>(BC->this_m.scope);
                     if (member_object.second.second) { // default provided
-                        destination.m_objects.insert({ member_object.first, Class->call(Class->breadcrumb_m.this_m.scope_name, { member_object.second.second }).get_underlying_ptr() });
+                        destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(Class->call(Class->breadcrumb_m.this_m.scope_name, { member_object.second.second })) });
                     }
                     else { // no default. Attempt to construct the member object. 
-                        destination.m_objects.insert({ member_object.first, Class->call(Class->breadcrumb_m.this_m.scope_name, {}).get_underlying_ptr() });
+                        destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>(Class->call(Class->breadcrumb_m.this_m.scope_name, {})) });
                     }
                 }
                 else {
                     // not a reference, and class was not found. We have no choice but to accept the provided data as-is. 
                     GL::any f = member_object.second.second;
                     f.m_casted_type = member_object.second.first;
-                    destination.m_objects.insert({ member_object.first, (f | GL::type::Reference).get_underlying_ptr() });
+                    destination.m_objects.insert({ member_object.first, GL::make_shared<GL::any>((f | GL::type::Reference)) });
                 }
             }
         };
@@ -1363,7 +1361,7 @@ namespace GL {
 
                 for (auto& x : rhs.cast<GL::dynamic_object>().m_objects) {
                     if (auto f = temp.m_objects.find(x.first), e = temp.m_objects.end(); f != e) {
-                        this->call("=", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)f->second, f->second->m_actual_type), GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)x.second, x.second->m_actual_type) });
+                        this->call("=", { f->second->fast(), x.second->fast() });
                     }
                 }
 
@@ -1380,7 +1378,7 @@ namespace GL {
 
                 for (auto& x : RHS.m_objects) {
                     if (auto f = LHS.m_objects.find(x.first), e = LHS.m_objects.end(); f != e) {
-                        this->call("=", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)f->second, f->second->m_actual_type), GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)x.second, x.second->m_actual_type) });
+                        this->call("=", { f->second->fast(), x.second->fast() });
                     }
                 }
 
@@ -1394,11 +1392,14 @@ namespace GL {
                 if (!member_object.first.begins_with("~")) {
                     // non-const reference access to member objects
                     this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                        return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
+                        return GL::dynamic_object::object_access(member_name, rhs)->fast() + GL::type::Reference;
+                        // return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
                     }, GL::function_signature::MemberObject | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
                     // const reference access to member objects
                     this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any const& rhs)->GL::any::fast_any {
-                        return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
+                        return GL::dynamic_object::object_access(member_name, rhs)->fast() + GL::type::Const + GL::type::Reference;
+
+                        // return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
                     }, GL::function_signature::MemberObject | GL::function_signature::Constant | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
                 }
             }
@@ -1411,12 +1412,12 @@ namespace GL {
                     if (obj.second) {
                         if (!obj.first.begins_with("~")) {
                             auto this_pair = GetCurrentCaller()->call("+", { GL::any::fast_any::instance(GL::string(obj.first + ":")), GetCurrentCaller()->call("to_string", {
-                                GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
+                                obj.second->fast() + GL::type::Const + GL::type::Reference
                             }) });
                             out = GetCurrentCaller()->call("add_to_delim", { out, this_pair, GL::any::fast_any::instance(GL::string(", ")) });
                         }
                         else {
-                            return GetCurrentCaller()->call("to_string", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference) }).cast<GL::string>();
+                            return GetCurrentCaller()->call("to_string", { obj.second->fast() + GL::type::Const + GL::type::Reference }).cast<GL::string>();
                         }
                     }
                 }
@@ -1430,13 +1431,13 @@ namespace GL {
                         if (!obj.first.begins_with("~")) {
                             GL::util::hash(out, obj.first.hash());
                             GL::util::hash(out, GetCurrentCaller()->call("to_hash", {
-                                GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
-                                }).cast<size_t>());
+                                obj.second->fast() + GL::type::Const + GL::type::Reference
+                            }).cast<size_t>());
                         }
                         else {
                             return GetCurrentCaller()->call("to_hash", {
-                                GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>)obj.second, obj.second->m_actual_type + GL::type::Const + GL::type::Reference)
-                                }).cast<size_t>();
+                                obj.second->fast() + GL::type::Const + GL::type::Reference
+                            }).cast<size_t>();
                         }
                     }
                 }
@@ -2205,50 +2206,90 @@ namespace GL {
                 // boolean test for vars, to ensure they are "valid"
                 var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
 
-                //var_class.add_function(GL::make_callable("to_string", [](GL::var const& rhs) -> GL::string {  
-                //    thread_local int recursion_depth{ 0 };
-                //    class recursion_depth_manager {
-                //    private:
-                //        int& r;
-
-                //    public:
-                //        recursion_depth_manager(int& R) : r(R) {
-                //            ++r;
-                //        };
-                //        ~recursion_depth_manager() {
-                //            --r;
-                //        };
-                //    };
-                //    recursion_depth_manager manager(recursion_depth);
-                //    if (recursion_depth > 2) return GL::string::empty_string();
-
-                //    if (GL::fast_shared_ptr<GL::any> p = const_cast<GL::var&>(rhs).get_data(); p && *p) {
-                //        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_string", { p->fast() }).cast<GL::string>();
-                //    }
-                //    return GL::string::empty_string();
-                //}, GL::function_signature::Async));
-                //var_class.add_function(GL::make_callable("to_hash", [](GL::var const& rhs) -> size_t { 
-                //    thread_local int recursion_depth{ 0 };
-                //    class recursion_depth_manager {
-                //    private:
-                //        int& r;
-
-                //    public:
-                //        recursion_depth_manager(int& R) : r(R) {
-                //            ++r;
-                //        };
-                //        ~recursion_depth_manager() {
-                //            --r;
-                //        };
-                //    };
-                //    recursion_depth_manager manager(recursion_depth);
-                //    if (recursion_depth > 2) return 0;
-
-                //    if (GL::fast_shared_ptr<GL::any> p = const_cast<GL::var&>(rhs).get_data(); p && *p) {
-                //        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_hash", { p->fast() }).cast<size_t>();
-                //    }
-                //    return 0;
-                //}, GL::function_signature::Async));
+                var_class.add_function(GL::make_callable("to_string", [](GL::var const& rhs) -> GL::string {  
+                    thread_local int recursion_depth{ 0 };
+                    class recursion_depth_manager {
+                    private:
+                        int& r;
+                    public:
+                        recursion_depth_manager(int& R) : r(R) {
+                            ++r;
+                        };
+                        ~recursion_depth_manager() {
+                            --r;
+                        };
+                    };
+                    recursion_depth_manager manager(recursion_depth);
+                    if (recursion_depth > 2) return GL::string::empty_string();
+                    GL::any::fast_any this_any;
+                    GL::var* this_var = &const_cast<GL::var&>(rhs);
+                    while (this_var) {
+                        if (auto p = this_var->get_data(); p) {
+                            if (this_any = p->fast(); this_any) {
+                                if (this_any.can_cast(GL::type_of<GL::var&>())) {
+                                    this_var = &this_any.cast<GL::var&>();
+                                }
+                                else {
+                                    if (auto* C = GL::scope::GetClass(this_any.m_casted_type); C) {
+                                        return C->call("to_string", { this_any }).cast<GL::string>();
+                                    }
+                                    else {
+                                        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_string", { this_any }).cast<GL::string>();
+                                    }
+                                }
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                    return GL::string::empty_string();
+                }, GL::function_signature::Async | GL::function_signature::Explicit));
+                var_class.add_function(GL::make_callable("to_hash", [](GL::var const& rhs) -> size_t { 
+                    thread_local int recursion_depth{ 0 };
+                    class recursion_depth_manager {
+                    private:
+                        int& r;
+                    public:
+                        recursion_depth_manager(int& R) : r(R) {
+                            ++r;
+                        };
+                        ~recursion_depth_manager() {
+                            --r;
+                        };
+                    };
+                    recursion_depth_manager manager(recursion_depth);
+                    if (recursion_depth > 2) return 0;
+                    GL::any::fast_any this_any;
+                    GL::var* this_var = &const_cast<GL::var&>(rhs);
+                    while (this_var) {
+                        if (auto p = this_var->get_data(); p) {
+                            if (this_any = p->fast(); this_any) {
+                                if (this_any.can_cast(GL::type_of<GL::var&>())) {
+                                    this_var = &this_any.cast<GL::var&>();
+                                }
+                                else {
+                                    if (auto* C = GL::scope::GetClass(this_any.m_casted_type); C) {
+                                        return C->call("to_hash", { this_any }).cast<size_t>();
+                                    }
+                                    else {
+                                        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_hash", { this_any }).cast<size_t>();
+                                    }
+                                }
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                    return 0;
+                }, GL::function_signature::Async | GL::function_signature::Explicit));
             }
 
             // std::string support
@@ -2329,6 +2370,87 @@ namespace GL {
 
                 Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs; }));
                 Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
+            }
+
+            // pair<T0,T1>
+            if (1) {
+                auto& BaseClass = this->make_class("pair");
+                BaseClass.add_member_object("first", GL::type_of<GL::template_parameter<0>>());
+                BaseClass.add_member_object("second", GL::type_of<GL::template_parameter<1>>());
+                BaseClass.initialize_basic_member_functions();
+            }
+
+            // iterator<T>
+            if (1) {
+                auto& BaseClass = this->make_class("iterator");
+                BaseClass.add_member_object("parent", GL::type_of<GL::var>());
+                BaseClass.add_member_object("position", GL::type_of<size_t>());
+                BaseClass.add_function(GL::make_callable("begin", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    *this_iter["parent"] = rhs;
+                    this_iter["position"]->cast<size_t&>() = 0;
+                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } , { "", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                BaseClass.add_function(GL::make_callable("end", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    *this_iter["parent"] = rhs;
+                    this_iter["position"]->cast<size_t&>() = 0;
+                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } , { "", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                BaseClass.add_function(GL::make_callable("++", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    ++this_iter["position"]->cast<size_t&>();
+                    if (auto* Class = GL::scope::GetClass(this_iter["parent"]->m_casted_type); Class) {
+                        Class->call("++", { this_iter["parent"]->fast(), lhs });
+                    }
+                    return lhs;
+                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } }, BaseClass.this_type | GL::type::Reference));
+                BaseClass.add_function(GL::make_callable("--", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    --this_iter["position"]->cast<size_t&>();
+                    if (auto* Class = GL::scope::GetClass(this_iter["parent"]->m_casted_type); Class) {
+                        Class->call("--", { this_iter["parent"]->fast(), lhs });
+                    }
+                    return lhs;
+                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } }, BaseClass.this_type | GL::type::Reference));
+                BaseClass.add_function(GL::make_callable("get", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    if (auto* Class = GL::scope::GetClass(this_iter["parent"]->m_casted_type); Class) {
+                        return Class->call("get", { this_iter["parent"]->fast(), lhs });
+                    }
+                    throw std::out_of_range("iterator out-of-bounds");
+                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } }));
+
+                BaseClass.add_function(GL::make_callable("==", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    auto& that_iter = rhs.cast<GL::dynamic_object&>();
+                    return this_iter["position"]->cast<size_t&>() == that_iter["position"]->cast<size_t&>();
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }, GL::type_of<bool>()));
+                BaseClass.add_function(GL::make_callable("!=", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    auto& that_iter = rhs.cast<GL::dynamic_object&>();
+                    return this_iter["position"]->cast<size_t&>() != that_iter["position"]->cast<size_t&>();
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }, GL::type_of<bool>()));
+                BaseClass.add_function(GL::make_callable(">=", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    auto& that_iter = rhs.cast<GL::dynamic_object&>();
+                    return this_iter["position"]->cast<size_t&>() >= that_iter["position"]->cast<size_t&>();
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }, GL::type_of<bool>()));
+                BaseClass.add_function(GL::make_callable(">", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    auto& that_iter = rhs.cast<GL::dynamic_object&>();
+                    return this_iter["position"]->cast<size_t&>() > that_iter["position"]->cast<size_t&>();
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }, GL::type_of<bool>()));
+                BaseClass.add_function(GL::make_callable("<=", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    auto& that_iter = rhs.cast<GL::dynamic_object&>();
+                    return this_iter["position"]->cast<size_t&>() <= that_iter["position"]->cast<size_t&>();
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }, GL::type_of<bool>()));
+                BaseClass.add_function(GL::make_callable("<", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
+                    auto& this_iter = lhs.cast<GL::dynamic_object&>();
+                    auto& that_iter = rhs.cast<GL::dynamic_object&>();
+                    return this_iter["position"]->cast<size_t&>() < that_iter["position"]->cast<size_t&>();
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }, GL::type_of<bool>()));
+
+                BaseClass.initialize_basic_member_functions();
             }
 
             // vector<T>
@@ -2421,48 +2543,48 @@ namespace GL {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
                         auto* param0_class = GetClass(rhs.m_casted_type);
-                        return impl_class->call("push_back", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>) * implp, (*implp)->m_actual_type | GL::type::Reference), param0_class->call(param0_class->this_type.name(), { rhs }) });
+                        return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, param0_class->call(param0_class->this_type.name(), { rhs }) });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("push_back", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
-                        return impl_class->call("push_back", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>) * implp, (*implp)->m_actual_type | GL::type::Reference), rhs - GL::type::Temporary });
+                        return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, rhs - GL::type::Temporary });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Temporary } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("size", [](GL::any::fast_any const& lhs) -> size_t {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = *(*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.size();
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("at", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = *(*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.at(rhs).fast() | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("at", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = *(*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.at(rhs).fast() | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = *(*implp)->cast<GL::atomic_constructable_vector<GL::any>>();                        
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();                        
                         return impl[rhs].fast() | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = *(*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl[rhs].fast() | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
@@ -2470,12 +2592,54 @@ namespace GL {
                 BaseClass.add_function(GL::make_callable("grow_to_at_least", [](GL::any::fast_any const& lhs, size_t const& rhs) -> bool {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
-                        return impl_class->call("grow_to_at_least", { GL::any::fast_any((GL::shared_ptr<GL::type_erasure::any_data>) * implp, (*implp)->m_actual_type | GL::type::Reference), GL::any::fast_any::instance(rhs) }).cast<bool>();
+                        return impl_class->call("grow_to_at_least", { (*implp)->fast() + GL::type::Reference, GL::any::fast_any::instance(rhs) }).cast<bool>();
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<bool>()));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<bool>()));
+                
+                BaseClass.add_function(GL::make_callable("begin", [](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                    auto* impl_class = GetClass(lhs.m_casted_type);
+                    auto new_iterator = impl_class->call("iterator<" + impl_class->this_type.name() + ">", {});
+                    impl_class->call("begin", { new_iterator, lhs }); // initializes the base iterator 
+                    auto& iterator = new_iterator.cast<GL::dynamic_object&>();
+                    if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
+                        // return impl_class->call("grow_to_at_least", { (*implp)->fast() + GL::type::Reference, GL::any::fast_any::instance(rhs) }).cast<bool>();
+                    }
+                    return new_iterator;
+                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }));
+                BaseClass.add_function(GL::make_callable("end", [](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                    auto* impl_class = GetClass(lhs.m_casted_type);
+                    auto new_iterator = impl_class->call("iterator<" + impl_class->this_type.name() + ">", {});
+                    impl_class->call("end", { new_iterator, lhs }); // initializes the base iterator 
+                    auto& iterator = new_iterator.cast<GL::dynamic_object&>();
+                    if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        iterator["position"]->cast<size_t>() = impl.size();
+                    }
+                    return new_iterator;
+                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }));
+                BaseClass.add_function(GL::make_callable("get", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                    auto* impl_class = GetClass(lhs.m_casted_type);
+                    // auto* iter_class = GetClass(rhs.m_casted_type);
+                    auto& iterator = rhs.cast<GL::dynamic_object&>();
+                    return impl_class->call("[]", { lhs, iterator["position"]->fast() }) | GL::type::Reference;                    
+                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
+                BaseClass.add_function(GL::make_callable("++", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
+                    auto* impl_class = GetClass(lhs.m_casted_type);
+                    // auto* iter_class = GetClass(rhs.m_casted_type);
+                    auto& iterator = rhs.cast<GL::dynamic_object&>();
+                    // if we needed to do anything with the iterator, this would have been the time.
+                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }));
+                BaseClass.add_function(GL::make_callable("--", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
+                    auto* impl_class = GetClass(lhs.m_casted_type);
+                    // auto* iter_class = GetClass(rhs.m_casted_type);
+                    auto& iterator = rhs.cast<GL::dynamic_object&>();
+                    // if we needed to do anything with the iterator, this would have been the time.
+                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }));
                 BaseClass.initialize_basic_member_functions();
             }
+
+
 
             // GPU-accelerated arrays
             if (1) {

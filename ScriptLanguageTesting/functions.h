@@ -24,7 +24,8 @@ namespace GL {
             Cached = 32, // whether the function is a cache from another function, for performance reasons. 
             NoCost = 64,
             Constructor = 128,
-            MemberObject = 256
+            MemberObject = 256,
+            // TemplateConstructor = 512 // indicates that the name and return type for the function should be updated once template-initialization is performed. 
         };
 
     public:
