@@ -814,7 +814,7 @@ namespace GL {
         static GL::shared_ptr<GL::any> object_access(GL::string const& member_name, T const& rhs) {
             if constexpr (std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>) {
                 if (rhs.can_cast(GL::type_of<GL::dynamic_object&>())) {
-                    if (auto* p = rhs.cast<GL::dynamic_object>().try_at(member_name); p) {
+                    if (GL::shared_ptr<GL::any>* p = rhs.cast<GL::dynamic_object>().try_at(member_name); p) {
                         return *p;
                     }
                     else {

@@ -125,7 +125,6 @@ namespace GL {
             }
             return false;
         };
-
     };
 
     auto& get_base(type const& from) {
@@ -173,27 +172,60 @@ namespace GL {
             return out;
         }
         else {
-            std::map<int, std::vector<type>> collection;
-            std::queue< std::pair<int, GL::type> > types_to_try;
+            GL::atomic_vector< std::vector<type> > collection;
+            std::deque< std::pair<int, GL::type> > types_to_try;
             std::set<GL::type> attempted_types;
-            types_to_try.push({ 0, *this - GL::type::Reference - GL::type::Const - GL::type::Temporary });
+            types_to_try.push_back({ 0, *this - GL::type::Reference - GL::type::Const - GL::type::Temporary });
             while (types_to_try.size() > 0) {
                 std::pair<int, GL::type> this_t = types_to_try.front();
-                types_to_try.pop();
-                if (attempted_types.find(this_t.second) == attempted_types.end()) {
-                    attempted_types.insert(this_t.second);
-                    collection[this_t.first].push_back(this_t.second);
-                    for (GL::type const& base_type : this_t.second.all_base_types()) {
-                        types_to_try.push({ this_t.first + 1, base_type });
+                types_to_try.pop_front();
+                if (auto [iter, success] = attempted_types.insert(this_t.second); success) {
+                    collection.get_or_make(this_t.first).push_back(this_t.second);
+                    //collection.grow_to_at_least(this_t.first + 1);
+                    //collection[this_t.first].push_back(this_t.second);
+
+                    if (1) {
+                        if (this_t.second.is_cpp_type()) {
+                            for (auto& x : get_base(this_t.second).base_classes_ordered) {
+                                types_to_try.push_back({ this_t.first + 1, type(impl::get_impl(x).base_hash) + GL::type::CppType });
+                            }
+                        }
+                        else {
+                            for (auto& x : get_base(this_t.second).base_classes_ordered) {
+                                types_to_try.push_back({ this_t.first + 1, type(impl::get_scripted_type(x).base_hash) });
+                            }
+                        }
                     }
                 }
             }
             std::vector<GL::type> out;
             out.reserve(attempted_types.size() + 16);
             for (auto& x : collection) {
-                out.insert(out.end(), x.second.begin(), x.second.end());
+                out.insert(out.end(), x.begin(), x.end());
             }
             return out;
+
+            //std::map<int, std::vector<type>> collection;
+            //std::queue< std::pair<int, GL::type> > types_to_try;
+            //std::set<GL::type> attempted_types;
+            //types_to_try.push({ 0, *this - GL::type::Reference - GL::type::Const - GL::type::Temporary });
+            //while (types_to_try.size() > 0) {
+            //    std::pair<int, GL::type> this_t = types_to_try.front();
+            //    types_to_try.pop();
+            //    if (attempted_types.find(this_t.second) == attempted_types.end()) {
+            //        attempted_types.insert(this_t.second);
+            //        collection[this_t.first].push_back(this_t.second);
+            //        for (GL::type const& base_type : this_t.second.all_base_types()) {
+            //            types_to_try.push({ this_t.first + 1, base_type });
+            //        }
+            //    }
+            //}
+            //std::vector<GL::type> out;
+            //out.reserve(attempted_types.size() + 16);
+            //for (auto& x : collection) {
+            //    out.insert(out.end(), x.second.begin(), x.second.end());
+            //}
+            //return out;
         }
     };
     // returns true if this is found to be a child of the parent type (id'd by its base hash) 

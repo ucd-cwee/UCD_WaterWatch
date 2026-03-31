@@ -1160,7 +1160,7 @@ namespace GL {
                 };
             
             public:
-                template<typename iter_type> GL::any::fast_any call(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
+                template<typename iter_type> GL::any::fast_any call_impl(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
                     auto handler = push_back_caller(this);
                     if (auto f = try_find_callable(PossiblyScopedName, from_iter, from_end); f) {
                         return this->GetRoot()->get_converters().call_with_conversions(&*f, from_iter, from_end);
@@ -1174,7 +1174,16 @@ namespace GL {
                         throw std::runtime_error(err.to_string());
                     }
                 };
-                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const;
+                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const;
+                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const {
+                    GL::any::fast_any got = call_impl(PossiblyScopedName, params.begin(), params.end());
+                    if (!got.can_cast(GL::type_of<T>())) {
+                        if (auto converter = this->GetRoot()->get_converters().try_get_converter(got.m_casted_type, GL::type_of<std::decay_t<T>>())) {
+                            return converter->operator()(got).cast<T>();
+                        }
+                    }
+                    return got.cast<T>();
+                };
 
             };
 
@@ -1639,17 +1648,25 @@ namespace GL {
 
         };
         // Get the nearest calling scope for the current thread.
-        __forceinline static impl::BasicScope* GetCurrentCaller() {
-            return impl::BasicScope::GetCurrentCaller();
-        };
+        impl::BasicScope* GetCurrentCaller();
         // attempts to find the scripting class for the provided type from the nearest script scope for the current thread.
-        __forceinline static impl::ClassScope* GetClass(GL::type const& rhs) {
-            if (auto* caller = GetCurrentCaller(); caller) {
-                if (auto* BC = caller->GetRoot()->try_find_class(rhs); BC) {
-                    return dynamic_cast<impl::ClassScope*>(BC->this_m.scope);
-                }
-            }
-            return nullptr;
-        };
+        impl::ClassScope* GetClass(GL::type const& rhs);
+        //// attempts to find the scripting class for the provided type from the nearest script scope for the current thread.
+        //GL::any::fast_any Call(GL::string const& name, std::vector<GL::any::fast_any> const& inputs = {});
+        //// attempts to find the scripting class for the provided type from the nearest script scope for the current thread.
+        //template <typename T>
+        //decltype(auto) Call(GL::string const& name, std::vector<GL::any::fast_any> const& inputs = {}) {
+        //    if (auto* caller = GetCurrentCaller(); caller) {
+        //        auto scope = caller->make_scope();
+        //        return scope.call<T>(name, inputs);
+        //    }
+        //    else {
+        //        GL::scope::impl::RootScope
+        //            root;
+        //        root.perform_builtins();
+        //        auto scope = root.make_scope();
+        //        return scope.call<T>(name, inputs);
+        //    }
+        //};
     }        
 }

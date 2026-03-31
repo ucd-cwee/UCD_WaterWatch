@@ -329,7 +329,7 @@ namespace GL {
         std::string_view const& c_str() const {
             return data;
         };
-        string substr(const size_type _Off = 0, size_type _Count = npos) const {
+        string substr(const size_type _Off = 0, size_type const& _Count = npos) const {
             return string(this->_data, data.substr(_Off, _Count));
         };
         bool empty() const {

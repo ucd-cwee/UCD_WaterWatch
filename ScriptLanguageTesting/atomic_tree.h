@@ -2185,7 +2185,7 @@ namespace GL {
 			void instantiate_object(Args&&... args) {
 				ptr = father->objAllocator.Alloc(std::move(args)...);
 			};
-			objType*
+			objType* const&
 				object() {
 				return ptr;
 			};
@@ -3329,7 +3329,7 @@ namespace GL {
 			try_at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
 				auto g = ProtectCurrentEpoch();
-				return node->object();
+				return node->ptr; //  object();
 			}
 			return nullptr;
 		};

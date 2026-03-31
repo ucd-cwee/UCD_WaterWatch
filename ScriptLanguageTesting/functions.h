@@ -1673,9 +1673,9 @@ namespace GL {
                 //if (out->m_signature.argument_types_m[i].is_any()) {
                     out->m_signature.argument_types_m[i] = arguments[i].second;
                 //}
-            }
-            out->m_signature.evaluate_if_template_function();
+            }            
         }
+        out->m_signature.evaluate_if_template_function();
         return out;
     };
 
@@ -1696,9 +1696,10 @@ namespace GL {
                 out->m_signature.argument_types_m[i] = arguments[i].second;
                 //}
             }
-            out->m_signature.returns_m = returnType;
-            out->m_signature.evaluate_if_template_function();
         }
+        out->m_signature.returns_m = returnType;
+        out->m_signature.evaluate_if_template_function();
+
         return out;
     };
 
@@ -1716,9 +1717,9 @@ namespace GL {
                // if (out->m_signature.argument_types_m[i].is_any()) {
                     out->m_signature.argument_types_m[i] = arguments[i].second;
                // }
-            }
-            out->m_signature.evaluate_if_template_function();
+            }            
         }
+        out->m_signature.evaluate_if_template_function();
         return out;
     };
 
@@ -1738,9 +1739,9 @@ namespace GL {
                 out->m_signature.argument_types_m[i] = arguments[i].second;
                 // }
             }
-            out->m_signature.returns_m = returnType;
-            out->m_signature.evaluate_if_template_function();
         }
+        out->m_signature.returns_m = returnType;
+        out->m_signature.evaluate_if_template_function();
         return out;
     };
 

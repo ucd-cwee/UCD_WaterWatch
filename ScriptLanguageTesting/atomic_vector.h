@@ -180,22 +180,25 @@ namespace GL {
             return std::max(valid_pos, current_pos);
         };
         element_t& get_or_make(size_t index) {
-            auto block_i = global_index_to_block(index);
-            auto block_j = global_index_to_local_index(index, block_i);
-            if (EnsureBlockExists(block_i)) {
-                while (true) {
-                    size_t prevValid = valid_pos;
-                    if (prevValid < (index + 1)) {
-                        if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&valid_pos), (index + 1), prevValid) == prevValid) {
-                            break;
-                        }
-                    }
-                    else {
-                        break;
-                    }
-                }
-            }
-            return blocks[block_i][block_j];
+            grow_to_at_least(index + 1);
+            return at(index);
+
+            //auto block_i = global_index_to_block(index);
+            //auto block_j = global_index_to_local_index(index, block_i);
+            //if (EnsureBlockExists(block_i)) {
+            //    while (true) {
+            //        size_t prevValid = valid_pos;
+            //        if (prevValid < (index + 1)) {
+            //            if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&valid_pos), (index + 1), prevValid) == prevValid) {
+            //                break;
+            //            }
+            //        }
+            //        else {
+            //            break;
+            //        }
+            //    }
+            //}
+            //return blocks[block_i][block_j];
         };
 
         class Iterator {

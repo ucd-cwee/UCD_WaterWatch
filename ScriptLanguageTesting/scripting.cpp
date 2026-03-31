@@ -79,7 +79,7 @@ namespace GL {
                     state &= x->m_signature.state_m;
                 }
 
-                /*                           else if (auto& x = srce.try_find_callable("", &this_t, &this_t + 1, 0); x) {
+                /*                           else if (auto& x = srce.try_find_callable(GL::string::empty_string(), &this_t, &this_t + 1, 0); x) {
                                                converters.push_back(&x);
                                                this_t = t;
                                                state &= x->m_signature.state_m;
@@ -923,7 +923,7 @@ namespace GL {
             if (auto [prefix, middle_and_postfix] = from.left_and_right_of("<"); !middle_and_postfix.empty()) {
                 prefix = prefix.remove_leading_and_trailing(' ');
                 middle_and_postfix = middle_and_postfix.remove_leading_and_trailing(' ');
-                if (auto [middle, postfix] = middle_and_postfix.left_and_right_of(">"); !middle.empty()) {
+                if (auto [middle, postfix] = middle_and_postfix.left_and_right_of_last(">"); (middle_and_postfix.find(">") != GL::string::npos) && !middle.empty()) {
                     middle = middle.remove_leading_and_trailing(' ');
                     postfix = postfix.remove_leading_and_trailing(' ');
 
@@ -936,10 +936,13 @@ namespace GL {
                         }
                         inner_types.push_back(f);
                         return false;
-                        });
+                    });
 
                     if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
-                        return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
+                        if (dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types.size() == inner_types.size()) {
+                            // must have the same number of template arguments. 
+                            return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
+                        }
                     }
                 }
             }
@@ -974,14 +977,14 @@ namespace GL {
                 };
             };
             recursion_depth_manager manager(recursion_depth);
-            if (recursion_depth > 2) return { PossiblyScopedName, nullptr };
+            if (recursion_depth > 16) return { PossiblyScopedName, nullptr };
 
             // "std::wrapper<std::string>::npos" -> ["std", "wrapper<std::string>", "npos"]
             const Breadcrumb* current_scope = &this->breadcrumb_m;
             Breadcrumb* closest_scope;
             bool accumulating = false;
             GL::string accumulated;
-            (void)PossiblyScopedName.replace(" ", "").with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
+            (void)PossiblyScopedName.replace(" ", GL::string::empty_string()).with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
                 if (accumulating) {
                     accumulated = accumulated + this_split;
                     return false;
@@ -1041,7 +1044,7 @@ namespace GL {
             return const_cast<BasicScope*>(this)->breadcrumb_m.GetScopeIndex();
         };        
         impl::BasicScope impl::BasicScope::make_scope() const {
-            return BasicScope("", ScopeType::Basic, const_cast<Breadcrumb*>(&this->breadcrumb_m));
+            return BasicScope(GL::string::empty_string(), ScopeType::Basic, const_cast<Breadcrumb*>(&this->breadcrumb_m));
         };        
         bool impl::BasicScope::add_using_here(NamespaceScope const& ptr) {
             if (auto p = static_cast<const BasicScope*>(&ptr)) {
@@ -1215,7 +1218,7 @@ namespace GL {
             throw std::runtime_error(err);
         };
         GL::any::fast_any impl::BasicScope::call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
-            return call(PossiblyScopedName, params.begin(), params.end());
+            return call_impl(PossiblyScopedName, params.begin(), params.end());
         };
 
         void impl::NamespaceScope::invalidate_cache(long* parent_alive, size_t call_number) {
@@ -1348,7 +1351,7 @@ namespace GL {
                 const_cast<GL::type&>(out.get_actual_type()) = this->this_type;
                 out.m_casted_type = this->this_type;
                 return out;
-                }, GL::function_signature::Constructor, {}, {}, this->this_type));
+            }, GL::function_signature::Constructor | GL::function_signature::Static | GL::function_signature::Async, std::vector<any>{}, std::vector<std::pair<GL::string, GL::type>>{}, this->this_type));
 
             // copy constructor
             this->add_function(GL::make_callable(breadcrumb_m.this_m.scope_name, [this](GL::any::fast_any const& rhs) -> GL::any::fast_any {
@@ -1405,7 +1408,7 @@ namespace GL {
             }
 
             // to_string and to_hash functions
-            this->add_function(GL::make_callable("to_string", [](GL::any::fast_any const& lhs) -> GL::string {
+            this->add_function(GL::make_callable("to_string", [this](GL::any::fast_any const& lhs) -> GL::string {
                 auto& o = lhs.cast<GL::dynamic_object>();
                 GL::any::fast_any out = GL::any::fast_any::instance(GL::string());
                 for (auto& obj : o.m_objects) {
@@ -1417,13 +1420,13 @@ namespace GL {
                             out = GetCurrentCaller()->call("add_to_delim", { out, this_pair, GL::any::fast_any::instance(GL::string(", ")) });
                         }
                         else {
-                            return GetCurrentCaller()->call("to_string", { obj.second->fast() + GL::type::Const + GL::type::Reference }).cast<GL::string>();
+                            return GetCurrentCaller()->call<GL::string>("to_string", { obj.second->fast() + GL::type::Const + GL::type::Reference });
                         }
                     }
                 }
-                return "[" + GetCurrentCaller()->GetRoot()->call("::string", { out }).cast<GL::string>() + "]";
+                return "[" + this->GetRoot()->call<GL::string>("::string", { out }) + "]";
                 }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::string>()));
-            this->add_function(GL::make_callable("to_hash", [](GL::any::fast_any const& lhs) -> size_t {
+            this->add_function(GL::make_callable("to_hash", [this](GL::any::fast_any const& lhs) -> size_t {
                 auto& o = lhs.cast<GL::dynamic_object>();
                 size_t out = 0;
                 for (auto& obj : o.m_objects) {
@@ -1483,17 +1486,6 @@ namespace GL {
 
                             auto new_f = f->duplicate();
                             bool necessary = false;
-                            //std::cout << new_f->m_signature.display() << std::endl;
-                            for (auto& x : new_f->m_signature.argument_types_m) {
-                                if (x.get_base_hash() == this->this_type.get_base_hash()) {
-                                    x = new_class->this_type + (x - GL::type::CppType).get_qualifiers();
-                                    necessary = true;
-                                }
-                                if (auto template_index = GL::is_template::index(x); template_index >= 0) {
-                                    x = new_class->template_types[template_index] + (x - GL::type::CppType).get_qualifiers();
-                                    necessary = true;
-                                }
-                            }
                             if (new_f->m_signature.returns_m.get_base_hash() == this->this_type.get_base_hash()) {
                                 new_f->m_signature.returns_m = new_class->this_type + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
                                 necessary = true;
@@ -1502,7 +1494,20 @@ namespace GL {
                                 new_f->m_signature.returns_m = new_class->template_types[template_index] + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
                                 necessary = true;
                             }
-                            //std::cout << new_f->m_signature.display() << std::endl;
+                            for (auto& x : new_f->m_signature.argument_types_m) {
+                                if (auto template_index = GL::is_template::index(x); template_index >= 0) {
+                                    x = new_class->template_types[template_index] + (x - GL::type::CppType).get_qualifiers();
+                                    necessary = true;
+                                }
+                            }
+                            if (necessary) {
+                                for (auto& x : new_f->m_signature.argument_types_m) {
+                                    if (x.get_base_hash() == this->this_type.get_base_hash()) {
+                                        x = new_class->this_type + (x - GL::type::CppType).get_qualifiers();
+                                        necessary = true;
+                                    }
+                                }
+                            }
                             if (necessary) {
                                 new_f->m_signature.evaluate_if_template_function();
                                 new_f->m_signature.reevaluate_hash();
@@ -1510,7 +1515,7 @@ namespace GL {
                             }
 
                             return false;
-                            });
+                        });
                         for (auto& member_o : this->member_objects) {
                             if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
                                 new_class->add_member_object(member_o.first, new_class->template_types[template_index]);
@@ -1934,8 +1939,8 @@ namespace GL {
             if (1) {
 #define add_a(type) \
                 this->make_class(GL::type_of< type >()).add_function(GL::make_callable(GL::type_of< type >().name(), []() -> type { return 0; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< type >())); \
-                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_string", [](type const& rhs) -> GL::string { return std::to_string(rhs); })); \
-                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_hash", [](type const& rhs) -> size_t { return std::hash<type>()(rhs); })); \
+                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_string", [this](type const& rhs) -> GL::string { return std::to_string(rhs); })); \
+                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_hash", [this](type const& rhs) -> size_t { return std::hash<type>()(rhs); })); \
                 add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, type const& rhs) -> GL::any::fast_any { lhs.cast<type &>() = rhs; return lhs; }, 0, {}, { { "lhs", GL::type_of<type &>() }, { "rhs", GL::type_of<type const&>() }}, GL::type_of< type& >())); \
                 this->make_class(GL::type_of< bool >()).add_function(GL::make_converter<type, bool>()); \
                 this->make_class(GL::type_of< char >()).add_function(GL::make_converter<type, char>()); \
@@ -2074,7 +2079,7 @@ namespace GL {
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::decl_func(&GL::value::ceiling));
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::decl_func(&GL::value::abs));
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::decl_func(&GL::value::clamp));
-                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("round", [](GL::value const& lhs, float magnitude) -> GL::value { return lhs.round(magnitude); },
+                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("round", [this](GL::value const& lhs, float magnitude) -> GL::value { return lhs.round(magnitude); },
                     GL::function_signature::Async | GL::function_signature::Constant, 
                     { GL::any{ 1.0f } }, { {"lhs", GL::type_of<GL::value const&>() }, {"magnitude", GL::type_of<float>() } }, GL::type_of<GL::value>() 
                 ));
@@ -2098,7 +2103,7 @@ namespace GL {
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::decl_func(&GL::value::asin));
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::decl_func(&GL::value::acos));
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::decl_func(&GL::value::atan));
-                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("to_string", [](GL::value const& lhs) -> GL::string {
+                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("to_string", [this](GL::value const& lhs) -> GL::string {
                     GL::string Num = std::to_string((float)lhs);
                     auto& ab = lhs.abbreviation();
                     if (ab.empty()) {
@@ -2109,7 +2114,7 @@ namespace GL {
                     }
                     
                 }, GL::function_signature::Async | GL::function_signature::Constant));
-                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("to_hash", [](GL::value const& rhs) -> size_t { 
+                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("to_hash", [this](GL::value const& rhs) -> size_t {
                     return std::hash<float>()((float)rhs);
                 }));
 
@@ -2172,7 +2177,7 @@ namespace GL {
                         return GL::var(GL::make_shared<GL::any>(rhs));
                     }
                     
-                }, GL::function_signature::Constructor | GL::function_signature::Async, {}, { { "rhs", GL::type_of<GL::any>() } }, GL::type_of<GL::var>()));
+                }, GL::function_signature::Constructor | GL::function_signature::Async, {}, { { "rhs", GL::type_of<GL::any>() + GL::type::Const + GL::type::Reference } }, GL::type_of<GL::var>()));
                 // assignment operator. Anything can be assigned to an empty var object.
                 this->add_function(GL::make_callable("=", [](GL::any::fast_any& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {                    
                     GL::any::fast_any& out = lhs;
@@ -2231,10 +2236,10 @@ namespace GL {
                                 }
                                 else {
                                     if (auto* C = GL::scope::GetClass(this_any.m_casted_type); C) {
-                                        return C->call("to_string", { this_any }).cast<GL::string>();
+                                        return C->call<GL::string>("to_string", { this_any });
                                     }
                                     else {
-                                        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_string", { this_any }).cast<GL::string>();
+                                        return GL::scope::GetCurrentCaller()->GetRoot()->call<GL::string>("to_string", { this_any });
                                     }
                                 }
                             }
@@ -2273,10 +2278,10 @@ namespace GL {
                                 }
                                 else {
                                     if (auto* C = GL::scope::GetClass(this_any.m_casted_type); C) {
-                                        return C->call("to_hash", { this_any }).cast<size_t>();
+                                        return C->call<size_t>("to_hash", { this_any });
                                     }
                                     else {
-                                        return GL::scope::GetCurrentCaller()->GetRoot()->call("to_hash", { this_any }).cast<size_t>();
+                                        return GL::scope::GetCurrentCaller()->GetRoot()->call<size_t>("to_hash", { this_any });
                                     }
                                 }
                             }
@@ -2309,72 +2314,11 @@ namespace GL {
                 Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
 
-            // string functions
-            if (1) {
-                using class_t = GL::string;
-                auto& Class = this->make_class(GL::type_of<class_t>());
-                // default constructor
-                Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type));
-                // copy constructor
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor));
-                Class.add_function(GL::make_callable(Class.this_type.name(), [](std::string const& rhs) -> class_t { return class_t((std::string)rhs); }, GL::function_signature::Constructor));
-                // assignment operator
-                this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
-                this->add_function(GL::make_callable("==", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs == rhs; }));
-                this->add_function(GL::make_callable("!=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs != rhs; }));
-                this->add_function(GL::make_callable(">", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs > rhs; }));
-                this->add_function(GL::make_callable(">=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs >= rhs; }));
-                this->add_function(GL::make_callable("<", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs < rhs; }));
-                this->add_function(GL::make_callable("<=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs <= rhs; }));
-                this->add_function(GL::make_callable("+", [](class_t const& lhs, class_t const& rhs) -> class_t { return lhs + rhs; }));
-
-                Class.add_function(GL::decl_func(&class_t::add_to_delim));
-                Class.add_function(GL::decl_func(&class_t::at));
-                Class.add_function(GL::decl_func(&class_t::back));
-                Class.add_function(GL::decl_func(&class_t::begins_with));
-                Class.add_function(GL::make_callable("distance", [](class_t const& lhs, class_t const& rhs, bool case_sensitive) -> size_t { return lhs.distance(rhs, case_sensitive); }, GL::function_signature::Async | GL::function_signature::Constant, { true }, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const}, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const }, { "case_sensitive", GL::type_of<bool const&>() } }, GL::type_of<size_t>()));
-                Class.add_function(GL::decl_func(&class_t::empty));
-                Class.add_function(GL::decl_func(&class_t::empty_string));
-                Class.add_function(GL::decl_func(&class_t::ends_with));
-                Class.add_function(GL::make_callable("find", [](class_t const& lhs, class_t const& rhs, bool case_sensitive, long long start, long long end) -> size_t { return lhs.find(rhs, case_sensitive, start, end); }, { true, 0ll, -1ll }));
-                Class.add_function(GL::decl_func(&class_t::front));
-                Class.add_function(GL::decl_func(&class_t::hash));
-                Class.add_function(GL::decl_func(&class_t::has_lower));
-                Class.add_function(GL::decl_func(&class_t::has_upper));
-                Class.add_function(GL::decl_func(&class_t::left));
-                // Class.add_function(GL::decl_func(&class_t::left_and_right_of)); // needs conversion to std::pair<var, var> or equivalent...
-                // Class.add_function(GL::decl_func(&class_t::left_and_right_of_last)); // needs conversion to std::pair<var, var> or equivalent...
-                Class.add_function(GL::decl_func(&class_t::left_of));
-                Class.add_function(GL::decl_func(&class_t::left_of_last));
-                Class.add_function(GL::decl_func(&class_t::length));
-                Class.add_function(GL::decl_func(&class_t::namespace_colons));
-                Class.insert_object_here("npos", GL::any::ref(class_t::npos));
-                Class.add_function(GL::decl_func(&class_t::remove_leading));
-                Class.add_function(GL::decl_func(&class_t::remove_leading_and_trailing));                
-                Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
-                Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<size_t const&>() } }, Class.this_type | GL::type::Reference));
-                Class.add_function(GL::make_callable("remove_suffix", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_suffix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
-                Class.add_function(GL::make_callable("remove_suffix", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_suffix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<size_t const&>() } }, Class.this_type | GL::type::Reference));
-                Class.add_function(GL::decl_func(&class_t::remove_trailing));
-                Class.add_function(GL::decl_func(&class_t::replace));
-                Class.add_function(GL::decl_func(&class_t::rfind));
-                Class.add_function(GL::decl_func(&class_t::right));
-                Class.add_function(GL::decl_func(&class_t::right_of));
-                Class.add_function(GL::decl_func(&class_t::right_of_last));
-                Class.add_function(GL::decl_func(&class_t::size));
-                // Class.add_function(GL::decl_func(&class_t::split)); // needs conversion to std::vector<var> or equivalent...
-                Class.add_function(GL::make_callable("substr", [](class_t const& lhs, size_t _off, size_t _count) -> class_t { return lhs.substr(_off, _count); }, GL::function_signature::Async | GL::function_signature::Constant, { 0ull, class_t::npos }, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const}, { "_Off", GL::type_of<size_t const&>() }, { "_Count", GL::type_of<size_t const&>() } }, Class.this_type));
-                Class.add_function(GL::decl_func(&class_t::to_lower));                
-                Class.add_function(GL::decl_func(&class_t::to_number));
-                Class.add_function(GL::decl_func(&class_t::to_upper));
-
-                Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs; }));
-                Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
-            }
-
             // pair<T0,T1>
             if (1) {
                 auto& BaseClass = this->make_class("pair");
+                BaseClass.template_types = { GL::type_of<GL::template_parameter<0>>(), GL::type_of<GL::template_parameter<1>>() };
+
                 BaseClass.add_member_object("first", GL::type_of<GL::template_parameter<0>>());
                 BaseClass.add_member_object("second", GL::type_of<GL::template_parameter<1>>());
                 BaseClass.initialize_basic_member_functions();
@@ -2383,18 +2327,20 @@ namespace GL {
             // iterator<T>
             if (1) {
                 auto& BaseClass = this->make_class("iterator");
+                BaseClass.template_types = { GL::type_of<GL::template_parameter<0>>() };
+
                 BaseClass.add_member_object("parent", GL::type_of<GL::var>());
                 BaseClass.add_member_object("position", GL::type_of<size_t>());
                 BaseClass.add_function(GL::make_callable("begin", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     *this_iter["parent"] = rhs;
                     this_iter["position"]->cast<size_t&>() = 0;
-                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } , { "", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
                 BaseClass.add_function(GL::make_callable("end", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     *this_iter["parent"] = rhs;
                     this_iter["position"]->cast<size_t&>() = 0;
-                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } , { "", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
                 BaseClass.add_function(GL::make_callable("++", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     ++this_iter["position"]->cast<size_t&>();
@@ -2402,7 +2348,7 @@ namespace GL {
                         Class->call("++", { this_iter["parent"]->fast(), lhs });
                     }
                     return lhs;
-                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } }, BaseClass.this_type | GL::type::Reference));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } }, BaseClass.this_type | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("--", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     --this_iter["position"]->cast<size_t&>();
@@ -2410,14 +2356,14 @@ namespace GL {
                         Class->call("--", { this_iter["parent"]->fast(), lhs });
                     }
                     return lhs;
-                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } }, BaseClass.this_type | GL::type::Reference));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } }, BaseClass.this_type | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("get", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     if (auto* Class = GL::scope::GetClass(this_iter["parent"]->m_casted_type); Class) {
                         return Class->call("get", { this_iter["parent"]->fast(), lhs });
                     }
                     throw std::out_of_range("iterator out-of-bounds");
-                }, GL::function_signature::Async, {}, { { "", BaseClass.this_type | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } }));
 
                 BaseClass.add_function(GL::make_callable("==", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> bool {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
@@ -2456,6 +2402,8 @@ namespace GL {
             // vector<T>
             if (1) {
                 auto& BaseClass = this->make_class("vector");
+                BaseClass.template_types = { GL::type_of<GL::template_parameter<0>>() };
+
                 if (1) {
                     // teach it how to create the generic map
                     GL::type_of<GL::atomic_constructable_vector<GL::any>>().try_update_name("vector_impl");
@@ -2470,7 +2418,7 @@ namespace GL {
                             }
                             throw std::runtime_error("Must be called from the impl class constructor");
                         });
-                    }, GL::function_signature::Constructor + GL::function_signature::Async));
+                        }, GL::function_signature::Constructor + GL::function_signature::Async, {}, {}, AnyMap.this_type));
                     AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap](GL::atomic_constructable_vector<GL::any> const& rhs) -> GL::shared_ptr<GL::atomic_constructable_vector<GL::any>> {
                         auto out = GL::make_shared<GL::atomic_constructable_vector<GL::any>>([]() -> GL::any {
                             auto* p = GL::scope::GetCurrentCaller()->GetNamespace();
@@ -2490,7 +2438,7 @@ namespace GL {
                             }());
                         }
                         return out;
-                    }, GL::function_signature::Constructor + GL::function_signature::Async));
+                        }, GL::function_signature::Constructor + GL::function_signature::Async, {}, { { "rhs", AnyMap.this_type + GL::type::Const + GL::type::Reference }}, AnyMap.this_type));
                     AnyMap.GetRoot()->add_function(GL::make_callable("=", [&AnyMap](GL::any::fast_any const& Lhs, GL::atomic_constructable_vector<GL::any> const& rhs) -> GL::any::fast_any {
                         auto& out = Lhs.cast<GL::atomic_constructable_vector<GL::any>&>();
                         int L = 0;
@@ -2526,12 +2474,12 @@ namespace GL {
                             auto first_str = GL::scope::GetCurrentCaller()->call("to_string", { rhs[i].fast() });
                             out = GL::scope::GetCurrentCaller()->call("add_to_delim", { out, first_str, GL::any::fast_any::instance(GL::string(", ")) });
                         }
-                        return "[" + GL::scope::GetCurrentCaller()->call("::string", { out }).cast<GL::string>() + "]";
+                        return "[" + GL::scope::GetCurrentCaller()->call<GL::string>("::string", { out }) + "]";
                     }, GL::function_signature::Async | GL::function_signature::Constant));
                     AnyMap.add_function(GL::make_callable("to_hash", [](GL::atomic_constructable_vector<GL::any> const& rhs) -> size_t {
                         size_t out = 0;
                         for (size_t i = 0; i < rhs.size(); ++i) {
-                            auto first_hash = GL::scope::GetCurrentCaller()->call("to_hash", { rhs[i].fast() }).cast<size_t>();
+                            auto first_hash = GL::scope::GetCurrentCaller()->call<size_t>("to_hash", { rhs[i].fast() });
                             GL::util::hash(out, first_hash);
                         }
                         return out;
@@ -2539,7 +2487,7 @@ namespace GL {
                 }
                 // the use of "~" at the start of this member object's name is not arbitrary. This is a special code that means this is an intended-to-be-hidden wrapper for the dynamic_object.
                 BaseClass.add_member_object("~impl", GL::type_of<GL::atomic_constructable_vector<GL::any>>());
-                BaseClass.add_function(GL::make_callable("push_back", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("push_back", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
                         auto* param0_class = GetClass(rhs.m_casted_type);
@@ -2547,67 +2495,67 @@ namespace GL {
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
-                BaseClass.add_function(GL::make_callable("push_back", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("push_back", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
                         return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, rhs - GL::type::Temporary });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Temporary } }, GL::type_of<size_t>()));
-                BaseClass.add_function(GL::make_callable("size", [](GL::any::fast_any const& lhs) -> size_t {
+                BaseClass.add_function(GL::make_callable("size", [&BaseClass](GL::any::fast_any const& lhs) -> size_t {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.size();
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
-                BaseClass.add_function(GL::make_callable("at", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("at", [&BaseClass](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.at(rhs).fast() | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference));
-                BaseClass.add_function(GL::make_callable("at", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("at", [&BaseClass](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.at(rhs).fast() | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
-                BaseClass.add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();                        
                         return impl[rhs].fast() | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference));
-                BaseClass.add_function(GL::make_callable("[]", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl[rhs].fast() | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
-                BaseClass.add_function(GL::make_callable("grow_to_at_least", [](GL::any::fast_any const& lhs, size_t const& rhs) -> bool {
+                BaseClass.add_function(GL::make_callable("grow_to_at_least", [&BaseClass](GL::any::fast_any const& lhs, size_t const& rhs) -> bool {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
-                        return impl_class->call("grow_to_at_least", { (*implp)->fast() + GL::type::Reference, GL::any::fast_any::instance(rhs) }).cast<bool>();
+                        return impl_class->call<bool>("grow_to_at_least", { (*implp)->fast() + GL::type::Reference, GL::any::fast_any::instance(rhs) });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<bool>()));
                 
-                BaseClass.add_function(GL::make_callable("begin", [](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("begin", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     auto new_iterator = impl_class->call("iterator<" + impl_class->this_type.name() + ">", {});
                     impl_class->call("begin", { new_iterator, lhs }); // initializes the base iterator 
                     auto& iterator = new_iterator.cast<GL::dynamic_object&>();
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        // return impl_class->call("grow_to_at_least", { (*implp)->fast() + GL::type::Reference, GL::any::fast_any::instance(rhs) }).cast<bool>();
+                        // return impl_class->call<bool>("grow_to_at_least", { (*implp)->fast() + GL::type::Reference, GL::any::fast_any::instance(rhs) });
                     }
                     return new_iterator;
                 }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }));
-                BaseClass.add_function(GL::make_callable("end", [](GL::any::fast_any const& lhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("end", [&BaseClass](GL::any::fast_any const& lhs) -> GL::any::fast_any {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     auto new_iterator = impl_class->call("iterator<" + impl_class->this_type.name() + ">", {});
                     impl_class->call("end", { new_iterator, lhs }); // initializes the base iterator 
@@ -2618,19 +2566,19 @@ namespace GL {
                     }
                     return new_iterator;
                 }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }));
-                BaseClass.add_function(GL::make_callable("get", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
+                BaseClass.add_function(GL::make_callable("get", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> GL::any::fast_any {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     // auto* iter_class = GetClass(rhs.m_casted_type);
                     auto& iterator = rhs.cast<GL::dynamic_object&>();
                     return impl_class->call("[]", { lhs, iterator["position"]->fast() }) | GL::type::Reference;                    
                 }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
-                BaseClass.add_function(GL::make_callable("++", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
+                BaseClass.add_function(GL::make_callable("++", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     // auto* iter_class = GetClass(rhs.m_casted_type);
                     auto& iterator = rhs.cast<GL::dynamic_object&>();
                     // if we needed to do anything with the iterator, this would have been the time.
                 }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }));
-                BaseClass.add_function(GL::make_callable("--", [](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
+                BaseClass.add_function(GL::make_callable("--", [&BaseClass](GL::any::fast_any const& lhs, GL::any::fast_any const& rhs) -> void {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     // auto* iter_class = GetClass(rhs.m_casted_type);
                     auto& iterator = rhs.cast<GL::dynamic_object&>();
@@ -2639,7 +2587,94 @@ namespace GL {
                 BaseClass.initialize_basic_member_functions();
             }
 
+            // string functions
+            if (1) {
+                using class_t = GL::string;
+                auto& Class = this->make_class(GL::type_of<class_t>());
+                // default constructor
+                Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type));
+                // copy constructor
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor));
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](std::string const& rhs) -> class_t { return class_t((std::string)rhs); }, GL::function_signature::Constructor));
+                // assignment operator
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                this->add_function(GL::make_callable("==", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs == rhs; }));
+                this->add_function(GL::make_callable("!=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs != rhs; }));
+                this->add_function(GL::make_callable(">", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs > rhs; }));
+                this->add_function(GL::make_callable(">=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs >= rhs; }));
+                this->add_function(GL::make_callable("<", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs < rhs; }));
+                this->add_function(GL::make_callable("<=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs <= rhs; }));
+                this->add_function(GL::make_callable("+", [](class_t const& lhs, class_t const& rhs) -> class_t { return lhs + rhs; }));
 
+                Class.add_function(GL::decl_func(&class_t::add_to_delim));
+                Class.add_function(GL::decl_func(&class_t::at));
+                Class.add_function(GL::decl_func(&class_t::back));
+                Class.add_function(GL::decl_func(&class_t::begins_with));
+                Class.add_function(GL::make_callable("distance", [](class_t const& lhs, class_t const& rhs, bool case_sensitive) -> size_t { return lhs.distance(rhs, case_sensitive); }, GL::function_signature::Async | GL::function_signature::Constant, { true }, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const}, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const }, { "case_sensitive", GL::type_of<bool const&>() } }, GL::type_of<size_t>()));
+                Class.add_function(GL::decl_func(&class_t::empty));
+                Class.add_function(GL::make_callable("empty_string", []() -> GL::any::fast_any { 
+                    static GL::string colons{ GL::string::empty_string() };
+                    static GL::any::fast_any out{ GL::any::ref(colons).fast() + GL::type::Reference };
+                    return out;
+                }, 0, {}, {}, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::decl_func(&class_t::ends_with));
+                Class.add_function(GL::make_callable("find", [](class_t const& lhs, class_t const& rhs, bool case_sensitive, long long start, long long end) -> size_t { return lhs.find(rhs, case_sensitive, start, end); }, { true, 0ll, -1ll }));
+                Class.add_function(GL::decl_func(&class_t::front));
+                Class.add_function(GL::decl_func(&class_t::hash));
+                Class.add_function(GL::decl_func(&class_t::has_lower));
+                Class.add_function(GL::decl_func(&class_t::has_upper));
+                Class.add_function(GL::decl_func(&class_t::left));
+                Class.add_function(GL::make_callable("left_and_right_of", [&Class](class_t const& lhs, class_t const& rhs) -> GL::any::fast_any {
+                    auto results = lhs.left_and_right_of(rhs);
+                    auto Pair = Class.call("pair<string,string>", {});
+                    Class.call("=", { Class.call("first", { Pair }), GL::any::fast_any::instance(results.first) });
+                    Class.call("=", { Class.call("second", { Pair }), GL::any::fast_any::instance(results.second) });
+                    return Pair;                    
+                }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.DetermineType("pair<string,string>")));
+                Class.add_function(GL::make_callable("left_and_right_of_last", [&Class](class_t const& lhs, class_t const& rhs) -> GL::any::fast_any {
+                    auto results = lhs.left_and_right_of_last(rhs);
+                    auto Pair = Class.call("pair<string,string>", {});
+                    Class.call("=", { Class.call("first", { Pair }), GL::any::fast_any::instance(results.first) });
+                    Class.call("=", { Class.call("second", { Pair }), GL::any::fast_any::instance(results.second) });
+                    return Pair;                    
+                }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.DetermineType("pair<string,string>")));
+                Class.add_function(GL::decl_func(&class_t::left_of));
+                Class.add_function(GL::decl_func(&class_t::left_of_last));
+                Class.add_function(GL::decl_func(&class_t::length));
+                Class.add_function(GL::make_callable("namespace_colons", []() -> GL::any::fast_any { 
+                    static GL::string colons{ GL::string::namespace_colons() };
+                    static GL::any::fast_any out{ GL::any::ref(colons).fast() + GL::type::Reference };
+                    return out;
+                }, 0, {}, {}, Class.this_type | GL::type::Reference));
+                Class.insert_object_here("npos", GL::any::ref(class_t::npos));
+                Class.add_function(GL::decl_func(&class_t::remove_leading));
+                Class.add_function(GL::decl_func(&class_t::remove_leading_and_trailing));                
+                Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<size_t const&>() } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::make_callable("remove_suffix", [](GL::any::fast_any const& lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_suffix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::make_callable("remove_suffix", [](GL::any::fast_any const& lhs, size_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_suffix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<size_t const&>() } }, Class.this_type | GL::type::Reference));
+                Class.add_function(GL::decl_func(&class_t::remove_trailing));
+                Class.add_function(GL::decl_func(&class_t::replace));
+                Class.add_function(GL::decl_func(&class_t::rfind));
+                Class.add_function(GL::decl_func(&class_t::right));
+                Class.add_function(GL::decl_func(&class_t::right_of));
+                Class.add_function(GL::decl_func(&class_t::right_of_last));
+                Class.add_function(GL::decl_func(&class_t::size));
+                Class.add_function(GL::make_callable("split", [&Class](class_t const& lhs, class_t const& rhs) -> GL::any::fast_any {
+                    auto vec = Class.call("vector<string>", {});
+                    for (auto& result : lhs.split(rhs)) {
+                        Class.call("push_back", { vec, GL::any::fast_any::instance(result) });
+                    }
+                    return vec;
+                }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.DetermineType("vector<string>")));
+                Class.add_function(GL::make_callable("substr", [](class_t const& lhs, size_t _off, size_t _count) -> class_t { return lhs.substr(_off, _count); }, GL::function_signature::Async | GL::function_signature::Constant, { 0ull, class_t::npos }, { { "lhs", Class.this_type | GL::type::Reference | GL::type::Const}, { "_Off", GL::type_of<size_t const&>() }, { "_Count", GL::type_of<size_t const&>() } }, Class.this_type));
+                Class.add_function(GL::decl_func(&class_t::to_lower));                
+                Class.add_function(GL::decl_func(&class_t::to_number));
+                Class.add_function(GL::decl_func(&class_t::to_upper));
+
+                Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs; }));
+                Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
+            }
 
             // GPU-accelerated arrays
             if (1) {
@@ -2855,6 +2890,20 @@ namespace GL {
             else {
                 return nullptr;
             }
+        };
+
+        // Get the nearest calling scope for the current thread.
+        impl::BasicScope* GetCurrentCaller() {
+            return impl::BasicScope::GetCurrentCaller();
+        };
+        // attempts to find the scripting class for the provided type from the nearest script scope for the current thread.
+        impl::ClassScope* GetClass(GL::type const& rhs) {
+            if (auto* caller = GetCurrentCaller(); caller) {
+                if (auto* BC = caller->GetRoot()->try_find_class(rhs); BC) {
+                    return dynamic_cast<impl::ClassScope*>(BC->this_m.scope);
+                }
+            }
+            return nullptr;
         };
 	}
 }
