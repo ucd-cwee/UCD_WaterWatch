@@ -21,7 +21,7 @@ namespace GL {
         thread_object_no_default<atomic_allocator<innerType, num_items, skipInitialization>>
             TLS;
         long
-            count;
+            count{ 0 };
 
     public:
         static constexpr bool callable_size = support_count;

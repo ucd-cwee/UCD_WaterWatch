@@ -576,6 +576,15 @@ namespace GL {
                                     ++raw_pos;
                                 }
                                 else {
+                                    if (get_type_of(begin).get_base_hash() == GL::type_of<var>().get_base_hash()) {
+                                        if (begin->cast<GL::var&>().get_type().can_cast(func->m_signature.argument_types_m[pos])) {
+                                            did_conversions = true;
+                                            raw_params[raw_pos] = *begin;
+                                            params[pos] = &raw_params[raw_pos];
+                                            ++raw_pos;
+                                            continue;
+                                        }
+                                    }
                                     GL::string err = GL::string("Could not cast from ") + get_type_of(begin).name() + " to " + func->m_signature.argument_types_m[pos].name();
                                     throw std::runtime_error(err.to_string());
                                 }

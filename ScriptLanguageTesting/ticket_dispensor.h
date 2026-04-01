@@ -17,13 +17,13 @@ namespace GL {
             ScopedListener(size_t index, callback& parent)
                 : _index(index), _parent(&parent) {};
             ScopedListener(ScopedListener const& rhs) = delete;
-            ScopedListener(ScopedListener&& rhs)
+            ScopedListener(ScopedListener&& rhs) noexcept
                 : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
             {
                 rhs._index = 0;
             };
             ScopedListener& operator=(ScopedListener const& rhs) = delete;
-            ScopedListener& operator=(ScopedListener&& rhs)
+            ScopedListener& operator=(ScopedListener&& rhs) noexcept
             {
                 if (_index > 0)
                     _parent->remove_listener(_index);

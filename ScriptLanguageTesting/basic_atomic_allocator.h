@@ -26,7 +26,7 @@ namespace GL {
         
         block_t* PushBlock() {
             block_t* p = (block_t*)::_aligned_malloc(sizeof(block_t), 16);
-            if constexpr (!skipInitialization) std::memset(p, 0, sizeof(block_t));
+            if constexpr (!skipInitialization) if (p) std::memset(p, 0, sizeof(block_t));
             return p;
         };
         void PopBlock(block_t* p) {

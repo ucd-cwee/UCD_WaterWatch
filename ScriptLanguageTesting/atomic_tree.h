@@ -2163,19 +2163,19 @@ namespace GL {
 			};
 
 			objType
-				* ptr;
+				* ptr{ nullptr };
 			std::array<epoch_search_treeNode*, maxChildrenPerNode>
 				data;
 			epoch_search_treeNode // parent node
-				* parent;
+				* parent{ nullptr };
 			epoch_search_tree
-				* father;
+				* father{ nullptr };
 			keyType	// key used for sorting						
 				key;
 			int	// number of children							
-				numChildren;
+				numChildren{ 0 };
 			int
-				parent_index;
+				parent_index{ 0 };
 
 			bool
 				is_leaf() const {
@@ -2251,7 +2251,7 @@ namespace GL {
 					}
 					ch[i] = p;
 #else
-					std::memmove(&ch[i + 1], &ch[i], sizeof(epoch_search_treeNode*) * (numChildren - i));
+					std::memmove(&ch[i + 1], &ch[i], sizeof(epoch_search_treeNode*) * (size_t)(numChildren - i));
 					ch[i] = p;
 					ch = &ch[i];
 					for (j = i + 1; j <= numChildren; ++j) {
@@ -2315,11 +2315,11 @@ namespace GL {
 					--numChildren;
 					if (numChildren > 0) this->key = ch[numChildren - 1]->key;
 #else
-					std::memmove(&ch[i], &ch[i + 1], sizeof(epoch_search_treeNode*) * ((numChildren - i) - 1));
+					std::memmove(&ch[i], &ch[i + 1], sizeof(epoch_search_treeNode*) * (size_t)((numChildren - i) - 1));
 					if (numChildren > 1) this->key = ch[numChildren - 2]->key;
 					ch[j] = nullptr;
 					ch = &ch[i];
-					for (; i < j; ++i) {
+					for (; (i < j) && ch; ++i) {
 						(*ch)->parent_index = i;
 						++ch;
 					}

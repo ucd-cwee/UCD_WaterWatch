@@ -79,25 +79,27 @@ namespace GL {
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
                     element_t* new_ptr = (element_t*)(::_aligned_malloc(block_to_allocsize(blockN) * sizeof(element_t), 16));
-                    if constexpr (!std::is_pod_v<T>) {
-                        for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                            new (new_ptr + i) element_t();
-                        }
-                    }
-                    else {
-                        // some users expect the POD-types to be zero'd when the requested index has been initialized.
-                        std::memset(new_ptr, 0, block_to_allocsize(blockN) * sizeof(element_t));
-                    }
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
-                        out = true;
-                    }
-                    else {
-                        if constexpr (!std::is_pod_v<element_t>) {
+                    if (new_ptr) {
+                        if constexpr (!std::is_pod_v<T>) {
                             for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                                (new_ptr + i)->~element_t();
+                                new (new_ptr + i) element_t();
                             }
                         }
-                        ::_aligned_free(new_ptr);
+                        else {
+                            // some users expect the POD-types to be zero'd when the requested index has been initialized.
+                            std::memset(new_ptr, 0, block_to_allocsize(blockN) * sizeof(element_t));
+                        }
+                        if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                            out = true;
+                        }
+                        else {
+                            if constexpr (!std::is_pod_v<element_t>) {
+                                for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                                    (new_ptr + i)->~element_t();
+                                }
+                            }
+                            ::_aligned_free(new_ptr);
+                        }
                     }
                 }
             }

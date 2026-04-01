@@ -125,7 +125,7 @@ namespace GL {
             uint32_t
                 hash{ std::numeric_limits< uint32_t>::max() };
             package
-                default_bits;
+                default_bits{ package::bitset2{ 0, 0.0f } };
         };
         // does not use the 'ratio' values yet. 
         class si_unit {
@@ -151,9 +151,9 @@ namespace GL {
 
             si_unit() = default;
             si_unit(si_unit const&) : si_unit() {};
-            si_unit(si_unit &&) : si_unit() {};
+            si_unit(si_unit &&) noexcept : si_unit() {};
             si_unit& operator=(si_unit const&) { return *this; };
-            si_unit& operator=(si_unit&&) { return *this; };
+            si_unit& operator=(si_unit&&) noexcept { return *this; };
             ~si_unit() = default;
 
             static uint16_t calc_si_hash(double meters, double kilograms, double seconds, double amperes, double celsius, double radians) {

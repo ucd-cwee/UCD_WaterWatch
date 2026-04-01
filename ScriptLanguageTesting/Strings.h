@@ -154,7 +154,7 @@ namespace GL {
                     ++p;
                 }
                 while (*p >= '0' && *p <= '9') {
-                    r = (r * 10.0) + (*p - '0');
+                    r = (r * 10.0) + (double)(int)(*p - '0');
                     ++p;
                 }
                 if (*p == '.') {
@@ -162,7 +162,7 @@ namespace GL {
                     int n = 0;
                     ++p;
                     while (*p >= '0' && *p <= '9') {
-                        f = (f * 10.0) + (*p - '0');
+                        f = (f * 10.0) + (double)(int)(*p - '0');
                         ++p;
                         ++n;
                     }
@@ -298,7 +298,7 @@ namespace GL {
                 int corner = i;
 
                 int j = 0;
-                for (auto it2 = s2.cbegin(); it2 != s2.end(); ++it2, ++j) {
+                for (auto it2 = s2.cbegin(); (it2 != s2.end()) && (j < n); ++it2, ++j) {
                     int upper = costs[j + 1];
                     if (*it1 == *it2)
                     {
@@ -529,7 +529,7 @@ namespace GL {
 
                 if ((c == delim) && (depth == 0)) {
                     if (len > 1) {
-                        parts.push_back(this->substr(pos, len - 1));
+                        parts.push_back(this->substr(pos, (size_t)len - 1ull));
                     }
                     pos += len;
                     len = 0;
@@ -556,10 +556,10 @@ namespace GL {
                 if (this->substr(search_pos, nested_start.length()) == nested_start) depth++;
                 else if (this->substr(search_pos, nested_end.length()) == nested_end) depth--;
                 else if ((this->substr(search_pos, delim.length()) == delim) && (depth == 0)) {
-                    len += ((int)delim.length() - 1);
-                    search_pos += ((int)delim.length() - 1);
+                    len += (int)(delim.length() - 1ull);
+                    search_pos += (int)(delim.length() - 1ull);
                     if (len > 1) {
-                        parts.push_back(this->substr(pos, len - 1));
+                        parts.push_back(this->substr(pos, (size_t)len - 1ull));
                     }
                     pos += len;
                     len = 0;
@@ -1097,7 +1097,7 @@ namespace GL {
             // Allocate buffer and print to it
             std::string buffer(size, '\0'); // Initialize string with null characters
             va_start(args, format);
-            ::vsnprintf(&buffer[0], size + 1, format, args); // +1 for null terminator
+            ::vsnprintf(&buffer[0], size + 1ull, format, args); // +1 for null terminator
             va_end(args);
             return buffer;
         }
