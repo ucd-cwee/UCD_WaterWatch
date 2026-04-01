@@ -2556,6 +2556,9 @@ namespace GL {
 		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
 			return EpochGuard(this);
 		};
+		void ProtectCurrentEpoch_Fast() const {
+			nodeAllocator.ProtectCurrentEpoch_Fast();
+		};
 
 		epoch_search_tree()
 			: objAllocator()
@@ -3257,6 +3260,9 @@ namespace GL {
 		[[nodiscard]] GuardType ProtectCurrentEpoch() const {
 			return tree.ProtectCurrentEpoch();
 		};
+		void ProtectCurrentEpoch_Fast() const {
+			return tree.ProtectCurrentEpoch_Fast();
+		};
 
 		class WrappedReference {
 		private:
@@ -3320,7 +3326,7 @@ namespace GL {
 		objType& // throws if the key is not found. 
 			at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
-				auto g = ProtectCurrentEpoch();
+				(void)ProtectCurrentEpoch_Fast();
 				return *node->object();
 			}
 			throw std::range_error("Could not find key");
@@ -3328,7 +3334,7 @@ namespace GL {
 		objType* // returns nullptr if the key is not found. 
 			try_at(const keyType& time) const {
 			if (auto [node, locker] = tree.NodeFind(time); node) {
-				auto g = ProtectCurrentEpoch();
+				(void)ProtectCurrentEpoch_Fast();
 				return node->ptr; //  object();
 			}
 			return nullptr;

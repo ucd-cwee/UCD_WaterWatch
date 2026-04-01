@@ -1175,14 +1175,24 @@ namespace GL {
                     }
                 };
                 GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const;
-                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const {
-                    GL::any::fast_any got = call_impl(PossiblyScopedName, params.begin(), params.end());
+                template <typename T> T cast(GL::any::fast_any const& got) const {
                     if (!got.can_cast(GL::type_of<T>())) {
                         if (auto converter = this->GetRoot()->get_converters().try_get_converter(got.m_casted_type, GL::type_of<std::decay_t<T>>())) {
-                            return converter->operator()(got).cast<T>();
+                            return converter->operator()(const_cast<GL::any::fast_any&>(got)).cast<T>();
                         }
                     }
                     return got.cast<T>();
+                };
+                GL::any::fast_any cast(GL::any::fast_any const& from, GL::type const& to) const {
+                    if (!from.can_free_cast(to)) {
+                        if (auto converter = this->GetRoot()->get_converters().try_get_converter(from.m_casted_type, to)) {
+                            return converter->operator()(const_cast<GL::any::fast_any&>(from));
+                        }
+                    }
+                    return from;
+                };
+                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const {
+                    return cast<T>(call_impl(PossiblyScopedName, params.begin(), params.end()));                    
                 };
 
             };

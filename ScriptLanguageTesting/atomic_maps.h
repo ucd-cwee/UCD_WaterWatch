@@ -209,6 +209,16 @@ namespace GL {
                 GL::util::get_current_epoch()
             );
         };
+        void ProtectCurrentEpoch_Fast() const {
+            TLS* parent = const_cast<TLS*>(&**_TLS);
+            if (parent) {
+                if (parent->_scope_count == 0) {
+                    if (parent->ForwardEpoch(GL::util::get_current_epoch()) >= 0) {
+                        const_cast<atomic_epoch_allocator*>(this)->RunGC();
+                    }
+                }
+            }
+        };
 
         // Request a new memory pointer
         template <typename... TArgs> _type_* Alloc(TArgs &&... a) {
