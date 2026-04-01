@@ -5,8 +5,6 @@
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
 namespace GL {
-	// boost::type_info hashes are unpredictable and therefore we must use a map.
-
 	// static std::map<uint16_t, value::si_unit> si_unit_types;
 	// static GL::epoch_map< value::si_unit, uint16_t> si_unit_types;
 	static concurrency::concurrent_unordered_map<uint16_t, value::si_unit> si_unit_types;

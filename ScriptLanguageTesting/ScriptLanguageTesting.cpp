@@ -1100,7 +1100,6 @@ int main() {
                 }
 
 #else
-#if 1
             if (auto timer = sw.debug_timer("1 million scopes with 10 sub-scopes")) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
@@ -1191,6 +1190,16 @@ int main() {
                         }));
                     });
             }
+            if (auto timer = sw.debug_timer("example calc (C++ only, for the theoretical 'optimal' performance)")) {
+                GL::parallel::For(0, 1000000, [&](size_t i) {
+                    auto x0 = GL::foot(100.0f);
+                    auto v0 = GL::foot(10.0f) / GL::second(1.0f);
+                    auto a0 = v0 / GL::second(1.0f);
+                    auto t = GL::second(5);
+                    auto d = (v0 * t) + ((t.pow(2) * a0) * 0.5);
+                    auto x = x0 + d;
+                });
+            }
             if (auto timer = sw.debug_timer("example calc 2 (once only)")) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
@@ -1263,7 +1272,7 @@ int main() {
                     temp_scope.find_object("d")
                     }));
             }
-            if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)"); false) {
+            if (auto timer = sw.debug_timer("example calc 2 (sequence, not parallel)"); true) {
                 GL::scope::impl::RootScope program_root;
                 program_root.perform_builtins();
                 for (size_t i = 0; i < 1000000; ++i) {
@@ -1724,7 +1733,6 @@ int main() {
                 root.call("=", { root.call("radius", {Cir}), GL::any::fast_any::instance(1) });
                 EXPECT_EQ(root.call<GL::square_foot>("Shape<Shapes::Circle>::area", { Cir }), GL::square_foot((float)GL::constants::pi()));
             }
-
             if (auto timer = sw.debug_timer("Competing Class Name(s) test")) {
                 GL::scope::impl::RootScope
                     root;
@@ -1760,7 +1768,6 @@ int main() {
                     EXPECT_EQ(std_ns.find_object("::string::npos").cast<size_t>(), GL::string::npos);
                 }
             }
-#endif
             if (auto timer = sw.debug_timer("Template classes")) {
                 GL::scope::impl::RootScope 
                     root;

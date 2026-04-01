@@ -181,21 +181,16 @@ namespace GL {
                 types_to_try.pop_front();
                 if (auto [iter, success] = attempted_types.insert(this_t.second); success) {
                     collection.get_or_make(this_t.first).push_back(this_t.second);
-                    //collection.grow_to_at_least(this_t.first + 1);
-                    //collection[this_t.first].push_back(this_t.second);
-
-                    if (1) {
-                        if (this_t.second.is_cpp_type()) {
-                            for (auto& x : get_base(this_t.second).base_classes_ordered) {
-                                types_to_try.push_back({ this_t.first + 1, type(impl::get_impl(x).base_hash) + GL::type::CppType });
-                            }
-                        }
-                        else {
-                            for (auto& x : get_base(this_t.second).base_classes_ordered) {
-                                types_to_try.push_back({ this_t.first + 1, type(impl::get_scripted_type(x).base_hash) });
-                            }
+                    if (this_t.second.is_cpp_type()) {
+                        for (auto& x : get_base(this_t.second).base_classes_ordered) {
+                            types_to_try.push_back({ this_t.first + 1, type(impl::get_impl(x).base_hash) + GL::type::CppType });
                         }
                     }
+                    else {
+                        for (auto& x : get_base(this_t.second).base_classes_ordered) {
+                            types_to_try.push_back({ this_t.first + 1, type(impl::get_scripted_type(x).base_hash) });
+                        }
+                    }                    
                 }
             }
             std::vector<GL::type> out;
