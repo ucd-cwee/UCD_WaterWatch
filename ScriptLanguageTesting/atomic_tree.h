@@ -3414,7 +3414,7 @@ namespace GL {
 					_data = { &_ptr->key, _ptr->object() };
 				}
 			};
-			Iterator(const Iterator& rhs) : _parent(rhs._parent), _ptr(rhs._ptr), _data(nullptr) {
+			Iterator(const Iterator& rhs) : _parent(rhs._parent), _ptr(rhs._ptr), _data(nullptr, nullptr) {
 				if (_ptr) {
 					_data = { &_ptr->key, _ptr->object() };
 				}
