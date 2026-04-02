@@ -1167,11 +1167,23 @@ namespace GL {
                 
                     return nullptr;
                 };
-            
-            public:
+                // attempts to find a suitable function from this set that is callable with the given parameters. 
+// searches for object-lambdas (lambda or not), non-template-functions, and template-functions, in that order of preference. 
+                const GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_find_callable(GL::string const& PossiblyScopedName, std::vector<GL::type> const& params = {}) const {
+                    return try_find_callable(PossiblyScopedName, params.begin(), params.end());
+                };
+
+            protected:
                 template<typename iter_type> GL::any::fast_any call_impl(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
                     auto handler = push_back_caller(this);
-                    if (auto f = try_find_callable(PossiblyScopedName, from_iter, from_end); f) {
+
+                    //std::vector<GL::type> types;
+                    //for (iter_type iter = from_iter; iter != from_end; ++iter) {
+                    //    types.push_back(get_type_of(iter));
+                    //}
+                    //if (auto f = try_find_callable(PossiblyScopedName, types.begin(), types.end()); f)
+                    if (auto f = try_find_callable(PossiblyScopedName, from_iter, from_end); f) 
+                    {
                         return this->GetRoot()->get_converters().call_with_conversions(&*f, from_iter, from_end);
                     }
                     else {
@@ -1183,7 +1195,11 @@ namespace GL {
                         throw std::runtime_error(err.to_string());
                     }
                 };
+
+            public:
+                // calls the requested function or finds the requested object
                 GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const;
+                // casts to the requested c++ type.
                 template <typename T> T cast(GL::any::fast_any const& got) const {
                     if (!got.can_cast(GL::type_of<T>())) {
                         if (auto converter = this->GetRoot()->get_converters().try_get_converter(got.m_casted_type, GL::type_of<std::decay_t<T>>())) {
@@ -1192,6 +1208,7 @@ namespace GL {
                     }
                     return got.cast<T>();
                 };
+                // casts to the requested c++ or scripting type.
                 GL::any::fast_any cast(GL::any::fast_any const& from, GL::type const& to) const {
                     if (!from.can_free_cast(to)) {
                         if (auto converter = this->GetRoot()->get_converters().try_get_converter(from.m_casted_type, to)) {
@@ -1200,10 +1217,17 @@ namespace GL {
                     }
                     return from;
                 };
+                // calls the requested function or finds the requested object, and casts to the requested c++ type.
                 template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const {
                     return cast<T>(call_impl(PossiblyScopedName, params.begin(), params.end()));                    
                 };
-
+                // estimates the return type of a call, if that call was to have been performed. Does not actually perform the call. In the case of failure to find anything, will return a 'GL::any' type, since that does not 100% guarrantee the function does not exist (e.g. var's, templates, etc.)
+                GL::type return_type_of_potential_call(GL::string const& PossiblyScopedName, std::vector<GL::type> const& types = {}) {
+                    if (auto f = try_find_callable(PossiblyScopedName, types.begin(), types.end()); f) {
+                        return f->m_signature.returns_m;
+                    }
+                    return GL::type_of<GL::any>();
+                };
             };
 
             /// <summary>
@@ -1587,11 +1611,11 @@ namespace GL {
 
             public:
                 const GL::type this_type;
-                std::vector< GL::type > template_types;
+                std::vector< std::pair< GL::string, GL::type > > template_types;
 
                 void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {});                
                 void initialize_basic_member_functions();
-                ClassScope& make_inherited_template_class(std::vector< GL::type > const& templates);
+                ClassScope& make_inherited_template_class(std::vector< std::pair<GL::string, GL::type> > const& templates);
                 virtual Breadcrumb* FindNearestScopeWhere(
                     std::function<int(Breadcrumb*, int)> const& func,
                     Breadcrumb* SecondaryPriortyScope = nullptr,
