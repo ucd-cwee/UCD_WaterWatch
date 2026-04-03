@@ -12,7 +12,6 @@
 namespace GL {
     class undefined {};
     class template_t {};
-    template<int index> class template_parameter final : template_t {};
 
     class any;
     class var;
@@ -181,6 +180,9 @@ namespace GL {
             thread_local size_t const h{ void_hash_code() };
             return get_base_hash() == h;
         };
+        bool is_template() const noexcept {
+            return ((hash & ((size_t)TemplateType << 59ull)) > 0);
+        };
         bool is_cpp_type() const noexcept { return (hash & ((size_t)CppType << 59ull)) > 0; };
         bool is_any() const noexcept;
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
@@ -337,7 +339,9 @@ namespace GL {
     template<typename T> /*__forceinline*/__declspec(noinline) static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*        
 
-        static constexpr size_t template_modifier{ std::is_base_of_v< template_t, BaseType> ? type::Qualifiers::TemplateType : 0 };
+        static constexpr size_t template_modifier{ 
+            (std::is_base_of_v< template_t, BaseType> || std::is_same_v< template_t, BaseType>) ? type::Qualifiers::TemplateType : 0
+        };
 
         if constexpr (std::is_rvalue_reference<T>::value) {
             static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((size_t)((size_t)type::Qualifiers::Temporary | (size_t)type::Qualifiers::CppType | template_modifier) << 59ull) & impl::cached_type::MAGIC_MASK1));
@@ -1721,29 +1725,16 @@ namespace GL {
     };
 
     class is_template {
-        static std::map<GL::type, int>& list_of_template_parameter() {
-            static std::map<GL::type, int> out{ 
-                { GL::type_of<template_parameter<0>>(), 0}, { GL::type_of<template_parameter<1>>(), 1},
-                { GL::type_of<template_parameter<2>>(), 2}, { GL::type_of<template_parameter<3>>(), 3},
-                { GL::type_of<template_parameter<4>>(), 4}, { GL::type_of<template_parameter<5>>(), 5},
-                { GL::type_of<template_parameter<6>>(), 6}, { GL::type_of<template_parameter<7>>(), 7},
-                { GL::type_of<template_parameter<8>>(), 8}, { GL::type_of<template_parameter<9>>(), 9},
-                { GL::type_of<template_parameter<10>>(), 10}, { GL::type_of<template_parameter<11>>(), 11},
-                { GL::type_of<template_parameter<12>>(), 12}, { GL::type_of<template_parameter<13>>(), 13},
-                { GL::type_of<template_parameter<14>>(), 14}, { GL::type_of<template_parameter<15>>(), 15}
-            };
-            return out;
-        };
     public:
+        template <size_t index> static GL::type type(GL::string const& name) {
+            return GL::type((((size_t)GL::type::TemplateType + (size_t)GL::type::CppType) << 59ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'0000'0000'000F) | index);
+        };
+        static GL::type type(size_t index, GL::string const& name) {
+            return GL::type((((size_t)GL::type::TemplateType + (size_t)GL::type::CppType) << 59ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'0000'0000'000F) | index);
+        };
         static int index(GL::type const& what) {
             if (what & GL::type::TemplateType) {
-                auto& out = list_of_template_parameter();
-                if (auto f = out.find(what - GL::type::Reference - GL::type::Const - GL::type::Temporary), e = out.end(); f != e) {
-                    return f->second;
-                }
-                else {
-                    return -1;
-                }
+                return (int)(what.get_base_hash() & 0x0000'0000'0000'000F);
             }
             else {
                 return -1;

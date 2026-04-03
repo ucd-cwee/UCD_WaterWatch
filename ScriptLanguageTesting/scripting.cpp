@@ -2372,27 +2372,27 @@ namespace GL {
             // pair<T0,T1>
             if (1) {
                 auto& BaseClass = this->make_class("pair");
-                BaseClass.template_types = { { GL::type_of<GL::template_parameter<0>>().name(), GL::type_of<GL::template_parameter<0>>() }, { GL::type_of<GL::template_parameter<1>>().name(), GL::type_of<GL::template_parameter<1>>() } };
+                BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") }, { "T1", GL::is_template::type<1>("T1") } };
 
-                BaseClass.add_member_object("first", GL::type_of<GL::template_parameter<0>>());
-                BaseClass.add_member_object("second", GL::type_of<GL::template_parameter<1>>());
+                BaseClass.add_member_object("first", GL::is_template::type<0>("T0"));
+                BaseClass.add_member_object("second", GL::is_template::type<1>("T1"));
                 BaseClass.initialize_basic_member_functions();
             }
 
             // iterator<T>
             if (1) {
                 auto& BaseClass = this->make_class("iterator");
-                BaseClass.template_types = { { GL::type_of<GL::template_parameter<0>>().name(), GL::type_of<GL::template_parameter<0>>() } };
+                BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") } };
 
                 BaseClass.add_member_object("parent", GL::type_of<GL::var>());
                 BaseClass.add_function(GL::make_callable("begin", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> void {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     *this_iter["parent"] = rhs;
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }));
                 BaseClass.add_function(GL::make_callable("end", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> void {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     *this_iter["parent"] = rhs;
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }));
                 BaseClass.add_function(GL::make_callable("++", [&BaseClass](GL::any::fast_any lhs) -> GL::any::fast_any {
                     auto& this_iter = lhs.cast<GL::dynamic_object&>();
                     if (auto* Class = GL::scope::GetClass(this_iter["parent"]->m_casted_type); Class) {
@@ -2493,7 +2493,7 @@ namespace GL {
             // vector<T>
             if (1) {
                 auto& BaseClass = this->make_class("vector");
-                BaseClass.template_types = { { GL::type_of<GL::template_parameter<0>>().name(), GL::type_of<GL::template_parameter<0>>() } };
+                BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") } };
 
                 if (1) {
                     // teach it how to create the generic map
@@ -2585,14 +2585,14 @@ namespace GL {
                         return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, param0_class->call(param0_class->this_type.name(), { rhs }) });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("push_back", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
                         return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, rhs - GL::type::Temporary });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Temporary } }, GL::type_of<size_t>()));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Temporary } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("size", [&BaseClass](GL::any::fast_any lhs) -> size_t {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
@@ -2606,28 +2606,28 @@ namespace GL {
                         return impl.at(rhs).fast() | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference));
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("at", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl.at(rhs).fast() | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();                        
                         return impl[rhs].fast() | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference));
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
                         return impl[rhs].fast() | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("grow_to_at_least", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> bool {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
@@ -2660,7 +2660,7 @@ namespace GL {
                     // auto* iter_class = GetClass(rhs.m_casted_type);
                     auto& iterator = rhs.cast<GL::dynamic_object&>();
                     return impl_class->call("[]", { lhs, iterator["position"]->fast() }) | GL::type::Reference;                    
-                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<GL::template_parameter<0>>() | GL::type::Reference));
+                }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::is_template::type<0>("T0") | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("++", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> void {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     // auto* iter_class = GetClass(rhs.m_casted_type);
@@ -2807,7 +2807,7 @@ namespace GL {
             // map<T0, T1>
             if (1) {
                 auto& BaseClass = this->make_class("map");
-                BaseClass.template_types = { { GL::type_of<GL::template_parameter<0>>().name(), GL::type_of<GL::template_parameter<0>>() }, { GL::type_of<GL::template_parameter<1>>().name(), GL::type_of<GL::template_parameter<1>>() } };
+                BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") }, { "T1", GL::is_template::type<1>("T1") } };
 
                 using impl_t = GL::epoch_map<std::pair<GL::any, GL::any>, size_t>;
                 if (1) {
@@ -2901,7 +2901,7 @@ namespace GL {
                         }                            
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Const | GL::type::Reference));
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }, GL::is_template::type<1>("T1") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [](GL::any::fast_any lhs, GL::any::fast_any rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();
@@ -2929,7 +2929,7 @@ namespace GL {
                         }).second.fast() + GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Reference));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }, GL::is_template::type<1>("T1") | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("size", [](GL::any::fast_any lhs) -> size_t {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();
@@ -2949,7 +2949,7 @@ namespace GL {
                         }
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Const | GL::type::Reference));
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }, GL::is_template::type<1>("T1") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("at", [](GL::any::fast_any lhs, GL::any::fast_any rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();                        
@@ -2962,7 +2962,7 @@ namespace GL {
                         }
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::template_parameter<1>>() | GL::type::Reference));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }, GL::is_template::type<1>("T1") | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("clear", [](GL::any::fast_any lhs) -> void {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();
@@ -2977,7 +2977,7 @@ namespace GL {
                         return impl.erase(hash);
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }));
                 BaseClass.add_function(GL::make_callable("erase", [](GL::any::fast_any lhs, GL::any::fast_any rhs, GL::any::fast_any copy) -> bool {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();
@@ -2990,7 +2990,7 @@ namespace GL {
                         return false;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                    }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference }, { "copy", GL::type_of<GL::template_parameter<1>>() | GL::type::Reference }}));
+                    }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference }, { "copy", GL::is_template::type<1>("T1") | GL::type::Reference }}));
                 BaseClass.add_function(GL::make_callable("insert", [](GL::any::fast_any lhs, GL::any::fast_any key, GL::any::fast_any obj) -> bool {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
@@ -3005,7 +3005,7 @@ namespace GL {
                         return out | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
-                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "key", GL::type_of<GL::template_parameter<0>>() | GL::type::Const | GL::type::Reference }, { "obj", GL::type_of<GL::template_parameter<1>>() | GL::type::Const | GL::type::Reference } }));
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "key", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference }, { "obj", GL::is_template::type<1>("T1") | GL::type::Const | GL::type::Reference } }));
 
                 BaseClass.add_function(GL::make_callable("begin", [&BaseClass](GL::any::fast_any lhs) -> GL::any::fast_any {
                     auto* impl_class = GetClass(lhs.m_casted_type);

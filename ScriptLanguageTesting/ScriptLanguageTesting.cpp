@@ -1059,11 +1059,11 @@ int main() {
                     }
 
                     auto& Shape = root.make_class("Shape"); {
-                        Shape.template_types = { { "Which", GL::type_of<GL::template_parameter<0>>()} };
+                        Shape.template_types = { { "Which", GL::is_template::type<0>("Which")} };
                         Shape.add_function(GL::make_callable("area", [&Shape](GL::any::fast_any lhs) -> GL::any::fast_any {
                             auto scope = Shape.GetRoot()->make_scope();
                             return scope.call("area", { lhs });
-                        }, GL::function_signature::Static, {}, { { "lhs", GL::type_of<GL::template_parameter<0>>() + GL::type::Const + GL::type::Reference }}, GL::type_of<GL::square_foot>()));
+                        }, GL::function_signature::Static, {}, { { "lhs", GL::is_template::type<0>("Which") + GL::type::Const + GL::type::Reference }}, GL::type_of<GL::square_foot>()));
                         Shape.initialize_basic_member_functions();
                     }
 
@@ -1110,9 +1110,9 @@ int main() {
                         // std::pair<T0,T1>
                         if (1) {
                             auto& BaseClass = std_ns.make_class("pair");
-                            BaseClass.template_types = { { "",GL::type_of<GL::template_parameter<0>>() }, { "",GL::type_of<GL::template_parameter<1>>() } };
-                            BaseClass.add_member_object("first", GL::type_of<GL::template_parameter<0>>());
-                            BaseClass.add_member_object("second", GL::type_of<GL::template_parameter<1>>());
+                            BaseClass.template_types = { { "T0",GL::is_template::type<0>("T0") }, { "T1",GL::is_template::type<1>("T1") } };
+                            BaseClass.add_member_object("first", GL::is_template::type<0>("T0"));
+                            BaseClass.add_member_object("second", GL::is_template::type<1>("T1"));
                             BaseClass.initialize_basic_member_functions();
                         }
                         EXPECT_EQ("::pair<int,int>::", dynamic_cast<GL::scope::impl::NamespaceScope*>(root.try_find_class(root.call("pair<int, int>", {}).m_casted_type)->this_m.scope)->path());
@@ -1343,7 +1343,7 @@ int main() {
                     // test<T0,T1>::make_pair() -> pair<T0,T1> // should automatically "figure out" that it should return a pair with the updated type information
                     if (1) {
                         auto& BaseClass = root.make_class("test");
-                        BaseClass.template_types = { { "T0", GL::type_of<GL::template_parameter<0>>() }, { "T1", GL::type_of<GL::template_parameter<1>>() } };
+                        BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") }, { "T1", GL::is_template::type<1>("T1") } };
                         BaseClass.add_member_object("my_pair", BaseClass.DetermineType("pair<T0,T1>"));
                         BaseClass.add_member_object("another_pair", BaseClass.DetermineType("pair<T0,vector<int>>"));
                         BaseClass.add_member_object("yet_another_pair", BaseClass.DetermineType("pair<T0,vector<T1>>"));
@@ -1533,10 +1533,10 @@ int main() {
                     // template classes
                     if (1) {
                         auto& Vector_class = program_root.make_class("Vector"); // this is the base class. 
-                        Vector_class.template_types = { { "", GL::type_of<GL::template_parameter<0>>()}}; // this action suddenly declares that it is available as a template base to exactly one parameter type.
+                        Vector_class.template_types = { { "T0", GL::is_template::type<0>("T0") }}; // this action suddenly declares that it is available as a template base to exactly one parameter type.
                         Vector_class.add_member_object("int_member", GL::type_of<int>(), GL::any::fast_any::instance(0)); // this type is always going to be an int, regardless of the template class type.
-                        Vector_class.add_member_object("dynamic_member", GL::type_of<GL::template_parameter<0>>()); // this type is dependant on the template class type.
-                        Vector_class.insert_object_here("static_member", []() -> GL::any::fast_any { GL::any::fast_any out; out.m_casted_type = GL::type_of<GL::template_parameter<0>>(); return out; }()); // this is a static class object with a dynamic type
+                        Vector_class.add_member_object("dynamic_member", GL::is_template::type<0>("T0")); // this type is dependant on the template class type.
+                        Vector_class.insert_object_here("static_member", []() -> GL::any::fast_any { GL::any::fast_any out; out.m_casted_type = GL::is_template::type<0>("T0"); return out; }()); // this is a static class object with a dynamic type
                         // note that any members should 100% be added BEFORE initialize_basic_member_functions is called. 
                         Vector_class.initialize_basic_member_functions();
 
