@@ -10,6 +10,10 @@
 
 // implimentatin of atomic type info and atomic any
 namespace GL {
+    class undefined {};
+    class template_t {};
+    template<int index> class template_parameter final : template_t {};
+
     class any;
     class var;
     class dynamic_object;
@@ -30,7 +34,7 @@ namespace GL {
     namespace impl {
         class cached_type {
         public:
-            constexpr static size_t MAGIC_MASK1 = 0xF000'0000'0000'0000;
+            constexpr static size_t MAGIC_MASK1 = 0xF800'0000'0000'0000;
             constexpr static size_t MAGIC_MASK2 = ~MAGIC_MASK1;
 
             GL::string // underlying name for this type
@@ -114,6 +118,7 @@ namespace GL {
             , Reference = 2 // tag as a reference to an object, e.g: std::string&
             , Temporary = 4 // tag as a temporary object, e.g: std::string&&
             , CppType = 8 // Distinguishes whether this is a scripted type or built-in C++ type. The look-up for the cached info changes depending on this value. 
+            , TemplateType = 16 // Distinguishes whether this is a template type. 
         };
 
     protected:
@@ -128,7 +133,7 @@ namespace GL {
             return out;
         };
         static size_t const& default_hash_code() {
-            static size_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | 0x8000000000000000 };
+            static size_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((size_t)CppType << 59ull) };
             return out;
         };
 
@@ -154,7 +159,7 @@ namespace GL {
         };
         // returns the qualifiers attached to this hash, shifted to easily compare with the Qualifiers enum directly. 
         size_t get_qualifiers() const {
-            return (hash & impl::cached_type::MAGIC_MASK1) >> 60;
+            return (hash & impl::cached_type::MAGIC_MASK1) >> 59ull;
         };
         // atomicly swaps this type with a new hash and qualifier(s)
         void set_qualifiers(size_t qualifiers) {
@@ -162,19 +167,21 @@ namespace GL {
                 qualifiers &= ~Const;
                 qualifiers &= ~Reference;
             }
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 60) & impl::cached_type::MAGIC_MASK1));
+            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 59ull) & impl::cached_type::MAGIC_MASK1));
         };
 
-        bool is_temp() const noexcept { return ((hash & 0x4000000000000000) > 0); };
-        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & 0x1000000000000000) > 0); };
-        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & 0x2000000000000000) > 0); };
-        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & 0x3000000000000000) == 0x3000000000000000); };
-        bool is_base() const noexcept {  return 0 == (hash & ~0x8FFFFFFFFFFFFFFF); };
+        bool is_temp() const noexcept { return ((hash & ((size_t)Temporary << 59ull)) > 0); };
+        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & ((size_t)Const << 59ull)) > 0); };
+        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & ((size_t)Reference << 59ull)) > 0); };
+        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & (((size_t)Const + (size_t)Reference) << 59ull)) == (((size_t)Const + (size_t)Reference) << 59ull)); };
+        bool is_base() const noexcept { 
+            return 0 == ((hash & impl::cached_type::MAGIC_MASK1) & ~((size_t)CppType << 59ull));
+        };
         bool is_void() const noexcept {
             thread_local size_t const h{ void_hash_code() };
             return get_base_hash() == h;
         };
-        bool is_cpp_type() const noexcept { return (hash & 0x8000000000000000) > 0; };
+        bool is_cpp_type() const noexcept { return (hash & ((size_t)CppType << 59ull)) > 0; };
         bool is_any() const noexcept;
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
@@ -200,7 +207,6 @@ namespace GL {
         friend bool operator>(const type& a, const type& b) noexcept { return a.hash > b.hash; };
         friend bool operator>=(const type& a, const type& b) noexcept { return a.hash >= b.hash; };
         bool operator&(size_t p_modifiers) const {
-            // return hash & ((p_modifiers << 60ull) & impl::cached_type::MAGIC_MASK1);
             return (get_qualifiers() & p_modifiers) > 0;
         };
         type operator|(size_t p_modifiers) const {
@@ -330,14 +336,17 @@ namespace GL {
     // get the type information for a c++ type.
     template<typename T> /*__forceinline*/__declspec(noinline) static GL::type type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*        
+
+        static constexpr size_t template_modifier{ std::is_base_of_v< template_t, BaseType> ? type::Qualifiers::TemplateType : 0 };
+
         if constexpr (std::is_rvalue_reference<T>::value) {
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((size_t)((size_t)type::Qualifiers::Temporary | (size_t)type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((size_t)((size_t)type::Qualifiers::Temporary | (size_t)type::Qualifiers::CppType | template_modifier) << 59ull) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
         else {
             static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
             static constexpr size_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (size_t)type::Qualifiers::CppType) << 60ull) & impl::cached_type::MAGIC_MASK1));
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (size_t)type::Qualifiers::CppType | template_modifier) << 59ull) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
     };
@@ -1711,13 +1720,11 @@ namespace GL {
         };
     };
 
-    class undefined {};
-    template<int index> class template_parameter {};    
     class is_template {
         static std::map<GL::type, int>& list_of_template_parameter() {
             static std::map<GL::type, int> out{ 
-                { GL::type_of<template_parameter<0>>(), 0}, { GL::type_of<template_parameter<1>>(), 1}, 
-                { GL::type_of<template_parameter<2>>(), 2}, { GL::type_of<template_parameter<3>>(), 3}, 
+                { GL::type_of<template_parameter<0>>(), 0}, { GL::type_of<template_parameter<1>>(), 1},
+                { GL::type_of<template_parameter<2>>(), 2}, { GL::type_of<template_parameter<3>>(), 3},
                 { GL::type_of<template_parameter<4>>(), 4}, { GL::type_of<template_parameter<5>>(), 5},
                 { GL::type_of<template_parameter<6>>(), 6}, { GL::type_of<template_parameter<7>>(), 7},
                 { GL::type_of<template_parameter<8>>(), 8}, { GL::type_of<template_parameter<9>>(), 9},
@@ -1729,9 +1736,14 @@ namespace GL {
         };
     public:
         static int index(GL::type const& what) {
-            auto& out = list_of_template_parameter();
-            if (auto f = out.find(what - GL::type::Reference - GL::type::Const - GL::type::Temporary), e = out.end(); f != e) {
-                return f->second;
+            if (what & GL::type::TemplateType) {
+                auto& out = list_of_template_parameter();
+                if (auto f = out.find(what - GL::type::Reference - GL::type::Const - GL::type::Temporary), e = out.end(); f != e) {
+                    return f->second;
+                }
+                else {
+                    return -1;
+                }
             }
             else {
                 return -1;

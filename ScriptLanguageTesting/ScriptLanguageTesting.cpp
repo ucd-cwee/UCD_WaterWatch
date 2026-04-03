@@ -1351,6 +1351,7 @@ int main() {
                             if (auto* Class = GL::scope::GetClass(rhs.m_casted_type)) {
                                 return Class->call("pair<T0,T1>", {});
                             }
+                            return GL::scope::GetCurrentCaller()->call("pair<T0,T1>");
                         }));
                         BaseClass.initialize_basic_member_functions();
 
@@ -1362,6 +1363,7 @@ int main() {
 
                         dynamic_cast<GL::scope::impl::ClassScope*>(root.try_find_class(Pair.m_casted_type)->this_m.scope)->DetermineType("pair<T0,T1>");
                         print(root.call<GL::string>("to_string", { root.call("make_pair", { Pair }) }));
+                        print(root.call("my_pair", { Pair }).m_casted_type.name()); // pair<{0}, {1}>
                     }
 
 

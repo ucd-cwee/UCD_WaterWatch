@@ -1534,12 +1534,12 @@ namespace GL {
                                 necessary = true;
                             }
                             if (auto template_index = GL::is_template::index(new_f->m_signature.returns_m); template_index >= 0) {
-                                new_f->m_signature.returns_m = new_class->template_types[template_index].second + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
+                                new_f->m_signature.returns_m = new_class->template_types[template_index].second + (new_f->m_signature.returns_m - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                 necessary = true;
                             }
                             for (auto& x : new_f->m_signature.argument_types_m) {
                                 if (auto template_index = GL::is_template::index(x); template_index >= 0) {
-                                    x = new_class->template_types[template_index].second + (x - GL::type::CppType).get_qualifiers();
+                                    x = new_class->template_types[template_index].second + (x - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                     necessary = true;
                                 }
                             }
@@ -1561,14 +1561,14 @@ namespace GL {
                         });
                         for (auto& member_o : this->member_objects) {
                             if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
-                                new_class->add_member_object(member_o.first, new_class->template_types[template_index].second);
+                                new_class->add_member_object(member_o.first, new_class->template_types[template_index].second - GL::type::TemplateType);
                             }
                         }
                         if (1) {
                             auto objects = this->objects_m.lock_shared();
                             for (auto& obj : *objects) {
                                 if (auto template_index = GL::is_template::index(obj.second.m_casted_type); template_index >= 0) {
-                                    auto this_static_obj_type = new_class->template_types[template_index].second + (obj.second.m_casted_type - GL::type::CppType).get_qualifiers();
+                                    auto this_static_obj_type = new_class->template_types[template_index].second + (obj.second.m_casted_type - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                     if (auto* BC = this->GetRoot()->try_find_class(this_static_obj_type); BC) {
                                         new_class->insert_object_here(obj.first, BC->this_m.scope->call(this_static_obj_type.name(), {}));
                                     }
