@@ -8544,7 +8544,7 @@ int main() {
 					print("YAY");
 				#endif
 			)";
-5		GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
+		GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
 		if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(Script)) {
 			preprocessor_result->GenerateExpandedCode(state);
 			auto expanded_script = state.GetFinalScript();
