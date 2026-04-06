@@ -13,11 +13,11 @@ namespace GL {
 	value::si_unit& value::get_si_unit(uint16_t hash) {
 		return si_unit_types[hash];
 	};
-	// const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
+	const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
  //   const GL::epoch_map< value::si_unit, uint16_t>&
-	//	value::all_known_unit_types() {
-	//	return si_unit_types;
-	//};
+		value::all_known_unit_types() {
+		return si_unit_types;
+	};
 
 #ifdef DECL_UNIT_LITERALS
 #define DerivedUnitType(type, category, abbreviation, Ratio) \

@@ -509,7 +509,45 @@ namespace GL {
         operator bool() const { return (bool)obj; };
     };
 };
+namespace GL {
+    namespace utilities {
+        /// <summary>
+        /// FinallyImpl implements a Finally. The template parameter F is the function type to be called when the finally is destructed. F must have the signature void().
+        /// </summary>
+        /// <typeparam name="F"></typeparam>
+        template <typename F> class FinallyImpl /*: public Finally*/ {
+        public:
+            inline FinallyImpl(const F& func_) : func(func_) {};
+            inline FinallyImpl(F&& func_) : func(std::move(func_)) {};
+            inline FinallyImpl(FinallyImpl<F>&& other) : func(std::move(other.func)) { other.valid = false; };
+            inline ~FinallyImpl() { if (valid) { func(); } };
+            void MakeInvalid() {
+                valid = false;
+            };
+        private:
+            FinallyImpl(const FinallyImpl<F>& other) = delete;
+            FinallyImpl<F>& operator=(const FinallyImpl<F>& other) = delete;
+            FinallyImpl<F>& operator=(FinallyImpl<F>&&) = delete;
+            F func;
+            bool valid = true;
+        };
 
+        template <typename F> __forceinline [[nodiscard]] FinallyImpl<F> make_finally(F&& f) { return FinallyImpl<F>(std::forward<F>(f)); };
+    };
+#define FINALLY_CONCAT_(a, b) a##b
+#define FINALLY_CONCAT(a, b) FINALLY_CONCAT_(a, b)
+    // defer() is a macro to defer execution of a statement until the surrounding scope is closed and is typically used to perform cleanup logic once a function returns.
+    // . .
+    // Note: Unlike golang's defer(), the defer statement is executed when the surrounding *scope* is closed, not necessarily the function.
+    // . .
+    // Example usage:
+    // . .
+    // void sayHelloWorld() {
+    //		defer(printf("world\n"));
+    //      printf("hello ");
+    // }
+#define defer(x) decltype(auto) FINALLY_CONCAT(defer_, __LINE__) { GL::utilities::make_finally([&] { x; }) }
 
+};
 
 

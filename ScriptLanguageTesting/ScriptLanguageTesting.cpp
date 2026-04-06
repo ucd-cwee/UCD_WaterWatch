@@ -65,6 +65,7 @@ public:
 };
 #define EXPECT_EQ(a, b) if ((a) != (b)){ catcher::CatchMe(__LINE__); }
 #define EXPECT_NE(a, b) if ((a) == (b)){ catcher::CatchMe(__LINE__); }
+#define ASSERT(a) if ((a) != true){ catcher::CatchMe(__LINE__); }
 #pragma endregion
 
 #include "../GpuProgramming/matrix.h" // Working implimentation of GPU-accelrated matrix
@@ -549,8 +550,8 @@ namespace GL {
 			};
 
 			virtual std::vector<std::reference_wrapper<AST_Node>> get_children() const = 0;
-			virtual void compile(GL::scope::impl::BasicScope& currentScope) const = 0;
-			virtual GL::any::fast_any eval(GL::scope::impl::BasicScope& currentScope) const = 0;
+			virtual void compile(GL::scope::impl::BasicScope* currentScope) const = 0;
+			virtual GL::any::fast_any eval(GL::scope::impl::BasicScope* currentScope) const = 0;
 			virtual GL::type return_type() const = 0;
 
 			/// Prints the contents of an AST node, including its children, recursively
@@ -596,8 +597,8 @@ namespace GL {
 					, filename(t_fname) {
 				}
 
-				explicit eval_error(const std::string& t_why) noexcept
-					: std::runtime_error(t_why)
+				explicit eval_error(const GL::string& t_why) noexcept
+					: std::runtime_error(t_why.to_string())
 					, reason(t_why) {
 				}
 
@@ -783,7 +784,7 @@ namespace GL {
 							auto const& m = *i;
 							retval = true;
 							to_split = m.str();
-							if (m.prefix().str().find(" ") != std::string::npos) {
+							if (m.prefix().str().find(" ") != GL::string::npos) {
 								return false;
 							}
 							else {
@@ -834,7 +835,7 @@ namespace GL {
 						}
 
 						// in-word replacement when explicitely requested
-						if (auto f_p = Where.word.find("##" + Find); f_p != std::string::npos) {
+						if (auto f_p = Where.word.find("##" + Find); f_p != GL::string::npos) {
 							auto NewReplaceWith = Replace(Where.word, "##" + Find, ReplaceWith);
 
 							if (Where.pos_start == 0) {
@@ -850,7 +851,7 @@ namespace GL {
 						}
 
 						// in-word string replacement when explicitely requested
-						if (auto f_p = Where.word.find("#" + Find); f_p != std::string::npos) {
+						if (auto f_p = Where.word.find("#" + Find); f_p != GL::string::npos) {
 							auto NewReplaceWith = Replace(Where.word, "#" + Find, "\"" + ExpandCode(ReplaceWith) + "\"");
 
 							if (Where.pos_start == 0) {
@@ -884,13 +885,13 @@ namespace GL {
 							// note, do not perform this work if we do not have to.
 							bool anyReason = false;
 							for (auto& macro_definition : macro_definitions) {
-								if (Code.find(macro_definition.first) != std::string::npos) {
+								if (Code.find(macro_definition.first) != GL::string::npos) {
 									anyReason = true;
 									break;
 								}
 							}
 							for (auto& macro_definition : macro_functions) {
-								if (Code.find(macro_definition.first) != std::string::npos) {
+								if (Code.find(macro_definition.first) != GL::string::npos) {
 									anyReason = true;
 									break;
 								}
@@ -2332,18 +2333,11 @@ namespace GL {
 				};
 
 				static GL::type GetClassType(AST_Node_Impl_Ptr const& r, GL::scope::impl::BasicScope* currentScope) {
-					GL::type out; // { user_type_shared<void>() }
+					GL::type out = GL::type_of<void>();
 					if (r) {
 						if (!detail::GetClassTypeImpl(r, out)) {
 							auto sv = GetText(r);
-							if (auto Class = currentScope->FindClass(sv)) {
-								if (auto ClassPtr = dynamic_cast<Scopes::ClassScope*>(Class->this_m->scope_ptr)) {
-									out = ClassPtr->ClassType;
-								}
-							}
-							else if (sv == "void") {
-								out = user_type_shared<void>();
-							}
+							return currentScope->DetermineType(sv);
 						}
 					}
 					return out;
@@ -2355,13 +2349,11 @@ namespace GL {
 					return out;
 				};
 				static GL::any::fast_any const_var(GL::any::fast_any const& rhs) {
-					GL::any::fast_any out = rhs;
-					out.SetFlag(GL::any::fast_anyData::Flag::constant, true);
-					return out;
+					return rhs | GL::type::Const;
 				};
 
 				struct AST_Node_Impl : public AST_Node {
-					AST_Node_Impl(std::string t_ast_node_text,
+					AST_Node_Impl(GL::string t_ast_node_text,
 						Engine::AST_Node_Type t_id,
 						Engine::Parse_Location t_loc,
 						std::vector<AST_Node_Impl_Ptr> t_children = std::vector<AST_Node_Impl_Ptr>())
@@ -2382,28 +2374,24 @@ namespace GL {
 
 					GL::any::fast_any eval(GL::scope::impl::BasicScope* currentScope) const override final {
 						thread_local GL::stopwatch sw;
-						sw.Start();
 
 						InterlockedIncrementAcquire64(&num_evals);
 						defer(
-							InterlockedAddAcquire64(&time_spent_during_eval, sw.Stop());
+							const_cast<GL::second&>(time_spent_during_eval) += GL::second(sw.stop());
 						);
 
 						try {
 							return eval_internal(currentScope);
 						}
-						catch (exception::eval_error& ee) {
-							// ee.call_stack.push_back(*this);
+						catch (exception::eval_error& ee) {							
 							throw ee;
 						}
 						catch (std::runtime_error& ee) {
-							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
-							// e.call_stack.push_back(*this);
+							auto e = exception::eval_error(std::string(ee.what()), this->location.start, "Compiled C++ Function");
 							throw e;
 						}
 						catch (std::exception& ee) {
-							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
-							// e.call_stack.push_back(*this);
+							auto e = exception::eval_error(std::string(ee.what()), this->location.start, "Compiled C++ Function");
 							throw e;
 						}
 					}
@@ -2416,13 +2404,11 @@ namespace GL {
 							throw ee;
 						}
 						catch (std::runtime_error& ee) {
-							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
-							// e.call_stack.push_back(*this);
+							auto e = exception::eval_error(std::string(ee.what()), this->location.start, "Compiled C++ Function");
 							throw e;
 						}
 						catch (std::exception& ee) {
-							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
-							// e.call_stack.push_back(*this);
+							auto e = exception::eval_error(std::string(ee.what()), this->location.start, "Compiled C++ Function");
 							throw e;
 						}
 					};
@@ -2431,33 +2417,30 @@ namespace GL {
 							return return_type_internal();
 						}
 						catch (exception::eval_error& ee) {
-							// ee.call_stack.push_back(*this);
 							throw ee;
 						}
 						catch (std::runtime_error& ee) {
-							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
-							// e.call_stack.push_back(*this);
+							auto e = exception::eval_error(std::string(ee.what()), this->location.start, "Compiled C++ Function");
 							throw e;
 						}
 						catch (std::exception& ee) {
-							auto e = exception::eval_error(ee.what(), this->location.start, "Compiled C++ Function");
-							// e.call_stack.push_back(*this);
+							auto e = exception::eval_error(std::string(ee.what()), this->location.start, "Compiled C++ Function");
 							throw e;
 						}
 					};
 
-					Units::second TimeSpent_Total() const override {
-						Units::second out = Units::nanosecond(time_spent_during_eval);
+					GL::second TimeSpent_Total() const override {
+						GL::second out = time_spent_during_eval;
 						for (auto& child : children) {
 							out += child->TimeSpent_Total();
 						}
 						return out;
 					};
-					Units::second TimeSpent_Self() const override {
-						return Units::nanosecond(time_spent_during_eval) / std::max<long long>(1, num_evals);
+					GL::second TimeSpent_Self() const override {
+						return time_spent_during_eval / std::max<float>(1, num_evals);
 					};
 
-					mutable __int64 time_spent_during_eval;
+					GL::second time_spent_during_eval;
 					mutable __int64 num_evals;
 					std::vector<AST_Node_Impl_Ptr> children;
 
@@ -2470,14 +2453,14 @@ namespace GL {
 						for (auto& child : children) child->compile(currentScope);
 					};
 					virtual GL::type return_type_internal() const {
-						return user_type_shared<void>();
+						return GL::type_of<void>();
 					};
 				};
 				class AST_Nodes {
 				public:
 					// wrapper for an entire script
 					struct File_AST_Node final : AST_Node_Impl {
-						File_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						File_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::File, std::move(t_loc), std::move(t_children))
 						{}
 
@@ -2509,7 +2492,7 @@ namespace GL {
 					};
 					// empty lines, comments, etc.
 					struct Noop_AST_Node final : AST_Node_Impl {
-						Noop_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc)
+						Noop_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc)
 							: AST_Node_Impl(t_ast_node_text, Engine::AST_Node_Type::Noop, t_loc)
 						{};
 
@@ -2523,7 +2506,7 @@ namespace GL {
 					};
 					// return ARG
 					struct Return_AST_Node final : AST_Node_Impl {
-						Return_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Return_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Return, std::move(t_loc), std::move(t_children))
 						{}
 
@@ -2533,52 +2516,44 @@ namespace GL {
 							}
 							else if (this->children.size() == 1) {
 								GL::any::fast_any out{ this->children[0]->eval(currentScope) };
-								if (out.IsEmpty()) // cannot return void						
-									throw exception::eval_error("Cannot return void from a return statement.", this->location.start);
-								else
-									throw detail::Return_Value{ out };
+								if (out.empty()) throw exception::eval_error("Cannot return void from a return statement.", this->location.start);
+								else throw detail::Return_Value{ out };
 							}
 							else {
-								Vector<Var> vec;
-								for (const auto& child : this->children) {
-									vec.push_back(Var(child->eval(currentScope)));
-								}
+								auto vec = currentScope->call("::vector<::var>");
+								for (const auto& child : this->children) currentScope->call("push_back", { vec, child->eval(currentScope) });								
 								throw detail::Return_Value{ vec };
 							}
 						}
 					};
 					// built-in constants that could be understood by the compiler, such as integers, floating-point values, strings, vectors, etc.
 					struct Constant_AST_Node final : public AST_Node_Impl {
-						Constant_AST_Node(std::string t_ast_node_text, Engine::Parse_Location t_loc, GL::any::fast_any t_value)
+						Constant_AST_Node(GL::string t_ast_node_text, Engine::Parse_Location t_loc, GL::any::fast_any t_value)
 							: AST_Node_Impl(t_ast_node_text, Engine::AST_Node_Type::Constant, std::move(t_loc))
-							, m_value(std::move(t_value))
-						{
-							m_value.SetFlag(AnyData::Flag::constant, true);
-						}
+							, m_value(std::move(t_value) | GL::type::Const)
+						{}
 
-						explicit Constant_AST_Node(Any t_value)
+						explicit Constant_AST_Node(GL::any::fast_any t_value)
 							: AST_Node_Impl("", Engine::AST_Node_Type::Constant, Engine::Parse_Location{ Engine::Position{}, Engine::Position{} })
-							, m_value(std::move(t_value))
-						{
-							m_value.SetFlag(AnyData::Flag::constant, true);
-						}
+							, m_value(std::move(t_value) | GL::type::Const)
+						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope*) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope*) const override {
 							return m_value;
 						}
 
-						Any m_value;
+						GL::any::fast_any m_value;
 					};
 
 					// intended for basic operations like "+"
 					struct Binary_Operator_AST_Node : AST_Node_Impl {
-						Binary_Operator_AST_Node(GL::scope::impl::BasicScope* currentScope, const std::string& t_oper, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Binary_Operator_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_oper, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(t_oper, Engine::AST_Node_Type::Binary, std::move(t_loc), std::move(t_children))
-							, m_oper(Engine::Operators::to_operator(t_oper))
+							, m_oper(Engine::Operators::to_operator(t_oper.c_str()))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							return currentScope->Call(this->text, { this->children[0]->eval(currentScope), this->children[1]->eval(currentScope) });
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return currentScope->call(this->text, { this->children[0]->eval(currentScope), this->children[1]->eval(currentScope) });
 						};
 
 					private:
@@ -2594,7 +2569,7 @@ namespace GL {
 					};
 					// keyname node, could be a function name, could be a variable name, etc.
 					struct Id_AST_Node : AST_Node_Impl {
-						Id_AST_Node(GL::scope::impl::BasicScope* currentScope, const std::string& t_ast_node_text, Engine::Parse_Location t_loc)
+						Id_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_ast_node_text, Engine::Parse_Location t_loc)
 							: AST_Node_Impl(t_ast_node_text, Engine::AST_Node_Type::Id, std::move(t_loc))
 						{}
 
@@ -2603,70 +2578,66 @@ namespace GL {
 					};
 					// 
 					struct FunctionName_AST_Node final : Id_AST_Node {
-						FunctionName_AST_Node(GL::scope::impl::BasicScope* currentScope, const std::string& t_ast_node_text, Engine::Parse_Location t_loc)
+						FunctionName_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_ast_node_text, Engine::Parse_Location t_loc)
 							: Id_AST_Node(currentScope, t_ast_node_text, std::move(t_loc))
 						{
 							type = IdType::Function;
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							if (auto obj = currentScope->FindObject(this->text)) {
-								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							if (auto obj = currentScope->find_object(this->text)) {
 								return obj;
 							}
-							throw exception::eval_error(ToString("Can not find object: ") + ToString(this->text), this->location.start);
+							throw exception::eval_error("Can not find object: " + this->text, this->location.start);
 						}
 					};
 					// 
 					struct VariableName_AST_Node final : Id_AST_Node {
-						VariableName_AST_Node(GL::scope::impl::BasicScope* currentScope, const std::string& t_ast_node_text, Engine::Parse_Location t_loc)
+						VariableName_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_ast_node_text, Engine::Parse_Location t_loc)
 							: Id_AST_Node(currentScope, t_ast_node_text, std::move(t_loc))
 						{
 							type = IdType::Variable;
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							if (auto obj = currentScope->FindObject(this->text)) {
-								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							if (auto obj = currentScope->find_object(this->text)) {
 								return obj;
 							}
-							throw exception::eval_error(ToString("Can not find object: ") + ToString(this->text), this->location.start);
+							throw exception::eval_error("Can not find object: " + this->text, this->location.start);
 						}
 					};
 					// 
 					struct ClassName_AST_Node final : Id_AST_Node {
-						ClassName_AST_Node(GL::scope::impl::BasicScope* currentScope, const std::string& t_ast_node_text, Engine::Parse_Location t_loc)
+						ClassName_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_ast_node_text, Engine::Parse_Location t_loc)
 							: Id_AST_Node(currentScope, t_ast_node_text, std::move(t_loc))
 						{
 							type = IdType::Class;
+							TypeInfo = currentScope->DetermineType(t_ast_node_text);
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							if (auto obj = currentScope->FindObject(this->text)) {
-								// const_cast<Id_AST_Node*>(this)->return_type = obj->Type();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							if (auto obj = currentScope->find_object(this->text)) {
 								return obj;
 							}
-							throw exception::eval_error(ToString("Can not find object: ") + ToString(this->text), this->location.start);
+							throw exception::eval_error("Can not find object: " + this->text, this->location.start);
 						}
 
 					public:
-						std::weak_ptr<GoodLang::Type_Info> TypeInfo;
+						GL::type TypeInfo;
 					};
 					//
 					struct Arg_AST_Node final : AST_Node_Impl {
-						Arg_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Arg_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Arg, std::move(t_loc), std::move(t_children))
 						{};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							return this->children.back()->eval(currentScope);
 						}
-
-
 					};
 					//
 					struct Arg_List_AST_Node final : AST_Node_Impl {
-						Arg_List_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Arg_List_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Arg_List, std::move(t_loc), std::move(t_children))
 						{};
 
@@ -2692,10 +2663,10 @@ namespace GL {
 						}
 						static GL::type get_arg_type(const AST_Node_Impl& t_node) {
 							if (t_node.children.empty()) {
-								return user_type_shared<Any>();
+								return GL::type_of<GL::any::fast_any>();
 							}
 							else if (t_node.children.size() == 1) {
-								return user_type_shared<Any>();
+								return GL::type_of<GL::any::fast_any>();
 							}
 							else if (t_node.children[0]->identifier == Engine::AST_Node_Type::Id) {
 								if (auto ptr = std::dynamic_pointer_cast<AST_Nodes::Id_AST_Node>(t_node.children[0])) {
@@ -2706,12 +2677,12 @@ namespace GL {
 									}
 								}
 								if (GetText(t_node.children[0]) == "void") {
-									return user_type_shared<void>();
+									return GL::type_of<void>();
 								}
-								return user_type_shared<Any>();
+								return GL::type_of<GL::any::fast_any>();
 							}
 							else {
-								return user_type_shared<Any>();
+								return GL::type_of<GL::any::fast_any>();
 							}
 						}
 						static std::vector<GL::type> get_arg_types(const AST_Node_Impl& t_node) {
@@ -2722,7 +2693,7 @@ namespace GL {
 							return retval;
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							// evaluate all of the children, return the result of the last child
 							int numChildren = this->children.size();
 							if (numChildren > 0) {
@@ -2732,158 +2703,70 @@ namespace GL {
 								return this->children.back()->eval(currentScope);
 							}
 							else {
-								return Any();
+								return {};
 							}
 						}
 					};
 					// ID(ARG_LIST)
 					struct Fun_Call_AST_Node : AST_Node_Impl {
-						Fun_Call_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Fun_Call_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Fun_Call, std::move(t_loc), std::move(t_children))
 						{
 							function_name = GetText(this->children[0]);
 						};
 
-						template <bool returnsValue>
-						Any do_eval_internal(GL::scope::impl::BasicScope* currentScope) const {
-							std::vector<Any> params{};
-
+						GL::any::fast_any do_eval_internal(GL::scope::impl::BasicScope* currentScope) const {
+							std::vector<GL::any::fast_any> params;
 							params.reserve(this->children[1]->children.size());
 							for (const AST_Node_Impl_Ptr& child : this->children[1]->children) {
 								params.push_back(child->eval(currentScope));
 							}
-							ParamTypes Params{ params };
-
-							if (auto func = Function.lock()) {
-								if (
-									func->NumArguments() == 2
-									&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scopes::BasicScope>())
-									&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
-									) {
-									if constexpr (returnsValue) {
-										return func->operator()({ currentScope, params });
-									}
-									else {
-										(void)func->operator()({ currentScope, params });
-										return {};
-									}
-								}
-								else {
-									if constexpr (returnsValue)
-										return currentScope->Call(func, params);
-									else {
-										(void)currentScope->Call(func, params);
-										return {};
-									}
-								}
-							}
-
-							if (1) {
-								auto tree = currentScope->GetRoot()->GetTypeConverterTree();
-								std::shared_ptr<Any> obj;
-								Proxy_Function found_function;
-
-								if (currentScope->FindObjectOrFunction(function_name, Params, obj, found_function, &*tree)) {
-									if (obj) {
-										if (Proxy_Function func = obj->cast<Proxy_Function>()) {
-											if (
-												func->NumArguments() == 2
-												&& GoodLang::GetHash(func->Argument(0)) == GoodLang::GetHash(user_type_shared<Scopes::BasicScope>())
-												&& GoodLang::GetHash(func->Argument(1)) == GoodLang::GetHash(user_type_shared<std::vector<Any>>())
-												) {
-												if constexpr (returnsValue) {
-													return func->operator()({ currentScope, params });
-												}
-												else {
-													(void)func->operator()({ currentScope, params });
-													return {};
-												}
-											}
-											else {
-												if constexpr (returnsValue)
-													return currentScope->Call(func, params);
-												else {
-													(void)currentScope->Call(func, params);
-													return {};
-												}
-											}
-										}
-										if (1) {
-											std::vector<Any> params2{ obj };
-											for (auto& x : params) params2.push_back(x);
-
-											if (auto func = currentScope->FindFunction("()", ParamTypes(params2))) {
-												if constexpr (returnsValue) {
-													return currentScope->Call(func, params2);
-												}
-												else {
-													currentScope->Call(func, params2);
-													return {};
-												}
-											}
-										}
-									}
-									else if (found_function) {
-										if constexpr (returnsValue)
-											return currentScope->Call(found_function, params);
-										else {
-											(void)currentScope->Call(found_function, params);
-											return {};
-										}
-									}
-								}
-								throw exception::eval_error("Can not find requested object or function: " + function_name, this->location.start);
-							}
+							return currentScope->call(function_name, params);
 						};
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							return do_eval_internal<true>(currentScope);
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return do_eval_internal(currentScope);
 						};
-						std::string function_name;
-						std::weak_ptr<details::Proxy_Function_Base> Function;
+						GL::string function_name;
 					};
+					// ID(ARG_LIST), but we know for a fact that the return value will go unused. 
 					struct Unused_Return_Fun_Call_AST_Node final : Fun_Call_AST_Node {
-						Unused_Return_Fun_Call_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Unused_Return_Fun_Call_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: Fun_Call_AST_Node(currentScope, std::move(t_ast_node_text), std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							return this->template do_eval_internal<false>(currentScope);
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return this->do_eval_internal(currentScope);
 						};
 					};
 					// 
 					struct Equation_AST_Node final : AST_Node_Impl {
-						Equation_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Equation_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Equation, std::move(t_loc), std::move(t_children))
-							, m_oper(Engine::Operators::to_operator(this->text))
+							, m_oper(Engine::Operators::to_operator(text.c_str()))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							if (m_oper == Engine::Operators::Opers::assign_if_null || this->text == "?=") {
-								Any lhs = this->children[0]->eval(currentScope);
-								if (lhs.IsTypeOf<void>()) {
-									return currentScope->Call(":=", { lhs, this->children[1]->eval(currentScope) });
+								auto lhs = this->children[0]->eval(currentScope);
+								if (lhs.m_casted_type.is_void()) {
+									return currentScope->call(":=", { lhs, this->children[1]->eval(currentScope) });
 								}
 								else {
 									return lhs;
 								}
 							}
 							else {
-								Any lhs = this->children[0]->eval(currentScope);
-								Any rhs = this->children[1]->eval(currentScope);
+								auto lhs = this->children[0]->eval(currentScope);
+								auto rhs = this->children[1]->eval(currentScope);
 
 								if (m_oper == Engine::Operators::Opers::assign) {
-									return currentScope->Call("=", { lhs, rhs });
+									return currentScope->call("=", { lhs, rhs });
 								}
 								else if (this->text == ":=") {
-									return currentScope->Call(":=", { lhs, rhs });
+									return currentScope->call(":=", { lhs, rhs });
 								}
 								else {
-									try {
-										return currentScope->Call(this->text, { lhs, rhs });
-									}
-									catch (GoodLang::exception::not_found_error const& e) {
-										throw exception::eval_error(ToString("Unable to find appropriate'") + ToString(this->text) + "' operator.", this->location.start);
-									}
+									return currentScope->call(this->text, { lhs, rhs });
 								}
 							}
 						}
@@ -2894,23 +2777,23 @@ namespace GL {
 					};
 					// &&
 					struct Logical_And_AST_Node final : AST_Node_Impl {
-						Logical_And_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Logical_And_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Logical_And, std::move(t_loc), std::move(t_children)) {
-							assert(this->children.size() == 2);
+							EXPECT_EQ(this->children.size(), 2);
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							return currentScope->Cast<bool>(this->children[0]->eval(currentScope)) && currentScope->Cast<bool>(this->children[1]->eval(currentScope));
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return GL::any::fast_any::instance(currentScope->cast<bool>(this->children[0]->eval(currentScope)) && currentScope->cast<bool>(this->children[1]->eval(currentScope)));
 						}
 					};
 					// ||
 					struct Logical_Or_AST_Node final : AST_Node_Impl {
-						Logical_Or_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Logical_Or_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Logical_Or, std::move(t_loc), std::move(t_children)) {
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							return currentScope->Cast<bool>(this->children[0]->eval(currentScope)) || currentScope->Cast<bool>(this->children[1]->eval(currentScope));
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return GL::any::fast_any::instance(currentScope->cast<bool>(this->children[0]->eval(currentScope)) || currentScope->cast<bool>(this->children[1]->eval(currentScope)));
 						}
 					};
 
@@ -2918,131 +2801,99 @@ namespace GL {
 					var x;
 					*/
 					struct Var_Decl_AST_Node final : AST_Node_Impl {
-						Var_Decl_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Var_Decl_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Var_Decl, std::move(t_loc), std::move(t_children))
 						{}
 
 						/*! Empty variable assignment:
 						  var j;
 						*/
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							const auto& idname = this->children[0]->text;
-							currentScope->EmplaceObject(idname, std::make_shared<Any>(Var()));
-							return currentScope->FindObject(idname);
+							currentScope->insert_object_here(idname, GL::var());
+							if (auto* p = currentScope->find_object_here(idname)) return p->fast();
+							return {};
 						}
 					};
 					/*
 					double x;
 					*/
 					struct Assign_Retroactively_AST_Node final : AST_Node_Impl {
-						Assign_Retroactively_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Assign_Retroactively_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Assign_Retroactively, std::move(t_loc), std::move(t_children))
 						{
-							assert(this->children.size() >= 1);
-							idname = std::string(GetText(this->children[1]));// ->text; // e.g. x, y, z
+							ASSERT(this->children.size() >= 1);
+							idname = GL::string(GetText(this->children[1]));// ->text; // e.g. x, y, z
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							Any defaultVal;
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							GL::any::fast_any defaultVal;
 							if (this->children.size() == 3) {
 								defaultVal = this->children[2]->eval(currentScope);
 							}
 
 							if (currentScope->is_class()) {
-								if (auto ClassPtr = std::dynamic_pointer_cast<Scopes::ClassScope>(currentScope)) {
-									GL::type out;
-									if (detail::GetClassTypeImpl(this->children[0], out)) {
-										if (out.lock()->is_ref()) {
-											if (defaultVal.IsEmpty()) {
-												ClassPtr->DeclareMemberObject(idname, user_type_shared<Var>(), std::make_shared<Any>(Var(this->children[0]->eval(currentScope))));
-												return {};
-											}
-											else {
-												auto newVal = std::make_shared<Any>(Var(this->children[0]->eval(currentScope)));
-												currentScope->Call(":=", { newVal, defaultVal });
-												ClassPtr->DeclareMemberObject(idname, user_type_shared<Var>(), newVal);
-												return {};
-											}
+								if (auto* ClassPtr = dynamic_cast<scope::impl::ClassScope*>(currentScope)) {
+									ClassPtr->add_member_object(idname, currentScope->DetermineType(this->children[0]->text), defaultVal);
+									return ClassPtr->find_object_here(idname)->fast();
+								}
+							}
+							if (currentScope->is_namespace()) {
+								if (auto* ClassPtr = dynamic_cast<scope::impl::NamespaceScope*>(currentScope)) {
+									if (auto* BC = currentScope->GetRoot()->try_find_class(currentScope->DetermineType(this->children[0]->text)); BC && BC->this_m.is_class()) {
+										auto& Class = *dynamic_cast<GL::scope::impl::ClassScope*>(BC->this_m.scope);
+										if (!defaultVal.empty()) {
+											ClassPtr->insert_object_here(idname, Class.cast(defaultVal, Class.this_type));
 										}
 										else {
-											if (defaultVal.IsEmpty()) {
-												ClassPtr->DeclareMemberObject(idname, out, std::make_shared<Any>(this->children[0]->eval(currentScope)));
-												return {};
-											}
-											else {
-												auto newVal = std::make_shared<Any>(this->children[0]->eval(currentScope));
-												currentScope->Call(":=", { newVal, defaultVal });
-												ClassPtr->DeclareMemberObject(idname, user_type_shared<Var>(), newVal);
-												return {};
-											}
+											ClassPtr->insert_object_here(idname, Class.call(Class.this_type.name()));
 										}
 									}
-								}
-							}
-
-							if (1) {
-								bool refObj = false;
-								GL::type out;
-								if (detail::GetClassTypeImpl(this->children[0], out)) {
-									if (out.lock()->is_ref()) {
-										// user wanted a reference object.
-										currentScope->EmplaceObject(idname, std::make_shared<Any>(Var(this->children[0]->eval(currentScope))));
-										refObj = true;
+									else {
+										if (!defaultVal.empty()) {
+											ClassPtr->insert_object_here(idname, currentScope->cast(defaultVal, currentScope->DetermineType(this->children[0]->text)));
+										}
+										else {
+											ClassPtr->insert_object_here(idname, currentScope->call(currentScope->DetermineType(this->children[0]->text).name()));
+										}
 									}
-								}
-
-								// child 0 = TypeID()
-								// child 1 = Id()
-								if (!refObj) currentScope->EmplaceObject(idname, std::make_shared<Any>(this->children[0]->eval(currentScope)));
-								if (!defaultVal.IsEmpty()) {
-									std::shared_ptr<Any> thisObj = currentScope->FindObject(idname);
-									(void)currentScope->Call(":=", { thisObj, defaultVal });
-									return thisObj;
-								}
-								else {
-									return currentScope->FindObject(idname);
+									return ClassPtr->find_object_here(idname)->fast();
 								}
 							}
+							return currentScope->find_object(idname);
 						};
 
-						// std::string type_name;
-						std::string idname;
+						// GL::string type_name;
+						GL::string idname;
 					};
 					/*
 					var x = double();
 					*/
 					struct Assign_Decl_AST_Node final : AST_Node_Impl {
-						Assign_Decl_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Assign_Decl_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children))
 						{};
 
 						/*! Non-Empty variable assignment:
 						  var j = 100;
 						*/
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							const auto& idname = this->children[0]->text;
-							Any value = this->children[1]->eval(currentScope);
-							if (value.GetFlag(AnyData::Flag::constant)) {
-								// clone it
-								currentScope->EmplaceObject(idname, std::make_shared<Any>(value.Type().lock()->GetCopyConstructor()(value)));
-							}
-							else {
-								// return as-is
-								currentScope->EmplaceObject(idname, std::make_shared<Any>(value));
-							}
-							return currentScope->FindObject(idname);
+							GL::any::fast_any value = this->children[1]->eval(currentScope);
+							currentScope->insert_object_here(idname, value);
+							return value;
 						}
 					};
 					// ++x
 					struct Prefix_AST_Node final : AST_Node_Impl {
-						Prefix_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Prefix_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Prefix, std::move(t_loc), std::move(t_children))
-							, m_oper(Engine::Operators::to_operator(this->text, true))
+							, m_oper(Engine::Operators::to_operator(this->text.c_str(), true))
 						{}
 
 						// ++x;
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							return currentScope->Call(this->text, { this->children[0]->eval(currentScope) }); // we currently do not attempt to validate -- just process the request and see what lands. 
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return currentScope->call(this->text, { this->children[0]->eval(currentScope) }); // we currently do not attempt to validate -- just process the request and see what lands. 
 						};
 
 					private:
@@ -3050,45 +2901,35 @@ namespace GL {
 					};
 					// x++
 					struct Postfix_AST_Node final : AST_Node_Impl {
-						Postfix_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Postfix_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Postfix, std::move(t_loc), std::move(t_children))
-							, m_oper(Engine::Operators::to_operator(this->text, true)) {
+							, m_oper(Engine::Operators::to_operator(this->text.c_str(), true)) {
 						}
 
 						// x++; 
 						// depending on the context, is either specifying the type (e.g. _ft, ull) or is modifying the underlying value (++, --)
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							Any var(this->children[0]->eval(currentScope)); // an int, float, etc.                 
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto var(this->children[0]->eval(currentScope)); // an int, float, etc.                 
 
 							// the type is known. Short-circuit and get out fast. 
 							if (m_oper == Engine::Operators::Opers::pre_increment) {
-								auto out = var.Type().lock()->GetCopyConstructor()(var);
-								(void)currentScope->Call("++", { var });
-								return out;
+								auto copied = currentScope->cast(var, var.m_casted_type - GL::type::Reference - GL::type::Const);
+								(void)currentScope->call("++", { var });
+								return copied;
 							}
 							else if (m_oper == Engine::Operators::Opers::pre_decrement) {
-								auto out = var.Type().lock()->GetCopyConstructor()(var);
-								(void)currentScope->Call("--", { var });
-								return out;
+								auto copied = currentScope->cast(var, var.m_casted_type - GL::type::Reference - GL::type::Const);
+								(void)currentScope->call("--", { var });
+								return copied;
 							}
 							else if (m_oper == Engine::Operators::Opers::invalid) {
 								if (this->text != "" && this->text.length() >= 1) {
-									for (auto& unit_type : Units::value::GetValueTypes()) {
-										auto abbreviation = unit_type.second.first.UnitAbbreviation();
-										if (this->text == abbreviation) {
-											if (auto Class = currentScope->FindClass(unit_type.first.lock())) {
-												if (auto ClassPtr = Class->this_m->scope_ptr) {
-													return ClassPtr->Call(Class->this_m->scope_name, { var });
-												}
-												else {
-													auto out = Any(unit_type.second);
-													currentScope->Call("=", { out, var });
-													return out;
-												}
-											}
-											else {
-												auto out = Any(unit_type.second);
-												currentScope->Call("=", { out, var });
+									for (auto& si_unit_type : GL::value::all_known_unit_types()) {
+										for (auto& unit_type : si_unit_type.second.implimented_units) {
+											auto& abbreviation = unit_type.second.abbreviation;
+											if (this->text == abbreviation) {
+												auto out = GL::any::fast_any::instance(GL::value(unit_type.second));
+												(void)currentScope->call("=", { out, var });
 												return out;
 											}
 										}
@@ -3105,41 +2946,40 @@ namespace GL {
 					};
 					// if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node	
 					struct If_AST_Node final : AST_Node_Impl {
-						If_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						If_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::If, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							// create a temporary scope for temporary variables made in the CONDITION
 							if (1) {
-								auto newScope = currentScope->MakeChildScope();
+								auto newScope = currentScope->make_scope();
 								// evaluate the CONDITION statement within this new scope -- note that the new scope only applies if true! 
-								if (newScope->Cast<bool>(this->children[0]->eval(newScope))) {
-									return this->children[1]->eval(newScope);
+								if (newScope.cast<bool>(this->children[0]->eval(&newScope))) {
+									return this->children[1]->eval(&newScope);
 								}
 							}
 
 							// if an else-statement is available...
 							if (this->children.size() >= 3) {
-								auto newScope = currentScope->MakeChildScope();
-
-								return this->children[2]->eval(newScope);
+								auto newScope = currentScope->make_scope();
+								return this->children[2]->eval(&newScope);
 							}
-							else return Any(); // returns void
+							else return {}; // returns void
 						}
 					};
 					// while (Scopeless_Block_AST_Node) Block_AST_Node
 					struct While_AST_Node final : AST_Node_Impl {
-						While_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						While_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::While, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							while (currentScope->Cast<bool>(this->children[0]->eval(currentScope))) {
-								auto newScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							while (currentScope->cast<bool>(this->children[0]->eval(currentScope))) {
+								auto newScope = currentScope->make_scope();
 
 								try {
-									(void)this->children[1]->eval(newScope);
+									(void)this->children[1]->eval(&newScope);
 								}
 								catch (detail::Break_Loop&) {
 									break;
@@ -3151,33 +2991,33 @@ namespace GL {
 					};
 					// for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK
 					struct For_AST_Node final : AST_Node_Impl {
-						For_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						For_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::For, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto forScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto forScope = currentScope->make_scope();
 							{
 								// INIT_BLOCK
 								if (this->children[0]->identifier != Engine::AST_Node_Type::Noop) {
-									this->children[0]->eval(forScope); // may include declaring a variable, or nothing at all
+									this->children[0]->eval(&forScope); // may include declaring a variable, or nothing at all
 								}
 
 								// CONDITION_BLOCK
 								while (this->children[1]->identifier == Engine::AST_Node_Type::Noop
 									||
-									forScope->Cast<bool>(this->children[1]->eval(forScope))
+									forScope.cast<bool>(this->children[1]->eval(&forScope))
 									) {
-									auto newScope = forScope->MakeChildScope();
+									auto newScope = forScope.make_scope();
 
 									try {
-										(void)this->children[3]->eval(newScope);
+										(void)this->children[3]->eval(&newScope);
 									}
 									catch (detail::Continue_Loop&) {}
 									catch (detail::Break_Loop&) { break; }
 
 									// PROGRESS_BLOCK
-									this->children[2]->eval(forScope);
+									this->children[2]->eval(&forScope);
 								}
 							}
 							return {};
@@ -3185,55 +3025,31 @@ namespace GL {
 					};
 					// for (range_declaration : range_expression) loop_statement
 					struct Ranged_For_AST_Node final : AST_Node_Impl {
-						Ranged_For_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Ranged_For_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Ranged_For, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							Any out;
-							auto forScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							GL::any::fast_any out;
+							auto forScope = currentScope->make_scope();
 
-							Any item_decl = this->children[0]->eval(forScope); // var x;
-							Any range = this->children[1]->eval(forScope); // 0..100 or [0,1,2,3] or vectorObjName etc;
-
+							GL::any::fast_any item_decl = this->children[0]->eval(&forScope); // var x;
+							GL::any::fast_any range = this->children[1]->eval(&forScope); // 0..100 or [0,1,2,3] or vectorObjName etc;
 							try {
-								auto begin_func = forScope->FindFunction("begin", ParamTypes({ range }));
-								auto end_func = forScope->FindFunction("end", ParamTypes({ range }));
-								if (begin_func && end_func) {
-									// user-defined functions for begin() and end() were found -- this is the ideal.
-									for (
-										auto begin = forScope->Call(begin_func, { range }),
-										end = forScope->Call(end_func, { range });
-										forScope->Cast<bool>(forScope->Call("!=", { begin, end }));
-										forScope->Call("++", { begin })
-										) {
-										forScope->Call(":=", { item_decl, forScope->Call("get", { begin }) });
-										try {
-											auto innerScope = forScope->MakeChildScope();
-											out = this->children[2]->eval(innerScope);
-										}
-										catch (detail::Continue_Loop&) {}
+								// user-defined functions for begin() and end() were found -- this is the ideal.
+								for (
+									auto begin = forScope.call("begin", { range }),
+									end = forScope.call("end", { range });
+									forScope.cast<bool>(forScope.call("!=", { begin, end }));
+									forScope.call("++", { begin })
+									) {
+									forScope.call(":=", { item_decl, forScope.call("get", { begin }) });
+									try {
+										auto innerScope = forScope.make_scope();
+										out = this->children[2]->eval(&innerScope);
 									}
-								}
-								else { // TO-DO, we should probably just throw an error and give-up...
-
-
-									// try to fall-back to the built-in GetChildren function and see what we get.
-									// Note that this causes a huge lift in the memory requirements for the call due to how this recursive function works... 
-									auto cache = GoodLang::GetChildren(range).children[0];
-									Any Child;
-									for (auto& childWrapper : cache.children) {
-										childWrapper.children.clear();
-										Child.container = std::move(childWrapper.data);
-										forScope->Call(":=", { item_decl, Child });
-
-										try {
-											auto innerScope = forScope->MakeChildScope();
-											out = this->children[2]->eval(innerScope);
-										}
-										catch (detail::Continue_Loop&) {}
-									}
-								}
+									catch (detail::Continue_Loop&) {}
+								}								
 							}
 							catch (detail::Break_Loop&) {}
 							return out;
@@ -3241,20 +3057,15 @@ namespace GL {
 					};
 					// x[1]
 					struct Array_Call_AST_Node final : AST_Node_Impl {
-						Array_Call_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Array_Call_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Array_Call, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							try {
-								return currentScope->Call("[]", {
-									this->children[0]->eval(currentScope),
-									this->children[1]->eval(currentScope)
-									});
-							}
-							catch (const GoodLang::exception::not_found_error& e) {
-								throw exception::eval_error("Can not find appropriate array lookup operator '[]'.", this->location.start);
-							}
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							return currentScope->call("[]", {
+								this->children[0]->eval(currentScope),
+								this->children[1]->eval(currentScope)
+							});
 						}
 
 					private:
@@ -3262,18 +3073,16 @@ namespace GL {
 					};
 					// x.first
 					struct Dot_Access_AST_Node final : AST_Node_Impl {
-						Dot_Access_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Dot_Access_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Dot_Access, std::move(t_loc), std::move(t_children))
 							, m_fun_name(((this->children[1]->identifier == Engine::AST_Node_Type::Fun_Call) || (this->children[1]->identifier == Engine::AST_Node_Type::Array_Call))
 								? this->children[1]->children[0]->text
 								: this->children[1]->text)
-						{
+						{}
 
-						}
-
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							std::vector<Any> params{ this->children[0]->eval(currentScope) };
-							std::string functionName;
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							std::vector<GL::any::fast_any> params{ this->children[0]->eval(currentScope) };
+							GL::string functionName;
 
 							// what happens next depends on the RHS
 							switch (this->children[1]->identifier) {
@@ -3286,18 +3095,13 @@ namespace GL {
 								functionName = this->children[1]->text;
 								break;
 							}
-							return currentScope->Call(functionName, std::move(params));
+							return currentScope->call(functionName, std::move(params));
 						}
-						const std::string m_fun_name;
-
-					private:
-						mutable std::atomic_uint_fast32_t m_loc = { 0 };
-						mutable std::atomic_uint_fast32_t m_array_loc = { 0 };
-
+						const GL::string m_fun_name;
 					};
 					// [x](FF) async -> int { return x+FF; };
 					struct Lambda_AST_Node final : AST_Node_Impl {
-						Lambda_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Lambda_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(t_ast_node_text,
 								Engine::AST_Node_Type::Lambda,
 								std::move(t_loc),
@@ -3324,7 +3128,8 @@ namespace GL {
 							this->children.back() = m_lambda_node;
 						};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+#if 0
 							// children[0] -> list of Id's or variables to be captured. 
 							// children[1] -> list of (possibly type'd) variables that define the inputs to the function.
 							// children[2] -> either Noop or Id whose name is the desired return type
@@ -3360,7 +3165,7 @@ namespace GL {
 										std::shared_ptr<Scopes::BasicScope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
 										)->Any {
-											auto function_scope = currentScope->MakeChildScope();
+											auto function_scope = currentScope->make_scope();
 
 											// insert the captures
 											for (auto& capture : captures) {
@@ -3402,7 +3207,7 @@ namespace GL {
 										std::shared_ptr<Scopes::BasicScope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
 										)->Any {
-											auto function_scope = currentScope->MakeChildScope();
+											auto function_scope = currentScope->make_scope();
 
 											// insert the captures
 											for (auto& capture : captures) {
@@ -3451,7 +3256,7 @@ namespace GL {
 										std::shared_ptr<Scopes::BasicScope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
 										)->Any {
-											auto function_scope = currentScope->MakeChildScope();
+											auto function_scope = currentScope->make_scope();
 
 											// insert the captures
 											for (auto& capture : captures) {
@@ -3488,7 +3293,7 @@ namespace GL {
 										std::shared_ptr<Scopes::BasicScope> currentScope,
 										std::shared_ptr<std::vector<Any>> params
 										)->Any {
-											auto function_scope = currentScope->MakeChildScope();
+											auto function_scope = currentScope->make_scope();
 
 											// insert the captures
 											for (auto& capture : captures) {
@@ -3519,6 +3324,10 @@ namespace GL {
 											);
 								}
 							}
+
+#else
+                            return {};
+#endif
 						}
 
 					public:
@@ -3531,11 +3340,12 @@ namespace GL {
 					};
 					// [0, 1, 2, 3]
 					struct Inline_Array_AST_Node final : AST_Node_Impl {
-						Inline_Array_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Inline_Array_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Inline_Array, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+#if 0
 							// assumes the first child is an ArgList or Arg
 							Vector<Var> vec;
 							if (!this->children.empty()) {
@@ -3545,23 +3355,27 @@ namespace GL {
 								}
 							}
 							return vec;
+#else
+							return {};
+#endif
 						}
 
 					private:
 						mutable std::atomic_uint_fast32_t m_loc = { 0 };
 					};
 					struct Map_Pair_AST_Node final : AST_Node_Impl {
-						Map_Pair_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Map_Pair_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Map_Pair, std::move(t_loc), std::move(t_children))
 						{}
 					};
 					// ["":10, 10:10, Vector():10, 20:Vector()]
 					struct Inline_Map_AST_Node final : AST_Node_Impl {
-						Inline_Map_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Inline_Map_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Inline_Map, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+#if 0
 							// assumes the first child is an ArgList or Arg
 							Any out{ Map<size_t, std::pair<Var, Var>>() };
 							if (!this->children.empty()) {
@@ -3570,6 +3384,9 @@ namespace GL {
 								}
 							}
 							return out;
+#else
+							return {};
+#endif
 						};
 
 					};
@@ -3577,19 +3394,20 @@ namespace GL {
 					// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
 					// parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
 					struct Parallel_For_AST_Node final : AST_Node_Impl {
-						Parallel_For_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Parallel_For_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Parallel_For, std::move(t_loc), std::move(t_children))
 						{
-							assert(this->children.size() == 3);
+							ASSERT(this->children.size() == 3);
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto forScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+#if 0
+							auto forScope = currentScope->make_scope();
 
 							if (1) { // parallel_for (var x = START_VALUE; END_VALUE) WORK_BLOCK
 								int startPos{ 0 }, endPos{ 0 };
 								if (1) {
-									auto temp_memory = forScope->MakeChildScope();
+									auto temp_memory = forScope->make_scope();
 
 									startPos = temp_memory->Cast<int>(this->children[0]->eval(temp_memory));
 									endPos = temp_memory->Cast<int>(this->children[1]->eval(temp_memory));
@@ -3620,7 +3438,7 @@ namespace GL {
 
 											// do the work
 											try {
-												auto newScope = shared_memory.get<1>()->MakeChildScope();
+												auto newScope = shared_memory.get<1>()->make_scope();
 												this->children[2]->eval(newScope);
 											}
 											catch (detail::Continue_Loop&) {}
@@ -3629,7 +3447,7 @@ namespace GL {
 											[&](void* p) -> void {
 											new (p) DateStorageType{
 												Any{},
-												forScope->MakeChildScope(),
+												forScope->make_scope(),
 												Proxy_Function{}
 											}; // initialize the shared memory
 											DateStorageType& iter = *static_cast<DateStorageType*>(p);
@@ -3647,19 +3465,23 @@ namespace GL {
 							}
 
 							return Any();
+#else
+							return {};
+#endif
 						}
 					};
 
 					// parallel_for (range_declaration : range_expression) loop_statement;
 					struct Parallel_Ranged_For_AST_Node final : AST_Node_Impl {
-						Parallel_Ranged_For_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Parallel_Ranged_For_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Parallel_Ranged_For, std::move(t_loc), std::move(t_children))
 						{
-							assert(this->children.size() == 3);
+							ASSERT(this->children.size() == 3);
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto forScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+#if 0
+							auto forScope = currentScope->make_scope();
 
 							Any range = this->children[1]->eval(forScope); // 0..100 or [0,1,2,3] or vectorObjName etc;
 							try {
@@ -3706,14 +3528,14 @@ namespace GL {
 
 											// do the work
 											try {
-												auto innerScope = iter.second->MakeChildScope();
+												auto innerScope = iter.second->make_scope();
 												this->children[2]->eval(innerScope);
 											}
 											catch (detail::Continue_Loop&) {}
 										},
 										sizeof(shared_type),
 											[&](void* p) -> void {
-											new (p) shared_type{ std::pair<Any,Any>{}, forScope->MakeChildScope() };
+											new (p) shared_type{ std::pair<Any,Any>{}, forScope->make_scope() };
 											shared_type& iter = *static_cast<shared_type*>(p);
 											iter.first.first = copyConstructorFunctor(begin); // iterator
 											iter.first.second = this->children[0]->eval(iter.second); // var x;
@@ -3731,58 +3553,67 @@ namespace GL {
 							catch (detail::Break_Loop&) {}
 
 							return Any();
+#else
+							return {};
+#endif
 						}
 					};
 
 					struct Break_AST_Node final : AST_Node_Impl {
-						Break_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Break_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Break, std::move(t_loc), std::move(t_children)) {
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override { throw detail::Break_Loop(); }
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override { throw detail::Break_Loop(); }
 					};
 
 					struct Continue_AST_Node final : AST_Node_Impl {
-						Continue_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Continue_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Continue, std::move(t_loc), std::move(t_children)) {
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override { throw detail::Continue_Loop(); }
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override { throw detail::Continue_Loop(); }
 					};
 
 					struct Case_AST_Node final : AST_Node_Impl {
-						Case_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Case_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Case, std::move(t_loc), std::move(t_children))
 						{
-							assert(this->children.size() == 2);
+#if 0
+							ASSERT(this->children.size() == 2);
 							// if this is a constant, its hash should also be a constant
 							if (this->children[0]->identifier == Engine::AST_Node_Type::Constant) {
 								try {
 									constexprHash = currentScope->Cast<size_t>(currentScope->Call("to_hash", { std::dynamic_pointer_cast<Constant_AST_Node>(this->children[0])->m_value }));
 									// don't need the first child anymore
-									const_cast<std::string&>(this->text) = this->children.front()->text;
+									const_cast<GL::string&>(this->text) = this->children.front()->text;
 									this->children.front() = this->children.back();
 									this->children.pop_back();
 								}
 								catch (...) {}
 							}
+#else
+							return {};
+#endif
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto thisScope = currentScope->MakeChildScope();
-							return this->children.back()->eval(thisScope);
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto thisScope = currentScope->make_scope();
+							return this->children.back()->eval(&thisScope);
 						}
 
-						std::optional<size_t> constexprHash;
+						// std::optional<size_t> constexprHash;
 					};
 
+					// CONTINUE FROM HERE .... 
+
 					struct Switch_AST_Node final : AST_Node_Impl {
-						Switch_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Switch_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Switch, std::move(t_loc), std::move(t_children)) {
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto thisScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto thisScope = currentScope->make_scope();
 
 							bool breaking = false;
 							size_t currentCase = 1;
@@ -3832,26 +3663,26 @@ namespace GL {
 					};
 
 					struct Default_AST_Node final : AST_Node_Impl {
-						Default_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Default_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Default, std::move(t_loc), std::move(t_children)) {
 							assert(this->children.size() == 1);
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto thisScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto thisScope = currentScope->make_scope();
 							return this->children[0]->eval(thisScope);
 						}
 					};
 
 					struct Do_AST_Node final : AST_Node_Impl {
-						Do_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Do_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Do, std::move(t_loc), std::move(t_children))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							Any retval;
 
-							auto thisScope = currentScope->MakeChildScope();
+							auto thisScope = currentScope->make_scope();
 
 							std::exception_ptr err{ nullptr };
 
@@ -3869,7 +3700,7 @@ namespace GL {
 					};
 
 					struct Try_AST_Node final : AST_Node_Impl {
-						Try_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Try_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Try, std::move(t_loc), std::move(t_children))
 						{}
 
@@ -3936,12 +3767,12 @@ namespace GL {
 							return retval;
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							Any retval;
 							Any err;
 							std::exception_ptr Error;
 							bool rethrow = false;
-							auto thisScope = currentScope->MakeChildScope();
+							auto thisScope = currentScope->make_scope();
 
 							try {
 								retval = this->children[0]->eval(thisScope);
@@ -3978,29 +3809,29 @@ namespace GL {
 					};
 
 					struct Catch_AST_Node final : AST_Node_Impl {
-						Catch_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Catch_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Catch, std::move(t_loc), std::move(t_children))
 						{}
 					};
 
 					struct Finally_AST_Node final : AST_Node_Impl {
-						Finally_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Finally_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Finally, std::move(t_loc), std::move(t_children))
 						{}
 					};
 
 					/*! Currently, the JIT compilation does not support preprocessor macros or other preprocessor activities. */
 					struct JustInTimeCompilation_AST_Node final : AST_Node_Impl {
-						JustInTimeCompilation_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						JustInTimeCompilation_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::JustInTimeCompilation, std::move(t_loc), std::move(t_children))
 						{
 							if (this->children[0]->identifier == Engine::AST_Node_Type::Constant) {
 								auto& scriptVar = std::dynamic_pointer_cast<Constant_AST_Node>(this->children[0])->m_value;
-								if (scriptVar.IsTypeOf<std::string>()) {
-									Compile(scriptVar.cast<std::string&>(), currentScope, true);
+								if (scriptVar.IsTypeOf<GL::string>()) {
+									Compile(scriptVar.cast<GL::string&>(), currentScope, true);
 								}
 								else {
-									auto SCRIPT = currentScope->Cast<std::string>(currentScope->Call("to_string", { scriptVar }));
+									auto SCRIPT = currentScope->Cast<GL::string>(currentScope->Call("to_string", { scriptVar }));
 									Compile(SCRIPT, currentScope, true);
 								}
 							}
@@ -4009,12 +3840,12 @@ namespace GL {
 						// eval("x + 1");
 						// Each thread will compile its own code. If a thread sees the same code again, it will not re-compile it.
 						// Pre-processor macros are not supported at this time. To do so would require text splicing, running the preprocessor, and then resuming the code here.
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							if (this->children[0]->identifier == Engine::AST_Node_Type::Constant) {
 								// consider this already done
 							}
 							else {
-								auto SCRIPT = currentScope->Cast<std::string>(currentScope->Call("to_string", { this->children[0]->eval(currentScope) }));
+								auto SCRIPT = currentScope->Cast<GL::string>(currentScope->Call("to_string", { this->children[0]->eval(currentScope) }));
 								Compile(SCRIPT, currentScope);
 							}
 							return TLS->second->eval(currentScope);
@@ -4022,21 +3853,21 @@ namespace GL {
 
 					private:
 						GoodLang::ThreadLocalInstance <
-							std::pair < std::string, AST_Node_Impl_Ptr >
+							std::pair < GL::string, AST_Node_Impl_Ptr >
 						> TLS;
-						void Compile(std::string const& SCRIPT, GL::scope::impl::BasicScope* currentScope, bool UpdateAll = false) const {
+						void Compile(GL::string const& SCRIPT, GL::scope::impl::BasicScope* currentScope, bool UpdateAll = false) const {
 							if (UpdateAll) {
 								auto PARSER = GoodLang::Engine2::Compiler::Interpreter::Parser();
 								auto PARSED_RESULT = PARSER.Parse(SCRIPT, currentScope);
-								const_cast<GoodLang::ThreadLocalInstance<std::pair<std::string, AST_Node_Impl_Ptr>>&>(TLS) =
-									std::pair < std::string, AST_Node_Impl_Ptr >(SCRIPT, PARSED_RESULT.first);
+								const_cast<GoodLang::ThreadLocalInstance<std::pair<GL::string, AST_Node_Impl_Ptr>>&>(TLS) =
+									std::pair < GL::string, AST_Node_Impl_Ptr >(SCRIPT, PARSED_RESULT.first);
 							}
 							else {
 								if ((!TLS->second) || (TLS->first != SCRIPT)) {
 									auto PARSER = GoodLang::Engine2::Compiler::Interpreter::Parser();
 									auto PARSED_RESULT = PARSER.Parse(SCRIPT, currentScope);
 
-									const_cast<std::string&>(TLS->first) = SCRIPT;
+									const_cast<GL::string&>(TLS->first) = SCRIPT;
 									const_cast<AST_Node_Impl_Ptr&>(TLS->second) = PARSED_RESULT.first;
 								}
 							}
@@ -4044,11 +3875,11 @@ namespace GL {
 					};
 
 					struct Scopeless_Block_AST_Node final : AST_Node_Impl {
-						Scopeless_Block_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Scopeless_Block_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Scopeless_Block, std::move(t_loc), std::move(t_children))
 						{};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							// evaluate all of the children, return the result of the last child
 							int numChildren = this->children.size();
 							if (numChildren > 0) {
@@ -4064,12 +3895,12 @@ namespace GL {
 					};
 
 					struct Block_AST_Node final : AST_Node_Impl {
-						Block_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Block_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
 						{};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto newScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto newScope = currentScope->make_scope();
 
 							const auto numChildren = this->children.size();
 							if (numChildren > 0) {
@@ -4085,12 +3916,12 @@ namespace GL {
 					};
 
 					struct Function_Block_AST_Node final : AST_Node_Impl {
-						Function_Block_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Function_Block_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::FunctionBlock, std::move(t_loc), std::move(t_children))
 						{};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
-							auto newScope = currentScope->MakeChildScope();
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+							auto newScope = currentScope->make_scope();
 
 							const auto numChildren = this->children.size();
 							if (numChildren > 0) {
@@ -4106,13 +3937,13 @@ namespace GL {
 					};
 
 					struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl {
-						Fold_Right_Binary_Operator_AST_Node(GL::scope::impl::BasicScope* currentScope, const std::string& t_oper, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, Any t_rhs)
+						Fold_Right_Binary_Operator_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_oper, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, Any t_rhs)
 							: AST_Node_Impl(t_oper, Engine::AST_Node_Type::BinaryFoldRight, std::move(t_loc), std::move(t_children))
 							, m_oper(Engine::Operators::to_operator(t_oper))
 							, m_rhs(std::move(t_rhs))
 						{}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							return currentScope->Call(this->text, { this->children[0]->eval(currentScope), m_rhs });
 						};
 
@@ -4122,34 +3953,34 @@ namespace GL {
 					};
 
 					struct Namespace_AST_Node final : AST_Node_Impl {
-						Namespace_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Namespace_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Namespace, std::move(t_loc), std::move(t_children))
 						{
 							(void)this->children.back()->eval(currentScope);
 						}
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							return {};
 						};
 					};
 
 					struct Class_AST_Node final : AST_Node_Impl {
-						Class_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Class_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Namespace, std::move(t_loc), std::move(t_children))
 						{
 							(void)this->children.back()->eval(currentScope);
 						}
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							return {};
 						}
 					};
 
 					struct Declaration_Block_AST_Node final : AST_Node_Impl {
-						Declaration_Block_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						Declaration_Block_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::DeclarationBlock, std::move(t_loc), std::move(t_children))
 						{};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							const auto numChildren = this->children.size();
 							if (numChildren > 0) {
 								for (int i = 0; i < numChildren - 1; i++) {
@@ -4164,7 +3995,7 @@ namespace GL {
 					};
 
 					struct FunctionDecl_AST_Node final : AST_Node_Impl {
-						FunctionDecl_AST_Node(GL::scope::impl::BasicScope* currentScope, std::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
+						FunctionDecl_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::FunctionDecl, std::move(t_loc), std::move(t_children))
 							, inputArgNames(Arg_List_AST_Node::get_arg_names(*this->children[2]))
 							, inputArgTypes(Arg_List_AST_Node::get_arg_types(*this->children[2]))
@@ -4185,7 +4016,7 @@ namespace GL {
 							AddObjects(startposition + 1, thisScope, argNames, argTypes, arguments...);
 						};
 
-						Any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							if (currentScope->is_class()) {
 								if (auto ptr = std::dynamic_pointer_cast<Scopes::ClassScope>(currentScope)) {
 									auto p_locked = initialized.Unique();
@@ -4209,7 +4040,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									]() {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes);
 
@@ -4224,7 +4055,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& in1) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1);
 
@@ -4239,7 +4070,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& in1, Any const& in2) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1, in2);
 
@@ -4254,7 +4085,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& a, Any const& b, Any const& c) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c);
 
@@ -4269,7 +4100,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& a, Any const& b, Any const& c, Any const& d) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d);
 
@@ -4284,7 +4115,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e);
 
@@ -4299,7 +4130,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f);
 
@@ -4314,7 +4145,7 @@ namespace GL {
 									func = GoodLang::make_callable([InputArgNames = this->inputArgNames, InputArgTypes = this->inputArgTypes, lambda = FunctionBlock, declaringNamespace = std::weak_ptr<Scopes::BasicScope>(currentScope), returnType = this->returnArgType
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g);
 
@@ -4330,7 +4161,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h);
 
@@ -4346,7 +4177,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i);
 
@@ -4362,7 +4193,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j);
 
@@ -4378,7 +4209,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k);
 
@@ -4395,7 +4226,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l) {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l);
 
@@ -4411,7 +4242,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m);
 
@@ -4427,7 +4258,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
 
@@ -4443,7 +4274,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g,
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n, Any const& o) {
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
 
@@ -4462,7 +4293,7 @@ namespace GL {
 									]()->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes);
 
@@ -4481,7 +4312,7 @@ namespace GL {
 									](Any const& in1)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1);
 
@@ -4499,7 +4330,7 @@ namespace GL {
 									](Any const& in1, Any const& in2)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, in1, in2);
 
@@ -4517,7 +4348,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c);
 
@@ -4535,7 +4366,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d);
 
@@ -4553,7 +4384,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e);
 
@@ -4571,7 +4402,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f);
 
@@ -4589,7 +4420,7 @@ namespace GL {
 									](Any const& a, Any const& b, Any const& c, Any const& d, Any const& e, Any const& f, Any const& g)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g);
 
@@ -4608,7 +4439,7 @@ namespace GL {
 										Any const& h)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h);
 
@@ -4627,7 +4458,7 @@ namespace GL {
 										Any const& h, Any const& i)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i);
 
@@ -4646,7 +4477,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j);
 
@@ -4665,7 +4496,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j, Any const& k)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k);
 
@@ -4684,7 +4515,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l);
 
@@ -4703,7 +4534,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m);
 
@@ -4722,7 +4553,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
 
@@ -4741,7 +4572,7 @@ namespace GL {
 										Any const& h, Any const& i, Any const& j, Any const& k, Any const& l, Any const& m, Any const& n, Any const& o)->Any {
 										Any result;
 										if (auto parentScope = declaringNamespace.lock()) {
-											auto thisScope = parentScope->MakeChildScope();
+											auto thisScope = parentScope->make_scope();
 
 											AddObjects(0, thisScope, InputArgNames, InputArgTypes, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o);
 
@@ -4771,8 +4602,8 @@ namespace GL {
 						};
 
 						GoodLang::SharedLockable<bool> initialized{ false };
-						std::string return_type_name;
-						std::string function_name;
+						GL::string return_type_name;
+						GL::string function_name;
 						int numArgs;
 						AST_Node_Impl_Ptr FunctionBlock;
 						std::vector<GL::type> inputArgTypes;
@@ -5197,7 +5028,7 @@ namespace GL {
 						}
 					};
 
-					// Try to fold a basic binary operation between two constant values (e.g. std::string + std::string, or Units::foot == Units::meter)
+					// Try to fold a basic binary operation between two constant values (e.g. GL::string + GL::string, or Units::foot == Units::meter)
 					struct BinaryFold {
 						bool optimize(AST_Node_Impl_Ptr& node, GL::scope::impl::BasicScope* currentScope) {
 							if (node->identifier == Engine::AST_Node_Type::Binary
@@ -5914,7 +5745,7 @@ namespace GL {
 						case Engine::hash("if"):
 						case Engine::hash("else"):
 						{
-							std::string temp = std::string(name);
+							GL::string temp = GL::string(name);
 							throw exception::eval_error(GoodLang::printf("Id name '%s' was reserved for the langauge", temp.c_str()), m_position);
 						}
 						default:
@@ -6228,7 +6059,7 @@ namespace GL {
 
 						try {
 							/// TODO fix this to use from_chars
-							auto u = std::stoll(std::string(t_val), nullptr, base);
+							auto u = std::stoll(GL::string(t_val), nullptr, base);
 
 							if (!unsigned_ && !long_ && u >= std::numeric_limits<int>::min() && u <= std::numeric_limits<int>::max()) {
 								return static_cast<int>(u);
@@ -6255,7 +6086,7 @@ namespace GL {
 							// too big to be signed
 							try {
 								/// TODO fix this to use from_chars
-								auto u = std::stoull(std::string(t_val), nullptr, base);
+								auto u = std::stoull(GL::string(t_val), nullptr, base);
 
 								if (!longlong_ && u >= std::numeric_limits<unsigned long>::min() && u <= std::numeric_limits<unsigned long>::max()) {
 									return static_cast<unsigned long>(u);
@@ -6400,7 +6231,7 @@ namespace GL {
 
 				private:
 					/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
-					template<typename NodeType> std::shared_ptr<NodeType> build_match(GL::scope::impl::BasicScope* currentScope, size_t t_match_start, std::string t_text = "") {
+					template<typename NodeType> std::shared_ptr<NodeType> build_match(GL::scope::impl::BasicScope* currentScope, size_t t_match_start, GL::string t_text = "") {
 						bool is_deep = false;
 
 						Engine::Parse_Location filepos = [&]() -> Engine::Parse_Location {
@@ -6440,7 +6271,7 @@ namespace GL {
 					template<typename T, typename... Param> std::shared_ptr<AST_Node_Impl> make_node(GL::scope::impl::BasicScope* currentScope, GL::string t_match, Engine::Position t_prev, Param &&...param) {
 						auto out = std::make_shared<T>(
 							currentScope,
-							std::string(t_match),
+							GL::string(t_match),
 							Engine::Parse_Location(t_prev, m_position),
 							std::forward<Param>(param)...
 							);
@@ -6449,7 +6280,7 @@ namespace GL {
 					/// create a node
 					template<typename... Param> std::shared_ptr<AST_Nodes::Constant_AST_Node> make_const(GL::string t_match, Engine::Position t_prev, Param &&...param) {
 						return std::make_shared<AST_Nodes::Constant_AST_Node>(
-							std::string(t_match),
+							GL::string(t_match),
 							Engine::Parse_Location(t_prev, m_position),
 							std::forward<Param>(param)...
 							);
@@ -6470,7 +6301,7 @@ namespace GL {
 							}
 							GL::string comment = Engine::Position::str(start, m_position);
 							auto parseLoc = Engine::Parse_Location(start, m_position);
-							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
+							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, GL::string(comment), parseLoc), nullptr });
 
 							return true;
 						}
@@ -6491,7 +6322,7 @@ namespace GL {
 
 							GL::string comment = Engine::Position::str(start, m_position);
 							auto parseLoc = Engine::Parse_Location(start, m_position);
-							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
+							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, GL::string(comment), parseLoc), nullptr });
 
 							return true;
 
@@ -6512,7 +6343,7 @@ namespace GL {
 							}
 							GL::string comment = Engine::Position::str(start, m_position);
 							auto parseLoc = Engine::Parse_Location(start, m_position);
-							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, std::string(comment), parseLoc), nullptr });
+							m_comment_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Noop_AST_Node>(nullptr, GL::string(comment), parseLoc), nullptr });
 
 							return true;
 						}
@@ -6602,7 +6433,7 @@ namespace GL {
 						return Num_();
 					};
 					/// 
-					bool Operator_Helper(const size_t t_precedence, std::string& oper) {
+					bool Operator_Helper(const size_t t_precedence, GL::string& oper) {
 						return Operator_Matches::any_of(t_precedence, [&oper, this](const auto& elem) {
 							if (Symbol(elem.c_str())) {
 								oper = elem.c_str();
@@ -6620,11 +6451,11 @@ namespace GL {
 						const auto start = m_position;
 
 						if (Quoted_String_()) {
-							std::string match;
+							GL::string match;
 							const auto prev_stack_top = m_match_stack.size();
 
 							bool is_interpolated = [&]() -> bool {
-								Char_Parser<std::string> cparser(match, true);
+								Char_Parser<GL::string> cparser(match, true);
 
 								auto s = start + 1, end = m_position - 1;
 
@@ -6643,7 +6474,7 @@ namespace GL {
 											// We've finished with the part of the string up to this point, so clear it
 											match.clear();
 
-											std::string eval_match;
+											GL::string eval_match;
 
 											++s;
 											while ((s != end) && (*s != '}')) {
@@ -7109,7 +6940,7 @@ namespace GL {
 							const bool is_char = oper.size() == 1;
 							if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(oper.c_str()))) {
 								if (!Operator(currentScope, operators().size() - 1)) {
-									throw exception::eval_error("Incomplete prefix '" + std::string(oper.c_str()) + "' expression", m_position);
+									throw exception::eval_error("Incomplete prefix '" + GL::string(oper.c_str()) + "' expression", m_position);
 								}
 								build_match<AST_Nodes::Prefix_AST_Node>(currentScope, prev_stack_top, oper.c_str());
 								return true;
@@ -7121,7 +6952,7 @@ namespace GL {
 					static auto make_postfix_operators() {
 						std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, std::pair<Units::value, Any>>>, std::greater_equal<int>> out;
 						for (auto& unit_type : Units::value::GetValueTypes()) {
-							auto abbreviation = std::string("_") + std::string(unit_type.second.first.UnitAbbreviation());
+							auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
 							out[abbreviation.length()].push_back(unit_type);
 						}
 						return out;
@@ -7154,7 +6985,7 @@ namespace GL {
 									// this path means the incoming value is constant and known									
 									for (auto& abbreviation_length_to_category : customOperators) {
 										for (auto& unit_type : abbreviation_length_to_category.second) {
-											auto abbreviation = std::string("_") + std::string(unit_type.second.first.UnitAbbreviation());
+											auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
 											if (Symbol(abbreviation)) {
 												auto& rhs = std::dynamic_pointer_cast<AST_Nodes::Constant_AST_Node>(m_match_stack[prev_stack_top - 1].first)->m_value;
 												Any lhs(unit_type.second.first);
@@ -7169,7 +7000,7 @@ namespace GL {
 												else {
 													currentScope->Call("=", { lhs, rhs });
 												}
-												std::string temp = GoodLang::ToString(lhs);
+												GL::string temp = GoodLang::ToString(lhs);
 
 												Engine::Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
 												loc.end += abbreviation.length();
@@ -7188,7 +7019,7 @@ namespace GL {
 									// this path means the incoming value is NOT constant and is not known. 
 									for (auto& abbreviation_length_to_category : customOperators) {
 										for (auto& unit_type : abbreviation_length_to_category.second) {
-											auto abbreviation = std::string("_") + std::string(unit_type.second.first.UnitAbbreviation());
+											auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
 											if (Symbol(abbreviation)) {
 												Any lhs(unit_type.second.first);
 												if (auto Class = currentScope->FindClass(unit_type.first.lock())) {
@@ -7528,7 +7359,7 @@ namespace GL {
 
 						if (operators()[t_precedence] != Engine::Operator_Precedence::Prefix) {
 							if (Operator(currentScope, t_precedence + 1)) {
-								std::string oper;
+								GL::string oper;
 								retval = true;
 								while (Operator_Helper(t_precedence, oper)) {
 									while (Eol()) {}
@@ -8043,9 +7874,9 @@ namespace GL {
 								throw exception::eval_error("Incomplete 'class' block: class must have a name", m_position);
 							}
 
-							std::string desired_namespace = ToString(currentScope->CurrentNamespacePath()) + "::" + std::string(GetText(m_match_stack.back().first));
+							GL::string desired_namespace = ToString(currentScope->CurrentNamespacePath()) + "::" + GL::string(GetText(m_match_stack.back().first));
 
-							static auto fixNamespace{ [](std::string& x) {
+							static auto fixNamespace{ [](GL::string& x) {
 								while (x.find("::") == 0 && x.length() > 2) {
 									x = x.substr(2);
 								}
@@ -8060,7 +7891,7 @@ namespace GL {
 								newNamespace = std::dynamic_pointer_cast<Scopes::ClassScope>(f->this_m->scope.lock());
 							}
 							if (!newNamespace) {
-								newNamespace = currentScope->GetNamespace()->MakeChildClass(std::make_shared<std::string>(GetText(m_match_stack.back().first)));
+								newNamespace = currentScope->GetNamespace()->MakeChildClass(std::make_shared<GL::string>(GetText(m_match_stack.back().first)));
 							}
 
 							// instead of collecting statements, we want to collect declarations...
@@ -8090,9 +7921,9 @@ namespace GL {
 								throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", m_position);
 							}
 
-							std::string desired_namespace = ToString(currentScope->CurrentNamespacePath()) + "::" + std::string(GetText(m_match_stack.back().first));
+							GL::string desired_namespace = ToString(currentScope->CurrentNamespacePath()) + "::" + GL::string(GetText(m_match_stack.back().first));
 
-							static auto fixNamespace{ [](std::string& x) {
+							static auto fixNamespace{ [](GL::string& x) {
 								while (x.find("::") == 0 && x.length() > 2) {
 									x = x.substr(2);
 								}
@@ -8105,7 +7936,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 								newNamespace = std::dynamic_pointer_cast<Scopes::NamespaceScope>(f->this_m->scope.lock());
 							}
 							if (!newNamespace) {
-								newNamespace = currentScope->GetNamespace()->MakeChildNamespace(std::make_shared<std::string>(GetText(m_match_stack.back().first)));
+								newNamespace = currentScope->GetNamespace()->MakeChildNamespace(std::make_shared<GL::string>(GetText(m_match_stack.back().first)));
 							}
 
 							// instead of collecting statements, we want to collect declarations...
@@ -8154,7 +7985,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 						}
 
 						// Block
-						auto this_scope = currentScope->MakeChildScope();
+						auto this_scope = currentScope->make_scope();
 						if (!Block(this_scope)) {
 							return failure();
 						}
@@ -8418,7 +8249,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 						return parse_internal(t_input, currentScope);
 					};
 					ParseNode parse_internal(const GL::string& t_input, GL::scope::impl::BasicScope* currentScope) {
-						auto this_scope = currentScope->MakeChildScope();
+						auto this_scope = currentScope->make_scope();
 
 						const auto begin = t_input.empty() ? nullptr : &t_input.front();
 						const auto end = begin == nullptr ? nullptr : begin + t_input.size();
@@ -8563,14 +8394,14 @@ int main() {
 #if 0
     if (auto wb = cweeExcel::OpenExcel("S:\\Engineering\\Monthly Conservation Report\\Analysis File\\DemandSupplyShortage.xlsx")) {        
         if (auto ws = wb->active_sheet()) {
-            print(ws->cell("A2")->value<std::string>());
+            print(ws->cell("A2")->value<GL::string>());
         }
     }
     if (auto wb = cweeExcel::OpenExcel("S:\\Engineering\\Monthly Conservation Report\\Analysis File\\Demand ProRating\\ProRating Calculator.xlsx")) {        
         for (int sheet_index = 0; sheet_index < wb->sheet_count(); ++sheet_index) {
             if (auto ws = wb->sheet_by_index(sheet_index)) {
                 if (auto cell = ws->cell("A1")) {
-                    auto str = cell->value<std::string>();
+                    auto str = cell->value<GL::string>();
                     print(str);
                 }
             }
@@ -8580,7 +8411,7 @@ int main() {
 
 #if 0
     //auto func = [](int x) -> double { return x; };
-    //typedef decltype(GL::details::detail::function_signature(&std::string::length)) function_header;
+    //typedef decltype(GL::details::detail::function_signature(&GL::string::length)) function_header;
     //function_header::
 
     GL::scope::impl::Functions funcs;
@@ -8595,10 +8426,10 @@ int main() {
     funcs.add_function(GL::make_callable("type_name", [](GL::any const& any_type) -> GL::string { return any_type.m_casted_type.name(); }));
     funcs.add_function(GL::make_callable("type_name", [](GL::type const& any_type) -> GL::string { return any_type.name(); }));
     funcs.add_function(GL::make_callable("type_of", [](GL::any const& any_type) -> GL::type { return any_type.m_casted_type; }));
-    funcs.add_function(GL::decl_func(&std::string::length));
-    funcs.add_function(GL::decl_func(&std::string::capacity));
-    funcs.add_function(GL::decl_func(&std::string::clear));
-    funcs.add_function(GL::decl_func(&std::string::empty));
+    funcs.add_function(GL::decl_func(&GL::string::length));
+    funcs.add_function(GL::decl_func(&GL::string::capacity));
+    funcs.add_function(GL::decl_func(&GL::string::clear));
+    funcs.add_function(GL::decl_func(&GL::string::empty));
 
     funcs.for_each([](GL::Proxy_Function const& f) -> bool {
         print(f->m_signature.display());
@@ -8609,32 +8440,32 @@ int main() {
         return false;
     });
     if (1) {
-        std::vector < GL::type > types{ GL::type_of<std::string>() };
+        std::vector < GL::type > types{ GL::type_of<GL::string>() };
         EXPECT_NE(nullptr, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
         EXPECT_NE(nullptr, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
-        std::vector < GL::type > types{ GL::type_of<std::string&>() };
+        std::vector < GL::type > types{ GL::type_of<GL::string&>() };
         EXPECT_NE(nullptr, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
         EXPECT_NE(nullptr, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
-        std::vector < GL::type > types{ GL::type_of<std::string const&>() };
+        std::vector < GL::type > types{ GL::type_of<GL::string const&>() };
         EXPECT_NE(nullptr, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
         EXPECT_EQ(nullptr, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
-        std::vector < GL::type > types{ GL::type_of<std::string const&>() };
+        std::vector < GL::type > types{ GL::type_of<GL::string const&>() };
         EXPECT_NE(nullptr, funcs.try_find_callable("length", types.begin(), types.end()));
         EXPECT_NE(nullptr, funcs.try_find_callable("clear", types.begin(), types.end()));
     }
     if (1) {
-        std::vector < GL::any > types{ GL::any{ std::string{} } };
+        std::vector < GL::any > types{ GL::any{ GL::string{} } };
         EXPECT_NE(nullptr, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
         EXPECT_NE(nullptr, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
     if (1) {
-        std::vector < GL::any::fast_any > types{ GL::any{ std::string{} }.fast() };
+        std::vector < GL::any::fast_any > types{ GL::any{ GL::string{} }.fast() };
         EXPECT_NE(nullptr, funcs.try_find_callable("length", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
         EXPECT_NE(nullptr, funcs.try_find_callable("clear", types.begin(), types.end(), GL::scope::impl::Functions::free_cast_only));
     }
