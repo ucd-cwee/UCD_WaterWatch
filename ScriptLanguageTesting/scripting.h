@@ -721,7 +721,7 @@ namespace GL {
                 // Get the root of the entire scope tree
                 RootScope* GetRoot() const;
 
-            protected:
+            public:
                 enum CheckFlagState {
                     none = 0,
                     self = 1,
@@ -740,6 +740,7 @@ namespace GL {
                     Success = 2,
                     StaticFailure = 4
                 };
+            protected:
                 using check_cache = std::vector<short>;
                 static check_cache& GetCheckMap();
                 virtual Breadcrumb* FindNearestScopeWhere(
@@ -1566,7 +1567,7 @@ namespace GL {
                 ClassScope& make_class(GL::string const& class_type);
 
                 // insert a function into the storage
-                void add_function(GL::Proxy_Function&& func);
+                GL::Proxy_Function const& add_function(GL::Proxy_Function&& func);
 
                 // to_do should be of the form: [](GL::Proxy_Function const&)->bool{}. Return true to early-exit the for-each loop. 
                 template <typename Func> bool for_each_function(Func const& to_do) const {

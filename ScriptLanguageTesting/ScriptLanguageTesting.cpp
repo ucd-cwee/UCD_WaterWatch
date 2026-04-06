@@ -63,8 +63,8 @@ public:
         }
     }
 };
-#define EXPECT_EQ(a, b) if (a != b){ catcher::CatchMe(__LINE__); }
-#define EXPECT_NE(a, b) if (a == b){ catcher::CatchMe(__LINE__); }
+#define EXPECT_EQ(a, b) if ((a) != (b)){ catcher::CatchMe(__LINE__); }
+#define EXPECT_NE(a, b) if ((a) == (b)){ catcher::CatchMe(__LINE__); }
 #pragma endregion
 
 #include "../GpuProgramming/matrix.h" // Working implimentation of GPU-accelrated matrix
@@ -9604,18 +9604,27 @@ int main() {
                             EXPECT_EQ(false, Pair.m_casted_type.is_cpp_type());
                             EXPECT_EQ(true, first.m_casted_type.is_cpp_type());
                             EXPECT_EQ(true, second.m_casted_type.is_cpp_type());
-                            print(first.m_casted_type.name());
-                            print(second.m_casted_type.name());
+							EXPECT_EQ(first.m_casted_type, GL::type_of<int&>());
+							EXPECT_EQ(second.m_casted_type, GL::type_of<GL::string&>());
                         }
                         if (auto this_scope = root.make_scope()) {
                             auto Pair = this_scope.call("pair<int, pair<int, pair<int, string>>>", {});
                             auto first = this_scope.call("first", { Pair });
                             auto second = this_scope.call("second", { Pair });
+							EXPECT_EQ(false, second.m_casted_type.is_cpp_type());
+							EXPECT_EQ(false, second.m_casted_type.is_template());
+							EXPECT_EQ(true, second.m_casted_type.is_ref());
+							EXPECT_EQ(false, second.m_casted_type.is_const());
                             EXPECT_EQ(false, Pair.m_casted_type.is_cpp_type());
                             EXPECT_EQ(true, first.m_casted_type.is_cpp_type());
                             EXPECT_EQ(false, second.m_casted_type.is_cpp_type());
-                            print(first.m_casted_type.name());
-                            print(second.m_casted_type.name());
+							EXPECT_EQ(first.m_casted_type, GL::type_of<int&>());
+							EXPECT_EQ(first.m_casted_type.is_ref(), true);
+							EXPECT_EQ(second.m_casted_type.is_ref(), true);
+							EXPECT_EQ(second.m_casted_type.get_base_hash(), (this_scope.DetermineType("pair<int, pair<int, string>>") | GL::type::Reference).get_base_hash());
+							EXPECT_EQ(second.m_casted_type, (this_scope.DetermineType("pair<int, pair<int, string>>") | GL::type::Reference));
+							EXPECT_NE(second.m_casted_type, this_scope.DetermineType("pair<int, pair<int, string>>"));
+							print(second.m_casted_type.name());
                         }
                         if (auto this_scope = root.make_scope()) {
                             auto Pair = this_scope.call("pair<vector<int>,pair<int,vector<int>>>", {});
@@ -9624,9 +9633,11 @@ int main() {
                             EXPECT_EQ(false, Pair.m_casted_type.is_cpp_type());
                             EXPECT_EQ(false, first.m_casted_type.is_cpp_type());
                             EXPECT_EQ(false, second.m_casted_type.is_cpp_type());
-                            print(first.m_casted_type.name());
-                            print(second.m_casted_type.name());
-                        }
+							EXPECT_EQ(first.m_casted_type, (this_scope.DetermineType("vector<int>") | GL::type::Reference));
+							EXPECT_EQ(second.m_casted_type, (this_scope.DetermineType("pair<int,vector<int>>") | GL::type::Reference));
+							print(first.m_casted_type.name());
+							print(second.m_casted_type.name());
+                        }						
                     }
 
                     // vector<T0> template class
@@ -9794,7 +9805,19 @@ int main() {
 
                     }
 
-                    // test<T0,T1>::make_pair() -> pair<T0,T1> // should automatically "figure out" that it should return a pair with the updated type information
+                    /* // during construction of an implimentation for a template class (e.g. test<int, double>) it should attempt to automatically resolve any sub-types.  
+					template <T0, T1> class test{
+					    pair<T0,T1> 
+							my_pair;
+						pair<T0,vector<int>> 
+							another_pair;
+						pair<T0,vector<T1>> 
+							yet_another_pair;
+
+						auto make_pair() const {
+							return pair<T0,T1>();
+						};
+					}; */
                     if (1) {
                         auto& BaseClass = root.make_class("test");
                         BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") }, { "T1", GL::is_template::type<1>("T1") } };
@@ -9810,21 +9833,46 @@ int main() {
                         BaseClass.initialize_basic_member_functions();
 
                         auto Pair = root.call("test<int, double>", {});
-                        for (auto& x : dynamic_cast<GL::scope::impl::ClassScope*>(root.try_find_class(Pair.m_casted_type)->this_m.scope)->template_types) {
-                            print(x.first);
-                            print(x.second.name());
-                        }
-
-                        dynamic_cast<GL::scope::impl::ClassScope*>(root.try_find_class(Pair.m_casted_type)->this_m.scope)->DetermineType("pair<T0,T1>");
+                        //for (auto& x : dynamic_cast<GL::scope::impl::ClassScope*>(root.try_find_class(Pair.m_casted_type)->this_m.scope)->template_types) {
+                        //    print(x.first);
+                        //    print(x.second.name());
+                        //}
+                        // dynamic_cast<GL::scope::impl::ClassScope*>(root.try_find_class(Pair.m_casted_type)->this_m.scope)->DetermineType("pair<T0,T1>");
                         print(root.call<GL::string>("to_string", { root.call("make_pair", { Pair }) }));
-                        print(root.call("my_pair", { Pair }).m_casted_type.name()); // pair<{0}, {1}>
+						print(root.call("my_pair", { Pair }).m_casted_type.name()); // pair<{0}, {1}>
+						print(root.call("another_pair", { Pair }).m_casted_type.name()); // pair<{0}, {1}>
+						print(root.call("yet_another_pair", { Pair }).m_casted_type.name()); // pair<{0}, {1}>
+						print(root.call<GL::string>("to_string", { root.call("my_pair", { Pair }) }));
+                        
                     }
 
+					///*
+					//template<T0> class outter {
+					//	template<T0> class inner {
+					//		static T0 instance(){
+					//			return T0();
+					//		};
+					//	}
+					//}
+					//*/
+					//if (1) {
+					//	auto& outter = root.make_class("outter");
+					//	outter.template_types = { { "T0", GL::is_template::type<0>("T0") }};
+					//	auto& inner = root.make_class("inner");
+					//	// inner.template_types = { { "T0", GL::is_template::type<0>("T0") } };
+					//	inner.add_function(GL::make_callable("instance", [](GL::any::fast_any const& parent) -> GL::any::fast_any {
+					//		if (auto* Class = GL::scope::GetClass(parent.m_casted_type)) {								
+					//			if (auto* templateClass = GL::scope::GetClass(Class->template_types[0].second)) {
+					//				return templateClass->call(templateClass->this_type.name());
+					//			}
+					//		}
+					//		throw std::runtime_error("Could not trace back");
+					//	}, GL::function_signature::Static, {}, { { "", inner.this_type | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0")));
+					//	root.call("outter<int>::inner::instance");
+					//}
 
-
-
-                    print(root.DetermineType("{0}").name());
-                    print(root.DetermineType("pair<{0}, {1}>").name());
+                    EXPECT_EQ("undefined", root.DetermineType("{0}").name());
+					EXPECT_EQ("undefined", root.DetermineType("pair<{0}, {1}>").name());
                 }
                 if (auto timer = sw.debug_timer("GPU matrix test"); true) {
                     GL::scope::impl::RootScope

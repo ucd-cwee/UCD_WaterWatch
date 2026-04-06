@@ -951,13 +951,19 @@ namespace GL {
             return m_casted_type & p_modifiers;
         };
         any operator|(int p_modifiers) const {
-            return any(m_ptr, m_casted_type | p_modifiers);
+            any out(*this);
+            out.m_casted_type |= p_modifiers;
+            return out;
         };
         any operator+(int p_modifiers) const {
-            return any(m_ptr, m_casted_type + p_modifiers);
+            any out(*this);
+            out.m_casted_type |= p_modifiers;
+            return out;
         };
         any operator-(int p_modifiers) const {
-            return any(m_ptr, m_casted_type - p_modifiers);
+            any out(*this);
+            out.m_casted_type -= p_modifiers;
+            return out;
         };
         any& operator|=(int p_modifiers) {
             m_casted_type |= p_modifiers;
@@ -1482,13 +1488,19 @@ namespace GL {
                 return m_casted_type & p_modifiers;
             };
             fast_any operator|(int p_modifiers) const {
-                return fast_any((GL::shared_ptr< type_erasure::any_data >)m_ptr, m_casted_type | p_modifiers);
+                fast_any out(*this);
+                out.m_casted_type |= p_modifiers;
+                return out;
             };
             fast_any operator+(int p_modifiers) const {
-                return fast_any((GL::shared_ptr< type_erasure::any_data >)m_ptr, m_casted_type + p_modifiers);
+                fast_any out(*this);
+                out.m_casted_type |= p_modifiers;
+                return out;
             };
             fast_any operator-(int p_modifiers) const {
-                return fast_any((GL::shared_ptr< type_erasure::any_data >)m_ptr, m_casted_type - p_modifiers);
+                fast_any out(*this);
+                out.m_casted_type -= p_modifiers;
+                return out;
             };
             fast_any& operator|=(int p_modifiers) {
                 m_casted_type |= p_modifiers;

@@ -929,23 +929,35 @@ namespace GL {
 
                     GL::type original_template_type = DetermineType(prefix) | state_modifiers;
                     std::vector<std::pair<GL::string, GL::type>> inner_types;
-                    middle.with_split_nested(",", "<", ">", [&](GL::string const& with_split, bool is_last) -> bool {
+                    bool templated_result = false;
+                    if (middle.with_split_nested(",", "<", ">", [&](GL::string const& with_split, bool is_last) -> bool {
                         auto f = DetermineType(with_split);
                         if (f == GL::type_of<GL::undefined>()) {
                             return true;
                         }
+                        if (f.is_template()) {
+                            templated_result = true;
+                        }
                         inner_types.push_back({ with_split, f });
                         return false;
-                    });
+                    })) {
+                        // undefined type was returned, so we will also return undefined. 
+                        return GL::type_of<GL::undefined>();
+                    }
+                    else {
+                        //if (templated_result) {
+                        //    // hit a brick wall and was not able to finish identification
+                        //    return original_template_type | state_modifiers;
+                        //}
+                        if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
+                            if (dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types.size() == inner_types.size()) {
+                                for (int i = 0; i < dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types.size(); i++) {
+                                    inner_types[i].first = dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types[i].first;
+                                }
 
-                    if (auto* BC = this->GetRoot()->try_find_class(original_template_type); BC && BC->this_m.is_class()) {
-                        if (dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types.size() == inner_types.size()) {
-                            for (int i = 0; i < dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types.size(); i++) {
-                                inner_types[i].first = dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types[i].first;
+                                // must have the same number of template arguments. 
+                                return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
                             }
-
-                            // must have the same number of template arguments. 
-                            return dynamic_cast<ClassScope*>(BC->this_m.scope)->make_inherited_template_class(inner_types).this_type | state_modifiers;
                         }
                     }
                 }
@@ -964,21 +976,16 @@ namespace GL {
 
             // check to see if it matches the template name for any of the template arguments from up above
             GL::type out = GL::type_of<GL::undefined>();
-            if (this->is_class()) {
-                for (auto& x : dynamic_cast<ClassScope*>(this->breadcrumb_m.this_m.scope)->template_types) {
-                    if (x.first == from) {
-                        return x.second;
-                    }
-                }
-            }
             (void)this->FindNearestScopeWhere([&from, &out](Breadcrumb* BC, int state) -> int {
                 if ((state & SearchState::SearchingUsings) != 0) return SearchResult::StaticFailure;
                 if ((state & SearchState::SearchingChildren) != 0) return SearchResult::StaticFailure;
                 if (BC->this_m.is_class()) {
                     for (auto& x : dynamic_cast<ClassScope*>(BC->this_m.scope)->template_types) {
                         if (x.first == from) {
-                            out = x.second;
-                            return SearchResult::Success;
+                            //if (!x.second.is_template()) {
+                                out = x.second;
+                                return SearchResult::Success;
+                            //}
                         }
                     }
                 }
@@ -1268,6 +1275,10 @@ namespace GL {
             return this->breadcrumb_m.GetCurrentNamespace();
         };
         impl::NamespaceScope& impl::NamespaceScope::make_namespace(GL::string const& name) {
+            if (this->breadcrumb_m.this_m.is_class()) {
+                throw std::runtime_error("It is invalid to declare a namespace within a class. Classes may only declare further classes.");
+            }
+
             if (auto f = children.find(name.hash()); f != children.end()) {
                 return *f->second;
             }
@@ -1282,7 +1293,7 @@ namespace GL {
             }
         };
         impl::ClassScope& impl::NamespaceScope::make_class(GL::type class_type) {
-            if ((class_type & GL::type::CppType) == 0) {
+            if (!(class_type & GL::type::CppType)) {
                 GL::string error = "Classes defined with GL::type must be C++ built-in types. Was provided `" + class_type.name() + "` instead, which was not identified was a C++ type.";
                 throw std::runtime_error(error.to_string());
             }
@@ -1309,6 +1320,12 @@ namespace GL {
             }
         };
         impl::ClassScope& impl::NamespaceScope::make_class(GL::string const& class_type) {
+            if (this->is_class()) {
+                if (dynamic_cast<ClassScope*>(this)->template_types.size() > 0) {
+                    throw std::runtime_error("It is invalid to declare a class within a templated class<...>. Templated classes must not declare any further classes or namespaces.");
+                }
+            }
+
             if (auto f = children.find(class_type.hash()); (f != children.end()) && (f->second) && (f->second->is_class())) {
                 return *dynamic_cast<ClassScope*>(f->second.get());
             }
@@ -1328,13 +1345,14 @@ namespace GL {
                 }
             }
         };
-        void impl::NamespaceScope::add_function(GL::Proxy_Function&& func) {
+        GL::Proxy_Function const& impl::NamespaceScope::add_function(GL::Proxy_Function&& func) {
             GL::Proxy_Function copy = func;
-            functions.add_function(std::move(copy));
+            auto& out = functions.add_function(std::move(copy));
             if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                 this->GetRoot()->add_constructor(&this->breadcrumb_m, std::move(func));
             }
             this->invalidate_cache();
+            return out;
         }; 
 
         void impl::ClassScope::default_construct(GL::dynamic_object& destination) {
@@ -1433,16 +1451,18 @@ namespace GL {
             for (auto& member_object : member_objects) {
                 if (!member_object.first.begins_with("~")) {
                     // non-const reference access to member objects
-                    this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any rhs)->GL::any::fast_any {
+                    auto& ref_access = this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any rhs)->GL::any::fast_any {
                         return GL::dynamic_object::object_access(member_name, rhs)->fast() + GL::type::Reference;
                         // return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference);
                     }, GL::function_signature::MemberObject | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference } }, member_object.second.first | GL::type::Reference));
                     // const reference access to member objects
-                    this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any rhs)->GL::any::fast_any {
+                    auto& const_ref_access = this->add_function(GL::make_callable(member_object.first, [member_name = GL::string(member_object.first), expected_type = member_object.second.first](GL::any::fast_any rhs)->GL::any::fast_any {
                         return GL::dynamic_object::object_access(member_name, rhs)->fast() + GL::type::Const + GL::type::Reference;
 
                         // return GL::any::fast_any(GL::dynamic_object::object_access(member_name, rhs), expected_type | GL::type::Reference | GL::type::Const);
                     }, GL::function_signature::MemberObject | GL::function_signature::Constant | GL::function_signature::Async, {}, { { "rhs", this->this_type | GL::type::Reference | GL::type::Const } }, member_object.second.first | GL::type::Reference | GL::type::Const));
+
+                    // std::cout << breadcrumb_m.this_m.scope_name << " : " << member_object.first << " : " << ref_access->m_signature.display() << std::endl;
                 }
             }
 
@@ -1477,7 +1497,7 @@ namespace GL {
                                 GL::util::hash(out, obj.first.hash());
                                 GL::util::hash(out, GetCurrentCaller()->call("to_hash", {
                                     obj.second->fast() + GL::type::Const + GL::type::Reference
-                                    }).cast<size_t>());
+                                }).cast<size_t>());
                             }
                         }
                         else {
@@ -1489,6 +1509,74 @@ namespace GL {
                 }
                 return out;
                 }, 0, {}, { { "rhs", this->this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
+        };
+        static std::pair<GL::type, bool> TryFinalizeType(GL::type const& candidtate, GL::scope::impl::ClassScope* NewClass) {
+            // Prevent infinite looping with `make_inherited_template_class`
+            static thread_local std::deque<GL::type> recent_attempts;
+            class push_pop {
+            public:
+                push_pop(GL::type const& rhs) {
+                    recent_attempts.push_back(rhs);
+                };
+                ~push_pop() {
+                    recent_attempts.pop_back();
+                };
+            };
+            for (auto& recent : recent_attempts) if (recent == candidtate) return { candidtate, false };           
+            push_pop pusher_popper(candidtate);
+            
+            if (GL::is_template::index(candidtate) >= 0) {                
+                // this is a template type. seek to discover the type from the parent types / classes
+                GL::type out = candidtate;
+                bool result = NewClass->FindNearestScopeWhere([&](GL::scope::impl::Breadcrumb* BC, int state) -> int {
+                    if (!BC->this_m.is_class()) return GL::scope::impl::BasicScope::SearchResult::Failure;
+                    auto& Class = *dynamic_cast<GL::scope::impl::ClassScope*>(BC->this_m.scope);
+                    auto& potential_templates = Class.template_types;
+                    for (int i = 0; i < potential_templates.size(); ++i) {
+                        if (!potential_templates[i].second.is_template()) { // ...do not want to replace with another template type...
+                            if (GL::is_template::type(i, potential_templates[i].first).get_base_hash() == candidtate.get_base_hash()) { // this would have been a good match.
+                                out = potential_templates[i].second;
+                                return GL::scope::impl::BasicScope::SearchResult::Success;
+                            }
+                        }
+                    }
+                    return GL::scope::impl::BasicScope::SearchResult::Failure;
+                }, nullptr, GL::scope::impl::BasicScope::SearchState::SkipChildren);
+                return { out, result };
+            }
+            else {
+                if (auto* Class_p = NewClass->GetRoot()->try_find_class(candidtate)) {
+                    auto& Class = *dynamic_cast<GL::scope::impl::ClassScope*>(Class_p->this_m.scope);
+                    std::vector<std::pair<GL::string, GL::type>> corrected_template_params;
+                    bool need_to_recalc = false;
+                    for (auto& template_t : Class.template_types) {
+                        if (auto [newT, successful] = TryFinalizeType(template_t.second, NewClass); successful) {
+                            need_to_recalc = true;
+                            corrected_template_params.push_back({ template_t.first, newT });
+                        }
+                        else {
+                            corrected_template_params.push_back({ template_t.first, template_t.second });
+                        }
+                    }
+                    if (need_to_recalc) {
+                        if (Class.this_type.name().find("<") == GL::string::npos) {                            
+                            auto& correctedClass = Class.make_inherited_template_class(corrected_template_params);
+                            return { correctedClass.this_type, true };
+                        }
+                        else {
+                            if (auto* BC = Class.GetRoot()->try_find_class(Class.DetermineType(Class.this_type.name().left_of("<")))) {
+                                auto& correctedClass = dynamic_cast<GL::scope::impl::ClassScope*>(BC->this_m.scope)->make_inherited_template_class(corrected_template_params);
+                                return { correctedClass.this_type, true };
+                            }
+                            else {
+                                auto& correctedClass = Class.make_inherited_template_class(corrected_template_params);
+                                return { correctedClass.this_type, true };
+                            }
+                        }
+                    }
+                }
+            }
+            return { candidtate, false };
         };
         impl::ClassScope& impl::ClassScope::make_inherited_template_class(std::vector< std::pair<GL::string, GL::type> > const& templates) {
             GL::string name; for (auto& x : templates) {
@@ -1503,7 +1591,12 @@ namespace GL {
                     name = name.add_to_delim(x.second.name(), ",");
                 }
             }
-            name = this->this_type.name() + "<" + name + ">"; // vector<int>
+            if (!name.empty()) {
+                name = this->this_type.name() + "<" + name + ">"; // vector<int>
+            }
+            else {
+                name = this->this_type.name();
+            }
 
             auto _parent = dynamic_cast<NamespaceScope*>(this->GetParent());
             if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
@@ -1528,25 +1621,30 @@ namespace GL {
                             }
 
                             auto new_f = f->duplicate();
+
                             bool necessary = false;
                             if (new_f->m_signature.returns_m.get_base_hash() == this->this_type.get_base_hash()) {
-                                new_f->m_signature.returns_m = new_class->this_type + (new_f->m_signature.returns_m - GL::type::CppType).get_qualifiers();
+                                new_f->m_signature.returns_m = new_class->this_type + (new_f->m_signature.returns_m - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                 necessary = true;
                             }
-                            if (auto template_index = GL::is_template::index(new_f->m_signature.returns_m); template_index >= 0) {
-                                new_f->m_signature.returns_m = new_class->template_types[template_index].second + (new_f->m_signature.returns_m - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
-                                necessary = true;
+                            if (new_f->m_signature.returns_m.is_template()) {
+                                auto& replace_me = new_f->m_signature.returns_m;
+                                if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
+                                    replace_me = newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
+                                    necessary = true;
+                                }
                             }
                             for (auto& x : new_f->m_signature.argument_types_m) {
-                                if (auto template_index = GL::is_template::index(x); template_index >= 0) {
-                                    x = new_class->template_types[template_index].second + (x - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
+                                auto& replace_me = x;
+                                if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
+                                    replace_me = newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                     necessary = true;
                                 }
                             }
                             if (necessary) {
                                 for (auto& x : new_f->m_signature.argument_types_m) {
                                     if (x.get_base_hash() == this->this_type.get_base_hash()) {
-                                        x = new_class->this_type + (x - GL::type::CppType).get_qualifiers();
+                                        x = new_class->this_type + (x - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                         necessary = true;
                                     }
                                 }
@@ -1560,17 +1658,19 @@ namespace GL {
                             return false;
                         });
                         for (auto& member_o : this->member_objects) {
-                            if (auto template_index = GL::is_template::index(member_o.second.first); template_index >= 0) {
-                                new_class->add_member_object(member_o.first, new_class->template_types[template_index].second - GL::type::TemplateType);
+                            auto& replace_me = member_o.second.first; 
+                            if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
+                                new_class->add_member_object(member_o.first, newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers());
                             }
                         }
                         if (1) {
                             auto objects = this->objects_m.lock_shared();
                             for (auto& obj : *objects) {
-                                if (auto template_index = GL::is_template::index(obj.second.m_casted_type); template_index >= 0) {
-                                    auto this_static_obj_type = new_class->template_types[template_index].second + (obj.second.m_casted_type - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
-                                    if (auto* BC = this->GetRoot()->try_find_class(this_static_obj_type); BC) {
-                                        new_class->insert_object_here(obj.first, BC->this_m.scope->call(this_static_obj_type.name(), {}));
+                                auto& replace_me = obj.second.m_casted_type;
+                                if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
+                                    auto this_static_obj_type = newT + (obj.second.m_casted_type - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
+                                    if (auto* BCP = this->GetRoot()->try_find_class(this_static_obj_type); BCP) {
+                                        new_class->insert_object_here(obj.first, BCP->this_m.scope->call(this_static_obj_type.name(), {}));
                                     }
                                     else {
                                         new_class->insert_object_here(obj.first, this->call(this_static_obj_type.name(), {}));
@@ -1578,6 +1678,14 @@ namespace GL {
                                 }
                             }
                         }
+
+                        //for (auto& child_scope : this->children) {
+                        //    if (child_scope.second->is_class()) {
+                        //        ClassScope& Class = *dynamic_cast<ClassScope*>(child_scope.second.get());
+                        //        Class.make_inherited_template_class(templates);
+                        //    }
+                        //}
+
                         _parent->children.insert(
                             { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(new_class) }
                         );
