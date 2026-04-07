@@ -14,6 +14,7 @@ namespace GL {
     // Shared strings with fast, robust support functions. Modifying strings requires creating a new string.
     class string {
     public:
+        using value_type = std::string_view::value_type;
         using size_type = std::string_view::size_type;
         static constexpr const auto npos = std::string_view::npos;
 

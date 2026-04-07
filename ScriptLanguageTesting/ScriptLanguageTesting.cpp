@@ -544,9 +544,17 @@ namespace GL {
 			const Engine::Position& end() const noexcept { return location.end; }
 
 			GL::string pretty_print() const {
-				GL::string out = text;
-				for (auto& elem : get_children()) out = out.add_to_delim(elem.get().pretty_print(), " ");				
-				return out;
+				auto children = get_children();
+				if (children.size() > 0) {
+					GL::string out;
+					for (auto& elem : children) {
+						out = out.add_to_delim(elem.get().pretty_print(), ", ");
+					}
+					return text + "{" + out + "}";
+				}
+				else {
+					return text;
+				}
 			};
 
 			virtual std::vector<std::reference_wrapper<AST_Node>> get_children() const = 0;
@@ -561,8 +569,8 @@ namespace GL {
 				GL::string returnType = return_type().name();
 				GL::string TimeSpentEvaling = std::to_string(TimeSpent_Total());
 				GL::string locationStr = location.to_string();
-				auto out = t_prepend + "(" + str + ")" + " [" + TimeSpentEvaling + "] " + Text + " : " + locationStr + " -> " + returnType + "\n";
-				for (auto& elem : get_children()) { out = out.add_to_delim(elem.get().to_string(t_prepend), " "); }
+				auto out = t_prepend + "(" + TimeSpentEvaling.add_to_delim(str, " ") + ") \"" + Text + "\": " + locationStr + " -> " + returnType;
+				for (auto& elem : get_children()) { out = out.add_to_delim(elem.get().to_string(t_prepend + "\t"), "\n"); }
 				return out;
 			};
 
@@ -2273,7 +2281,7 @@ namespace GL {
 				};
 			};
 
-#if 0
+#if 1
 			class Interpreter {
 			public:
 				struct AST_Node_Impl;
@@ -2348,8 +2356,8 @@ namespace GL {
 					(void)detail::GetTextImpl(r, out);
 					return out;
 				};
-				static GL::any::fast_any const_var(GL::any::fast_any const& rhs) {
-					return rhs | GL::type::Const;
+				static GL::any::fast_any const_var(GL::any const& rhs) {
+					return rhs.fast() | GL::type::Const;
 				};
 
 				struct AST_Node_Impl : public AST_Node {
@@ -2377,7 +2385,7 @@ namespace GL {
 
 						InterlockedIncrementAcquire64(&num_evals);
 						defer(
-							const_cast<GL::second&>(time_spent_during_eval) += GL::second(sw.stop());
+							const_cast<GL::second&>(time_spent_during_eval) += GL::second((float)sw.stop());
 						);
 
 						try {
@@ -2437,7 +2445,7 @@ namespace GL {
 						return out;
 					};
 					GL::second TimeSpent_Self() const override {
-						return time_spent_during_eval / std::max<float>(1, num_evals);
+						return time_spent_during_eval / (float)std::max<long long>(1ll, num_evals);
 					};
 
 					GL::second time_spent_during_eval;
@@ -2528,9 +2536,9 @@ namespace GL {
 					};
 					// built-in constants that could be understood by the compiler, such as integers, floating-point values, strings, vectors, etc.
 					struct Constant_AST_Node final : public AST_Node_Impl {
-						Constant_AST_Node(GL::string t_ast_node_text, Engine::Parse_Location t_loc, GL::any::fast_any t_value)
+						Constant_AST_Node(GL::string t_ast_node_text, Engine::Parse_Location t_loc, GL::any const& t_value)
 							: AST_Node_Impl(t_ast_node_text, Engine::AST_Node_Type::Constant, std::move(t_loc))
-							, m_value(std::move(t_value) | GL::type::Const)
+							, m_value(t_value.fast() | GL::type::Const)
 						{}
 
 						explicit Constant_AST_Node(GL::any::fast_any t_value)
@@ -2695,7 +2703,7 @@ namespace GL {
 
 						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							// evaluate all of the children, return the result of the last child
-							int numChildren = this->children.size();
+							size_t numChildren = this->children.size();
 							if (numChildren > 0) {
 								for (int i = 0; i < numChildren - 1; i++) {
 									this->children[i]->eval(currentScope);
@@ -3892,7 +3900,7 @@ namespace GL {
 
 						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
 							// evaluate all of the children, return the result of the last child
-							int numChildren = this->children.size();
+							size_t numChildren = this->children.size();
 							if (numChildren > 0) {
 								for (int i = 0; i < numChildren - 1; i++) {
 									this->children[i]->eval(currentScope);
@@ -3948,10 +3956,10 @@ namespace GL {
 					};
 
 					struct Fold_Right_Binary_Operator_AST_Node : AST_Node_Impl {
-						Fold_Right_Binary_Operator_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_oper, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, Any t_rhs)
+						Fold_Right_Binary_Operator_AST_Node(GL::scope::impl::BasicScope* currentScope, const GL::string& t_oper, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children, GL::any::fast_any t_rhs)
 							: AST_Node_Impl(t_oper, Engine::AST_Node_Type::BinaryFoldRight, std::move(t_loc), std::move(t_children))
 							, m_oper(Engine::Operators::to_operator(t_oper.c_str()))
-							, m_rhs(std::move(t_rhs))
+							, m_rhs(t_rhs)
 						{}
 
 						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
@@ -3997,7 +4005,7 @@ namespace GL {
 								for (int i = 0; i < numChildren - 1; i++) {
 									this->children[i]->eval(currentScope);
 								}
-								this->children.back()->eval(currentScope);
+								return this->children.back()->eval(currentScope);
 							}
 							else {
 								return {};
@@ -4005,31 +4013,30 @@ namespace GL {
 						};
 					};
 
-					// CONTINUE FROM HERE...
-
 					struct FunctionDecl_AST_Node final : AST_Node_Impl {
 						FunctionDecl_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::FunctionDecl, std::move(t_loc), std::move(t_children))
-							, inputArgNames(Arg_List_AST_Node::get_arg_names(*this->children[2]))
-							, inputArgTypes(Arg_List_AST_Node::get_arg_types(*this->children[2]))
+							//, inputArgNames(Arg_List_AST_Node::get_arg_names(*this->children[2]))
+							//, inputArgTypes(Arg_List_AST_Node::get_arg_types(*this->children[2]))
 						{
 							ASSERT(this->children.size() == 4); // Id -> return_type, Id -> function_name, Arg_List, Block
 
-							function_name = GetText(this->children[1]);
-							numArgs = this->children[2]->children.size();
-							FunctionBlock = this->children[3] = optimizer::optimize(this->children[3], currentScope);
-							return_type_name = GetText(this->children[0]);
-							returnArgType = GetClassType(this->children[0], currentScope);
-							// if (returnArgType.expired()) returnArgType = user_type_shared<void>();
+							//function_name = GetText(this->children[1]);
+							//numArgs = this->children[2]->children.size();
+							//FunctionBlock = this->children[3] = optimizer::optimize(this->children[3], currentScope);
+							//return_type_name = GetText(this->children[0]);
+							//returnArgType = GetClassType(this->children[0], currentScope);
 						};
-
+#if 0
 						static void AddObjects(int startposition, std::shared_ptr< Scopes::BasicScope> const& thisScope, std::vector<GL::string> const& argNames, std::vector<GL::type> const& argTypes) {};
 						template<typename T, typename... R> static void AddObjects(int startposition, std::shared_ptr< Scopes::BasicScope> const& thisScope, std::vector<GL::string> const& argNames, std::vector<GL::type> const& argTypes, T const& argument, R const&... arguments) {
 							thisScope->EmplaceObject(argNames[startposition], std::make_shared<Any>(thisScope->Cast(argument, argTypes[startposition], true)), false);
 							AddObjects(startposition + 1, thisScope, argNames, argTypes, arguments...);
 						};
+#endif
 
 						GL::any::fast_any eval_internal(GL::scope::impl::BasicScope* currentScope) const override {
+#if 0
 							if (currentScope->is_class()) {
 								if (auto ptr = std::dynamic_pointer_cast<Scopes::ClassScope>(currentScope)) {
 									auto p_locked = initialized.Unique();
@@ -4612,16 +4619,19 @@ namespace GL {
 								throw exception::eval_error("Function has too many parameters!");
 							}
 							return {};
+#else
+                        return {};
+#endif
 						};
 
-						GoodLang::SharedLockable<bool> initialized{ false };
-						GL::string return_type_name;
-						GL::string function_name;
-						int numArgs;
-						AST_Node_Impl_Ptr FunctionBlock;
-						std::vector<GL::type> inputArgTypes;
-						std::vector<GL::string> inputArgNames;
-						GL::type returnArgType;
+						//GoodLang::SharedLockable<bool> initialized{ false };
+						//GL::string return_type_name;
+						//GL::string function_name;
+						//int numArgs;
+						//AST_Node_Impl_Ptr FunctionBlock;
+						//std::vector<GL::type> inputArgTypes;
+						//std::vector<GL::string> inputArgNames;
+						//GL::type returnArgType;
 					};
 				};
 
@@ -4765,11 +4775,11 @@ namespace GL {
 								&& node->children[1]->children[0]->identifier == Engine::AST_Node_Type::Constant
 								&& node->children[0]->text == "to_string"
 								) {
-								const Any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1]->children[0].get())->m_value;
+								const GL::any::fast_any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1]->children[0].get())->m_value;
 								try {
 									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
-										node->text, node->location, currentScope->Call("to_string", { rhs })
-										));
+										node->text, node->location, currentScope->call("to_string", { rhs })
+								    ));
 									return true;
 								}
 								catch (...) {
@@ -4964,7 +4974,7 @@ namespace GL {
 												sub_child.text,
 												sub_child.location,
 												std::move(sub_child.children)
-												));
+											));
 											result = true;
 										}
 									}
@@ -4979,7 +4989,7 @@ namespace GL {
 						bool optimize(AST_Node_Impl_Ptr& node, GL::scope::impl::BasicScope* currentScope) {
 							if ((node->identifier == Engine::AST_Node_Type::If) && (node->children.size() >= 2) && (node->children[0]->identifier == Engine::AST_Node_Type::Constant)) {
 								try {
-									if (currentScope->Cast<bool>(dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value)) {
+									if (currentScope->cast<bool>(dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value)) {
 										// "TRUE" statement is the exclusive path
 										node = std::move(node->children[1]);
 										return true;
@@ -5010,11 +5020,11 @@ namespace GL {
 								&& node->children.size() == 1
 								&& node->children[0]->identifier == Engine::AST_Node_Type::Constant
 								) {
-								const Any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value;
+								const GL::any::fast_any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value;
 								try {
 									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
-										node->text, node->location, currentScope->Call(node->text, { rhs })
-										));
+										node->text, node->location, currentScope->call(node->text, { rhs })
+								    ));
 									return true;
 								}
 								catch (...) {
@@ -5033,7 +5043,7 @@ namespace GL {
 								&& node->children.size() == 1
 								&& node->children[0]->identifier == Engine::AST_Node_Type::Constant
 								&& ((node->text == "++") || (node->text == "--"))
-								) {
+						    ) {
 								node = std::move(node->children[0]);
 								return true;
 							}
@@ -5049,13 +5059,13 @@ namespace GL {
 								&& node->children[0]->identifier == Engine::AST_Node_Type::Constant
 								&& node->children[1]->identifier == Engine::AST_Node_Type::Constant
 								) {
-								const Any& lhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value;
-								const Any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1].get())->m_value;
+								const GL::any::fast_any& lhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[0].get())->m_value;
+								const GL::any::fast_any& rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1].get())->m_value;
 
 								try {
 									node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
-										node->text, node->location, currentScope->Call(node->text, { lhs, rhs })
-										));
+										node->text, node->location, currentScope->call(node->text, { lhs, rhs })
+									));
 									return true;
 								}
 								catch (...) {
@@ -5078,12 +5088,12 @@ namespace GL {
 								) {
 								try {
 									const auto& oper = node->text;
-									const auto parsed = Engine::Operators::to_operator(oper);
+									const auto parsed = Engine::Operators::to_operator(oper.c_str());
 									if (parsed != Engine::Operators::Opers::invalid) {
 										const auto rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(node->children[1].get())->m_value;
 										node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Fold_Right_Binary_Operator_AST_Node>(
 											currentScope, node->text, node->location, std::move(node->children), rhs
-											));
+										));
 										return true;
 									}
 								}
@@ -5100,6 +5110,7 @@ namespace GL {
 					// If an Inline_Array is made-up of const elements, then evaluate and store it as constexpr too.
 					struct ConstArray {
 						bool optimize(AST_Node_Impl_Ptr& node, GL::scope::impl::BasicScope* currentScope) {
+#if 0
 							// Fold right side
 							if (node->identifier == Engine::AST_Node_Type::Inline_Array
 								&& node->children.size() == 1
@@ -5129,6 +5140,9 @@ namespace GL {
 								}
 							}
 							return false;
+#else
+							return false;
+#endif
 						}
 					};
 
@@ -5136,6 +5150,7 @@ namespace GL {
 					struct ConstMap {
 						bool optimize(AST_Node_Impl_Ptr& node, GL::scope::impl::BasicScope* currentScope) {
 							// Fold right side
+#if 0
 							if (node->identifier == Engine::AST_Node_Type::Inline_Map
 								&& node->children.size() == 1
 								&& node->children[0]->identifier == Engine::AST_Node_Type::Arg_List
@@ -5188,11 +5203,15 @@ namespace GL {
 									return true;
 								}
 							}
+
 							return false;
+#else
+							return false;
+#endif
 						}
 					};
 
-					// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
+					// Improve the performance of a well-defined for loop by re-structuring it.
 					struct ForLoopSignature {
 						bool optimize(AST_Node_Impl_Ptr& node, GL::scope::impl::BasicScope* currentScope) {
 							if (node->identifier == Engine::AST_Node_Type::For
@@ -5200,7 +5219,7 @@ namespace GL {
 								) {
 								// x++ into ++x;
 								if (node->children[2]->identifier == Engine::AST_Node_Type::Postfix) { // x++
-									switch (Engine::hash(GetText(node->children[2]))) {
+									switch (Engine::hash(GetText(node->children[2]).c_str())) {
 									case Engine::hash("++"):
 										node->children[2] = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Prefix_AST_Node>(
 											currentScope, "++", node->children[2]->location, std::move(node->children[2]->children)
@@ -5296,28 +5315,28 @@ namespace GL {
 
 						void process_hex() {
 							if (!hex_matches.empty()) {
-								auto val = stoll(hex_matches, nullptr, 16);
-								match.push_back(char_type(val));
+								auto val = stoll(hex_matches.to_string(), nullptr, 16);
+								match = match + std::string(1, char_type(val));
 							}
-							hex_matches.clear();
+							hex_matches = "";
 							is_escaped = false;
 							is_hex = false;
 						}
 
 						void process_octal() {
 							if (!octal_matches.empty()) {
-								auto val = stoll(octal_matches, nullptr, 8);
-								match.push_back(char_type(val));
+								auto val = stoll(octal_matches.to_string(), nullptr, 8);
+								match = match + std::string(1, char_type(val));
 							}
-							octal_matches.clear();
+							octal_matches = "";
 							is_escaped = false;
 							is_octal = false;
 						}
 
 						void process_unicode() {
-							const auto ch = static_cast<uint32_t>(std::stoi(hex_matches, nullptr, 16));
+							const auto ch = static_cast<uint32_t>(std::stoi(hex_matches.to_string(), nullptr, 16));
 							const auto match_size = hex_matches.size();
-							hex_matches.clear();
+							hex_matches = "";
 							is_escaped = false;
 							const auto u_size = unicode_size;
 							unicode_size = 0;
@@ -5331,25 +5350,25 @@ namespace GL {
 							}
 
 							if (ch < 0x80) {
-								match += static_cast<char>(ch);
+								match = match + std::string(1, static_cast<char>(ch));
 							}
 							else if (ch < 0x800) {
 								buf[0] = static_cast<char>(0xC0 | (ch >> 6));
 								buf[1] = static_cast<char>(0x80 | (ch & 0x3F));
-								match.append(buf, 2);
+								match = match + std::string(buf, 2);
 							}
 							else if (ch < 0x10000) {
 								buf[0] = static_cast<char>(0xE0 | (ch >> 12));
 								buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
 								buf[2] = static_cast<char>(0x80 | (ch & 0x3F));
-								match.append(buf, 3);
+								match = match + std::string(buf, 3);
 							}
 							else if (ch < 0x200000) {
 								buf[0] = static_cast<char>(0xF0 | (ch >> 18));
 								buf[1] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
 								buf[2] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
 								buf[3] = static_cast<char>(0x80 | (ch & 0x3F));
-								match.append(buf, 4);
+								match = match + std::string(buf, 4);
 							}
 							else {
 								// this must be an invalid escape sequence?
@@ -5364,7 +5383,7 @@ namespace GL {
 
 							if (is_octal) {
 								if (is_octal_char) {
-									octal_matches.push_back(t_char);
+									octal_matches = octal_matches + std::string(1, t_char);
 
 									if (octal_matches.size() == 3) {
 										process_octal();
@@ -5377,7 +5396,7 @@ namespace GL {
 							}
 							else if (is_hex) {
 								if (is_hex_char) {
-									hex_matches.push_back(t_char);
+									hex_matches = hex_matches + std::string(1, t_char);
 
 									if (hex_matches.size() == 2 * sizeof(char_type)) {
 										// This rule differs from the C/C++ standard, but ChaiScript
@@ -5394,7 +5413,7 @@ namespace GL {
 							}
 							else if (unicode_size > 0) {
 								if (is_hex_char) {
-									hex_matches.push_back(t_char);
+									hex_matches = hex_matches + std::string(1, t_char);
 
 									if (hex_matches.size() == unicode_size) {
 										// Format is specified to be 'slash'uABCD
@@ -5412,7 +5431,7 @@ namespace GL {
 
 							if (t_char == '\\') {
 								if (is_escaped) {
-									match.push_back('\\');
+									match = match + "\\";
 									is_escaped = false;
 								}
 								else {
@@ -5423,7 +5442,7 @@ namespace GL {
 								if (is_escaped) {
 									if (is_octal_char) {
 										is_octal = true;
-										octal_matches.push_back(t_char);
+										octal_matches = octal_matches + std::string(1, t_char);
 									}
 									else if (t_char == 'x') {
 										is_hex = true;
@@ -5437,37 +5456,37 @@ namespace GL {
 									else {
 										switch (t_char) {
 										case ('\''):
-											match.push_back('\'');
+											match = match + "\'";
 											break;
 										case ('\"'):
-											match.push_back('\"');
+											match = match + "\"";
 											break;
 										case ('?'):
-											match.push_back('?');
+											match = match + "?";
 											break;
 										case ('a'):
-											match.push_back('\a');
+											match = match + "\a";
 											break;
 										case ('b'):
-											match.push_back('\b');
+											match = match + "\b";
 											break;
 										case ('f'):
-											match.push_back('\f');
+											match = match + "\f";
 											break;
 										case ('n'):
-											match.push_back('\n');
+											match = match + "\n";
 											break;
 										case ('r'):
-											match.push_back('\r');
+											match = match + "\r";
 											break;
 										case ('t'):
-											match.push_back('\t');
+											match = match + "\t";
 											break;
 										case ('v'):
-											match.push_back('\v');
+											match = match + "\v";
 											break;
 										case ('$'):
-											match.push_back('$');
+											match = match + "$";
 											break;
 										default:
 											throw exception::eval_error("Unknown escaped sequence in string", pos);
@@ -5479,22 +5498,22 @@ namespace GL {
 									saw_interpolation_marker = true;
 								}
 								else {
-									match.push_back(t_char);
+									match = match + std::string(1, t_char);
 								}
 							}
 						}
 					};
-					static std::map<GL::string, Any> build_constants() {
-						std::map<GL::string, Any> out;
+					static std::map<GL::string, GL::any::fast_any> build_constants() {
+						std::map<GL::string, GL::any::fast_any> out;
 						out["true"] = const_var(true);
 						out["false"] = const_var(false);
 						out["Infinity"] = const_var(std::numeric_limits<double>::infinity());
 						out["NaN"] = const_var(std::numeric_limits<double>::quiet_NaN());
-						out["nullptr"] = const_var(Any());
-						out["null"] = const_var(Any());
+						out["nullptr"] = const_var(GL::any());
+						out["null"] = const_var(GL::any());
 						return out;
 					};
-					static std::map<GL::string, Any> const& constants() {
+					static std::map<GL::string, GL::any::fast_any> const& constants() {
 						static auto out{ build_constants() };
 						return out;
 					};
@@ -5654,7 +5673,7 @@ namespace GL {
 						}
 						static bool is_match(const std::size_t t_group, GL::string t_str)  noexcept {
 							auto match = [&t_str](const auto& array) {
-								return std::any_of(array.begin(), array.end(), [&t_str](const auto& v) { return v == t_str; });
+								return std::any_of(array.begin(), array.end(), [&t_str](const auto& v) { return std::string_view(v) == t_str; });
 							};
 
 							switch (t_group) {
@@ -5691,17 +5710,17 @@ namespace GL {
 						return std::array<Engine::Operator_Precedence, 12>{
 							{
 								Engine::Operator_Precedence::Ternary_Cond,
-									Engine::Operator_Precedence::Logical_Or,
-									Engine::Operator_Precedence::Logical_And,
-									Engine::Operator_Precedence::Bitwise_Or,
-									Engine::Operator_Precedence::Bitwise_And,
-									Engine::Operator_Precedence::Equality,
-									Engine::Operator_Precedence::Comparison,
-									Engine::Operator_Precedence::Shift,
-									Engine::Operator_Precedence::Addition,
-									Engine::Operator_Precedence::Multiplication,
-									Engine::Operator_Precedence::Bitwise_Xor,
-									Engine::Operator_Precedence::Prefix
+								Engine::Operator_Precedence::Logical_Or,
+								Engine::Operator_Precedence::Logical_And,
+								Engine::Operator_Precedence::Bitwise_Or,
+								Engine::Operator_Precedence::Bitwise_And,
+								Engine::Operator_Precedence::Equality,
+								Engine::Operator_Precedence::Comparison,
+								Engine::Operator_Precedence::Shift,
+								Engine::Operator_Precedence::Addition,
+								Engine::Operator_Precedence::Multiplication,
+								Engine::Operator_Precedence::Bitwise_Xor,
+								Engine::Operator_Precedence::Prefix
 							}
 						};
 					};
@@ -5723,7 +5742,7 @@ namespace GL {
 					// check if the string is a valid operator
 					static bool is_operator(GL::string t_s) noexcept { return Operator_Matches::is_match(t_s); }
 					static void validate_object_name(GL::string const& name, Engine::Position const& m_position) {
-						switch (Engine::hash(name)) {
+						switch (Engine::hash(name.c_str())) {
 						case Engine::hash(""):
 							throw exception::eval_error("Id names cannot be empty", m_position);
 						case Engine::hash("#define"):
@@ -5738,7 +5757,7 @@ namespace GL {
 						case Engine::hash("#include"):
 						case Engine::hash("#pragma"):
 						case Engine::hash("auto"):
-						case Engine::hash("var"):
+						// case Engine::hash("var"):
 						case Engine::hash("global"):
 						case Engine::hash("while"):
 						case Engine::hash("for"):
@@ -5759,7 +5778,7 @@ namespace GL {
 						case Engine::hash("else"):
 						{
 							GL::string temp = GL::string(name);
-							throw exception::eval_error(GoodLang::printf("Id name '%s' was reserved for the langauge", temp.c_str()), m_position);
+							throw exception::eval_error("Id name '"+ temp +"' was reserved for the langauge", m_position);
 						}
 						default:
 							return;
@@ -6010,7 +6029,7 @@ namespace GL {
 						return exponent ? base * std::pow(T(10), t * static_cast<T>(exponent)) : t;
 					};
 					/// Parses a floating point value
-					static Units::value buildFloat(GL::string t_val) {
+					static GL::value buildFloat(GL::string t_val) {
 						bool float_ = false;
 						bool long_ = false;
 
@@ -6031,17 +6050,17 @@ namespace GL {
 						}
 
 						if (float_) {
-							return Units::value(parse_num_<float>(t_val.substr(0, i)));
+							return GL::value((float)parse_num_<float>(t_val.substr(0, i)));
 						}
 						else if (long_) {
-							return Units::value(parse_num_<long double>(t_val.substr(0, i)));
+							return GL::value((float)parse_num_<long double>(t_val.substr(0, i)));
 						}
 						else {
-							return Units::value(parse_num_<double>(t_val.substr(0, i)));
+							return GL::value((float)parse_num_<double>(t_val.substr(0, i)));
 						}
 					}
 					/// Parses a integer value and returns a wrapped representation of it
-					static Units::value buildInt(const int base, GL::string t_val, const bool prefixed) {
+					static GL::value buildInt(const int base, GL::string t_val, const bool prefixed) {
 						bool unsigned_ = false;
 						bool long_ = false;
 						bool longlong_ = false;
@@ -6072,45 +6091,45 @@ namespace GL {
 
 						try {
 							/// TODO fix this to use from_chars
-							auto u = std::stoll(GL::string(t_val), nullptr, base);
+							auto u = std::stoll(t_val.to_string(), nullptr, base);
 
 							if (!unsigned_ && !long_ && u >= std::numeric_limits<int>::min() && u <= std::numeric_limits<int>::max()) {
-								return static_cast<int>(u);
+								return (float)static_cast<int>(u);
 							}
 							else if ((unsigned_ || base != 10) && !long_ && u >= std::numeric_limits<unsigned int>::min()
 								&& u <= std::numeric_limits<unsigned int>::max()) {
-								return static_cast<unsigned int>(u);
+								return (float)static_cast<unsigned int>(u);
 							}
 							else if (!unsigned_ && !longlong_ && u >= std::numeric_limits<long>::min() && u <= std::numeric_limits<long>::max()) {
-								return static_cast<long>(u);
+								return (float)static_cast<long>(u);
 							}
 							else if ((unsigned_ || base != 10) && !longlong_ && u >= std::numeric_limits<unsigned long>::min()
 								&& u <= std::numeric_limits<unsigned long>::max()) {
-								return static_cast<unsigned long>(u);
+								return (float)static_cast<unsigned long>(u);
 							}
 							else if (!unsigned_ && u >= std::numeric_limits<long long>::min() && u <= std::numeric_limits<long long>::max()) {
-								return static_cast<long long>(u);
+								return (float)static_cast<long long>(u);
 							}
 							else {
-								return static_cast<unsigned long long>(u);
+								return (float)static_cast<unsigned long long>(u);
 							}
 						}
 						catch (const std::out_of_range&) {
 							// too big to be signed
 							try {
 								/// TODO fix this to use from_chars
-								auto u = std::stoull(GL::string(t_val), nullptr, base);
+								auto u = std::stoull(t_val.to_string(), nullptr, base);
 
 								if (!longlong_ && u >= std::numeric_limits<unsigned long>::min() && u <= std::numeric_limits<unsigned long>::max()) {
-									return static_cast<unsigned long>(u);
+									return (float)static_cast<unsigned long>(u);
 								}
 								else {
-									return static_cast<unsigned long long>(u);
+									return (float)static_cast<unsigned long long>(u);
 								}
 							}
 							catch (const std::out_of_range&) {
 								// it's just simply too big
-								return std::numeric_limits<long long>::max();
+								return (float)std::numeric_limits<long long>::max();
 							}
 						}
 					}
@@ -6199,32 +6218,32 @@ namespace GL {
 							try {
 								if (Hex_()) {
 									auto match = Engine::Position::str(start, m_position);
-									auto bv = buildInt(16, match, true);
-									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									auto bv = buildInt(16, (std::string_view)match, true);
+									m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
 									return true;
 								}
 								else if (Binary_()) {
 									auto match = Engine::Position::str(start, m_position);
-									auto bv = buildInt(2, match, true);
-									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									auto bv = buildInt(2, (std::string_view)match, true);
+									m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
 									return true;
 								}
 								else if (Float_()) {
 									auto match = Engine::Position::str(start, m_position);
-									auto bv = buildFloat(match);
-									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+									auto bv = buildFloat((std::string_view)match);
+									m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
 									return true;
 								}
 								else {
 									IntSuffix_();
 									auto match = Engine::Position::str(start, m_position);
 									if (!match.empty() && (match[0] == '0')) {
-										auto bv = buildInt(8, match, false);
-										m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+										auto bv = buildInt(8, (std::string_view)match, false);
+										m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
 									}
 									else if (!match.empty()) {
-										auto bv = buildInt(10, match, false);
-										m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
+										auto bv = buildInt(10, (std::string_view)match, false);
+										m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
 									}
 									else {
 										return false;
@@ -6448,8 +6467,8 @@ namespace GL {
 					/// 
 					bool Operator_Helper(const size_t t_precedence, GL::string& oper) {
 						return Operator_Matches::any_of(t_precedence, [&oper, this](const auto& elem) {
-							if (Symbol(elem.c_str())) {
-								oper = elem.c_str();
+							if (Symbol(std::string_view(elem))) {
+								oper = std::string_view(elem);
 								return true;
 							}
 							else {
@@ -6485,13 +6504,13 @@ namespace GL {
 											}
 
 											// We've finished with the part of the string up to this point, so clear it
-											match.clear();
+											match = "";
 
 											GL::string eval_match;
 
 											++s;
 											while ((s != end) && (*s != '}')) {
-												eval_match.push_back(*s);
+												eval_match = eval_match + std::string(1, *s);
 												++s;
 											}
 
@@ -6509,7 +6528,7 @@ namespace GL {
 													m_match_stack.push_back(parse_instr_eval(eval_match, currentScope));
 												}
 												catch (const exception::eval_error& e) {
-													throw exception::eval_error(e.what(), start);
+													throw exception::eval_error(std::string(e.what()), start);
 												}
 
 												build_match<AST_Nodes::Arg_List_AST_Node>(currentScope, ev_stack_top);
@@ -6521,7 +6540,7 @@ namespace GL {
 											}
 										}
 										else {
-											match.push_back('$');
+											match = match + "$";
 										}
 										cparser.saw_interpolation_marker = false;
 									}
@@ -6533,7 +6552,7 @@ namespace GL {
 								}
 
 								if (cparser.saw_interpolation_marker) {
-									match.push_back('$');
+									match = match + "$";
 								}
 
 								return cparser.is_interpolated;
@@ -6567,30 +6586,25 @@ namespace GL {
 							GL::string className;
 
 							auto Success = [&](bool Const, bool Ref) -> bool {
-								if (className == "void") {
+								auto classT = currentScope->DetermineType(className);
+								if (auto* BC = currentScope->GetRoot()->try_find_class(classT)) {
+									auto& Class = *dynamic_cast<GL::scope::impl::ClassScope*>(BC->this_m.scope);
+
 									auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, className, prev_pos));
-									ptr->TypeInfo = user_type_shared<void>();
+									if (Const && Ref) {
+										ptr->TypeInfo = classT | GL::type::Const | GL::type::Reference;
+									}
+									else if (Const && !Ref) {
+										ptr->TypeInfo = classT | GL::type::Const;
+									}
+									else if (!Const && Ref) {
+										ptr->TypeInfo = classT | GL::type::Reference;
+									}
+									else {
+										ptr->TypeInfo = classT;
+									}
 									m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
 									return true;
-								}
-								else if (auto Class = currentScope->FindClass(className)) {
-									if (auto ClassPtr = dynamic_cast<Scopes::ClassScope*>(Class->this_m->scope_ptr)) {
-										auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, className, prev_pos));
-										if (Const && Ref) {
-											ptr->TypeInfo = ClassPtr->ClassType->MakeConstRef();
-										}
-										else if (Const && !Ref) {
-											ptr->TypeInfo = ClassPtr->ClassType->MakeConst();
-										}
-										else if (!Const && Ref) {
-											ptr->TypeInfo = ClassPtr->ClassType->MakeRef();
-										}
-										else {
-											ptr->TypeInfo = ClassPtr->ClassType;
-										}
-										m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
-										return true;
-									}
 								}
 								return failure();
 							};
@@ -6657,18 +6671,18 @@ namespace GL {
 						}
 						else {
 							if (Id_()) {
-								auto text = Engine::Position::str(prev_pos, m_position);
+								GL::string text = Engine::Position::str(prev_pos, m_position);
 								if (validate) { validate_object_name(text, m_position); }
 
 								auto foundConstant = constants().find(text);
 								if (foundConstant != constants().end()) {
-									if (AST_Nodes::IdType::Class == T) throw exception::eval_error(GoodLang::printf("Cannot use constant value \"%s\" as a class or type name", text.data()), m_position);
+									if (AST_Nodes::IdType::Class == T) throw exception::eval_error("Cannot use constant value \""+text+"\" as a class or type name", m_position);
 									m_match_stack.push_back({ make_const(text, prev_pos, foundConstant->second), nullptr });
 								}
 								else {
-									switch (Engine::hash(text)) {
+									switch (Engine::hash(text.c_str())) {
 									case Engine::hash("__LINE__"): {
-										if (AST_Nodes::IdType::Class == T) throw exception::eval_error(GoodLang::printf("Cannot use constant value \"%s\" as a class or type name", text.data()), m_position);
+										if (AST_Nodes::IdType::Class == T) throw exception::eval_error("Cannot use constant value \""+ text +"\" as a class or type name", m_position);
 										m_match_stack.push_back({ make_const(text, prev_pos, const_var(prev_pos.line)), nullptr });
 									} break;
 										//case hash("__FILE__"): {
@@ -6714,21 +6728,19 @@ namespace GL {
 							const auto prev_pos = m_position;
 							if (Keyword("auto")) {
 								auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, Engine::Position::str(prev_pos, m_position), prev_pos));
-								ptr->TypeInfo = user_type_shared<Any>();
+								ptr->TypeInfo = {};
 								m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
 							}
-							else if (Keyword("var")) {
-								auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, Engine::Position::str(prev_pos, m_position), prev_pos));
-								ptr->TypeInfo = user_type_shared<Any>();
-								m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
-							}
+							//else if (Keyword("var")) {
+							//	auto ptr = std::dynamic_pointer_cast<AST_Nodes::ClassName_AST_Node>(make_node<AST_Nodes::ClassName_AST_Node>(currentScope, Engine::Position::str(prev_pos, m_position), prev_pos));
+							//	ptr->TypeInfo = {};
+							//	m_match_stack.push_back({ std::dynamic_pointer_cast<AST_Node_Impl>(ptr), currentScope }); // e.g. "x", "Units::meter", etc.
+							//}
 							else {
 								return false;
 							}
 						}
-						else {
-							return false;
-						}
+						return false;
 					};
 
 					/// Reads an argument from input
@@ -6872,13 +6884,13 @@ namespace GL {
 						if (Operator(currentScope)) {
 							for (const auto& sym :
 								{ SS{"="}, SS{":="}, SS{"?="}, SS{".."}, SS{"+="}, SS{"-="}, SS{"*="}, SS{"/="}, SS{"%="}, SS{"<<="}, SS{">>="}, SS{"&="}, SS{"^="}, SS{"|="} }) {
-								if (Symbol(sym.c_str(), true)) {
+								if (Symbol(std::string_view(sym.c_str()), true)) {
 									SkipWS(true);
 									if (!Equation(currentScope)) {
 										throw exception::eval_error("Incomplete equation", m_position);
 									}
 
-									build_match<AST_Nodes::Equation_AST_Node>(currentScope, prev_stack_top, sym.c_str());
+									build_match<AST_Nodes::Equation_AST_Node>(currentScope, prev_stack_top, std::string_view(sym.c_str()));
 									return true;
 								}
 							}
@@ -6927,7 +6939,7 @@ namespace GL {
 							return SpecifiedType_Var_Decl(currentScope);
 						}
 						else { // Normal scopes may utilize implicit or late-definition style variables if they so choose, for ease.
-							if (Keyword("auto") || Keyword("var")) {
+							if (Keyword("auto") /*|| Keyword("var")*/) {
 								(void)Char('&');
 								if (Id(true, currentScope, AST_Nodes::IdType::Variable)) {
 									build_match<AST_Nodes::Var_Decl_AST_Node>(currentScope, prev_stack_top);
@@ -6951,11 +6963,11 @@ namespace GL {
 						constexpr std::array<utility::Static_String, 6> prefix_opers{ SS{"++"}, SS{"--"}, SS{"-"}, SS{"+"}, SS{"!"}, SS{"~"} };
 						for (const auto& oper : prefix_opers) {
 							const bool is_char = oper.size() == 1;
-							if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(oper.c_str()))) {
+							if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(std::string_view(oper.c_str())))) {
 								if (!Operator(currentScope, operators().size() - 1)) {
-									throw exception::eval_error("Incomplete prefix '" + GL::string(oper.c_str()) + "' expression", m_position);
+									throw exception::eval_error("Incomplete prefix '" + GL::string(std::string_view(oper.c_str())) + "' expression", m_position);
 								}
-								build_match<AST_Nodes::Prefix_AST_Node>(currentScope, prev_stack_top, oper.c_str());
+								build_match<AST_Nodes::Prefix_AST_Node>(currentScope, prev_stack_top, std::string_view(oper.c_str()));
 								return true;
 							}
 						}
@@ -6963,11 +6975,11 @@ namespace GL {
 					};
 
 					static auto make_postfix_operators() {
-						std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, std::pair<Units::value, Any>>>, std::greater_equal<int>> out;
-						for (auto& unit_type : Units::value::GetValueTypes()) {
-							auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
-							out[abbreviation.length()].push_back(unit_type);
-						}
+						std::map<int, std::vector<std::pair<GL::type, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<int>> out;
+						//for (auto& unit_type : Units::value::GetValueTypes()) {
+						//	auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
+						//	out[abbreviation.length()].push_back(unit_type);
+						//}
 						return out;
 					}
 
@@ -6990,12 +7002,13 @@ namespace GL {
 								return true;
 							}
 							else {
-								static std::map<int, std::vector<std::pair<std::weak_ptr<GoodLang::Type_Info>, std::pair<Units::value, Any>>>, std::greater_equal<int>>
+								static std::map<int, std::vector<std::pair<GL::type, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<int>>
 									customOperators{ make_postfix_operators() };
 
 								// evaluate the custom operators...
 								if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "" && m_match_stack[prev_stack_top - 1].first->identifier == Engine::AST_Node_Type::Constant) {
-									// this path means the incoming value is constant and known									
+									// this path means the incoming value is constant and known			
+#if 0
 									for (auto& abbreviation_length_to_category : customOperators) {
 										for (auto& unit_type : abbreviation_length_to_category.second) {
 											auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
@@ -7027,9 +7040,11 @@ namespace GL {
 											}
 										}
 									}
+#endif
 								}
 								else if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].first->text != "") {
 									// this path means the incoming value is NOT constant and is not known. 
+#if 0
 									for (auto& abbreviation_length_to_category : customOperators) {
 										for (auto& unit_type : abbreviation_length_to_category.second) {
 											auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
@@ -7074,6 +7089,7 @@ namespace GL {
 											}
 										}
 									}
+#endif
 								}
 							}
 						}
@@ -7417,7 +7433,7 @@ namespace GL {
 										build_match<AST_Nodes::Logical_Or_AST_Node>(currentScope, prev_stack_top, oper);
 										break;
 									case (Engine::Operator_Precedence::Prefix):
-										assert(false); // cannot reach here because of if() statement at the top
+										ASSERT(false); // cannot reach here because of if() statement at the top
 										break;
 									}
 								}
@@ -7493,7 +7509,7 @@ namespace GL {
 								return false;
 							}
 							else {
-								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Constant_AST_Node>(Any(true)), nullptr });
+								m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Constant_AST_Node>(GL::any::fast_any::instance(true)), nullptr });
 							}
 						}
 
@@ -7516,7 +7532,7 @@ namespace GL {
 						}
 
 						if (!(Equation(currentScope))) {
-							m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Constant_AST_Node>(Any(true)), nullptr });
+							m_match_stack.push_back(ParseNode{ std::make_shared<AST_Nodes::Constant_AST_Node>(GL::any::fast_any::instance(true)), nullptr });
 						}
 
 						return true;
@@ -7887,32 +7903,17 @@ namespace GL {
 								throw exception::eval_error("Incomplete 'class' block: class must have a name", m_position);
 							}
 
-							GL::string desired_namespace = ToString(currentScope->CurrentNamespacePath()) + "::" + GL::string(GetText(m_match_stack.back().first));
-
-							static auto fixNamespace{ [](GL::string& x) {
-								while (x.find("::") == 0 && x.length() > 2) {
-									x = x.substr(2);
-								}
-
-								while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-							} };
-							fixNamespace(desired_namespace);
-
-							// if the namespace already exists, then we should "resume" it, rather than creating a new one. 
-							std::shared_ptr<Scopes::ClassScope> newNamespace{ nullptr };
-							if (auto f = currentScope->FindClass(desired_namespace)) {
-								newNamespace = std::dynamic_pointer_cast<Scopes::ClassScope>(f->this_m->scope.lock());
-							}
-							if (!newNamespace) {
-								newNamespace = currentScope->GetNamespace()->MakeChildClass(std::make_shared<GL::string>(GetText(m_match_stack.back().first)));
-							}
+							auto this_class_name = GL::string(GetText(m_match_stack.back().first));
+							auto& Class = currentScope->GetNamespace()->make_class(this_class_name);
 
 							// instead of collecting statements, we want to collect declarations...
-							if (!DeclarationsBlock(newNamespace)) {
+							if (!DeclarationsBlock(&Class)) {
 								throw exception::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", m_position);
 							}
 
-							build_match<AST_Nodes::Class_AST_Node>(newNamespace, prev_stack_top);
+							build_match<AST_Nodes::Class_AST_Node>(&Class, prev_stack_top);
+
+							Class.initialize_basic_member_functions();
 						}
 						return retval;
 					};
@@ -7934,29 +7935,14 @@ namespace GL {
 								throw exception::eval_error("Incomplete 'namespace' block: namespace must have a name", m_position);
 							}
 
-							GL::string desired_namespace = ToString(currentScope->CurrentNamespacePath()) + "::" + GL::string(GetText(m_match_stack.back().first));
-
-							static auto fixNamespace{ [](GL::string& x) {
-								while (x.find("::") == 0 && x.length() > 2) {
-									x = x.substr(2);
-								}
-while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x.length() - 2); }
-} };
-							fixNamespace(desired_namespace);
-
-							std::shared_ptr<Scopes::NamespaceScope> newNamespace{ nullptr };
-							if (auto f = currentScope->FindNamespace(desired_namespace)) {
-								newNamespace = std::dynamic_pointer_cast<Scopes::NamespaceScope>(f->this_m->scope.lock());
-							}
-							if (!newNamespace) {
-								newNamespace = currentScope->GetNamespace()->MakeChildNamespace(std::make_shared<GL::string>(GetText(m_match_stack.back().first)));
-							}
+							auto this_class_name = GL::string(GetText(m_match_stack.back().first));
+							auto& newNamespace = currentScope->GetNamespace()->make_namespace(this_class_name);
 
 							// instead of collecting statements, we want to collect declarations...
-							if (!DeclarationsBlock(newNamespace)) {
+							if (!DeclarationsBlock(&newNamespace)) {
 								throw exception::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", m_position);
 							}
-							build_match<AST_Nodes::Namespace_AST_Node>(newNamespace, prev_stack_top);
+							build_match<AST_Nodes::Namespace_AST_Node>(&newNamespace, prev_stack_top);
 						}
 						return retval;
 					};
@@ -7999,7 +7985,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 
 						// Block
 						auto this_scope = currentScope->make_scope();
-						if (!Block(this_scope)) {
+						if (!Block(&this_scope)) {
 							return failure();
 						}
 
@@ -8173,7 +8159,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 						else {
 							return false;
 						}
-					}
+					};
 
 					/// Reads an if/else if/else block from input
 					bool If(GL::scope::impl::BasicScope* currentScope) {
@@ -8269,7 +8255,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 						m_position = Engine::Position(begin, end);
 
 						// top level stack        
-						if (Statements(this_scope)) {
+						if (Statements(&this_scope)) {
 							if (m_position.has_more()) {
 								throw exception::eval_error("Unparsed input", m_position);
 							}
@@ -8280,7 +8266,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 									m_match_stack.insert(m_match_stack.begin(), std::move(*i));
 									i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
 								}
-								build_match<AST_Nodes::File_AST_Node>(this_scope, 0);
+								build_match<AST_Nodes::File_AST_Node>(&this_scope, 0);
 							}
 						}
 						else {
@@ -8305,21 +8291,7 @@ while (x.size() >= 2 && (x.rfind("::") == (x.length() - 2))) { x = x.substr(0, x
 						return retval;
 					};
 
-
-
 				};
-
-
-
-
-
-
-
-
-
-
-
-
 
 			};
 #endif
@@ -8397,6 +8369,33 @@ int main() {
 	}
 
 	if (1) {
+		GL::string Script = R"(
+			int x = 10;
+            x = 100;
+            return x * x + x;
+
+			namespace Test{
+				int StaticObject = 100;	
+				namespace Test2{
+
+				};
+			};
+
+		)";
+
+		GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
+		if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(Script)) {
+			preprocessor_result->GenerateExpandedCode(state);
+			auto expanded_script = state.GetFinalScript();
+			print(expanded_script);
+
+			GL::Engine2::Compiler::Interpreter::Parser parser;
+			GL::scope::impl::RootScope root;
+			root.perform_builtins();
+			if (auto node = parser.Parse(expanded_script, &root); node.first && node.second) {
+				print(node.first->to_string());
+			}
+		}
 
 
 	}
