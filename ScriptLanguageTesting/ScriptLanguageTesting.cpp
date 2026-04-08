@@ -177,7 +177,7 @@ namespace GL {
 			Switch, Case, Default,
 			Class, Namespace,
 			FunctionDecl,
-			BinaryFoldRight, Binary,
+			BinaryFoldRight, BinaryFoldLeft, Binary,
 			Global_Decl,
 			Compiled,
 			ControlBlock,
@@ -2288,9 +2288,6 @@ namespace GL {
 				};
 			};
 			
-
-
-
 			// The interpreter should take in source code and develop an AST node diagram.
 			class Interpreter {
 			public:
@@ -2815,9 +2812,7 @@ namespace GL {
 						}
 					};
 
-					/*
-					var x;
-					*/
+					/* var x; */
 					struct Var_Decl_AST_Node final : AST_Node_Impl {
 						Var_Decl_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Var_Decl, std::move(t_loc), std::move(t_children))
@@ -2833,9 +2828,7 @@ namespace GL {
 							return {};
 						}
 					};
-					/*
-					double x;
-					*/
+					/* double x; */
 					struct Assign_Retroactively_AST_Node final : AST_Node_Impl {
 						Assign_Retroactively_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Assign_Retroactively, std::move(t_loc), std::move(t_children))
@@ -2884,9 +2877,7 @@ namespace GL {
 						// GL::string type_name;
 						GL::string idname;
 					};
-					/*
-					var x = double();
-					*/
+					/* var x = double(); */
 					struct Assign_Decl_AST_Node final : AST_Node_Impl {
 						Assign_Decl_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Assign_Decl, std::move(t_loc), std::move(t_children))
@@ -3922,7 +3913,6 @@ namespace GL {
 							}
 						}
 					};
-
 					struct Block_AST_Node final : AST_Node_Impl {
 						Block_AST_Node(GL::scope::impl::BasicScope* currentScope, GL::string t_ast_node_text, Engine::Parse_Location t_loc, std::vector<AST_Node_Impl_Ptr> t_children)
 							: AST_Node_Impl(std::move(t_ast_node_text), Engine::AST_Node_Type::Block, std::move(t_loc), std::move(t_children))
@@ -8305,21 +8295,49 @@ namespace GL {
 
 			};
 
-
-
 		};
 	};
 	namespace Engine {
 		class AbstractSyntaxTreeNode {
 		public:
 			AbstractSyntaxTreeNode(Engine::AST_Node_Type id) : identifier{ id } {};
-			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode> t_children) : text(t_ast_node_text), location(std::forward<Engine::Parse_Location>(t_loc)), identifier{ id }, children(std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children) : text(t_ast_node_text), location(t_loc), identifier{ id }, children(t_children) {};
 			AbstractSyntaxTreeNode() : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop) {};
-			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const&) = default;
-			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode&&) = default;
-			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode const&) = default;
-			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&&) = default;
-			virtual ~AbstractSyntaxTreeNode() = default;
+			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const& rhs) : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
+				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
+			};
+			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode&& rhs) noexcept : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
+				children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
+			};
+			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode const& rhs) {
+				identifier = rhs.identifier;
+				text = rhs.text;
+				location = rhs.location;
+				constant = rhs.constant;				
+				output = rhs.output;
+				tag = rhs.tag;
+
+				size_t N = children.size();
+				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
+				if (N > 0) children.erase(children.begin(), children.begin() + N);
+
+				return *this;
+			};
+			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&& rhs) noexcept {
+				identifier = rhs.identifier;
+				text = rhs.text;
+				location = rhs.location;
+				constant = rhs.constant;
+				output = rhs.output;
+				tag = rhs.tag;
+
+				size_t N = children.size();
+				children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
+				if (N > 0) children.erase(children.begin(), children.begin() + N);
+
+				return *this;
+			};
+			~AbstractSyntaxTreeNode() noexcept = default;
 
 		public:
 			Engine::AST_Node_Type
@@ -8333,19 +8351,52 @@ namespace GL {
 			std::vector< AbstractSyntaxTreeNode >
 				children;
 			GL::type
-				output;
+				output = GL::type_of<GL::undefined>();
+			GL::any::fast_any
+				tag; // custom data, unique to the node type
 
 			/// Prints the contents of an AST node, including its children, recursively
-			GL::string to_string(const GL::string& t_prepend = "") const {
-				GL::string Text{ text };
-				GL::string str = std::string(identifier.ToString());
+			GL::string to_string(GL::string t_prepend = "") const {
+				GL::string str = std::string_view(identifier.ToString());
 				GL::string returnType = output.name();
 				GL::string locationStr = location.to_string();
-				auto out = t_prepend + "(" + str + ") \"" + Text + "\": " + locationStr + " -> " + returnType;
+				auto out = t_prepend + "(" + str + ") \"" + text + "\": " + locationStr + " -> " + returnType;
+				if (constant) {
+					try {
+						GL::scope::impl::RootScope temp;
+						temp.perform_builtins();
+						GL::string Const = temp.call<GL::string>("to_string", { constant });
+						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { " + Const + " }", "\n");
+					}
+					catch (...) {
+						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { ??? }", "\n");
+					}					
+				}
 				for (auto& elem : children) { out = out.add_to_delim(elem.to_string(t_prepend + "\t"), "\n"); }
 				return out;
 			};
 
+		private:
+			bool try_get_text(const GL::string*& out) const {
+				if (!text.empty()) {
+					out = &text; 
+					return true;
+				}
+				for (int i = 0; i < children.size(); ++i) {
+					if (children[i].try_get_text(out)) {
+						return true;
+					};
+				}
+				return false;
+			};
+
+		public:
+			const GL::string& get_text() const {
+				const GL::string* out{ nullptr };
+				if (try_get_text(out)) if (out) return *out;				
+				static GL::string empty{ GL::string::empty_string() };
+				return empty;
+			};
 		};
 		namespace except {
 			/// Errors generated during parsing or evaluation
@@ -8432,25 +8483,3973 @@ namespace GL {
 
 		class File_Node final : public AbstractSyntaxTreeNode {
 		public:
-			File_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::File, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+			File_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::File, t_ast_node_text, t_loc, t_children) {};
 		};
 		class Noop_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Noop_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+			Noop_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop, t_ast_node_text, t_loc, t_children) {};
 		};
 		class Return_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, t_loc, t_children) {};
 		};
 		class Constant_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Constant_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Constant, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {
+			Constant_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Constant, t_ast_node_text, t_loc, t_children) {
 				this->constant = t_value.fast();
+				this->output = t_value.m_casted_type;
 			};
+		};
+		class Binary_Operator_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Binary_Operator_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Binary, t_ast_node_text, t_loc, t_children) {				
+				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+			};
+		};
+		class Id_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Id_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Id, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Arg_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Arg_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Arg, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Arg_List_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Arg_List_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Arg_List, t_ast_node_text, t_loc, t_children) {};
+		}; 		
+		struct FunctionCallInformation {
+			GL::string function_name;
+			bool use_return;
+		};
+		class Fun_Call_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Fun_Call_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Fun_Call, t_ast_node_text, t_loc, t_children) {
+				FunctionCallInformation info;
+				info.function_name = this->children[0].get_text();
+				info.use_return = true;
+				this->tag = GL::any::fast_any::instance(info);
+			};
+		};
+		class Unused_Return_Fun_Call_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Unused_Return_Fun_Call_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Fun_Call, t_ast_node_text, t_loc, t_children) {
+				FunctionCallInformation info;
+				info.function_name = this->children[0].get_text();
+				info.use_return = false;
+				this->tag = GL::any::fast_any::instance(info);
+			};
+		};
+		class Equation_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Equation_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Equation, t_ast_node_text, t_loc, t_children) {
+				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+			};
+		};
+		/* x && y */ class Logical_And_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Logical_And_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Logical_And, t_ast_node_text, t_loc, t_children) {
+				ASSERT(this->children.size() == 2);
+			};
+		};
+		/* x || y */ class Logical_Or_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Logical_Or_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Logical_Or, t_ast_node_text, t_loc, t_children) {
+				ASSERT(this->children.size() == 2);
+			};
+		};
+		/* auto x; */ class Var_Decl_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Var_Decl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Var_Decl, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* double x; */ class Assign_Retroactively_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Assign_Retroactively_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Assign_Retroactively, t_ast_node_text, t_loc, t_children) {
+				ASSERT(this->children.size() >= 1);
+				auto idname = this->children[1].get_text(); // e.g. x, y, z
+			};
+		};
+		/* auto x = double(); */ class Assign_Decl_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Assign_Decl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Assign_Decl, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* ++x */ class Prefix_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Prefix_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Prefix, t_ast_node_text, t_loc, t_children) {
+				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+			};
+		};
+		/* x++ */ class Postfix_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Postfix_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Postfix, t_ast_node_text, t_loc, t_children) {
+				// To-Do, This needs to determine the operator OR the runtime type of the unit, e.g. ft, m, gpm, MG, etc. 
+				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+			};
+		};
+		/* if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node */ class If_Node final : public AbstractSyntaxTreeNode {
+		public:
+			If_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::If, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* while (Scopeless_Block_AST_Node) Block_AST_Node */ class While_Node final : public AbstractSyntaxTreeNode {
+		public:
+			While_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::While, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK */ class For_Node final : public AbstractSyntaxTreeNode {
+		public:
+			For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::For, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* for (range_declaration : range_expression) loop_statement */ class Ranged_For_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Ranged_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Ranged_For, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* x[1] */ class Array_Call_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Array_Call_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Array_Call, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* x.first */ class Dot_Access_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Dot_Access_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Dot_Access, t_ast_node_text, t_loc, t_children) {
+				GL::string m_fun_name = ((children[1].identifier == Engine::AST_Node_Type::Fun_Call) || (children[1].identifier == Engine::AST_Node_Type::Array_Call))
+					? children[1].children[0].text
+					: children[1].text;
+			};
+		};
+		/* [x](FF) async -> int { return x+FF; } */ class Lambda_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Lambda_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Lambda, t_ast_node_text, t_loc, t_children) {
+				// Heavy To-Do
+			};
+		};
+		/* [0, 1, 2, 3] */ class Inline_Array_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Inline_Array_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Inline_Array, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Map_Pair_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Map_Pair_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Map_Pair, t_ast_node_text, t_loc, t_children) {};
+		};
+		/* ["":10, 10:10, Vector():10, 20:Vector()] */ class Inline_Map_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Inline_Map_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Inline_Map, t_ast_node_text, t_loc, t_children) {};
+		};		
+		// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
+        // parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
+		class Parallel_For_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Parallel_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Parallel_For, t_ast_node_text, t_loc, t_children) {
+				ASSERT(this->children.size() == 3);
+			};
+		};
+		// parallel_for (range_declaration : range_expression) loop_statement;
+		class Parallel_Ranged_For_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Parallel_Ranged_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Parallel_Ranged_For, t_ast_node_text, t_loc, t_children) {
+				ASSERT(this->children.size() == 3);
+			};
+		};		
+		class Break_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Break_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Break, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Continue_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Continue_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Continue, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Default_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Default_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Default, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Case_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Case_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Case, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Switch_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Switch_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Switch, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Try_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Try_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Try, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Catch_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Catch_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Catch, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Finally_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Finally_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Finally, t_ast_node_text, t_loc, t_children) {};
+		};
+		/*! Currently, the JIT compilation does not support preprocessor macros or other preprocessor activities. */
+		class JustInTimeCompilation_Node final : public AbstractSyntaxTreeNode {
+		public:
+			JustInTimeCompilation_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::JustInTimeCompilation, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Scopeless_Block_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Scopeless_Block_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Scopeless_Block, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Block_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Block_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Block, t_ast_node_text, t_loc, t_children) {};
+		};
+		class FunctionBlock_Node final : public AbstractSyntaxTreeNode {
+		public:
+			FunctionBlock_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::FunctionBlock, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Fold_Right_Binary_Operator_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Fold_Right_Binary_Operator_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::BinaryFoldRight, t_ast_node_text, t_loc, t_children) {
+				this->constant = t_value.fast();
+				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+			};
+		};
+		class Fold_Left_Binary_Operator_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Fold_Left_Binary_Operator_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::BinaryFoldLeft, t_ast_node_text, t_loc, t_children) {
+				this->constant = t_value.fast();
+				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+			};
+		};
+		class Namespace_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Namespace_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Namespace, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Class_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Class_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Class, t_ast_node_text, t_loc, t_children) {};
+		};
+		class Declaration_Block_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Declaration_Block_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::DeclarationBlock, t_ast_node_text, t_loc, t_children) {};
+		};
+		class FunctionDecl_Node final : public AbstractSyntaxTreeNode {
+		public:
+			FunctionDecl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::FunctionDecl, t_ast_node_text, t_loc, t_children) {};
+		};
+
+		class optimizer {
+		private:
+			template<typename... T> struct Optimizer : T... {
+				Optimizer() = default;
+				explicit Optimizer(T... t) : T(std::move(t))... { };
+				AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode& p) {
+					long long maxDepth = 100;
+					while (--maxDepth >= 0) {
+						bool successful = false;
+						((successful = (successful || static_cast<T&>(*this).optimize(p))), ...); // this line performs all optimizations in-line
+						if (!successful) break;
+					}
+					return p;
+				};
+			};
+
+			static AbstractSyntaxTreeNode& child_at(AbstractSyntaxTreeNode& node, const size_t offset) noexcept {
+				return node.children[offset];
+			};
+			static const AbstractSyntaxTreeNode& child_at(const AbstractSyntaxTreeNode& node, const size_t offset) noexcept {
+				return node.children[offset];
+			};
+			static size_t child_count(const AbstractSyntaxTreeNode& node) noexcept {
+				return node.children.size();
+			};
+			static bool contains_var_decl_in_scope(const AbstractSyntaxTreeNode& node) noexcept {
+				if (
+					node.identifier == Engine::AST_Node_Type::Var_Decl
+					|| node.identifier == Engine::AST_Node_Type::Assign_Decl
+					|| node.identifier == Engine::AST_Node_Type::Reference
+					|| node.identifier == Engine::AST_Node_Type::Assign_Retroactively
+					|| node.identifier == Engine::AST_Node_Type::Def
+					|| node.identifier == Engine::AST_Node_Type::Class
+		        ) {
+					return true;
+				}
+
+				const auto num = child_count(node);
+				for (size_t i = 0; i < num; ++i) {
+					const auto& child = child_at(node, i);
+					if (child.identifier != Engine::AST_Node_Type::Block
+						&& child.identifier != Engine::AST_Node_Type::For
+						&& child.identifier != Engine::AST_Node_Type::Ranged_For
+						&& child.identifier != Engine::AST_Node_Type::Parallel_For
+						&& child.identifier != Engine::AST_Node_Type::Parallel_Ranged_For
+						&& contains_var_decl_in_scope(child)
+					) {
+						return true;
+					}
+				}
+
+				return false;
+			};
+
+			// re-arrange the return statement, to avoid throwing whenever possible
+			struct Example {
+				bool optimize(AbstractSyntaxTreeNode& p) {
+					return false; // does nothing
+				}
+			};
+
+			// String embedding results in a structure that may resemble:
+			//		ArgList -> {  File -> {   Constant   }  }
+			// This should be simplified to: 
+			//		ArgList -> {  Constant  }
+			struct ArgListFileConstant {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Arg_List
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::File
+						&& node.children[0].children.size() == 1
+						&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Constant
+					) {
+						node.children[0] = std::move(node.children[0].children[0]);
+						return true;
+					}
+					return false;
+				}
+			};
+
+			// converts from:
+			//		auto x = int(1)
+			// to:
+			//		int x{ 1 };
+			struct VarDeclEquation_To_RetroactiveAssignment {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Equation
+						&& node.children.size() == 2
+						&& ((node.children[0].identifier == Engine::AST_Node_Type::Reference) || (node.children[0].identifier == Engine::AST_Node_Type::Var_Decl))
+						&& node.children[0].children.size() == 1
+						// && node->children[0]->children[0]->identifier == AST_Node_Type::Id
+						// && node->children[1]->identifier == AST_Node_Type::Fun_Call
+						&& ((node.text == "=") || (node.text == ":="))
+					) {
+						node = Assign_Retroactively_Node(
+							node.text, (Engine::Parse_Location)node.location, {
+								node.children[1],
+								node.children[0]
+							}
+						);
+						return true;
+					}
+
+					if (node.identifier == Engine::AST_Node_Type::Equation
+						&& node.children.size() == 2
+						&& node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
+						&& ((node.text == "=") || (node.text == ":="))
+						) {
+						node = Assign_Retroactively_Node(
+							node.text, (Engine::Parse_Location)node.location, {
+								node.children[0].children[0],
+								node.children[0].children[1],
+								node.children[1]
+							}
+						);
+						return true;
+					}
+					return false;
+				}
+			};
+
+			// String embedding results in a structure that may resemble:
+			//		Fun_Call -> {  Id{ to_string }, Arg_list{ Constant{} } }
+			// This should be simplified and completed:
+			//      Constant(to_string(Constant()))
+			struct ToStringFunctionCallWithConstant {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Fun_Call
+						&& node.children.size() == 2
+						&& node.children[0].identifier == Engine::AST_Node_Type::Id
+						&& node.children[1].identifier == Engine::AST_Node_Type::Arg_List
+						&& node.children[1].children.size() == 1
+						&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Constant
+						&& node.children[0].text == "to_string"
+				    ) {
+						const GL::any::fast_any& rhs = node.children[1].children[0].constant;
+						try {
+							GL::scope::impl::RootScope root;
+							root.perform_builtins();
+							auto result = root.call<GL::string>("to_string", { rhs });
+							node = Constant_Node(node.text, (Engine::Parse_Location)node.location, {}, node);
+							return true;
+						}
+						catch (...) {
+							// failure to fold -- that's OK. Just means that the constant-value wasn't one of the built-ins or wasn't easily understood. 
+							return false;
+						}
+					}
+					return false;
+				}
+			};
+
+			// removes items from Blocks that are unecessary (e.g. floating code) or will never be hit (e.g. following return statements)
+			struct Dead_Code {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if ((node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
+						std::vector<size_t> keepers;
+						const auto num_children = node.children.size();
+						keepers.reserve(num_children);
+						bool foundReturnStatement = false;
+						for (size_t i = 0; i < (num_children - 1); ++i) {
+							const auto& child = node.children[i];
+							switch (child.identifier) {
+							case Engine::AST_Node_Type::Constant: // 50.0f;
+							case Engine::AST_Node_Type::Noop: // comments
+							case Engine::AST_Node_Type::Id: // y, x, etc.
+								break;
+							case Engine::AST_Node_Type::Return: // return; return x; return 50; etc.
+								keepers.push_back(i);
+								i = num_children; // stop considering the remaining items -- they'll never be found anyways. 
+								foundReturnStatement = true;
+								break;
+							default:
+								keepers.push_back(i);
+								break;
+							}
+						}
+						if ((!foundReturnStatement) && (num_children > 0)) { keepers.push_back(num_children - 1); };
+
+						if (keepers.size() == num_children) {
+							return false;
+						}
+						else {
+							const auto new_children = [&]() {
+								std::vector<AbstractSyntaxTreeNode> retval;
+								for (const auto x : keepers) {
+									retval.push_back(node.children[x]);
+								}
+								return retval;
+							};
+
+							if (node.identifier == Engine::AST_Node_Type::Scopeless_Block) {
+								node = Scopeless_Block_Node(node.text, (Engine::Parse_Location)node.location, new_children());
+							}
+							else {
+								node = Block_Node(node.text, (Engine::Parse_Location)node.location, new_children());
+							}						
+
+							return true;
+						}
+					}
+					else {
+						return false;
+					}
+				}
+			};
+
+			// re-arrange the return statement, to avoid throwing whenever possible
+			struct Return {
+				bool optimize(AbstractSyntaxTreeNode& p) {
+#if 0
+					if ((p.identifier == Engine::AST_Node_Type::Lambda) && !p.children.empty()) {
+						auto& last_child = p->children.back();
+						if (last_child->identifier == Engine::AST_Node_Type::Block || last_child->identifier == Engine::AST_Node_Type::Scopeless_Block) {
+							auto& block_last_child = last_child->children.back();
+							if (block_last_child->identifier == Engine::AST_Node_Type::Return) {
+								if (block_last_child->children.size() == 1) {
+									block_last_child = std::move(block_last_child->children[0]);
+									return true;
+								}
+								else if (block_last_child->children.size() == 0) {
+									block_last_child = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Noop_AST_Node>());
+									return true;
+								}
+							}
+						}
+						//if (last_child->identifier == AST_Node_Type::Return) {
+						//	if (last_child->children.size() == 1) {
+						//		last_child = std::move(last_child->children[0]);
+						//		return true;
+						//	}
+						//	else if (last_child->children.size() == 0) {
+						//		last_child = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<Noop_AST_Node>());
+						//		return true;
+						//	}
+						//}
+					}
+
+					if ((p->identifier == Engine::AST_Node_Type::Def) && !p->children.empty()) {
+						auto& last_child = p->children.back();
+						if (last_child->identifier == Engine::AST_Node_Type::Block || last_child->identifier == Engine::AST_Node_Type::Scopeless_Block) {
+							auto& block_last_child = last_child->children.back();
+							if (block_last_child->identifier == Engine::AST_Node_Type::Return) {
+								if (block_last_child->children.size() == 1) {
+									last_child->children.back() = std::move(block_last_child->children[0]);
+									return true;
+								}
+							}
+						}
+					}
+#endif
+					if (p.identifier == Engine::AST_Node_Type::File && !p.children.empty()) {
+						auto& last_child = p.children.back();
+						if ((last_child.identifier == Engine::AST_Node_Type::Block) || (last_child.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
+							auto& block_last_child = last_child.children.back();
+							if (block_last_child.identifier == Engine::AST_Node_Type::Return) {
+								if (block_last_child.children.size() == 0) {
+									last_child.children.back() = Noop_Node(GL::string::empty_string(), (Parse_Location)last_child.location, {});
+									return true;
+								}
+								else if (block_last_child.children.size() == 1) {
+									last_child.children.back() = block_last_child.children[0];
+									return true;
+								}
+							}
+						}
+						else if (last_child.identifier == Engine::AST_Node_Type::Return) {
+							if (last_child.children.size() == 0) {
+								last_child = Noop_Node(GL::string::empty_string(), (Parse_Location)last_child.location, {});
+								return true;
+							}
+							else if (last_child.children.size() == 1) {
+								last_child = last_child.children[0];
+								return true;
+							}
+						}
+					}
+					return false;
+				}
+			};
+
+			// removes the scope from blocks if they do not have declarations at all
+			struct Block {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Block) {
+						if (!contains_var_decl_in_scope(node)) {
+							if (node.children.size() == 1) {
+								node = node.children[0];
+								return true;
+							}
+							else {
+								node = Scopeless_Block_Node(
+									node.text,
+									node.location,
+									node.children
+								);
+								return true;
+							}
+						}
+					}
+					else if (node.identifier == Engine::AST_Node_Type::Scopeless_Block) {
+						if (!contains_var_decl_in_scope(node)) {
+							if (node.children.size() == 1) {
+								node = node.children[0];
+								return true;
+							}
+						}
+					}
+					return false;
+				}
+			};
+
+			// If a function call's return value was going to be unused, there may be no point to holding onto it. 
+			struct Unused_Fun_Return {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					bool result = false;
+					if ((node.identifier == Engine::AST_Node_Type::Block || node.identifier == Engine::AST_Node_Type::Scopeless_Block) && !node.children.empty()) {
+						for (size_t i = 0; i < node.children.size() - 1; ++i) {
+							auto& child = node.children[i];
+							if (child.identifier == Engine::AST_Node_Type::Fun_Call) {
+								node.children[i] = Unused_Return_Fun_Call_Node(
+									child.text,
+									child.location,
+									child.children
+								);
+								result = true;
+							}
+						}
+					}
+					else if ((node.identifier == Engine::AST_Node_Type::For || node.identifier == Engine::AST_Node_Type::While) && child_count(node) > 0) {
+						auto& child = child_at(node, child_count(node) - 1);
+						if (child.identifier == Engine::AST_Node_Type::Block || child.identifier == Engine::AST_Node_Type::Scopeless_Block) {
+							auto num_sub_children = child_count(child);
+							for (size_t i = 0; i < num_sub_children; ++i) {
+								auto& sub_child = child.children[i];
+								if (sub_child.identifier == Engine::AST_Node_Type::Fun_Call) {
+									child.children[i] = Unused_Return_Fun_Call_Node(
+										sub_child.text,
+										sub_child.location,
+										sub_child.children
+									);
+									result = true;
+								}
+							}
+						}
+					}
+					return result;
+				}
+			};
+
+			// If the condition of an If statement is constant and known, then simply skip the check and hard-code the correct path. 
+			struct If {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if ((node.identifier == Engine::AST_Node_Type::If) && (node.children.size() >= 2) && (node.children[0].identifier == Engine::AST_Node_Type::Constant)) {
+						try {
+							bool result;
+							if (node.children[0].constant.can_cast(GL::type_of<bool>())) {
+								result = node.children[0].constant.cast<bool>();
+							}
+							else {
+								GL::scope::impl::RootScope temp_root;
+								temp_root.perform_builtins();
+								result = temp_root.cast<bool>(node.children[0].constant);
+							}			
+
+							if (result) {
+								// "TRUE" statement is the exclusive path
+								node = node.children[1];
+								return true;
+							}
+							else if (node.children.size() == 3) {
+								// "FALSE" statement is the exclusive path (and a false path is even present)
+								node = node.children[2];
+								return true;
+							}
+							else {
+								// do nothing?
+								node = Noop_Node(GL::string::empty_string(), (Parse_Location)node.location, {});
+								return true;
+							}
+						}
+						catch (...) {
+							return false;
+						}
+					}
+					return false;
+				}
+			};
+
+			// Try to fold a basic prefix operation with a constant value
+			struct PrefixFold {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Prefix
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+					) {
+						const GL::any::fast_any& rhs = node.children[0].constant;
+						try {
+							GL::scope::impl::RootScope temp_root;
+							temp_root.perform_builtins();
+							node = Constant_Node(node.text, (Parse_Location)node.location, {}, temp_root.call(node.text, { rhs }));
+							return true;
+						}
+						catch (...) {
+							// failure to fold -- that's OK. 
+							return false;
+						}
+					}
+					return false;
+				}
+			};
+
+			// postfix's (++/--) on constant values should simply return the same constant value before the change anyways. 
+			struct PostfixFold {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Postfix
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+						&& ((node.text == "++") || (node.text == "--"))
+					) {
+						node = node.children[0];
+						return true;
+					}
+					return false;
+				}
+			};
+
+			// Try to fold a basic binary operation between two constant values (e.g. GL::string + GL::string, or Units::foot == Units::meter)
+			struct BinaryFold {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Binary
+						&& node.children.size() == 2
+						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+						&& node.children[1].identifier == Engine::AST_Node_Type::Constant
+					) {
+						auto& lhs = node.children[0].constant;
+						auto& rhs = node.children[1].constant;
+						try {
+							GL::scope::impl::RootScope temp_root;
+							temp_root.perform_builtins();
+							auto result = temp_root.call(node.text, { lhs, rhs });
+							node = Constant_Node(
+								node.text, (Parse_Location)node.location, {}, result
+							);
+							return true;
+						}
+						catch (...) {
+							// failure to fold -- that's OK
+							return false;
+						}
+					}
+
+					return false;
+				}
+			};
+
+			// Try to fold a basic binary operation (e.g. +/-/*) with one constant value, to speed-up evaluation in the future
+			struct PartialBinaryFold {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					// Fold right side
+					if (node.identifier == Engine::AST_Node_Type::Binary
+						&& node.children.size() == 2
+						&& node.children[0].identifier != Engine::AST_Node_Type::Constant
+						&& node.children[1].identifier == Engine::AST_Node_Type::Constant
+					) {
+						const auto& oper = node.text;
+						const auto parsed = Engine::Operators::to_operator(oper.c_str());
+						if (parsed != Engine::Operators::Opers::invalid) {
+							auto& rhs = node.children[1].constant;
+							node = Fold_Right_Binary_Operator_Node(node.text, std::move(node.location), { node.children[0] }, rhs);
+							return true;
+						}
+					}
+
+					// Fold left side
+					if (node.identifier == Engine::AST_Node_Type::Binary
+						&& node.children.size() == 2
+						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+						&& node.children[1].identifier != Engine::AST_Node_Type::Constant
+					) {
+						const auto& oper = node.text;
+						const auto parsed = Engine::Operators::to_operator(oper.c_str());
+						if (parsed != Engine::Operators::Opers::invalid) {
+							auto& rhs = node.children[0].constant;
+							node = Fold_Left_Binary_Operator_Node(node.text, std::move(node.location), { node.children[1] }, rhs);
+							return true;
+						}
+					}
+
+					// Left-Fold Within Right-Fold
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children[0].children.size() == 1
+					) {
+						GL::Engine::Operators::Opers outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers inner_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+						
+						GL::string const_operation;
+						GL::string runtime_operation;
+						GL::any::fast_any lhs = node.children[0].constant;
+						GL::any::fast_any rhs = node.constant;
+						const_operation = node.text; // outter operation
+						runtime_operation = node.children[0].text; // inner operation
+
+						switch (outter_oper) {
+						case GL::Engine::Operators::to_operator("+"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// no issues
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// no issues
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("-"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// no issues
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// no issues
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("*"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// no issues
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// no issues
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("/"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// no issues
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// no issues
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						default: return false;
+						}
+
+						try {
+							GL::any::fast_any result;
+
+							GL::scope::impl::RootScope temp;
+							temp.perform_builtins();
+							result = temp.call(const_operation, { lhs, rhs });
+							node = Fold_Left_Binary_Operator_Node(runtime_operation, std::move(node.location), { node.children[0].children[0] }, result);
+							return true;
+						}
+						catch (...) {
+							return false;
+						}
+					}
+
+					// Right-Fold Within Right-Fold
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children[0].children.size() == 1
+					) {
+						GL::Engine::Operators::Opers outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers inner_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+
+						GL::string const_operation;
+						GL::string runtime_operation;
+						GL::any::fast_any lhs = node.children[0].constant;
+						GL::any::fast_any rhs = node.constant;
+						const_operation = node.text; // outter operation
+						runtime_operation = node.children[0].text; // inner operation
+
+						switch (outter_oper) {
+						case GL::Engine::Operators::to_operator("+"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (x+C)+C
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (x-C)+C
+								rhs = node.children[0].constant;
+								lhs = node.constant;
+								const_operation = "-";								
+								runtime_operation = "+";
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("-"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (x+C)-C
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (x-C)-C
+								const_operation = "+";
+								runtime_operation = "-";
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("*"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// (x*C)*C
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (x/C)*C
+								rhs = node.children[0].constant;
+								lhs = node.constant;
+								const_operation = "/";
+								runtime_operation = "*";
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("/"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// (x*C)/C
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (x/C)/C
+								const_operation = "*";
+								runtime_operation = "/";
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						default: return false;
+						}
+
+						try {
+							GL::any::fast_any result;
+
+							GL::scope::impl::RootScope temp;
+							temp.perform_builtins();
+							result = temp.call(const_operation, { lhs, rhs });
+							node = Fold_Right_Binary_Operator_Node(runtime_operation, std::move(node.location), { node.children[0].children[0] }, result);
+							return true;
+						}
+						catch (...) {
+							return false;
+						}
+					}
+
+					return false;
+				}
+			};
+
+			// If an Inline_Array is made-up of const elements, then evaluate and store it as constexpr too.
+			struct ConstArray {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+#if 0
+					// Fold right side
+					if (node->identifier == Engine::AST_Node_Type::Inline_Array
+						&& node->children.size() == 1
+						&& node->children[0]->identifier == Engine::AST_Node_Type::Arg_List
+						) {
+						auto& argList = *node->children.back();
+
+						bool allItemsAreConst = true;
+						for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+							if (argList.children[childIndex]->identifier != Engine::AST_Node_Type::Constant) {
+								allItemsAreConst = false;
+								break;
+							}
+						}
+
+						if (allItemsAreConst) {
+							Vector<Var> constArray;
+							for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+								Any rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(argList.children[childIndex].get())->m_value;
+								rhs.SetFlag(AnyData::Flag::constant, true);
+								constArray.push_back(Var(std::move(rhs)));
+							}
+							node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+								node->text, node->location, std::move(constArray)
+								));
+							return true;
+						}
+					}
+					return false;
+#else
+					return false;
+#endif
+				}
+			};
+
+			// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
+			struct ConstMap {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					// Fold right side
+#if 0
+					if (node->identifier == Engine::AST_Node_Type::Inline_Map
+						&& node->children.size() == 1
+						&& node->children[0]->identifier == Engine::AST_Node_Type::Arg_List
+						) {
+						auto& argList = *node->children.back();
+
+						bool allItemsAreConst = true;
+						for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+							if (argList.children[childIndex]->identifier == Engine::AST_Node_Type::Map_Pair) {
+								auto& map_pair = *dynamic_cast<AST_Nodes::Map_Pair_AST_Node*>(argList.children[childIndex].get());
+								if (
+									(map_pair.children[0]->identifier == Engine::AST_Node_Type::Constant) &&
+									(map_pair.children[1]->identifier == Engine::AST_Node_Type::Constant)
+									) {
+									continue;
+								}
+								else {
+									allItemsAreConst = false;
+									break;
+								}
+							}
+							else {
+								allItemsAreConst = false;
+								break;
+							}
+						}
+
+						if (allItemsAreConst) {
+							Any constArray{ Map<size_t, std::pair<Var, Var>>() };
+							if (!node->children.empty()) {
+								for (const auto& child : node->children[0]->children) {
+									auto rhs_key = child->children[0]->eval(currentScope);
+									auto rhs_val = child->children[1]->eval(currentScope);
+
+									rhs_key.SetFlag(AnyData::Flag::constant, true);
+									rhs_val.SetFlag(AnyData::Flag::constant, true);
+
+									currentScope->Call("emplace", {
+										constArray,
+										rhs_key,
+										rhs_val
+										});
+								}
+							}
+							constArray.SetFlag(AnyData::Flag::constant, true);
+
+							node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
+								node->text, node->location, std::move(constArray)
+								));
+							return true;
+						}
+					}
+
+					return false;
+#else
+					return false;
+#endif
+				}
+			};
+
+			// Improve the performance of a well-defined for loop by re-structuring it.
+			struct ForLoopSignature {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::For
+						&& node.children.size() >= 4
+						) {
+						// x++ into ++x;
+						if (node.children[2].identifier == Engine::AST_Node_Type::Postfix) { // x++
+							switch (Engine::hash(node.children[2].get_text().c_str())) {
+							case Engine::hash("++"):
+								node.children[2] = Prefix_Node(
+									"++", std::move(node.children[2].location), std::move(node.children[2].children)
+								);
+								return true;
+							case Engine::hash("--"):
+								node.children[2] = Prefix_Node(
+									"--", std::move(node.children[2].location), std::move(node.children[2].children)
+								);
+								return true;
+							default:
+								return false;
+							};
+						}
+					}
+					return false;
+				};
+			};
+
+			using Optimizer_Default = Optimizer<
+				optimizer::PostfixFold,
+				optimizer::PrefixFold,
+				optimizer::BinaryFold,
+				optimizer::PartialBinaryFold,
+				optimizer::Unused_Fun_Return,
+				optimizer::ArgListFileConstant,
+				optimizer::VarDeclEquation_To_RetroactiveAssignment,
+				optimizer::ToStringFunctionCallWithConstant,
+				optimizer::ConstArray,
+				optimizer::ConstMap,
+				optimizer::If,
+				optimizer::Return,
+				optimizer::Dead_Code,
+				optimizer::ForLoopSignature,
+				optimizer::Block
+				// optimizer::Example
+			>;
+
+		public:
+			static AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode p) {
+				return Optimizer_Default().optimize(p);
+			};
+		}; // namespace optimizer
+
+		class Parser {
+		private:
+			constexpr static utility::Static_String m_multiline_comment_end{ "*/" };
+			constexpr static utility::Static_String m_multiline_comment_begin{ "/*" };
+			constexpr static utility::Static_String m_singleline_comment{ "//" };
+			constexpr static utility::Static_String m_annotation{ "#" };
+			constexpr static utility::Static_String m_cr_lf{ "\r\n" };
+
+			template<typename string_type> struct Char_Parser {
+				string_type& match;
+				using char_type = typename string_type::value_type;
+				bool is_escaped = false;
+				bool is_interpolated = false;
+				bool saw_interpolation_marker = false;
+				bool is_octal = false;
+				bool is_hex = false;
+				std::size_t unicode_size = 0;
+				const bool interpolation_allowed;
+
+				string_type octal_matches;
+				string_type hex_matches;
+
+				Char_Parser(string_type& t_match, const bool t_interpolation_allowed)
+					: match(t_match)
+					, interpolation_allowed(t_interpolation_allowed) {
+				}
+
+				Char_Parser& operator=(const Char_Parser&) = delete;
+
+				~Char_Parser() {
+					try {
+						if (is_octal) {
+							process_octal();
+						}
+
+						if (is_hex) {
+							process_hex();
+						}
+
+						if (unicode_size > 0) {
+							process_unicode();
+						}
+					}
+					catch (const std::invalid_argument&) {
+					}
+					catch (const except::eval_error&) {
+						// Something happened with parsing, we'll catch it later?
+					}
+				}
+
+				void process_hex() {
+					if (!hex_matches.empty()) {
+						auto val = stoll(hex_matches.to_string(), nullptr, 16);
+						match = match + std::string(1, char_type(val));
+					}
+					hex_matches = "";
+					is_escaped = false;
+					is_hex = false;
+				}
+
+				void process_octal() {
+					if (!octal_matches.empty()) {
+						auto val = stoll(octal_matches.to_string(), nullptr, 8);
+						match = match + std::string(1, char_type(val));
+					}
+					octal_matches = "";
+					is_escaped = false;
+					is_octal = false;
+				}
+
+				void process_unicode() {
+					const auto ch = static_cast<uint32_t>(std::stoi(hex_matches.to_string(), nullptr, 16));
+					const auto match_size = hex_matches.size();
+					hex_matches = "";
+					is_escaped = false;
+					const auto u_size = unicode_size;
+					unicode_size = 0;
+
+					char buf[4];
+					if (u_size != match_size) {
+						throw except::eval_error("Incomplete unicode escape sequence");
+					}
+					if (u_size == 4 && ch >= 0xD800 && ch <= 0xDFFF) {
+						throw except::eval_error("Invalid 16 bit universal character");
+					}
+
+					if (ch < 0x80) {
+						match = match + std::string(1, static_cast<char>(ch));
+					}
+					else if (ch < 0x800) {
+						buf[0] = static_cast<char>(0xC0 | (ch >> 6));
+						buf[1] = static_cast<char>(0x80 | (ch & 0x3F));
+						match = match + std::string(buf, 2);
+					}
+					else if (ch < 0x10000) {
+						buf[0] = static_cast<char>(0xE0 | (ch >> 12));
+						buf[1] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+						buf[2] = static_cast<char>(0x80 | (ch & 0x3F));
+						match = match + std::string(buf, 3);
+					}
+					else if (ch < 0x200000) {
+						buf[0] = static_cast<char>(0xF0 | (ch >> 18));
+						buf[1] = static_cast<char>(0x80 | ((ch >> 12) & 0x3F));
+						buf[2] = static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+						buf[3] = static_cast<char>(0x80 | (ch & 0x3F));
+						match = match + std::string(buf, 4);
+					}
+					else {
+						// this must be an invalid escape sequence?
+						throw except::eval_error("Invalid 32 bit universal character");
+					}
+				}
+
+				void parse(const char_type t_char, Engine::Position pos) {
+					const bool is_octal_char = t_char >= '0' && t_char <= '7';
+
+					const bool is_hex_char = (t_char >= '0' && t_char <= '9') || (t_char >= 'a' && t_char <= 'f') || (t_char >= 'A' && t_char <= 'F');
+
+					if (is_octal) {
+						if (is_octal_char) {
+							octal_matches = octal_matches + std::string(1, t_char);
+
+							if (octal_matches.size() == 3) {
+								process_octal();
+							}
+							return;
+						}
+						else {
+							process_octal();
+						}
+					}
+					else if (is_hex) {
+						if (is_hex_char) {
+							hex_matches = hex_matches + std::string(1, t_char);
+
+							if (hex_matches.size() == 2 * sizeof(char_type)) {
+								// This rule differs from the C/C++ standard, but ChaiScript
+								// does not offer the same workaround options, and having
+								// hexadecimal sequences longer than can fit into the char
+								// type is undefined behavior anyway.
+								process_hex();
+							}
+							return;
+						}
+						else {
+							process_hex();
+						}
+					}
+					else if (unicode_size > 0) {
+						if (is_hex_char) {
+							hex_matches = hex_matches + std::string(1, t_char);
+
+							if (hex_matches.size() == unicode_size) {
+								// Format is specified to be 'slash'uABCD
+								// on collecting from A to D do parsing
+								process_unicode();
+							}
+							return;
+						}
+						else {
+							// Not a unicode anymore, try parsing any way
+							// May be someone used 'slash'uAA only
+							process_unicode();
+						}
+					}
+
+					if (t_char == '\\') {
+						if (is_escaped) {
+							match = match + "\\";
+							is_escaped = false;
+						}
+						else {
+							is_escaped = true;
+						}
+					}
+					else {
+						if (is_escaped) {
+							if (is_octal_char) {
+								is_octal = true;
+								octal_matches = octal_matches + std::string(1, t_char);
+							}
+							else if (t_char == 'x') {
+								is_hex = true;
+							}
+							else if (t_char == 'u') {
+								unicode_size = 4;
+							}
+							else if (t_char == 'U') {
+								unicode_size = 8;
+							}
+							else {
+								switch (t_char) {
+								case ('\''):
+									match = match + "\'";
+									break;
+								case ('\"'):
+									match = match + "\"";
+									break;
+								case ('?'):
+									match = match + "?";
+									break;
+								case ('a'):
+									match = match + "\a";
+									break;
+								case ('b'):
+									match = match + "\b";
+									break;
+								case ('f'):
+									match = match + "\f";
+									break;
+								case ('n'):
+									match = match + "\n";
+									break;
+								case ('r'):
+									match = match + "\r";
+									break;
+								case ('t'):
+									match = match + "\t";
+									break;
+								case ('v'):
+									match = match + "\v";
+									break;
+								case ('$'):
+									match = match + "$";
+									break;
+								default:
+									throw except::eval_error("Unknown escaped sequence in string", pos);
+								}
+								is_escaped = false;
+							}
+						}
+						else if (interpolation_allowed && t_char == '$') {
+							saw_interpolation_marker = true;
+						}
+						else {
+							match = match + std::string(1, t_char);
+						}
+					}
+				}
+			};
+
+			static GL::any::fast_any const_var(GL::any const& rhs) {
+				return rhs.fast() | GL::type::Const;
+			};
+			static std::map<GL::string, GL::any::fast_any> build_constants() {
+				std::map<GL::string, GL::any::fast_any> out;
+				out["true"] = const_var(true);
+				out["false"] = const_var(false);
+				out["Infinity"] = const_var(std::numeric_limits<double>::infinity());
+				out["NaN"] = const_var(std::numeric_limits<double>::quiet_NaN());
+				out["nullptr"] = const_var(GL::any());
+				out["null"] = const_var(GL::any());
+				return out;
+			};
+			static std::map<GL::string, GL::any::fast_any> const& constants() {
+				static auto out{ build_constants() };
+				return out;
+			};
+
+			template<typename Array2D, typename First, typename Second>
+			static void set_alphabet(Array2D& array, const First first, const Second second) noexcept {
+				auto* first_ptr = &std::get<0>(array) + static_cast<std::size_t>(first);
+				auto* second_ptr = &std::get<0>(*first_ptr) + static_cast<std::size_t>(second);
+				*second_ptr = true;
+			};
+			static std::array<std::array<bool, Engine::lengthof_alphabet>, Engine::max_alphabet> build_alphabet() noexcept {
+				std::array<std::array<bool, Engine::lengthof_alphabet>, Engine::max_alphabet> alphabet{};
+
+				set_alphabet(alphabet, Engine::symbol_alphabet, '?');
+
+				set_alphabet(alphabet, Engine::symbol_alphabet, '?');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '+');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '-');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '*');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '/');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '|');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '&');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '^');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '=');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '.');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '<');
+				set_alphabet(alphabet, Engine::symbol_alphabet, '>');
+
+				for (size_t c = 'a'; c <= 'z'; ++c) {
+					set_alphabet(alphabet, Engine::keyword_alphabet, c);
+				}
+				for (size_t c = 'A'; c <= 'Z'; ++c) {
+					set_alphabet(alphabet, Engine::keyword_alphabet, c);
+				}
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, Engine::keyword_alphabet, c);
+				}
+				set_alphabet(alphabet, Engine::keyword_alphabet, '_');
+				// set_alphabet(alphabet, keyword_alphabet, ':');
+
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, Engine::int_alphabet, c);
+				}
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, Engine::float_alphabet, c);
+				}
+				set_alphabet(alphabet, Engine::float_alphabet, '.');
+
+				for (size_t c = '0'; c <= '9'; ++c) {
+					set_alphabet(alphabet, Engine::hex_alphabet, c);
+				}
+				for (size_t c = 'a'; c <= 'f'; ++c) {
+					set_alphabet(alphabet, Engine::hex_alphabet, c);
+				}
+				for (size_t c = 'A'; c <= 'F'; ++c) {
+					set_alphabet(alphabet, Engine::hex_alphabet, c);
+				}
+
+				set_alphabet(alphabet, Engine::x_alphabet, 'x');
+				set_alphabet(alphabet, Engine::x_alphabet, 'X');
+
+				for (size_t c = '0'; c <= '1'; ++c) {
+					set_alphabet(alphabet, Engine::bin_alphabet, c);
+				}
+				set_alphabet(alphabet, Engine::b_alphabet, 'b');
+				set_alphabet(alphabet, Engine::b_alphabet, 'B');
+
+				for (size_t c = 'a'; c <= 'z'; ++c) {
+					set_alphabet(alphabet, Engine::id_alphabet, c);
+				}
+				for (size_t c = 'A'; c <= 'Z'; ++c) {
+					set_alphabet(alphabet, Engine::id_alphabet, c);
+				}
+				set_alphabet(alphabet, Engine::id_alphabet, '_');
+				set_alphabet(alphabet, Engine::id_alphabet, ':'); // RG
+				for (size_t c = '0'; c <= '9'; ++c) { set_alphabet(alphabet, Engine::id_alphabet, c); } // RG
+
+				set_alphabet(alphabet, Engine::white_alphabet, ' ');
+				set_alphabet(alphabet, Engine::white_alphabet, '\t');
+
+				set_alphabet(alphabet, Engine::int_suffix_alphabet, 'l');
+				set_alphabet(alphabet, Engine::int_suffix_alphabet, 'L');
+				set_alphabet(alphabet, Engine::int_suffix_alphabet, 'u');
+				set_alphabet(alphabet, Engine::int_suffix_alphabet, 'U');
+
+				set_alphabet(alphabet, Engine::float_suffix_alphabet, 'l');
+				set_alphabet(alphabet, Engine::float_suffix_alphabet, 'L');
+				set_alphabet(alphabet, Engine::float_suffix_alphabet, 'f');
+				set_alphabet(alphabet, Engine::float_suffix_alphabet, 'F');
+
+				return alphabet;
+			}
+			static std::array<std::array<bool, Engine::lengthof_alphabet>, Engine::max_alphabet> const& alphabet() {
+				static auto out{ build_alphabet() };
+				return out;
+			};
+
+			struct Operator_Matches {
+				using SS = utility::Static_String;
+
+				struct Operator_Matches_Impl {
+					using SS = utility::Static_String;
+					// should match the order and categories from create_operators()
+					const std::array<utility::Static_String, 2> m_0{ {SS("?"), SS("?=")} };
+					const std::array<utility::Static_String, 1> m_1{ {SS("||")} };
+					const std::array<utility::Static_String, 1> m_2{ {SS("&&")} };
+					const std::array<utility::Static_String, 1> m_3{ {SS("|")} };
+					const std::array<utility::Static_String, 1> m_4{ {SS("&")} };
+					const std::array<utility::Static_String, 3> m_5{ {SS("=="), SS("!="), SS("..")} };
+					const std::array<utility::Static_String, 4> m_6{ {SS("<"), SS("<="), SS(">"), SS(">=")} };
+					const std::array<utility::Static_String, 2> m_7{ {SS("<<"), SS(">>")} };
+					const std::array<utility::Static_String, 2> m_8{ {SS("+"), SS("-")} };
+					const std::array<utility::Static_String, 3> m_9{ {SS("*"), SS("/"), SS("%")} };
+					const std::array<utility::Static_String, 1> m_10{ {SS("^")} };
+					const std::array<utility::Static_String, 6> m_11{ SS("++"), SS("--"), SS("-"), SS("+"), SS("!"), SS("~") };
+				};
+				static auto const& Data() {
+					static Operator_Matches_Impl out;
+					return out;
+				};
+				static bool is_match(GL::string t_str) noexcept {
+					constexpr std::array<std::size_t, 12> groups{ { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } };
+					return std::any_of(groups.begin(), groups.end(), [&t_str](const std::size_t group) { return is_match(group, t_str); });
+				};
+				template<typename Predicate> static bool any_of(const std::size_t t_group, Predicate&& predicate) {
+					auto match = [&predicate](const auto& array) { return std::any_of(array.begin(), array.end(), predicate); };
+
+					switch (t_group) {
+					case 0:
+						return match(Data().m_0);
+					case 1:
+						return match(Data().m_1);
+					case 2:
+						return match(Data().m_2);
+					case 3:
+						return match(Data().m_3);
+					case 4:
+						return match(Data().m_4);
+					case 5:
+						return match(Data().m_5);
+					case 6:
+						return match(Data().m_6);
+					case 7:
+						return match(Data().m_7);
+					case 8:
+						return match(Data().m_8);
+					case 9:
+						return match(Data().m_9);
+					case 10:
+						return match(Data().m_10);
+					case 11:
+						return match(Data().m_11);
+					default:
+						return false;
+					}
+				}
+				static bool is_match(const std::size_t t_group, GL::string t_str)  noexcept {
+					auto match = [&t_str](const auto& array) {
+						return std::any_of(array.begin(), array.end(), [&t_str](const auto& v) { return std::string_view(v) == t_str; });
+					};
+
+					switch (t_group) {
+					case 0:
+						return match(Data().m_0);
+					case 1:
+						return match(Data().m_1);
+					case 2:
+						return match(Data().m_2);
+					case 3:
+						return match(Data().m_3);
+					case 4:
+						return match(Data().m_4);
+					case 5:
+						return match(Data().m_5);
+					case 6:
+						return match(Data().m_6);
+					case 7:
+						return match(Data().m_7);
+					case 8:
+						return match(Data().m_8);
+					case 9:
+						return match(Data().m_9);
+					case 10:
+						return match(Data().m_10);
+					case 11:
+						return match(Data().m_11);
+					default:
+						return false;
+					}
+				}
+			};
+			static std::array<Engine::Operator_Precedence, 12> build_operators() noexcept {
+				return std::array<Engine::Operator_Precedence, 12>{
+					{
+						Engine::Operator_Precedence::Ternary_Cond,
+						Engine::Operator_Precedence::Logical_Or,
+						Engine::Operator_Precedence::Logical_And,
+						Engine::Operator_Precedence::Bitwise_Or,
+						Engine::Operator_Precedence::Bitwise_And,
+						Engine::Operator_Precedence::Equality,
+						Engine::Operator_Precedence::Comparison,
+						Engine::Operator_Precedence::Shift,
+						Engine::Operator_Precedence::Addition,
+						Engine::Operator_Precedence::Multiplication,
+						Engine::Operator_Precedence::Bitwise_Xor,
+						Engine::Operator_Precedence::Prefix
+					}
+				};
+			};
+			static std::array<Engine::Operator_Precedence, 12> const& operators() noexcept {
+				static auto out{ build_operators() };
+				return out;
+			};
+
+			constexpr bool char_in_alphabet(char c, Engine::Alphabet a) const noexcept { return alphabet()[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
+
+		private:
+			Engine::Position m_position{};
+			std::vector<AbstractSyntaxTreeNode> m_match_stack;
+			std::vector<AbstractSyntaxTreeNode> m_comment_stack;
+
+		private:
+			// check if the string is a valid operator
+			static bool is_operator(GL::string t_s) noexcept { return Operator_Matches::is_match(t_s); }
+			static void validate_object_name(GL::string const& name, Engine::Position const& m_position) {
+				switch (Engine::hash(name.c_str())) {
+				case Engine::hash(""):
+					throw except::eval_error("Id names cannot be empty", m_position);
+				case Engine::hash("#define"):
+				case Engine::hash("#undef"):
+				case Engine::hash("#ifdef"):
+				case Engine::hash("#ifndef"):
+				case Engine::hash("#elif"):
+				case Engine::hash("#else"):
+				case Engine::hash("#endif"):
+				case Engine::hash("#error"):
+				case Engine::hash("#warning"):
+				case Engine::hash("#include"):
+				case Engine::hash("#pragma"):
+				case Engine::hash("auto"):
+					// case Engine::hash("var"):
+				case Engine::hash("global"):
+				case Engine::hash("while"):
+				case Engine::hash("for"):
+				case Engine::hash("parallel_for"):
+				case Engine::hash("break"):
+				case Engine::hash("conitnue"):
+				case Engine::hash("case"):
+				case Engine::hash("default"):
+				case Engine::hash("switch"):
+				case Engine::hash("try"):
+				case Engine::hash("catch"):
+				case Engine::hash("finally"):
+				case Engine::hash("do"):
+				case Engine::hash("evaluate"):
+				case Engine::hash("namespace"):
+				case Engine::hash("return"):
+				case Engine::hash("if"):
+				case Engine::hash("else"):
+				{
+					GL::string temp = GL::string(name);
+					throw except::eval_error("Id name '" + temp + "' was reserved for the langauge", m_position);
+				}
+				default:
+					return;
+				}
+			};
+
+		private:
+			/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+			bool Symbol_(const utility::Static_String& sym) noexcept {
+				const auto len = sym.size();
+				if (m_position.remaining() >= len) {
+					const char* file_pos = &(*m_position);
+					for (size_t pos = 0; pos < len; ++pos) {
+						if (sym.c_str()[pos] != file_pos[pos]) {
+							return false;
+						}
+					}
+					m_position += len;
+					return true;
+				}
+				return false;
+			};
+			/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+			bool Symbol_(const GL::string& sym) noexcept {
+				const auto len = sym.size();
+				if (m_position.remaining() >= len) {
+					const char* file_pos = &(*m_position);
+					for (size_t pos = 0; pos < len; ++pos) {
+						if (sym[pos] != file_pos[pos]) {
+							return false;
+						}
+					}
+					m_position += len;
+					return true;
+				}
+				return false;
+			};
+			/// Reads a char from input if it matches the parameter, without skipping initial whitespace
+			bool Char_(const char c) {
+				if (m_position.has_more() && (*m_position == c)) {
+					++m_position;
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+			/// Reads an end-of-line group from input, without skipping initial whitespace
+			bool Eol_(const bool t_eos = false) {
+				bool retval = false;
+
+				if (m_position.has_more() && (Symbol_(m_cr_lf) || Char_('\n'))) {
+					retval = true;
+					//++m_position.line;
+					m_position.col = 1;
+				}
+				else if (m_position.has_more() && !t_eos && Char_(';')) {
+					retval = true;
+				}
+
+				return retval;
+			};
+			/// Reads a string from input if it matches the parameter, without skipping initial whitespace
+			bool Keyword_(const utility::Static_String& t_s) {
+				const auto len = t_s.size();
+				if (m_position.remaining() >= len) {
+					auto tmp = m_position;
+					for (size_t i = 0; tmp.has_more() && i < len; ++i) {
+						if (*tmp != t_s.c_str()[i]) {
+							return false;
+						}
+						++tmp;
+					}
+					m_position = tmp;
+					return true;
+				}
+
+				return false;
+			};
+			/// Reads the optional exponent (scientific notation) and suffix for a Float, without skipping initial whitespace
+			/// Support a form of scientific notation: 1e-5, 35.5E+8, 0.01e19
+			bool read_exponent_and_suffix_() noexcept {
+				// Support a form of scientific notation: 1e-5, 35.5E+8, 0.01e19
+				if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+					++m_position;
+					if (m_position.has_more() && ((*m_position == '-') || (*m_position == '+'))) {
+						++m_position;
+					}
+					auto exponent_pos = m_position;
+					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::int_alphabet)) {
+						++m_position;
+					}
+					if (m_position == exponent_pos) {
+						// Require at least one digit after the exponent
+						return false;
+					}
+				}
+
+				// Parse optional float suffix
+				while (m_position.has_more() && char_in_alphabet(*m_position, Engine::float_suffix_alphabet)) {
+					++m_position;
+				}
+
+				return true;
+			};
+			/// Reads a floating point value from input, without skipping initial whitespace
+			bool Float_() noexcept {
+				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::float_alphabet)) {
+					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::int_alphabet)) {
+						++m_position;
+					}
+
+					if (m_position.has_more() && (std::tolower(*m_position) == 'e')) {
+						// The exponent is valid even without any decimal in the Float (1e8, 3e-15)
+						return read_exponent_and_suffix_();
+					}
+					else if (m_position.has_more() && (*m_position == '.')) {
+						++m_position;
+						if (m_position.has_more() && char_in_alphabet(*m_position, Engine::int_alphabet)) {
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::int_alphabet)) {
+								++m_position;
+							}
+							// After any decimal digits, support an optional exponent (3.7e3)
+							return read_exponent_and_suffix_();
+						}
+						else {
+							--m_position;
+						}
+					}
+				}
+				return false;
+			};
+			/// Reads a hex value from input, without skipping initial whitespace
+			bool Hex_() noexcept {
+				if (m_position.has_more() && (*m_position == '0')) {
+					++m_position;
+
+					if (m_position.has_more() && char_in_alphabet(*m_position, Engine::x_alphabet)) {
+						++m_position;
+						if (m_position.has_more() && char_in_alphabet(*m_position, Engine::hex_alphabet)) {
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::hex_alphabet)) {
+								++m_position;
+							}
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::int_suffix_alphabet)) {
+								++m_position;
+							}
+
+							return true;
+						}
+						else {
+							--m_position;
+						}
+					}
+					else {
+						--m_position;
+					}
+				}
+
+				return false;
+			}
+			/// Reads an integer suffix, without skipping initial whitespace
+			void IntSuffix_() {
+				while (m_position.has_more() && char_in_alphabet(*m_position, Engine::int_suffix_alphabet)) {
+					++m_position;
+				}
+			}
+			/// Reads a binary value from input, without skipping initial whitespace
+			bool Binary_() {
+				if (m_position.has_more() && (*m_position == '0')) {
+					++m_position;
+
+					if (m_position.has_more() && char_in_alphabet(*m_position, Engine::b_alphabet)) {
+						++m_position;
+						if (m_position.has_more() && char_in_alphabet(*m_position, Engine::bin_alphabet)) {
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::bin_alphabet)) {
+								++m_position;
+							}
+							return true;
+						}
+						else {
+							--m_position;
+						}
+					}
+					else {
+						--m_position;
+					}
+				}
+
+				return false;
+			};
+			template<typename T> constexpr static auto parse_num_(const GL::string t_str) noexcept -> typename std::enable_if<std::is_integral<T>::value, T>::type {
+				T t = 0;
+				for (const auto c : t_str) {
+					if (c < '0' || c > '9') {
+						return t;
+					}
+					t *= 10;
+					t += c - '0';
+				}
+				return t;
+			};
+			template<typename T> static auto parse_num_(const GL::string t_str) -> typename std::enable_if<!std::is_integral<T>::value, T>::type {
+				T t = 0;
+				T base{};
+				T decimal_place = 0;
+				int exponent = 0;
+
+				for (const auto c : t_str) {
+					switch (c) {
+					case '.':
+						decimal_place = 10;
+						break;
+					case 'e':
+					case 'E':
+						exponent = 1;
+						decimal_place = 0;
+						base = t;
+						t = 0;
+						break;
+					case '-':
+						exponent = -1;
+						break;
+					case '+':
+						break;
+					case '0':
+					case '1':
+					case '2':
+					case '3':
+					case '4':
+					case '5':
+					case '6':
+					case '7':
+					case '8':
+					case '9':
+						if (decimal_place < 10) {
+							t *= 10;
+							t += static_cast<T>(c - '0');
+						}
+						else {
+							t += static_cast<T>(c - '0') / decimal_place;
+							decimal_place *= 10;
+						}
+						break;
+					default:
+						break;
+					}
+				}
+				return exponent ? base * std::pow(T(10), t * static_cast<T>(exponent)) : t;
+			};
+			/// Parses a floating point value
+			static GL::value buildFloat(GL::string t_val) {
+				bool float_ = false;
+				bool long_ = false;
+
+				auto i = t_val.size();
+
+				for (; i > 0; --i) {
+					char val = t_val[i - 1];
+
+					if (val == 'f' || val == 'F') {
+						float_ = true;
+					}
+					else if (val == 'l' || val == 'L') {
+						long_ = true;
+					}
+					else {
+						break;
+					}
+				}
+
+				if (float_) {
+					return GL::value((float)parse_num_<float>(t_val.substr(0, i)));
+				}
+				else if (long_) {
+					return GL::value((float)parse_num_<long double>(t_val.substr(0, i)));
+				}
+				else {
+					return GL::value((float)parse_num_<double>(t_val.substr(0, i)));
+				}
+			}
+			/// Parses a integer value and returns a wrapped representation of it
+			static GL::value buildInt(const int base, GL::string t_val, const bool prefixed) {
+				bool unsigned_ = false;
+				bool long_ = false;
+				bool longlong_ = false;
+
+				auto i = t_val.size();
+
+				for (; i > 0; --i) {
+					const char val = t_val[i - 1];
+
+					if (val == 'u' || val == 'U') {
+						unsigned_ = true;
+					}
+					else if (val == 'l' || val == 'L') {
+						if (long_) {
+							longlong_ = true;
+						}
+
+						long_ = true;
+					}
+					else {
+						break;
+					}
+				}
+
+				if (prefixed) {
+					t_val.remove_prefix(2);
+				}
+
+				try {
+					/// TODO fix this to use from_chars
+					auto u = std::stoll(t_val.to_string(), nullptr, base);
+
+					if (!unsigned_ && !long_ && u >= std::numeric_limits<int>::min() && u <= std::numeric_limits<int>::max()) {
+						return (float)static_cast<int>(u);
+					}
+					else if ((unsigned_ || base != 10) && !long_ && u >= std::numeric_limits<unsigned int>::min()
+						&& u <= std::numeric_limits<unsigned int>::max()) {
+						return (float)static_cast<unsigned int>(u);
+					}
+					else if (!unsigned_ && !longlong_ && u >= std::numeric_limits<long>::min() && u <= std::numeric_limits<long>::max()) {
+						return (float)static_cast<long>(u);
+					}
+					else if ((unsigned_ || base != 10) && !longlong_ && u >= std::numeric_limits<unsigned long>::min()
+						&& u <= std::numeric_limits<unsigned long>::max()) {
+						return (float)static_cast<unsigned long>(u);
+					}
+					else if (!unsigned_ && u >= std::numeric_limits<long long>::min() && u <= std::numeric_limits<long long>::max()) {
+						return (float)static_cast<long long>(u);
+					}
+					else {
+						return (float)static_cast<unsigned long long>(u);
+					}
+				}
+				catch (const std::out_of_range&) {
+					// too big to be signed
+					try {
+						/// TODO fix this to use from_chars
+						auto u = std::stoull(t_val.to_string(), nullptr, base);
+
+						if (!longlong_ && u >= std::numeric_limits<unsigned long>::min() && u <= std::numeric_limits<unsigned long>::max()) {
+							return (float)static_cast<unsigned long>(u);
+						}
+						else {
+							return (float)static_cast<unsigned long long>(u);
+						}
+					}
+					catch (const std::out_of_range&) {
+						// it's just simply too big
+						return (float)std::numeric_limits<long long>::max();
+					}
+				}
+			}
+			/// Reads an identifier from input which conforms to C's identifier naming conventions, without skipping initial whitespace
+			bool Id_(GL::string* out = nullptr) {
+				const auto start = m_position;
+				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) {
+					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { //keyword_alphabet)) {
+						++m_position;
+					}
+					if (out) *out = Engine::Position::str(start, m_position);
+					return true;
+				}
+				else if (m_position.has_more() && (*m_position == '`')) {
+					++m_position;
+					const auto start = m_position;
+
+					while (m_position.has_more() && (*m_position != '`')) {
+						if (Eol()) {
+							throw except::eval_error("Carriage return in identifier literal", m_position);
+						}
+						else {
+							++m_position;
+						}
+					}
+
+					if (start == m_position) {
+						throw except::eval_error("Missing contents of identifier literal", m_position);
+					}
+					else if (!m_position.has_more()) {
+						throw except::eval_error("Incomplete identifier literal", m_position);
+					}
+
+					++m_position;
+					if (out) *out = Engine::Position::str(start, m_position);
+					return true;
+				}
+				return false;
+			};
+			/// Reads a quoted string from input, without skipping initial whitespace
+			bool Quoted_String_() {
+				if (m_position.has_more() && (*m_position == '\"')) {
+					char prev_char = *m_position;
+					++m_position;
+
+					int in_interpolation = 0;
+					bool in_quote = false;
+
+					while (m_position.has_more() && ((*m_position != '\"') || (in_interpolation > 0) || (prev_char == '\\'))) {
+						if (!Eol_()) {
+							if (prev_char == '$' && *m_position == '{') {
+								++in_interpolation;
+							}
+							else if (prev_char != '\\' && *m_position == '"') {
+								in_quote = !in_quote;
+							}
+							else if (*m_position == '}' && !in_quote) {
+								--in_interpolation;
+							}
+
+							if (prev_char == '\\') {
+								prev_char = 0;
+							}
+							else {
+								prev_char = *m_position;
+							}
+							++m_position;
+						}
+					}
+
+					if (m_position.has_more()) {
+						++m_position;
+					}
+					else {
+						throw except::eval_error("Unclosed quoted string", m_position);
+					}
+
+					return true;
+				}
+				return false;
+			};
+			/// Reads (and potentially captures) a number from the input, detecting if it's an integer or floating point, without skipping initial whitespace
+			bool Num_() {
+				const auto start = m_position;
+				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::float_alphabet)) {
+					try {
+						if (Hex_()) {
+							auto match = Engine::Position::str(start, m_position);
+							auto bv = buildInt(16, (std::string_view)match, true);
+							m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							return true;
+						}
+						else if (Binary_()) {
+							auto match = Engine::Position::str(start, m_position);
+							auto bv = buildInt(2, (std::string_view)match, true);
+							m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							return true;
+						}
+						else if (Float_()) {
+							auto match = Engine::Position::str(start, m_position);
+							auto bv = buildFloat((std::string_view)match);
+							m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							return true;
+						}
+						else {
+							IntSuffix_();
+							auto match = Engine::Position::str(start, m_position);
+							if (!match.empty() && (match[0] == '0')) {
+								auto bv = buildInt(8, (std::string_view)match, false);
+								m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							}
+							else if (!match.empty()) {
+								auto bv = buildInt(10, (std::string_view)match, false);
+								m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							}
+							else {
+								return false;
+							}
+							return true;
+						}
+					}
+					catch (const std::invalid_argument&) {
+						// error parsing number passed in to buildFloat/buildInt
+						return false;
+					}
+				}
+				else {
+					return false;
+				}
+			};
+
+		private:
+			/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
+			template<typename NodeType> AbstractSyntaxTreeNode& build_match(size_t t_match_start, GL::string t_text = "") {
+				bool is_deep = false;
+
+				Engine::Parse_Location filepos = [&]() -> Engine::Parse_Location {
+					// so we want to take everything to the right of this and make them children
+					if (t_match_start != m_match_stack.size()) {
+						is_deep = true;
+						return Engine::Parse_Location(
+							m_match_stack[t_match_start].location.start,
+							m_position);
+					}
+					else {
+						return Engine::Parse_Location(m_position, m_position);
+					}
+				}();
+
+				std::vector<AbstractSyntaxTreeNode> new_children;
+				if (is_deep) {
+					new_children.assign(std::make_move_iterator(m_match_stack.begin() + static_cast<int>(t_match_start)),
+						std::make_move_iterator(m_match_stack.end()));
+					m_match_stack.erase(m_match_stack.begin() + static_cast<int>(t_match_start), m_match_stack.end());
+				}
+
+				m_match_stack.push_back(optimizer::optimize(NodeType(
+					std::move(t_text)
+					, std::move(filepos)
+					, std::move(new_children)
+				)));
+				return m_match_stack.back();
+			};
+			/// create a node
+			template<typename T, typename... Param> AbstractSyntaxTreeNode make_node(GL::string t_match, Engine::Position t_prev, Param &&...param) {
+				return T(
+					GL::string(t_match),
+					Engine::Parse_Location(t_prev, m_position),
+					std::forward<Param>(param)...
+				);
+			};
+			/// create a node
+			template<typename... Param> AbstractSyntaxTreeNode make_const(GL::string t_match, Engine::Position t_prev, Param &&...param) {
+				return Constant_Node(
+					GL::string(t_match),
+					Engine::Parse_Location(t_prev, m_position),
+					{},
+					std::forward<Param>(param)...
+				);
+			};
+
+		private:
+			/// Skips (and potentially captures w/ nullptr scope) any multi-line or single-line comment
+			bool SkipComment() {
+				const auto start = m_position;
+				if (Symbol_(m_multiline_comment_begin)) {
+					while (m_position.has_more()) {
+						if (Symbol_(m_multiline_comment_end)) {
+							break;
+						}
+						else if (!Eol_()) {
+							++m_position;
+						}
+					}
+					GL::string comment = Engine::Position::str(start, m_position);
+					m_comment_stack.push_back(Noop_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+
+					return true;
+				}
+				else if (Symbol_(m_singleline_comment)) {
+					while (m_position.has_more()) {
+						if (Symbol_(m_cr_lf)) {
+							m_position -= 2;
+							break;
+						}
+						else if (Char_('\n')) {
+							--m_position;
+							break;
+						}
+						else {
+							++m_position;
+						}
+					}
+
+					GL::string comment = Engine::Position::str(start, m_position);
+					m_comment_stack.push_back(Noop_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+
+					return true;
+
+				}
+				else if (Symbol_(m_annotation)) {
+					while (m_position.has_more()) {
+						if (Symbol_(m_cr_lf)) {
+							m_position -= 2;
+							break;
+						}
+						else if (Char_('\n')) {
+							--m_position;
+							break;
+						}
+						else {
+							++m_position;
+						}
+					}
+					GL::string comment = Engine::Position::str(start, m_position);
+					m_comment_stack.push_back(Noop_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+
+					return true;
+				}
+				return false;
+			}
+			/// Skips whitespace, which means space and tab, but not cr/lf
+			/// jespada: Modified SkipWS to skip optionally CR ('\n') and/or LF+CR ("\r\n")
+			/// AlekMosingiewicz: Added exception when illegal character detected
+			bool SkipWS(bool skip_cr = false) {
+				bool retval = false;
+
+				while (m_position.has_more()) {
+					if (static_cast<unsigned char>(*m_position) > 0x7e) {
+						throw except::eval_error("Illegal character", m_position);
+					}
+					auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
+
+					if (char_in_alphabet(*m_position, Engine::white_alphabet) || (skip_cr && end_line)) {
+						if (end_line) {
+							if (*m_position == '\r') {
+								// discards lf
+								++m_position;
+							}
+						}
+
+						++m_position;
+
+						retval = true;
+					}
+					else if (SkipComment()) {
+						retval = true;
+					}
+					else {
+						break;
+					}
+				}
+				return retval;
+			};
+			/// Reads until the end of the current statement
+			bool Eos() {
+				SkipWS();
+				return Eol_(true);
+			};
+			/// Reads (and potentially captures) an end-of-line group from input
+			bool Eol() {
+				SkipWS();
+				return Eol_();
+			};
+			/// Reads (and potentially captures) a char from input if it matches the parameter
+			bool Char(const char t_c) {
+				SkipWS();
+				return Char_(t_c);
+			};
+			/// Reads (and potentially captures) a string from input if it matches the parameter
+			bool Keyword(const utility::Static_String& t_s) {
+				SkipWS();
+				const auto start = m_position;
+				bool retval = Keyword_(t_s);
+				// ignore substring matches
+				if (retval && m_position.has_more() && char_in_alphabet(*m_position, Engine::keyword_alphabet)) {
+					m_position = start;
+					retval = false;
+				}
+				return retval;
+			};
+			/// Reads (and potentially captures) a symbol group from input if it matches the parameter
+			bool Symbol(const GL::string& t_s, const bool t_disallow_prevention = false) {
+				SkipWS();
+				const auto start = m_position;
+				bool retval = Symbol_(t_s);
+
+				// ignore substring matches
+				if (retval && m_position.has_more() && (t_disallow_prevention == false) && char_in_alphabet(*m_position, Engine::symbol_alphabet)) {
+					if (*m_position != '=' && is_operator(Engine::Position::str(start, m_position)) && !is_operator(Engine::Position::str(start, m_position + 1))) {
+						// don't throw this away, it's a good match and the next is not
+					}
+					else {
+						m_position = start;
+						retval = false;
+					}
+				}
+				return retval;
+			}
+			/// Reads (and potentially captures) a number from the input, detecting if it's an integer or floating point
+			bool Num() {
+				SkipWS();
+				return Num_();
+			};
+			/// 
+			bool Operator_Helper(const size_t t_precedence, GL::string& oper) {
+				return Operator_Matches::any_of(t_precedence, [&oper, this](const auto& elem) {
+					if (Symbol(std::string_view(elem))) {
+						oper = std::string_view(elem);
+						return true;
+					}
+					else {
+						return false;
+					}
+					});
+			};
+			/// Reads (and potentially captures) a quoted string from input.  Translates escaped sequences.
+			bool Quoted_String() {
+				SkipWS();
+
+				const auto start = m_position;
+
+				if (Quoted_String_()) {
+					GL::string match;
+					const auto prev_stack_top = m_match_stack.size();
+
+					bool is_interpolated = [&]() -> bool {
+						Char_Parser<GL::string> cparser(match, true);
+
+						auto s = start + 1, end = m_position - 1;
+
+						while (s != end) {
+							if (cparser.saw_interpolation_marker) {
+								if (*s == '{') {
+									// We've found an interpolation point
+
+									m_match_stack.push_back(make_const(match, start, match));
+
+									if (cparser.is_interpolated) {
+										// If we've seen previous interpolation, add on instead of making a new one
+										build_match<Binary_Operator_Node>(prev_stack_top, "+");
+									}
+
+									// We've finished with the part of the string up to this point, so clear it
+									match = "";
+
+									GL::string eval_match;
+
+									++s;
+									while ((s != end) && (*s != '}')) {
+										eval_match = eval_match + std::string(1, *s);
+										++s;
+									}
+
+									if (*s == '}') {
+										cparser.is_interpolated = true;
+										++s;
+
+										const auto tostr_stack_top = m_match_stack.size();
+
+										m_match_stack.push_back(make_node<Id_Node>("to_string", start)); //  Id_AST_Node
+
+										const auto ev_stack_top = m_match_stack.size();
+
+										try {
+											m_match_stack.push_back(parse_instr_eval(eval_match));
+										}
+										catch (const except::eval_error& e) {
+											throw except::eval_error(std::string(e.what()), start);
+										}
+
+										build_match<Arg_List_Node>(ev_stack_top);
+										build_match<Fun_Call_Node>(tostr_stack_top);
+										build_match<Binary_Operator_Node>(prev_stack_top, "+");
+									}
+									else {
+										throw except::eval_error("Unclosed in-string eval", start);
+									}
+								}
+								else {
+									match = match + "$";
+								}
+								cparser.saw_interpolation_marker = false;
+							}
+							else {
+								cparser.parse(*s, start);
+
+								++s;
+							}
+						}
+
+						if (cparser.saw_interpolation_marker) {
+							match = match + "$";
+						}
+
+						return cparser.is_interpolated;
+					}();
+
+					m_match_stack.push_back(make_const(match, start, match));
+
+					if (is_interpolated) {
+						build_match<Binary_Operator_Node>(prev_stack_top, "+");
+					}
+
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+			/// Reads (and potentially captures) an identifier from input
+			bool Id(const bool validate) {
+				SkipWS();
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+				if (Id_()) {
+					GL::string text = Engine::Position::str(prev_pos, m_position);
+					if (validate) { validate_object_name(text, m_position); }
+
+					auto foundConstant = constants().find(text);
+					if (foundConstant != constants().end()) {
+						m_match_stack.push_back(make_const(text, prev_pos, foundConstant->second));
+					}
+					else {
+						switch (Engine::hash(text.c_str())) {
+						case Engine::hash("__LINE__"): {
+							m_match_stack.push_back(make_const(text, prev_pos, const_var(prev_pos.line)));
+						} break;
+							//case hash("__FILE__"): {
+							//	m_match_stack.push_back(make_node<eval::Constant_AST_Node>(text, prev_pos.line, prev_pos.col, const_var(m_filename)));
+							//} break;
+						default: {
+							auto val = text;
+							if (*prev_pos == '`') { // 'escaped' literal, like an operator name ( e.g. `[]`(...) )
+								val = Engine::Position::str(prev_pos + 1, m_position - 1);
+							}
+							m_match_stack.push_back(make_node<Id_Node>(val, prev_pos)); // e.g. "x", "Units::meter", etc.							
+						} break;
+						}
+					}
+					return true;
+				}
+				else {
+					return false;
+				}
+				
+			};
+			/// Reads (and potentially captures) an type or class identifier from input
+			bool TypeName(bool allowAuto = false) {
+				if (Id(false)) {
+					return true;
+				}
+				else if (allowAuto) {
+					const auto prev_pos = m_position;
+					if (Keyword("auto")) {
+						m_match_stack.push_back(make_node<Id_Node>(Engine::Position::str(prev_pos, m_position), prev_pos)); // e.g. "x", "Units::meter", etc.
+					}
+					else {
+						return false;
+					}
+				}
+				return false;
+			};
+
+			/// Reads an argument from input
+			bool Arg(const bool t_type_allowed = true) {
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+				SkipWS();
+
+				bool foundType = false;
+				if (t_type_allowed) {
+					foundType = TypeName();
+				}
+
+				if (!Id(true)) {
+					return failure();
+				}
+
+				build_match<Arg_Node>(prev_stack_top);
+
+				return true;
+			};
+
+			/// Reads a comma-separated list of values from input. Id's only, no types allowed
+			bool Id_Arg_List() {
+				SkipWS(true);
+
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Arg(false)) {
+					retval = true;
+					SkipWS(true);
+					while (Char(',')) {
+						SkipWS(true);
+						if (!Arg(false)) {
+							throw except::eval_error("Unexpected value in parameter list", m_position);
+						}
+					}
+				}
+				build_match<Arg_List_Node>(prev_stack_top);
+
+				SkipWS(true);
+
+				return retval;
+			};
+
+			/// Reads a comma-separated list of values from input, for function declarations
+			bool Decl_Arg_List() {
+				SkipWS(true);
+
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Arg(true)) {
+					retval = true;
+					SkipWS(true);
+					while (Char(',')) {
+						SkipWS(true);
+						if (!Arg(true)) {
+							throw except::eval_error("Unexpected value in parameter list", m_position);
+						}
+					}
+				}
+				build_match<Arg_List_Node>(prev_stack_top);
+
+				SkipWS(true);
+
+				return retval;
+			};
+
+			/// Reads a comma-separated list of values from input
+			bool Arg_List(int maxNumArgs = std::numeric_limits<int>::max()) {
+				SkipWS(true);
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Equation()) {
+					retval = true;
+					SkipWS(true);
+					while (((--maxNumArgs) > 0)) {
+						SkipWS(true);
+						if (!Char(',')) break;
+						SkipWS(true);
+						if (!Equation()) {
+							throw except::eval_error("Unexpected value in parameter list", m_position);
+						}
+					}
+				}
+
+				build_match<Arg_List_Node>(prev_stack_top);
+
+				SkipWS(true);
+
+				return retval;
+			};
+
+			/// Reads a C-style type-cast from input (e.g. (int)0.0f )
+			bool TypeCastOperation() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				SkipWS(true);
+
+				// (string)100
+				if (Char('(') && TypeName() && Char(')')) {
+					if (Operator()) {
+						retval = true;
+						build_match<Arg_List_Node>(prev_stack_top + 1);
+						build_match<Fun_Call_Node>(prev_stack_top); // Id(fun name), Arg_List()
+					}
+				}
+
+				if (!retval) {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+				}
+				return retval;
+			};
+
+			/// Parses a string of binary equation operators
+			bool Equation() {
+				const auto prev_stack_top = m_match_stack.size();
+				using SS = utility::Static_String;
+
+				if (TypeCastOperation()) {
+					return true;
+				}
+
+				if (Operator()) {
+					for (const auto& sym :
+						{ SS{"="}, SS{":="}, SS{"?="}, SS{".."}, SS{"+="}, SS{"-="}, SS{"*="}, SS{"/="}, SS{"%="}, SS{"<<="}, SS{">>="}, SS{"&="}, SS{"^="}, SS{"|="} }) {
+						if (Symbol(std::string_view(sym.c_str()), true)) {
+							SkipWS(true);
+							if (!Equation()) {
+								throw except::eval_error("Incomplete equation", m_position);
+							}
+
+							build_match<Equation_Node>(prev_stack_top, std::string_view(sym.c_str()));
+							return true;
+						}
+					}
+					return true;
+				}
+
+				return false;
+			};
+			// int x;
+			// int const& x;
+			bool SpecifiedType_Var_Decl() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				if (TypeName()) { // typename was specified and found
+					build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
+					build_match<Fun_Call_Node>(prev_stack_top); // collapse all into a function call (i.e. int({no_params}))
+
+					if (Id(true)) {
+						retval = true;
+						build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;                           
+					}
+
+					if (retval) {
+						// Fun_Call ("Typename()") , Id or Ref ("Variable name");
+						build_match < Assign_Retroactively_Node>(prev_stack_top);
+					}
+				}
+				if (!retval) {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+				}
+
+				return retval;
+			}
+
+			/// Reads a variable declaration from input
+			bool Var_Decl() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Keyword("auto") /*|| Keyword("var")*/) {
+					(void)Char('&');
+					if (Id(true)) {
+						build_match<Var_Decl_Node>(prev_stack_top);
+						retval = true;
+					}
+					else {
+						throw except::eval_error("Incomplete variable declaration ", m_position);
+					}
+				}
+				else {
+					return SpecifiedType_Var_Decl();
+				}
+				
+				return retval;
+			};
+
+			/// Reads a unary prefixed expression from input
+			bool Prefix() {
+				const auto prev_stack_top = m_match_stack.size();
+				using SS = utility::Static_String;
+				constexpr std::array<utility::Static_String, 6> prefix_opers{ SS{"++"}, SS{"--"}, SS{"-"}, SS{"+"}, SS{"!"}, SS{"~"} };
+				for (const auto& oper : prefix_opers) {
+					const bool is_char = oper.size() == 1;
+					if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(std::string_view(oper.c_str())))) {
+						if (!Operator(operators().size() - 1)) {
+							throw except::eval_error("Incomplete prefix '" + GL::string(std::string_view(oper.c_str())) + "' expression", m_position);
+						}
+						build_match<Prefix_Node>(prev_stack_top, std::string_view(oper.c_str()));
+						return true;
+					}
+				}
+				return false;
+			};
+
+			static auto make_postfix_operators() {
+				std::map<int, std::vector<std::pair<GL::type, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<int>> out;
+				//for (auto& unit_type : Units::value::GetValueTypes()) {
+				//	auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
+				//	out[abbreviation.length()].push_back(unit_type);
+				//}
+				return out;
+			}
+
+			bool Postfix(bool gotValueAlready) {
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				// add support for custom post-fixes
+				// Examples: 
+				// 12_in = inch(12)
+				// 1_gal = gallon(1)
+
+				if (gotValueAlready) {
+					if (Symbol("++")) {
+						build_match<Postfix_Node>(prev_stack_top - 1, "++");
+						return true;
+					}
+					else if (Symbol("--")) {
+						build_match<Postfix_Node>(prev_stack_top - 1, "--");
+						return true;
+					}
+					else {
+						static std::map<int, std::vector<std::pair<GL::type, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<int>>
+							customOperators{ make_postfix_operators() };
+
+						// evaluate the custom operators...
+						if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].text != "" && m_match_stack[prev_stack_top - 1].identifier == Engine::AST_Node_Type::Constant) {
+							// this path means the incoming value is constant and known			
+#if 0
+							for (auto& abbreviation_length_to_category : customOperators) {
+								for (auto& unit_type : abbreviation_length_to_category.second) {
+									auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
+									if (Symbol(abbreviation)) {
+										auto& rhs = std::dynamic_pointer_cast<Constant_Node>(m_match_stack[prev_stack_top - 1].first)->m_value;
+										Any lhs(unit_type.second.first);
+										if (auto Class = currentScope->FindClass(unit_type.first.lock())) {
+											if (auto ClassPtr = Class->this_m->scope_ptr) {
+												lhs = ClassPtr->Call(Class->this_m->scope_name, { rhs });
+											}
+											else {
+												currentScope->Call("=", { lhs, rhs });
+											}
+										}
+										else {
+											currentScope->Call("=", { lhs, rhs });
+										}
+										GL::string temp = GoodLang::ToString(lhs);
+
+										Engine::Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+										loc.end += abbreviation.length();
+
+										m_match_stack[prev_stack_top - 1].first =
+											std::dynamic_pointer_cast<AST_Node_Impl>(
+												std::make_shared<AST_Nodes::Constant_AST_Node>(temp, loc, lhs)
+												);
+
+										return true;
+									}
+								}
+							}
+#endif
+						}
+						else if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].text != "") {
+							// this path means the incoming value is NOT constant and is not known. 
+#if 0
+							for (auto& abbreviation_length_to_category : customOperators) {
+								for (auto& unit_type : abbreviation_length_to_category.second) {
+									auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
+									if (Symbol(abbreviation)) {
+										Any lhs(unit_type.second.first);
+										if (auto Class = currentScope->FindClass(unit_type.first.lock())) {
+											if (auto ClassPtr = Class->this_m->scope_ptr) {
+												lhs = ClassPtr->Call(Class->this_m->scope_name, {});
+											}
+										}
+
+										Engine::Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
+										loc.end += abbreviation.length();
+
+										m_match_stack[prev_stack_top - 1].first =
+											std::dynamic_pointer_cast<AST_Node_Impl>(
+												std::make_shared<AST_Nodes::Equation_AST_Node>("=", loc, std::vector<AST_Node_Impl_Ptr>{
+											std::dynamic_pointer_cast<AST_Node_Impl>(
+												std::make_shared<AST_Nodes::Constant_AST_Node>(GoodLang::ToString(lhs), loc, lhs)
+												),
+												std::move(m_match_stack[prev_stack_top - 1].first)
+										})
+												);
+
+										return true;
+
+
+										//// To-Do, finish this analysis!
+										//// Insert a node that evaluates the function `=`(lhs, rhs) and returns lhs.
+
+
+
+
+
+
+
+										//throw std::runtime_error("FIX ME!");
+										//while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+										//m_position = prev_pos;
+
+
+									}
+								}
+							}
+#endif
+						}
+					}
+				}
+				else {
+					if (Id(true)) {
+						if (Symbol("++")) {
+							build_match<Postfix_Node>(prev_stack_top, "++");
+							return true;
+						}
+						else if (Symbol("--")) {
+							build_match<Postfix_Node>(prev_stack_top, "--");
+							return true;
+						}
+						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+						m_position = prev_pos;
+					}
+				}
+				return false;
+			}
+
+			/// Reads a pair of values used to create a map initialization from input
+			bool Map_Pair() {
+				SkipWS(true);
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				if (Operator()) {
+					if (Symbol(":")) {
+						retval = true;
+						if (!Operator()) { throw except::eval_error("Incomplete map pair", m_position); }
+
+						build_match<Map_Pair_Node>(prev_stack_top);
+					}
+					else {
+						m_position = prev_pos;
+						while (prev_stack_top != m_match_stack.size()) {
+							m_match_stack.pop_back();
+						}
+					}
+				}
+
+				return retval;
+			}
+
+			/// Reads possible special container values, including ranges and map_pairs
+			bool Container_Arg_List() {
+				SkipWS(true);
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Map_Pair()) {
+					retval = true;
+					SkipWS(true);
+					while (Char(',')) {
+						SkipWS(true);
+						if (!Map_Pair()) {
+							throw except::eval_error("Unexpected value in container", m_position);
+						}
+					}
+					build_match<Arg_List_Node>(prev_stack_top);
+				}
+				else if (Operator()) {
+					retval = true;
+					SkipWS(true);
+					while (Char(',')) {
+						SkipWS(true);
+						if (!Operator()) {
+							throw except::eval_error("Unexpected value in container", m_position);
+						}
+						SkipWS(true);
+					}
+					build_match<Arg_List_Node>(prev_stack_top);
+				}
+
+				SkipWS(true);
+
+				return retval;
+			}
+
+			/// Reads, and identifies, a short-form container initialization from input
+			bool Inline_Container() {
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Char('[')) {
+					SkipWS(true);
+					Container_Arg_List();
+					SkipWS(true);
+					if (!Char(']')) {
+						throw except::eval_error("Missing closing square bracket ']' in container initializer", m_position);
+					}
+					if ((prev_stack_top != m_match_stack.size()) && (!m_match_stack.back().children.empty())) {
+						if (m_match_stack.back().children[0].identifier == Engine::AST_Node_Type::Map_Pair) {
+							build_match<Inline_Map_Node>(prev_stack_top);
+						}
+						else {
+							build_match<Inline_Array_Node>(prev_stack_top);
+						}
+					}
+					else {
+						build_match<Inline_Array_Node>(prev_stack_top);
+					}
+
+					return true;
+				}
+				else {
+					return false;
+				}
+			}
+
+			/// Reads a lambda (anonymous function) from input
+			bool Lambda() {
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+				/* All of the following should be examples of valid forms of lambda functions */
+				// [...](...) async -> typename {...} 
+				// [...](...) -> typename {...} 
+				// [...](...) async {...} 
+				// (...) async {...} 
+				// (...) {...} 
+
+				// Arg_List
+				if (Char('[')) {
+					SkipWS(true);
+					Id_Arg_List();
+					SkipWS(true);
+					if (!Char(']')) {
+						return failure();
+					}
+				}
+				else {
+					// make sure we always have the same number of nodes
+					build_match<Arg_List_Node>(prev_stack_top);
+				}
+
+				// Arg_List
+				if (Char('(')) {
+					SkipWS(true);
+					Decl_Arg_List();
+					SkipWS(true);
+					if (!Char(')')) {
+						return failure();
+					}
+				}
+				else {
+					return failure();
+				}
+
+				// KeyWords / modifiers
+				bool is_async = false;
+				bool foundKeyWord = true;
+				while (foundKeyWord) {
+					SkipWS(true);
+					foundKeyWord = false;
+
+					if (Keyword("async")) {
+						foundKeyWord = true;
+						is_async = true;
+					}
+				}
+
+				SkipWS(true);
+
+				// Noop or Id
+				if (Symbol("->")) {
+					SkipWS(true);
+					const auto start = m_position;
+					if (!TypeName()) {
+						return failure();
+					}
+				}
+				else {
+					// make sure we always have the same number of nodes
+					m_match_stack.push_back(Noop_Node("", {}, {}));
+				}
+
+				// Block
+				SkipWS(true);
+				if (!Block()) {
+					return failure();
+				}
+
+				auto lambda_node = build_match<Lambda_Node>(prev_stack_top);
+				// lambda_node.is_async = is_async;
+
+				return true;
+			};
+
+			bool Dot_Fun_Array() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Lambda() || Num() || Quoted_String() || Paren_Expression() || Inline_Container() || Id(false)) {
+					retval = true;
+					bool has_more = true;
+
+					while (has_more) {
+						has_more = false;
+						if (Char('(')) {
+							has_more = true;
+							SkipWS(true);
+							Arg_List();
+							SkipWS(true);
+							if (!Char(')')) {
+								throw except::eval_error("Incomplete function call", m_position);
+							}
+
+							build_match<Fun_Call_Node>(prev_stack_top, "()");
+							/// \todo Work around for method calls until we have a better solution
+							if (!m_match_stack.back().children.empty()) {
+								if (m_match_stack.back().children[0].identifier == Engine::AST_Node_Type::Dot_Access) {
+									if (m_match_stack.empty()) {
+										throw except::eval_error("Incomplete dot access fun call", m_position);
+									}
+									if (m_match_stack.back().children.empty()) {
+										throw except::eval_error("Incomplete dot access fun call", m_position);
+									}
+									auto dot_access = std::move(m_match_stack.back().children[0]);
+									auto func_call = std::move(m_match_stack.back());
+									m_match_stack.pop_back();
+									func_call.children.erase(func_call.children.begin());
+									if (dot_access.children.empty()) {
+										throw except::eval_error("Incomplete dot access fun call", m_position);
+									}
+									func_call.children.insert(func_call.children.begin(), std::move(dot_access.children.back()));
+									dot_access.children.pop_back();
+									dot_access.children.push_back(std::move(func_call));
+									if (dot_access.children.size() != 2) {
+										throw except::eval_error("Incomplete dot access fun call", m_position);
+									}
+									m_match_stack.push_back(dot_access);
+								}
+							}
+						}
+						else if (Char('[')) {
+							has_more = true;
+							if (!(Operator() && Char(']'))) {
+								// TO-DO, Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
+								throw except::eval_error("Incomplete array access", m_position);
+							}
+
+							build_match<Array_Call_Node>(prev_stack_top, "[]");
+						}
+						else if (Symbol(".")) {
+							has_more = true;
+							if (!(Id(true))) {
+								throw except::eval_error("Incomplete dot access fun call", m_position);
+							}
+
+							if (std::distance(m_match_stack.begin() + static_cast<int>(prev_stack_top), m_match_stack.end()) != 2) {
+								throw except::eval_error("Incomplete dot access fun call", m_position);
+							}
+
+							build_match<Dot_Access_Node>(prev_stack_top, ".");
+						}
+						else if (Eol()) {
+							auto start = (--m_position);
+							SkipWS(true);
+							if (Symbol(".")) {
+								has_more = true;
+								--m_position;
+							}
+							else {
+								m_position = start;
+							}
+						}
+					}
+				}
+
+				return retval;
+			};
+
+			/// Parses any of a group of 'value' style ast_node groups from input
+			bool Value() {
+				if (Var_Decl() || Dot_Fun_Array() || Prefix()) {
+					Postfix(true);
+					return true;
+				}
+				else {
+					return Postfix(false);
+				}
+			};
+
+			bool Operator(const size_t t_precedence = 0) {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (operators()[t_precedence] != Engine::Operator_Precedence::Prefix) {
+					if (Operator(t_precedence + 1)) {
+						GL::string oper;
+						retval = true;
+						while (Operator_Helper(t_precedence, oper)) {
+							while (Eol()) {}
+
+							if (!Operator(t_precedence + 1)) {
+								throw except::eval_error("Incomplete '" + oper + "' expression", m_position);
+							}
+
+							switch (operators()[t_precedence]) {
+							case (Engine::Operator_Precedence::Ternary_Cond):
+								if (oper == "?=") {
+									build_match<Equation_Node>(prev_stack_top, oper);
+								}
+								else {
+									if (Symbol(":")) {
+										if (!Operator(t_precedence + 1)) {
+											throw except::eval_error("Incomplete '" + oper + "' expression", m_position);
+										}
+										build_match<If_Node>(prev_stack_top);
+									}
+									else {
+										throw except::eval_error("Incomplete '" + oper + "' expression", m_position);
+									}
+								}
+								break;
+
+							case (Engine::Operator_Precedence::Addition):
+							case (Engine::Operator_Precedence::Multiplication):
+							case (Engine::Operator_Precedence::Shift):
+							case (Engine::Operator_Precedence::Equality):
+							case (Engine::Operator_Precedence::Bitwise_And):
+							case (Engine::Operator_Precedence::Bitwise_Xor):
+							case (Engine::Operator_Precedence::Bitwise_Or):
+							case (Engine::Operator_Precedence::Comparison):
+								build_match<Binary_Operator_Node>(prev_stack_top, oper);
+								break;
+
+							case (Engine::Operator_Precedence::Logical_And):
+								build_match<Logical_And_Node>(prev_stack_top, oper);
+								break;
+							case (Engine::Operator_Precedence::Logical_Or):
+								build_match<Logical_Or_Node>(prev_stack_top, oper);
+								break;
+							case (Engine::Operator_Precedence::Prefix):
+								ASSERT(false); // cannot reach here because of if() statement at the top
+								break;
+							}
+						}
+					}
+				}
+				else {
+					return Value();
+				}
+
+				return retval;
+			}
+
+			/// Reads an expression surrounded by parentheses from input
+			bool Paren_Expression() {
+				if (Char('(')) {
+					SkipWS(true);
+					if (!Operator()) {
+						throw except::eval_error("Incomplete expression", m_position);
+					}
+					SkipWS(true);
+					if (!Char(')')) {
+						throw except::eval_error("Missing closing parenthesis ')'", m_position);
+					}
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+
+			/// Reads a while block from input
+			bool While() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Keyword("while")) {
+					retval = true;
+
+					if (!Char('(')) {
+						throw except::eval_error("Incomplete 'while' expression", m_position);
+					}
+
+					if (!(Operator() && Char(')'))) {
+						throw except::eval_error("Incomplete 'while' expression", m_position);
+					}
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'while' block", m_position);
+					}
+
+					build_match<While_Node>(prev_stack_top);
+				}
+
+				return retval;
+			};
+
+			/// Reads the C-style `for` conditions from input
+			bool For_Guards() {
+				if (!(Equation() && Eol())) {
+					if (!Eol()) {
+						return false;
+					}
+					else {
+						m_match_stack.push_back(Noop_Node("", {}, {}));
+					}
+				}
+
+				if (!(Equation() && Eol())) {
+					if (!Eol()) {
+						return false;
+					}
+					else {
+						m_match_stack.push_back(make_const("", m_position, true));
+					}
+				}
+
+				if (!Equation()) {
+					m_match_stack.push_back(Noop_Node("", {}, {}));
+				}
+
+				return true;
+			}
+
+			/// Reads the C-style `for` conditions from input
+			bool Parallel_For_Guards() {
+				if (!(Equation() && Eol())) {
+					if (!Eol()) {
+						return false;
+					}
+					else {
+						m_match_stack.push_back(Noop_Node("", {}, {}));
+					}
+				}
+
+				if (!(Equation())) {
+					m_match_stack.push_back(make_const("", m_position, true));
+				}
+
+				return true;
+			}
+
+			/// Reads the ranged `for` conditions from input
+			bool Range_Expression() {
+				// the first element will have already been captured by the For_Guards() call that preceeds it
+				return Char(':') && Equation();
+			}
+
+			/// Reads a for block from input
+			bool For() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Keyword("for")) {
+					retval = true;
+
+					SkipWS(true);
+
+					if (!Char('(')) {
+						throw except::eval_error("Incomplete 'for' expression", m_position);
+					}
+
+					SkipWS(true);
+
+					bool classic_for = For_Guards();
+					SkipWS(true);
+					if (classic_for) classic_for = classic_for && Char(')');
+					if (!classic_for) {
+						classic_for = Range_Expression();
+						SkipWS(true);
+						if (classic_for) classic_for = classic_for && Char(')');
+
+						if (!classic_for) {
+							throw except::eval_error("Incomplete 'for' expression", m_position);
+						}
+
+						classic_for = false;
+					}
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'for' block", m_position);
+					}
+
+					const auto num_children = m_match_stack.size() - prev_stack_top;
+
+					if (classic_for) {
+						if (num_children != 4) {
+							throw except::eval_error("Incomplete 'for' expression", m_position);
+						}
+						build_match<For_Node>(prev_stack_top);
+					}
+					else {
+						if (num_children != 3) {
+							throw except::eval_error("Incomplete ranged-for expression", m_position);
+						}
+						build_match<Ranged_For_Node>(prev_stack_top);
+					}
+				}
+				else if (Keyword("parallel_for")) {
+					// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
+					// parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
+					// parallel_for (range_declaration : range_expression) loop_statement;
+					retval = true;
+
+					SkipWS(true);
+
+					if (!Char('(')) {
+						throw except::eval_error("Incomplete 'parallel_for' expression", m_position);
+					}
+
+					SkipWS(true);
+
+					bool classic_for = Parallel_For_Guards();
+					SkipWS(true);
+					if (classic_for) classic_for = classic_for && Char(')');
+					if (!classic_for) {
+						classic_for = Range_Expression();
+						SkipWS(true);
+						if (classic_for) classic_for = classic_for && Char(')');
+
+						if (!classic_for) {
+							throw except::eval_error("Incomplete 'parallel_for' expression", m_position);
+						}
+
+						classic_for = false;
+					}
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'parallel_for' block", m_position);
+					}
+
+					const auto num_children = m_match_stack.size() - prev_stack_top;
+
+					if (classic_for) {
+						if (num_children != 3) {
+							throw except::eval_error("Incomplete 'parallel_for' expression", m_position);
+						}
+						build_match<Parallel_For_Node>(prev_stack_top);
+					}
+					else {
+						if (num_children != 3) {
+							throw except::eval_error("Incomplete ranged-parallel_for expression", m_position);
+						}
+						build_match<Parallel_Ranged_For_Node>(prev_stack_top);
+					}
+				}
+
+				return retval;
+			}
+
+			/// Reads a break statement from input
+			bool Break() {
+				const auto prev_stack_top = m_match_stack.size();
+				if (Keyword("break")) {
+					build_match<Break_Node>(prev_stack_top);
+					return true;
+				}
+				else {
+					return false;
+				}
+			}
+
+			/// Reads a continue statement from input
+			bool Continue() {
+				const auto prev_stack_top = m_match_stack.size();
+				if (Keyword("continue")) {
+					build_match<Continue_Node>(prev_stack_top);
+					return true;
+				}
+				else {
+					return false;
+				}
+			}
+
+			/// Reads a case block from input
+			bool Case() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				// case "option": { ... }
+				// case "option" { ... }
+				if (Keyword("case")) {
+					retval = true;
+
+					SkipWS(true);
+
+					if (!Operator()) {
+						throw except::eval_error("Incomplete 'case' expression", m_position);
+					}
+
+					SkipWS(true);
+
+					Char(':'); // optional
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'case' block", m_position);
+					}
+
+					build_match<Case_Node>(prev_stack_top);
+				}
+				// default: { ... }
+				// default { ... }
+				else if (Keyword("default")) {
+					retval = true;
+
+					SkipWS(true);
+
+					Char(':'); // optional
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'default' block", m_position);
+					}
+
+					build_match<Default_Node>(prev_stack_top);
+				}
+
+				return retval;
+			};
+
+			/// Reads a switch statement from input
+			bool Switch() {
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Keyword("switch")) {
+					if (!Char('(')) {
+						throw except::eval_error("Incomplete 'switch' expression", m_position);
+					}
+
+					if (!(Operator() && Char(')'))) {
+						throw except::eval_error("Incomplete 'switch' expression", m_position);
+					}
+
+					SkipWS(true);
+
+					if (Char('{')) {
+						SkipWS(true);
+
+						while (Case()) {
+							SkipWS(true);
+						}
+
+						SkipWS(true);
+
+						if (!Char('}')) {
+							throw except::eval_error("Incomplete block", m_position);
+						}
+					}
+					else {
+						throw except::eval_error("Incomplete block", m_position);
+					}
+
+					build_match<Switch_Node>(prev_stack_top);
+					return true;
+
+				}
+				else {
+					return false;
+				}
+			}
+
+			/// Reads a try-catch from input
+			bool Try() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				if (Keyword("try")) {
+					retval = true;
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'try' block", m_position);
+					}
+
+					bool has_matches = true;
+					while (has_matches) {
+						SkipWS(true);
+						has_matches = false;
+						if (Keyword("catch")) {
+							const auto catch_stack_top = m_match_stack.size();
+							if (Char('(')) {
+								bool success = false;
+								if (Symbol("...")) {
+									// captures anything...
+									if (!Char(')')) {
+										throw except::eval_error("Incomplete 'catch(...)' expression", m_position);
+									}
+									success = true;
+								}
+
+								if (Arg(true)) {
+									if (!Char(')')) {
+										throw except::eval_error("Incomplete 'catch' expression", m_position);
+									}
+									success = true;
+								}
+
+								if (!success) {
+									throw except::eval_error("Incomplete 'catch' expression", m_position);
+								}
+							}
+
+							SkipWS(true);
+
+							if (!Block()) {
+								throw except::eval_error("Incomplete 'catch' block", m_position);
+							}
+							build_match<Catch_Node>(catch_stack_top);
+							has_matches = true;
+						}
+					}
+					SkipWS(true);
+					if (Keyword("finally")) {
+						const auto finally_stack_top = m_match_stack.size();
+
+						SkipWS(true);
+
+						if (!Block()) {
+							throw except::eval_error("Incomplete 'finally' block", m_position);
+						}
+						build_match<Finally_Node>(finally_stack_top);
+					}
+
+					build_match<Try_Node>(prev_stack_top);
+				}
+				//else if (Keyword("do")) {
+				//	retval = true;
+				//	SkipWS(true);
+				//	if (!Block()) {
+				//		throw except::eval_error("Incomplete 'do' block", m_position);
+				//	}
+				//	SkipWS(true);
+				//	if (Keyword("finally")) {
+				//		const auto finally_stack_top = m_match_stack.size();
+				//		SkipWS(true);
+				//		if (!Block()) {
+				//			throw except::eval_error("Incomplete 'finally' block", m_position);
+				//		}
+				//		build_match<Finally_Node>(finally_stack_top);
+				//	}
+				//	build_match<Do_Node>(prev_stack_top);
+				//}
+				return retval;
+			}
+
+			/// Reads a just-in-time compilation request from input
+			bool Eval() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				if (Keyword("evaluate")) {
+					retval = true;
+					SkipWS(true);
+#if 1
+					if (!Char('(')) {
+						throw except::eval_error("Incomplete 'evaluate' expression", m_position);
+					}
+					SkipWS(true);
+					if (!Equation()) {
+						throw except::eval_error("Incomplete 'evaluate' expression", m_position);
+					}
+					SkipWS(true);
+					if (!Char(')')) {
+						throw except::eval_error("Incomplete 'evaluate' expression", m_position);
+					}
+#else
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'evaluate' block", m_position);
+					}
+#endif
+					build_match<JustInTimeCompilation_Node>(prev_stack_top);
+				}
+				return retval;
+			}
+
+			/// Reads a namespace block from input
+			/// namespace Thing{ ... };
+			bool DeclClass() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+
+				// class TypeName { ... }
+				// class TypeName : ParentTypeName { ... }
+
+				if (Keyword("class")) {
+					retval = true;
+					SkipWS(true);
+
+					if (Id(true)) { // variable becase this namespace may not exist yet! 
+						/* Great! Got the desired name of the new namespace */
+					}
+					else {
+						throw except::eval_error("Incomplete 'class' block: class must have a name", m_position);
+					}
+
+					auto this_class_name = GL::string(m_match_stack.back().get_text());
+
+					// instead of collecting statements, we want to collect declarations...
+					if (!DeclarationsBlock()) {
+						throw except::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", m_position);
+					}
+
+					build_match<Class_Node>(prev_stack_top);
+				}
+				return retval;
+			};
+
+			/// Reads a namespace block from input
+			/// namespace Thing{ ... };
+			bool DeclNamespace() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Keyword("namespace")) {
+					retval = true;
+					SkipWS(true);
+
+					if (Id(true)) { // variable becase this namespace may not exist yet! 
+						/* Great! Got the desired name of the new namespace */
+					}
+					else {
+						throw except::eval_error("Incomplete 'namespace' block: namespace must have a name", m_position);
+					}
+
+					auto this_class_name = m_match_stack.back().get_text();
+
+					// instead of collecting statements, we want to collect declarations...
+					if (!DeclarationsBlock()) {
+						throw except::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", m_position);
+					}
+					build_match<Namespace_Node>(prev_stack_top);
+				}
+				return retval;
+			};
+
+			/// Reads a declared function from input
+			/// Type Foo(...){ ... };
+			bool DeclFunction() {
+				bool retval = false;
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+				// return type (Id)
+				if (!TypeName(true)) { // Id
+					return failure();
+				}
+
+				// function name (Id)
+				if (!Id(true)) {
+					return failure();
+				}
+
+				// Arg_List 
+				if (Char('(')) {
+					SkipWS(true);
+					Decl_Arg_List();
+					SkipWS(true);
+					if (!Char(')')) {
+						return failure();
+					}
+				}
+				else {
+					return failure();
+				}
+
+				// Block
+				if (!Block()) {
+					return failure();
+				}
+
+				build_match<FunctionDecl_Node>(prev_stack_top);
+
+				return true;
+			};
+
+			/// Top level parser, starts parsing of all known parses
+			bool Declarations() {
+				SkipWS();
+
+				bool retval = false;
+				bool has_more = true;
+				bool saw_eol = true;
+
+				while (has_more) {
+					const auto start = m_position;
+
+					// TO-DO, complete impl of these evaluations:
+
+					if (DeclNamespace() || DeclFunction() || DeclClass()) {
+						if (!saw_eol) {
+							throw except::eval_error("Two function definitions missing line separator", start);
+						}
+						has_more = true;
+						retval = true;
+						saw_eol = true;
+					}
+					else if (Equation()) {
+						if (!saw_eol) {
+							throw except::eval_error("Two expressions missing line separator", start);
+						}
+						has_more = true;
+						retval = true;
+						saw_eol = false;
+					}
+					else if (DeclarationsBlock() || Eol()) {
+						has_more = true;
+						retval = true;
+						saw_eol = true;
+					}
+					else {
+						has_more = false;
+					}
+				}
+				return retval;
+			};
+
+			/// Top level parser, starts parsing of all known parses
+			bool Statements() {
+				SkipWS();
+
+				bool retval = false;
+				bool has_more = true;
+				bool saw_eol = true;
+
+				while (has_more) {
+					const auto start = m_position;
+					if (DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
+						if (!saw_eol) {
+							throw except::eval_error("Two function definitions missing line separator", start);
+						}
+						has_more = true;
+						retval = true;
+						saw_eol = true;
+					}
+					else if (Return() || Break() || Continue() || Equation()) {
+						if (!saw_eol) {
+							throw except::eval_error("Two expressions missing line separator", start);
+						}
+						has_more = true;
+						retval = true;
+						saw_eol = false;
+					}
+					else if (Block() || Eol()) {
+						has_more = true;
+						retval = true;
+						saw_eol = true;
+					}
+					else {
+						has_more = false;
+					}
+				}
+				return retval;
+			};
+
+			/// Reads a curly-brace C-style block from input
+			bool Block() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Char('{')) {
+					retval = true;
+
+					Statements();
+
+					if (!Char('}')) {
+						throw except::eval_error("Incomplete block", m_position);
+					}
+
+					if (m_match_stack.size() == prev_stack_top) {
+						m_match_stack.push_back(Noop_Node("", {}, {}));
+					}
+
+					build_match<Block_Node>(prev_stack_top);
+				}
+
+				return retval;
+			};
+
+			/// Reads a curly-brace C-style block from input which only allows for declarations
+			bool DeclarationsBlock() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Char('{')) {
+					retval = true;
+
+					Declarations();
+
+					if (!Char('}')) {
+						throw except::eval_error("Incomplete declaration block", m_position);
+					}
+
+					if (m_match_stack.size() == prev_stack_top) {
+						m_match_stack.push_back(Noop_Node("", {}, {}));
+					}
+
+					build_match<Declaration_Block_Node>(prev_stack_top);
+				}
+
+				return retval;
+			};
+
+			/// Reads a curly-brace C-style block from input -- note that this scope is special and cannot find objects from parent scopes. 
+			bool FunctionBlock() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+
+				if (Char('{')) {
+					retval = true;
+
+					Statements();
+
+					if (!Char('}')) {
+						throw except::eval_error("Incomplete function block", m_position);
+					}
+
+					if (m_match_stack.size() == prev_stack_top) {
+						m_match_stack.push_back(Noop_Node("", {}, {}));
+					}
+
+					build_match<FunctionBlock_Node>(prev_stack_top);
+				}
+
+				return retval;
+			};
+
+			/// Reads a return statement from input
+			bool Return() {
+				const auto prev_stack_top = m_match_stack.size();
+				if (Keyword("return")) {
+					Operator();
+					build_match<Return_Node>(prev_stack_top);
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+
+			/// Reads an if/else if/else block from input
+			bool If() {
+				bool retval = false;
+
+				const auto prev_stack_top = m_match_stack.size();
+				// SkipWS(true);
+				if (Keyword("if")) {
+					retval = true;
+					SkipWS(true);
+					if (!Char('(')) {
+						throw except::eval_error("Incomplete 'if' expression: cannot find '('", m_position);
+					}
+					SkipWS(true);
+					if (!Equation()) {
+						throw except::eval_error("Incomplete 'if' expression: cannot find equation block", m_position);
+					}
+					SkipWS(true);
+					const bool is_if_init = Eol() && Equation();
+					SkipWS(true);
+					if (!Char(')')) {
+						throw except::eval_error("Incomplete 'if' expression: cannot find ')'", m_position);
+					}
+
+					SkipWS(true);
+
+					if (!Block()) {
+						throw except::eval_error("Incomplete 'if' block", m_position);
+					}
+
+					bool has_matches = true;
+					while (has_matches) {
+						SkipWS(true);
+						has_matches = false;
+						if (Keyword("else")) {
+							SkipWS(true);
+							if (If()) {
+								has_matches = true;
+							}
+							else {
+								SkipWS(true);
+								if (!Block()) {
+									throw except::eval_error("Incomplete 'else' block", m_position);
+								}
+								has_matches = true;
+							}
+						}
+					}
+
+					const auto num_children = m_match_stack.size() - prev_stack_top;
+
+					if ((is_if_init && num_children == 3) || (!is_if_init && num_children == 2)) {
+						m_match_stack.push_back(Noop_Node("", {}, {}));
+					}
+
+					if (!is_if_init) {
+						build_match<If_Node>(prev_stack_top);
+					}
+					else {
+						build_match<If_Node>(prev_stack_top + 1);
+						build_match<Block_Node>(prev_stack_top);
+					}
+				}
+
+				return retval;
+			};
+
+		public:
+			Parser() = default;
+			~Parser() = default;
+
+			// highest-level parse request, which starts a new scope from scratch and completes it. 
+			AbstractSyntaxTreeNode Parse(const GL::string& t_input) {
+				return parse(t_input);
+			};
+
+		private:
+			AbstractSyntaxTreeNode parse(const GL::string& t_input) {
+				return parse_internal(t_input);
+			};
+			AbstractSyntaxTreeNode parse_internal(const GL::string& t_input) {
+				const auto begin = t_input.empty() ? nullptr : &t_input.front();
+				const auto end = begin == nullptr ? nullptr : begin + t_input.size();
+				m_position = Engine::Position(begin, end);
+
+				// top level stack        
+				if (Statements()) {
+					if (m_position.has_more()) {
+						throw except::eval_error("Unparsed input", m_position);
+					}
+					else {
+						// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
+						auto i = m_comment_stack.rbegin();
+						while (i != m_comment_stack.rend()) {
+							m_match_stack.insert(m_match_stack.begin(), std::move(*i));
+							i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
+						}
+						build_match<File_Node>(0);
+					}
+				}
+				else {
+					m_match_stack.push_back(Noop_Node("", Parse_Location(m_position, m_position), {}));
+				}
+
+				AbstractSyntaxTreeNode retval = m_match_stack.front();
+				m_match_stack.clear();
+				return retval;
+			};
+			AbstractSyntaxTreeNode parse_instr_eval(const GL::string& t_input) {
+				auto last_position = m_position;
+				auto last_match_stack = std::exchange(m_match_stack, decltype(m_match_stack){});
+				auto retval = parse_internal(t_input);
+				m_position = std::move(last_position);
+				m_match_stack = std::move(last_match_stack);
+				return retval;
+			};
+
 		};
 
 	};
-
 
 };
 
@@ -8467,7 +12466,24 @@ namespace GL {
 
 
 int main() {
-	while (1) {
+	while (0) {
+		auto optimized_node = GL::Engine::optimizer::optimize(GL::Engine::Block_Node("", {}, {
+			GL::Engine::Block_Node("", {}, {
+
+		    }), 
+			GL::Engine::Block_Node("", {}, {
+				GL::Engine::Block_Node("", {}, {
+
+				})
+			}), 
+			GL::Engine::Return_Node("", {}, {
+				GL::Engine::Constant_Node("", {}, {}, 100.0f)
+			})
+		}));
+		print(optimized_node.to_string());
+
+
+
 		GL::Engine::AbstractSyntaxTreeNode 
 			node;
 		node.children.resize(16);
@@ -8535,21 +12551,52 @@ int main() {
 
 	if (1) {
 		GL::string Script = R"(
-			int x = 10;
-            x = 100;
-            return x * x + x;
+			int y = 10;
+			y + 10 + 10 + 10 + 10; // y + 40 (correct)
+			y - 10 + 10 - 10 + 10; // y - 20 (incorrect?)
+            y - 10 + y - 10 + y; // (((y-10)+y)-10)+y (correct)
+			10 * y + 10 * y + 10 * y; // ((10y)+(10y))+(10y)
+			10 / y / 2; // 5 / y (correct)
 
-			for (int i = 0; i < 10; ++i){
-				--i++;				
+			
+			if (y > 0) {
+				int x = 10;
+				x = 100;
+				x * x + x;
+				return 10 + x + 10;
+				return 10;
 			}
+			if (true) {
+				var x;
+				x = 100;
+				return x;				
+			}else{}
+			if (0 + 1) {
+				auto x;
+				x = 100;
+				return x;
+			}else{}
+			if (1){
+				for (int i = 0; i < 10; i++){
+					return --i++;
+				}
+			}else{}
+			if (!0){
+				namespace Test{
+					int StaticObject1 = 100;	
+					int StaticObject2;	
+					auto StaticObject3;	
 
-			namespace Test{
-				int StaticObject = 100;	
-				namespace Test2{
-
+					namespace Test2{
+						class Class1 {
+							int StaticObject1;
+						}
+					};
 				};
-			};
+			}else{}
 		)";
+
+
 
 		GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
 		if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(Script)) {
@@ -8557,12 +12604,9 @@ int main() {
 			auto expanded_script = state.GetFinalScript();
 			print(expanded_script);
 
-			GL::Engine2::Compiler::Interpreter::Parser parser;
-			GL::scope::impl::RootScope root;
-			root.perform_builtins();
-			if (auto node = parser.Parse(expanded_script, &root); node.first && node.second) {
-				print(node.first->to_string());
-			}
+			GL::Engine::Parser parser;
+			auto node = parser.Parse(expanded_script);
+			print(node.to_string());
 		}
 
 
