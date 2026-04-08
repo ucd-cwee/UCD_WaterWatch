@@ -109,7 +109,12 @@ namespace GL {
     public:
         atomic_vector() noexcept = default;
         atomic_vector(atomic_vector const&) = delete;
-        atomic_vector(atomic_vector &&) = delete;
+        atomic_vector(atomic_vector&& rhs) : blocks{ rhs.blocks }, current_pos{ rhs.current_pos }, valid_pos{ rhs.valid_pos }, current_blockN{ rhs.current_blockN } {
+            for (auto& x : rhs.blocks) x = nullptr;
+            rhs.current_pos = 0;
+            rhs.valid_pos = 0;
+            rhs.current_blockN = -1;
+        };
         atomic_vector& operator=(atomic_vector const&) = delete;
         atomic_vector& operator=(atomic_vector&&) = delete;
         __declspec(noinline) ~atomic_vector() noexcept {

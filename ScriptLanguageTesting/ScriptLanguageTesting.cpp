@@ -334,6 +334,10 @@ namespace GL {
 			int m_last_col = -1;
 		};
 		struct Parse_Location {
+			Parse_Location()
+				: start()
+				, end()
+			{}
 			Parse_Location(Position _start, Position _end)
 				: start(_start)
 				, end(_end)
@@ -536,9 +540,12 @@ namespace GL {
 	namespace Engine2 {
 		struct AST_Node {
 		public:
-			const Engine::AST_Node_Type identifier; // node type
-			const GL::string text;
-			Engine::Parse_Location location; // start & end Position
+			Engine::AST_Node_Type 
+				identifier; // node type
+			GL::string 
+				text; // processed text, relevant to the node type
+			Engine::Parse_Location 
+				location; // start & end Position within provided script
 
 			const Engine::Position& start() const noexcept { return location.start; }
 			const Engine::Position& end() const noexcept { return location.end; }
@@ -2280,8 +2287,11 @@ namespace GL {
 					return retval;
 				};
 			};
+			
 
-#if 1
+
+
+			// The interpreter should take in source code and develop an AST node diagram.
 			class Interpreter {
 			public:
 				struct AST_Node_Impl;
@@ -8294,11 +8304,150 @@ namespace GL {
 				};
 
 			};
-#endif
+
 
 
 		};
+	};
+	namespace Engine {
+		class AbstractSyntaxTreeNode {
+		public:
+			AbstractSyntaxTreeNode(Engine::AST_Node_Type id) : identifier{ id } {};
+			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode> t_children) : text(t_ast_node_text), location(std::forward<Engine::Parse_Location>(t_loc)), identifier{ id }, children(std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+			AbstractSyntaxTreeNode() : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop) {};
+			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const&) = default;
+			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode&&) = default;
+			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode const&) = default;
+			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&&) = default;
+			virtual ~AbstractSyntaxTreeNode() = default;
 
+		public:
+			Engine::AST_Node_Type
+				identifier; // node type
+			GL::string
+				text; // processed text, relevant to the node type
+			Engine::Parse_Location
+				location; // start & end Position within provided script
+			GL::any::fast_any
+				constant;
+			std::vector< AbstractSyntaxTreeNode >
+				children;
+			GL::type
+				output;
+
+			/// Prints the contents of an AST node, including its children, recursively
+			GL::string to_string(const GL::string& t_prepend = "") const {
+				GL::string Text{ text };
+				GL::string str = std::string(identifier.ToString());
+				GL::string returnType = output.name();
+				GL::string locationStr = location.to_string();
+				auto out = t_prepend + "(" + str + ") \"" + Text + "\": " + locationStr + " -> " + returnType;
+				for (auto& elem : children) { out = out.add_to_delim(elem.to_string(t_prepend + "\t"), "\n"); }
+				return out;
+			};
+
+		};
+		namespace except {
+			/// Errors generated during parsing or evaluation
+			struct eval_error : std::runtime_error {
+				GL::string reason;
+				Engine::Position start_position;
+				GL::string filename;
+				GL::string detail;
+
+				eval_error(const GL::string& t_why, const Engine::Position& t_where, const GL::string& t_fname = "__EVAL__") noexcept
+					: std::runtime_error(format(t_why, t_where, t_fname).to_string())
+					, reason(t_why)
+					, start_position(t_where)
+					, filename(t_fname) {
+				}
+
+				explicit eval_error(const GL::string& t_why) noexcept
+					: std::runtime_error(t_why.to_string())
+					, reason(t_why) {
+				}
+
+				eval_error(const eval_error&) = default;
+
+				GL::string pretty_print() const {
+					std::ostringstream ss;
+					return ss.str();
+				};
+
+				~eval_error() noexcept override = default;
+
+			private:
+				template<typename T> static Engine::AST_Node_Type id(const T& t) noexcept {
+					return t.identifier;
+				};
+				template<typename T> static GL::string pretty(const T& t) {
+					return t.pretty_print();
+				};
+				template<typename T> static const GL::string& fname(const T& t) noexcept {
+					return t.filename();
+				};
+				template<typename T> static GL::string startpos(const T& t) {
+					std::ostringstream oss;
+					oss << t.start().line << ", " << t.start().column;
+					return oss.str();
+				};
+				static GL::string format_why(const GL::string& t_why) { return "Error: \"" + t_why + "\""; };
+				template<typename T> static GL::string format_location(const T& t) {
+					std::ostringstream oss;
+					oss << "(" << t.filename() << " " << t.start().line << ", " << t.start().column << ")";
+					return oss.str();
+				};
+				static GL::string format_filename(const GL::string& t_fname) {
+					std::stringstream ss;
+
+					if (t_fname != "__EVAL__") {
+						ss << "in '" << t_fname << "' ";
+					}
+					else {
+						ss << "during evaluation ";
+					}
+
+					return ss.str();
+				};
+				static GL::string format_location(const Engine::Position& t_where) {
+					std::stringstream ss;
+					ss << "at (" << t_where.line << ", " << t_where.col << ")";
+					return ss.str();
+				};
+				static GL::string format(const GL::string& t_why, const Engine::Position& t_where, const GL::string& t_fname) {
+					std::stringstream ss;
+
+					ss << format_why(t_why);
+					ss << " ";
+
+					ss << format_filename(t_fname);
+					ss << " ";
+
+					ss << format_location(t_where);
+
+					return ss.str();
+				};
+			};
+		};
+
+		class File_Node final : public AbstractSyntaxTreeNode {
+		public:
+			File_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::File, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+		};
+		class Noop_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Noop_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+		};
+		class Return_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {};
+		};
+		class Constant_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Constant_Node(GL::string const& t_ast_node_text, Engine::Parse_Location&& t_loc, std::vector<AbstractSyntaxTreeNode>&& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Constant, t_ast_node_text, std::forward<Engine::Parse_Location>(t_loc), std::forward<std::vector<AbstractSyntaxTreeNode>>(t_children)) {
+				this->constant = t_value.fast();
+			};
+		};
 
 	};
 
@@ -8318,6 +8467,22 @@ namespace GL {
 
 
 int main() {
+	while (1) {
+		GL::Engine::AbstractSyntaxTreeNode 
+			node;
+		node.children.resize(16);
+
+
+
+
+		GL::Engine::File_Node node2("", GL::Engine::Parse_Location(), {});
+		node2.children.resize(16);
+
+		node.children.push_back(std::move(node2));
+
+		node.children.push_back(GL::Engine::Constant_Node("", {}, {}, 100.0f));
+	}
+
 	if (1) {
 		GL::string Script = R"(
 				print(ONE_HUNDRED); // print(ONE_HUNDRED);
@@ -8374,13 +8539,16 @@ int main() {
             x = 100;
             return x * x + x;
 
+			for (int i = 0; i < 10; ++i){
+				--i++;				
+			}
+
 			namespace Test{
 				int StaticObject = 100;	
 				namespace Test2{
 
 				};
 			};
-
 		)";
 
 		GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
