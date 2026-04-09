@@ -153,7 +153,7 @@ namespace GL {
 	namespace Engine {
 		using SourceFile = GL::string;
 		BETTER_ENUM(AST_Node_Type, uint32_t,
-			File, Noop,
+			File, Noop, Comment,
 			Id, Reference, Var_Decl, Assign_Decl, Constant,
 			Fun_Call, Unused_Return_Fun_Call,
 			Arg_List, Arg,
@@ -8301,7 +8301,7 @@ namespace GL {
 		class AbstractSyntaxTreeNode {
 		public:
 			AbstractSyntaxTreeNode(Engine::AST_Node_Type id) : identifier{ id } {};
-			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children) : text(t_ast_node_text), location(t_loc), identifier{ id }, children(t_children) {};
+			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children) : text(t_ast_node_text.to_string()), location(t_loc), identifier{ id }, children(t_children) {};
 			AbstractSyntaxTreeNode() : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop) {};
 			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const& rhs) : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
 				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
@@ -8310,20 +8310,9 @@ namespace GL {
 				children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
 			};
 			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode const& rhs) {
-				identifier = rhs.identifier;
-				text = rhs.text;
-				location = rhs.location;
-				constant = rhs.constant;				
-				output = rhs.output;
-				tag = rhs.tag;
-
 				size_t N = children.size();
 				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
-				if (N > 0) children.erase(children.begin(), children.begin() + N);
 
-				return *this;
-			};
-			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&& rhs) noexcept {
 				identifier = rhs.identifier;
 				text = rhs.text;
 				location = rhs.location;
@@ -8331,8 +8320,21 @@ namespace GL {
 				output = rhs.output;
 				tag = rhs.tag;
 
+				if (N > 0) children.erase(children.begin(), children.begin() + N);
+
+				return *this;
+			};
+			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&& rhs) noexcept {
 				size_t N = children.size();
 				children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
+
+				identifier = rhs.identifier;
+				text = rhs.text;
+				location = rhs.location;
+				constant = rhs.constant;
+				output = rhs.output;
+				tag = rhs.tag;
+
 				if (N > 0) children.erase(children.begin(), children.begin() + N);
 
 				return *this;
@@ -8374,6 +8376,18 @@ namespace GL {
 				}
 				for (auto& elem : children) { out = out.add_to_delim(elem.to_string(t_prepend + "\t"), "\n"); }
 				return out;
+			};
+			// [](AbstractSyntaxTreeNode& this_child) -> bool {}
+			template <typename F> bool for_each_child(F const& Func) {
+				for (auto& x : this->children) {
+					if (x.for_each_child(Func)) {
+						return true;
+					}
+					if (Func(x)) {
+						return true;
+					}
+				}
+				return false;
 			};
 
 		private:
@@ -8489,6 +8503,10 @@ namespace GL {
 		public:
 			Noop_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop, t_ast_node_text, t_loc, t_children) {};
 		};
+		class Comment_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Comment_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Comment, t_ast_node_text, t_loc, t_children) {};
+		};		
 		class Return_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, t_loc, t_children) {};
@@ -8729,18 +8747,51 @@ namespace GL {
 
 		class optimizer {
 		private:
+			static std::deque<GL::scope::impl::RootScope*>& GetEngine() {
+				thread_local std::deque<GL::scope::impl::RootScope*> p;
+				return p;
+			};
+			static GL::scope::impl::RootScope& CurrentEngine() {
+				return *GetEngine().back();
+			};
+			static bool AttemptCalculation(GL::string const& operation, std::vector<GL::any::fast_any> const& inputs, GL::any::fast_any& out) {
+				try {
+					GL::scope::impl::RootScope& temp = CurrentEngine();
+					out = temp.call(operation, inputs);					
+					return true;
+				}
+				catch (...) {
+					return false;
+				}
+			};
+			template<typename T>
+			static bool AttemptCast(GL::any::fast_any const& input, T& out) {
+				try {
+					GL::scope::impl::RootScope& temp = CurrentEngine();
+					out = temp.cast<T>(input);
+					return true;
+				}
+				catch (...) {
+					return false;
+				}
+			};
+
+		private:
 			template<typename... T> struct Optimizer : T... {
 				Optimizer() = default;
 				explicit Optimizer(T... t) : T(std::move(t))... { };
-				AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode& p) {
+				AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode& p, GL::scope::impl::RootScope& analysisEngine) {
+					GetEngine().push_back(&analysisEngine);
 					long long maxDepth = 100;
 					while (--maxDepth >= 0) {
 						bool successful = false;
 						((successful = (successful || static_cast<T&>(*this).optimize(p))), ...); // this line performs all optimizations in-line
 						if (!successful) break;
 					}
+					GetEngine().pop_back();
 					return p;
 				};
+
 			};
 
 			static AbstractSyntaxTreeNode& child_at(AbstractSyntaxTreeNode& node, const size_t offset) noexcept {
@@ -8863,17 +8914,11 @@ namespace GL {
 						&& node.children[0].text == "to_string"
 				    ) {
 						const GL::any::fast_any& rhs = node.children[1].children[0].constant;
-						try {
-							GL::scope::impl::RootScope root;
-							root.perform_builtins();
-							auto result = root.call<GL::string>("to_string", { rhs });
-							node = Constant_Node(node.text, (Engine::Parse_Location)node.location, {}, node);
+						if (GL::any::fast_any result; AttemptCalculation("to_string", { rhs }, result)) {
+							node = Constant_Node(node.text, (Engine::Parse_Location)node.location, {}, result);
 							return true;
 						}
-						catch (...) {
-							// failure to fold -- that's OK. Just means that the constant-value wasn't one of the built-ins or wasn't easily understood. 
-							return false;
-						}
+						return false;
 					}
 					return false;
 				}
@@ -8882,7 +8927,7 @@ namespace GL {
 			// removes items from Blocks that are unecessary (e.g. floating code) or will never be hit (e.g. following return statements)
 			struct Dead_Code {
 				bool optimize(AbstractSyntaxTreeNode& node) {
-					if ((node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
+					if ((node.identifier == Engine::AST_Node_Type::File) || (node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
 						std::vector<size_t> keepers;
 						const auto num_children = node.children.size();
 						keepers.reserve(num_children);
@@ -8892,6 +8937,7 @@ namespace GL {
 							switch (child.identifier) {
 							case Engine::AST_Node_Type::Constant: // 50.0f;
 							case Engine::AST_Node_Type::Noop: // comments
+							// case Engine::AST_Node_Type::Comment: // comments
 							case Engine::AST_Node_Type::Id: // y, x, etc.
 								break;
 							case Engine::AST_Node_Type::Return: // return; return x; return 50; etc.
@@ -9081,35 +9127,30 @@ namespace GL {
 			struct If {
 				bool optimize(AbstractSyntaxTreeNode& node) {
 					if ((node.identifier == Engine::AST_Node_Type::If) && (node.children.size() >= 2) && (node.children[0].identifier == Engine::AST_Node_Type::Constant)) {
-						try {
-							bool result;
-							if (node.children[0].constant.can_cast(GL::type_of<bool>())) {
-								result = node.children[0].constant.cast<bool>();
-							}
-							else {
-								GL::scope::impl::RootScope temp_root;
-								temp_root.perform_builtins();
-								result = temp_root.cast<bool>(node.children[0].constant);
-							}			
-
-							if (result) {
-								// "TRUE" statement is the exclusive path
-								node = node.children[1];
-								return true;
-							}
-							else if (node.children.size() == 3) {
-								// "FALSE" statement is the exclusive path (and a false path is even present)
-								node = node.children[2];
-								return true;
-							}
-							else {
-								// do nothing?
-								node = Noop_Node(GL::string::empty_string(), (Parse_Location)node.location, {});
-								return true;
-							}
+						bool result;
+						if (node.children[0].constant.can_cast(GL::type_of<bool>())) {
+							result = node.children[0].constant.cast<bool>();
 						}
-						catch (...) {
-							return false;
+						else {
+							if (!AttemptCast<bool>(node.children[0].constant, result)) {
+								return false;
+							}
+						}			
+
+						if (result) {
+							// "TRUE" statement is the exclusive path
+							node = node.children[1];
+							return true;
+						}
+						else if (node.children.size() == 3) {
+							// "FALSE" statement is the exclusive path (and a false path is even present)
+							node = node.children[2];
+							return true;
+						}
+						else {
+							// do nothing?
+							node = Noop_Node(GL::string::empty_string(), (Parse_Location)node.location, {});
+							return true;
 						}
 					}
 					return false;
@@ -9124,16 +9165,11 @@ namespace GL {
 						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
 					) {
 						const GL::any::fast_any& rhs = node.children[0].constant;
-						try {
-							GL::scope::impl::RootScope temp_root;
-							temp_root.perform_builtins();
-							node = Constant_Node(node.text, (Parse_Location)node.location, {}, temp_root.call(node.text, { rhs }));
+						if (GL::any::fast_any out; AttemptCalculation(node.text, { rhs }, out)) {
+							node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 							return true;
 						}
-						catch (...) {
-							// failure to fold -- that's OK. 
-							return false;
-						}
+						return false;
 					}
 					return false;
 				}
@@ -9150,6 +9186,9 @@ namespace GL {
 						node = node.children[0];
 						return true;
 					}
+
+					// this is a great place to convert a unit into a constant unit. E.g. 10_ft to foot(10)
+
 					return false;
 				}
 			};
@@ -9164,19 +9203,11 @@ namespace GL {
 					) {
 						auto& lhs = node.children[0].constant;
 						auto& rhs = node.children[1].constant;
-						try {
-							GL::scope::impl::RootScope temp_root;
-							temp_root.perform_builtins();
-							auto result = temp_root.call(node.text, { lhs, rhs });
-							node = Constant_Node(
-								node.text, (Parse_Location)node.location, {}, result
-							);
+						if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
+							node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 							return true;
 						}
-						catch (...) {
-							// failure to fold -- that's OK
-							return false;
-						}
+						return false;
 					}
 
 					return false;
@@ -9185,6 +9216,20 @@ namespace GL {
 
 			// Try to fold a basic binary operation (e.g. +/-/*) with one constant value, to speed-up evaluation in the future
 			struct PartialBinaryFold {
+				static bool is_numeric(AbstractSyntaxTreeNode const& rhs) {
+					return rhs.constant.can_cast(GL::type_of<GL::value>())
+						|| rhs.constant.can_cast(GL::type_of<float>())
+						|| rhs.constant.can_cast(GL::type_of<double>())
+						|| rhs.constant.can_cast(GL::type_of<long>())
+						|| rhs.constant.can_cast(GL::type_of<long double>())
+						|| rhs.constant.can_cast(GL::type_of<int>())
+						|| rhs.constant.can_cast(GL::type_of<unsigned int>())
+						|| rhs.constant.can_cast(GL::type_of<unsigned long>())
+						|| rhs.constant.can_cast(GL::type_of<unsigned long long>())
+						|| rhs.constant.can_cast(GL::type_of<char>())
+						|| rhs.constant.can_cast(GL::type_of<unsigned char>());
+				}
+
 				bool optimize(AbstractSyntaxTreeNode& node) {
 					// Fold right side
 					if (node.identifier == Engine::AST_Node_Type::Binary
@@ -9216,11 +9261,105 @@ namespace GL {
 						}
 					}
 
+					// Reduction of unecessary binary operations
+					if (((node.identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft))
+						&& node.children.size() == 1
+						&& node.text == "*"
+						&& is_numeric(node)
+					) {
+						if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
+							if (out.can_cast(GL::type_of<bool>())) {
+								if (out.cast<bool>()) {
+									node = Constant_Node("", node.location, {}, node.constant);
+									return true;
+								}
+							}
+						}
+						if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(1) }, out)) {
+							if (out.can_cast(GL::type_of<bool>())) {
+								if (out.cast<bool>()) {
+									node = node.children[0];
+									return true;
+								}
+							}
+						}
+					}
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children.size() == 1
+						&& node.text == "/"
+						&& is_numeric(node)
+					) {
+						if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(1) }, out)) {
+							if (out.can_cast(GL::type_of<bool>())) {
+								if (out.cast<bool>()) {
+									node = node.children[0];
+									return true;
+								}
+							}
+						}
+					}
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children.size() == 1
+						&& node.text == "/"
+						&& is_numeric(node)
+						) {
+						if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
+							if (out.can_cast(GL::type_of<bool>())) {
+								if (out.cast<bool>()) {
+									node = Constant_Node("", node.location, {}, node.constant);
+									return true;
+								}
+							}
+						}
+					}
+					if (((node.identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft))
+						&& node.children.size() == 1
+						&& node.text == "+"
+						&& is_numeric(node)
+					) {
+						if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
+							if (out.can_cast(GL::type_of<bool>())) {
+								if (out.cast<bool>()) {
+									node = node.children[0];
+									return true;
+								}
+							}
+						}
+					}
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children.size() == 1
+						&& node.text == "-"
+						&& is_numeric(node)
+					) {
+						if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
+							if (out.can_cast(GL::type_of<bool>())) {
+								if (out.cast<bool>()) {
+									node = node.children[0];
+									return true;
+								}
+							}
+						}
+					}
+
+					// removal of "appending" empty strings
+					if (((node.identifier == Engine::AST_Node_Type::BinaryFoldLeft) || (node.identifier == Engine::AST_Node_Type::BinaryFoldRight))
+						&& node.children.size() == 1
+						&& node.text == "+"
+						&& node.constant.can_cast(GL::type_of<GL::string>())
+					) {
+						if (node.constant.cast<GL::string>().empty()) {
+							node = node.children[0];
+							return true;
+						}						
+					}
+
 					// Left-Fold Within Right-Fold
 					if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
 						&& node.children.size() == 1
 						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft
 						&& node.children[0].children.size() == 1
+						&& is_numeric(node)
+						&& is_numeric(node.children[0])
 					) {
 						GL::Engine::Operators::Opers outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
 						GL::Engine::Operators::Opers inner_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
@@ -9292,18 +9431,11 @@ namespace GL {
 						default: return false;
 						}
 
-						try {
-							GL::any::fast_any result;
-
-							GL::scope::impl::RootScope temp;
-							temp.perform_builtins();
-							result = temp.call(const_operation, { lhs, rhs });
-							node = Fold_Left_Binary_Operator_Node(runtime_operation, std::move(node.location), { node.children[0].children[0] }, result);
+						if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
 							return true;
 						}
-						catch (...) {
-							return false;
-						}
+						return false;
 					}
 
 					// Right-Fold Within Right-Fold
@@ -9311,6 +9443,8 @@ namespace GL {
 						&& node.children.size() == 1
 						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight
 						&& node.children[0].children.size() == 1
+						&& is_numeric(node)
+						&& is_numeric(node.children[0])
 					) {
 						GL::Engine::Operators::Opers outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
 						GL::Engine::Operators::Opers inner_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
@@ -9394,17 +9528,834 @@ namespace GL {
 						default: return false;
 						}
 
-						try {
-							GL::any::fast_any result;
-
-							GL::scope::impl::RootScope temp;
-							temp.perform_builtins();
-							result = temp.call(const_operation, { lhs, rhs });
-							node = Fold_Right_Binary_Operator_Node(runtime_operation, std::move(node.location), { node.children[0].children[0] }, result);
+						if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							node = Fold_Right_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
 							return true;
 						}
-						catch (...) {
+						return false;
+					}
+
+					// Left-Fold Within Left-Fold
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children[0].children.size() == 1
+						&& is_numeric(node)
+						&& is_numeric(node.children[0])
+					) {
+						GL::Engine::Operators::Opers outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers inner_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+
+						GL::string const_operation;
+						GL::string runtime_operation;
+						GL::any::fast_any lhs = node.children[0].constant;
+						GL::any::fast_any rhs = node.constant;
+						const_operation = node.text; // outter operation
+						runtime_operation = node.children[0].text; // inner operation
+
+						switch (outter_oper) {
+						case GL::Engine::Operators::to_operator("+"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// 10+(10+y)
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// 10+(10-y)
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("-"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// 10-(10+y)
+								const_operation = "-";
+								runtime_operation = "-";
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// 10-(10-y)
+								const_operation = "-";
+								runtime_operation = "+";
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("*"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// 10*(10*y)
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// 10*(10/y)
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("/"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// 10/(10*y)
+								const_operation = "/";
+								runtime_operation = "/";
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// 10/(10/y)
+								const_operation = "/";
+								runtime_operation = "*";
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						default: return false;
+						}
+
+						if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
+							return true;
+						}
+						return false;
+					}
+
+					// Right-Fold Within Left-Fold
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children[0].children.size() == 1
+						&& is_numeric(node)
+						&& is_numeric(node.children[0])
+					) {
+						GL::Engine::Operators::Opers outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers inner_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+
+						GL::string const_operation;
+						GL::string runtime_operation;
+						GL::any::fast_any lhs = node.children[0].constant;
+						GL::any::fast_any rhs = node.constant;
+						const_operation = node.text; // outter operation
+						runtime_operation = node.children[0].text; // inner operation
+						bool fold_left = false;
+
+						switch (outter_oper) {
+						case GL::Engine::Operators::to_operator("+"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// 10+(y+10)
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// 10+(y-10)
+								const_operation = "-";
+								runtime_operation = "+";
+								// y+(10-10)
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("-"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// 10-(y+10)
+								const_operation = "-";
+								runtime_operation = "-";
+								fold_left = true;
+								// (10-10)-y
+								break;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// 10-(y-10)
+								const_operation = "+";
+								runtime_operation = "-";
+								fold_left = true;
+								// (10+10)-y
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("*"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// 10*(y*10)
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// 10*(y/10)
+								const_operation = "/";
+								runtime_operation = "*";
+								// y*(10/10)
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("/"): {
+							switch (inner_oper) {
+							case GL::Engine::Operators::to_operator("*"): {
+								// 10/(y*10)
+								const_operation = "/";
+								runtime_operation = "/";
+								fold_left = true;
+								// (10/10)/y
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// 10/(y/10)
+								const_operation = "*";
+								runtime_operation = "/";
+								fold_left = true;
+								// (10*10)/y
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						default: return false;
+						}
+
+						if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							if (fold_left) {
+								node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
+							}
+							else {
+								node = Fold_Right_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
+							}
+							return true;
+						}
+						return false;
+					}
+
+					if ((node.identifier == Engine::AST_Node_Type::Binary)
+						&& (node.children.size() == 2)
+						&& ((node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft))
+						&& (node.children[0].children.size() == 1)
+						&& (node.children[0].children[0].identifier == Engine::AST_Node_Type::Id)
+						&& ((node.children[1].identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.children[1].identifier == Engine::AST_Node_Type::BinaryFoldLeft))
+						&& (node.children[1].children.size() == 1)
+						&& (node.children[1].children[0].identifier == Engine::AST_Node_Type::Id)
+						&& (node.children[0].children[0].get_text() == node.children[1].children[0].get_text())
+						&& is_numeric(node.children[0])
+						&& is_numeric(node.children[1])
+					) {
+						GL::Engine::Operators::Opers& outter_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers& LHS_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers& RHS_oper = node.children[1].tag.cast<GL::Engine::Operators::Opers>();
+						AbstractSyntaxTreeNode& IdNode = node.children[0].children[0];
+						GL::any::fast_any& LHS = node.children[0].constant;
+						GL::any::fast_any& RHS = node.children[1].constant;
+						GL::string const_operation;
+						GL::string runtime_operation;
+						bool fold_left = true;
+
+						if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("+")
+							&& RHS_oper == GL::Engine::Operators::to_operator("+")
+						) {
+							// (10+y)+(10+y)
+							const_operation = "+";
+							runtime_operation = "+";
+							fold_left = true;
+							// (20)+y
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("*")
+							&& RHS_oper == GL::Engine::Operators::to_operator("*")
+						) {
+							// (10*y)+(10*y)
+							const_operation = "+";
+							runtime_operation = "*";
+							fold_left = true;
+							// (20)*y
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("*")
+							&& RHS_oper == GL::Engine::Operators::to_operator("*")
+						) {
+							// (10*y)-(5*y)
+							const_operation = "-";
+							runtime_operation = "*";
+							fold_left = true;
+							// (5)*y
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("*")
+							&& RHS_oper == GL::Engine::Operators::to_operator("+")
+						) {
+							// (10*y)+(5+y)
+							// reduces to:
+							// (10+1)*y + 5
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								node = Fold_Right_Binary_Operator_Node("+", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
+								}, RHS);
+								return true;
+							}
 							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("*")
+							&& RHS_oper == GL::Engine::Operators::to_operator("+")
+						) {
+							// (10*y)-(5+y)
+							// reduces to:
+							// (10-1)*y - 5
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								node = Fold_Right_Binary_Operator_Node("-", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
+								}, RHS);
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("*")
+							&& RHS_oper == GL::Engine::Operators::to_operator("-")
+						) {
+							// (10*y)+(5-y)
+							// reduces to:
+							// (10-1)*y + 5
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								node = Fold_Right_Binary_Operator_Node("+", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
+								}, RHS);
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("*")
+							&& RHS_oper == GL::Engine::Operators::to_operator("-")
+						) {
+							// (10*y)-(5-y)
+							// reduces to:
+							// (10+1)*y - 5
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								node = Fold_Right_Binary_Operator_Node("-", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
+								}, RHS);
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("-")
+							&& RHS_oper == GL::Engine::Operators::to_operator("-")
+						) {
+							// (10-y)-(5-y)
+							// reduces to:
+							// (10-5)-y+y
+							// reduces to:
+							// (10-5)
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("-")
+							&& RHS_oper == GL::Engine::Operators::to_operator("-")
+						) {
+							// (10-y)+(5-y)
+							// reduces to:
+							// ((10+5)-y)-y
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, RHS }, new_LHS)) {
+								node = Binary_Operator_Node("-", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("-", (Parse_Location)node.location, { IdNode }, new_LHS),
+									IdNode
+								});
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("+")
+							&& RHS_oper == GL::Engine::Operators::to_operator("+")
+						) {
+							// (10+y)-(5+y)
+							// reduces to:
+							// (10-5)
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("+")
+							&& RHS_oper == GL::Engine::Operators::to_operator("-")
+						) {
+							// (10+y)-(5-y)
+							// reduces to:
+							// (10-5)+y+y
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								node = Binary_Operator_Node("+", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("+", (Parse_Location)node.location, { IdNode }, new_LHS),
+									IdNode
+								});
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("-")
+							&& LHS_oper == GL::Engine::Operators::to_operator("-")
+							&& RHS_oper == GL::Engine::Operators::to_operator("+")
+						) {
+							// (10-y)-(5+y)
+							// reduces to:
+							// (10-5)-y-y
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								node = Binary_Operator_Node("-", (Parse_Location)node.location, {
+									Fold_Left_Binary_Operator_Node("-", (Parse_Location)node.location, { IdNode }, new_LHS),
+									IdNode
+								});
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("-")
+							&& RHS_oper == GL::Engine::Operators::to_operator("+")
+						) {
+							// (10-y)+(5+y)
+							// reduces to:
+							// 10+5
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, RHS }, new_LHS)) {
+								node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
+								return true;
+							}
+							return false;
+						}
+						else if (outter_oper == GL::Engine::Operators::to_operator("+")
+							&& LHS_oper == GL::Engine::Operators::to_operator("+")
+							&& RHS_oper == GL::Engine::Operators::to_operator("-")
+						) {
+							// (10+y)+(5-y)
+							// reduces to:
+							// 10+5
+
+							if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, RHS }, new_LHS)) {
+								node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
+								return true;
+							}
+							return false;
+						}
+
+						if (const_operation.empty() || runtime_operation.empty()) return false;
+
+						if (GL::any::fast_any out; AttemptCalculation(const_operation, { LHS, RHS }, out)) {
+							if (fold_left) {
+								node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { IdNode }, out);
+							}
+							else {
+								node = Fold_Right_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { IdNode }, out);
+							}
+							return true;
+						}
+						return false;
+					}
+					
+					if (node.identifier == Engine::AST_Node_Type::Binary
+						&& node.children.size() == 2
+						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children[1].identifier == Engine::AST_Node_Type::Id
+						&& node.children[0].children.size() == 1
+						&& node.children[0].children[0].get_text() == node.children[1].get_text()
+						&& is_numeric(node.children[0])
+					) {
+						// (y+10)+y
+						// reduces to:
+						// (y+y)+10
+						GL::Engine::Operators::Opers& RHS_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers& LHS_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+						AbstractSyntaxTreeNode& IdNode = node.children[1];
+						GL::any::fast_any& Constant = node.children[0].constant;
+
+						switch (RHS_oper) {
+						case GL::Engine::Operators::to_operator("+"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (y+10)+y
+								// reduces to:
+						        // (y+y)+10
+								node = Fold_Right_Binary_Operator_Node("+", node.location, {
+									Binary_Operator_Node("+", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (y-10)+y
+								// reduces to:
+								// (y+y)-10
+								node = Fold_Right_Binary_Operator_Node("-", node.location, {
+									Binary_Operator_Node("+", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (y*10)+y
+								// reduces to:
+								// y*(10+1)
+								if (GL::any::fast_any out; AttemptCalculation("+", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									node = Fold_Right_Binary_Operator_Node("*", node.location, {
+										IdNode
+									}, out);
+									return true;
+								}
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (y/10)+y
+								return false;
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("-"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (y+10)-y
+								// reduces to:
+								// (y-y)+10
+								// reduces to:
+								// 10
+								node = Constant_Node("", node.location, {}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (y-10)-y
+								// reduces to:
+								// (y-y)-10
+								// reduces to:
+								// 0-10
+								if (GL::any::fast_any out; AttemptCalculation("-", { GL::any::fast_any::instance(0), Constant }, out)) {
+									node = Constant_Node("", node.location, {}, out);
+									return true;
+								}
+								break;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (y*10)-y
+								// reduces to:
+								// y*(10-1)
+								if (GL::any::fast_any out; AttemptCalculation("-", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									node = Fold_Right_Binary_Operator_Node("*", node.location, {
+										IdNode
+									}, out);
+									return true;
+								}
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (y/10)-y
+								return false;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("*"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (y+10)*y
+								return false;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (y-10)*y
+								return false;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (y*10)*y
+								// rearranges to:
+								// (y*y)*10
+								node = Fold_Right_Binary_Operator_Node("*", node.location, {
+									Binary_Operator_Node("*", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (y/10)*y
+								// rearranges to:
+								// (y*y)/10
+								node = Fold_Right_Binary_Operator_Node("/", node.location, {
+									Binary_Operator_Node("*", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("/"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (y+10)/y
+								// reduces to:
+								// 1 + 10/y
+								node = Fold_Left_Binary_Operator_Node("+", node.location, {
+									Fold_Left_Binary_Operator_Node("/", node.location, {
+										IdNode
+									}, Constant)
+								}, GL::any::fast_any::instance(1));
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (y-10)/y
+								// reduces to:
+								// 1 - 10/y
+								node = Fold_Left_Binary_Operator_Node("-", node.location, {
+									Fold_Left_Binary_Operator_Node("/", node.location, {
+										IdNode
+									}, Constant)
+								}, GL::any::fast_any::instance(1));
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (y*10)/y
+								// rearranges to:
+								// 10
+								node = Constant_Node("", node.location, {}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (y/10)/y
+								// rearranges to:
+								// 1/10
+								if (GL::any::fast_any out; AttemptCalculation("/", { GL::any::fast_any::instance(1), Constant }, out)) {
+									node = Constant_Node("", node.location, {}, out);
+									return true;
+								}
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						default: return false;
+						}
+					}
+
+					if (node.identifier == Engine::AST_Node_Type::Binary
+						&& node.children.size() == 2
+						&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children[1].identifier == Engine::AST_Node_Type::Id
+						&& node.children[0].children.size() == 1
+						&& node.children[0].children[0].get_text() == node.children[1].get_text()
+						&& is_numeric(node.children[0])
+					) {
+						// (10+y)+y
+						// reduces to:
+						// 10+(y+y)
+						GL::Engine::Operators::Opers& RHS_oper = node.tag.cast<GL::Engine::Operators::Opers>();
+						GL::Engine::Operators::Opers& LHS_oper = node.children[0].tag.cast<GL::Engine::Operators::Opers>();
+						AbstractSyntaxTreeNode& IdNode = node.children[1];
+						GL::any::fast_any& Constant = node.children[0].constant;
+
+						switch (RHS_oper) {
+						case GL::Engine::Operators::to_operator("+"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (10+y)+y
+								// reduces to:
+								// (y+y)+10
+								node = Fold_Right_Binary_Operator_Node("+", node.location, {
+									Binary_Operator_Node("+", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (10-y)+y
+								// reduces to:
+								// 10
+								node = Constant_Node("", node.location, {}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (10*y)+y
+								// reduces to:
+								// y*(10+1)
+								if (GL::any::fast_any out; AttemptCalculation("+", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									node = Fold_Right_Binary_Operator_Node("*", node.location, {
+										IdNode
+									}, out);
+									return true;
+								}
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (10/y)+y
+								return false;
+								break;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("-"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (10+y)-y
+								// reduces to:
+								// 10
+								node = Constant_Node("", node.location, {}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (10-y)-y
+								// reduces to:
+								// 10-(y-y)
+								node = Fold_Left_Binary_Operator_Node("-", node.location, {
+									Binary_Operator_Node("-", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (10*y)-y
+								// reduces to:
+								// y*(10-1)
+								if (GL::any::fast_any out; AttemptCalculation("-", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									node = Fold_Right_Binary_Operator_Node("*", node.location, {
+										IdNode
+										}, out);
+									return true;
+								}
+								break;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (10/y)-y
+								return false;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("*"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (10+y)*y
+								return false;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (10-y)*y
+								return false;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (10*y)*y
+								// rearranges to:
+								// (y*y)*10
+								node = Fold_Right_Binary_Operator_Node("*", node.location, {
+									Binary_Operator_Node("*", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (10/y)*y
+								// rearranges to:
+								// 10
+								node = Constant_Node("", node.location, {}, Constant);
+								return true;
+							}
+							default: return false;
+							}
+							break;
+						}
+						case GL::Engine::Operators::to_operator("/"): {
+							switch (LHS_oper) {
+							case GL::Engine::Operators::to_operator("+"): {
+								// (10+y)/y
+								// reduces to:
+								// 1 + 10/y
+								node = Fold_Left_Binary_Operator_Node("+", node.location, {
+									Fold_Left_Binary_Operator_Node("/", node.location, {
+										IdNode
+									}, Constant)
+									}, GL::any::fast_any::instance(1));
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("-"): {
+								// (10-y)/y
+								// reduces to:
+								// 10/y - 1 
+								node = Fold_Right_Binary_Operator_Node("-", node.location, {
+									Fold_Left_Binary_Operator_Node("/", node.location, {
+										IdNode
+									}, Constant)
+								}, GL::any::fast_any::instance(1));
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("*"): {
+								// (10*y)/y
+								// rearranges to:
+								// 10
+								node = Constant_Node("", node.location, {}, Constant);
+								return true;
+							}
+							case GL::Engine::Operators::to_operator("/"): {
+								// (10/y)/y
+								// rearranges to:
+								// 10/(y*y)
+								node = Fold_Left_Binary_Operator_Node("/", node.location, {
+									Binary_Operator_Node("*", node.location, {
+										IdNode,
+										IdNode
+									})
+								}, Constant);
+								return true;
+							}
+							default: return false;
+							}
+							break;
+						}
+						default: return false;
 						}
 					}
 
@@ -9564,8 +10515,8 @@ namespace GL {
 			>;
 
 		public:
-			static AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode p) {
-				return Optimizer_Default().optimize(p);
+			static AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode p, GL::scope::impl::RootScope& analysisEngine) {
+				return Optimizer_Default().optimize(p, analysisEngine);
 			};
 		}; // namespace optimizer
 
@@ -10593,11 +11544,19 @@ namespace GL {
 					m_match_stack.erase(m_match_stack.begin() + static_cast<int>(t_match_start), m_match_stack.end());
 				}
 
+#if 1
+				m_match_stack.push_back(NodeType(
+					std::move(t_text)
+					, std::move(filepos)
+					, std::move(new_children)
+				));
+#else
 				m_match_stack.push_back(optimizer::optimize(NodeType(
 					std::move(t_text)
 					, std::move(filepos)
 					, std::move(new_children)
-				)));
+				), this->analysis_engine));
+#endif
 				return m_match_stack.back();
 			};
 			/// create a node
@@ -10632,7 +11591,7 @@ namespace GL {
 						}
 					}
 					GL::string comment = Engine::Position::str(start, m_position);
-					m_comment_stack.push_back(Noop_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+					m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
 
 					return true;
 				}
@@ -10652,7 +11611,7 @@ namespace GL {
 					}
 
 					GL::string comment = Engine::Position::str(start, m_position);
-					m_comment_stack.push_back(Noop_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+					m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
 
 					return true;
 
@@ -10672,7 +11631,7 @@ namespace GL {
 						}
 					}
 					GL::string comment = Engine::Position::str(start, m_position);
-					m_comment_stack.push_back(Noop_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+					m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
 
 					return true;
 				}
@@ -10794,7 +11753,6 @@ namespace GL {
 									// We've found an interpolation point
 
 									m_match_stack.push_back(make_const(match, start, match));
-
 									if (cparser.is_interpolated) {
 										// If we've seen previous interpolation, add on instead of making a new one
 										build_match<Binary_Operator_Node>(prev_stack_top, "+");
@@ -10826,7 +11784,14 @@ namespace GL {
 										}
 										catch (const except::eval_error& e) {
 											throw except::eval_error(std::string(e.what()), start);
-										}
+										}									
+
+										//if (
+										//	m_match_stack.back().identifier == Engine::AST_Node_Type::File
+										//	&& m_match_stack.back().children.size() == 1
+										//) {
+										//	m_match_stack.back() = m_match_stack.back().children[0];
+										//}
 
 										build_match<Arg_List_Node>(ev_stack_top);
 										build_match<Fun_Call_Node>(tostr_stack_top);
@@ -10856,9 +11821,8 @@ namespace GL {
 					}();
 
 					m_match_stack.push_back(make_const(match, start, match));
-
 					if (is_interpolated) {
-						build_match<Binary_Operator_Node>(prev_stack_top, "+");
+						build_match<Binary_Operator_Node>(prev_stack_top, "+");						
 					}
 
 					return true;
@@ -12397,8 +13361,12 @@ namespace GL {
 				return retval;
 			};
 
+		private:
+			GL::scope::impl::RootScope analysis_engine;
 		public:
-			Parser() = default;
+			Parser() {
+				analysis_engine.perform_builtins();
+			};
 			~Parser() = default;
 
 			// highest-level parse request, which starts a new scope from scratch and completes it. 
@@ -12421,6 +13389,22 @@ namespace GL {
 						throw except::eval_error("Unparsed input", m_position);
 					}
 					else {
+						for (auto& x : m_match_stack) {
+							x.for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+								if (this_child.identifier == Engine::AST_Node_Type::Comment) {
+									m_comment_stack.push_back(this_child);
+									this_child = Noop_Node("", {}, {});
+								}
+								this_child = optimizer::optimize(this_child, this->analysis_engine);
+								return false;
+							});
+							if (x.identifier == Engine::AST_Node_Type::Comment) {
+								m_comment_stack.push_back(x);
+								x = Noop_Node("", {}, {});
+							}
+							x = optimizer::optimize(x, this->analysis_engine);
+						}
+
 						// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
 						auto i = m_comment_stack.rbegin();
 						while (i != m_comment_stack.rend()) {
@@ -12466,39 +13450,6 @@ namespace GL {
 
 
 int main() {
-	while (0) {
-		auto optimized_node = GL::Engine::optimizer::optimize(GL::Engine::Block_Node("", {}, {
-			GL::Engine::Block_Node("", {}, {
-
-		    }), 
-			GL::Engine::Block_Node("", {}, {
-				GL::Engine::Block_Node("", {}, {
-
-				})
-			}), 
-			GL::Engine::Return_Node("", {}, {
-				GL::Engine::Constant_Node("", {}, {}, 100.0f)
-			})
-		}));
-		print(optimized_node.to_string());
-
-
-
-		GL::Engine::AbstractSyntaxTreeNode 
-			node;
-		node.children.resize(16);
-
-
-
-
-		GL::Engine::File_Node node2("", GL::Engine::Parse_Location(), {});
-		node2.children.resize(16);
-
-		node.children.push_back(std::move(node2));
-
-		node.children.push_back(GL::Engine::Constant_Node("", {}, {}, 100.0f));
-	}
-
 	if (1) {
 		GL::string Script = R"(
 				print(ONE_HUNDRED); // print(ONE_HUNDRED);
@@ -12552,12 +13503,28 @@ int main() {
 	if (1) {
 		GL::string Script = R"(
 			int y = 10;
-			y + 10 + 10 + 10 + 10; // y + 40 (correct)
-			y - 10 + 10 - 10 + 10; // y - 20 (incorrect?)
-            y - 10 + y - 10 + y; // (((y-10)+y)-10)+y (correct)
-			10 * y + 10 * y + 10 * y; // ((10y)+(10y))+(10y)
-			10 / y / 2; // 5 / y (correct)
 
+			10
+            "10"
+			"${ 10 + 10 }" // correctly reduces to "20"
+            "${ 10 + 10 + y }" // correctly reduces to "${ 20 + y }"
+            "start${ 10 + 10 + y }middle${ y * y }end"
+
+            0 / 10; // 0 (correct)
+            0 / 0; // -nan(ind) (correct?)
+            y / 1; // y (correct)
+            0 / y; // 0 (correct) 
+            y + 0; // y (correct)
+            0 + y; // y (correct)
+            10 + y - 10; // y (correct)     
+
+			y + 10 + 10 + 10 + 10; // y + 40 (correct)
+			y - 10 + 10 - 10 + 10; // y + 0 (correct)
+            y - 10 + y - 10 + y; // ((y+y)-20)+y ... correct, but not fully optimized. Would require looking even deeper into nodes than is typical.
+			10 * y + 10 * y + 10 * y; // 30*y (correct)
+			10 / y / 2; // 5 / y; (correct)
+            10 / (10 / y); // y (correct)
+            10 / (10 * y); // 1 / y (correct)
 			
 			if (y > 0) {
 				int x = 10;
