@@ -8358,23 +8358,28 @@ namespace GL {
 				tag; // custom data, unique to the node type
 
 			/// Prints the contents of an AST node, including its children, recursively
-			GL::string to_string(GL::string t_prepend = "") const {
+			GL::string to_string(GL::string t_prepend = "", GL::scope::impl::RootScope* local_root = nullptr) const {
+				GL::shared_ptr< GL::scope::impl::RootScope> temp;
+				if (!local_root) {
+					temp = GL::make_shared<GL::scope::impl::RootScope>();
+					temp->perform_builtins();
+					local_root = temp.get();
+				}
+
 				GL::string str = std::string_view(identifier.ToString());
 				GL::string returnType = output.name();
 				GL::string locationStr = location.to_string();
 				auto out = t_prepend + "(" + str + ") \"" + text + "\": " + locationStr + " -> " + returnType;
 				if (constant) {
 					try {
-						GL::scope::impl::RootScope temp;
-						temp.perform_builtins();
-						GL::string Const = temp.call<GL::string>("to_string", { constant });
+						GL::string Const = local_root->call<GL::string>("to_string", { constant });
 						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { " + Const + " }", "\n");
 					}
 					catch (...) {
 						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { ??? }", "\n");
 					}					
 				}
-				for (auto& elem : children) { out = out.add_to_delim(elem.to_string(t_prepend + "\t"), "\n"); }
+				for (auto& elem : children) { out = out.add_to_delim(elem.to_string(t_prepend + "\t", local_root), "\n"); }
 				return out;
 			};
 			// [](AbstractSyntaxTreeNode& this_child) -> bool {}
@@ -9073,7 +9078,7 @@ namespace GL {
 							}
 						}
 					}
-					else if (node.identifier == Engine::AST_Node_Type::Scopeless_Block) {
+					if ((node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File)) {
 						if (!contains_var_decl_in_scope(node)) {
 							if (node.children.size() == 1) {
 								node = node.children[0];
