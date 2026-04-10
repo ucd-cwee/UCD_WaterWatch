@@ -13455,7 +13455,7 @@ namespace GL {
 
 
 int main() {
-	if (1) {
+	if (0) {
 		GL::string Script = R"(
 				print(ONE_HUNDRED); // print(ONE_HUNDRED);
 
@@ -13504,6 +13504,60 @@ int main() {
 			print(expanded_script);
 		}
 	}
+
+	if (1) {
+		for (GL::string& Script : std::vector<GL::string>{
+			R"(
+				for (int i = 0; i < 10; i++){
+					return "i = ${ i }";
+				}
+			)",
+			R"(
+				int y = 50;
+				return y - 10 + y - 10 + y;
+			)",
+			R"(
+				int y;
+				return "${ 0 / y }";
+			)",
+			R"(
+				int y;
+				return "${ y }";
+			)",
+			R"(
+				int y;
+				if (y == 0){
+					return y;
+				}
+				else{
+					return y + y;
+				}
+			)",
+			R"(
+#define assert(x) if (!(x)){ throw(err); }
+				var y;
+				assert(true); // constexpr check will reduce down to a no-op
+				assert(10 == 10); // constexpr check will reduce down to a no-op
+				assert(10 == 9);
+				assert(1); // constexpr check will reduce down to a no-op
+				assert(y);
+			)"
+		}) {
+			print(Script);
+			print(" >> ");
+			GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
+			if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(Script)) {
+				preprocessor_result->GenerateExpandedCode(state);
+				auto expanded_script = state.GetFinalScript();
+				GL::Engine::Parser parser;
+				auto node = parser.Parse(expanded_script);
+				print(node.to_string("\t"));
+			}
+			print("");
+		}
+	}
+
+
 
 	if (1) {
 		GL::string Script = R"(
