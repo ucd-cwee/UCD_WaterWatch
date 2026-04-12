@@ -2209,6 +2209,7 @@ namespace GL {
 #undef CalculateMetricPrefixV
 
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable(GL::type_of< GL::value >().name(), []() -> GL::value { return GL::value{ 0.0f }; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< GL::value >()));
+                this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable(GL::type_of< GL::value >().name(), [](GL::value const& rhs) -> GL::value { return rhs; }, GL::function_signature::Constructor | GL::function_signature::Async));
                 this->make_class(GL::type_of< float >()).add_function(GL::make_converter<GL::value, float>());
                 this->make_class(GL::type_of< GL::value >()).add_function(GL::make_converter<float, GL::value>());
                 /*this->make_class(GL::type_of< GL::value >()).*/add_function(GL::make_callable("=", [](GL::any::fast_any lhs, GL::value const& rhs) -> GL::any::fast_any { lhs.cast<GL::value&>() = rhs; return lhs; }, GL::function_signature::Async, {}, { { "lhs", GL::type_of<GL::value&>() }, { "rhs", GL::type_of<GL::value const&>() } }, GL::type_of< GL::value& >()));
@@ -2605,10 +2606,10 @@ namespace GL {
 
                 if (1) {
                     // teach it how to create the generic map
-                    GL::type_of<GL::atomic_constructable_vector<GL::any>>().try_update_name("vector_impl");
-                    auto& AnyMap = BaseClass.make_class(GL::type_of<GL::atomic_constructable_vector<GL::any>>());
-                    AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap]() -> GL::shared_ptr<GL::atomic_constructable_vector<GL::any>> {
-                        return GL::make_shared<GL::atomic_constructable_vector<GL::any>>([]() -> GL::any {
+                    GL::type_of<GL::atomic_constructable_vector<GL::any::fast_any>>().try_update_name("vector_impl");
+                    auto& AnyMap = BaseClass.make_class(GL::type_of<GL::atomic_constructable_vector<GL::any::fast_any>>());
+                    AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap]() -> GL::shared_ptr<GL::atomic_constructable_vector<GL::any::fast_any>> {
+                        return GL::make_shared<GL::atomic_constructable_vector<GL::any::fast_any>>([]() -> GL::any::fast_any {
                             auto* p = GL::scope::GetCurrentCaller()->GetNamespace();
                             if (p->is_class()) {
                                 if (auto* BC = p->GetRoot()->try_find_class(dynamic_cast<GL::scope::impl::ClassScope*>(p)->template_types[0].second); BC) {
@@ -2617,9 +2618,9 @@ namespace GL {
                             }
                             throw std::runtime_error("Must be called from the impl class constructor");
                         });
-                        }, GL::function_signature::Constructor + GL::function_signature::Async, {}, {}, AnyMap.this_type));
-                    AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap](GL::atomic_constructable_vector<GL::any> const& rhs) -> GL::shared_ptr<GL::atomic_constructable_vector<GL::any>> {
-                        auto out = GL::make_shared<GL::atomic_constructable_vector<GL::any>>([]() -> GL::any {
+                    }, GL::function_signature::Constructor + GL::function_signature::Async, {}, {}, AnyMap.this_type));
+                    AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap](GL::atomic_constructable_vector<GL::any::fast_any> const& rhs) -> GL::shared_ptr<GL::atomic_constructable_vector<GL::any::fast_any>> {
+                        auto out = GL::make_shared<GL::atomic_constructable_vector<GL::any::fast_any>>([]() -> GL::any::fast_any {
                             auto* p = GL::scope::GetCurrentCaller()->GetNamespace();
                             if (p->is_class()) {
                                 if (auto* BC = p->GetRoot()->try_find_class(dynamic_cast<GL::scope::impl::ClassScope*>(p)->template_types[0].second); BC) {
@@ -2638,8 +2639,8 @@ namespace GL {
                         }
                         return out;
                         }, GL::function_signature::Constructor + GL::function_signature::Async, {}, { { "rhs", AnyMap.this_type + GL::type::Const + GL::type::Reference }}, AnyMap.this_type));
-                    AnyMap.GetRoot()->add_function(GL::make_callable("=", [&AnyMap](GL::any::fast_any Lhs, GL::atomic_constructable_vector<GL::any> const& rhs) -> GL::any::fast_any {
-                        auto& out = Lhs.cast<GL::atomic_constructable_vector<GL::any>&>();
+                    AnyMap.GetRoot()->add_function(GL::make_callable("=", [&AnyMap](GL::any::fast_any Lhs, GL::atomic_constructable_vector<GL::any::fast_any> const& rhs) -> GL::any::fast_any {
+                        auto& out = Lhs.cast<GL::atomic_constructable_vector<GL::any::fast_any>&>();
                         int L = 0;
                         for (auto& x : rhs) {
                             out.grow_to_at_least(++L);
@@ -2657,40 +2658,41 @@ namespace GL {
                             }
                         }
                         return Lhs;
-                    }, GL::function_signature::Async, {}, { { "lhs", GL::type_of<GL::atomic_constructable_vector<GL::any>&>() }, { "rhs", GL::type_of<GL::atomic_constructable_vector<GL::any> const&>() } }, GL::type_of<GL::atomic_constructable_vector<GL::any>&>()));
+                    }, GL::function_signature::Async, {}, { { "lhs", GL::type_of<GL::atomic_constructable_vector<GL::any::fast_any>&>() }, { "rhs", GL::type_of<GL::atomic_constructable_vector<GL::any::fast_any> const&>() } }, GL::type_of<GL::atomic_constructable_vector<GL::any::fast_any>&>()));
 
-                    AnyMap.add_function(GL::make_callable("push_back", [&AnyMap](GL::atomic_constructable_vector<GL::any>& lhs, GL::any::fast_any rhs) -> size_t {
+                    AnyMap.add_function(GL::make_callable("push_back", [&AnyMap](GL::atomic_constructable_vector<GL::any::fast_any>& lhs, GL::any::fast_any rhs) -> size_t {
                         return lhs.push_back(rhs);
                     }, GL::function_signature::Async));
-                    AnyMap.add_function(GL::make_callable("grow_to_at_least", [&AnyMap](GL::atomic_constructable_vector<GL::any>& lhs, size_t const& rhs) -> bool {
+                    AnyMap.add_function(GL::make_callable("grow_to_at_least", [&AnyMap](GL::atomic_constructable_vector<GL::any::fast_any>& lhs, size_t const& rhs) -> bool {
                         return lhs.grow_to_at_least(rhs);
                     }, GL::function_signature::Async));
 
                     // to_string and to_hash functions
-                    AnyMap.add_function(GL::make_callable("to_string", [](GL::atomic_constructable_vector<GL::any> const& rhs) -> GL::string {
-                        GL::any::fast_any out = GL::any::fast_any::instance(GL::string());
+                    AnyMap.add_function(GL::make_callable("to_string", [](GL::atomic_constructable_vector<GL::any::fast_any> const& rhs) -> GL::string {
+                        GL::string out;
                         for (size_t i = 0; i < rhs.size(); ++i) {
-                            auto first_str = GL::scope::GetCurrentCaller()->call("to_string", { rhs[i].fast() });
-                            out = GL::scope::GetCurrentCaller()->call("add_to_delim", { out, first_str, GL::any::fast_any::instance(GL::string(", ")) });
+                            auto first_str = GL::scope::GetCurrentCaller()->call<GL::string>("to_string", { rhs[i] });
+                            out = out.add_to_delim(first_str, ", ");
                         }
-                        return "[" + GL::scope::GetCurrentCaller()->call<GL::string>("::string", { out }) + "]";
+                        return "[" + out + "]";
                     }, GL::function_signature::Async | GL::function_signature::Constant));
-                    AnyMap.add_function(GL::make_callable("to_hash", [](GL::atomic_constructable_vector<GL::any> const& rhs) -> size_t {
+                    AnyMap.add_function(GL::make_callable("to_hash", [](GL::atomic_constructable_vector<GL::any::fast_any> const& rhs) -> size_t {
                         size_t out = 0;
                         for (size_t i = 0; i < rhs.size(); ++i) {
-                            auto first_hash = GL::scope::GetCurrentCaller()->call<size_t>("to_hash", { rhs[i].fast() });
+                            auto first_hash = GL::scope::GetCurrentCaller()->call<size_t>("to_hash", { rhs[i] });
                             GL::util::hash(out, first_hash);
                         }
                         return out;
                     }, GL::function_signature::Async | GL::function_signature::Constant));
                 }
                 // the use of "~" at the start of this member object's name is not arbitrary. This is a special code that means this is an intended-to-be-hidden wrapper for the dynamic_object.
-                BaseClass.add_member_object("~impl", GL::type_of<GL::atomic_constructable_vector<GL::any>>());
+                BaseClass.add_member_object("~impl", GL::type_of<GL::atomic_constructable_vector<GL::any::fast_any>>());
                 BaseClass.add_function(GL::make_callable("push_back", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto* impl_class = GetClass(lhs.m_casted_type);
                         auto* param0_class = GetClass(rhs.m_casted_type);
-                        return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, param0_class->call(param0_class->this_type.name(), { rhs }) });
+                        auto copied = param0_class->call(param0_class->this_type.name(), { rhs });
+                        return impl_class->call("push_back", { (*implp)->fast() + GL::type::Reference, copied });
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
@@ -2703,36 +2705,36 @@ namespace GL {
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Temporary } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("size", [&BaseClass](GL::any::fast_any lhs) -> size_t {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
                         return impl.size();
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
                 BaseClass.add_function(GL::make_callable("at", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
-                        return impl.at(rhs).fast() | GL::type::Const | GL::type::Reference;
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
+                        return impl.at(rhs) | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("at", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
-                        return impl.at(rhs).fast() | GL::type::Reference;
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
+                        return impl.at(rhs) | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();                        
-                        return impl[rhs].fast() | GL::type::Const | GL::type::Reference;
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();                        
+                        return impl[rhs] | GL::type::Const | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
-                        return impl[rhs].fast() | GL::type::Reference;
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
+                        return impl[rhs] | GL::type::Reference;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Reference));
@@ -2758,7 +2760,7 @@ namespace GL {
                     impl_class->call("end", { new_iterator, lhs }); // initializes the base iterator 
                     auto& iterator = new_iterator.cast<GL::dynamic_object&>();
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
-                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any>>();
+                        auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
                         iterator["position"] = GL::make_shared<GL::any>((size_t)impl.size());
                     }
                     return new_iterator;

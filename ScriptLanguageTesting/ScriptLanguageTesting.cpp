@@ -1701,6 +1701,8 @@ namespace GL {
 					set_alphabet(alphabet, Engine::id_alphabet, '_');
 					set_alphabet(alphabet, Engine::id_alphabet, ':'); // RG
 					for (size_t c = '0'; c <= '9'; ++c) { set_alphabet(alphabet, Engine::id_alphabet, c); } // RG
+					//set_alphabet(alphabet, Engine::id_alphabet, '<'); // RG
+					//set_alphabet(alphabet, Engine::id_alphabet, '>'); // RG
 
 					set_alphabet(alphabet, Engine::white_alphabet, ' ');
 					set_alphabet(alphabet, Engine::white_alphabet, '\t');
@@ -8358,21 +8360,14 @@ namespace GL {
 				tag; // custom data, unique to the node type
 
 			/// Prints the contents of an AST node, including its children, recursively
-			GL::string to_string(GL::string t_prepend = "", GL::scope::impl::RootScope* local_root = nullptr) const {
-				GL::shared_ptr< GL::scope::impl::RootScope> temp;
-				if (!local_root) {
-					temp = GL::make_shared<GL::scope::impl::RootScope>();
-					temp->perform_builtins();
-					local_root = temp.get();
-				}
-
+			GL::string to_string(GL::string t_prepend, GL::scope::impl::RootScope& local_root) const {
 				GL::string str = std::string_view(identifier.ToString());
 				GL::string returnType = output.name();
 				GL::string locationStr = location.to_string();
 				auto out = t_prepend + "(" + str + ") \"" + text + "\": " + locationStr + " -> " + returnType;
 				if (constant) {
 					try {
-						GL::string Const = local_root->call<GL::string>("to_string", { constant });
+						GL::string Const = local_root.call<GL::string>("to_string", { constant });
 						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { " + Const + " }", "\n");
 					}
 					catch (...) {
@@ -8519,7 +8514,7 @@ namespace GL {
 		class Constant_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Constant_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Constant, t_ast_node_text, t_loc, t_children) {
-				this->constant = t_value.fast();
+				this->constant = t_value.fast() | GL::type::Const;
 				this->output = t_value.m_casted_type;
 			};
 		};
@@ -8837,7 +8832,7 @@ namespace GL {
 				return false;
 			};
 
-			// re-arrange the return statement, to avoid throwing whenever possible
+			// 
 			struct Example {
 				bool optimize(AbstractSyntaxTreeNode& p) {
 					return false; // does nothing
@@ -9029,7 +9024,7 @@ namespace GL {
 						}
 					}
 #endif
-					if (p.identifier == Engine::AST_Node_Type::File && !p.children.empty()) {
+					if ((p.identifier == Engine::AST_Node_Type::File) && (!p.children.empty())) {
 						auto& last_child = p.children.back();
 						if ((last_child.identifier == Engine::AST_Node_Type::Block) || (last_child.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
 							auto& block_last_child = last_child.children.back();
@@ -10371,67 +10366,121 @@ namespace GL {
 			// If an Inline_Array is made-up of const elements, then evaluate and store it as constexpr too.
 			struct ConstArray {
 				bool optimize(AbstractSyntaxTreeNode& node) {
-#if 0
-					// Fold right side
-					if (node->identifier == Engine::AST_Node_Type::Inline_Array
-						&& node->children.size() == 1
-						&& node->children[0]->identifier == Engine::AST_Node_Type::Arg_List
-						) {
-						auto& argList = *node->children.back();
+					if (node.identifier == Engine::AST_Node_Type::Inline_Array
+						&& node.children.size() == 0
+					) {
+						auto& engine = CurrentEngine();
+						try {
+							auto new_vector = engine.call("vector<var>", {});
+							node = Constant_Node(node.text, node.location, {}, new_vector);
+							return true;
+						}
+						catch (...) {
+							return false;
+						}
+					}
+					
+					if (node.identifier == Engine::AST_Node_Type::Inline_Array
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::Arg_List
+					) {
+						auto& argList = node.children.back();
 
+						std::set<GL::type> types;
 						bool allItemsAreConst = true;
 						for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-							if (argList.children[childIndex]->identifier != Engine::AST_Node_Type::Constant) {
+							if (argList.children[childIndex].identifier != Engine::AST_Node_Type::Constant) {
 								allItemsAreConst = false;
 								break;
+							}
+							else {
+								types.insert(argList.children[childIndex].constant.m_casted_type);
 							}
 						}
 
 						if (allItemsAreConst) {
-							Vector<Var> constArray;
-							for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-								Any rhs = dynamic_cast<AST_Nodes::Constant_AST_Node*>(argList.children[childIndex].get())->m_value;
-								rhs.SetFlag(AnyData::Flag::constant, true);
-								constArray.push_back(Var(std::move(rhs)));
+							if (types.size() == 1) {
+								// vector<type>
+								try {
+									auto& engine = CurrentEngine();
+									if (auto* BC = engine.try_find_class(*types.begin()); BC && BC->this_m.is_class()) {
+										auto new_vector = engine.call("vector<"+ BC->this_m.scope_name +">", {});
+										for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+											engine.call("push_back", { new_vector, argList.children[childIndex].constant });
+										}										
+										node = Constant_Node(node.text, node.location, {}, new_vector);
+										return true;
+									}
+									else {
+										auto& engine = CurrentEngine();
+										auto new_vector = engine.call("vector<var>", {});
+										for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+											engine.call("push_back", { new_vector, argList.children[childIndex].constant });
+										}
+										node = Constant_Node(node.text, node.location, {}, new_vector);
+										return true;
+									}
+								}
+								catch (...) {
+									return false;
+								}
 							}
-							node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
-								node->text, node->location, std::move(constArray)
-								));
-							return true;
+							else {
+								// vector<var>
+								try {
+									auto& engine = CurrentEngine();
+									auto new_vector = engine.call("vector<var>", {});
+									for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+										engine.call("push_back", { new_vector, argList.children[childIndex].constant });
+									}
+									node = Constant_Node(node.text, node.location, {}, new_vector);
+									return true;									
+								}
+								catch (...) {
+									return false;
+								}
+							}
 						}
 					}
 					return false;
-#else
-					return false;
-#endif
 				}
 			};
 
 			// If an Inline_Map is made-up of const elements, then evaluate and store it as constexpr too.
 			struct ConstMap {
 				bool optimize(AbstractSyntaxTreeNode& node) {
-					// Fold right side
-#if 0
-					if (node->identifier == Engine::AST_Node_Type::Inline_Map
-						&& node->children.size() == 1
-						&& node->children[0]->identifier == Engine::AST_Node_Type::Arg_List
-						) {
-						auto& argList = *node->children.back();
+					if (node.identifier == Engine::AST_Node_Type::Inline_Map
+						&& node.children.size() == 0
+					) {
+						auto& engine = CurrentEngine();
+						try {
+							auto new_map = engine.call("map<var,var>", {});
+							node = Constant_Node(node.text, node.location, {}, new_map);
+							return true;
+						}
+						catch (...) {
+							return false;
+						}
+					}					
+
+					if (node.identifier == Engine::AST_Node_Type::Inline_Map
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::Arg_List
+					) {
+						auto& argList = node.children.back();
+
+						std::set<GL::type> key_types;
+						std::set<GL::type> value_types;
 
 						bool allItemsAreConst = true;
 						for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-							if (argList.children[childIndex]->identifier == Engine::AST_Node_Type::Map_Pair) {
-								auto& map_pair = *dynamic_cast<AST_Nodes::Map_Pair_AST_Node*>(argList.children[childIndex].get());
-								if (
-									(map_pair.children[0]->identifier == Engine::AST_Node_Type::Constant) &&
-									(map_pair.children[1]->identifier == Engine::AST_Node_Type::Constant)
-									) {
-									continue;
-								}
-								else {
-									allItemsAreConst = false;
-									break;
-								}
+							if (argList.children[childIndex].identifier == Engine::AST_Node_Type::Map_Pair
+								&& argList.children[childIndex].children.size() == 2
+								&& argList.children[childIndex].children[0].identifier == Engine::AST_Node_Type::Constant
+								&& argList.children[childIndex].children[1].identifier == Engine::AST_Node_Type::Constant
+							) {
+								key_types.insert(argList.children[childIndex].children[0].constant.m_casted_type);
+								value_types.insert(argList.children[childIndex].children[1].constant.m_casted_type);
 							}
 							else {
 								allItemsAreConst = false;
@@ -10440,35 +10489,49 @@ namespace GL {
 						}
 
 						if (allItemsAreConst) {
-							Any constArray{ Map<size_t, std::pair<Var, Var>>() };
-							if (!node->children.empty()) {
-								for (const auto& child : node->children[0]->children) {
-									auto rhs_key = child->children[0]->eval(currentScope);
-									auto rhs_val = child->children[1]->eval(currentScope);
-
-									rhs_key.SetFlag(AnyData::Flag::constant, true);
-									rhs_val.SetFlag(AnyData::Flag::constant, true);
-
-									currentScope->Call("emplace", {
-										constArray,
-										rhs_key,
-										rhs_val
-										});
+							auto& engine = CurrentEngine();
+							try {
+								GL::any::fast_any new_map;
+								if (key_types.size() == 1) {
+									if (auto* BC = engine.try_find_class(*key_types.begin()); BC && BC->this_m.is_class()) {
+										if (value_types.size() == 1) {
+											if (auto* BC2 = engine.try_find_class(*value_types.begin()); BC2 && BC2->this_m.is_class()) {
+												new_map = engine.call("map<" + BC->this_m.scope_name + "," + BC2->this_m.scope_name + ">", {});
+											}
+											else return false;
+										}
+										else {
+											new_map = engine.call("map<" + BC->this_m.scope_name + ",var>", {});
+										}
+									}
+									else return false;
 								}
-							}
-							constArray.SetFlag(AnyData::Flag::constant, true);
+								else {
+									if (value_types.size() == 1) {
+										if (auto* BC2 = engine.try_find_class(*value_types.begin()); BC2 && BC2->this_m.is_class()) {
+											new_map = engine.call("map<var," + BC2->this_m.scope_name + ">", {});
+										}
+										else return false;
+									}
+									else {
+										new_map = engine.call("map<var,var>", {});
+									}
+								}
 
-							node = std::dynamic_pointer_cast<AST_Node_Impl>(std::make_shared<AST_Nodes::Constant_AST_Node>(
-								node->text, node->location, std::move(constArray)
-								));
-							return true;
+								for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
+									engine.call("insert", { new_map, argList.children[childIndex].children[0].constant,  argList.children[childIndex].children[1].constant });
+								}
+
+								node = Constant_Node(node.text, node.location, {}, new_map);
+								return true;
+							}
+							catch (...) {
+								return false;
+							}
 						}
 					}
 
 					return false;
-#else
-					return false;
-#endif
 				}
 			};
 
@@ -11398,39 +11461,60 @@ namespace GL {
 			}
 			/// Reads an identifier from input which conforms to C's identifier naming conventions, without skipping initial whitespace
 			bool Id_(GL::string* out = nullptr) {
-				const auto start = m_position;
-				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) {
-					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { //keyword_alphabet)) {
+				const auto prev_pos = m_position;
+
+				auto failure = [&]() {
+					m_position = prev_pos;
+					return false;
+				};
+
+				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. `v`
+					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. `vector`
 						++m_position;
 					}
-					if (out) *out = Engine::Position::str(start, m_position);
+					const auto potential_end = m_position;
+					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) { // e.g. `vector `
+						++m_position;
+					}
+					if (m_position.has_more() && (*m_position == '<')) {
+						++m_position;
+						while (m_position.has_more()) {
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) { // e.g. `vector `
+								++m_position;
+							}
+							if (Id_(out)) { // e.g. `vector<int`
+								while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) { // e.g. `vector<int `
+									++m_position;
+								}
+								if (!m_position.has_more()) {
+									// failure to find <> bracket -- return with what was found. 
+									m_position = potential_end;
+									break;
+								}
+								if (m_position.has_more() && (*m_position == '>')) {
+									++m_position;
+									break;
+								}
+								if (m_position.has_more() && (*m_position == ',')) { // e.g. `map<int, 
+									++m_position;
+									continue; 
+								}
+							}
+							else {
+								// failure to find an Id after the "<", so we return with what was found.
+								m_position = potential_end;
+								break;
+							}
+						}
+					}
+					else {
+						m_position = potential_end;
+					}
+
+					if (out) *out = Engine::Position::str(prev_pos, m_position);
 					return true;
 				}
-				else if (m_position.has_more() && (*m_position == '`')) {
-					++m_position;
-					const auto start = m_position;
-
-					while (m_position.has_more() && (*m_position != '`')) {
-						if (Eol()) {
-							throw except::eval_error("Carriage return in identifier literal", m_position);
-						}
-						else {
-							++m_position;
-						}
-					}
-
-					if (start == m_position) {
-						throw except::eval_error("Missing contents of identifier literal", m_position);
-					}
-					else if (!m_position.has_more()) {
-						throw except::eval_error("Incomplete identifier literal", m_position);
-					}
-
-					++m_position;
-					if (out) *out = Engine::Position::str(start, m_position);
-					return true;
-				}
-				return false;
+				return failure();
 			};
 			/// Reads a quoted string from input, without skipping initial whitespace
 			bool Quoted_String_() {
@@ -11931,6 +12015,12 @@ namespace GL {
 				bool retval = false;
 
 				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
 
 				if (Arg(false)) {
 					retval = true;
@@ -11938,7 +12028,7 @@ namespace GL {
 					while (Char(',')) {
 						SkipWS(true);
 						if (!Arg(false)) {
-							throw except::eval_error("Unexpected value in parameter list", m_position);
+							return failure(); // throw except::eval_error("Unexpected value in parameter list", m_position);
 						}
 					}
 				}
@@ -13367,11 +13457,9 @@ namespace GL {
 			};
 
 		private:
-			GL::scope::impl::RootScope analysis_engine;
+			GL::scope::impl::RootScope& analysis_engine;
 		public:
-			Parser() {
-				analysis_engine.perform_builtins();
-			};
+			Parser(GL::scope::impl::RootScope& root) : analysis_engine(root) {};
 			~Parser() = default;
 
 			// highest-level parse request, which starts a new scope from scratch and completes it. 
@@ -13417,6 +13505,7 @@ namespace GL {
 							i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
 						}
 						build_match<File_Node>(0);
+						m_match_stack[0] = optimizer::optimize(m_match_stack[0], this->analysis_engine);
 					}
 				}
 				else {
@@ -13508,6 +13597,31 @@ int main() {
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
 			R"(
+				auto x = vector<int>();
+				auto y = map<int, double>();
+			)",
+			R"(
+                auto z = map<int, vector<int> >();
+			)",
+			R"(
+                return vector<int>::static_function();
+			)",
+			R"(
+				return [](){ return 10; };
+			)",
+		    R"(
+				return [](int x){ return 10 + x; };
+			)",
+			R"(
+				return [](int x) -> int { return 10 + x; };
+			)",
+		    R"(
+				return [](int x, Vector y) async -> Vector { return 10 + x; };
+			)",
+			R"(
+				return [](int x, vector<int> y) async -> vector<int> { return 10 + x; };
+			)",
+			R"(
 				for (int i = 0; i < 10; i++){
 					return "i = ${ i }";
 				}
@@ -13541,17 +13655,45 @@ int main() {
 				assert(10 == 9);
 				assert(1); // constexpr check will reduce down to a no-op
 				assert(y);
+			)",
+			R"(
+				return foot(10).meter.float.int + 10;
+			)",
+			R"(
+				return string("test").add_to_delimiter("a", " ");
+			)",
+			R"(
+				return [];
+			)",			
+            R"(
+				return [10, 10, 10];
+			)",
+			R"(
+				return ["ten", 10, [10, "twenty"]];
+			)",
+			R"(
+				return [10:10, 20:20, 30:30, 40:40];
+			)",
+			R"(
+				return ["ten":10, 20:20, 30.0f:30.0l];
+			)",
+			R"(
+				return ["ten":10.0f, 20:"twenty", 30:[3,0], ["forty", "fifty", "sixty"]:70];
 			)"
 		}) {
+			GL::scope::impl::RootScope root;
+			root.perform_builtins();
+			GL::Engine::Parser parser(root);
+
 			print(Script);
 			print(" >> ");
 			GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
 			if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(Script)) {
 				preprocessor_result->GenerateExpandedCode(state);
 				auto expanded_script = state.GetFinalScript();
-				GL::Engine::Parser parser;
+
 				auto node = parser.Parse(expanded_script);
-				print(node.to_string("\t"));
+				print(node.to_string("\t", root));
 			}
 			print("");
 		}
@@ -13626,13 +13768,16 @@ int main() {
 
 		GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
 		if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(Script)) {
+			GL::scope::impl::RootScope root;
+			root.perform_builtins();
+
 			preprocessor_result->GenerateExpandedCode(state);
 			auto expanded_script = state.GetFinalScript();
 			print(expanded_script);
 
-			GL::Engine::Parser parser;
+			GL::Engine::Parser parser(root);
 			auto node = parser.Parse(expanded_script);
-			print(node.to_string());
+			print(node.to_string("", root));
 		}
 
 
