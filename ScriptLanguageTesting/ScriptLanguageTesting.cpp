@@ -5765,7 +5765,7 @@ namespace GL {
 						case Engine::hash("for"):
 						case Engine::hash("parallel_for"):
 						case Engine::hash("break"):
-						case Engine::hash("conitnue"):
+						case Engine::hash("continue"):
 						case Engine::hash("case"):
 						case Engine::hash("default"):
 						case Engine::hash("switch"):
@@ -7695,11 +7695,13 @@ namespace GL {
 
 							SkipWS(true);
 
-							Char(':'); // optional
+							(void)Char(':'); // optional
 
 							SkipWS(true);
 
 							if (!Block(currentScope)) {
+
+
 								throw exception::eval_error("Incomplete 'case' block", m_position);
 							}
 
@@ -7712,7 +7714,7 @@ namespace GL {
 
 							SkipWS(true);
 
-							Char(':'); // optional
+							(void)Char(':'); // optional
 
 							SkipWS(true);
 
@@ -8378,13 +8380,35 @@ namespace GL {
 				return out;
 			};
 			// [](AbstractSyntaxTreeNode& this_child) -> bool {}
-			template <typename F> bool for_each_child(F const& Func) {
-				for (auto& x : this->children) {
-					if (x.for_each_child(Func)) {
+			template <typename F> bool for_each_child(F const& Func, bool skip_self = false) {
+				for (int i = ((int)this->children.size()) - 1; i >= 0; --i) {
+					auto& x = this->children[i];
+					if (x.for_each_child(Func, skip_self)) {
 						return true;
 					}
-					if (Func(x)) {
-						return true;
+					if (!skip_self) {
+						if (Func(x)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			};
+			// returns true if a return call is guarranteed or was found.
+			bool guarranteed_return() const {
+				if (this->identifier == Engine::AST_Node_Type::Return) return true;
+				if (
+					(this->identifier == Engine::AST_Node_Type::Block
+					|| this->identifier == Engine::AST_Node_Type::Scopeless_Block
+					|| this->identifier == Engine::AST_Node_Type::File)
+					&& this->children.size() > 0
+				) {
+					return this->children.back().guarranteed_return();
+				}
+				if (this->identifier == Engine::AST_Node_Type::If) {
+					if (this->children.size() == 3) {
+						// must have both the if and else statements be qualified.
+						return this->children[1].guarranteed_return() && this->children[2].guarranteed_return();
 					}
 				}
 				return false;
@@ -8495,9 +8519,15 @@ namespace GL {
 			};
 		};
 
+		class Return_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, t_loc, t_children) {};
+		};
 		class File_Node final : public AbstractSyntaxTreeNode {
 		public:
-			File_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::File, t_ast_node_text, t_loc, t_children) {};
+			File_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::File, t_ast_node_text, t_loc, t_children) {
+				children.push_back(Return_Node("", { t_loc.end, t_loc.end }, {}));
+			};
 		};
 		class Noop_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8506,11 +8536,7 @@ namespace GL {
 		class Comment_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Comment_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Comment, t_ast_node_text, t_loc, t_children) {};
-		};		
-		class Return_Node final : public AbstractSyntaxTreeNode {
-		public:
-			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, t_loc, t_children) {};
-		};
+		};				
 		class Constant_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Constant_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children, GL::any const& t_value) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Constant, t_ast_node_text, t_loc, t_children) {
@@ -8782,12 +8808,16 @@ namespace GL {
 				explicit Optimizer(T... t) : T(std::move(t))... { };
 				AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode& p, GL::scope::impl::RootScope& analysisEngine) {
 					GetEngine().push_back(&analysisEngine);
+
+					bool any_success = false;
 					long long maxDepth = 100;
 					while (--maxDepth >= 0) {
 						bool successful = false;
 						((successful = (successful || static_cast<T&>(*this).optimize(p))), ...); // this line performs all optimizations in-line
+						any_success = any_success || successful;
 						if (!successful) break;
 					}
+
 					GetEngine().pop_back();
 					return p;
 				};
@@ -8872,12 +8902,12 @@ namespace GL {
 						// && node->children[1]->identifier == AST_Node_Type::Fun_Call
 						&& ((node.text == "=") || (node.text == ":="))
 					) {
-						node = Assign_Retroactively_Node(
+						node = optimizer::optimize(Assign_Retroactively_Node(
 							node.text, (Engine::Parse_Location)node.location, {
 								node.children[1],
 								node.children[0]
 							}
-						);
+						), CurrentEngine());
 						return true;
 					}
 
@@ -8886,13 +8916,13 @@ namespace GL {
 						&& node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
 						&& ((node.text == "=") || (node.text == ":="))
 						) {
-						node = Assign_Retroactively_Node(
+						node = optimizer::optimize(Assign_Retroactively_Node(
 							node.text, (Engine::Parse_Location)node.location, {
 								node.children[0].children[0],
 								node.children[0].children[1],
 								node.children[1]
 							}
-						);
+						), CurrentEngine());
 						return true;
 					}
 					return false;
@@ -8932,13 +8962,13 @@ namespace GL {
 						const auto num_children = node.children.size();
 						keepers.reserve(num_children);
 						bool foundReturnStatement = false;
-						for (size_t i = 0; i < (num_children - 1); ++i) {
+						for (size_t i = 0; i < num_children; ++i) {
 							const auto& child = node.children[i];
 							switch (child.identifier) {
-							case Engine::AST_Node_Type::Constant: // 50.0f;
+							//case Engine::AST_Node_Type::Constant: // 50.0f;
 							case Engine::AST_Node_Type::Noop: // comments
 							// case Engine::AST_Node_Type::Comment: // comments
-							case Engine::AST_Node_Type::Id: // y, x, etc.
+							//case Engine::AST_Node_Type::Id: // y, x, etc.
 								break;
 							case Engine::AST_Node_Type::Return: // return; return x; return 50; etc.
 								keepers.push_back(i);
@@ -8950,7 +8980,7 @@ namespace GL {
 								break;
 							}
 						}
-						if ((!foundReturnStatement) && (num_children > 0)) { keepers.push_back(num_children - 1); };
+						// if ((!foundReturnStatement) && (num_children > 0)) { keepers.push_back(num_children - 1); };
 
 						if (keepers.size() == num_children) {
 							return false;
@@ -8964,12 +8994,7 @@ namespace GL {
 								return retval;
 							};
 
-							if (node.identifier == Engine::AST_Node_Type::Scopeless_Block) {
-								node = Scopeless_Block_Node(node.text, (Engine::Parse_Location)node.location, new_children());
-							}
-							else {
-								node = Block_Node(node.text, (Engine::Parse_Location)node.location, new_children());
-							}						
+							node.children = new_children();		
 
 							return true;
 						}
@@ -9049,14 +9074,74 @@ namespace GL {
 								return true;
 							}
 						}
+						else if (last_child.identifier == Engine::AST_Node_Type::If) {
+							if ((last_child.children.size() == 3) && last_child.guarranteed_return()) {
+								// both paths are guarranteed to return. We can remove the call to "return" explicitely for each path. 
+								bool out = false;
+								if (1) {
+									auto& this_child = last_child.children[1];
+									if ((this_child.identifier == Engine::AST_Node_Type::Block) || (this_child.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
+										auto& block_last_child = this_child.children.back();
+										if (block_last_child.identifier == Engine::AST_Node_Type::Return) {
+											if (block_last_child.children.size() == 0) {
+												this_child.children.back() = Noop_Node(GL::string::empty_string(), (Parse_Location)last_child.location, {});												
+												out = true;
+											}
+											else if (block_last_child.children.size() == 1) {
+												this_child.children.back() = block_last_child.children[0];
+												out = true;
+											}
+										}
+									}
+									else if (this_child.identifier == Engine::AST_Node_Type::Return) {
+										if (this_child.children.size() == 0) {
+											this_child = Noop_Node(GL::string::empty_string(), (Parse_Location)last_child.location, {});
+											out = true;
+										}
+										else if (this_child.children.size() == 1) {
+											this_child = this_child.children[0];
+											out = true;
+										}
+									}
+								}
+								if (1) {
+									auto& this_child = last_child.children[2];
+									if ((this_child.identifier == Engine::AST_Node_Type::Block) || (this_child.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
+										auto& block_last_child = this_child.children.back();
+										if (block_last_child.identifier == Engine::AST_Node_Type::Return) {
+											if (block_last_child.children.size() == 0) {
+												this_child.children.back() = Noop_Node(GL::string::empty_string(), (Parse_Location)last_child.location, {});
+												out = true;
+											}
+											else if (block_last_child.children.size() == 1) {
+												this_child.children.back() = block_last_child.children[0];
+												out = true;
+											}
+										}
+									}
+									else if (this_child.identifier == Engine::AST_Node_Type::Return) {
+										if (this_child.children.size() == 0) {
+											this_child = Noop_Node(GL::string::empty_string(), (Parse_Location)last_child.location, {});
+											out = true;
+										}
+										else if (this_child.children.size() == 1) {
+											this_child = this_child.children[0];
+											out = true;
+										}
+									}
+								}
+								if (out) return out;
+							}
+						}
 					}
 					return false;
 				}
 			};
 
-			// removes the scope from blocks if they do not have declarations at all
+			// re-order blocks, scopeless blocks, and file declarations.
 			struct Block {
 				bool optimize(AbstractSyntaxTreeNode& node) {
+					// un-scope blocks that do not require the use of an explicit scope.
 					if (node.identifier == Engine::AST_Node_Type::Block) {
 						if (!contains_var_decl_in_scope(node)) {
 							if (node.children.size() == 1) {
@@ -9064,15 +9149,17 @@ namespace GL {
 								return true;
 							}
 							else {
-								node = Scopeless_Block_Node(
+								node = optimizer::optimize(Scopeless_Block_Node(
 									node.text,
 									node.location,
 									node.children
-								);
+								), CurrentEngine());
 								return true;
 							}
 						}
 					}
+
+					// if a scopeless block node only has one child, accept that child as the content of this node
 					if ((node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File)) {
 						if (!contains_var_decl_in_scope(node)) {
 							if (node.children.size() == 1) {
@@ -9081,6 +9168,23 @@ namespace GL {
 							}
 						}
 					}
+
+					// if a block, scopeless block, or file has a child that is a scopeless block, then incorporate their children directly, eliminating the middle-man.
+					if ((node.identifier == Engine::AST_Node_Type::Block)
+						|| (node.identifier == Engine::AST_Node_Type::Scopeless_Block)
+						|| (node.identifier == Engine::AST_Node_Type::File)
+					) {
+						bool success = false;
+						for (int i = ((int)node.children.size()) - 1; i >= 0; --i) {
+							if (node.children[i].identifier == Engine::AST_Node_Type::Scopeless_Block) {
+								node.children.insert(node.children.begin() + i + 1, node.children[i].children.begin(), node.children[i].children.end());
+								node.children.erase(node.children.begin() + i);								
+								success = true;
+							}
+						}
+						if (success) return success;
+					}
+
 					return false;
 				}
 			};
@@ -9093,11 +9197,11 @@ namespace GL {
 						for (size_t i = 0; i < node.children.size() - 1; ++i) {
 							auto& child = node.children[i];
 							if (child.identifier == Engine::AST_Node_Type::Fun_Call) {
-								node.children[i] = Unused_Return_Fun_Call_Node(
+								node.children[i] = optimizer::optimize(Unused_Return_Fun_Call_Node(
 									child.text,
 									child.location,
 									child.children
-								);
+								), CurrentEngine());
 								result = true;
 							}
 						}
@@ -9109,11 +9213,11 @@ namespace GL {
 							for (size_t i = 0; i < num_sub_children; ++i) {
 								auto& sub_child = child.children[i];
 								if (sub_child.identifier == Engine::AST_Node_Type::Fun_Call) {
-									child.children[i] = Unused_Return_Fun_Call_Node(
+									child.children[i] = optimizer::optimize(Unused_Return_Fun_Call_Node(
 										sub_child.text,
 										sub_child.location,
 										sub_child.children
-									);
+									), CurrentEngine());
 									result = true;
 								}
 							}
@@ -9123,9 +9227,10 @@ namespace GL {
 				}
 			};
 
-			// If the condition of an If statement is constant and known, then simply skip the check and hard-code the correct path. 
+			// Re-order or collapse if statements.
 			struct If {
 				bool optimize(AbstractSyntaxTreeNode& node) {
+					// If the condition of an If statement is constant and known, then simply skip the check and hard-code the correct path. 
 					if ((node.identifier == Engine::AST_Node_Type::If) && (node.children.size() >= 2) && (node.children[0].identifier == Engine::AST_Node_Type::Constant)) {
 						bool result;
 						if (node.children[0].constant.can_cast(GL::type_of<bool>())) {
@@ -9135,7 +9240,7 @@ namespace GL {
 							if (!AttemptCast<bool>(node.children[0].constant, result)) {
 								return false;
 							}
-						}			
+						}
 
 						if (result) {
 							// "TRUE" statement is the exclusive path
@@ -9153,6 +9258,55 @@ namespace GL {
 							return true;
 						}
 					}
+
+					// Combine statements made after an If statement into the If statement, when a return call has been demonstrated to be guarranteed.
+					if (((node.identifier == Engine::AST_Node_Type::Block)
+						|| (node.identifier == Engine::AST_Node_Type::Scopeless_Block)
+						|| (node.identifier == Engine::AST_Node_Type::File))
+					) {
+						for (int i = ((int)node.children.size()) - 1; i >= 0; --i) {
+							if (
+								(node.children[i].identifier == Engine::AST_Node_Type::If)
+								&& (i < (((int)node.children.size()) - 1))
+							) {
+								auto& this_if = node.children[i];
+								if (this_if.children.size() == 2) {
+									if (this_if.children[1].guarranteed_return()) {
+										// move all children after this If statement into the Else statement
+										this_if.children.push_back(optimizer::optimize(Block_Node("", this_if.location, {
+											node.children.begin() + i + 1, node.children.end()
+										}), CurrentEngine()));
+										node.children.erase(node.children.begin() + i + 1, node.children.end());
+										return true;
+									}
+								}
+								else if (this_if.children.size() == 3) {
+									if (this_if.guarranteed_return()) {
+										// all children after this If statement can be eliminated
+										node.children.erase(node.children.begin() + i + 1, node.children.end());
+										return true;
+									}
+									if (this_if.children[1].guarranteed_return()) {
+										// move all children after this If statement into the Else statement
+										auto new_else_statement = Block_Node("", this_if.location, { this_if.children[2] });
+										new_else_statement.children.insert(new_else_statement.children.end(), node.children.begin() + i + 1, node.children.end());
+										this_if.children[2] = optimizer::optimize(new_else_statement, CurrentEngine());
+										node.children.erase(node.children.begin() + i + 1, node.children.end());
+										return true;
+									}
+									if (this_if.children[2].guarranteed_return()) {
+										// move all children after this If statement into the Then statement
+										auto new_then_statement = Block_Node("", this_if.location, { this_if.children[1] });
+										new_then_statement.children.insert(new_then_statement.children.end(), node.children.begin() + i + 1, node.children.end());
+										this_if.children[1] = optimizer::optimize(new_then_statement, CurrentEngine());
+										node.children.erase(node.children.begin() + i + 1, node.children.end());
+										return true;
+									}
+								}
+							}
+						}
+					}
+
 					return false;
 				}
 			};
@@ -9181,13 +9335,68 @@ namespace GL {
 					if (node.identifier == Engine::AST_Node_Type::Postfix
 						&& node.children.size() == 1
 						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
-						&& ((node.text == "++") || (node.text == "--"))
 					) {
-						node = node.children[0];
-						return true;
+						if ((node.text == "++") || (node.text == "--")) {
+							// ++/-- as a post-fix on constant values should simply return the same constant value before the change anyways. 
+							node = node.children[0];
+							return true;
+						}
+						else {
+							// handle constexpr compilations of unit types
+							if (auto iter = GL::value::abbreviations_to_type().find(node.text); iter != GL::value::abbreviations_to_type().end()) {
+								if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
+									try {
+										auto result = BC->this_m.scope->call(BC->this_m.scope_name, { node.children[0].constant });
+										node = Constant_Node(node.text, node.location, {}, result);
+										return true;
+									}
+									catch (...) {
+										return false;
+									}
+								}
+							}
+						}
+					}
+					if (node.identifier == Engine::AST_Node_Type::Postfix
+						&& node.children.size() == 1
+						&& !((node.text == "++") || (node.text == "--"))
+					) {
+						// re-order the postfix into a Fun_Call. This speeds-up the process by compiling-out the search for the unit type based on the abbreviation.
+						if (auto iter = GL::value::abbreviations_to_type().find(node.text); iter != GL::value::abbreviations_to_type().end()) {
+							if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
+								node = optimizer::optimize(Fun_Call_Node("", {}, {
+									Id_Node(BC->this_m.scope_name, node.location, {}),
+									Arg_List_Node("", node.location, node.children)
+								}), CurrentEngine());
+								return true;
+							}
+						}
 					}
 
-					// this is a great place to convert a unit into a constant unit. E.g. 10_ft to foot(10)
+					if ((node.identifier == Engine::AST_Node_Type::Fun_Call)
+						&& (node.children.size() == 2)
+						&& (node.children[0].identifier == Engine::AST_Node_Type::Id)
+						&& (node.children[1].identifier == Engine::AST_Node_Type::Arg_List)
+						&& (node.children[1].children.size() == 1)
+						&& (node.children[1].children[0].identifier == Engine::AST_Node_Type::Id)
+						&& (node.children[1].children[0].text[0] == '_')
+					) {
+						GL::string const& variable_name = node.children[0].text;
+						GL::string const& abbreviation = node.children[1].children[0].text;
+
+						if (auto iter = GL::value::abbreviations_to_type().find(abbreviation.right_of("_")); iter != GL::value::abbreviations_to_type().end()) {
+							if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
+								node = optimizer::optimize(Fun_Call_Node("", {}, {
+									Id_Node(BC->this_m.scope_name, node.location, {}),
+									Arg_List_Node("", node.location, {
+										node.children[0]
+									})
+								}), CurrentEngine());
+								return true;
+							}
+						}
+
+					}
 
 					return false;
 				}
@@ -10583,7 +10792,7 @@ namespace GL {
 			>;
 
 		public:
-			static AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode p, GL::scope::impl::RootScope& analysisEngine) {
+			static AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode p, GL::scope::impl::RootScope& analysisEngine = CurrentEngine()) {
 				return Optimizer_Default().optimize(p, analysisEngine);
 			};
 		}; // namespace optimizer
@@ -11089,7 +11298,7 @@ namespace GL {
 				case Engine::hash("for"):
 				case Engine::hash("parallel_for"):
 				case Engine::hash("break"):
-				case Engine::hash("conitnue"):
+				case Engine::hash("continue"):
 				case Engine::hash("case"):
 				case Engine::hash("default"):
 				case Engine::hash("switch"):
@@ -12058,19 +12267,82 @@ namespace GL {
 			};
 			/// Reads (and potentially captures) an type or class identifier from input
 			bool TypeName(bool allowAuto = false) {
-				if (Id(false)) {
-					return true;
-				}
-				else if (allowAuto) {
-					const auto prev_pos = m_position;
-					if (Keyword("auto")) {
-						m_match_stack.push_back(make_node<Id_Node>(Engine::Position::str(prev_pos, m_position), prev_pos)); // e.g. "x", "Units::meter", etc.
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+				if (Keyword("const")) {
+					SkipWS(false);
+					if (Id(false)) {
+						SkipWS(false);
+						if (Keyword("&")) {
+							if (Keyword("&")) {
+								m_match_stack.back().text = m_match_stack.back().text + "&&";
+							}
+							else {
+								m_match_stack.back().text = "const " + m_match_stack.back().text + "&";
+							}
+							return true;
+						}
+						else {
+							m_match_stack.back().text = "const " + m_match_stack.back().text;
+							return true;
+						}
 					}
-					else {
-						return false;
+					return failure();
+				}
+				else {
+					if (Id(false)) {
+						SkipWS(false);
+						if (Keyword("&")) {
+							if (Keyword("&")) {
+								m_match_stack.back().text = m_match_stack.back().text + "&&";
+							}
+							else {
+								m_match_stack.back().text = m_match_stack.back().text + "&";
+							}
+							return true;
+						}
+						else if (Keyword("const")) {
+							SkipWS(false);
+							if (Keyword("&")) {
+								if (Keyword("&")) {
+									m_match_stack.back().text = m_match_stack.back().text + "&&";
+								}else{
+									m_match_stack.back().text = "const " + m_match_stack.back().text + "&";
+								}
+								return true;
+							}
+							else {
+								m_match_stack.back().text = "const " + m_match_stack.back().text;
+								return true;
+							}
+						}
+						else {
+							return true;
+						}
 					}
 				}
-				return false;
+
+
+				//if (Id(false)) {
+				//	return true;
+				//}
+				//else if (allowAuto) {
+				//	const auto prev_pos = m_position;
+				//	if (Keyword("auto")) {
+				//		m_match_stack.push_back(make_node<Id_Node>(Engine::Position::str(prev_pos, m_position), prev_pos)); // e.g. "x", "Units::meter", etc.
+				//		return true;
+				//	}
+				//	else {
+				//		return failure();
+				//	}
+				//}
+				return failure();
 			};
 
 			/// Reads an argument from input
@@ -12306,11 +12578,11 @@ namespace GL {
 			};
 
 			static auto make_postfix_operators() {
-				std::map<int, std::vector<std::pair<GL::type, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<int>> out;
-				//for (auto& unit_type : Units::value::GetValueTypes()) {
-				//	auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
-				//	out[abbreviation.length()].push_back(unit_type);
-				//}
+				std::map<size_t, std::vector<std::pair<GL::string, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<size_t>> out;
+				for (auto& unit_type : GL::value::abbreviations_to_type()) {
+					auto abbreviation = GL::string("_") + unit_type.first;
+					out[abbreviation.length()].push_back({ abbreviation, { unit_type.second.cast<GL::value>(), unit_type.second } });
+				}
 				return out;
 			}
 
@@ -12333,94 +12605,38 @@ namespace GL {
 						return true;
 					}
 					else {
-						static std::map<int, std::vector<std::pair<GL::type, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<int>>
+						static auto
 							customOperators{ make_postfix_operators() };
 
 						// evaluate the custom operators...
-						if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].text != "" && m_match_stack[prev_stack_top - 1].identifier == Engine::AST_Node_Type::Constant) {
-							// this path means the incoming value is constant and known			
-#if 0
+						if ((prev_stack_top > 0) && m_match_stack[prev_stack_top - 1].identifier == Engine::AST_Node_Type::Constant) {
+							// this path means the incoming value is constant. Compile to constant. 
 							for (auto& abbreviation_length_to_category : customOperators) {
 								for (auto& unit_type : abbreviation_length_to_category.second) {
-									auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
+									auto& abbreviation = unit_type.first;
 									if (Symbol(abbreviation)) {
-										auto& rhs = std::dynamic_pointer_cast<Constant_Node>(m_match_stack[prev_stack_top - 1].first)->m_value;
-										Any lhs(unit_type.second.first);
-										if (auto Class = currentScope->FindClass(unit_type.first.lock())) {
-											if (auto ClassPtr = Class->this_m->scope_ptr) {
-												lhs = ClassPtr->Call(Class->this_m->scope_name, { rhs });
-											}
-											else {
-												currentScope->Call("=", { lhs, rhs });
-											}
+										auto& rhs = m_match_stack[prev_stack_top - 1].constant;
+										if (auto* BC = this->analysis_engine.try_find_class(unit_type.second.second.m_casted_type); BC && BC->this_m.is_class()) {
+											auto result = BC->this_m.scope->call(BC->this_m.scope_name, { rhs });
+											auto temp = BC->this_m.scope->call<GL::string>("to_string", { result });
+											m_match_stack[prev_stack_top - 1] = Constant_Node(temp, m_match_stack[prev_stack_top - 1].location, {}, result);
+											return true;
 										}
-										else {
-											currentScope->Call("=", { lhs, rhs });
-										}
-										GL::string temp = GoodLang::ToString(lhs);
-
-										Engine::Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
-										loc.end += abbreviation.length();
-
-										m_match_stack[prev_stack_top - 1].first =
-											std::dynamic_pointer_cast<AST_Node_Impl>(
-												std::make_shared<AST_Nodes::Constant_AST_Node>(temp, loc, lhs)
-												);
-
-										return true;
 									}
 								}
 							}
-#endif
 						}
-						else if (prev_stack_top > 0 && m_match_stack[prev_stack_top - 1].text != "") {
-							// this path means the incoming value is NOT constant and is not known. 
-#if 0
+						else if (prev_stack_top > 0) {
+							// this path means the incoming value is NOT constant. Compile to a function call. 
 							for (auto& abbreviation_length_to_category : customOperators) {
 								for (auto& unit_type : abbreviation_length_to_category.second) {
-									auto abbreviation = GL::string("_") + GL::string(unit_type.second.first.UnitAbbreviation());
+									auto& abbreviation = unit_type.first;
 									if (Symbol(abbreviation)) {
-										Any lhs(unit_type.second.first);
-										if (auto Class = currentScope->FindClass(unit_type.first.lock())) {
-											if (auto ClassPtr = Class->this_m->scope_ptr) {
-												lhs = ClassPtr->Call(Class->this_m->scope_name, {});
-											}
-										}
-
-										Engine::Parse_Location loc = m_match_stack[prev_stack_top - 1].first->location;
-										loc.end += abbreviation.length();
-
-										m_match_stack[prev_stack_top - 1].first =
-											std::dynamic_pointer_cast<AST_Node_Impl>(
-												std::make_shared<AST_Nodes::Equation_AST_Node>("=", loc, std::vector<AST_Node_Impl_Ptr>{
-											std::dynamic_pointer_cast<AST_Node_Impl>(
-												std::make_shared<AST_Nodes::Constant_AST_Node>(GoodLang::ToString(lhs), loc, lhs)
-												),
-												std::move(m_match_stack[prev_stack_top - 1].first)
-										})
-												);
-
+										build_match<Postfix_Node>(prev_stack_top - 1, unit_type.second.first.abbreviation());
 										return true;
-
-
-										//// To-Do, finish this analysis!
-										//// Insert a node that evaluates the function `=`(lhs, rhs) and returns lhs.
-
-
-
-
-
-
-
-										//throw std::runtime_error("FIX ME!");
-										//while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-										//m_position = prev_pos;
-
-
 									}
 								}
 							}
-#endif
 						}
 					}
 				}
@@ -12830,7 +13046,9 @@ namespace GL {
 					SkipWS(true);
 
 					if (!Block()) {
-						throw except::eval_error("Incomplete 'while' block", m_position);
+						if (!SingleStatement()) {
+							throw except::eval_error("Incomplete 'while' block", m_position);
+						}
 					}
 
 					build_match<While_Node>(prev_stack_top);
@@ -12924,7 +13142,9 @@ namespace GL {
 					SkipWS(true);
 
 					if (!Block()) {
-						throw except::eval_error("Incomplete 'for' block", m_position);
+						if (!SingleStatement()) {
+							throw except::eval_error("Incomplete 'for' block", m_position);
+						}
 					}
 
 					const auto num_children = m_match_stack.size() - prev_stack_top;
@@ -12974,7 +13194,9 @@ namespace GL {
 					SkipWS(true);
 
 					if (!Block()) {
-						throw except::eval_error("Incomplete 'parallel_for' block", m_position);
+						if (!SingleStatement()) {
+							throw except::eval_error("Incomplete 'parallel_for' block", m_position);
+						}
 					}
 
 					const auto num_children = m_match_stack.size() - prev_stack_top;
@@ -13039,12 +13261,14 @@ namespace GL {
 
 					SkipWS(true);
 
-					Char(':'); // optional
+					(void)Char(':'); // optional
 
 					SkipWS(true);
 
 					if (!Block()) {
-						throw except::eval_error("Incomplete 'case' block", m_position);
+						if (!SingleStatement()) {
+							throw except::eval_error("Incomplete 'case' block", m_position);
+						}						
 					}
 
 					build_match<Case_Node>(prev_stack_top);
@@ -13056,12 +13280,14 @@ namespace GL {
 
 					SkipWS(true);
 
-					Char(':'); // optional
+					(void)Char(':'); // optional
 
 					SkipWS(true);
 
 					if (!Block()) {
-						throw except::eval_error("Incomplete 'default' block", m_position);
+						if (!SingleStatement()) {
+							throw except::eval_error("Incomplete 'default' block", m_position);
+						}
 					}
 
 					build_match<Default_Node>(prev_stack_top);
@@ -13371,6 +13597,30 @@ namespace GL {
 				return retval;
 			};
 
+			bool SingleStatement() {
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+				SkipWS();
+				if (Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
+					if (Eol()) return true;
+					else return failure();
+				}
+				else if (Return() || Break() || Continue() || Equation()) {
+					if (Eol()) return true;
+					else return failure();
+				}
+				else if (Block()) {
+					return true;
+				}				
+				return failure();
+			}
+
 			/// Top level parser, starts parsing of all known parses
 			bool Statements() {
 				SkipWS();
@@ -13523,7 +13773,9 @@ namespace GL {
 					SkipWS(true);
 
 					if (!Block()) {
-						throw except::eval_error("Incomplete 'if' block", m_position);
+						if (!SingleStatement()) {
+							throw except::eval_error("Incomplete 'if' block", m_position);
+						}
 					}
 
 					bool has_matches = true;
@@ -13538,7 +13790,9 @@ namespace GL {
 							else {
 								SkipWS(true);
 								if (!Block()) {
-									throw except::eval_error("Incomplete 'else' block", m_position);
+									if (!SingleStatement()) {
+										throw except::eval_error("Incomplete 'else' block", m_position);
+									}
 								}
 								has_matches = true;
 							}
@@ -13586,8 +13840,8 @@ namespace GL {
 				// top level stack        
 				if (Statements()) {
 					if (m_position.has_more()) {
-						build_match<File_Node>(0);
-						print(m_match_stack[0].to_string("", this->analysis_engine));
+						//build_match<File_Node>(0);
+						//print(m_match_stack[0].to_string("", this->analysis_engine));
 						throw except::eval_error("Unparsed input", m_position);
 					}
 					else {
@@ -13703,8 +13957,367 @@ int main() {
 		}
 	}
 
+	if (0) {
+		GL::scope::impl::RootScope root;
+		root.perform_builtins();
+		for (auto& each : GL::value::abbreviations_to_type()) {
+			print(each.first + ": " + root.call<GL::string>("to_string", {each.second}));
+		}
+	}
+
+	if (1) {
+		GL::scope::impl::RootScope root;
+		root.perform_builtins();
+		GL::Engine::Parser parser(root);
+
+		// Reads an if/else if/else block from input
+		if (1) {
+			print(parser.Parse(R"(
+				if (x){
+					++x;
+					return x;
+				}
+				else {
+					return y;
+				}
+				return "FAILURE";
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x) return x;				
+				else return y;				
+				return "FAILURE";
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x) 
+					return x;				
+				else if (y)
+					return y;
+				else if (z)
+					return z;
+				else if (w)
+					return w;
+				return "Following All If-Else-If Checks...";
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x){
+					++x;
+					return x;
+				}
+				else {
+					++x;
+				}
+				return "INSIDE ELSE";
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x){
+					++x;
+				}
+				else {
+					++x;
+					return x;
+				}
+				return "INSIDE THEN";
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x){
+					++x;
+				}
+				else {
+					++x;
+				}
+				return "INSIDE NONE";
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x){
+					return "If True";
+				}else{
+					return "If False";
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (true){
+					return "Correct";
+				}else{
+					return "ISSUE!";
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (false){
+					return "ISSUE!";
+				}else{
+					return "Correct";
+				}
+			)").to_string("", root) + "\n\n");
+		}
+		// Reads a return statement from input
+		if (1) {
+			print(parser.Parse(R"(
+				10;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return 10;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (x){
+					return x;
+				}
+			)").to_string("", root) + "\n\n");
+		}
+		// Reads a curly-brace C-style block from input
+		if (1) {
+			print(parser.Parse(R"(
+				{
+					int x;
+					x + 1;
+				}
+				{
+					int y;
+					y + 2;					
+				}				
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int x;
+				{
+					x + 1;
+				}
+				{
+					int y;
+					y + 2;					
+				}			
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int x;
+				{
+					x + 1;
+					{
+						x + 2;
+					}
+				}
+				{
+					x + 3;
+					return x;
+				}		
+			)").to_string("", root) + "\n\n");
+		}
+		// switch statement(s)
+		if (1) {
+			print(parser.Parse(R"(
+				switch (x){
+				case 0: {
+					return 0;
+					break;
+				}
+				case 1: {
+					return 1;
+					break;
+				}
+				case 2: {
+					return 2;
+					break;
+				}
+				default: {
+					break;
+				}
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				switch (1){
+				case 0 {
+					break;
+				}
+				case 1 {
+					break;
+				}
+				case 2 {
+					break;
+				}
+				default {
+					break;
+				}
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				switch (1) {
+				case 0: 
+					break;				
+				case 1: 
+					break;				
+				case 2: 
+					break;				
+				default: 
+					break;				
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int x;
+				switch (x) {
+				case 0: 
+					return 0;				
+				case 1: {
+					x = 0;
+					return 1;
+				}		
+				case 2: 
+					x += 20;
+				case 3: 
+					x += 30;			
+				default: 
+					return x;				
+				};
+			)").to_string("", root) + "\n\n");
+		}
+		// units and literals
+		if (1) {
+			print(parser.Parse(R"(
+				10_ft
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				10_ft + 12_in
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return (110_ft + 120_in) / 120_s;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				if (true){
+					(10_ft + 10_m + 100_in + 0.01_mi) / (0.05_d);
+				}else{
+					return 100;
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				1_MG;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				(x)_MG;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return (1_Mgal)_ac_ft;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return (foot(110) + inch(120)) / second(120);
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				var x = 11.0f;
+				return ((x)_ft + (12)_in) / (120)_s;
+			)").to_string("", root) + "\n\n");
+		}
+		// types
+		if (1) {
+			print(parser.Parse(R"(
+				[](int x){};
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				[](int& x){};
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				[](int const& x){};
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				[](const int& x){};
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				[](int&& x){};
+			)").to_string("", root) + "\n\n");
+			//print(parser.Parse(R"(
+			//	return (int)x;
+			//)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				var x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				auto x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				auto x = 10;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				var x = 10;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int x = 10;
+				return x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int& x = 10;
+				return x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int const& x = 10;
+				return x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				const int& x = 10;
+				return x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				const int x = 10;
+				return x;
+			)").to_string("", root) + "\n\n");
+
+		}
+		// For, While loops
+		if (0) {
+			print(parser.Parse(R"(
+				for (int i = 0; i < 10; ++i){}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (; true;){}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (;;){}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (;;) ++x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				while (true){}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				while (true) ++x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (x : vector<int>()){
+					
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (int x : vector<int>()){
+					
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (int& x : vector<int>()){
+					
+				}
+			)").to_string("", root) + "\n\n");
+		}
+
+
+	}
+
+
+
+
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
+	        R"(
+				10_ft; // constexpr
+			)",
+			R"(
+				10_ft; // constexpr
+			)",
+			R"(
+				(10_ft + 12_in) == (11_ft); // constexpr	
+			)",
+			R"(
+				return (100+12)_in; // constexpr
+			)",
+			R"(
+				return (x+12)_in; // inch(x+12)
+			)",
             R"(
 				return (x ? x : y) + 10;
 			)",

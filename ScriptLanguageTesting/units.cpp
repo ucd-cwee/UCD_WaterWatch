@@ -19,10 +19,16 @@ namespace GL {
 		return si_unit_types;
 	};
 
+	static concurrency::concurrent_unordered_map<GL::string, GL::any::fast_any> abbreviation_to_type_map;
+	const concurrency::concurrent_unordered_map<GL::string, GL::any::fast_any>&
+		value::abbreviations_to_type() {
+		return abbreviation_to_type_map;
+	};
+
 #ifdef DECL_UNIT_LITERALS
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
     static auto* type ## _pkg{ &GL::value::get_si_unit(value::Categories::##category##::unitType_m[0], value::Categories::##category##::unitType_m[1], value::Categories::##category##::unitType_m[2], value::Categories::##category##::unitType_m[3], value::Categories::##category##::unitType_m[4], value::Categories::##category##::unitType_m[5]).get_impl_unit(Ratio, #type, #abbreviation) }; \
-    static bool type ## _added_to_base { GL::type_of< type >().add_base(GL::type_of<GL::value>()) && GL::type_of< type >().try_update_name( #type ) }; \
+    static bool type ## _added_to_base { GL::type_of< type >().add_base(GL::type_of<GL::value>()) && GL::type_of< type >().try_update_name( #type ) && abbreviation_to_type_map.insert({#abbreviation, GL::any::fast_any::instance(GL:: type()) }).second }; \
     value::package type ## ::unique_pkg() { return type ## _pkg->default_bits; };
 
 #define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) \

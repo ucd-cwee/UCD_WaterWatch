@@ -703,6 +703,10 @@ namespace GL {
             // const GL::epoch_map< value::si_unit, uint16_t>&
             all_known_unit_types();
 
+        static
+            const concurrency::concurrent_unordered_map<GL::string, GL::any::fast_any>&
+            abbreviations_to_type();
+
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       
         explicit value(impl_unit const& from) : packed(from.default_bits) {};
         value(float rhs) : value(package{ package::bitset2{ 0ull, rhs } }) {};
