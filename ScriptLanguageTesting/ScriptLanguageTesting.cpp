@@ -11469,7 +11469,27 @@ namespace GL {
 				};
 
 				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. found `v`
-					if (*m_position == ':') return failure();
+					if (*m_position == ':') {
+						// we require colons to come in pairs
+						++m_position;
+						if (m_position.has_more()) {
+							if (*m_position == ':') {
+								++m_position;
+								if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) {
+									// works for us. 
+								}
+								else {
+									return failure();
+								}
+							}
+							else {
+								return failure();
+							}
+						}
+						else {
+							return failure();
+						}
+					}
 					if ((*m_position >= '0') && (*m_position <= '9')) return failure();
 
 					auto potential_end = m_position;
@@ -13689,7 +13709,7 @@ int main() {
 				return (x ? x : y) + 10;
 			)",
             R"(
-				auto x = int();
+				auto x = (y ? ::int() : ::double());
                 auto x_1 = apple_banana_123(123, apple, banana);
 			)",
 			R"(
