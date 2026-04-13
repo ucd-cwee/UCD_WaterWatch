@@ -8308,39 +8308,39 @@ namespace GL {
 			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const& rhs) : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
 				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
 			};
-			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode&& rhs) noexcept : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
-				children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
-			};
+			//AbstractSyntaxTreeNode(AbstractSyntaxTreeNode&& rhs) noexcept : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
+			//	children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
+			//};
 			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode const& rhs) {
+				identifier = rhs.identifier;
+				text = rhs.text;
+				location = rhs.location;
+				constant = rhs.constant;
+				output = rhs.output;
+				tag = rhs.tag;
+
 				size_t N = children.size();
 				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
 
-				identifier = rhs.identifier;
-				text = rhs.text;
-				location = rhs.location;
-				constant = rhs.constant;
-				output = rhs.output;
-				tag = rhs.tag;
-
 				if (N > 0) children.erase(children.begin(), children.begin() + N);
 
 				return *this;
 			};
-			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&& rhs) noexcept {
-				size_t N = children.size();
-				children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
+			//AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode&& rhs) noexcept {
+			//	identifier = rhs.identifier;
+			//	text = rhs.text;
+			//	location = rhs.location;
+			//	constant = rhs.constant;
+			//	output = rhs.output;
+			//	tag = rhs.tag;
 
-				identifier = rhs.identifier;
-				text = rhs.text;
-				location = rhs.location;
-				constant = rhs.constant;
-				output = rhs.output;
-				tag = rhs.tag;
+			//	size_t N = children.size();
+			//	children.insert(children.end(), std::make_move_iterator(rhs.children.begin()), std::make_move_iterator(rhs.children.end()));
 
-				if (N > 0) children.erase(children.begin(), children.begin() + N);
+			//	if (N > 0) children.erase(children.begin(), children.begin() + N);
 
-				return *this;
-			};
+			//	return *this;
+			//};
 			~AbstractSyntaxTreeNode() noexcept = default;
 
 		public:
@@ -11468,11 +11468,83 @@ namespace GL {
 					return false;
 				};
 
+				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. found `v`
+					if (*m_position == ':') return failure();
+					if ((*m_position >= '0') && (*m_position <= '9')) return failure();
+
+					auto potential_end = m_position;
+					auto local_revert = m_position;
+					bool inside_brackets = false;
+					while (m_position.has_more()) {
+						// capture "normal" id chars
+						if (char_in_alphabet(*m_position, Engine::id_alphabet)) {
+							if (*m_position == ':') {
+								// we require colons to come in pairs
+								++m_position;
+								if (m_position.has_more()) {
+									if (*m_position == ':') {
+										++m_position;
+										if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) {
+											potential_end = m_position;
+											continue;
+										}
+									}
+								}
+								break;								
+							}
+							else {
+								++m_position;
+								potential_end = m_position;
+								continue;
+							}
+						}
+						// skip whitespace chars
+						while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) ++m_position;
+						local_revert = m_position;
+						// handle <...>
+						if (*m_position == '<') {
+							inside_brackets = true;
+							++m_position;
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) ++m_position;
+							if (Id_(out)) {								
+								// successful search, keep going.
+								continue;
+							}
+							else {
+								m_position = local_revert;
+							}
+						}
+						if (inside_brackets && (*m_position == ',')) {
+							++m_position;
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) ++m_position;
+							if (Id_(out)) {
+								// successful search, keep going.
+								continue;
+							}
+							else {
+								m_position = local_revert;
+							}
+						}
+						if (inside_brackets && (*m_position == '>')) {
+							inside_brackets = false;
+							++m_position;
+							potential_end = m_position;
+							continue;
+						}
+						break;
+					}
+					m_position = potential_end;
+					if (out) *out = Engine::Position::str(prev_pos, m_position);
+					return true;
+				}
+				return failure();
+
+#if 0
 				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. `v`
 					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. `vector`
 						++m_position;
 					}
-					const auto potential_end = m_position;
+					auto potential_end = m_position;
 					while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) { // e.g. `vector `
 						++m_position;
 					}
@@ -11510,11 +11582,11 @@ namespace GL {
 					else {
 						m_position = potential_end;
 					}
-
 					if (out) *out = Engine::Position::str(prev_pos, m_position);
 					return true;
 				}
 				return failure();
+#endif
 			};
 			/// Reads a quoted string from input, without skipping initial whitespace
 			bool Quoted_String_() {
@@ -12624,6 +12696,12 @@ namespace GL {
 			bool Operator(const size_t t_precedence = 0) {
 				bool retval = false;
 				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
 
 				if (operators()[t_precedence] != Engine::Operator_Precedence::Prefix) {
 					if (Operator(t_precedence + 1)) {
@@ -12687,10 +12765,19 @@ namespace GL {
 
 			/// Reads an expression surrounded by parentheses from input
 			bool Paren_Expression() {
+				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+
+
 				if (Char('(')) {
 					SkipWS(true);
 					if (!Operator()) {
-						throw except::eval_error("Incomplete expression", m_position);
+						return failure();
 					}
 					SkipWS(true);
 					if (!Char(')')) {
@@ -13479,6 +13566,8 @@ namespace GL {
 				// top level stack        
 				if (Statements()) {
 					if (m_position.has_more()) {
+						build_match<File_Node>(0);
+						print(m_match_stack[0].to_string("", this->analysis_engine));
 						throw except::eval_error("Unparsed input", m_position);
 					}
 					else {
@@ -13596,12 +13685,19 @@ int main() {
 
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
+            R"(
+				return (x ? x : y) + 10;
+			)",
+            R"(
+				auto x = int();
+                auto x_1 = apple_banana_123(123, apple, banana);
+			)",
 			R"(
 				auto x = vector<int>();
 				auto y = map<int, double>();
 			)",
 			R"(
-                auto z = map<int, vector<int> >();
+                auto z = map<int,vector<int>::iterator>();
 			)",
 			R"(
                 return vector<int>::static_function();
