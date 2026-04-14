@@ -8374,26 +8374,26 @@ namespace GL {
 					}
 					catch (...) {
 						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { ??? }", "\n");
-					}					
+					}
 				}
 				for (auto& elem : children) { out = out.add_to_delim(elem.to_string(t_prepend + "\t", local_root), "\n"); }
 				return out;
 			};
 			// [](AbstractSyntaxTreeNode& this_child) -> bool {}
-			template <typename F> bool for_each_child(F const& Func, bool skip_self = false) {
+			template <typename F> bool for_each_child(F const& Func) {
+				// for (int i = 0; i < (int)this->children.size(); ++i) {
 				for (int i = ((int)this->children.size()) - 1; i >= 0; --i) {
 					auto& x = this->children[i];
-					if (x.for_each_child(Func, skip_self)) {
+					if (x.for_each_child(Func)) {
 						return true;
 					}
-					if (!skip_self) {
-						if (Func(x)) {
-							return true;
-						}
-					}
-				}
-				return false;
+					if (Func(x)) {
+						return true;
+					}					
+				}			
+			    return false;
 			};
+			
 			// returns true if a return call is guarranteed or was found.
 			bool guarranteed_return() const {
 				if (this->identifier == Engine::AST_Node_Type::Return) return true;
@@ -8756,11 +8756,30 @@ namespace GL {
 		};
 		class Namespace_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Namespace_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Namespace, t_ast_node_text, t_loc, t_children) {};
+			Namespace_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Namespace, t_ast_node_text, t_loc, t_children) {
+				if (this->children.size() > 0) {
+					if (this->children[0].identifier == Engine::AST_Node_Type::Id) {
+						this->text = this->children[0].text;
+					}
+				}
+			};
 		};
 		class Class_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Class_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Class, t_ast_node_text, t_loc, t_children) {};
+			Class_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Class, t_ast_node_text, t_loc, t_children) {
+				if (this->children.size() > 0) {
+					if (this->children[0].identifier == Engine::AST_Node_Type::Id) {
+						this->text = this->children[0].text;
+					}
+				}
+				this->tag = GL::any::fast_any::instance(std::vector<GL::string>());
+				if (this->text.find("<") != GL::string::npos) {
+					if (this->text.find(">") != GL::string::npos) {
+						this->tag = GL::any::fast_any::instance(this->text.right_of("<").left_of(">").split_nested(",", "<", ">"));
+						this->text = this->text.left_of("<");
+					}
+				}
+			};
 		};
 		class Declaration_Block_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -10776,7 +10795,7 @@ namespace GL {
 			struct TryCatch {
 				bool optimize(AbstractSyntaxTreeNode& node) {
 					if ((node.identifier == Engine::AST_Node_Type::Try)
-						&& (node.children.size() > 1)
+						&& (node.children.size() > 2)
 					) {
 						std::vector< size_t > catches_with_types;
 						std::vector< size_t > catches_without_types;
@@ -10844,9 +10863,67 @@ namespace GL {
 				}
 			};
 
+			// Re-order namespace or class declarations to make the most sense, prefering objects over functions. 
+			struct NamespaceDeclarations {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (((node.identifier == Engine::AST_Node_Type::Namespace) || (node.identifier == Engine::AST_Node_Type::Class))
+						&& (node.children.size() == 2)
+						&& (node.children[1].identifier == Engine::AST_Node_Type::DeclarationBlock)
+						&& (node.children[1].children.size() > 1)
+					) {
+						std::vector< size_t > object_declarations;
+						std::vector< size_t > function_declarations;
+						std::vector< size_t > other_declarations;
+
+						for (size_t i = 0; i < node.children[1].children.size(); ++i) {
+							auto& this_node = node.children[1].children[i];
+							if (   this_node.identifier == Engine::AST_Node_Type::Assign_Retroactively
+								|| this_node.identifier == Engine::AST_Node_Type::Var_Decl
+								|| this_node.identifier == Engine::AST_Node_Type::Assign_Decl
+							) {
+								object_declarations.push_back(i);
+							}
+							else if (this_node.identifier == Engine::AST_Node_Type::FunctionDecl) {
+								function_declarations.push_back(i);
+							}
+							else {
+								other_declarations.push_back(i);
+							}
+						}
+
+						bool do_work = (node.children[1].children.size() - 1) != (object_declarations.size() + function_declarations.size() + other_declarations.size());
+						int expected_progress = 0;
+						if (!do_work) for (auto& x : object_declarations) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}
+						if (!do_work) for (auto& x : function_declarations) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}
+						if (!do_work) for (auto& x : other_declarations) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}
+
+						if (do_work) {
+							node.children[1].children = [&]() -> std::vector< AbstractSyntaxTreeNode > {
+								std::vector< AbstractSyntaxTreeNode > out;
+								for (auto& x : object_declarations) out.push_back(node.children[1].children[x]);
+								for (auto& x : function_declarations) out.push_back(node.children[1].children[x]);
+								for (auto& x : other_declarations) out.push_back(node.children[1].children[x]);
+								return out;
+							}();
+							return true;
+						}
+					}
+					return false; // does nothing
+				}
+			};
 
 			using Optimizer_Default = Optimizer<
 				optimizer::TryCatch,
+				optimizer::NamespaceDeclarations,
 				optimizer::PostfixFold,
 				optimizer::PrefixFold,
 				optimizer::BinaryFold,
@@ -13545,13 +13622,12 @@ namespace GL {
 					retval = true;
 					SkipWS(true);
 
-					if (Id(true)) { // variable becase this namespace may not exist yet! 
+					if (TypeName(false)) { // variable becase this namespace may not exist yet! 
 						/* Great! Got the desired name of the new namespace */
 					}
 					else {
 						throw except::eval_error("Incomplete 'class' block: class must have a name", m_position);
 					}
-
 					auto this_class_name = GL::string(m_match_stack.back().get_text());
 
 					// instead of collecting statements, we want to collect declarations...
@@ -13627,6 +13703,9 @@ namespace GL {
 				else {
 					return failure();
 				}
+
+				// Function Characteristics
+				// to-do
 
 				// Block
 				if (!Block()) {
@@ -14416,10 +14495,101 @@ int main() {
 				}
 			)").to_string("", root) + "\n\n");
 		}
+		// Namespaces
+		if (1) {
+			print(parser.Parse(R"(
+				namespace std {}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					namespace string {}
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {}
+				if (x) {
+					namespace std {
+						namespace string {}
+					}
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					int x = 10;
+					int Function(){ return 10; };
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					int x = 10;
+					int Function(){ return 10; };
+					int y;
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					auto z = 10;
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					auto z;
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					int AbsDouble(int i) { 
+						switch (i) {
+						case 0: return 0;
+						case 1: return 2;
+						case 2: return 4;
+						default: return ((i * 2) > 0) ? (i * 2) : (i * -2);
+						}
+					};
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				namespace std {
+					int AbsDouble(int i) { 
+						switch (i) {
+						case 0: return 0;
+						case 1: return 2;
+						case 2: return 4;
+						default: return ((i * 2) > 0) ? (i * 2) : (i * -2);
+						}
+					};
+				}
+			)").to_string("", root) + "\n\n");
+		}
+		// Classes
+		if (1) {
+			print(parser.Parse(R"(
+				class example {}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				class example {
+					int Function(){ return 10+x+y+10+z+w+20; };		
+					auto x;
+					auto y = 10;
+					int z;
+					int w = 10;			
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(				
+				class Vector<T0> {					
+					T0 x;
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(				
+				class Map<T0, T1> {					
+					T0 x;
+					T1 y;
+				}
+			)").to_string("", root) + "\n\n");
+
+		}
 
 	}
-
-
 
 
 	if (1) {
