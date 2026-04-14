@@ -12485,9 +12485,9 @@ namespace GL {
 				const auto prev_stack_top = m_match_stack.size();
 				using SS = utility::Static_String;
 
-				if (TypeCastOperation()) {
-					return true;
-				}
+				//if (TypeCastOperation()) {
+				//	return true;
+				//}
 
 				if (Operator()) {
 					for (const auto& sym :
@@ -12938,6 +12938,12 @@ namespace GL {
 					m_position = prev_pos;
 					return false;
 				};
+
+				if (t_precedence == 0) {
+					if (TypeCastOperation()) {
+						return true;
+					}
+				}
 
 				if (operators()[t_precedence] != Engine::Operator_Precedence::Prefix) {
 					if (Operator(t_precedence + 1)) {
@@ -14218,9 +14224,6 @@ int main() {
 			print(parser.Parse(R"(
 				[](int&& x){};
 			)").to_string("", root) + "\n\n");
-			//print(parser.Parse(R"(
-			//	return (int)x;
-			//)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				int x;
 			)").to_string("", root) + "\n\n");
@@ -14257,6 +14260,18 @@ int main() {
 				return x;
 			)").to_string("", root) + "\n\n");
 
+		}
+		// type conversion
+		if (1) {
+			print(parser.Parse(R"(
+				(int)x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return (int)x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				auto x = (int)10_ft;
+			)").to_string("", root) + "\n\n");
 		}
 		// For, While loops
 		if (0) {
