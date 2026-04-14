@@ -12364,7 +12364,9 @@ namespace GL {
 				}
 
 				if (!Id(true)) {
-					return failure();
+					if (!foundType) {
+						return failure();
+					}
 				}
 
 				build_match<Arg_Node>(prev_stack_top);
@@ -14274,7 +14276,7 @@ int main() {
 			)").to_string("", root) + "\n\n");
 		}
 		// For, While loops
-		if (0) {
+		if (1) {
 			print(parser.Parse(R"(
 				for (int i = 0; i < 10; ++i){}
 			)").to_string("", root) + "\n\n");
@@ -14288,28 +14290,56 @@ int main() {
 				for (;;) ++x;
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
+				for (;;) 
+					++x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
 				while (true){}
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				while (true) ++x;
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
-				for (x : vector<int>()){
-					
+				while (true) 
+					++x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (x : vector<int>()){}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (int x : vector<int>()){}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				for (int& x : vector<int>()){}
+			)").to_string("", root) + "\n\n");
+		}
+		// Try/Catch/Finally
+		if (1) {
+			print(parser.Parse(R"(
+				try{
+					auto x = 10;
 				}
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
-				for (int x : vector<int>()){
-					
+				try {
+					auto x = 10;
+				}
+				catch(e){
+					return 10;
 				}
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
-				for (int& x : vector<int>()){
-					
+				try {
+					auto x = 10;
+				} catch(e) {
+					return e.what();
+				} catch(int e2) {
+					return e2;
+				} finally {
+					return 10;
 				}
 			)").to_string("", root) + "\n\n");
 		}
-
 
 	}
 
