@@ -10772,7 +10772,81 @@ namespace GL {
 				};
 			};
 
+			// Re-order the catch statements to make the most sense, prefering type-matching to capture-at-all to catch-but-no-knowledge
+			struct TryCatch {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if ((node.identifier == Engine::AST_Node_Type::Try)
+						&& (node.children.size() > 1)
+					) {
+						std::vector< size_t > catches_with_types;
+						std::vector< size_t > catches_without_types;
+						std::vector< size_t > catches_without_anything;
+						std::vector< size_t > finallys;
+						for (size_t i = 1; i < node.children.size(); ++i) {
+							auto& this_node = node.children[i];
+							if (this_node.identifier == Engine::AST_Node_Type::Catch) {
+								if (this_node.children.size() == 1) {
+									catches_without_anything.push_back(i);
+								}
+								else if (this_node.children.size() == 2) {
+									if (this_node.children[0].identifier == Engine::AST_Node_Type::Arg) {
+										if (this_node.children[0].children.size() == 1) {
+											catches_without_types.push_back(i);
+										}
+										else if (this_node.children[0].children.size() == 2) {
+											catches_with_types.push_back(i);
+										}
+									}
+								}
+							}
+							else if (this_node.identifier == Engine::AST_Node_Type::Finally) {
+								finallys.push_back(i);
+							}
+						}
+						
+						if (catches_without_types.size() > 1) catches_without_types.erase(catches_without_types.begin() + 1, catches_without_types.end());
+						if (catches_without_types.size() > 0) catches_without_anything.clear();						
+						if (finallys.size() > 1) finallys.erase(finallys.begin() + 1, finallys.end());
+
+						bool do_work = (node.children.size() - 1) != (catches_with_types.size() + catches_without_types.size() + catches_without_anything.size() + finallys.size());
+						int expected_progress = 0;
+						if (!do_work) for (auto& x : catches_with_types) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}						
+						if (!do_work) for (auto& x : catches_without_types) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}						
+						if (!do_work) for (auto& x : catches_without_anything) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}						
+						if (!do_work) for (auto& x : finallys) if (x != ++expected_progress) {
+							do_work = true;
+							break;
+						}
+						
+						if (do_work) {
+							node.children = [&]() -> std::vector< AbstractSyntaxTreeNode > {
+								std::vector< AbstractSyntaxTreeNode > out;
+								out.push_back(node.children[0]);
+								for (auto& x : catches_with_types) out.push_back(node.children[x]);
+								for (auto& x : catches_without_types) out.push_back(node.children[x]);
+								for (auto& x : catches_without_anything) out.push_back(node.children[x]);
+								for (auto& x : finallys) out.push_back(node.children[x]);
+								return out;
+							}();
+							return true;
+						}
+					}
+					return false; // does nothing
+				}
+			};
+
+
 			using Optimizer_Default = Optimizer<
+				optimizer::TryCatch,
 				optimizer::PostfixFold,
 				optimizer::PrefixFold,
 				optimizer::BinaryFold,
@@ -14334,6 +14408,8 @@ int main() {
 				} catch(e) {
 					return e.what();
 				} catch(int e2) {
+					return e2;
+				} catch(...) {
 					return e2;
 				} finally {
 					return 10;
