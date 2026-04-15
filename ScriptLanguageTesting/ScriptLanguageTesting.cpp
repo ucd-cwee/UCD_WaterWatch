@@ -174,7 +174,7 @@ namespace GL {
 			Method,
 			Attr_Decl,
 			Logical_And, Logical_Or,
-			Switch, Case, Default,
+			Switch, PreprocessedSwitch, Case, Default,
 			Class, Namespace,
 			FunctionDecl,
 			BinaryFoldRight, BinaryFoldLeft, Binary,
@@ -775,7 +775,7 @@ namespace GL {
 
 					static std::vector<word_t> GetAllWords(GL::string const& text) {
 						std::vector<word_t> out; {
-							static std::regex pattern{ R"("[^"]*"|\/\/[^\n]*\n|\/\*[^\*\/]*\*\/|[A-z0-9_:#]+)" };
+							static std::regex pattern{ R"("[^"]*"|\/\/[^\n]*\n|\/\*[^\*\/]*\*\/|[A-z0-9_#]+)" };
 							size_t position, length;
 							for (auto i = std::regex_iterator(text.begin(), text.end(), pattern);
 								i != decltype(i)();
@@ -838,46 +838,56 @@ namespace GL {
 						// exact word match
 						if (Where.word == Find) {
 							if (Where.pos_start == 0) {
-								Text = ReplaceWith + Text.substr(Where.word.length());
+								Text = ExpandCode(ReplaceWith) + ExpandCode(Text.substr(Where.word.length()));
 							}
 							else if ((Where.pos_start + Where.word.length()) == Text.length()) {
-								Text = Text.substr(0, Where.pos_start) + ReplaceWith;
+								Text = ExpandCode(Text.substr(0, Where.pos_start)) + ExpandCode(ReplaceWith);
 							}
 							else {
-								Text = Text.substr(0, Where.pos_start) + ReplaceWith + Text.substr(Where.pos_start + Where.word.length());
+								auto t0 = ExpandCode(Text.substr(0, Where.pos_start));
+								auto t1 = ExpandCode(ReplaceWith);
+								auto t2 = ExpandCode(Text.substr(Where.pos_start + Where.word.length()));
+								Text = t0 + t1 + t2;
 							}
 							return true;
 						}
 
 						// in-word replacement when explicitely requested
 						if (auto f_p = Where.word.find("##" + Find); f_p != GL::string::npos) {
-							auto NewReplaceWith = Replace(Where.word, "##" + Find, ReplaceWith);
+							auto expanded_lhs = ExpandCode(Where.word.left(f_p));
+							auto NewReplaceWith = expanded_lhs + Replace(Where.word.right(Where.word.length() - f_p), "##" + Find, ExpandCode(ReplaceWith));
 
 							if (Where.pos_start == 0) {
-								Text = NewReplaceWith + Text.substr(Where.word.length());
+								Text = NewReplaceWith + ExpandCode(Text.substr(Where.word.length()));
 							}
 							else if ((Where.pos_start + (Where.word.length())) == Text.length()) {
-								Text = Text.substr(0, Where.pos_start) + NewReplaceWith;
+								Text = ExpandCode(Text.substr(0, Where.pos_start)) + NewReplaceWith;
 							}
 							else {
-								Text = Text.substr(0, Where.pos_start) + NewReplaceWith + Text.substr(Where.pos_start + (Where.word.length()));
+								Text = ExpandCode(Text.substr(0, Where.pos_start)) + NewReplaceWith + ExpandCode(Text.substr(Where.pos_start + (Where.word.length())));
 							}
 							return true;
 						}
 
 						// in-word string replacement when explicitely requested
 						if (auto f_p = Where.word.find("#" + Find); f_p != GL::string::npos) {
-							auto NewReplaceWith = Replace(Where.word, "#" + Find, "\"" + ExpandCode(ReplaceWith) + "\"");
+							auto expanded_lhs = ExpandCode(Where.word.left(f_p));
+							auto NewReplaceWith = expanded_lhs + Replace(Where.word.right(Where.word.length() - f_p), "#" + Find, "\"" + ExpandCode(ReplaceWith) + "\"");
 
 							if (Where.pos_start == 0) {
-								Text = NewReplaceWith + Text.substr(Where.word.length());
+								Text = NewReplaceWith + ExpandCode(Text.substr(Where.word.length()));
 							}
 							else if ((Where.pos_start + (Where.word.length())) == Text.length()) {
-								Text = Text.substr(0, Where.pos_start) + NewReplaceWith;
+								Text = ExpandCode(Text.substr(0, Where.pos_start)) + NewReplaceWith;
 							}
 							else {
-								Text = Text.substr(0, Where.pos_start) + NewReplaceWith + Text.substr(Where.pos_start + (Where.word.length()));
+								Text = ExpandCode(Text.substr(0, Where.pos_start)) + NewReplaceWith + ExpandCode(Text.substr(Where.pos_start + (Where.word.length())));
 							}
+							return true;
+						}
+
+						if (Where.word.begins_with("#") && !Where.word.begins_with("##")) {
+							Text = ExpandCode(Text.substr(0, Where.pos_start)) + "\"" + ExpandCode(Where.word.right(Where.word.length() - 1)) + "\"" + ExpandCode(Text.substr(Where.pos_start + (Where.word.length())));
 							return true;
 						}
 
@@ -960,6 +970,8 @@ namespace GL {
 											if ((currentVarStart < end_pos) && (functionParams.size() < macro_function.second.second.size())) {
 												functionParams.push_back(Code.substr(currentVarStart, (end_pos)-currentVarStart));
 											}
+
+											if (parenCount > 0) continue; // we didn't get an actual function decl
 
 											// we have a candidate -- ensure there are enough "vars" for the variables
 											if (functionParams.size() >= macro_function.second.second.size()) {
@@ -8629,7 +8641,7 @@ namespace GL {
 				// To-Do, This needs to determine the operator OR the runtime type of the unit, e.g. ft, m, gpm, MG, etc. 
 				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
 			};
-		};
+		};		
 		/* if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node */ class If_Node final : public AbstractSyntaxTreeNode {
 		public:
 			If_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::If, t_ast_node_text, t_loc, t_children) {};
@@ -8638,13 +8650,24 @@ namespace GL {
 		public:
 			While_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::While, t_ast_node_text, t_loc, t_children) {};
 		};
+		struct ForLoopInformation {
+			bool parallel_hint;
+		};
 		/* for (INIT_BLOCK; CONDITION_BLOCK; PROGRESS_BLOCK) WORK_BLOCK */ class For_Node final : public AbstractSyntaxTreeNode {
 		public:
-			For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::For, t_ast_node_text, t_loc, t_children) {};
+			For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}, bool parallel_hint = false) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::For, t_ast_node_text, t_loc, t_children) {
+				ForLoopInformation info;
+				info.parallel_hint = parallel_hint;
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
 		};
 		/* for (range_declaration : range_expression) loop_statement */ class Ranged_For_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Ranged_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Ranged_For, t_ast_node_text, t_loc, t_children) {};
+			Ranged_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}, bool parallel_hint = false) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Ranged_For, t_ast_node_text, t_loc, t_children) {
+				ForLoopInformation info;
+				info.parallel_hint = parallel_hint;
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
 		};
 		/* x[1] */ class Array_Call_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8676,21 +8699,6 @@ namespace GL {
 		public:
 			Inline_Map_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Inline_Map, t_ast_node_text, t_loc, t_children) {};
 		};		
-		// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
-        // parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
-		class Parallel_For_Node final : public AbstractSyntaxTreeNode {
-		public:
-			Parallel_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Parallel_For, t_ast_node_text, t_loc, t_children) {
-				ASSERT(this->children.size() == 3);
-			};
-		};
-		// parallel_for (range_declaration : range_expression) loop_statement;
-		class Parallel_Ranged_For_Node final : public AbstractSyntaxTreeNode {
-		public:
-			Parallel_Ranged_For_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Parallel_Ranged_For, t_ast_node_text, t_loc, t_children) {
-				ASSERT(this->children.size() == 3);
-			};
-		};		
 		class Break_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Break_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Break, t_ast_node_text, t_loc, t_children) {};
@@ -8707,9 +8715,26 @@ namespace GL {
 		public:
 			Case_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Case, t_ast_node_text, t_loc, t_children) {};
 		};
+		struct SwitchInformation {
+			bool allow_precompilation;
+			bool is_precompiled;
+			std::map<size_t, size_t> hash_to_child_index; // hash to child index;
+			size_t default_child_index; // chidl index for the default param. Values larger than the number of children indicate that no default was provided. 
+		};
 		class Switch_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Switch_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Switch, t_ast_node_text, t_loc, t_children) {};
+			Switch_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Switch, t_ast_node_text, t_loc, t_children) {
+				SwitchInformation info;
+				info.is_precompiled = false;
+				info.allow_precompilation = true;
+				info.default_child_index = std::numeric_limits<size_t>::max();
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
+		};
+		// Preprocessed switches are switch statements that have been already resolved. We still need to handle Break throws, but otherwise they can be processed just like Blocks.
+		class PreprocessedSwitch_Node final : public AbstractSyntaxTreeNode {
+		public:
+			PreprocessedSwitch_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::PreprocessedSwitch, t_ast_node_text, t_loc, t_children) {};
 		};
 		class Try_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8754,6 +8779,10 @@ namespace GL {
 				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
 			};
 		};
+		struct NamespaceClassInformation {
+			std::vector<GL::string> template_types;
+			bool original_placement;
+		};
 		class Namespace_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Namespace_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Namespace, t_ast_node_text, t_loc, t_children) {
@@ -8762,6 +8791,10 @@ namespace GL {
 						this->text = this->children[0].text;
 					}
 				}
+				NamespaceClassInformation info;
+				info.template_types = {};
+				info.original_placement = true;
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
 		class Class_Node final : public AbstractSyntaxTreeNode {
@@ -8772,13 +8805,16 @@ namespace GL {
 						this->text = this->children[0].text;
 					}
 				}
-				this->tag = GL::any::fast_any::instance(std::vector<GL::string>());
+				NamespaceClassInformation info;
+				info.template_types = {};
+				info.original_placement = true;	
 				if (this->text.find("<") != GL::string::npos) {
-					if (this->text.find(">") != GL::string::npos) {
-						this->tag = GL::any::fast_any::instance(this->text.right_of("<").left_of(">").split_nested(",", "<", ">"));
+					if (this->text.find(">") != GL::string::npos) {						
+						info.template_types = this->text.right_of("<").left_of(">").split_nested(",", "<", ">");
 						this->text = this->text.left_of("<");
 					}
 				}
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
 		class Declaration_Block_Node final : public AbstractSyntaxTreeNode {
@@ -8825,9 +8861,8 @@ namespace GL {
 			template<typename... T> struct Optimizer : T... {
 				Optimizer() = default;
 				explicit Optimizer(T... t) : T(std::move(t))... { };
-				AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode& p, GL::scope::impl::RootScope& analysisEngine) {
-					GetEngine().push_back(&analysisEngine);
 
+				bool optimize_impl(AbstractSyntaxTreeNode& p) {
 					bool any_success = false;
 					long long maxDepth = 100;
 					while (--maxDepth >= 0) {
@@ -8836,9 +8871,41 @@ namespace GL {
 						any_success = any_success || successful;
 						if (!successful) break;
 					}
+					return any_success;
+				};
 
+				bool optimize(AbstractSyntaxTreeNode& p, GL::scope::impl::RootScope& analysisEngine) {	
+					GetEngine().push_back(&analysisEngine);
+					bool any_success = false;
+					while (true) {
+						bool success = false;
+						while (p.for_each_child([this](AbstractSyntaxTreeNode& this_child) -> bool {							
+							bool local_success = false;
+							while (this->optimize_impl(this_child)) {
+								local_success = true;
+							}
+							return local_success;
+						})) {
+							success = true;
+						};
+						success = success || optimize_impl(p);
+						any_success = any_success || success;
+						if (!success) break;
+					}
 					GetEngine().pop_back();
-					return p;
+					return any_success;
+
+					//GetEngine().push_back(&analysisEngine);
+					//bool any_success = false;
+					////long long maxDepth = 100;
+					//while (true){//--maxDepth >= 0) {
+					//	bool successful = false;
+					//	((successful = (successful || static_cast<T&>(*this).optimize(p))), ...); // this line performs all optimizations in-line
+					//	any_success = any_success || successful;
+					//	if (!successful) break;
+					//}
+					//GetEngine().pop_back();
+					//return p;
 				};
 
 			};
@@ -8921,12 +8988,12 @@ namespace GL {
 						// && node->children[1]->identifier == AST_Node_Type::Fun_Call
 						&& ((node.text == "=") || (node.text == ":="))
 					) {
-						node = optimizer::optimize(Assign_Retroactively_Node(
+						node = Assign_Retroactively_Node(
 							node.text, (Engine::Parse_Location)node.location, {
 								node.children[1],
 								node.children[0]
 							}
-						), CurrentEngine());
+						);
 						return true;
 					}
 
@@ -8935,13 +9002,13 @@ namespace GL {
 						&& node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
 						&& ((node.text == "=") || (node.text == ":="))
 						) {
-						node = optimizer::optimize(Assign_Retroactively_Node(
+						node = Assign_Retroactively_Node(
 							node.text, (Engine::Parse_Location)node.location, {
 								node.children[0].children[0],
 								node.children[0].children[1],
 								node.children[1]
 							}
-						), CurrentEngine());
+						);
 						return true;
 					}
 					return false;
@@ -9168,11 +9235,11 @@ namespace GL {
 								return true;
 							}
 							else {
-								node = optimizer::optimize(Scopeless_Block_Node(
+								node = Scopeless_Block_Node(
 									node.text,
 									node.location,
 									node.children
-								), CurrentEngine());
+								);
 								return true;
 							}
 						}
@@ -9216,11 +9283,11 @@ namespace GL {
 						for (size_t i = 0; i < node.children.size() - 1; ++i) {
 							auto& child = node.children[i];
 							if (child.identifier == Engine::AST_Node_Type::Fun_Call) {
-								node.children[i] = optimizer::optimize(Unused_Return_Fun_Call_Node(
+								node.children[i] = Unused_Return_Fun_Call_Node(
 									child.text,
 									child.location,
 									child.children
-								), CurrentEngine());
+								);
 								result = true;
 							}
 						}
@@ -9232,11 +9299,11 @@ namespace GL {
 							for (size_t i = 0; i < num_sub_children; ++i) {
 								auto& sub_child = child.children[i];
 								if (sub_child.identifier == Engine::AST_Node_Type::Fun_Call) {
-									child.children[i] = optimizer::optimize(Unused_Return_Fun_Call_Node(
+									child.children[i] = Unused_Return_Fun_Call_Node(
 										sub_child.text,
 										sub_child.location,
 										sub_child.children
-									), CurrentEngine());
+									);
 									result = true;
 								}
 							}
@@ -9292,9 +9359,9 @@ namespace GL {
 								if (this_if.children.size() == 2) {
 									if (this_if.children[1].guarranteed_return()) {
 										// move all children after this If statement into the Else statement
-										this_if.children.push_back(optimizer::optimize(Block_Node("", this_if.location, {
+										this_if.children.push_back(Block_Node("", this_if.location, {
 											node.children.begin() + i + 1, node.children.end()
-										}), CurrentEngine()));
+										}));
 										node.children.erase(node.children.begin() + i + 1, node.children.end());
 										return true;
 									}
@@ -9309,7 +9376,7 @@ namespace GL {
 										// move all children after this If statement into the Else statement
 										auto new_else_statement = Block_Node("", this_if.location, { this_if.children[2] });
 										new_else_statement.children.insert(new_else_statement.children.end(), node.children.begin() + i + 1, node.children.end());
-										this_if.children[2] = optimizer::optimize(new_else_statement, CurrentEngine());
+										this_if.children[2] = new_else_statement;
 										node.children.erase(node.children.begin() + i + 1, node.children.end());
 										return true;
 									}
@@ -9317,13 +9384,134 @@ namespace GL {
 										// move all children after this If statement into the Then statement
 										auto new_then_statement = Block_Node("", this_if.location, { this_if.children[1] });
 										new_then_statement.children.insert(new_then_statement.children.end(), node.children.begin() + i + 1, node.children.end());
-										this_if.children[1] = optimizer::optimize(new_then_statement, CurrentEngine());
+										this_if.children[1] = new_then_statement;
 										node.children.erase(node.children.begin() + i + 1, node.children.end());
 										return true;
 									}
 								}
 							}
 						}
+					}
+
+					return false;
+				}
+			};
+
+			// Re-order or collapse if statements.
+			struct Switch {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					// Pre-compile the hash table for a Switch statement if possible. 
+					if ((node.identifier == Engine::AST_Node_Type::Switch)
+						&& (node.children.size() > 1)
+						&& (node.tag.cast< SwitchInformation>().is_precompiled == false)
+						&& (node.tag.cast< SwitchInformation>().allow_precompilation == true)
+					) {
+						// early-exit if there are any non-const case switches
+						for (int i = 1; i < node.children.size(); ++i) {
+							auto& child = node.children[i];
+							if (child.identifier == Engine::AST_Node_Type::Case
+								&& child.children.size() == 2
+								&& child.children[0].identifier == Engine::AST_Node_Type::Constant
+							) {
+								
+							}
+							else if (child.identifier == Engine::AST_Node_Type::Default) {
+
+							}
+							else {
+								return false;
+							}
+						}
+						// we know all switches are either const, or are the default. 
+						try {
+							for (int i = 1; i < node.children.size(); ++i) {
+								auto& child = node.children[i];
+								if (child.identifier == Engine::AST_Node_Type::Case
+									&& child.children.size() == 2
+									&& child.children[0].identifier == Engine::AST_Node_Type::Constant
+									) {
+									size_t this_hash = CurrentEngine().call<size_t>("to_hash", { child.children[0].constant });
+									node.tag.cast< SwitchInformation>().hash_to_child_index[this_hash] = i;
+								}
+								else if (child.identifier == Engine::AST_Node_Type::Default) {
+									node.tag.cast< SwitchInformation>().default_child_index = i;
+								}
+							}
+							node.tag.cast< SwitchInformation>().is_precompiled = true;
+							return true;
+						}
+						catch (...) { 
+							node.tag.cast< SwitchInformation>().allow_precompilation = false;
+							return false; 
+						}
+					}
+
+					// Resolve a Switch statement into a PreprocessedSwitch statement, if possible.
+					if ((node.identifier == Engine::AST_Node_Type::Switch)
+						&& (node.children.size() > 1)
+						&& (node.tag.cast< SwitchInformation>().is_precompiled == true)
+						&& (node.tag.cast< SwitchInformation>().allow_precompilation == true)
+						&& (node.children[0].identifier == Engine::AST_Node_Type::Constant)
+					) {
+						size_t starting_child_index = 1;
+						try {
+							size_t this_hash = CurrentEngine().call<size_t>("to_hash", { node.children[0].constant });
+							if (auto f = node.tag.cast< SwitchInformation>().hash_to_child_index.find(this_hash), e = node.tag.cast< SwitchInformation>().hash_to_child_index.end(); f != e) {
+								// from the found index on, compile into a block
+								starting_child_index = f->second;
+							}							
+							else if (node.tag.cast< SwitchInformation>().default_child_index < node.children.size()) {
+								// from the default index on, compile into a block
+								starting_child_index = node.tag.cast< SwitchInformation>().default_child_index;
+							}
+							else {
+								// no matching hash, AND, no default. Therefore, this should compile down to nothing. 
+								node = Noop_Node("", {}, {});
+								return true;
+							}
+						}
+						catch (...) {
+							node.tag.cast< SwitchInformation>().allow_precompilation = false;
+							return false;
+						}
+
+						std::vector<AbstractSyntaxTreeNode> out;
+						for (size_t i = starting_child_index; i < node.children.size(); ++i) {
+							if (node.children[i].identifier == Engine::AST_Node_Type::Case) {
+								if (node.children[i].children.size() == 2) {
+									out.push_back(node.children[i].children[1]);
+									continue;
+								}
+							}
+							else if (node.children[i].identifier == Engine::AST_Node_Type::Default) {
+								if (node.children[i].children.size() == 1) {
+									out.push_back(node.children[i].children[0]);
+									continue;
+								}
+							}
+							node.tag.cast< SwitchInformation>().allow_precompilation = false;
+							return false;
+						}
+
+						node = PreprocessedSwitch_Node("", node.location, { Block_Node("", node.location, out) });
+						return true;
+					}
+
+					// Reduce a PreprocessedSwitch by eliminating any nodes after an in-line break.
+					if (node.identifier == Engine::AST_Node_Type::PreprocessedSwitch
+						&& node.children.size() == 1
+						&& ((node.children[0].identifier == Engine::AST_Node_Type::Block) || (node.children[0].identifier == Engine::AST_Node_Type::Scopeless_Block))
+					) {
+						auto& block_n = node.children[0];
+						for (int i = 0; i < block_n.children.size(); ++i) {
+							auto& this_child = block_n.children[i];
+							if (this_child.identifier == Engine::AST_Node_Type::Break) {
+								block_n.children.erase(block_n.children.begin() + i, block_n.children.end());
+								return true;
+							}
+						}
+
+
 					}
 
 					return false;
@@ -9383,10 +9571,10 @@ namespace GL {
 						// re-order the postfix into a Fun_Call. This speeds-up the process by compiling-out the search for the unit type based on the abbreviation.
 						if (auto iter = GL::value::abbreviations_to_type().find(node.text); iter != GL::value::abbreviations_to_type().end()) {
 							if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
-								node = optimizer::optimize(Fun_Call_Node("", {}, {
+								node = Fun_Call_Node("", {}, {
 									Id_Node(BC->this_m.scope_name, node.location, {}),
 									Arg_List_Node("", node.location, node.children)
-								}), CurrentEngine());
+								});
 								return true;
 							}
 						}
@@ -9405,12 +9593,12 @@ namespace GL {
 
 						if (auto iter = GL::value::abbreviations_to_type().find(abbreviation.right_of("_")); iter != GL::value::abbreviations_to_type().end()) {
 							if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
-								node = optimizer::optimize(Fun_Call_Node("", {}, {
+								node = Fun_Call_Node("", {}, {
 									Id_Node(BC->this_m.scope_name, node.location, {}),
 									Arg_List_Node("", node.location, {
 										node.children[0]
 									})
-								}), CurrentEngine());
+								});
 								return true;
 							}
 						}
@@ -10865,13 +11053,74 @@ namespace GL {
 				}
 			};
 
+			// move up the class / namespace declarations outside of inner scopes 
+			struct PullOutNamespaceDeclarations {
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.children.size() > 0) {
+						for (auto& child : node.children) {
+							if (child.identifier != Engine::AST_Node_Type::DeclarationBlock
+								&& (child.children.size() > 0)
+								) {
+								for (int i = 0; i < child.children.size(); ++i) {
+									if (
+										child.children[i].identifier == Engine::AST_Node_Type::Namespace
+										|| child.children[i].identifier == Engine::AST_Node_Type::Class
+										) {
+										AbstractSyntaxTreeNode copy = child.children[i];
+										if (copy.tag.cast<NamespaceClassInformation&>().original_placement) {
+											copy.tag.cast<NamespaceClassInformation&>().original_placement = false;
+											child.children[i] = Noop_Node("", {}, {});
+
+											// find the highest non-namespace or class in this and insert it there. 
+											for (i = 0; i < node.children.size(); ++i) {
+												if (node.children[i].identifier == Engine::AST_Node_Type::Namespace
+													|| node.children[i].identifier == Engine::AST_Node_Type::Class
+													) {
+												}
+												else {
+													node.children.insert(node.children.begin() + i, copy);
+													return true;
+												}
+											}
+											node.children.insert(node.children.end(), copy);
+											return true;
+										}
+										else {
+											child.children.erase(child.children.begin() + i);
+
+											// find the highest non-namespace or class in this and insert it there. 
+											for (i = 0; i < node.children.size(); ++i) {
+												if (node.children[i].identifier == Engine::AST_Node_Type::Namespace
+													|| node.children[i].identifier == Engine::AST_Node_Type::Class
+													) {
+												}
+												else {
+													node.children.insert(node.children.begin() + i, copy);
+													return true;
+												}
+											}
+											node.children.insert(node.children.end(), copy);
+
+											// node.children.insert(node.children.begin(), copy);
+											return true;
+										}
+									}
+								}
+							}
+						}
+					}
+					return false;
+				};
+			};
+
 			// Re-order namespace or class declarations to make the most sense, prefering objects over functions. 
 			struct NamespaceDeclarations {
 				bool optimize(AbstractSyntaxTreeNode& node) {
+					// Move Class/Namespace declarations to the top of their Block classes, to prevent optimization and culling.
 					if (node.identifier == Engine::AST_Node_Type::Block
 						|| node.identifier == Engine::AST_Node_Type::Scopeless_Block
 						|| node.identifier == Engine::AST_Node_Type::File
-						) {
+					) {
 						int p;
 						int i;
 						for (i = 0, p = -1; i < node.children.size(); ++i) {
@@ -10879,20 +11128,20 @@ namespace GL {
 								node.children[i].identifier == Engine::AST_Node_Type::Namespace
 								|| node.children[i].identifier == Engine::AST_Node_Type::Class
 								|| node.children[i].identifier == Engine::AST_Node_Type::Comment
-							) {
+								) {
 								continue;
 							}
 							else {
 								p = i;
 								break;
 							}
-						}	
+						}
 						if (p >= 0) {
 							for (i = p + 1; i < node.children.size(); ++i) {
 								if (
 									node.children[i].identifier == Engine::AST_Node_Type::Namespace
 									|| node.children[i].identifier == Engine::AST_Node_Type::Class
-								) {
+									) {
 									AbstractSyntaxTreeNode copy = node.children[i];
 									node.children.erase(node.children.begin() + i);
 									node.children.insert(node.children.begin() + p, copy);
@@ -10902,54 +11151,71 @@ namespace GL {
 						}
 					}
 
-					if (((node.identifier == Engine::AST_Node_Type::Namespace) || (node.identifier == Engine::AST_Node_Type::Class))
-						&& (node.children.size() == 2)
-						&& (node.children[1].identifier == Engine::AST_Node_Type::DeclarationBlock)
-						&& (node.children[1].children.size() > 1)
+					// Move Comments to the very top of the pile
+					//if (node.identifier == Engine::AST_Node_Type::File) {
+					//	int p;
+					//	int i;
+					//	for (i = 0, p = -1; i < node.children.size(); ++i) {
+					//		if (node.children[i].identifier == Engine::AST_Node_Type::Comment) {
+					//			continue;
+					//		}
+					//		else {
+					//			p = i;
+					//			break;
+					//		}
+					//	}
+					//	if (p >= 0) {
+					//		for (i = p + 2; i < node.children.size(); ++i) {
+					//			if (node.children[i].identifier == Engine::AST_Node_Type::Comment) {
+					//				AbstractSyntaxTreeNode copy = node.children[i];
+					//				node.children.erase(node.children.begin() + i);
+					//				node.children.insert(node.children.begin() + p, copy);
+					//				return true;
+					//			}
+					//		}
+					//	}
+					//}
+
+					// Re - order Class / Namespace DeclarationBlocks to declare objects, then functions, then namespaces.
+					if (node.identifier == Engine::AST_Node_Type::DeclarationBlock
+						&& node.children.size() > 1
 					) {
 						std::vector< size_t > object_declarations;
 						std::vector< size_t > function_declarations;
 						std::vector< size_t > other_declarations;
 
-						for (size_t i = 0; i < node.children[1].children.size(); ++i) {
-							auto& this_node = node.children[1].children[i];
-							if (   this_node.identifier == Engine::AST_Node_Type::Assign_Retroactively
+						bool started_Functions = false;
+						bool started_Other = false;
+						bool do_work = false;
+						for (size_t i = 0; i < node.children.size(); ++i) {
+							auto& this_node = node.children[i];
+							if (this_node.identifier == Engine::AST_Node_Type::Assign_Retroactively
 								|| this_node.identifier == Engine::AST_Node_Type::Var_Decl
 								|| this_node.identifier == Engine::AST_Node_Type::Assign_Decl
 							) {
+								if (started_Functions || started_Other) do_work = true;
 								object_declarations.push_back(i);
 							}
 							else if (this_node.identifier == Engine::AST_Node_Type::FunctionDecl) {
+								if (started_Other) do_work = true;
+								started_Functions = true;
 								function_declarations.push_back(i);
 							}
 							else {
+								started_Other = true;
 								other_declarations.push_back(i);
 							}
 						}
 
-						bool do_work = (node.children[1].children.size() - 1) != (object_declarations.size() + function_declarations.size() + other_declarations.size());
-						int expected_progress = 0;
-						if (!do_work) for (auto& x : object_declarations) if (x != ++expected_progress) {
-							do_work = true;
-							break;
-						}
-						if (!do_work) for (auto& x : function_declarations) if (x != ++expected_progress) {
-							do_work = true;
-							break;
-						}
-						if (!do_work) for (auto& x : other_declarations) if (x != ++expected_progress) {
-							do_work = true;
-							break;
-						}
-
 						if (do_work) {
-							node.children[1].children = [&]() -> std::vector< AbstractSyntaxTreeNode > {
+							auto temp = [&]() -> std::vector< AbstractSyntaxTreeNode > {
 								std::vector< AbstractSyntaxTreeNode > out;
-								for (auto& x : object_declarations) out.push_back(node.children[1].children[x]);
-								for (auto& x : function_declarations) out.push_back(node.children[1].children[x]);
-								for (auto& x : other_declarations) out.push_back(node.children[1].children[x]);
+								for (auto& x : object_declarations) out.push_back(node.children[x]);
+								for (auto& x : function_declarations) out.push_back(node.children[x]);
+								for (auto& x : other_declarations) out.push_back(node.children[x]);
 								return out;
 							}();
+							node.children = temp;
 							return true;
 						}
 					}
@@ -10957,8 +11223,11 @@ namespace GL {
 				}
 			};
 
-			using Optimizer_Default = Optimizer<
-				optimizer::TryCatch,
+			using Optimizer_Reorg = Optimizer<
+				optimizer::PullOutNamespaceDeclarations,
+				optimizer::TryCatch
+			>;
+			using Optimizer_Normal = Optimizer<				
 				optimizer::NamespaceDeclarations,
 				optimizer::PostfixFold,
 				optimizer::PrefixFold,
@@ -10974,13 +11243,16 @@ namespace GL {
 				optimizer::Return,
 				optimizer::Dead_Code,
 				optimizer::ForLoopSignature,
-				optimizer::Block
-				// optimizer::Example
+				optimizer::Block,
+				optimizer::Switch
 			>;
 
 		public:
-			static AbstractSyntaxTreeNode optimize(AbstractSyntaxTreeNode p, GL::scope::impl::RootScope& analysisEngine = CurrentEngine()) {
-				return Optimizer_Default().optimize(p, analysisEngine);
+			static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, GL::scope::impl::RootScope& analysisEngine = CurrentEngine()) {
+				while (Optimizer_Reorg().optimize(p, analysisEngine)
+					|| Optimizer_Normal().optimize(p, analysisEngine)
+				) {};
+				return p;
 			};
 		}; // namespace optimizer
 
@@ -12098,7 +12370,7 @@ namespace GL {
 
 		private:
 			/// Helper function that collects ast_nodes from a starting position to the top of the stack into a new AST node
-			template<typename NodeType> AbstractSyntaxTreeNode& build_match(size_t t_match_start, GL::string t_text = "") {
+			template<typename NodeType, typename... Args> AbstractSyntaxTreeNode& build_match(size_t t_match_start, GL::string t_text = "", Args const&... arguments) {
 				bool is_deep = false;
 
 				Engine::Parse_Location filepos = [&]() -> Engine::Parse_Location {
@@ -12126,6 +12398,7 @@ namespace GL {
 					std::move(t_text)
 					, std::move(filepos)
 					, std::move(new_children)
+					, arguments...
 				));
 #else
 				m_match_stack.push_back(optimizer::optimize(NodeType(
@@ -13279,24 +13552,6 @@ namespace GL {
 				return true;
 			}
 
-			/// Reads the C-style `for` conditions from input
-			bool Parallel_For_Guards() {
-				if (!(Equation() && Eol())) {
-					if (!Eol()) {
-						return false;
-					}
-					else {
-						m_match_stack.push_back(Noop_Node("", {}, {}));
-					}
-				}
-
-				if (!(Equation())) {
-					m_match_stack.push_back(make_const("", m_position, true));
-				}
-
-				return true;
-			}
-
 			/// Reads the ranged `for` conditions from input
 			bool Range_Expression() {
 				// the first element will have already been captured by the For_Guards() call that preceeds it
@@ -13308,7 +13563,17 @@ namespace GL {
 				bool retval = false;
 				const auto prev_stack_top = m_match_stack.size();
 
-				if (Keyword("for")) {
+				bool is_parallel = false;
+				bool do_work = false;
+				if (Keyword("parallel_for")) {
+					is_parallel = true;
+					do_work = true;
+				}
+				else if (Keyword("for")) {
+					do_work = true;
+				}
+			
+				if (do_work) {
 					retval = true;
 
 					SkipWS(true);
@@ -13348,67 +13613,15 @@ namespace GL {
 						if (num_children != 4) {
 							throw except::eval_error("Incomplete 'for' expression", m_position);
 						}
-						build_match<For_Node>(prev_stack_top);
+						build_match<For_Node>(prev_stack_top, "", is_parallel);
 					}
 					else {
 						if (num_children != 3) {
 							throw except::eval_error("Incomplete ranged-for expression", m_position);
 						}
-						build_match<Ranged_For_Node>(prev_stack_top);
+						build_match<Ranged_For_Node>(prev_stack_top, "", is_parallel);
 					}
-				}
-				else if (Keyword("parallel_for")) {
-					// parallel_for (var x = START_VALUE ; END_VALUE) WORK_BLOCK; // this approach means every iteration will see it's own local "x"
-					// parallel_for (START_VALUE ; END_VALUE) WORK_BLOCK // this approach means every iteration will NOT see any "x" at all
-					// parallel_for (range_declaration : range_expression) loop_statement;
-					retval = true;
-
-					SkipWS(true);
-
-					if (!Char('(')) {
-						throw except::eval_error("Incomplete 'parallel_for' expression", m_position);
-					}
-
-					SkipWS(true);
-
-					bool classic_for = Parallel_For_Guards();
-					SkipWS(true);
-					if (classic_for) classic_for = classic_for && Char(')');
-					if (!classic_for) {
-						classic_for = Range_Expression();
-						SkipWS(true);
-						if (classic_for) classic_for = classic_for && Char(')');
-
-						if (!classic_for) {
-							throw except::eval_error("Incomplete 'parallel_for' expression", m_position);
-						}
-
-						classic_for = false;
-					}
-
-					SkipWS(true);
-
-					if (!Block()) {
-						if (!SingleStatement()) {
-							throw except::eval_error("Incomplete 'parallel_for' block", m_position);
-						}
-					}
-
-					const auto num_children = m_match_stack.size() - prev_stack_top;
-
-					if (classic_for) {
-						if (num_children != 3) {
-							throw except::eval_error("Incomplete 'parallel_for' expression", m_position);
-						}
-						build_match<Parallel_For_Node>(prev_stack_top);
-					}
-					else {
-						if (num_children != 3) {
-							throw except::eval_error("Incomplete ranged-parallel_for expression", m_position);
-						}
-						build_match<Parallel_Ranged_For_Node>(prev_stack_top);
-					}
-				}
+				}				
 
 				return retval;
 			}
@@ -14020,6 +14233,15 @@ namespace GL {
 			Parser(GL::scope::impl::RootScope& root) : analysis_engine(root) {};
 			~Parser() = default;
 
+			GL::string Preprocess(const GL::string& t_input) {
+				GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
+				if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(t_input)) {
+					preprocessor_result->GenerateExpandedCode(state);
+					return state.GetFinalScript();
+				}
+				return t_input;
+			};
+
 			// highest-level parse request, which starts a new scope from scratch and completes it. 
 			AbstractSyntaxTreeNode Parse(const GL::string& t_input) {
 				return parse(t_input);
@@ -14048,14 +14270,12 @@ namespace GL {
 									m_comment_stack.push_back(this_child);
 									this_child = Noop_Node("", {}, {});
 								}
-								this_child = optimizer::optimize(this_child, this->analysis_engine);
 								return false;
 							});
 							if (x.identifier == Engine::AST_Node_Type::Comment) {
 								m_comment_stack.push_back(x);
 								x = Noop_Node("", {}, {});
 							}
-							x = optimizer::optimize(x, this->analysis_engine);
 						}
 
 						// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
@@ -14065,7 +14285,7 @@ namespace GL {
 							i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
 						}
 						build_match<File_Node>(0);
-						m_match_stack[0] = optimizer::optimize(m_match_stack[0], this->analysis_engine);
+						m_match_stack[0] = optimizer::optimize_all(m_match_stack[0], this->analysis_engine);
 					}
 				}
 				else {
@@ -14320,15 +14540,19 @@ int main() {
 			print(parser.Parse(R"(
 				switch (1){
 				case 0 {
+					return 0;
 					break;
 				}
 				case 1 {
+					return 1;
 					break;
 				}
 				case 2 {
+					return 2;
 					break;
 				}
 				default {
+					return -1;
 					break;
 				}
 				}
@@ -14336,13 +14560,13 @@ int main() {
 			print(parser.Parse(R"(
 				switch (1) {
 				case 0: 
-					break;				
+					return 0;		
 				case 1: 
-					break;				
+					return 1;			
 				case 2: 
-					break;				
+					return 2;	
 				default: 
-					break;				
+					return -1;		
 				}
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
@@ -14361,6 +14585,26 @@ int main() {
 				default: 
 					return x;				
 				};
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int x;
+				switch (1) {
+				case 0: 
+					x += 0;
+					// Comment 0
+				case 1: 
+					x += 1;				
+					// Comment 1
+				case 2: {
+					x += 2;
+					break;
+					// Comment 2
+				}	
+				default: 
+					x += -1;
+					// Comment Default
+				}
+				return x;
 			)").to_string("", root) + "\n\n");
 		}
 		// units and literals
@@ -14534,6 +14778,25 @@ int main() {
 		// Namespaces
 		if (1) {
 			print(parser.Parse(R"(
+				if (x){
+					return 1; // comment
+					// namespace description
+					namespace TEST_IF {
+						// namespace description
+						namespace IMPL{
+							void Function(x) { 
+								return 100.0f + x; // Comment 
+								namespace FunctionImpl{}
+							}
+						}
+					};	
+				}else{
+					namespace TEST_ELSE {};
+				}
+				namespace TEST {};
+				namespace TEST2 {};
+			)").to_string("", root) + "\n\n");			
+			print(parser.Parse(R"(
 				namespace std {}
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
@@ -14624,7 +14887,19 @@ int main() {
 			)").to_string("", root) + "\n\n");
 
 		}
-
+		// parallel for
+		if (1) {
+			print(parser.Parse(R"(
+				parallel_for (int i = 0; i < 10; ++i){
+					return 10;
+				}
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				parallel_for (i : [0, 1, 2, 3, 4]){
+					return 10;
+				}
+			)").to_string("", root) + "\n\n");
+		}
 		// Combined Examples
 		if (1) {
 			print(parser.Parse(R"(
@@ -14635,21 +14910,84 @@ int main() {
 				auto d = v0 * t + t.pow(2) * a * 0.5;
 				auto x = x0 + d;
 			)").to_string("", root) + "\n\n");
-		}
-		if (1) {
-			print(parser.Parse(R"(
-				if (x){
-					return 1;
-					namespace TEST_IF {};	
-				}else{
-					namespace TEST_ELSE {};
+			print(parser.Parse(R"(				
+				for (int i = 0; i < 10; ++i){
+					namespace NS {
+						int Increment(int& x){ return ++x; }
+					}
+					return NS::Increment(i);
 				}
-				namespace TEST {};
-				namespace TEST2 {};
 			)").to_string("", root) + "\n\n");
 		}
+
+		// Pre-compilation 
+		if (1) {
+			print(/*parser.Parse(*/parser.Preprocess(R"(
+#define CONCAT(a, b) a##b
+#define defer(x) auto CONCAT(defer_, x)(){ return x; }
+
+CONCAT(defer_, __DATE__);
+defer(100);	
+			)")/*).to_string("", root) + "\n\n"*/);
+
+			print(/*parser.Parse(*/parser.Preprocess(R"(
+#define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
+
+#define DerivedUnitList \
+    DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
+    DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0))
+
+#define DerivedUnitType(type, category, abbreviation, Ratio) \
+	class type final : public value { \
+    private: \
+        static package unique_pkg(); \
+	public: \
+		constexpr static double conversion_ratio{ Ratio }; \
+        type() : value(unique_pkg()) {}; \
+        type(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; }; \
+        type(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); }; \
+        type(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); }; \
+        ~type() = default; \
 	}
 
+#define DerivedUnitTypeWithMetricPrefix(type, prefix) \
+    class prefix##type final : public value { \
+    private: \
+        static package unique_pkg(); \
+	public: \
+		constexpr static double conversion_ratio{ type::conversion_ratio * CalculateMetricPrefixV(prefix) }; \
+        prefix##type() : value(unique_pkg()) {}; \
+        prefix##type(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; }; \
+        prefix##type(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); }; \
+        prefix##type(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); }; \
+        ~prefix##type() = default; \
+	}
+
+#define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
+    DerivedUnitType(type, category, abbreviation, ratio); \
+	DerivedUnitTypeWithMetricPrefix(type, femto); \
+	DerivedUnitTypeWithMetricPrefix(type, pico); \
+	DerivedUnitTypeWithMetricPrefix(type, nano); \
+	DerivedUnitTypeWithMetricPrefix(type, micro); \
+	DerivedUnitTypeWithMetricPrefix(type, milli); \
+	DerivedUnitTypeWithMetricPrefix(type, centi); \
+	DerivedUnitTypeWithMetricPrefix(type, deci); \
+	DerivedUnitTypeWithMetricPrefix(type, deca); \
+	DerivedUnitTypeWithMetricPrefix(type, hecto); \
+	DerivedUnitTypeWithMetricPrefix(type, kilo); \
+	DerivedUnitTypeWithMetricPrefix(type, mega); \
+	DerivedUnitTypeWithMetricPrefix(type, giga); \
+	DerivedUnitTypeWithMetricPrefix(type, tera); \
+	DerivedUnitTypeWithMetricPrefix(type, peta)
+
+    DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
+
+			)")/*).to_string("", root) + "\n\n"*/);
+
+
+
+		}
+	}
 
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
