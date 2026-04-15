@@ -9490,6 +9490,7 @@ namespace GL {
 					}
 
 					// Reduction of unecessary binary operations
+#if 0
 					if (((node.identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft))
 						&& node.children.size() == 1
 						&& node.text == "*"
@@ -9540,6 +9541,7 @@ namespace GL {
 							}
 						}
 					}
+#endif
 					if (((node.identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft))
 						&& node.children.size() == 1
 						&& node.text == "+"
@@ -10866,6 +10868,40 @@ namespace GL {
 			// Re-order namespace or class declarations to make the most sense, prefering objects over functions. 
 			struct NamespaceDeclarations {
 				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Block
+						|| node.identifier == Engine::AST_Node_Type::Scopeless_Block
+						|| node.identifier == Engine::AST_Node_Type::File
+						) {
+						int p;
+						int i;
+						for (i = 0, p = -1; i < node.children.size(); ++i) {
+							if (
+								node.children[i].identifier == Engine::AST_Node_Type::Namespace
+								|| node.children[i].identifier == Engine::AST_Node_Type::Class
+								|| node.children[i].identifier == Engine::AST_Node_Type::Comment
+							) {
+								continue;
+							}
+							else {
+								p = i;
+								break;
+							}
+						}	
+						if (p >= 0) {
+							for (i = p + 1; i < node.children.size(); ++i) {
+								if (
+									node.children[i].identifier == Engine::AST_Node_Type::Namespace
+									|| node.children[i].identifier == Engine::AST_Node_Type::Class
+								) {
+									AbstractSyntaxTreeNode copy = node.children[i];
+									node.children.erase(node.children.begin() + i);
+									node.children.insert(node.children.begin() + p, copy);
+									return true;
+								}
+							}
+						}
+					}
+
 					if (((node.identifier == Engine::AST_Node_Type::Namespace) || (node.identifier == Engine::AST_Node_Type::Class))
 						&& (node.children.size() == 2)
 						&& (node.children[1].identifier == Engine::AST_Node_Type::DeclarationBlock)
@@ -14589,6 +14625,29 @@ int main() {
 
 		}
 
+		// Combined Examples
+		if (1) {
+			print(parser.Parse(R"(
+				auto x0 = 100.0_ft;
+				auto v0 = 10_ft / 1_s;
+				auto a0 = v0 / 1_s;
+				auto t = 5_s;
+				auto d = v0 * t + t.pow(2) * a * 0.5;
+				auto x = x0 + d;
+			)").to_string("", root) + "\n\n");
+		}
+		if (1) {
+			print(parser.Parse(R"(
+				if (x){
+					return 1;
+					namespace TEST_IF {};	
+				}else{
+					namespace TEST_ELSE {};
+				}
+				namespace TEST {};
+				namespace TEST2 {};
+			)").to_string("", root) + "\n\n");
+		}
 	}
 
 
