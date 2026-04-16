@@ -2727,14 +2727,18 @@ namespace GL {
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();                        
-                        return impl[rhs] | GL::type::Const | GL::type::Reference;
+                        if (rhs < impl.size()) 
+                            return impl[rhs] | GL::type::Const | GL::type::Reference;
+                        throw std::runtime_error("Index was out of bounds for the array");
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference));
                 BaseClass.add_function(GL::make_callable("[]", [&BaseClass](GL::any::fast_any lhs, size_t const& rhs) -> GL::any::fast_any {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
-                        return impl[rhs] | GL::type::Reference;
+                        if (rhs < impl.size())
+                            return impl[rhs] | GL::type::Reference;
+                        throw std::runtime_error("Index was out of bounds for the array");
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::type_of<size_t>() | GL::type::Const | GL::type::Reference } }, GL::is_template::type<0>("T0") | GL::type::Reference));

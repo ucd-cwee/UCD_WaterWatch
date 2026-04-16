@@ -572,7 +572,7 @@ namespace GL {
         };
 
         // f should be of the form: [](GL::string const& this_split, bool is_final) -> bool { /* return bool indicates a need to exit the search */ }
-        template <typename Func> bool with_split_nested(GL::string const& delim, GL::string const& nested_start, GL::string const& nested_end, Func const& f) {
+        template <typename Func> bool with_split_nested(GL::string const& delim, GL::string const& nested_start, GL::string const& nested_end, Func const& f) const {
             int search_pos = 0;
             int pos = 0;
             int len = 0;

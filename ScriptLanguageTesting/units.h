@@ -785,18 +785,45 @@ namespace GL {
             return *this;
         };
         friend value operator+(value const& lhs, value const& rhs) {
-            value LHS(lhs);
-            ST_add_or_sub([](float& lhs, float const& rhs) {
-                lhs += rhs;
-            }, LHS, rhs);
-            return LHS;
+            if (value::unary_arithmetic_okay(lhs.packed, rhs.packed)) {
+                value LHS(lhs);
+                ST_add_or_sub([](float& lhs, float const& rhs) {
+                    lhs += rhs;
+                }, LHS, rhs);
+                return LHS;
+            }
+            else if (value::unary_arithmetic_okay(rhs.packed, lhs.packed)) {
+                value RHS(rhs);
+                ST_add_or_sub([](float& lhs, float const& rhs) {
+                    lhs += rhs;
+                }, RHS, lhs);
+                return RHS;
+            }
+            else {
+                value::confirm_unary_arithmetic(lhs.packed, rhs.packed);
+                throw std::runtime_error("Critical error");
+            }
         };
         friend value operator-(value const& lhs, value const& rhs) {
-            value LHS(lhs);
-            ST_add_or_sub([](float& lhs, float const& rhs) {
-                lhs -= rhs;
-            }, LHS, rhs);
-            return LHS;
+            if (value::unary_arithmetic_okay(lhs.packed, rhs.packed)) {
+                value LHS(lhs);
+                ST_add_or_sub([](float& lhs, float const& rhs) {
+                    lhs -= rhs;
+                }, LHS, rhs);
+                return LHS;
+            }
+            else if (value::unary_arithmetic_okay(rhs.packed, lhs.packed)) {
+                value LHS(rhs);
+                LHS = lhs;
+                ST_add_or_sub([](float& lhs, float const& rhs) {
+                    lhs -= rhs;
+                }, LHS, rhs);
+                return LHS;
+            }
+            else {
+                value::confirm_unary_arithmetic(lhs.packed, rhs.packed);
+                throw std::runtime_error("Critical error");
+            }
         };
         friend value operator*(value const& lhs, value const& rhs) {
             return value(compound_units< true >(lhs.load(), rhs.load()));

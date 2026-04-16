@@ -155,7 +155,7 @@ namespace GL {
 		BETTER_ENUM(AST_Node_Type, uint32_t,
 			File, Noop, Comment,
 			Id, Reference, Var_Decl, Assign_Decl, Constant,
-			Fun_Call, Unused_Return_Fun_Call,
+			Fun_Call, Unused_Return_Fun_Call, Type_Cast,
 			Arg_List, Arg,
 			Equation,
 			Array_Call, Dot_Access,
@@ -774,20 +774,59 @@ namespace GL {
 					};
 
 					static std::vector<word_t> GetAllWords(GL::string const& text) {
-						std::vector<word_t> out; {
-							static std::regex pattern{ R"("[^"]*"|\/\/[^\n]*\n|\/\*[^\*\/]*\*\/|[A-z0-9_#]+)" };
-							size_t position, length;
-							for (auto i = std::regex_iterator(text.begin(), text.end(), pattern);
-								i != decltype(i)();
-								++i)
-							{
-								const auto& m = *i;
-								position = ((text.length() - m.suffix().length()) - m.length());
-								length = m.length();
-								out.push_back(word_t{ text.substr(position, length), position });
+						std::vector<word_t> out;
+						word_t this_word;
+						size_t current_pos = 0;
+						this_word.pos_start = current_pos;
+						bool got_anything = false;
+						for (const char& c : text) {
+							++current_pos;
+							// A-z0-9_#
+							if ((c >= 'A') && (c <= 'z')) {
+								got_anything = true;
+							}
+							else if ((c >= '0') && (c <= '9')) {
+								got_anything = true;
+							}
+							else if ((c == '#') || (c == '_')) {
+								got_anything = true;
+							}							
+							else {
+								if (got_anything) {
+									this_word.word = text.substr(this_word.pos_start, ((current_pos-1) - this_word.pos_start));
+									out.push_back(this_word);
+								}
+								// skip
+								this_word.pos_start = current_pos;
+								got_anything = false;
 							}
 						}
+						if (got_anything && (this_word.pos_start < text.length())) {
+							this_word.word = text.substr(this_word.pos_start, text.length() - this_word.pos_start);
+							out.push_back(this_word);
+						}
 						return out;
+
+
+
+
+
+
+
+						//std::vector<word_t> out; {
+						//	static std::regex pattern{ R"("[^"]*"|\/\/[^\n]*\n|\/\*[^\*\/]*\*\/|[A-z0-9_#]+)" };
+						//	size_t position, length;
+						//	for (auto i = std::regex_iterator(text.begin(), text.end(), pattern);
+						//		i != decltype(i)();
+						//		++i)
+						//	{
+						//		const auto& m = *i;
+						//		position = ((text.length() - m.suffix().length()) - m.length());
+						//		length = m.length();
+						//		out.push_back(word_t{ text.substr(position, length), position });
+						//	}
+						//}
+						//return out;
 					};
 					static bool TryGetFunctionParams(GL::string const& text, std::vector<GL::string>& splits) {
 						GL::string to_split = text.remove_leading_and_trailing(' ');
@@ -8392,6 +8431,7 @@ namespace GL {
 				return out;
 			};
 			// [](AbstractSyntaxTreeNode& this_child) -> bool {}
+			// Will continue the search until all nodes are searched or until the function returns true. 
 			template <typename F> bool for_each_child(F const& Func) {
 				// for (int i = 0; i < (int)this->children.size(); ++i) {
 				for (int i = ((int)this->children.size()) - 1; i >= 0; --i) {
@@ -8405,7 +8445,21 @@ namespace GL {
 				}			
 			    return false;
 			};
-			
+			// [](AbstractSyntaxTreeNode& this_child) -> bool {}
+			// [](AbstractSyntaxTreeNode& this_child) -> void {}
+			// [](AbstractSyntaxTreeNode& this_child) -> void {}
+			// Will continue the search until all nodes are searched. If the function returns false, this indicates that we should not go deeper into that node.
+			template <typename F, typename G, typename H> void for_each_child(F const& Func, G const& Push, H const& Pop) {
+				Push(*this);
+				for (int i = 0; i < ((int)this->children.size()); ++i) {
+					auto& x = this->children[i];
+					if (Func(x)) {
+						x.for_each_child(Func, Push, Pop);
+					}					
+				}
+				Pop(*this);
+			};
+
 			// returns true if a return call is guarranteed or was found.
 			bool guarranteed_return() const {
 				if (this->identifier == Engine::AST_Node_Type::Return) return true;
@@ -8574,6 +8628,12 @@ namespace GL {
 		public:
 			Arg_List_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Arg_List, t_ast_node_text, t_loc, t_children) {};
 		}; 		
+		class Type_Cast_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Type_Cast_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Type_Cast, t_ast_node_text, t_loc, t_children) {
+				
+			};
+		};
 		struct FunctionCallInformation {
 			GL::string function_name;
 			bool use_return;
@@ -8614,20 +8674,27 @@ namespace GL {
 				ASSERT(this->children.size() == 2);
 			};
 		};
-		/* auto x; */ class Var_Decl_Node final : public AbstractSyntaxTreeNode {
-		public:
-			Var_Decl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Var_Decl, t_ast_node_text, t_loc, t_children) {};
+		struct ObjectDeclarationInformation {
+			bool is_constexpr;
 		};
-		/* double x; */ class Assign_Retroactively_Node final : public AbstractSyntaxTreeNode {
+		/* [[constexpr]] auto x; */ class Var_Decl_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Var_Decl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Var_Decl, t_ast_node_text, t_loc, t_children) {
+				ObjectDeclarationInformation info;
+				info.is_constexpr = false;
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
+		};
+		/* [[constexpr]] double x; */ class Assign_Retroactively_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Assign_Retroactively_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Assign_Retroactively, t_ast_node_text, t_loc, t_children) {
 				ASSERT(this->children.size() >= 1);
 				auto idname = this->children[1].get_text(); // e.g. x, y, z
+
+				ObjectDeclarationInformation info;
+				info.is_constexpr = false;
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
-		};
-		/* auto x = double(); */ class Assign_Decl_Node final : public AbstractSyntaxTreeNode {
-		public:
-			Assign_Decl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Assign_Decl, t_ast_node_text, t_loc, t_children) {};
 		};
 		/* ++x */ class Prefix_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8635,11 +8702,19 @@ namespace GL {
 				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
 			};
 		};
+		struct PostfixInformation {
+			bool is_unit;
+			GL::string unit_name;
+			GL::Engine::Operators::Opers oper;
+		};
 		/* x++ */ class Postfix_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Postfix_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Postfix, t_ast_node_text, t_loc, t_children) {
-				// To-Do, This needs to determine the operator OR the runtime type of the unit, e.g. ft, m, gpm, MG, etc. 
-				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+				PostfixInformation info;
+				info.is_unit = false;
+				info.unit_name = GL::string::empty_string();
+				info.oper = (GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str());
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};		
 		/* if (Scopeless_Block_AST_Node) Block_AST_Node else Block_AST_Node */ class If_Node final : public AbstractSyntaxTreeNode {
@@ -8922,8 +8997,6 @@ namespace GL {
 			static bool contains_var_decl_in_scope(const AbstractSyntaxTreeNode& node) noexcept {
 				if (
 					node.identifier == Engine::AST_Node_Type::Var_Decl
-					|| node.identifier == Engine::AST_Node_Type::Assign_Decl
-					|| node.identifier == Engine::AST_Node_Type::Reference
 					|| node.identifier == Engine::AST_Node_Type::Assign_Retroactively
 					|| node.identifier == Engine::AST_Node_Type::Def
 					|| node.identifier == Engine::AST_Node_Type::Class
@@ -8982,33 +9055,54 @@ namespace GL {
 				bool optimize(AbstractSyntaxTreeNode& node) {
 					if (node.identifier == Engine::AST_Node_Type::Equation
 						&& node.children.size() == 2
-						&& ((node.children[0].identifier == Engine::AST_Node_Type::Reference) || (node.children[0].identifier == Engine::AST_Node_Type::Var_Decl))
+						&& node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
 						&& node.children[0].children.size() == 1
-						// && node->children[0]->children[0]->identifier == AST_Node_Type::Id
-						// && node->children[1]->identifier == AST_Node_Type::Fun_Call
-						&& ((node.text == "=") || (node.text == ":="))
-					) {
-						node = Assign_Retroactively_Node(
-							node.text, (Engine::Parse_Location)node.location, {
-								node.children[1],
-								node.children[0]
-							}
-						);
+						&& ((node.text == "=") || (node.text == ":=") || (node.text == "?="))
+						) {
+						std::vector<AbstractSyntaxTreeNode> new_children = {
+							node.children[1],
+							node.children[0]
+						};
+						node = node.children[0];
+						node.identifier = Engine::AST_Node_Type::Assign_Retroactively;
+						node.children = new_children;
+						node.children[1].tag = GL::any::fast_any::instance(ObjectDeclarationInformation{ 
+							false 
+						});
+
+
+						//node = Assign_Retroactively_Node(
+						//	node.text, (Engine::Parse_Location)node.location, {
+						//		node.children[1],
+						//		node.children[0]
+						//	}
+						//);
+
 						return true;
 					}
 
 					if (node.identifier == Engine::AST_Node_Type::Equation
 						&& node.children.size() == 2
 						&& node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
-						&& ((node.text == "=") || (node.text == ":="))
-						) {
-						node = Assign_Retroactively_Node(
-							node.text, (Engine::Parse_Location)node.location, {
-								node.children[0].children[0],
-								node.children[0].children[1],
-								node.children[1]
-							}
-						);
+						&& node.children[0].children.size() == 2
+						&& ((node.text == "=") || (node.text == ":=") || (node.text == "?="))
+					) {
+						std::vector<AbstractSyntaxTreeNode> new_children = {
+							node.children[0].children[0],
+							node.children[0].children[1],
+							node.children[1]
+						};						
+						node = node.children[0];
+						node.identifier = Engine::AST_Node_Type::Assign_Retroactively;
+						node.children = new_children;
+
+						//node = Assign_Retroactively_Node(
+						//	node.text, (Engine::Parse_Location)node.location, {
+						//		node.children[0].children[0],
+						//		node.children[0].children[1],
+						//		node.children[1]
+						//	}
+						//);
 						return true;
 					}
 					return false;
@@ -9564,6 +9658,7 @@ namespace GL {
 							}
 						}
 					}
+#if 0
 					if (node.identifier == Engine::AST_Node_Type::Postfix
 						&& node.children.size() == 1
 						&& !((node.text == "++") || (node.text == "--"))
@@ -9579,7 +9674,7 @@ namespace GL {
 							}
 						}
 					}
-
+#endif
 					if ((node.identifier == Engine::AST_Node_Type::Fun_Call)
 						&& (node.children.size() == 2)
 						&& (node.children[0].identifier == Engine::AST_Node_Type::Id)
@@ -9593,12 +9688,9 @@ namespace GL {
 
 						if (auto iter = GL::value::abbreviations_to_type().find(abbreviation.right_of("_")); iter != GL::value::abbreviations_to_type().end()) {
 							if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
-								node = Fun_Call_Node("", {}, {
-									Id_Node(BC->this_m.scope_name, node.location, {}),
-									Arg_List_Node("", node.location, {
-										node.children[0]
-									})
-								});
+								node = Postfix_Node(abbreviation, node.location, { node.children[0] });
+								node.tag.cast<PostfixInformation>().is_unit = true;
+								node.tag.cast<PostfixInformation>().unit_name = BC->this_m.scope_name;
 								return true;
 							}
 						}
@@ -9619,6 +9711,32 @@ namespace GL {
 					) {
 						auto& lhs = node.children[0].constant;
 						auto& rhs = node.children[1].constant;
+						if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
+							node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
+							return true;
+						}
+						return false;
+					}
+
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+					) {
+						auto& lhs = node.children[0].constant;
+						auto& rhs = node.constant;
+						if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
+							node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
+							return true;
+						}
+						return false;
+					}
+
+					if (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft
+						&& node.children.size() == 1
+						&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+					) {
+						auto& lhs = node.constant; 
+						auto& rhs = node.children[0].constant;
 						if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
 							node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 							return true;
@@ -10860,6 +10978,7 @@ namespace GL {
 							}
 						}
 					}
+
 					return false;
 				}
 			};
@@ -11150,32 +11269,7 @@ namespace GL {
 							}
 						}
 					}
-
-					// Move Comments to the very top of the pile
-					//if (node.identifier == Engine::AST_Node_Type::File) {
-					//	int p;
-					//	int i;
-					//	for (i = 0, p = -1; i < node.children.size(); ++i) {
-					//		if (node.children[i].identifier == Engine::AST_Node_Type::Comment) {
-					//			continue;
-					//		}
-					//		else {
-					//			p = i;
-					//			break;
-					//		}
-					//	}
-					//	if (p >= 0) {
-					//		for (i = p + 2; i < node.children.size(); ++i) {
-					//			if (node.children[i].identifier == Engine::AST_Node_Type::Comment) {
-					//				AbstractSyntaxTreeNode copy = node.children[i];
-					//				node.children.erase(node.children.begin() + i);
-					//				node.children.insert(node.children.begin() + p, copy);
-					//				return true;
-					//			}
-					//		}
-					//	}
-					//}
-
+							
 					// Re - order Class / Namespace DeclarationBlocks to declare objects, then functions, then namespaces.
 					if (node.identifier == Engine::AST_Node_Type::DeclarationBlock
 						&& node.children.size() > 1
@@ -11191,7 +11285,6 @@ namespace GL {
 							auto& this_node = node.children[i];
 							if (this_node.identifier == Engine::AST_Node_Type::Assign_Retroactively
 								|| this_node.identifier == Engine::AST_Node_Type::Var_Decl
-								|| this_node.identifier == Engine::AST_Node_Type::Assign_Decl
 							) {
 								if (started_Functions || started_Other) do_work = true;
 								object_declarations.push_back(i);
@@ -11223,10 +11316,340 @@ namespace GL {
 				}
 			};
 
+			// move up the class / namespace declarations outside of inner scopes 
+			struct ConstexprObject {
+				static bool try_find_constexpr(std::deque<std::map<GL::string, GL::any::fast_any>>& constexpr_results, GL::string const& to_find, GL::any::fast_any& out) {
+					for (auto iter = constexpr_results.rbegin(), e = constexpr_results.rend(); iter != e; ++iter) {
+						auto f = iter->find(to_find);
+						auto ee = iter->end();
+						if (f != ee) {
+							if (f->second) {
+								out = f->second;
+								return true;
+							}
+							else {
+								return false;
+							}
+						}
+					}
+					return false;
+				};
+				bool optimize(AbstractSyntaxTreeNode& node) {
+					if (node.identifier == Engine::AST_Node_Type::Var_Decl) {
+						// auto x;						
+						if (node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
+							// this basic invocation cannot be constexpr - it makes no sense.  
+							// return false;
+							throw except::eval_error("A non-typed 'auto' declaration cannot be constexpr without a clearly associated type or constant value assigned to it.", node.location.start);
+						}
+					}
+					if (node.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
+						if (node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
+							if (node.constant) return false; // already performed -- nothing to be done.
+
+							if (node.children.size() == 2
+								&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+							) {
+								// this is a perfect example of a constexpr object.
+								node.constant = node.children[0].constant;
+								return true;
+							}
+							if (node.children.size() == 2
+								&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
+								&& node.children[0].children.size() == 2
+								&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[0].children[0].text != "var"
+								&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
+								&& node.children[0].children[1].children.size() == 0
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+							) {
+								try {
+									auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
+									node.constant = initial_value | GL::type::Const;
+									node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+									return true;
+								} 
+								catch (...) {
+									// failure to do constexpr folding.
+									node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+									return true;
+								}
+							}
+							if (node.children.size() == 3
+								&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
+								&& node.children[0].children.size() == 2
+								&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[0].children[0].text != "var"
+								&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
+								&& node.children[0].children[1].children.size() == 0
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[2].identifier == Engine::AST_Node_Type::Constant
+							) {
+								try {
+									auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
+									CurrentEngine().call("=", { initial_value, node.children[2].constant });
+									node.constant = initial_value | GL::type::Const;
+									node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+									node.children.erase(node.children.begin()+2, node.children.end());
+									return true;
+								}
+								catch (...) {
+									// failure to do constexpr folding.
+									node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+									return true;
+								}
+							}
+							if (node.children.size() == 3
+								&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
+								&& node.children[0].children.size() == 2
+								&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[0].children[0].text != "var"
+								&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
+								&& node.children[0].children[1].children.size() == 0
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[2].identifier == Engine::AST_Node_Type::Fun_Call
+								&& node.children[2].children.size() == 2
+								&& node.children[2].children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
+								&& node.children[2].children[1].children.size() == 0
+							) {
+								try {
+									auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
+									auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
+									CurrentEngine().call("=", { initial_value, new_value });
+									node.constant = initial_value | GL::type::Const;
+									node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+									node.children.erase(node.children.begin() + 2, node.children.end());
+									return true;
+								}
+								catch (...) {
+									// failure to do constexpr folding.
+									node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+									return true;
+								}
+							}
+							// failure to do any constexpr folding.
+							// node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+							return false;
+						}
+					}
+
+					// perform replacements as appropriate with constexpr values. 					
+					if (node.identifier != Engine::AST_Node_Type::Assign_Retroactively) {
+						std::deque<std::map<GL::string, GL::any::fast_any>> constexpr_results;
+						constexpr_results.push_back({});
+						bool made_update = false;
+						node.for_each_child(
+							// called for each child in each layer, depth-first.
+							[&](AbstractSyntaxTreeNode& this_child) -> bool {
+								// Early exit when we do not want to have constexpr values to bleed deeper into the tree
+								if (this_child.identifier == Engine::AST_Node_Type::DeclarationBlock
+									|| this_child.identifier == Engine::AST_Node_Type::FunctionDecl 
+									|| this_child.identifier == Engine::AST_Node_Type::JustInTimeCompilation
+									|| this_child.identifier == Engine::AST_Node_Type::Var_Decl
+									|| this_child.identifier == Engine::AST_Node_Type::Constant
+								) {
+									// do not explore any deeper into these nodes
+									return false;
+								}
+								
+								// capture the constexpr value for the current block
+								if (this_child.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
+									if (this_child.constant
+										&& this_child.children.size() >= 2
+										&& this_child.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+										&& this_child.children[1].children.size() >= 1
+										&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+									) {
+										constexpr_results.back()[this_child.children[1].children[0].text] = this_child.constant;										
+										return true;
+									}
+									if (!this_child.constant
+										&& this_child.children.size() >= 2
+										&& this_child.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+										&& this_child.children[1].children.size() >= 1
+										&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+									) {
+										constexpr_results.back()[this_child.children[1].children[0].text] = {}; // nullptr
+										return true;
+									}
+								}
+
+								// Evaluate the places that constexpr should be allowed:
+								if (this_child.identifier == Engine::AST_Node_Type::Binary
+									&& this_child.children.size() == 2
+								) {
+									for (auto& child : this_child.children) {
+										if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
+												child = Constant_Node(child.text, child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}									
+									}
+								}
+								if (((this_child.identifier == Engine::AST_Node_Type::BinaryFoldLeft) || (this_child.identifier == Engine::AST_Node_Type::BinaryFoldRight))
+									&& this_child.children.size() == 1
+								) {
+									for (auto& child : this_child.children) {
+										if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
+												child = Constant_Node(child.text, child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+								}
+
+								if (this_child.identifier == Engine::AST_Node_Type::Inline_Array
+									&& this_child.children.size() == 1
+									&& this_child.children[0].identifier == Engine::AST_Node_Type::Arg_List
+								) {
+									for (auto& child : this_child.children[0].children) {
+										if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
+												child = Constant_Node(child.text, child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+								}
+
+								// constexprMap[constexprIndex]
+								if (this_child.identifier == Engine::AST_Node_Type::Array_Call
+									&& this_child.children.size() == 2
+									&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									if (GL::any::fast_any constexprMapOrArray; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprMapOrArray)) {
+										if (this_child.children[1].identifier == Engine::AST_Node_Type::Id) {
+											if (GL::any::fast_any Index; try_find_constexpr(constexpr_results, this_child.children[1].text, Index)) {
+												if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const, Index | GL::type::Const }, temp)) {
+													this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+													made_update = true;
+													return true;
+												}
+											}
+										}
+										else if (this_child.children[1].identifier == Engine::AST_Node_Type::Constant) {
+											if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const, this_child.children[1].constant | GL::type::Const }, temp)) {
+												this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+								}
+
+								if (this_child.identifier == Engine::AST_Node_Type::If
+									|| this_child.identifier == Engine::AST_Node_Type::For
+									|| this_child.identifier == Engine::AST_Node_Type::While
+									|| this_child.identifier == Engine::AST_Node_Type::Ranged_For
+									|| this_child.identifier == Engine::AST_Node_Type::Case
+									|| this_child.identifier == Engine::AST_Node_Type::Switch
+									|| this_child.identifier == Engine::AST_Node_Type::Map_Pair
+								) {
+									for (auto& child : this_child.children) {
+										if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
+												child = Constant_Node(child.text, child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+								}
+
+								if (this_child.identifier == Engine::AST_Node_Type::Fun_Call
+									&& this_child.children.size() == 2
+									&& this_child.children[1].identifier == Engine::AST_Node_Type::Arg_List
+								) {
+									for (auto& child : this_child.children[1].children) {
+										if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
+												child = Constant_Node(child.text, child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+								}
+
+								if (this_child.identifier == Engine::AST_Node_Type::Postfix
+									&& this_child.children.size() == 1
+									&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									if (this_child.tag.cast<PostfixInformation>().is_unit) {
+										if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprObj)) {
+											if (GL::any::fast_any temp; AttemptCalculation(this_child.tag.cast<PostfixInformation>().unit_name, { constexprObj | GL::type::Const }, temp)) {
+												this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+									else {
+										if ((this_child.text == "++") || (this_child.text == "--")) {
+											if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.children[0].text, temp)) {
+												throw except::eval_error("Calling postfix increment or decrement operations on constexpr objects is not supported.", this_child.location.start);
+											}
+										}
+									}
+								}
+
+
+
+
+
+
+								//if (this_child.identifier == Engine::AST_Node_Type::Id) {
+								//	if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.text, temp)) {
+								//		this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+								//		made_update = true;
+								//		return true;
+								//	}
+								//}
+
+
+
+
+
+
+								return true;
+							}, 
+							// Pushed on the start of every new "layer"
+							[&](AbstractSyntaxTreeNode& this_child) -> void {								
+								if (this_child.identifier == Engine::AST_Node_Type::File
+									|| this_child.identifier == Engine::AST_Node_Type::Block
+								) {
+									constexpr_results.push_back({});
+								}								
+							}, 
+							// Popped on the end of every "layer"
+							[&](AbstractSyntaxTreeNode& this_child) -> void {								
+								if (this_child.identifier == Engine::AST_Node_Type::File
+									|| this_child.identifier == Engine::AST_Node_Type::Block
+								) {
+									constexpr_results.pop_back();
+								}
+							}
+						);
+						return made_update;
+					}
+
+					return false;
+				};
+			};
+			// re-rorders the tree before other optimizations take place.
 			using Optimizer_Reorg = Optimizer<
 				optimizer::PullOutNamespaceDeclarations,
-				optimizer::TryCatch
+				optimizer::TryCatch,
+				optimizer::VarDeclEquation_To_RetroactiveAssignment
 			>;
+			// reduce the tree and remove dead code
 			using Optimizer_Normal = Optimizer<				
 				optimizer::NamespaceDeclarations,
 				optimizer::PostfixFold,
@@ -11235,10 +11658,11 @@ namespace GL {
 				optimizer::PartialBinaryFold,
 				optimizer::Unused_Fun_Return,
 				optimizer::ArgListFileConstant,
-				optimizer::VarDeclEquation_To_RetroactiveAssignment,
+				// optimizer::VarDeclEquation_To_RetroactiveAssignment,
 				optimizer::ToStringFunctionCallWithConstant,
 				optimizer::ConstArray,
 				optimizer::ConstMap,
+				optimizer::ConstexprObject,
 				optimizer::If,
 				optimizer::Return,
 				optimizer::Dead_Code,
@@ -11246,11 +11670,33 @@ namespace GL {
 				optimizer::Block,
 				optimizer::Switch
 			>;
+			//// Attempt to evaluate constant expressions
+			//using Optimizer_Constexpr = Optimizer<
+			//	optimizer::NamespaceDeclarations,
+			//	optimizer::PostfixFold,
+			//	optimizer::PrefixFold,
+			//	optimizer::BinaryFold,
+			//	optimizer::PartialBinaryFold,
+			//	optimizer::Unused_Fun_Return,
+			//	optimizer::ArgListFileConstant,
+			//	optimizer::VarDeclEquation_To_RetroactiveAssignment,
+			//	optimizer::ToStringFunctionCallWithConstant,
+			//	optimizer::ConstArray,
+			//	optimizer::ConstMap,
+			//	optimizer::ConstexprObject,
+			//	optimizer::If,
+			//	optimizer::Return,
+			//	optimizer::Dead_Code,
+			//	optimizer::ForLoopSignature,
+			//	optimizer::Block,
+			//	optimizer::Switch
+			//>;
 
 		public:
 			static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, GL::scope::impl::RootScope& analysisEngine = CurrentEngine()) {
 				while (Optimizer_Reorg().optimize(p, analysisEngine)
 					|| Optimizer_Normal().optimize(p, analysisEngine)
+					// || Optimizer_Constexpr().optimize(p, analysisEngine)
 				) {};
 				return p;
 			};
@@ -11735,7 +12181,7 @@ namespace GL {
 		private:
 			// check if the string is a valid operator
 			static bool is_operator(GL::string t_s) noexcept { return Operator_Matches::is_match(t_s); }
-			static void validate_object_name(GL::string const& name, Engine::Position const& m_position) {
+			static bool validate_object_name(GL::string const& name, Engine::Position const& m_position) {
 				switch (Engine::hash(name.c_str())) {
 				case Engine::hash(""):
 					throw except::eval_error("Id names cannot be empty", m_position);
@@ -11751,6 +12197,7 @@ namespace GL {
 				case Engine::hash("#include"):
 				case Engine::hash("#pragma"):
 				case Engine::hash("auto"):
+				case Engine::hash("constexpr"):
 					// case Engine::hash("var"):
 				case Engine::hash("global"):
 				case Engine::hash("while"):
@@ -11771,11 +12218,12 @@ namespace GL {
 				case Engine::hash("if"):
 				case Engine::hash("else"):
 				{
-					GL::string temp = GL::string(name);
-					throw except::eval_error("Id name '" + temp + "' was reserved for the langauge", m_position);
+					return false;
+					// GL::string temp = GL::string(name);
+					// throw except::eval_error("Id name '" + temp + "' was reserved for the langauge", m_position);
 				}
 				default:
-					return;
+					return true;
 				}
 			};
 
@@ -12695,7 +13143,11 @@ namespace GL {
 
 				if (Id_()) {
 					GL::string text = Engine::Position::str(prev_pos, m_position);
-					if (validate) { validate_object_name(text, m_position); }
+					if (validate) { 
+						if (!validate_object_name(text, m_position)) {
+							return failure();
+						}
+					}
 
 					auto foundConstant = constants().find(text);
 					if (foundConstant != constants().end()) {
@@ -12919,27 +13371,28 @@ namespace GL {
 
 			/// Reads a C-style type-cast from input (e.g. (int)0.0f )
 			bool TypeCastOperation() {
-				bool retval = false;
-
 				const auto prev_stack_top = m_match_stack.size();
 				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
 
 				SkipWS(true);
 
 				// (string)100
 				if (Char('(') && TypeName() && Char(')')) {
+					// if (TypeCastOperation() || Value()) {
 					if (Operator()) {
-						retval = true;
-						build_match<Arg_List_Node>(prev_stack_top + 1);
-						build_match<Fun_Call_Node>(prev_stack_top); // Id(fun name), Arg_List()
+						build_match<Type_Cast_Node>(prev_stack_top);
+						return true;
+						//build_match<Arg_List_Node>(prev_stack_top + 1);
+						//build_match<Fun_Call_Node>(prev_stack_top); // Id(fun name), Arg_List()
 					}
 				}
 
-				if (!retval) {
-					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-					m_position = prev_pos;
-				}
-				return retval;
+				return failure();
 			};
 
 			/// Parses a string of binary equation operators
@@ -12969,56 +13422,79 @@ namespace GL {
 
 				return false;
 			};
-			// int x;
-			// int const& x;
-			bool SpecifiedType_Var_Decl() {
-				bool retval = false;
-
-				const auto prev_stack_top = m_match_stack.size();
-				const auto prev_pos = m_position;
-
-				if (TypeName()) { // typename was specified and found
-					build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
-					build_match<Fun_Call_Node>(prev_stack_top); // collapse all into a function call (i.e. int({no_params}))
-
-					if (Id(true)) {
-						retval = true;
-						build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;                           
-					}
-
-					if (retval) {
-						// Fun_Call ("Typename()") , Id or Ref ("Variable name");
-						build_match < Assign_Retroactively_Node>(prev_stack_top);
-					}
-				}
-				if (!retval) {
-					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-					m_position = prev_pos;
-				}
-
-				return retval;
-			}
 
 			/// Reads a variable declaration from input
 			bool Var_Decl() {
 				bool retval = false;
 				const auto prev_stack_top = m_match_stack.size();
+				const auto prev_pos = m_position;
+				auto failure = [&]() {
+					while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+					m_position = prev_pos;
+					return false;
+				};
+				bool is_constexpr = false;
 
-				if (Keyword("auto") /*|| Keyword("var")*/) {
-					(void)Char('&');
+				if (Keyword("constexpr")) {
+					is_constexpr = true;
+				}
+				// auto x;
+				// auto const& x;
+				// auto& x;
+				if (Keyword("const auto&") || Keyword("auto const&") || Keyword("auto&") || Keyword("const auto") || Keyword("auto const") || Keyword("auto")) {
 					if (Id(true)) {
 						build_match<Var_Decl_Node>(prev_stack_top);
-						retval = true;
-					}
-					else {
-						throw except::eval_error("Incomplete variable declaration ", m_position);
+						if (is_constexpr) {
+							m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+						}
+						return true;
 					}
 				}
 				else {
-					return SpecifiedType_Var_Decl();
+					// int x;
+					// int& x;
+					// const int& x;
+					if (TypeName()) {
+						build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
+						build_match<Fun_Call_Node>(prev_stack_top); // Fun_Call{ Id{TypeName}, ArgList{} }
+						if (Id(true)) {
+							build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;               
+							build_match < Assign_Retroactively_Node>(prev_stack_top); // Assign_Retroactively_Node{ Fun_Call{ Id{TypeName}, ArgList{} }, Id{ VariableName } }
+							if (is_constexpr) {
+								m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+							}
+							return true;
+						}
+					}
 				}
-				
-				return retval;
+				return failure();
+
+				//if (Keyword("auto")) {
+				//	(void)Char('&');
+				//	if (Id(true)) {
+				//		build_match<Var_Decl_Node>(prev_stack_top);
+				//		if (is_constexpr) {
+				//			m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+				//		}
+				//		return true;
+				//	}
+				//	else {
+				//		return failure();
+				//	}
+				//}
+				//else {
+				//	if (SpecifiedType_Var_Decl()) {
+				//		if (is_constexpr) {							
+				//			m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+				//		}
+				//		return true;
+				//	}
+				//	else {
+				//		return failure();
+				//	}
+				//}
+				//
+				//return failure();
 			};
 
 			/// Reads a unary prefixed expression from input
@@ -13040,10 +13516,10 @@ namespace GL {
 			};
 
 			static auto make_postfix_operators() {
-				std::map<size_t, std::vector<std::pair<GL::string, std::pair<GL::value, GL::any::fast_any>>>, std::greater_equal<size_t>> out;
+				std::multimap<size_t, std::pair<GL::string, std::pair<GL::value, GL::any::fast_any>>, std::greater_equal<size_t>> out;
 				for (auto& unit_type : GL::value::abbreviations_to_type()) {
 					auto abbreviation = GL::string("_") + unit_type.first;
-					out[abbreviation.length()].push_back({ abbreviation, { unit_type.second.cast<GL::value>(), unit_type.second } });
+					out.insert({ abbreviation.length(), { abbreviation, { unit_type.second.cast<GL::value>(), unit_type.second } } });
 				}
 				return out;
 			}
@@ -13060,10 +13536,12 @@ namespace GL {
 				if (gotValueAlready) {
 					if (Symbol("++")) {
 						build_match<Postfix_Node>(prev_stack_top - 1, "++");
+						m_match_stack.back().tag.cast<PostfixInformation>().is_unit = false;
 						return true;
 					}
 					else if (Symbol("--")) {
 						build_match<Postfix_Node>(prev_stack_top - 1, "--");
+						m_match_stack.back().tag.cast<PostfixInformation>().is_unit = false;
 						return true;
 					}
 					else {
@@ -13073,31 +13551,29 @@ namespace GL {
 						// evaluate the custom operators...
 						if ((prev_stack_top > 0) && m_match_stack[prev_stack_top - 1].identifier == Engine::AST_Node_Type::Constant) {
 							// this path means the incoming value is constant. Compile to constant. 
-							for (auto& abbreviation_length_to_category : customOperators) {
-								for (auto& unit_type : abbreviation_length_to_category.second) {
-									auto& abbreviation = unit_type.first;
-									if (Symbol(abbreviation)) {
-										auto& rhs = m_match_stack[prev_stack_top - 1].constant;
-										if (auto* BC = this->analysis_engine.try_find_class(unit_type.second.second.m_casted_type); BC && BC->this_m.is_class()) {
-											auto result = BC->this_m.scope->call(BC->this_m.scope_name, { rhs });
-											auto temp = BC->this_m.scope->call<GL::string>("to_string", { result });
-											m_match_stack[prev_stack_top - 1] = Constant_Node(temp, m_match_stack[prev_stack_top - 1].location, {}, result);
-											return true;
-										}
+							for (auto& unit_type : customOperators) {
+								auto& abbreviation = unit_type.second.first;
+								if (Symbol(abbreviation, true)) {
+									auto& rhs = m_match_stack[prev_stack_top - 1].constant;
+									if (auto* BC = this->analysis_engine.try_find_class(unit_type.second.second.second.m_casted_type); BC && BC->this_m.is_class()) {
+										auto result = BC->this_m.scope->call(BC->this_m.scope_name, { rhs });
+										auto temp = BC->this_m.scope->call<GL::string>("to_string", { result });
+										m_match_stack[prev_stack_top - 1] = Constant_Node(temp, m_match_stack[prev_stack_top - 1].location, {}, result);
+										return true;
 									}
-								}
+								}								
 							}
 						}
 						else if (prev_stack_top > 0) {
 							// this path means the incoming value is NOT constant. Compile to a function call. 
-							for (auto& abbreviation_length_to_category : customOperators) {
-								for (auto& unit_type : abbreviation_length_to_category.second) {
-									auto& abbreviation = unit_type.first;
-									if (Symbol(abbreviation)) {
-										build_match<Postfix_Node>(prev_stack_top - 1, unit_type.second.first.abbreviation());
-										return true;
-									}
-								}
+							for (auto& unit_type : customOperators) {
+								auto& abbreviation = unit_type.second.first;
+								if (Symbol(abbreviation, true)) {
+									build_match<Postfix_Node>(prev_stack_top - 1, unit_type.second.second.first.abbreviation());
+									m_match_stack.back().tag.cast<PostfixInformation>().is_unit = true;
+									m_match_stack.back().tag.cast<PostfixInformation>().unit_name = unit_type.second.second.second.m_casted_type.name();
+									return true;
+								}								
 							}
 						}
 					}
@@ -13106,10 +13582,12 @@ namespace GL {
 					if (Id(true)) {
 						if (Symbol("++")) {
 							build_match<Postfix_Node>(prev_stack_top, "++");
+							m_match_stack.back().tag.cast<PostfixInformation>().is_unit = false;
 							return true;
 						}
 						else if (Symbol("--")) {
 							build_match<Postfix_Node>(prev_stack_top, "--");
+							m_match_stack.back().tag.cast<PostfixInformation>().is_unit = false;
 							return true;
 						}
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
@@ -13476,7 +13954,6 @@ namespace GL {
 					m_position = prev_pos;
 					return false;
 				};
-
 
 				if (Char('(')) {
 					SkipWS(true);
@@ -14638,7 +15115,7 @@ int main() {
 				return (foot(110) + inch(120)) / second(120);
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
-				var x = 11.0f;
+				auto x = 11.0f;
 				return ((x)_ft + (12)_in) / (120)_s;
 			)").to_string("", root) + "\n\n");
 		}
@@ -14919,9 +15396,8 @@ int main() {
 				}
 			)").to_string("", root) + "\n\n");
 		}
-
-		// Pre-compilation 
-		if (1) {
+		// Pre-compilation Tests
+		if (0) {
 			print(/*parser.Parse(*/parser.Preprocess(R"(
 #define CONCAT(a, b) a##b
 #define defer(x) auto CONCAT(defer_, x)(){ return x; }
@@ -14935,8 +15411,163 @@ defer(100);
 
 #define DerivedUnitList \
     DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
-    DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0))
-
+    DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0)); \
+	DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0)); \
+	DerivedUnitType(furlong, length, fur, Conversion<foot>(660)); \
+	DerivedUnitType(mile, length, mi, Conversion<foot>(5280)); \
+	DerivedUnitType(nautical_mile, length, nmi, Conversion<meter>(1852.0)); \
+	DerivedUnitType(astronical_unit, length, au, Conversion<meter>(149597870700.0)); \
+	DerivedUnitType(yard, length, yd, Conversion<foot>(3.0)); \
+	DerivedUnitTypeWithMetricPrefixes(gram, mass, g, 1.0 / 1000.0); \
+	DerivedUnitType(metric_ton, mass, t, Conversion<kilogram>(1000.0)); \
+	DerivedUnitType(pound, mass, lb, Conversion<kilogram>(45359237.0 / 100000000.0)); \
+	DerivedUnitType(long_ton, mass, ln_t, Conversion<pound>(2240.0)); \
+	DerivedUnitType(short_ton, mass, sh_t, Conversion<pound>(2000.0)); \
+	DerivedUnitType(stone, mass, st, Conversion<pound>(14.0)); \
+	DerivedUnitType(ounce, mass, oz, Conversion<pound>(1.0 / 16.0)); \
+	DerivedUnitType(carat, mass, ct, Conversion<milligram>(200.0)); \
+	DerivedUnitType(slug, mass, slug, Conversion<kilogram>(145939029.0 / 10000000.0)); \
+	DerivedUnitTypeWithMetricPrefixes(second, time, s, 1.0); \
+	DerivedUnitType(minute, time, min, Conversion<second>(60.0)); \
+	DerivedUnitType(hour, time, hr, Conversion<minute>(60.0)); \
+	DerivedUnitType(day, time, d, Conversion<hour>(24.0)); \
+	DerivedUnitType(week, time, wk, Conversion<day>(7.0)); \
+	DerivedUnitType(year, time, yr, Conversion<day>(365.25)); /* includes additional day for every 4 years */ \
+	DerivedUnitType(month, time, mnth, Conversion<year>(1.0 / 12.0)); \
+	DerivedUnitType(julian_year, time, a_j, Conversion<second>(31557600.0)); \
+	DerivedUnitType(gregorian_year, time, a_g, Conversion<second>(31556952.0)); \
+	DerivedUnitTypeWithMetricPrefixes(ampere, current, A, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(hertz, frequency, Hz, 1.0); \
+	DerivedUnitType(meters_per_second, velocity, mps, Conversion<meter>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(feet_per_second, velocity, fps, Conversion<foot>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(feet_per_minute, velocity, fpm, Conversion<foot>(1.0) / Conversion<minute>(1.0)); \
+    DerivedUnitType(inches_per_day, velocity, ipd, Conversion<inch>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(feet_per_hour, velocity, fph, Conversion<foot>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(miles_per_hour, velocity, mph, Conversion<mile>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(kilometers_per_hour, velocity, kph, Conversion<kilometer>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(knot, velocity, kts, Conversion<nautical_mile>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(meters_per_second_squared, acceleration, mps_sq, Conversion<meter>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
+	DerivedUnitType(feet_per_second_squared, acceleration, fps_sq, Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
+	DerivedUnitType(standard_gravity, acceleration, SG, Conversion<meters_per_second_squared>(980665.0 / 100000.0)); \
+	DerivedUnitTypeWithMetricPrefixes(newton, force, N, Conversion<kilogram>(1.0)* Conversion<meters_per_second_squared>(1.0)); \
+	DerivedUnitType(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0)); \
+	DerivedUnitType(dyne, force, dyn, Conversion<newton>(1.0 / 100000.0)); \
+	DerivedUnitType(kilopond, force, kp, Conversion<standard_gravity>(1.0)* Conversion<kilogram>(1.0)); \
+	DerivedUnitType(poundal, force, pdl, Conversion<pound>(1.0)* Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
+	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0); \
+	DerivedUnitType(bar, pressure, bar, Conversion<kilopascals>(100.0)); \
+	DerivedUnitType(atmosphere, pressure, atm, Conversion<pascals>(101325.0)); \
+	DerivedUnitType(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0))); \
+	DerivedUnitType(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0))); \
+	DerivedUnitType(torr, pressure, torr, Conversion<atmosphere>(1.0 / 760.0)); \
+	DerivedUnitType(coulomb, charge, C, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(ampere_hour, charge, Ah, Conversion< ampere>(1.0)* Conversion<hour>(1.0)); \
+	DerivedUnitTypeWithMetricPrefixes(watt, power, W, 1.0); \
+	DerivedUnitType(horsepower, power, hp, Conversion<watt>(7457.0 / 10.0)); \
+	DerivedUnitType(joule, energy, J, 1.0); \
+	DerivedUnitType(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0)); \
+	DerivedUnitType(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0)); \
+	DerivedUnitTypeWithMetricPrefixes(watt_hour, energy, Wh, Conversion<watt>(1.0)* Conversion<hour>(1.0)); \
+	DerivedUnitType(watt_day, energy, Wd, Conversion<watt>(1.0)* Conversion<day>(1.0)); \
+	DerivedUnitType(british_thermal_unit, energy, BTU, Conversion<joule>(105505585262.0 / 100000000.0)); \
+	DerivedUnitType(british_thermal_unit_iso, energy, BTU_iso, Conversion<joule>(1055056.0 / 1000.0)); \
+	DerivedUnitType(british_thermal_unit_59, energy, BTU59, Conversion<joule>(1054804.0 / 1000.0)); \
+	DerivedUnitType(therm, energy, thm, Conversion<british_thermal_unit_59>(100000.0)); \
+	DerivedUnitType(foot_pound, energy, ftlbf, Conversion<joule>(13558179483314004.0 / 10000000000000000.0)); \
+	DerivedUnitTypeWithMetricPrefixes(volt, voltage, V, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(ohm, impedance, Ohm, 1.0); \
+	DerivedUnitType(siemens, conductance, S, 1.0);  \
+	DerivedUnitType(square_meter, area, sq_m, 1.0); \
+	DerivedUnitType(square_foot, area, sq_ft, Conversion<foot>(1.0)* Conversion<foot>(1.0)); \
+	DerivedUnitType(square_inch, area, sq_in, Conversion<inch>(1.0)* Conversion<inch>(1.0)); \
+	DerivedUnitType(square_mile, area, sq_mi, Conversion<mile>(1.0)* Conversion<mile>(1.0)); \
+	DerivedUnitType(square_kilometer, area, sq_km, Conversion<kilometer>(1.0)* Conversion<kilometer>(1.0)); \
+	DerivedUnitType(hectare, area, ha, Conversion<square_meter>(1000.0)); \
+	DerivedUnitType(acre, area, acre, Conversion<square_foot>(43560.0)); \
+	DerivedUnitType(cubic_meter, volume, cu_m, 1.0); \
+	DerivedUnitType(cubic_millimeter, volume, cu_mm, CUBED(Conversion<millimeter>(1.0))); \
+	DerivedUnitType(cubic_kilometer, volume, cu_km, CUBED(Conversion<kilometer>(1.0))); \
+	DerivedUnitTypeWithMetricPrefixes(liter, volume, L, CUBED(Conversion<decimeter>(1.0))); \
+	DerivedUnitType(cubic_inch, volume, cu_in, CUBED(Conversion<inch>(1.0))); \
+	DerivedUnitType(cubic_foot, volume, cu_ft, CUBED(Conversion<foot>(1.0))); \
+	DerivedUnitType(cubic_yard, volume, cu_yd, CUBED(Conversion<yard>(1.0))); \
+	DerivedUnitType(cubic_mile, volume, cu_mi, CUBED(Conversion<mile>(1.0))); \
+	DerivedUnitTypeWithMetricPrefixes(gallon, volume, gal, Conversion<cubic_inch>(231.0)); \
+	DerivedUnitType(imperial_gallon, volume, igal, Conversion<gallon>(10.0 / 12.0)); \
+	DerivedUnitType(million_gallon, volume, MG, Conversion<gallon>(1.0) * CalculateMetricPrefixV(mega)); \
+	DerivedUnitType(imperial_million_gallon, volume, IMG, Conversion<imperial_gallon>(1.0) * CalculateMetricPrefixV(mega)); \
+	DerivedUnitType(acre_foot, volume, ac_ft, Conversion<acre>(1.0)* Conversion<foot>(1.0)); \
+	DerivedUnitType(quart, volume, qt, Conversion<gallon>(0.25)); \
+	DerivedUnitType(pint, volume, pt, Conversion<quart>(0.5)); \
+	DerivedUnitType(cup, volume, c, Conversion<pint>(0.5)); \
+	DerivedUnitType(fluid_ounce, volume, fl_oz, Conversion<cup>(0.125)); \
+	DerivedUnitType(barrel, volume, bl, Conversion<gallon>(42.0)); \
+	DerivedUnitType(bushel, volume, bu, Conversion<cubic_inch>(215042.0 / 100.0)); \
+	DerivedUnitType(cord, volume, cord, Conversion<cubic_foot>(128.0)); \
+	DerivedUnitType(tablespoon, volume, tbsp, Conversion<fluid_ounce>(0.5)); \
+	DerivedUnitType(teaspoon, volume, tsp, Conversion<fluid_ounce>(1.0 / 6.0)); \
+	DerivedUnitType(pinch, volume, pinch, Conversion<teaspoon>(1.0 / 8.0)); \
+	DerivedUnitType(dash, volume, dash, Conversion<pinch>(1.0 / 2.0)); \
+	DerivedUnitType(drop, volume, drop, Conversion<fluid_ounce>(1.0 / 360.0)); \
+	DerivedUnitType(fifth, volume, fifth, Conversion<gallon>(0.2)); \
+	DerivedUnitType(dram, volume, dr, Conversion<fluid_ounce>(0.125)); \
+	DerivedUnitType(gill, volume, gi, Conversion<fluid_ounce>(4.0)); \
+	DerivedUnitType(peck, volume, pk, Conversion<bushel>(0.25)); \
+	DerivedUnitType(sack, volume, sacks, Conversion<bushel>(3.0)); \
+	DerivedUnitType(shot, volume, shots, Conversion<fluid_ounce>(3.0 / 2.0)); \
+	DerivedUnitType(strike, volume, strikes, Conversion<bushel>(2.0)); \
+	DerivedUnitType(gram_per_second, fillrate, gs, 1.0 / 1000.0); \
+	DerivedUnitType(metric_ton_per_second, fillrate, mTs, Conversion<metric_ton>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(metric_ton_per_minute, fillrate, mTm, Conversion<metric_ton>(1.0) / Conversion<minute>(1.0)); \
+	DerivedUnitType(metric_ton_per_hour, fillrate, mTh, Conversion<metric_ton>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(metric_ton_per_day, fillrate, mTd, Conversion<metric_ton>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(metric_ton_per_year, fillrate, mTy, Conversion<metric_ton>(1.0) / Conversion<year>(1.0)); \
+	DerivedUnitType(cubic_meter_per_second, flowrate, cms, 1.0); \
+	DerivedUnitType(cubic_meter_per_hour, flowrate, cmh, Conversion<cubic_meter>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(cubic_meter_per_day, flowrate, cmd, Conversion<cubic_meter>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(cubic_millimeter_per_second, flowrate, cmms, Conversion<cubic_millimeter>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitTypeWithMetricPrefixes(liter_per_second, flowrate, lps, Conversion<liter>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(liter_per_minute, flowrate, lpm, Conversion<liter>(1.0) / Conversion<minute>(1.0)); \
+	DerivedUnitType(liter_per_day, flowrate, lpd, Conversion<liter>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(megaliter_per_day, flowrate, Mlpd, Conversion<megaliter>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(cubic_inch_per_second, flowrate, cis, Conversion<cubic_inch>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(cubic_inch_per_hour, flowrate, cih, Conversion<cubic_inch>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(cubic_foot_per_second, flowrate, cfs, Conversion<cubic_foot>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(cubic_foot_per_hour, flowrate, cfh, Conversion<cubic_foot>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(gallon_per_second, flowrate, gps, Conversion<gallon>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(gallon_per_minute, flowrate, gpm, Conversion<gallon>(1.0) / Conversion<minute>(1.0)); \
+	DerivedUnitType(gallon_per_hour, flowrate, gph, Conversion<gallon>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(gallon_per_day, flowrate, gpd, Conversion<gallon>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(gallon_per_year, flowrate, gpy, Conversion<gallon>(1.0) / Conversion<year>(1.0)); \
+	DerivedUnitType(million_gallon_per_second, flowrate, MGS, Conversion<megagallon>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(million_gallon_per_minute, flowrate, MGM, Conversion<megagallon>(1.0) / Conversion<minute>(1.0)); \
+	DerivedUnitType(million_gallon_per_hour, flowrate, MGH, Conversion<megagallon>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(million_gallon_per_day, flowrate, MGD, Conversion<megagallon>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(million_gallon_per_year, flowrate, MGY, Conversion<megagallon>(1.0) / Conversion<year>(1.0)); \
+	DerivedUnitType(imperial_million_gallon_per_second, flowrate, IMGS, Conversion<imperial_million_gallon>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(imperial_million_gallon_per_minute, flowrate, IMGM, Conversion<imperial_million_gallon>(1.0) / Conversion<minute>(1.0)); \
+	DerivedUnitType(imperial_million_gallon_per_hour, flowrate, IMGH, Conversion<imperial_million_gallon>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(imperial_million_gallon_per_day, flowrate, IMGD, Conversion<imperial_million_gallon>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(imperial_million_gallon_per_year, flowrate, IMGY, Conversion<imperial_million_gallon>(1.0) / Conversion<year>(1.0)); \
+	DerivedUnitType(acre_foot_per_second, flowrate, ac_ft_s, Conversion<acre_foot>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(acre_foot_per_minute, flowrate, ac_ft_m, Conversion<acre_foot>(1.0) / Conversion<minute>(1.0)); \
+	DerivedUnitType(acre_foot_per_hour, flowrate, ac_ft_h, Conversion<acre_foot>(1.0) / Conversion<hour>(1.0)); \
+	DerivedUnitType(acre_foot_per_day, flowrate, ac_ft_d, Conversion<acre_foot>(1.0) / Conversion<day>(1.0)); \
+	DerivedUnitType(acre_foot_per_year, flowrate, ac_ft_y, Conversion<acre_foot>(1.0) / Conversion<year>(1.0)); \
+	DerivedUnitType(kilograms_per_cubic_meter, density, kg_per_cu_m, 1.0); \
+	DerivedUnitType(grams_per_milliliter, density, g_per_mL, Conversion<gram>(1.0) / Conversion<milliliter>(1.0)); \
+	DerivedUnitType(kilograms_per_liter, density, kg_per_L, Conversion<kilogram>(1.0) / Conversion<liter>(1.0)); \
+	DerivedUnitType(ounces_per_cubic_foot, density, oz_per_cu_ft, Conversion<ounce>(1.0) / Conversion<cubic_foot>(1.0)); \
+	DerivedUnitType(ounces_per_cubic_inch, density, oz_per_cu_in, Conversion<ounce>(1.0) / Conversion<cubic_inch>(1.0)); \
+	DerivedUnitType(ounces_per_gallon, density, oz_per_gal, Conversion<ounce>(1.0) / Conversion<gallon>(1.0)); \
+	DerivedUnitType(pounds_per_cubic_foot, density, lb_per_cu_ft, Conversion<pound>(1.0) / Conversion<cubic_foot>(1.0)); \
+	DerivedUnitType(pounds_per_cubic_inch, density, lb_per_cu_in, Conversion<pound>(1.0) / Conversion<cubic_inch>(1.0)); \
+	DerivedUnitType(pounds_per_gallon, density, lb_per_gal, Conversion<pound>(1.0) / Conversion<gallon>(1.0)); \
+	DerivedUnitType(slugs_per_cubic_foot, density, slug_per_cu_ft, Conversion<slug>(1.0) / Conversion<cubic_foot>(1.0)); \
+	DerivedUnitType(celsius, temperature, degC, 1.0); \
+    DerivedUnitType(radian, angle, rad, 1.0); \
+    DerivedUnitType(degree, angle, deg, Conversion<radian>(3.141592653589793238462643383279502884197169399375105820974944 / 180.0))
+)"+std::string(R"(
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
 	class type final : public value { \
     private: \
@@ -14982,11 +15613,80 @@ defer(100);
 
     DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
-			)")/*).to_string("", root) + "\n\n"*/);
+			)"))/*).to_string("", root) + "\n\n"*/);
 
 
 
 		}
+		// constexpr 
+		if (1) {
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				constexpr int y = 5;
+				constexpr auto z = int();
+				constexpr auto w = x + y; 
+				constexpr auto a = x + y + z; 
+				constexpr auto b = (x + y) * (z + 2); 
+				constexpr auto c = 10_ft + x;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				if (x > 0) {
+					"TEST1";
+				}
+				if (x) {
+					"TEST2";
+				}
+				while (x) {
+					"TEST3"
+				}
+				for (auto y = 0; y < x; ++y) {
+					"TEST4"
+				}
+				for (; x; ) {
+					"TEST5"
+				}
+				for (Z : [x, x+2, x+5, x+10_ft]) {
+					return Z;
+				}
+				for (Z : [x:10, 10:x]) {
+					return Z;
+				}
+				constexpr size_t size = 10;
+				"TEST".size();
+				size("TEST");
+				"TEST".size(size);
+				size("TEST", size);
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				constexpr auto arr = [x, x+2, x+5, x+10_ft];
+				constexpr auto z = arr[0];
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return [(x):(x + 2), (10_ft):(100_m + x)];
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				return [(x):(x+2), (10_ft):(100_m+x)];
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				constexpr auto map = [(x):(x+2), (10_ft):(100_m+x)];
+				constexpr auto w = map[x];
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				constexpr auto y = ((x)_MG / 31_d)_gpm;
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				constexpr auto vector = [ x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
+				constexpr auto w = vector[4];
+			)").to_string("", root) + "\n\n");
+		}
+
 	}
 
 	if (1) {
