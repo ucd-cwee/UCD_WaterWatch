@@ -8896,9 +8896,17 @@ namespace GL {
 		public:
 			Declaration_Block_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::DeclarationBlock, t_ast_node_text, t_loc, t_children) {};
 		};
+
+		struct FunctionDeclInformation {
+			bool is_constexpr;
+		};
 		class FunctionDecl_Node final : public AbstractSyntaxTreeNode {
 		public:
-			FunctionDecl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::FunctionDecl, t_ast_node_text, t_loc, t_children) {};
+			FunctionDecl_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::FunctionDecl, t_ast_node_text, t_loc, t_children) {
+				FunctionDeclInformation info;
+				info.is_constexpr = false;
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
 		};
 
 		class optimizer {
@@ -14430,6 +14438,12 @@ namespace GL {
 					m_position = prev_pos;
 					return false;
 				};
+				bool is_constexpr = false;
+
+				// optional constexpr
+				if (Symbol("constexpr") ) {
+					is_constexpr = true;
+				}
 
 				// return type (Id)
 				if (!TypeName(true)) { // Id
@@ -14463,7 +14477,7 @@ namespace GL {
 				}
 
 				build_match<FunctionDecl_Node>(prev_stack_top);
-
+				m_match_stack.back().tag.cast<FunctionDeclInformation>().is_constexpr = true;
 				return true;
 			};
 
@@ -15706,11 +15720,26 @@ defer(100);
 				constexpr auto vector = [ (double)x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
 				constexpr auto w = vector[4];
 			)").to_string("", root) + "\n\n");
-			print(parser.Parse(R"(
-				constexpr auto x = 11.0f;
-				constexpr auto vector = [ (double)x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
-				constexpr auto w = vector[4];
-			)").to_string("", root) + "\n\n");
+			//print(parser.Parse(parser.Preprocess(R"(
+			//	// Compile-time absolute value
+			//	constexpr double abs_val(double x) {
+			//		return x < 0 ? -x : x;
+			//	};
+			//	return abs_val(-1);
+			//)")).to_string("", root) + "\n\n");
+
+
+		}
+		// recursive pre-compilation test
+		if (1) {
+			auto pre_processed = parser.Preprocess(R"(
+				// Compile-time factorial
+				#define factorial(n) ((n <= 1) ? 1ULL : (n * factorial(n - 1)))
+				constexpr auto x1 = factorial(1);
+				constexpr auto x2 = factorial(1);
+				constexpr auto x3 = factorial(5);				
+			)");
+			print(parser.Parse(pre_processed).to_string("", root) + "\n\n");
 		}
 
 	}
