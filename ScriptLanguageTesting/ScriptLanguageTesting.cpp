@@ -11600,8 +11600,28 @@ namespace GL {
 									}
 								}
 
+								if (this_child.identifier == Engine::AST_Node_Type::Type_Cast
+									&& this_child.children.size() == 2
+									&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									if (this_child.children[1].identifier == Engine::AST_Node_Type::Id) {
+										if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[1].text, constexprObj)) {
+											if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { constexprObj | GL::type::Const }, temp)) {
+												this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+									else if (this_child.children[1].identifier == Engine::AST_Node_Type::Constant) {
+										if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { this_child.children[1].constant | GL::type::Const }, temp)) {
+											this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+											made_update = true;
+											return true;
+										}										
+									}
 
-
+								}
 
 
 
@@ -13383,13 +13403,15 @@ namespace GL {
 
 				// (string)100
 				if (Char('(') && TypeName() && Char(')')) {
-					// if (TypeCastOperation() || Value()) {
-					if (Operator()) {
+					if (Postfix(true)) {
+						return true;
+					}
+					else if (Operator()) { // if (TypeCastOperation() || Value()) {
 						build_match<Type_Cast_Node>(prev_stack_top);
 						return true;
 						//build_match<Arg_List_Node>(prev_stack_top + 1);
-						//build_match<Fun_Call_Node>(prev_stack_top); // Id(fun name), Arg_List()
-					}
+						//build_match<Fun_Call_Node>(prev_stack_top); // Id(fun name), Arg_List()						
+					}					
 				}
 
 				return failure();
@@ -13879,11 +13901,11 @@ namespace GL {
 					return false;
 				};
 
-				if (t_precedence == 0) {
-					if (TypeCastOperation()) {
-						return true;
-					}
-				}
+				//if (t_precedence == 0) {
+				//	if (TypeCastOperation()) {
+				//		return true;
+				//	}
+				//}
 
 				if (operators()[t_precedence] != Engine::Operator_Precedence::Prefix) {
 					if (Operator(t_precedence + 1)) {
@@ -13939,7 +13961,8 @@ namespace GL {
 					}
 				}
 				else {
-					return Value();
+					if (TypeCastOperation()) { return true; }
+					else return Value();
 				}
 
 				return retval;
@@ -13962,6 +13985,7 @@ namespace GL {
 					}
 					SkipWS(true);
 					if (!Char(')')) {
+						// return failure();					
 						throw except::eval_error("Missing closing parenthesis ')'", m_position);
 					}
 					return true;
@@ -15116,7 +15140,11 @@ int main() {
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				auto x = 11.0f;
-				return ((x)_ft + (12)_in) / (120)_s;
+				return ((x)_ft+(12)_in)/(120)_s;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				constexpr auto x = 11.0f;
+				return ((x)_ft+(12)_in)/(120)_s;
 			)").to_string("", root) + "\n\n");
 		}
 		// types
@@ -15664,12 +15692,6 @@ defer(100);
 				constexpr auto z = arr[0];
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
-				return [(x):(x + 2), (10_ft):(100_m + x)];
-			)").to_string("", root) + "\n\n");
-			print(parser.Parse(R"(
-				return [(x):(x+2), (10_ft):(100_m+x)];
-			)").to_string("", root) + "\n\n");
-			print(parser.Parse(R"(
 				constexpr auto x = 11.0f;
 				constexpr auto map = [(x):(x+2), (10_ft):(100_m+x)];
 				constexpr auto w = map[x];
@@ -15679,10 +15701,14 @@ defer(100);
 				constexpr auto x = 11.0f;
 				constexpr auto y = ((x)_MG / 31_d)_gpm;
 			)").to_string("", root) + "\n\n");
-
+			print(parser.Parse(R"(
+				auto x = 11.0f;
+				constexpr auto vector = [ (double)x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
+				constexpr auto w = vector[4];
+			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				constexpr auto x = 11.0f;
-				constexpr auto vector = [ x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
+				constexpr auto vector = [ (double)x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
 				constexpr auto w = vector[4];
 			)").to_string("", root) + "\n\n");
 		}
@@ -17815,3 +17841,4 @@ defer(100);
     test_thread.join();
     return 0;
 };
+
