@@ -160,10 +160,8 @@ namespace GL {
 			Equation,
 			Array_Call, Dot_Access,
 			Lambda,
-			FunctionBlock,
-			DeclarationBlock, Block, Scopeless_Block,
-			Def,
-			If,
+			FunctionBlock, DeclarationBlock, Block, Scopeless_Block,
+			Def, If,
 			Parallel, Parallel_For, Parallel_Ranged_For, For, Ranged_For, While,
 			Inline_Array, Inline_Map,
 			Return,
@@ -184,7 +182,7 @@ namespace GL {
 			Assign_Retroactively,
 			TypeId,
 			JustInTimeCompilation,
-			AST_Node_Type_end
+			PreprocessorMacro
 		);
 		BETTER_ENUM(PreprocessorDirectives, uint32_t,
 			Completed, None,
@@ -8585,6 +8583,10 @@ namespace GL {
 			};
 		};
 
+		class PreprocessorMacro_Node final : public AbstractSyntaxTreeNode {
+		public:
+			PreprocessorMacro_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::PreprocessorMacro, t_ast_node_text, t_loc, t_children) {};
+		};
 		class Return_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Return_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Return, t_ast_node_text, t_loc, t_children) {};
@@ -12942,25 +12944,25 @@ namespace GL {
 					return true;
 
 				}
-				else if (Symbol_(m_annotation)) {
-					while (m_position.has_more()) {
-						if (Symbol_(m_cr_lf)) {
-							m_position -= 2;
-							break;
-						}
-						else if (Char_('\n')) {
-							--m_position;
-							break;
-						}
-						else {
-							++m_position;
-						}
-					}
-					GL::string comment = Engine::Position::str(start, m_position);
-					m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+				//else if (Symbol_(m_annotation)) {
+				//	while (m_position.has_more()) {
+				//		if (Symbol_(m_cr_lf)) {
+				//			m_position -= 2;
+				//			break;
+				//		}
+				//		else if (Char_('\n')) {
+				//			--m_position;
+				//			break;
+				//		}
+				//		else {
+				//			++m_position;
+				//		}
+				//	}
+				//	GL::string comment = Engine::Position::str(start, m_position);
+				//	m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
 
-					return true;
-				}
+				//	return true;
+				//}
 				return false;
 			}
 			/// Skips whitespace, which means space and tab, but not cr/lf
@@ -14493,8 +14495,7 @@ namespace GL {
 					const auto start = m_position;
 
 					// TO-DO, complete impl of these evaluations:
-
-					if (DeclNamespace() || DeclFunction() || DeclClass()) {
+					if (PreprocessorDirectives() || DeclNamespace() || DeclFunction() || DeclClass()) {
 						if (!saw_eol) {
 							throw except::eval_error("Two function definitions missing line separator", start);
 						}
@@ -14556,7 +14557,7 @@ namespace GL {
 
 				while (has_more) {
 					const auto start = m_position;
-					if (DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
+					if (PreprocessorDirectives() || DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
 						if (!saw_eol) {
 							throw except::eval_error("Two function definitions missing line separator", start);
 						}
@@ -14742,6 +14743,125 @@ namespace GL {
 				return retval;
 			};
 
+			bool PreprocessorText(GL::string& out) {
+				SkipWS();
+				auto start = m_position;
+				out = GL::string::empty_string();
+				while (m_position.has_more()) {
+					SkipWS();
+					if (Quoted_String_()) {
+						auto s = std::string(GL::Engine::Position::str(start, m_position));
+						start = m_position;
+						out = out + GL::string(s);
+						continue;
+					}
+					if (Keyword_("\\\n") || Keyword_("\\\r")) {	
+						auto s = std::string(GL::Engine::Position::str(start, m_position - 2));
+						start = m_position;
+						out = out + GL::string(s);
+						continue;
+					}
+					if (Eol()) {
+						auto s = std::string(GL::Engine::Position::str(start, m_position));
+						out = out + GL::string(s);
+						while (out.size() > 0) {
+							bool success = false;
+							switch (out[0]) {
+							case ' ':
+							case '\n':
+							case '\r':
+							case '\t':
+								out = out.remove_leading(out[0]);
+								success = true;
+								break;
+							default:
+								switch (out[out.size() - 1]) {
+								case ' ':
+								case '\n':
+								case '\r':
+								case '\t':
+									out = out.remove_trailing(out[out.size() - 1]);
+									success = true;
+									break;
+								default:
+									break;
+								}
+							}
+							if (!success) break;
+						}
+						return true;
+					}
+					++m_position;					
+				}
+				return false;
+			};
+			// Attempt to read a pre-processor directive from input
+			bool PreprocessorDirectives() {
+				for (auto& preprocessor_call : std::vector<GL::utility::Static_String>({ 
+					"#warning", 
+					"#error", 
+					"#pragma", 
+					"#include", 
+					"#ifndef", "#ifdef", "#if", "#elif", "#else", "#endif",
+					"#define", "#undef"
+				})) {
+					if ([&]() -> bool {
+						const auto prev_stack_top = m_match_stack.size();
+						const auto prev_pos = m_position;
+						auto failure = [&]() {
+						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+							m_position = prev_pos;
+							return false;
+						};
+
+						if (Keyword(preprocessor_call)) {
+							const auto content_start = m_position;
+							GL::string s;
+							if (PreprocessorText(s)) {
+								m_match_stack.push_back(make_const((GL::string)s.to_string(), prev_pos, (GL::string)s.to_string()));
+								build_match<PreprocessorMacro_Node>(prev_stack_top);
+								m_match_stack.back().text = std::string_view(preprocessor_call.data);
+								return true;
+							}
+						}
+						return failure();
+					}()) {
+						auto& current_preprocessor_node = m_match_stack.back();
+						// now that we know we "found" a preprocessor token, how should we handle it?
+						switch (hash(current_preprocessor_node.text.c_str())) {
+						case hash("#warning"):
+							break;
+						case hash("#error"):
+							break;
+						case hash("#pragma"):
+							break;
+						case hash("#include"):
+							break;
+						case hash("#ifndef"):
+							break;
+						case hash("#ifdef"):
+							break;
+						case hash("#if"):
+							break;
+						case hash("#elif"):
+							break;
+						case hash("#else"):
+							break;
+						case hash("#endif"):
+							break;
+						case hash("#define"):
+							break;
+						case hash("#undef"):
+							break;
+						default:
+							throw except::eval_error("Unknown preprocessor directive: " + current_preprocessor_node.text, m_position);
+						}
+						return true;
+					}
+				}
+				return false;
+			};
+
 		private:
 			GL::scope::impl::RootScope& analysis_engine;
 		public:
@@ -14771,11 +14891,9 @@ namespace GL {
 				const auto end = begin == nullptr ? nullptr : begin + t_input.size();
 				m_position = Engine::Position(begin, end);
 
-				// top level stack        
+				// top level stack
 				if (Statements()) {
 					if (m_position.has_more()) {
-						//build_match<File_Node>(0);
-						//print(m_match_stack[0].to_string("", this->analysis_engine));
 						throw except::eval_error("Unparsed input", m_position);
 					}
 					else {
@@ -15732,6 +15850,59 @@ defer(100);
 		}
 		// recursive pre-compilation test
 		if (1) {
+			print(parser.Parse(R"(
+#warning "TEST1"
+#warning TEST2
+#warning TEST ... TEST 3 
+#warning TEST ... \
+TEST 4
+				return 10;				
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+#error "TEST1"
+#error TEST2
+#error TEST ... TEST 3 
+#error TEST ... \
+TEST 4
+				return 10;				
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+#include "path.h"
+#include path.h
+#include path
+#include www.github.com/path
+#include www.github.com/path/path.h
+				return 10;				
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+#if 1
+	100;
+#elif 1
+	200;
+#else
+	300
+#endif
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+#pragma once
+#pragma unroll
+for (;;){}
+
+#pragma parallel
+for (;;){}
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define TEST 100;
+return TEST;
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define TEST 100;
+#define TESTING(x) x + TEST;
+return TESTING(10);
+			)").to_string("", root) + "\n\n");
+
 			auto pre_processed = parser.Preprocess(R"(
 				// Compile-time factorial
 				#define factorial(n) ((n <= 1) ? 1ULL : (n * factorial(n - 1)))
