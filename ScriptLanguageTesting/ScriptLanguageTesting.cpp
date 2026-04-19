@@ -151,7 +151,6 @@ namespace GL {
 	};
 
 	namespace Engine {
-		using SourceFile = GL::string;
 		BETTER_ENUM(AST_Node_Type, uint32_t,
 			File, Noop, Comment,
 			Id, Reference, Var_Decl, Assign_Decl, Constant,
@@ -238,26 +237,28 @@ namespace GL {
 			operator File_Position() const {
 				return File_Position(line, col, pos);
 			};
-			constexpr Position() = default;
-			constexpr Position(const char* t_pos, const char* t_end) noexcept
+			Position() 
+				: line(-1)
+				, col(-1)
+				, pos(-1)
+				, m_pos(0)
+				, m_str(nullptr)
+				, m_last_col(-1) {
+			};
+			Position(size_t t_pos, GL::string& srce) noexcept
 				: line(1)
 				, col(1)
 				, pos(0)
 				, m_pos(t_pos)
-				, m_end(t_end)
+				, m_str(&srce)
 				, m_last_col(1) {
-			}
-			static std::string_view str(const Position& t_begin, const Position& t_end) noexcept {
-				if (t_begin.m_pos != nullptr && t_end.m_pos != nullptr) {
-					return std::string_view(t_begin.m_pos, std::size_t(std::distance(t_begin.m_pos, t_end.m_pos)));
-				}
-				else {
-					return {};
-				}
-			}
-			constexpr Position& operator++() noexcept {
-				if (m_pos != m_end) {
-					if (*m_pos == '\n') {
+			};
+			static GL::string str(const Position& t_begin, const Position& t_end) noexcept {
+				return t_begin.m_str->substr(t_begin.m_pos, t_end.m_pos - t_begin.m_pos);
+			};
+			Position& operator++() noexcept {
+				if (m_pos < m_str->size()) {
+					if (m_str->operator[](m_pos) == '\n') {
 						++line;
 						m_last_col = col;
 						col = 1;
@@ -270,11 +271,11 @@ namespace GL {
 					++m_pos;
 				}
 				return *this;
-			}
-			constexpr Position& operator--() noexcept {
+			};
+			Position& operator--() noexcept {
 				--pos;
 				--m_pos;
-				if (*m_pos == '\n') {
+				if (m_str->operator[](m_pos) == '\n') {
 					--line;
 					col = m_last_col;
 				}
@@ -282,41 +283,41 @@ namespace GL {
 					--col;
 				}
 				return *this;
-			}
-			constexpr Position& operator+=(size_t t_distance) noexcept {
+			};
+			Position& operator+=(size_t t_distance) noexcept {
 				*this = (*this) + t_distance;
 				return *this;
 			}
-			constexpr Position operator+(size_t t_distance) const noexcept {
+			Position operator+(size_t t_distance) const noexcept {
 				Position ret(*this);
 				for (size_t i = 0; i < t_distance; ++i) {
 					++ret;
 				}
 				return ret;
 			}
-			constexpr Position& operator-=(size_t t_distance) noexcept {
+			Position& operator-=(size_t t_distance) noexcept {
 				*this = (*this) - t_distance;
 				return *this;
 			}
-			constexpr Position operator-(size_t t_distance) const noexcept {
+			Position operator-(size_t t_distance) const noexcept {
 				Position ret(*this);
 				for (size_t i = 0; i < t_distance; ++i) {
 					--ret;
 				}
 				return ret;
 			}
-			constexpr bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
-			constexpr bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
-			constexpr bool has_more() const noexcept { return m_pos != m_end; }
-			constexpr size_t remaining() const noexcept { return static_cast<size_t>(m_end - m_pos); }
-			constexpr const char& operator*() const noexcept {
-				if (m_pos == m_end) {
+			bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
+			bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
+			bool has_more() const noexcept { return m_pos != m_str->size(); }
+			size_t remaining() const noexcept { return static_cast<size_t>(m_str->size() - m_pos); }
+			const char& operator*() const noexcept {
+				if (m_pos == m_str->size()) {
 					return ""[0];
 				}
 				else {
-					return *m_pos;
+					return m_str->operator[](m_pos);
 				}
-			}
+			};
 
 			int line = -1;
 			int col = -1;
@@ -325,10 +326,13 @@ namespace GL {
 			GL::string to_string() const {
 				return GL::printf("L%iC%i(#%i)", line, col, pos);
 			};
+			GL::string& Source() {
+				return *m_str;
+			};
 
 		private:
-			const char* m_pos = nullptr;
-			const char* m_end = nullptr;
+			size_t m_pos = 0;
+			GL::string* m_str;
 			int m_last_col = -1;
 		};
 		struct Parse_Location {
@@ -1438,7 +1442,7 @@ namespace GL {
 				Preprocessor() = default;
 				~Preprocessor() = default;
 
-				PreprocessorTokenPtr Parse(Engine::SourceFile t_input) { return parse(t_input); };
+				PreprocessorTokenPtr Parse(GL::string t_input) { return parse(t_input); };
 
 			private:
 				Engine::Position m_position{};
@@ -2000,10 +2004,8 @@ namespace GL {
 					return retval;
 				}
 
-				PreprocessorTokenPtr parse(Engine::SourceFile t_input) {
-					const auto begin = t_input.empty() ? nullptr : &t_input.front();
-					const auto end = begin == nullptr ? nullptr : begin + t_input.size();
-					m_position = Engine::Position(begin, end);
+				PreprocessorTokenPtr parse(GL::string& t_input) {
+					m_position = Engine::Position(0, t_input);
 
 					// top level stack        
 					if (Statements()) {
@@ -6269,32 +6271,32 @@ namespace GL {
 							try {
 								if (Hex_()) {
 									auto match = Engine::Position::str(start, m_position);
-									auto bv = buildInt(16, (std::string_view)match, true);
-									m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
+									auto bv = buildInt(16, match, true);
+									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
 									return true;
 								}
 								else if (Binary_()) {
 									auto match = Engine::Position::str(start, m_position);
-									auto bv = buildInt(2, (std::string_view)match, true);
-									m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
+									auto bv = buildInt(2, match, true);
+									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
 									return true;
 								}
 								else if (Float_()) {
 									auto match = Engine::Position::str(start, m_position);
-									auto bv = buildFloat((std::string_view)match);
-									m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
+									auto bv = buildFloat(match);
+									m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
 									return true;
 								}
 								else {
 									IntSuffix_();
 									auto match = Engine::Position::str(start, m_position);
 									if (!match.empty() && (match[0] == '0')) {
-										auto bv = buildInt(8, (std::string_view)match, false);
-										m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
+										auto bv = buildInt(8, match, false);
+										m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
 									}
 									else if (!match.empty()) {
-										auto bv = buildInt(10, (std::string_view)match, false);
-										m_match_stack.push_back(ParseNode{ make_const((std::string_view)match, start, bv), nullptr });
+										auto bv = buildInt(10, match, false);
+										m_match_stack.push_back(ParseNode{ make_const(match, start, bv), nullptr });
 									}
 									else {
 										return false;
@@ -8300,12 +8302,10 @@ namespace GL {
 					ParseNode parse(const GL::string& t_input, GL::scope::impl::BasicScope* currentScope) {
 						return parse_internal(t_input, currentScope);
 					};
-					ParseNode parse_internal(const GL::string& t_input, GL::scope::impl::BasicScope* currentScope) {
+					ParseNode parse_internal(GL::string t_input, GL::scope::impl::BasicScope* currentScope) {
 						auto this_scope = currentScope->make_scope();
 
-						const auto begin = t_input.empty() ? nullptr : &t_input.front();
-						const auto end = begin == nullptr ? nullptr : begin + t_input.size();
-						m_position = Engine::Position(begin, end);
+						m_position = Engine::Position(0, t_input);
 
 						// top level stack        
 						if (Statements(&this_scope)) {
@@ -12803,32 +12803,32 @@ namespace GL {
 					try {
 						if (Hex_()) {
 							auto match = Engine::Position::str(start, m_position);
-							auto bv = buildInt(16, (std::string_view)match, true);
-							m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							auto bv = buildInt(16, match, true);
+							m_match_stack.push_back(make_const(match, start, bv));
 							return true;
 						}
 						else if (Binary_()) {
 							auto match = Engine::Position::str(start, m_position);
-							auto bv = buildInt(2, (std::string_view)match, true);
-							m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							auto bv = buildInt(2, match, true);
+							m_match_stack.push_back(make_const(match, start, bv));
 							return true;
 						}
 						else if (Float_()) {
 							auto match = Engine::Position::str(start, m_position);
-							auto bv = buildFloat((std::string_view)match);
-							m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+							auto bv = buildFloat(match);
+							m_match_stack.push_back(make_const(match, start, bv));
 							return true;
 						}
 						else {
 							IntSuffix_();
 							auto match = Engine::Position::str(start, m_position);
 							if (!match.empty() && (match[0] == '0')) {
-								auto bv = buildInt(8, (std::string_view)match, false);
-								m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+								auto bv = buildInt(8, match, false);
+								m_match_stack.push_back(make_const(match, start, bv));
 							}
 							else if (!match.empty()) {
-								auto bv = buildInt(10, (std::string_view)match, false);
-								m_match_stack.push_back(make_const((std::string_view)match, start, bv));
+								auto bv = buildInt(10, match, false);
+								m_match_stack.push_back(make_const(match, start, bv));
 							}
 							else {
 								return false;
@@ -14750,19 +14750,19 @@ namespace GL {
 				while (m_position.has_more()) {
 					SkipWS();
 					if (Quoted_String_()) {
-						auto s = std::string(GL::Engine::Position::str(start, m_position));
+						auto s = GL::Engine::Position::str(start, m_position);
 						start = m_position;
 						out = out + GL::string(s);
 						continue;
 					}
 					if (Keyword_("\\\n") || Keyword_("\\\r")) {	
-						auto s = std::string(GL::Engine::Position::str(start, m_position - 2));
+						auto s = GL::Engine::Position::str(start, m_position - 2);
 						start = m_position;
 						out = out + GL::string(s);
 						continue;
 					}
 					if (Eol()) {
-						auto s = std::string(GL::Engine::Position::str(start, m_position));
+						auto s = GL::Engine::Position::str(start, m_position);
 						out = out + GL::string(s);
 						while (out.size() > 0) {
 							bool success = false;
@@ -14834,6 +14834,7 @@ namespace GL {
 						case hash("#error"):
 							break;
 						case hash("#pragma"):
+							// m_position.Source() = m_position.Source() + "\nvoid foo(){};";
 							break;
 						case hash("#include"):
 							break;
@@ -14850,6 +14851,49 @@ namespace GL {
 						case hash("#endif"):
 							break;
 						case hash("#define"):
+							if (current_preprocessor_node.children.size() >= 1
+								&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
+							) {	
+								auto current_position = m_position;
+								GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
+								// #define VarName
+								// #define VarName = ...
+								// #define VarName ...
+								// #define VarName(...) ...
+
+
+
+								//m_position = GL::Engine::Position(0, node_text);
+								//if (Id(true)) {
+								//	auto ID = m_match_stack.back().text;
+								//	m_match_stack.pop_back();
+								//	if (Symbol("=", true)) {
+								//		SkipWS();
+								//		auto remainder = node_text.right(node_text.length() - m_position.pos);
+								//		
+								//		m_position = current_position;
+								//		//m_position.Source() = m_position.Source() + "\n" + ID + " = " + remainder;
+								//	}
+								//	else if (Char('(')) {
+								//		auto Inputs_Start = m_position;
+								//		auto Inputs_End = m_position;
+								//		while (!Char(')')) Inputs_End = m_position;
+								//		auto inputs = m_position.str(Inputs_Start, Inputs_End);
+								//		SkipWS();
+								//		auto remainder = node_text.right(node_text.length() - m_position.pos);
+								//		m_position = current_position;
+								//		//m_position.Source() = m_position.Source() + "\n" + ID + "(" + inputs + ") = " + remainder;
+								//	}
+								//	else {
+								//		auto remainder = node_text.right(node_text.length() - m_position.pos);
+								//		m_position = current_position;
+								//		//m_position.Source() = m_position.Source() + "\n" + ID + " = " + remainder;
+								//	}
+								//}
+								//else {
+								//	throw except::eval_error("#define preprocessor must include an ID of some type.", current_position);
+								//}
+							}
 							break;
 						case hash("#undef"):
 							break;
@@ -14878,18 +14922,16 @@ namespace GL {
 			};
 
 			// highest-level parse request, which starts a new scope from scratch and completes it. 
-			AbstractSyntaxTreeNode Parse(const GL::string& t_input) {
+			AbstractSyntaxTreeNode Parse(GL::string t_input) {
 				return parse(t_input);
 			};
 
 		private:
-			AbstractSyntaxTreeNode parse(const GL::string& t_input) {
+			AbstractSyntaxTreeNode parse(GL::string& t_input) {
 				return parse_internal(t_input);
 			};
-			AbstractSyntaxTreeNode parse_internal(const GL::string& t_input) {
-				const auto begin = t_input.empty() ? nullptr : &t_input.front();
-				const auto end = begin == nullptr ? nullptr : begin + t_input.size();
-				m_position = Engine::Position(begin, end);
+			AbstractSyntaxTreeNode parse_internal(GL::string& t_input) {
+				m_position = Engine::Position(0, t_input);
 
 				// top level stack
 				if (Statements()) {
@@ -14929,7 +14971,7 @@ namespace GL {
 				m_match_stack.clear();
 				return retval;
 			};
-			AbstractSyntaxTreeNode parse_instr_eval(const GL::string& t_input) {
+			AbstractSyntaxTreeNode parse_instr_eval(GL::string& t_input) {
 				auto last_position = m_position;
 				auto last_match_stack = std::exchange(m_match_stack, decltype(m_match_stack){});
 				auto retval = parse_internal(t_input);
