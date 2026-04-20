@@ -252,6 +252,7 @@ namespace GL {
 				, m_pos(t_pos)
 				, m_str(&srce)
 				, m_last_col(1) {
+				current_position = srce.substr(m_pos);
 			};
 			static GL::string str(const Position& t_begin, const Position& t_end) noexcept {
 				return t_begin.m_str->substr(t_begin.m_pos, t_end.m_pos - t_begin.m_pos);
@@ -269,6 +270,7 @@ namespace GL {
 
 					++pos;
 					++m_pos;
+					current_position = m_str->substr(m_pos);
 				}
 				return *this;
 			};
@@ -282,6 +284,7 @@ namespace GL {
 				else {
 					--col;
 				}
+				current_position = m_str->substr(m_pos);
 				return *this;
 			};
 			Position& operator+=(size_t t_distance) noexcept {
@@ -333,6 +336,7 @@ namespace GL {
 		private:
 			size_t m_pos = 0;
 			GL::string* m_str;
+			GL::string current_position;
 			int m_last_col = -1;
 		};
 		struct Parse_Location {
@@ -12201,7 +12205,7 @@ namespace GL {
 				return out;
 			};
 
-			constexpr bool char_in_alphabet(char c, Engine::Alphabet a) const noexcept { return alphabet()[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
+			static constexpr bool char_in_alphabet(char c, Engine::Alphabet a) noexcept { return alphabet()[a][static_cast<uint8_t>(c)]; } // test a char in an m_alphabet
 
 		private:
 			Engine::Position m_position{};
@@ -12288,8 +12292,48 @@ namespace GL {
 				}
 				return false;
 			};
+			/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+			static bool Symbol_FreeStanding(const utility::Static_String& sym, GL::Engine::Position& m_position) noexcept {
+				const auto len = sym.size();
+				if (m_position.remaining() >= len) {
+					const char* file_pos = &(*m_position);
+					for (size_t pos = 0; pos < len; ++pos) {
+						if (sym.c_str()[pos] != file_pos[pos]) {
+							return false;
+						}
+					}
+					m_position += len;
+					return true;
+				}
+				return false;
+			};
+			/// Reads a symbol group from input if it matches the parameter, without skipping initial whitespace
+			static bool Symbol_FreeStanding(const GL::string& sym, GL::Engine::Position& m_position) noexcept {
+				const auto len = sym.size();
+				if (m_position.remaining() >= len) {
+					const char* file_pos = &(*m_position);
+					for (size_t pos = 0; pos < len; ++pos) {
+						if (sym[pos] != file_pos[pos]) {
+							return false;
+						}
+					}
+					m_position += len;
+					return true;
+				}
+				return false;
+			};
 			/// Reads a char from input if it matches the parameter, without skipping initial whitespace
 			bool Char_(const char c) {
+				if (m_position.has_more() && (*m_position == c)) {
+					++m_position;
+					return true;
+				}
+				else {
+					return false;
+				}
+			};
+			/// Reads a char from input if it matches the parameter, without skipping initial whitespace
+			static bool Char_FreeStanding(const char c, GL::Engine::Position& m_position) {
 				if (m_position.has_more() && (*m_position == c)) {
 					++m_position;
 					return true;
@@ -12308,6 +12352,21 @@ namespace GL {
 					m_position.col = 1;
 				}
 				else if (m_position.has_more() && !t_eos && Char_(';')) {
+					retval = true;
+				}
+
+				return retval;
+			};
+			/// Reads an end-of-line group from input, without skipping initial whitespace
+			static bool Eol_FreeStanding(const bool t_eos, GL::Engine::Position& m_position) {
+				bool retval = false;
+
+				if (m_position.has_more() && (Symbol_FreeStanding(m_cr_lf, m_position) || Char_FreeStanding('\n', m_position))) {
+					retval = true;
+					//++m_position.line;
+					m_position.col = 1;
+				}
+				else if (m_position.has_more() && !t_eos && Char_FreeStanding(';', m_position)) {
 					retval = true;
 				}
 
@@ -12754,6 +12813,105 @@ namespace GL {
 				return failure();
 #endif
 			};
+			static bool Id_FreeStanding(GL::string* out, GL::Engine::Position& m_position) {
+				const auto prev_pos = m_position;
+
+				auto failure = [&]() {
+					m_position = prev_pos;
+					return false;
+				};
+
+				if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) { // e.g. found `v`
+					if (*m_position == ':') {
+						// we require colons to come in pairs
+						++m_position;
+						if (m_position.has_more()) {
+							if (*m_position == ':') {
+								++m_position;
+								if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) {
+									// works for us. 
+								}
+								else {
+									return failure();
+								}
+							}
+							else {
+								return failure();
+							}
+						}
+						else {
+							return failure();
+						}
+					}
+					if ((*m_position >= '0') && (*m_position <= '9')) return failure();
+
+					auto potential_end = m_position;
+					auto local_revert = m_position;
+					bool inside_brackets = false;
+					while (m_position.has_more()) {
+						// capture "normal" id chars
+						if (char_in_alphabet(*m_position, Engine::id_alphabet)) {
+							if (*m_position == ':') {
+								// we require colons to come in pairs
+								++m_position;
+								if (m_position.has_more()) {
+									if (*m_position == ':') {
+										++m_position;
+										if (m_position.has_more() && char_in_alphabet(*m_position, Engine::id_alphabet)) {
+											potential_end = m_position;
+											continue;
+										}
+									}
+								}
+								break;
+							}
+							else {
+								++m_position;
+								potential_end = m_position;
+								continue;
+							}
+						}
+						// skip whitespace chars
+						while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) ++m_position;
+						local_revert = m_position;
+						// handle <...>
+						if (*m_position == '<') {
+							inside_brackets = true;
+							++m_position;
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) ++m_position;
+							if (Id_FreeStanding(out, m_position)) {
+								// successful search, keep going.
+								continue;
+							}
+							else {
+								m_position = local_revert;
+							}
+						}
+						if (inside_brackets && (*m_position == ',')) {
+							++m_position;
+							while (m_position.has_more() && char_in_alphabet(*m_position, Engine::white_alphabet)) ++m_position;
+							if (Id_FreeStanding(out, m_position)) {
+								// successful search, keep going.
+								continue;
+							}
+							else {
+								m_position = local_revert;
+							}
+						}
+						if (inside_brackets && (*m_position == '>')) {
+							inside_brackets = false;
+							++m_position;
+							potential_end = m_position;
+							continue;
+						}
+						break;
+					}
+					m_position = potential_end;
+					if (out) *out = Engine::Position::str(prev_pos, m_position);
+					return true;
+				}
+				return failure();
+			};
 			/// Reads a quoted string from input, without skipping initial whitespace
 			bool Quoted_String_() {
 				if (m_position.has_more() && (*m_position == '\"')) {
@@ -12944,25 +13102,46 @@ namespace GL {
 					return true;
 
 				}
-				//else if (Symbol_(m_annotation)) {
-				//	while (m_position.has_more()) {
-				//		if (Symbol_(m_cr_lf)) {
-				//			m_position -= 2;
-				//			break;
-				//		}
-				//		else if (Char_('\n')) {
-				//			--m_position;
-				//			break;
-				//		}
-				//		else {
-				//			++m_position;
-				//		}
-				//	}
-				//	GL::string comment = Engine::Position::str(start, m_position);
-				//	m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+				return false;
+			}
+			/// Skips (and potentially captures w/ nullptr scope) any multi-line or single-line comment
+			static bool SkipComment_FreeStanding(GL::Engine::Position& m_position) {
+				const auto start = m_position;
+				if (Symbol_FreeStanding(m_multiline_comment_begin, m_position)) {
+					while (m_position.has_more()) {
+						if (Symbol_FreeStanding(m_multiline_comment_end, m_position)) {
+							break;
+						}
+						else if (!Eol_FreeStanding(false, m_position)) {
+							++m_position;
+						}
+					}
+					//GL::string comment = Engine::Position::str(start, m_position);
+					//  m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
 
-				//	return true;
-				//}
+					return true;
+				}
+				else if (Symbol_FreeStanding(m_singleline_comment, m_position)) {
+					while (m_position.has_more()) {
+						if (Symbol_FreeStanding(m_cr_lf, m_position)) {
+							m_position -= 2;
+							break;
+						}
+						else if (Char_FreeStanding('\n', m_position)) {
+							--m_position;
+							break;
+						}
+						else {
+							++m_position;
+						}
+					}
+
+					//GL::string comment = Engine::Position::str(start, m_position);
+					//m_comment_stack.push_back(Comment_Node(GL::string(comment), Engine::Parse_Location(start, m_position), {}));
+
+					return true;
+
+				}
 				return false;
 			}
 			/// Skips whitespace, which means space and tab, but not cr/lf
@@ -12990,6 +13169,39 @@ namespace GL {
 						retval = true;
 					}
 					else if (SkipComment()) {
+						retval = true;
+					}
+					else {
+						break;
+					}
+				}
+				return retval;
+			};
+			/// Skips whitespace, which means space and tab, but not cr/lf
+			/// jespada: Modified SkipWS to skip optionally CR ('\n') and/or LF+CR ("\r\n")
+			/// AlekMosingiewicz: Added exception when illegal character detected
+			static bool SkipWS_FreeStanding(bool skip_cr, GL::Engine::Position& m_position) {
+				bool retval = false;
+
+				while (m_position.has_more()) {
+					if (static_cast<unsigned char>(*m_position) > 0x7e) {
+						throw except::eval_error("Illegal character", m_position);
+					}
+					auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
+
+					if (char_in_alphabet(*m_position, Engine::white_alphabet) || (skip_cr && end_line)) {
+						if (end_line) {
+							if (*m_position == '\r') {
+								// discards lf
+								++m_position;
+							}
+						}
+
+						++m_position;
+
+						retval = true;
+					}
+					else if (SkipComment_FreeStanding(m_position)) {
 						retval = true;
 					}
 					else {
@@ -14744,7 +14956,7 @@ namespace GL {
 			};
 
 			bool PreprocessorText(GL::string& out) {
-				SkipWS();
+				// SkipWS();
 				auto start = m_position;
 				out = GL::string::empty_string();
 				while (m_position.has_more()) {
@@ -14855,44 +15067,53 @@ namespace GL {
 								&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
 							) {	
 								auto current_position = m_position;
-								GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
+								GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);						
+								
 								// #define VarName
 								// #define VarName = ...
 								// #define VarName ...
 								// #define VarName(...) ...
 
+								GL::string VarName;
+								GL::string remainder;
+								GL::string inputs;
+								bool is_function = false;
 
+								auto local_pos = GL::Engine::Position(0, node_text);
+								if (Id_FreeStanding(&VarName, local_pos)) {
+									SkipWS_FreeStanding(false, local_pos);
+									if (Symbol_FreeStanding(GL::string("="), local_pos)) {
+										SkipWS_FreeStanding(false, local_pos);
+										remainder = node_text.right(node_text.length() - local_pos.pos);
+									}
+									else if (Char_FreeStanding('(', local_pos)) {
+										SkipWS_FreeStanding(false, local_pos);
+										is_function = true;
+										auto Inputs_Start = local_pos;
+										auto Inputs_End = local_pos;
+										while (!Char_FreeStanding(')', local_pos)) {											
+											++local_pos;
+											Inputs_End = local_pos;											
+										}
+										inputs = local_pos.str(Inputs_Start, Inputs_End);
+										SkipWS_FreeStanding(false, local_pos);
+										remainder = node_text.right(node_text.length() - local_pos.pos);
+									}
+									else {
+										SkipWS_FreeStanding(false, local_pos);
+										remainder = node_text.right(node_text.length() - local_pos.pos);
+									}
+								}
+								else {
+									throw except::eval_error("#define preprocessor must include an ID of some type.", current_position);
+								}
 
-								//m_position = GL::Engine::Position(0, node_text);
-								//if (Id(true)) {
-								//	auto ID = m_match_stack.back().text;
-								//	m_match_stack.pop_back();
-								//	if (Symbol("=", true)) {
-								//		SkipWS();
-								//		auto remainder = node_text.right(node_text.length() - m_position.pos);
-								//		
-								//		m_position = current_position;
-								//		//m_position.Source() = m_position.Source() + "\n" + ID + " = " + remainder;
-								//	}
-								//	else if (Char('(')) {
-								//		auto Inputs_Start = m_position;
-								//		auto Inputs_End = m_position;
-								//		while (!Char(')')) Inputs_End = m_position;
-								//		auto inputs = m_position.str(Inputs_Start, Inputs_End);
-								//		SkipWS();
-								//		auto remainder = node_text.right(node_text.length() - m_position.pos);
-								//		m_position = current_position;
-								//		//m_position.Source() = m_position.Source() + "\n" + ID + "(" + inputs + ") = " + remainder;
-								//	}
-								//	else {
-								//		auto remainder = node_text.right(node_text.length() - m_position.pos);
-								//		m_position = current_position;
-								//		//m_position.Source() = m_position.Source() + "\n" + ID + " = " + remainder;
-								//	}
-								//}
-								//else {
-								//	throw except::eval_error("#define preprocessor must include an ID of some type.", current_position);
-								//}
+								if (is_function) {
+									print("Defined: " + VarName + "(" + inputs + ") = " + remainder);
+								}
+								else {
+									print("Defined: " + VarName + " = " + remainder);
+								}
 							}
 							break;
 						case hash("#undef"):
