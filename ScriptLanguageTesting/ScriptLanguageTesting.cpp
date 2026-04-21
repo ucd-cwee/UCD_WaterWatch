@@ -9188,7 +9188,40 @@ namespace GL {
 
 				// removes items from Blocks that are unecessary (e.g. floating code) or will never be hit (e.g. following return statements)
 				struct Dead_Code {
-					bool optimize(AbstractSyntaxTreeNode& node) {
+					__declspec(noinline) bool optimize(AbstractSyntaxTreeNode& node) {
+						if (node.identifier == Engine::AST_Node_Type::Block) {
+							const auto num_children = node.children.size();
+							for (size_t i = 0; i < num_children; ++i) {
+								if (node.children[i].identifier == Engine::AST_Node_Type::Assign_Retroactively) {
+									if (node.children[i].tag.cast<ObjectDeclarationInformation>().is_constexpr) {
+										bool is_used = false;
+										for (size_t j = i + 1; j < num_children; ++j) {
+											if (node.children[j].identifier == Engine::AST_Node_Type::Id) {
+												if (node.children[j].text == node.children[i].children[1].children[0].text) {
+													is_used = true;
+													break;
+												}
+											}
+											if (node.children[j].for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+												if (this_child.identifier == Engine::AST_Node_Type::Id) {
+													if (this_child.text == node.children[i].children[1].children[0].text) {
+														return true;
+													}
+												}
+												return false;
+												})) {
+												is_used = true;
+												break;
+											};
+										}
+										if (!is_used) {
+											node.children[i] = Noop_Node("", {}, {});
+										}
+									}
+								}
+							}
+						}						
+						
 						if ((node.identifier == Engine::AST_Node_Type::File) || (node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
 							std::vector<size_t> keepers;
 							const auto num_children = node.children.size();
@@ -9229,39 +9262,6 @@ namespace GL {
 								node.children = new_children();		
 
 								return true;
-							}
-						}
-
-						if (node.identifier == Engine::AST_Node_Type::Block) {
-							const auto num_children = node.children.size();
-							for (size_t i = 0; i < num_children; ++i) {
-								if (node.children[i].identifier == Engine::AST_Node_Type::Assign_Retroactively) {
-									if (node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
-										bool is_used = false;
-										for (size_t j = i + 1; j < num_children; ++j) {
-											if (node.children[j].identifier == Engine::AST_Node_Type::Id) {
-												if (node.children[j].text == node.children[i].children[1].children[0].text) {
-													is_used = true;
-													break;
-												}
-											}
-											if (node.children[j].for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
-												if (this_child.identifier == Engine::AST_Node_Type::Id) {
-													if (this_child.text == node.children[i].children[1].children[0].text) {
-														return true;
-													}
-												}
-												return false;												
-											})) {
-												is_used = true;
-												break;
-											};
-										}
-										if (!is_used) {
-											node.children[i] = Noop_Node("", {}, {});
-										}
-									}
-								}
 							}
 						}
 
@@ -9880,58 +9880,6 @@ namespace GL {
 						}
 
 						// Reduction of unecessary binary operations
-	#if 0
-						if (((node.identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft))
-							&& node.children.size() == 1
-							&& node.text == "*"
-							&& is_numeric(node)
-						) {
-							if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
-								if (out.can_cast(GL::type_of<bool>())) {
-									if (out.cast<bool>()) {
-										node = Constant_Node("", node.location, {}, node.constant);
-										return true;
-									}
-								}
-							}
-							if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(1) }, out)) {
-								if (out.can_cast(GL::type_of<bool>())) {
-									if (out.cast<bool>()) {
-										node = node.children[0];
-										return true;
-									}
-								}
-							}
-						}
-						if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
-							&& node.children.size() == 1
-							&& node.text == "/"
-							&& is_numeric(node)
-						) {
-							if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(1) }, out)) {
-								if (out.can_cast(GL::type_of<bool>())) {
-									if (out.cast<bool>()) {
-										node = node.children[0];
-										return true;
-									}
-								}
-							}
-						}
-						if (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft
-							&& node.children.size() == 1
-							&& node.text == "/"
-							&& is_numeric(node)
-							) {
-							if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
-								if (out.can_cast(GL::type_of<bool>())) {
-									if (out.cast<bool>()) {
-										node = Constant_Node("", node.location, {}, node.constant);
-										return true;
-									}
-								}
-							}
-						}
-	#endif
 						if (((node.identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.identifier == Engine::AST_Node_Type::BinaryFoldLeft))
 							&& node.children.size() == 1
 							&& node.text == "+"
@@ -16424,13 +16372,19 @@ if (TESTING(TEST)){
 TESTING(TEST);
 			)").to_string("", root) + "\n\n");
 
-
-
 			print(parser.Parse(R"(
 #define TEST TEST;
 #define TESTING(x) x + TEST;
 return TESTING(TEST);
 			)").to_string("", root) + "\n\n");
+
+//			print(parser.Parse(R"(
+//#define factorial(n) ((n <= 1) ? 1ULL : (n * factorial(n - 1)))
+//constexpr auto x1 = factorial(1);
+//constexpr auto x2 = factorial(2);
+//constexpr auto x3 = factorial(5);
+//return x1 + x2 + x3;
+//			)").to_string("", root) + "\n\n");
 
 			//auto pre_processed = parser.Preprocess(R"(
 			//	// Compile-time factorial
