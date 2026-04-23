@@ -1,6 +1,7 @@
 #pragma once
 #include "scripting.h"
 #include "../GpuProgramming/matrix.h"
+#include "datetime.h"
 
 namespace GL {
 	namespace scope {
@@ -2477,6 +2478,68 @@ namespace GL {
                 Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return (class_t)rhs; }));
                 Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
+            
+            // datetime
+            if (1) {
+                using class_t = GL::datetime;
+                auto& Class = this->make_class(GL::type_of<class_t>());
+                Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type));
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor));
+                Class.add_function(GL::make_callable(Class.this_type.name(), [](GL::string const& rhs) -> class_t { return class_t(rhs); }, GL::function_signature::Constructor | GL::function_signature::Explicit));
+
+                // assignment operator
+                this->add_function(GL::make_callable("=", [](GL::any::fast_any lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() = rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));
+                this->add_function(GL::make_callable("==", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs == rhs; }));
+                this->add_function(GL::make_callable("!=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs != rhs; }));
+                this->add_function(GL::make_callable(">", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs > rhs; }));
+                this->add_function(GL::make_callable(">=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs >= rhs; }));
+                this->add_function(GL::make_callable("<", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs < rhs; }));
+                this->add_function(GL::make_callable("<=", [](class_t const& lhs, class_t const& rhs) -> bool { return lhs <= rhs; }));
+                this->add_function(GL::make_callable("+", [](class_t const& lhs, GL::minute const& rhs) -> class_t { return lhs + rhs; }));
+                this->add_function(GL::make_callable("+", [](GL::minute const& lhs, class_t const& rhs) -> class_t { return lhs + rhs; }));
+                this->add_function(GL::make_callable("-", [](class_t const& lhs, GL::minute const& rhs) -> class_t { return lhs - rhs; }));
+                this->add_function(GL::make_callable("-", [](class_t const& lhs, class_t const& rhs) -> GL::minute { return lhs - rhs; }));
+                this->add_function(GL::make_callable("*", [](class_t const& lhs, double const& rhs) -> class_t { return lhs * rhs; }));
+                this->add_function(GL::make_callable("*", [](double const& lhs, class_t const& rhs) -> class_t { return rhs * lhs; }));
+                this->add_function(GL::make_callable("/", [](class_t const& lhs, double const& rhs) -> class_t { return lhs / rhs; }));
+                
+                this->add_function(GL::make_callable("+=", [](GL::any::fast_any lhs, GL::minute const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() += rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<GL::minute const&>() } }, Class.this_type | GL::type::Reference));
+                this->add_function(GL::make_callable("-=", [](GL::any::fast_any lhs, GL::minute const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() += rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<GL::minute const&>() } }, Class.this_type | GL::type::Reference));
+                this->add_function(GL::make_callable("*=", [](GL::any::fast_any lhs, double const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() *= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<double const&>() } }, Class.this_type | GL::type::Reference));
+                this->add_function(GL::make_callable("/=", [](GL::any::fast_any lhs, double const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() /= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<double const&>() } }, Class.this_type | GL::type::Reference));
+
+                Class.add_function(GL::decl_func(&class_t::Epoch));
+                Class.add_function(GL::decl_func(&class_t::Now));
+                Class.add_function(GL::decl_func(&class_t::getNumDaysInSameMonth));
+                Class.add_function(GL::decl_func(&class_t::GetUtcOffset));
+                Class.add_function(GL::make_callable("make_time", [](int year, int month, int day, int hour, int minute, float second) -> datetime { return datetime::make_time(year,month,day,hour,minute,second); }, { 1970,1,1,0,0,0 }));
+
+                Class.add_function(GL::decl_func(&class_t::ToStartOfMonth));
+                Class.add_function(GL::decl_func(&class_t::ToStartOfDay));
+                Class.add_function(GL::decl_func(&class_t::ToStartOfHour));
+                Class.add_function(GL::decl_func(&class_t::ToStartOfMinute));
+                Class.add_function(GL::decl_func(&class_t::ToEndOfMonth));
+                Class.add_function(GL::decl_func(&class_t::ToEndOfDay));
+                Class.add_function(GL::decl_func(&class_t::ToEndOfHour));
+                Class.add_function(GL::decl_func(&class_t::ToEndOfMinute));
+                Class.add_function(GL::decl_func(&class_t::ToNextMonth));
+                Class.add_function(GL::decl_func(&class_t::ToNextDay));
+                Class.add_function(GL::decl_func(&class_t::ToNextHour));
+                Class.add_function(GL::decl_func(&class_t::ToNextMinute));
+
+                Class.add_function(GL::decl_func(&class_t::tm_fractionalsec));
+                Class.add_function(GL::decl_func(&class_t::tm_sec));
+                Class.add_function(GL::decl_func(&class_t::tm_min));
+                Class.add_function(GL::decl_func(&class_t::tm_hour));
+                Class.add_function(GL::decl_func(&class_t::tm_mday));
+                Class.add_function(GL::decl_func(&class_t::tm_mon));
+                Class.add_function(GL::decl_func(&class_t::tm_year));
+                Class.add_function(GL::decl_func(&class_t::tm_wday));
+                Class.add_function(GL::decl_func(&class_t::tm_yday));
+
+                Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs; }));
+                Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<long long>()(rhs); }));
+            }
 
             // pair<T0,T1>
             if (1) {
@@ -3202,6 +3265,62 @@ namespace GL {
                 }, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
 
                 BaseClass.initialize_basic_member_functions();
+            }
+
+            // queue<T0>
+            if (1) {
+                auto& BaseClass = this->make_class("queue");
+                BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") } };
+
+                using impl_t = GL::atomic_parallel_queue<GL::any::fast_any>;
+                if (1) {
+                    // teach it how to create the generic map
+                    GL::type_of<impl_t>().try_update_name("queue_impl");
+                    auto& AnyMap = BaseClass.make_class(GL::type_of<impl_t>());
+                    AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), []() -> GL::shared_ptr<impl_t> { return GL::make_shared<impl_t>(); }, GL::function_signature::Constructor + GL::function_signature::Async));
+                    
+                    // to_string and to_hash functions
+                    AnyMap.add_function(GL::make_callable("to_string", [](impl_t const& rhs) -> GL::string {
+                        GL::string out;
+                        return out;
+                    }, GL::function_signature::Async | GL::function_signature::Constant));
+                    AnyMap.add_function(GL::make_callable("to_hash", [](impl_t const& rhs) -> size_t {
+                        size_t out = 0;                       
+                        return out;
+                    }, GL::function_signature::Async | GL::function_signature::Constant));
+                }
+                // the use of "~" at the start of this member object's name is not arbitrary. This is a special code that means this is an intended-to-be-hidden wrapper for the dynamic_object.
+                BaseClass.add_member_object("~impl", GL::type_of<impl_t>());
+
+                BaseClass.add_function(GL::make_callable("size", [](GL::any::fast_any lhs) -> size_t {
+                    if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
+                        auto& impl = (*implp)->cast<impl_t>();
+                        return impl.size();
+                    }
+                    throw std::runtime_error("Could not instantiate the map internals");
+                }, GL::function_signature::Constant | GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<size_t>()));
+                BaseClass.add_function(GL::make_callable("try_pop", [](GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+                    if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
+                        auto& impl = (*implp)->cast<impl_t>();
+                        GL::any::fast_any out;
+                        if (impl.try_pop(out)) {
+                            GL::scope::GetCurrentCaller()->GetRoot()->call("=", { rhs, out });
+                            return true;
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    throw std::runtime_error("Could not instantiate the map internals");
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference }, { "copy", GL::is_template::type<0>("T0") | GL::type::Reference } }));
+                BaseClass.add_function(GL::make_callable("push", [](GL::any::fast_any lhs, GL::any::fast_any obj) -> size_t {
+                    auto* impl_class = GetClass(lhs.m_casted_type);
+                    if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
+                        auto& impl = (*implp)->cast<impl_t>();
+                        return impl.push(obj);
+                    }
+                    throw std::runtime_error("Could not instantiate the map internals");
+                }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "obj", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }));
             }
 
             // GPU-accelerated arrays
