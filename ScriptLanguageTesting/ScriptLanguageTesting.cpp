@@ -8361,7 +8361,8 @@ namespace GL {
 			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children) : text(t_ast_node_text.to_string()), location(t_loc), identifier{ id }, children(t_children) {};
 			AbstractSyntaxTreeNode() : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop) {};
 			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const& rhs) : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
-				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
+				if (rhs.children.size() > 0) children = rhs.children;
+				// children.insert(children.end(), rhs.children.begin(), rhs.children.end());
 			};
 			AbstractSyntaxTreeNode& operator=(AbstractSyntaxTreeNode const& rhs) {
 				identifier = rhs.identifier;
@@ -8371,10 +8372,18 @@ namespace GL {
 				output = rhs.output;
 				tag = rhs.tag;
 
-				size_t N = children.size();
-				children.insert(children.end(), rhs.children.begin(), rhs.children.end());
+				if (rhs.children.size() == 0) {
+					children.clear();
+				}
+				else {
+					auto temp = rhs.children;
+					children = temp;
+				}
 
-				if (N > 0) children.erase(children.begin(), children.begin() + N);
+
+				// size_t N = children.size();
+				// children.insert(children.end(), rhs.children.begin(), rhs.children.end());
+				// if (N > 0) children.erase(children.begin(), children.begin() + N);
 
 				return *this;
 			};
@@ -8404,7 +8413,7 @@ namespace GL {
 				auto out = t_prepend + "(" + str + ") \"" + text + "\": " + locationStr + " -> " + returnType;
 				if (constant) {
 					try {
-						GL::string Const = local_root.call<GL::string>("to_string", { constant });
+						GL::string Const = local_root.call<GL::string>("to_string", { constant | GL::type::Const | GL::type::Reference });
 						out = out.add_to_delim(t_prepend + "\t... includes embedded constant { " + Const + " }", "\n");
 					}
 					catch (...) {
@@ -9131,7 +9140,10 @@ namespace GL {
 								if (node.constant) {
 									if (node.children[2].constant) {
 										// we were already given a contant value!
-										if (GL::any::fast_any result; AttemptCalculation("=", { node.constant, node.children[2].constant }, result)) {
+										if (GL::any::fast_any result; AttemptCalculation("=", { node.constant, node.children[2].constant | GL::type::Const | GL::type::Reference }, result)) {
+											// successfully "assigned" the RHS to the LHS type.
+											node.children[0] = Constant_Node(node.children[0].text, node.children[0].location, {}, node.constant);
+											node.children.pop_back();
 											return true;
 										}
 									}
@@ -9176,7 +9188,7 @@ namespace GL {
 							&& node.children[0].text == "to_string"
 						) {
 							const GL::any::fast_any& rhs = node.children[1].children[0].constant;
-							if (GL::any::fast_any result; AttemptCalculation("to_string", { rhs }, result)) {
+							if (GL::any::fast_any result; AttemptCalculation("to_string", { rhs | GL::type::Const | GL::type::Reference }, result)) {
 								node = Constant_Node(node.text, (Engine::Parse_Location)node.location, {}, result);
 								return true;
 							}
@@ -9505,9 +9517,9 @@ namespace GL {
 						}
 
 						// if a scopeless block node only has one child, accept that child as the content of this node
-						if ((node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File)) {
-							if (!contains_var_decl_in_scope(node)) {
-								if (node.children.size() == 1) {
+						if ((node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File)) {							
+							if (node.children.size() == 1) {
+								if (!contains_var_decl_in_scope(node)) {
 									node = node.children[0];
 									return true;
 								}
@@ -9541,7 +9553,10 @@ namespace GL {
 						if ((node.identifier == Engine::AST_Node_Type::Block || node.identifier == Engine::AST_Node_Type::Scopeless_Block) && !node.children.empty()) {
 							for (size_t i = 0; i < node.children.size() - 1; ++i) {
 								auto& child = node.children[i];
-								if (child.identifier == Engine::AST_Node_Type::Fun_Call) {
+								if ((child.identifier == Engine::AST_Node_Type::Fun_Call)
+									&& child.tag.can_cast(GL::type_of<FunctionCallInformation>())
+									&& (child.tag.cast< FunctionCallInformation>().use_return == true)
+								) {
 									node.children[i] = Unused_Return_Fun_Call_Node(
 										child.text,
 										child.location,
@@ -9557,7 +9572,10 @@ namespace GL {
 								auto num_sub_children = child_count(child);
 								for (size_t i = 0; i < num_sub_children; ++i) {
 									auto& sub_child = child.children[i];
-									if (sub_child.identifier == Engine::AST_Node_Type::Fun_Call) {
+									if (sub_child.identifier == Engine::AST_Node_Type::Fun_Call
+										&& sub_child.tag.can_cast(GL::type_of<FunctionCallInformation>())
+										&& (sub_child.tag.cast< FunctionCallInformation>().use_return == true)
+									) {
 										child.children[i] = Unused_Return_Fun_Call_Node(
 											sub_child.text,
 											sub_child.location,
@@ -9689,7 +9707,7 @@ namespace GL {
 										&& child.children.size() == 2
 										&& child.children[0].identifier == Engine::AST_Node_Type::Constant
 									) {
-										size_t this_hash = CurrentEngine().call<size_t>("to_hash", { child.children[0].constant });
+										size_t this_hash = CurrentEngine().call<size_t>("to_hash", { child.children[0].constant | GL::type::Const | GL::type::Reference });
 										node.tag.cast< SwitchInformation>().hash_to_child_index[this_hash] = i;
 									}
 									else if (child.identifier == Engine::AST_Node_Type::Default) {
@@ -9714,7 +9732,7 @@ namespace GL {
 						) {
 							size_t starting_child_index = 1;
 							try {
-								size_t this_hash = CurrentEngine().call<size_t>("to_hash", { node.children[0].constant });
+								size_t this_hash = CurrentEngine().call<size_t>("to_hash", { node.children[0].constant | GL::type::Const | GL::type::Reference });
 								if (auto f = node.tag.cast< SwitchInformation>().hash_to_child_index.find(this_hash), e = node.tag.cast< SwitchInformation>().hash_to_child_index.end(); f != e) {
 									// from the found index on, compile into a block
 									starting_child_index = f->second;
@@ -9731,7 +9749,7 @@ namespace GL {
 											&& child.children.size() == 2
 											&& child.children[0].identifier == Engine::AST_Node_Type::Constant
 										) {
-											if (GL::any::fast_any out; AttemptCalculation("==", { node.children[0].constant, child.children[0].constant }, out)) {
+											if (GL::any::fast_any out; AttemptCalculation("==", { node.children[0].constant | GL::type::Const | GL::type::Reference, child.children[0].constant | GL::type::Const | GL::type::Reference }, out)) {
 												if (out.cast<bool>()) {
 													starting_child_index = i;
 													break;
@@ -9834,7 +9852,7 @@ namespace GL {
 								if (auto iter = GL::value::abbreviations_to_type().find(node.text); iter != GL::value::abbreviations_to_type().end()) {
 									if (auto* BC = CurrentEngine().try_find_class(iter->second.m_casted_type); BC && BC->this_m.is_class()) {
 										try {
-											auto result = BC->this_m.scope->call(BC->this_m.scope_name, { node.children[0].constant });
+											auto result = BC->this_m.scope->call(BC->this_m.scope_name, { node.children[0].constant | GL::type::Const | GL::type::Reference });
 											node = Constant_Node(node.text, node.location, {}, result);
 											return true;
 										}
@@ -9900,7 +9918,7 @@ namespace GL {
 						) {
 							auto& lhs = node.children[0].constant;
 							auto& rhs = node.children[1].constant;
-							if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 								return true;
 							}
@@ -9913,7 +9931,7 @@ namespace GL {
 						) {
 							auto& lhs = node.children[0].constant;
 							auto& rhs = node.constant;
-							if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 								return true;
 							}
@@ -9926,7 +9944,7 @@ namespace GL {
 						) {
 							auto& lhs = node.constant; 
 							auto& rhs = node.children[0].constant;
-							if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(node.text, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 								return true;
 							}
@@ -9944,6 +9962,7 @@ namespace GL {
 							|| rhs.constant.can_cast(GL::type_of<float>())
 							|| rhs.constant.can_cast(GL::type_of<double>())
 							|| rhs.constant.can_cast(GL::type_of<long>())
+							|| rhs.constant.can_cast(GL::type_of<long long>())
 							|| rhs.constant.can_cast(GL::type_of<long double>())
 							|| rhs.constant.can_cast(GL::type_of<int>())
 							|| rhs.constant.can_cast(GL::type_of<unsigned int>())
@@ -9952,6 +9971,46 @@ namespace GL {
 							|| rhs.constant.can_cast(GL::type_of<char>())
 							|| rhs.constant.can_cast(GL::type_of<unsigned char>());
 					}
+					static bool equals(AbstractSyntaxTreeNode const& rhs, GL::value V) {
+						if (rhs.constant.can_cast(GL::type_of<GL::value>())) {
+							return rhs.constant.cast<GL::value>() == V;
+						}
+						else if (rhs.constant.can_cast(GL::type_of<float>())) {
+							return rhs.constant.cast<float>() == (float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<double>())) {
+							return rhs.constant.cast<double>() == (double)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<long>())) {
+							return rhs.constant.cast<long>() == (long)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<long long>())) {
+							return rhs.constant.cast<long long>() == (long long)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<long double>())) {
+							return rhs.constant.cast<long double>() == (long double)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<int>())) {
+							return rhs.constant.cast<int>() == (int)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<unsigned int>())) {
+							return rhs.constant.cast<unsigned int>() == (unsigned int)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<unsigned long>())) {
+							return rhs.constant.cast<unsigned long>() == (unsigned long)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<unsigned long long>())) {
+							return rhs.constant.cast<unsigned long long>() == (unsigned long long)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<char>())) {
+							return rhs.constant.cast<char>() == (char)(float)(V);
+						}
+						else if (rhs.constant.can_cast(GL::type_of<unsigned char>())) {
+							return rhs.constant.cast<unsigned char>() == (unsigned char)(float)(V);
+						}
+						return false;
+					}
+
 
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						// Fold right side
@@ -9990,13 +10049,9 @@ namespace GL {
 							&& node.text == "+"
 							&& is_numeric(node)
 						) {
-							if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
-								if (out.can_cast(GL::type_of<bool>())) {
-									if (out.cast<bool>()) {
-										node = node.children[0];
-										return true;
-									}
-								}
+							if (equals(node, 0)) {
+								node = node.children[0];
+								return true;
 							}
 						}
 						if (node.identifier == Engine::AST_Node_Type::BinaryFoldRight
@@ -10004,13 +10059,9 @@ namespace GL {
 							&& node.text == "-"
 							&& is_numeric(node)
 						) {
-							if (GL::any::fast_any out; AttemptCalculation("==", { node.constant, GL::any::fast_any::instance(0) }, out)) {
-								if (out.can_cast(GL::type_of<bool>())) {
-									if (out.cast<bool>()) {
-										node = node.children[0];
-										return true;
-									}
-								}
+							if (equals(node, 0)) {
+								node = node.children[0];
+								return true;
 							}
 						}
 
@@ -10104,7 +10155,7 @@ namespace GL {
 							default: return false;
 							}
 
-							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
 								return true;
 							}
@@ -10201,7 +10252,7 @@ namespace GL {
 							default: return false;
 							}
 
-							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								node = Fold_Right_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
 								return true;
 							}
@@ -10294,7 +10345,7 @@ namespace GL {
 							default: return false;
 							}
 
-							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
 								return true;
 							}
@@ -10402,7 +10453,7 @@ namespace GL {
 							default: return false;
 							}
 
-							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs, rhs }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(const_operation, { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
 								if (fold_left) {
 									node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { node.children[0].children[0] }, out);
 								}
@@ -10476,7 +10527,7 @@ namespace GL {
 								// reduces to:
 								// (10+1)*y + 5
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Fold_Right_Binary_Operator_Node("+", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
 									}, RHS);
@@ -10492,7 +10543,7 @@ namespace GL {
 								// reduces to:
 								// (10-1)*y - 5
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Fold_Right_Binary_Operator_Node("-", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
 									}, RHS);
@@ -10508,7 +10559,7 @@ namespace GL {
 								// reduces to:
 								// (10-1)*y + 5
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Fold_Right_Binary_Operator_Node("+", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
 									}, RHS);
@@ -10524,7 +10575,7 @@ namespace GL {
 								// reduces to:
 								// (10+1)*y - 5
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, GL::any::fast_any::instance(1) }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Fold_Right_Binary_Operator_Node("-", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("*", (Parse_Location)node.location, { IdNode }, new_LHS)
 									}, RHS);
@@ -10542,7 +10593,7 @@ namespace GL {
 								// reduces to:
 								// (10-5)
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
 									return true;
 								}
@@ -10556,7 +10607,7 @@ namespace GL {
 								// reduces to:
 								// ((10+5)-y)-y
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Binary_Operator_Node("-", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("-", (Parse_Location)node.location, { IdNode }, new_LHS),
 										IdNode
@@ -10573,7 +10624,7 @@ namespace GL {
 								// reduces to:
 								// (10-5)
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
 									return true;
 								}
@@ -10587,7 +10638,7 @@ namespace GL {
 								// reduces to:
 								// (10-5)+y+y
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Binary_Operator_Node("+", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("+", (Parse_Location)node.location, { IdNode }, new_LHS),
 										IdNode
@@ -10604,7 +10655,7 @@ namespace GL {
 								// reduces to:
 								// (10-5)-y-y
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("-", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Binary_Operator_Node("-", (Parse_Location)node.location, {
 										Fold_Left_Binary_Operator_Node("-", (Parse_Location)node.location, { IdNode }, new_LHS),
 										IdNode
@@ -10621,7 +10672,7 @@ namespace GL {
 								// reduces to:
 								// 10+5
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
 									return true;
 								}
@@ -10635,7 +10686,7 @@ namespace GL {
 								// reduces to:
 								// 10+5
 
-								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS, RHS }, new_LHS)) {
+								if (GL::any::fast_any new_LHS; AttemptCalculation("+", { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, new_LHS)) {
 									node = Constant_Node("", (Parse_Location)node.location, {}, new_LHS);
 									return true;
 								}
@@ -10644,7 +10695,7 @@ namespace GL {
 
 							if (const_operation.empty() || runtime_operation.empty()) return false;
 
-							if (GL::any::fast_any out; AttemptCalculation(const_operation, { LHS, RHS }, out)) {
+							if (GL::any::fast_any out; AttemptCalculation(const_operation, { LHS | GL::type::Const | GL::type::Reference, RHS | GL::type::Const | GL::type::Reference }, out)) {
 								if (fold_left) {
 									node = Fold_Left_Binary_Operator_Node(runtime_operation, (Parse_Location)node.location, { IdNode }, out);
 								}
@@ -10704,7 +10755,7 @@ namespace GL {
 									// (y*10)+y
 									// reduces to:
 									// y*(10+1)
-									if (GL::any::fast_any out; AttemptCalculation("+", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									if (GL::any::fast_any out; AttemptCalculation("+", { Constant | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, out)) {
 										node = Fold_Right_Binary_Operator_Node("*", node.location, {
 											IdNode
 										}, out);
@@ -10738,7 +10789,7 @@ namespace GL {
 									// (y-y)-10
 									// reduces to:
 									// 0-10
-									if (GL::any::fast_any out; AttemptCalculation("-", { GL::any::fast_any::instance(0), Constant }, out)) {
+									if (GL::any::fast_any out; AttemptCalculation("-", { GL::any::fast_any::instance(0) | GL::type::Const | GL::type::Reference, Constant | GL::type::Const | GL::type::Reference }, out)) {
 										node = Constant_Node("", node.location, {}, out);
 										return true;
 									}
@@ -10748,7 +10799,7 @@ namespace GL {
 									// (y*10)-y
 									// reduces to:
 									// y*(10-1)
-									if (GL::any::fast_any out; AttemptCalculation("-", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									if (GL::any::fast_any out; AttemptCalculation("-", { Constant | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, out)) {
 										node = Fold_Right_Binary_Operator_Node("*", node.location, {
 											IdNode
 										}, out);
@@ -10837,7 +10888,7 @@ namespace GL {
 									// (y/10)/y
 									// rearranges to:
 									// 1/10
-									if (GL::any::fast_any out; AttemptCalculation("/", { GL::any::fast_any::instance(1), Constant }, out)) {
+									if (GL::any::fast_any out; AttemptCalculation("/", { GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference, Constant | GL::type::Const | GL::type::Reference }, out)) {
 										node = Constant_Node("", node.location, {}, out);
 										return true;
 									}
@@ -10894,7 +10945,7 @@ namespace GL {
 									// (10*y)+y
 									// reduces to:
 									// y*(10+1)
-									if (GL::any::fast_any out; AttemptCalculation("+", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									if (GL::any::fast_any out; AttemptCalculation("+", { Constant | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, out)) {
 										node = Fold_Right_Binary_Operator_Node("*", node.location, {
 											IdNode
 										}, out);
@@ -10936,7 +10987,7 @@ namespace GL {
 									// (10*y)-y
 									// reduces to:
 									// y*(10-1)
-									if (GL::any::fast_any out; AttemptCalculation("-", { Constant, GL::any::fast_any::instance(1) }, out)) {
+									if (GL::any::fast_any out; AttemptCalculation("-", { Constant | GL::type::Const | GL::type::Reference, GL::any::fast_any::instance(1) | GL::type::Const | GL::type::Reference }, out)) {
 										node = Fold_Right_Binary_Operator_Node("*", node.location, {
 											IdNode
 											}, out);
@@ -11083,7 +11134,7 @@ namespace GL {
 										if (auto* BC = engine.try_find_class(*types.begin()); BC && BC->this_m.is_class()) {
 											auto new_vector = engine.call("vector<"+ BC->this_m.scope_name +">", {});
 											for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-												engine.call("push_back", { new_vector, argList.children[childIndex].constant });
+												engine.call("push_back", { new_vector, argList.children[childIndex].constant | GL::type::Const | GL::type::Reference });
 											}										
 											node = Constant_Node(node.text, node.location, {}, new_vector);
 											return true;
@@ -11092,7 +11143,7 @@ namespace GL {
 											auto& engine = CurrentEngine();
 											auto new_vector = engine.call("vector<var>", {});
 											for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-												engine.call("push_back", { new_vector, argList.children[childIndex].constant });
+												engine.call("push_back", { new_vector, argList.children[childIndex].constant | GL::type::Const | GL::type::Reference });
 											}
 											node = Constant_Node(node.text, node.location, {}, new_vector);
 											return true;
@@ -11108,13 +11159,12 @@ namespace GL {
 										auto& engine = CurrentEngine();
 										auto new_vector = engine.call("vector<var>", {});
 										for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-											engine.call("push_back", { new_vector, argList.children[childIndex].constant });
+											engine.call("push_back", { new_vector, argList.children[childIndex].constant | GL::type::Const | GL::type::Reference });
 										}
 										node = Constant_Node(node.text, node.location, {}, new_vector);
 										return true;									
 									}
-									catch (std::exception& e) {
-										print(e.what());
+									catch (...) {
 										return false;
 									}
 								}
@@ -11198,7 +11248,7 @@ namespace GL {
 									}
 
 									for (int childIndex = 0; childIndex < argList.children.size(); childIndex++) {
-										engine.call("insert", { new_map, argList.children[childIndex].children[0].constant,  argList.children[childIndex].children[1].constant });
+										engine.call("insert", { new_map, argList.children[childIndex].children[0].constant | GL::type::Const | GL::type::Reference, argList.children[childIndex].children[1].constant | GL::type::Const | GL::type::Reference });
 									}
 
 									node = Constant_Node(node.text, node.location, {}, new_map);
@@ -11448,7 +11498,7 @@ namespace GL {
 								) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
-										CurrentEngine().call("=", { initial_value, node.children[2].constant });
+										CurrentEngine().call("=", { initial_value, node.children[2].constant | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value | GL::type::Const;
 										node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
 										node.children.erase(node.children.begin()+2, node.children.end());
@@ -11479,7 +11529,7 @@ namespace GL {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
-										CurrentEngine().call("=", { initial_value, new_value });
+										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value | GL::type::Const;
 										node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
 										node.children.erase(node.children.begin() + 2, node.children.end());
@@ -11504,7 +11554,7 @@ namespace GL {
 									try {
 										auto initial_value = node.children[0].constant;
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
-										CurrentEngine().call("=", { initial_value, new_value });
+										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value | GL::type::Const;
 										node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
 										node.children.erase(node.children.begin() + 2, node.children.end());
@@ -11524,7 +11574,7 @@ namespace GL {
 									try {
 										auto initial_value = node.children[0].constant;
 										auto new_value = node.children[2].constant;
-										CurrentEngine().call("=", { initial_value, new_value });
+										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value | GL::type::Const;
 										node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
 										node.children.erase(node.children.begin() + 2, node.children.end());
@@ -11648,7 +11698,7 @@ namespace GL {
 												&& this_child.children[1].children.size() == 0
 											) {
 												if (GL::any::fast_any Index; try_find_constexpr(constexpr_results, this_child.children[1].text, Index)) {
-													if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const, Index | GL::type::Const }, temp)) {
+													if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const | GL::type::Reference, Index | GL::type::Const | GL::type::Reference }, temp)) {
 														this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
 														made_update = true;
 														return true;
@@ -11656,7 +11706,7 @@ namespace GL {
 												}
 											}
 											else if (this_child.children[1].identifier == Engine::AST_Node_Type::Constant) {
-												if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const, this_child.children[1].constant | GL::type::Const }, temp)) {
+												if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const | GL::type::Reference, this_child.children[1].constant | GL::type::Const | GL::type::Reference }, temp)) {
 													this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
 													made_update = true;
 													return true;
@@ -11710,7 +11760,7 @@ namespace GL {
 									) {
 										if (this_child.tag.cast<PostfixInformation>().is_unit) {
 											if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprObj)) {
-												if (GL::any::fast_any temp; AttemptCalculation(this_child.tag.cast<PostfixInformation>().unit_name, { constexprObj | GL::type::Const }, temp)) {
+												if (GL::any::fast_any temp; AttemptCalculation(this_child.tag.cast<PostfixInformation>().unit_name, { constexprObj | GL::type::Const | GL::type::Reference }, temp)) {
 													this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
 													made_update = true;
 													return true;
@@ -11735,7 +11785,7 @@ namespace GL {
 											&& this_child.children[1].children.size() == 0
 											) {
 											if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[1].text, constexprObj)) {
-												if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { constexprObj | GL::type::Const }, temp)) {
+												if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { constexprObj | GL::type::Const | GL::type::Reference }, temp)) {
 													this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
 													made_update = true;
 													return true;
@@ -11743,7 +11793,7 @@ namespace GL {
 											}
 										}
 										else if (this_child.children[1].identifier == Engine::AST_Node_Type::Constant) {
-											if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { this_child.children[1].constant | GL::type::Const }, temp)) {
+											if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { this_child.children[1].constant | GL::type::Const | GL::type::Reference }, temp)) {
 												this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
 												made_update = true;
 												return true;
@@ -11983,12 +12033,94 @@ namespace GL {
 				};
 				struct PreprocessMacroObjects {
 					bool optimize(AbstractSyntaxTreeNode& node) {
-						return node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
+						auto& current_parser = CurrentParser();
+#if 1
+						for (int preprocessorPos = (int)current_parser.m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
+							auto* iter = &current_parser.m_preprocessor_stack[preprocessorPos];
+							if (node.location.start.pos > iter->location.end.pos) {
+								if ((iter->text == "#define") || (iter->text == "#undef")) {
+									if (node.for_each_child([&iter, &current_parser](AbstractSyntaxTreeNode& this_child) -> bool {
+										if (this_child.identifier == Engine::AST_Node_Type::Id
+											&& this_child.children.size() == 0
+										) {
+											if (this_child.location.start.pos > iter->location.end.pos) {
+												if (iter->identifier == Engine::AST_Node_Type::PreprocessorMacro) {
+													if (iter->text == "#define") {
+														auto& info = iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorDefineInformation>();
+														if (!info.is_function) {
+															if (info.use_preprocessed_Remainder) {
+																auto new_child = info.Remainder_Preprocessed;
+																new_child.location = this_child.location;
+																new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
+																	this_child_2.location = this_child.location;
+																	return false;
+																});
+																this_child = new_child;
+																return true;
+															}
+															else {
+																if (info.VarName == this_child.text) {
+																	// this define has been... defined.
+																	auto new_child = current_parser.Parse(info.Remainder);
+
+																	if ((new_child.identifier == Engine::AST_Node_Type::Id) && (new_child.text == info.VarName) && (new_child.children.size() == 0)) {
+																		// returns itself?
+																		return false;
+																	}
+																	if (new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
+																		if (this_child_2.identifier == Engine::AST_Node_Type::Id
+																			&& this_child_2.identifier._size() == 0
+																			&& this_child_2.text == info.VarName
+																			) {
+																			return true;
+																		}
+																		return false;
+																	})) {
+																		throw except::eval_error("Macro ID replacement includes infinite recursion", this_child.location.start);
+																	}
+
+																	new_child.location = this_child.location;
+																	new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
+																		this_child_2.location = this_child.location;
+																		return false;
+																	});
+
+																	DepthCounter counter;
+																	if (counter.depth > 100) {
+																		throw Engine::except::eval_error("Macro ID replacement reached maximum recursive depth", this_child.location.start);
+																	}
+
+																	this_child = optimizer::optimize_all(new_child, &current_parser, 100);
+
+																	return true;
+																}
+															}
+														}
+													}
+													if (iter->text == "#undef") {
+														if (iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorUndefineInformation>().VarName == this_child.text) {
+															// this define has been... undefined. 
+															return false;
+														}
+													}
+												}
+											}
+										}
+										return false;
+									})) {
+										return true;
+									}
+								}
+							}
+						}
+						return false;
+#else
+						return node.for_each_child([&current_parser](AbstractSyntaxTreeNode& this_child) -> bool {
 							if (this_child.identifier == Engine::AST_Node_Type::Id
 								&& this_child.children.size() == 0
-							) {
-								for (int preprocessorPos = (int)CurrentParser().m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
-									auto* iter = &CurrentParser().m_preprocessor_stack[preprocessorPos];
+							) {								
+								for (int preprocessorPos = (int)current_parser.m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
+									auto* iter = &current_parser.m_preprocessor_stack[preprocessorPos];
 									if (this_child.location.start.pos > iter->location.end.pos) {
 										if (iter->identifier == Engine::AST_Node_Type::PreprocessorMacro) {
 											if (iter->text == "#define") {
@@ -12007,7 +12139,7 @@ namespace GL {
 													else {
 														if (info.VarName == this_child.text) {
 															// this define has been... defined.
-															auto new_child = CurrentParser().Parse(info.Remainder);
+															auto new_child = current_parser.Parse(info.Remainder);
 
 															if ((new_child.identifier == Engine::AST_Node_Type::Id) && (new_child.text == info.VarName) && (new_child.children.size() == 0)) {
 																// returns itself?
@@ -12036,7 +12168,7 @@ namespace GL {
 																throw Engine::except::eval_error("Macro ID replacement reached maximum recursive depth", this_child.location.start);
 															}
 
-															this_child = optimizer::optimize_all(new_child, &CurrentParser(), 100);
+															this_child = optimizer::optimize_all(new_child, &current_parser, 100);
 
 															return true;
 														}
@@ -12055,6 +12187,7 @@ namespace GL {
 							}
 							return false;
 						});
+#endif
 					};
 				};
 
@@ -14254,8 +14387,8 @@ namespace GL {
 									if (Symbol(abbreviation, true)) {
 										auto& rhs = m_match_stack[prev_stack_top - 1].constant;
 										if (auto* BC = this->analysis_engine.try_find_class(unit_type.second.second.second.m_casted_type); BC && BC->this_m.is_class()) {
-											auto result = BC->this_m.scope->call(BC->this_m.scope_name, { rhs });
-											auto temp = BC->this_m.scope->call<GL::string>("to_string", { result });
+											auto result = BC->this_m.scope->call(BC->this_m.scope_name, { rhs | GL::type::Const | GL::type::Reference });
+											auto temp = BC->this_m.scope->call<GL::string>("to_string", { result | GL::type::Const | GL::type::Reference });
 											m_match_stack[prev_stack_top - 1] = Constant_Node(temp, m_match_stack[prev_stack_top - 1].location, {}, result);
 											return true;
 										}
@@ -15149,7 +15282,7 @@ namespace GL {
 					else {
 						return failure();
 					}
-
+					SkipWS(true);
 					// Function Characteristics
 					// to-do
 
@@ -16945,8 +17078,7 @@ return CalculateMetricPrefixV(micro);
 #define CalculateMetricPrefixV(metric) std:: ## metric ## ::num
 return CalculateMetricPrefixV(micro);
 				)").to_string("", root) + "\n\n");
-			}
-			catch (std::exception& e) { print(e.what()); }
+			} catch (std::exception& e) { print(e.what()); }
 			
 			try {
 				print(parser.Parse(R"(
@@ -16954,9 +17086,7 @@ DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0);
 DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0));
 DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0));
 				)").to_string("", root) + "\n\n");
-			}
-			catch (std::exception& e) { print(e.what()); }
-
+			} catch (std::exception& e) { print(e.what()); }
 
 			try {
 				print(parser.Parse(R"(
@@ -16967,10 +17097,7 @@ DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0));
 
 DerivedUnitList;
 				)").to_string("", root) + "\n\n");
-			}
-			catch (std::exception& e) { print(e.what()); }
-
-
+			} catch (std::exception& e) { print(e.what()); }
 
 			try {
 				print(parser.Parse(R"(
@@ -16987,7 +17114,6 @@ DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 
 			try {
 				print(parser.Parse(R"(
-
 #define Conversion(From, ratio_of) (ratio_of) * (From##::conversion_ratio)
 #define CalculateMetricPrefixV(metric) (((ldouble)(std::##metric##::num)) / ((ldouble)(std::##metric##::den)))
 
@@ -17032,8 +17158,249 @@ DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 
 	return petameter::abbrev;
 				)").to_string("", root) + "\n\n");
+			} catch (std::exception& e) { print(e.what()); }
+			
+			// Moderately sized script test, confirming that we can quickly parse a larger text file. 
+			try {
+				print(parser.Parse(R"(
+			try{
+				constexpr cubic_foot_per_second QZERO = 1.e-6; // equiv. to 0 flow in CFS
+				constexpr value PI = (double)constant::pi;
+				constexpr value A1 = 1000.0 * PI;
+				constexpr value A2 = 500.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+				constexpr value A3 = 16.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+				constexpr value A4 = 2.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+				constexpr value A8 = 4.61841319859066668690e+00; // 5.74*(PI/4)^.9
+				constexpr value A9 = -8.68588963806503655300e-01;  // -2/ln(10)
+				constexpr value AA = -1.5634601348517065795e+00; // -2*.9*2/ln(10)
+				constexpr value AB = 3.28895476345399058690e-03; // 5.74/(4000^.9)
+				constexpr value AC = AA * AB;
+				constexpr value CSMALL = 1.e-6;
+				constexpr value CBIG = 1.e8;
+				constexpr auto MAXERRS = 10;  // Max. input errors reported
+				constexpr auto MAXCOUNT = 10; // Max. # of disconnected nodes listed
+				constexpr long HASHTABLEMAXSIZE = 128000;
+				constexpr auto ALLOC_BLOCK_SIZE = 64000;   /*(62*1024)*/
+				constexpr auto NOTFOUND = 0;
+				constexpr auto CODEVERSION = 20200;
+				constexpr auto MAGICNUMBER = 516114521;
+				constexpr auto ENGINE_VERSION = 201; // Used for binary hydraulics file
+				constexpr auto EOFMARK = 0x1A; // Use 0x04 for UNIX systems
+				constexpr auto MAXTITLE = 3;   // Max. # title lines
+				constexpr auto TITLELEN = 79;  // Max. # characters in a title line
+				constexpr auto MAXID = 51; //31;   // Max. # characters in ID name (this is very short! Want to fix, but would break current co-op with existing EPAnet files)
+				constexpr auto MAXMSG = 255;  // Max. # characters in message text
+				constexpr auto MAXLINE = 1024;   // Max. # characters read from input line
+				constexpr auto MAXFNAME = 259;  // Max. # characters in file name
+				constexpr auto MAXTOKS = 40;   // Max. items per line of input from INP files
+
+				constexpr value FULL = 2;
+				constexpr value BIG = 1.E10;
+				constexpr value TINY = 1.E-6;
+				constexpr value MISSING = -1.E-7;     // Missing value indicator // was -1.E-10, but was too small for constexpr math
+				constexpr squared_foot_per_second DIFFUS = 1.3E-8;     // Diffusivity of chlorine (sq ft/sec)
+				constexpr squared_foot_per_second VISCOS = 1.1E-5;     // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
+				constexpr value MINPDIFF = 0.1;        // PDA min. pressure difference (psi or m?)
+				constexpr auto SEPSTR = " \t\n\r";  // Token separator characters (space, tab, new line, carriage return)
+				constexpr value GPMperCFS = 1.0 / (((gallon_per_minute)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value AFDperCFS = 1.0 / (((acre_foot_per_day)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value MGDperCFS = 1.0 / (((million_gallon_per_day)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value IMGDperCFS = 1.0 / (((imperial_million_gallon_per_day)(1)) / ((cubic_foot_per_second)(1))); // was 0.5382; // Disagreement between units??
+				constexpr value LPSperCFS = 1.0 / (((liter_per_second)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value LPMperCFS = 1.0 / (((liter_per_minute)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value CMHperCFS = 1.0 / (((cubic_meter_per_hour)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value CMDperCFS = 1.0 / (((cubic_meter_per_day)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value MLDperCFS = 1.0 / (((megaliter_per_day)(1)) / ((cubic_foot_per_second)(1)));
+				constexpr value M3perFT3 = 1.0 / (((cubic_meter)(1)) / ((cubic_foot)(1)));
+				constexpr value LperFT3 = 1.0 / (((liter)(1)) / ((cubic_foot)(1)));
+				constexpr value MperFT = 1.0 / (((meter)(1)) / ((foot)(1)));
+				constexpr value PSIperFT = 1.0 / (((pounds_per_square_inch)(1)) / ((head)(1)));
+				constexpr value KPAperPSI = 1.0 / (((kilopascal)(1)) / ((pounds_per_square_inch)(1)));
+				constexpr value KWperHP = 1.0 / (((kilowatt)(1)) / ((horsepower)(1)));
+				constexpr value SECperDAY = 1.0 / ((second)(1) / (day)(1)); 
+
+				constexpr value MAXITER = 200;  // Default max. # hydraulic iterations
+				constexpr value HACC = 0.001;    // Default hydraulics convergence ratio
+				constexpr foot HTOL = 0.0005;   // Default hydraulic head tolerance (ft)
+				constexpr cubic_foot_per_second QTOL = 0.0001;   // Default flow rate tolerance (cfs)
+				constexpr value AGETOL = 0.01;   // Default water age tolerance (hrs)
+				constexpr value CHEMTOL = 0.01;  // Default concentration tolerance
+				constexpr value PAGESIZE = 0;    // Default uses no page breaks
+				constexpr value SPGRAV = 1.0;    // Default specific gravity
+				constexpr value EPUMP = 75;      // Default pump efficiency
+				constexpr auto  DEFPATID = "1";    // Default demand pattern ID
+				constexpr value RQTOL = 1E-7;    // Default low flow resistance tolerance
+				constexpr value CHECKFREQ = 2;   // Default status check frequency
+				constexpr value MAXCHECK = 10;   // Default # iterations for status checks
+				constexpr value DAMPLIMIT = 0;   // Default damping threshold
+				constexpr cubic_foot_per_second Q_STAGNANT = 0.005_gpm;     // 0.005 gpm = 1.114e-5 cfs
+
+				print([
+					QZERO, PI, A1, A2, A3, A4, A8, A9, AA, AB, AC, CSMALL, CBIG							
+				]);
+				print([
+					EOFMARK, BIG, TINY, MISSING, DIFFUS, VISCOS, MINPDIFF, SEPSTR
+				]);
+				print([
+					GPMperCFS, AFDperCFS, MGDperCFS, IMGDperCFS, LPSperCFS, LPMperCFS, CMHperCFS, CMDperCFS, MLDperCFS, M3perFT3, LperFT3, MperFT, PSIperFT, KPAperPSI, KWperHP, SECperDAY
+				]);
+				print([
+					MAXITER, HACC, HTOL, QTOL, DEFPATID, RQTOL, CHECKFREQ, MAXCHECK, DAMPLIMIT, Q_STAGNANT
+				]);
+
+				int hydsolve(EN_Project const& pr, int& iter, value& relerr, HydraulicSimulationQuality simQuality)
+					/*-------------------------------------------------------------------
+					**  Input:   none
+					**  Output:  *iter   = # of iterations to reach solution
+					**           *relerr = convergence error in solution
+					**           returns error code
+					**  Purpose: solves network nodal equations for heads and flows
+					**           using Todini's Gradient algorithm
+					**
+					**  Notes:   Status checks on CVs, pumps and pipes to tanks are made
+					**           every CheckFreq iteration, up until MaxCheck iterations
+					**           are reached. Status checks on control valves are made
+					**           every iteration if DampLimit = 0 or only when the
+					**           convergence error is at or below DampLimit. If DampLimit
+					**           is > 0 then future computed flow changes are only 60% of
+					**           their full value. A complete status check on all links
+					**           is made when convergence is achieved. If convergence is
+					**           not achieved in MaxIter trials and ExtraIter > 0 then
+					**           another ExtraIter trials are made with no status changes
+					**           made to any links and a warning message is generated.
+					**
+					**   This procedure calls linsolve() which appears in SMATRIX.C.
+					**-----------------------------------------------------------------*/							
+				{
+					EN_Network const& net = pr.network;
+					Hydraul& hyd = pr.hydraul;
+					Smatrix& sm = hyd.smatrix;
+					Report& rpt = pr.report;
+
+					int    i;							// Node index
+					int    errcode = 0;					// Node causing solution error
+					int    nextcheck;					// Next status check trial
+					int    maxtrials;					// Max. trials for convergence
+					value  newerr;						// New convergence error
+					int    valveChange;					// Valve status change flag
+					int    statChange;					// Non-valve status change flag
+					Hydbalance hydbal;					// Hydraulic balance errors
+					cubic_foot_per_second fullDemand;   // Full demand for a node (cfs)
+
+					// Initialize status checking & relaxation factor
+					nextcheck = hyd.CheckFreq;
+					hyd.RelaxFactor = 1.0;
+
+					// Initialize convergence criteria and PDA results
+					hydbal.maxheaderror = 0.0_ft;
+					hydbal.maxflowchange = 0.0_cfs;
+					hyd.DeficientNodes = 0;
+					hyd.DemandReduction = 0.0;
+
+					// Repeat iterations until convergence or trial limit is exceeded. (ExtraIter used to increase trials in case of status cycling.)
+					if (((SCALER)rpt.Statflag) == FULL) writerelerr(pr, 0, 0);
+					maxtrials = hyd.MaxIter;
+					if (hyd.ExtraIter > 0) maxtrials += hyd.ExtraIter;
+					iter = 1;
+					while (iter <= maxtrials) {
+						/* Compute coefficient matrices A & F and solve A*H = F
+							where H = heads, A = Jacobian coeffs. derived from
+							head loss gradients, & F = flow correction terms.
+							Solution for H is returned in F from call to linsolve(). */
+ 						headlosscoeffs(pr); // parallelized
+						matrixcoeffs(pr);
+						errcode = smatrix_t::linsolve(sm, net.Njuncs);
+
+						// Matrix ill-conditioning problem - if control valve causing problem, fix its status & continue, otherwise quit with no solution.
+						if (errcode > 0) {
+							if (badvalve(pr, sm.Order[errcode])) continue;
+							else break;
+						}
+
+						// Update current solution. (Row[i] = row of solution matrix corresponding to node i)
+						for (i = 1; i <= net.Njuncs; i++) {
+							hyd.NodeHead[i] = sm.B_ft[sm.Row[i]];   // Update heads
+						}
+
+						newerr = newflows(pr, hydbal);             // Update flows
+						relerr = newerr;
+
+						// Write convergence error to status report if called for
+						if (((SCALER)rpt.Statflag) == FULL) {
+							writerelerr(pr, iter, relerr);
+						}
+
+						// Apply solution damping & check for change in valve status
+						hyd.RelaxFactor = 1.0;
+						valveChange = false;
+						if (hyd.DampLimit > 0.0) {
+							if (relerr <= hyd.DampLimit) {
+								hyd.RelaxFactor = 0.6;
+								valveChange = calc_and_set_prv_and_psv_status(pr);
+							}
+						}
+						else {
+							valveChange = calc_and_set_prv_and_psv_status(pr);
+						}
+
+						// Check for convergence
+						if (hasconverged(pr, relerr, hydbal)) {
+							// We have convergence - quit if we are into extra iterations
+							if (iter > hyd.MaxIter) break;
+
+							// Quit if no status changes occur
+							statChange = false;
+							if (valveChange)    statChange = true;
+							if (linkstatus(pr)) statChange = true;
+							if (pswitch(pr))    statChange = true;
+							if (!statChange)    break;
+
+							// We have a status change so continue the iterations
+							nextcheck = iter + hyd.CheckFreq;
+						}
+
+						// No convergence yet - see if its time for a periodic status check  on pumps, CV's, and pipes connected to tank
+						else if ((iter <= hyd.MaxCheck) && (iter == nextcheck)) {
+							linkstatus(pr);
+							nextcheck += hyd.CheckFreq;
+						}
+						iter++;
+					}
+
+					// Iterations ended - report any errors.
+					if (errcode > 0) {
+						writehyderr(pr, sm.Order[errcode]); // Ill-conditioned matrix error
+						errcode = 110;
+					}
+
+					// Store actual junction outflow in NodeDemand & full demand in DemandFlow
+					for (i = 1; i <= net.Njuncs; i++) {
+						fullDemand = hyd.NodeDemand[i];
+						hyd.NodeDemand[i] = hyd.DemandFlow[i] + hyd.EmitterFlow[i];
+						hyd.DemandFlow[i] = fullDemand;
+					}
+
+					// Save the simulation data for this timestep            
+					SaveResultsForTimeStep(pr, simQuality);
+
+					// Save convergence info
+					hyd.RelativeError = relerr;
+					hyd.MaxHeadError = hydbal.maxheaderror;
+					hyd.MaxFlowChange = hydbal.maxflowchange;
+					hyd.Iterations = iter;
+					return errcode;
+				};
+				return hydsolve(a,b,c,d);
+			}		
+		)").to_string("", root) + "\n\n");
 			}
 			catch (std::exception& e) { print(e.what()); }
+			
+
+
+
+
+
 
 
 
