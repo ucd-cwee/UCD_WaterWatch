@@ -9194,8 +9194,14 @@ namespace GL {
 							&& (num_children > 0)
 						) {							
 							for (size_t i = 0; i < (num_children - 1); ++i) {
-								if (node.children[i].identifier == Engine::AST_Node_Type::Assign_Retroactively) {
-									if (node.children[i].tag.cast<ObjectDeclarationInformation>().is_constexpr && node.children[i].constant) {
+								if (node.children[i].identifier == Engine::AST_Node_Type::Assign_Retroactively
+									&& node.children[i].children.size() >= 2
+									&& node.children[i].children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[i].children[1].children.size() >= 1
+									&& node.children[i].children[1].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[i].children[1].children[0].children.size() == 0
+								) {
+									// if (node.children[i].tag.cast<ObjectDeclarationInformation>().is_constexpr && node.children[i].constant) {
 										bool is_used = false;
 										for (size_t j = i + 1; j < num_children; ++j) {
 											if (node.children[j].identifier == Engine::AST_Node_Type::Id
@@ -9224,10 +9230,46 @@ namespace GL {
 											node.children[i] = Noop_Node("", {}, {});
 											return true;
 										}
-									}
+									// }
+								}
+								else if (node.children[i].identifier == Engine::AST_Node_Type::Var_Decl 
+									&& node.children[i].children.size() >= 1 
+									&& node.children[i].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[i].children[0].children.size() == 0
+								) {
+									// if (node.children[i].tag.cast<ObjectDeclarationInformation>().is_constexpr && node.children[i].constant) {
+										bool is_used = false;
+										for (size_t j = i + 1; j < num_children; ++j) {
+											if (node.children[j].identifier == Engine::AST_Node_Type::Id
+												&& node.children[j].children.size() == 0
+											) {
+												if (node.children[j].text == node.children[i].children[0].text) {
+													is_used = true;
+													break;
+												}
+											}
+											if (node.children[j].for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+												if (this_child.identifier == Engine::AST_Node_Type::Id
+													&& this_child.children.size() == 0
+												) {
+													if (this_child.text == node.children[i].children[0].text) {
+														return true;
+													}
+												}
+												return false;
+											})) {
+												is_used = true;
+												break;
+											};
+										}
+										if (!is_used) {
+											node.children[i] = Noop_Node("", {}, {});
+											return true;
+										}
+									// }
 								}
 							}
-						}						
+						}
 						
 						if ((node.identifier == Engine::AST_Node_Type::File) || (node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block)) {
 							std::vector<size_t> keepers;
@@ -9255,7 +9297,13 @@ namespace GL {
 							// if ((!foundReturnStatement) && (num_children > 0)) { keepers.push_back(num_children - 1); };
 
 							if (keepers.size() == num_children) {
-								return false;
+								if (num_children == 0) {
+									node = Noop_Node(node.text, node.location, {});
+									return true;
+								}
+								else {
+									return false;
+								}								
 							}
 							else {
 								const auto new_children = [&]() {
@@ -12049,21 +12097,9 @@ namespace GL {
 				static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
 					GetParser().push_back(parser);
 
-					//while (--maxDepth >= 0) {
-					//	if (!Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)) {
-					//		if (!Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)) {
-					//			if (!Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)) {
-					//				if (!Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth)) {
-					//					break;
-					//				}
-					//			}
-					//		}
-					//	}						
-					//}
-
 					while ((--maxDepth >= 0) && 
-						(Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
-						||Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
+						(  Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
+						|| Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
 						|| Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)
 						|| Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth))
 					) {};
@@ -16241,6 +16277,23 @@ int main() {
 					return 10;
 				}
 			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				try {
+					auto x = 10;
+				} catch(e) {
+					return e.what();
+				} catch(int e2) {
+					return e2;
+				} catch(double e2) {
+					return e2;
+				} catch(string e2) {
+					return e2;
+				} catch(...) {
+					return e2;
+				} finally {
+					return 10;
+				}
+			)").to_string("", root) + "\n\n");
 		}
 		// Namespaces
 		if (1) {
@@ -16976,6 +17029,8 @@ DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 	DerivedUnitTypeWithMetricPrefix(type, peta, abbreviation, P)
 
     DerivedUnitList;
+
+	return petameter::abbrev;
 				)").to_string("", root) + "\n\n");
 			}
 			catch (std::exception& e) { print(e.what()); }
