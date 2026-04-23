@@ -8805,7 +8805,7 @@ namespace GL {
 			bool allow_precompilation;
 			bool is_precompiled;
 			std::map<size_t, size_t> hash_to_child_index; // hash to child index;
-			size_t default_child_index; // chidl index for the default param. Values larger than the number of children indicate that no default was provided. 
+			size_t default_child_index; // child index for the default param. Values larger than the number of children indicate that no default was provided. 
 		};
 		class Switch_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -9114,13 +9114,38 @@ namespace GL {
 							&& ((node.text == "=") || (node.text == ":=") || (node.text == "?="))
 						) {
 							std::vector<AbstractSyntaxTreeNode> new_children = {
-								node.children[0].children[0],
-								node.children[0].children[1],
-								node.children[1]
+								node.children[0].children[0], // Default Value or Initializer (e.g. Fun_Call, Int(0), etc.). May be converted to constexpr already. 
+								node.children[0].children[1], // VarDecl
+								node.children[1] // New value or assignment. 
 							};						
 							node = node.children[0];
 							node.identifier = Engine::AST_Node_Type::Assign_Retroactively;
 							node.children = new_children;
+							
+							if (!node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
+								node.constant = nullptr;
+								node.children[1].tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+							}
+							else {
+								node.children[1].tag.cast<ObjectDeclarationInformation>().is_constexpr = true;
+								if (node.constant) {
+									if (node.children[2].constant) {
+										// we were already given a contant value!
+										if (GL::any::fast_any result; AttemptCalculation("=", { node.constant, node.children[2].constant }, result)) {
+											return true;
+										}
+									}
+									else {
+										node.constant = nullptr;
+									}
+								}
+								//else {									
+									//if (node.children[2].constant) {
+									//	node.constant = node.children[2].constant;
+									//}
+								//}
+							}
+
 
 							//node = Assign_Retroactively_Node(
 							//	node.text, (Engine::Parse_Location)node.location, {
@@ -9144,6 +9169,7 @@ namespace GL {
 						if (node.identifier == Engine::AST_Node_Type::Fun_Call
 							&& node.children.size() == 2
 							&& node.children[0].identifier == Engine::AST_Node_Type::Id
+							&& node.children[0].children.size() == 0
 							&& node.children[1].identifier == Engine::AST_Node_Type::Arg_List
 							&& node.children[1].children.size() == 1
 							&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Constant
@@ -9172,14 +9198,18 @@ namespace GL {
 									if (node.children[i].tag.cast<ObjectDeclarationInformation>().is_constexpr && node.children[i].constant) {
 										bool is_used = false;
 										for (size_t j = i + 1; j < num_children; ++j) {
-											if (node.children[j].identifier == Engine::AST_Node_Type::Id) {
+											if (node.children[j].identifier == Engine::AST_Node_Type::Id
+												&& node.children[j].children.size() == 0
+												) {
 												if (node.children[j].text == node.children[i].children[1].children[0].text) {
 													is_used = true;
 													break;
 												}
 											}
 											if (node.children[j].for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
-												if (this_child.identifier == Engine::AST_Node_Type::Id) {
+												if (this_child.identifier == Engine::AST_Node_Type::Id
+													&& this_child.children.size() == 0
+													) {
 													if (this_child.text == node.children[i].children[1].children[0].text) {
 														return true;
 													}
@@ -9610,7 +9640,7 @@ namespace GL {
 									if (child.identifier == Engine::AST_Node_Type::Case
 										&& child.children.size() == 2
 										&& child.children[0].identifier == Engine::AST_Node_Type::Constant
-										) {
+									) {
 										size_t this_hash = CurrentEngine().call<size_t>("to_hash", { child.children[0].constant });
 										node.tag.cast< SwitchInformation>().hash_to_child_index[this_hash] = i;
 									}
@@ -9641,14 +9671,36 @@ namespace GL {
 									// from the found index on, compile into a block
 									starting_child_index = f->second;
 								}							
-								else if (node.tag.cast< SwitchInformation>().default_child_index < node.children.size()) {
-									// from the default index on, compile into a block
-									starting_child_index = node.tag.cast< SwitchInformation>().default_child_index;
-								}
 								else {
-									// no matching hash, AND, no default. Therefore, this should compile down to nothing. 
-									node = Noop_Node("", {}, {});
-									return true;
+									starting_child_index = 0;
+									if (node.tag.cast< SwitchInformation>().default_child_index < node.children.size()) {
+										starting_child_index = node.tag.cast< SwitchInformation>().default_child_index;
+									}
+									// the hash did not match. See if we can evaluate the "==" operation. 
+									for (int i = 1; i < node.children.size(); ++i) {
+										auto& child = node.children[i];
+										if (child.identifier == Engine::AST_Node_Type::Case
+											&& child.children.size() == 2
+											&& child.children[0].identifier == Engine::AST_Node_Type::Constant
+										) {
+											if (GL::any::fast_any out; AttemptCalculation("==", { node.children[0].constant, child.children[0].constant }, out)) {
+												if (out.cast<bool>()) {
+													starting_child_index = i;
+													break;
+												}
+											}
+											else {
+												// precompilation failed
+												node.tag.cast< SwitchInformation>().allow_precompilation = false;
+												return false;
+											}
+										}
+									}
+									if (starting_child_index == 0) {
+										// no matching hash, AND, no default. Therefore, this should compile down to nothing. 
+										node = Noop_Node("", {}, {});
+										return true;
+									}
 								}
 							}
 							catch (...) {
@@ -9764,10 +9816,12 @@ namespace GL {
 	#endif
 						if ((node.identifier == Engine::AST_Node_Type::Fun_Call)
 							&& (node.children.size() == 2)
-							&& (node.children[0].identifier == Engine::AST_Node_Type::Id)
+							&& (node.children[0].identifier == Engine::AST_Node_Type::Id)							
+							&& (node.children[0].children.size() == 0)
 							&& (node.children[1].identifier == Engine::AST_Node_Type::Arg_List)
 							&& (node.children[1].children.size() == 1)
 							&& (node.children[1].children[0].identifier == Engine::AST_Node_Type::Id)
+							&& (node.children[1].children[0].children.size() == 0)
 							&& (node.children[1].children[0].text[0] == '_')
 						) {
 							GL::string const& variable_name = node.children[0].text;
@@ -10317,9 +10371,11 @@ namespace GL {
 							&& ((node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft))
 							&& (node.children[0].children.size() == 1)
 							&& (node.children[0].children[0].identifier == Engine::AST_Node_Type::Id)
+							&& (node.children[0].children[0].children.size() == 0)
 							&& ((node.children[1].identifier == Engine::AST_Node_Type::BinaryFoldRight) || (node.children[1].identifier == Engine::AST_Node_Type::BinaryFoldLeft))
 							&& (node.children[1].children.size() == 1)
 							&& (node.children[1].children[0].identifier == Engine::AST_Node_Type::Id)
+							&& (node.children[1].children[0].children.size() == 0)
 							&& (node.children[0].children[0].get_text() == node.children[1].children[0].get_text())
 							&& is_numeric(node.children[0])
 							&& is_numeric(node.children[1])
@@ -10556,6 +10612,7 @@ namespace GL {
 							&& node.children.size() == 2
 							&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldRight
 							&& node.children[1].identifier == Engine::AST_Node_Type::Id
+							&& node.children[1].children.size() == 0
 							&& node.children[0].children.size() == 1
 							&& node.children[0].children[0].get_text() == node.children[1].get_text()
 							&& is_numeric(node.children[0])
@@ -10750,6 +10807,7 @@ namespace GL {
 							&& node.children.size() == 2
 							&& node.children[0].identifier == Engine::AST_Node_Type::BinaryFoldLeft
 							&& node.children[1].identifier == Engine::AST_Node_Type::Id
+							&& node.children[1].children.size() == 0
 							&& node.children[0].children.size() == 1
 							&& node.children[0].children[0].get_text() == node.children[1].get_text()
 							&& is_numeric(node.children[0])
@@ -11007,7 +11065,8 @@ namespace GL {
 										node = Constant_Node(node.text, node.location, {}, new_vector);
 										return true;									
 									}
-									catch (...) {
+									catch (std::exception& e) {
+										print(e.what());
 										return false;
 									}
 								}
@@ -11267,23 +11326,6 @@ namespace GL {
 					};
 				};
 
-				// Re-order namespace or class declarations to make the most sense, prefering objects over functions. 
-				struct NamespaceDeclarations {
-					bool optimize(AbstractSyntaxTreeNode& node) {
-						node.for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
-							if (this_child.identifier == Engine::AST_Node_Type::Id) {
-							
-							}
-							return false;
-						});
-
-
-
-
-						return false; // does nothing
-					}
-				};
-
 				// move up the class / namespace declarations outside of inner scopes 
 				struct ConstexprObject {
 					static bool try_find_constexpr(std::deque<std::map<GL::string, GL::any::fast_any>>& constexpr_results, GL::string const& to_find, GL::any::fast_any& out) {
@@ -11327,6 +11369,7 @@ namespace GL {
 									&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[0].children.size() == 2
 									&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[0].children[0].children.size() == 0
 									&& node.children[0].children[0].text != "var"
 									&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[0].children[1].children.size() == 0
@@ -11348,6 +11391,7 @@ namespace GL {
 									&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[0].children.size() == 2
 									&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[0].children[0].children.size() == 0
 									&& node.children[0].children[0].text != "var"
 									&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[0].children[1].children.size() == 0
@@ -11372,6 +11416,7 @@ namespace GL {
 									&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[0].children.size() == 2
 									&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[0].children[0].children.size() == 0
 									&& node.children[0].children[0].text != "var"
 									&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[0].children[1].children.size() == 0
@@ -11379,6 +11424,7 @@ namespace GL {
 									&& node.children[2].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[2].children.size() == 2
 									&& node.children[2].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[2].children[0].children.size() == 0
 									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[2].children[1].children.size() == 0
 								) {
@@ -11397,6 +11443,54 @@ namespace GL {
 										return true;
 									}
 								}
+								if (node.children.size() == 3
+									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[2].identifier == Engine::AST_Node_Type::Fun_Call
+									&& node.children[2].children.size() == 2
+									&& node.children[2].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[2].children[0].children.size() == 0
+									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
+									&& node.children[2].children[1].children.size() == 0
+								) {
+									try {
+										auto initial_value = node.children[0].constant;
+										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
+										CurrentEngine().call("=", { initial_value, new_value });
+										node.constant = initial_value | GL::type::Const;
+										node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
+										node.children.erase(node.children.begin() + 2, node.children.end());
+										return true;
+									}
+									catch (...) {
+										// failure to do constexpr folding.
+										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+										return true;
+									}
+								}
+								if (node.children.size() == 3
+									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
+								) {
+									try {
+										auto initial_value = node.children[0].constant;
+										auto new_value = node.children[2].constant;
+										CurrentEngine().call("=", { initial_value, new_value });
+										node.constant = initial_value | GL::type::Const;
+										node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
+										node.children.erase(node.children.begin() + 2, node.children.end());
+										return true;
+									}
+									catch (...) {
+										// failure to do constexpr folding.
+										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+										return true;
+									}
+								}
+
+
+
 								// failure to do any constexpr folding.
 								// node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 								return false;
@@ -11429,6 +11523,7 @@ namespace GL {
 											&& this_child.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 											&& this_child.children[1].children.size() >= 1
 											&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+											&& this_child.children[1].children[0].children.size() == 0
 										) {
 											constexpr_results.back()[this_child.children[1].children[0].text] = this_child.constant;										
 											return true;
@@ -11438,6 +11533,7 @@ namespace GL {
 											&& this_child.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 											&& this_child.children[1].children.size() >= 1
 											&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+											&& this_child.children[1].children[0].children.size() == 0
 										) {
 											constexpr_results.back()[this_child.children[1].children[0].text] = {}; // nullptr
 											return true;
@@ -11449,7 +11545,9 @@ namespace GL {
 										&& this_child.children.size() == 2
 									) {
 										for (auto& child : this_child.children) {
-											if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -11462,7 +11560,9 @@ namespace GL {
 										&& this_child.children.size() == 1
 									) {
 										for (auto& child : this_child.children) {
-											if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -11477,7 +11577,9 @@ namespace GL {
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Arg_List
 									) {
 										for (auto& child : this_child.children[0].children) {
-											if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -11491,9 +11593,12 @@ namespace GL {
 									if (this_child.identifier == Engine::AST_Node_Type::Array_Call
 										&& this_child.children.size() == 2
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
 									) {
 										if (GL::any::fast_any constexprMapOrArray; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprMapOrArray)) {
-											if (this_child.children[1].identifier == Engine::AST_Node_Type::Id) {
+											if (this_child.children[1].identifier == Engine::AST_Node_Type::Id
+												&& this_child.children[1].children.size() == 0
+											) {
 												if (GL::any::fast_any Index; try_find_constexpr(constexpr_results, this_child.children[1].text, Index)) {
 													if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const, Index | GL::type::Const }, temp)) {
 														this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
@@ -11521,7 +11626,9 @@ namespace GL {
 										|| this_child.identifier == Engine::AST_Node_Type::Map_Pair
 									) {
 										for (auto& child : this_child.children) {
-											if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -11536,7 +11643,9 @@ namespace GL {
 										&& this_child.children[1].identifier == Engine::AST_Node_Type::Arg_List
 									) {
 										for (auto& child : this_child.children[1].children) {
-											if (child.identifier == Engine::AST_Node_Type::Id) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -11549,6 +11658,7 @@ namespace GL {
 									if (this_child.identifier == Engine::AST_Node_Type::Postfix
 										&& this_child.children.size() == 1
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
 									) {
 										if (this_child.tag.cast<PostfixInformation>().is_unit) {
 											if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprObj)) {
@@ -11571,8 +11681,11 @@ namespace GL {
 									if (this_child.identifier == Engine::AST_Node_Type::Type_Cast
 										&& this_child.children.size() == 2
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
 									) {
-										if (this_child.children[1].identifier == Engine::AST_Node_Type::Id) {
+										if (this_child.children[1].identifier == Engine::AST_Node_Type::Id
+											&& this_child.children[1].children.size() == 0
+											) {
 											if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[1].text, constexprObj)) {
 												if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { constexprObj | GL::type::Const }, temp)) {
 													this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
@@ -11638,6 +11751,7 @@ namespace GL {
 							if ((this_child.identifier == Engine::AST_Node_Type::Fun_Call)
 								&& (this_child.children.size() == 2)
 								&& (this_child.children[0].identifier == Engine::AST_Node_Type::Id)
+								&& (this_child.children[0].children.size() == 0)
 								&& (this_child.children[1].identifier == Engine::AST_Node_Type::Arg_List)
 							) {
 								for (int preprocessorPos = (int)CurrentParser().m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
@@ -11682,20 +11796,100 @@ namespace GL {
 																this_child_2.location = this_child.location;
 																return false;
 															});	
-
-															
+								
 															while (true) {
 																bool made_update = false;
 
+																// Id swapping
+																if (!made_update)
+																	new_child.for_each_child([&info, &new_children, &made_update](AbstractSyntaxTreeNode& new_child) -> bool {
+																		if (new_child.identifier == Engine::AST_Node_Type::Id
+																			&& new_child.children.size() == 0
+																		) {
+																			for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
+																				if (info.Inputs[input_index] == new_child.text) {
+																					new_child = new_children[input_index].children[0];
+																					made_update = true;
+																					// return true;
+																				}
+																			}																			
+																		}
+																		return false;
+																	});
+																if (!made_update)
+																	if (new_child.identifier == Engine::AST_Node_Type::Id
+																		&& new_child.children.size() == 0
+																	) {
+																		for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
+																			if (info.Inputs[input_index] == new_child.text) {
+																				new_child = new_children[input_index].children[0];
+																				made_update = true;
+																			}
+																		}																		
+																	}
+
+																// Id fixing
+																if (!made_update)
+																	new_child.for_each_child([&info, &new_children, &made_update](AbstractSyntaxTreeNode& new_child) -> bool {
+																		if (new_child.identifier == Engine::AST_Node_Type::Id
+																			&& (new_child.children.size() == 2)
+																			&& (new_child.text == "##")
+																		) {
+																			new_child = CurrentParser().Parse(new_child.children[0].get_text() + new_child.children[1].get_text());
+																			made_update = true;
+																			// return true;
+																		}
+																		return false;
+																	});
+																if (!made_update)
+																	if (new_child.identifier == Engine::AST_Node_Type::Id
+																		&& (new_child.children.size() == 2)
+																		&& (new_child.text == "##")
+																	) {
+																		new_child = CurrentParser().Parse(new_child.children[0].get_text() + new_child.children[1].get_text());
+																		made_update = true;																		
+																	}
+
 																// #a
-																new_child.for_each_child([&info, &new_children, &made_update](AbstractSyntaxTreeNode& new_child) -> bool {
+																if (!made_update)
+																	new_child.for_each_child([&info, &new_children, &made_update](AbstractSyntaxTreeNode& new_child) -> bool {
+																		if (new_child.identifier == Engine::AST_Node_Type::Prefix
+																			&& new_child.children.size() == 1
+																			&& new_child.text == "#"
+																		) {
+																			auto& child = new_child.children[0];
+																			bool success = false;
+																			if (child.identifier == Engine::AST_Node_Type::Id
+																				&& child.children.size() == 0
+																			) {
+																				for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
+																					if (info.Inputs[input_index] == child.text) {
+																						auto this_text = new_children[input_index].children[0].get_text();
+																						new_child = Constant_Node(this_text, child.location, {}, this_text);
+																						success = true;
+																						made_update = true;
+																						break;
+																					}
+																				}
+																			}
+																			if (!success) {
+																				auto this_text = child.get_text();
+																				new_child = Constant_Node(this_text, child.location, {}, this_text);
+																				made_update = true;
+																			}
+																		}
+																		return false;
+																	});
+																if (!made_update)
 																	if (new_child.identifier == Engine::AST_Node_Type::Prefix
 																		&& new_child.children.size() == 1
 																		&& new_child.text == "#"
 																	) {
 																		auto& child = new_child.children[0];
 																		bool success = false;
-																		if (child.identifier == Engine::AST_Node_Type::Id) {
+																		if (child.identifier == Engine::AST_Node_Type::Id
+																			&& child.children.size() == 0
+																			) {
 																			for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
 																				if (info.Inputs[input_index] == child.text) {
 																					auto this_text = new_children[input_index].children[0].get_text();
@@ -11712,93 +11906,6 @@ namespace GL {
 																			made_update = true;
 																		}
 																	}
-																	return false;
-																});
-																if (new_child.identifier == Engine::AST_Node_Type::Prefix
-																	&& new_child.children.size() == 1
-																	&& new_child.text == "#"
-																) {
-																	auto& child = new_child.children[0];
-																	bool success = false;
-																	if (child.identifier == Engine::AST_Node_Type::Id) {
-																		for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
-																			if (info.Inputs[input_index] == child.text) {
-																				auto this_text = new_children[input_index].children[0].get_text();
-																				new_child = Constant_Node(this_text, child.location, {}, this_text);
-																				success = true;
-																				made_update = true;
-																				break;
-																			}
-																		}
-																	}
-																	if (!success) {
-																		auto this_text = child.get_text();
-																		new_child = Constant_Node(this_text, child.location, {}, this_text);
-																		made_update = true;
-																	}
-																}
-
-																// a##b
-																new_child.for_each_child([&info, &new_children, &made_update](AbstractSyntaxTreeNode& new_child) -> bool {
-																	if (new_child.identifier == Engine::AST_Node_Type::Binary
-																		&& new_child.children.size() == 2
-																		&& new_child.text == "##"
-																		) {
-																		for (auto& child : new_child.children) {
-																			bool success = false;
-																			if (child.identifier == Engine::AST_Node_Type::Id) {
-																				for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
-																					if (info.Inputs[input_index] == child.text) {
-																						auto this_text = new_children[input_index].children[0].get_text();
-																						child = Constant_Node(this_text, child.location, {}, this_text);
-																						success = true;
-																						made_update = true;
-																						break;
-																					}
-																				}
-																			}
-																			if (!success) {
-																				auto this_text = child.get_text();
-																				child = Constant_Node(this_text, child.location, {}, this_text);
-																				made_update = true;
-																			}
-																		}
-
-																		auto temp_child = CurrentParser().Parse(new_child.children[0].get_text() + new_child.children[1].get_text());
-																		temp_child.location = new_child.location;
-																		new_child = temp_child;
-																		made_update = true;
-																	}
-																	return false;
-																});
-																if (new_child.identifier == Engine::AST_Node_Type::Binary
-																	&& new_child.children.size() == 2
-																	&& new_child.text == "##"
-																	) {
-																	for (auto& child : new_child.children) {
-																		bool success = false;
-																		if (child.identifier == Engine::AST_Node_Type::Id) {
-																			for (size_t input_index = 0; input_index < info.Inputs.size(); ++input_index) {
-																				if (info.Inputs[input_index] == child.text) {
-																					auto this_text = new_children[input_index].children[0].get_text();
-																					child = Constant_Node(this_text, child.location, {}, this_text);
-																					made_update = true;
-																					success = true;
-																					break;
-																				}
-																			}
-																		}
-																		if (!success) {
-																			auto this_text = child.get_text();
-																			made_update = true;
-																			child = Constant_Node(this_text, child.location, {}, this_text);
-																		}
-																	}
-																	auto temp_child = CurrentParser().Parse(new_child.children[0].get_text() + new_child.children[1].get_text());
-																	temp_child.location = new_child.location;
-																	made_update = true;
-																	new_child = temp_child;
-																}
 
 																if (!made_update) break;
 															}
@@ -11829,7 +11936,9 @@ namespace GL {
 				struct PreprocessMacroObjects {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						return node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
-							if (this_child.identifier == Engine::AST_Node_Type::Id) {
+							if (this_child.identifier == Engine::AST_Node_Type::Id
+								&& this_child.children.size() == 0
+							) {
 								for (int preprocessorPos = (int)CurrentParser().m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
 									auto* iter = &CurrentParser().m_preprocessor_stack[preprocessorPos];
 									if (this_child.location.start.pos > iter->location.end.pos) {
@@ -11852,12 +11961,13 @@ namespace GL {
 															// this define has been... defined.
 															auto new_child = CurrentParser().Parse(info.Remainder);
 
-															if ((new_child.identifier == Engine::AST_Node_Type::Id) && new_child.text == info.VarName) {
+															if ((new_child.identifier == Engine::AST_Node_Type::Id) && (new_child.text == info.VarName) && (new_child.children.size() == 0)) {
 																// returns itself?
 																return false;
 															}
 															if (new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
 																if (this_child_2.identifier == Engine::AST_Node_Type::Id
+																	&& this_child_2.identifier._size() == 0
 																	&& this_child_2.text == info.VarName
 																) {
 																	return true;
@@ -11900,17 +12010,7 @@ namespace GL {
 					};
 				};
 
-
 				// re-rorders the tree before other optimizations take place.
-				using Optimizer_Preprocess = Optimizer<
-					optimizer::PreprocessMacroObjects,
-					optimizer::PreprocessMacroFunctions				
-				>;
-				using Optimizer_Reorg = Optimizer<
-					optimizer::PreprocessMacroObjects,
-					optimizer::PullOutNamespaceDeclarations,
-					optimizer::TryCatch					
-				>;
 				using Optimizer_Constexpr = Optimizer<
 					optimizer::PreprocessMacroObjects,
 					optimizer::VarDeclEquation_To_RetroactiveAssignment,
@@ -11926,10 +12026,18 @@ namespace GL {
 					optimizer::Return,
 					optimizer::Dead_Code
 				>;
+				using Optimizer_Preprocess = Optimizer<
+					optimizer::PreprocessMacroObjects,
+					optimizer::PreprocessMacroFunctions				
+				>;
+				using Optimizer_Reorg = Optimizer<
+					optimizer::PreprocessMacroObjects,
+					optimizer::PullOutNamespaceDeclarations,
+					optimizer::TryCatch					
+				>;
 				// reduce the tree and remove dead code
 				using Optimizer_Normal = Optimizer<	
 					optimizer::PreprocessMacroObjects,
-					optimizer::NamespaceDeclarations,
 					optimizer::Unused_Fun_Return,
 					optimizer::ArgListFileConstant,
 					optimizer::ForLoopSignature,
@@ -11940,12 +12048,26 @@ namespace GL {
 			public:
 				static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
 					GetParser().push_back(parser);
+
+					//while (--maxDepth >= 0) {
+					//	if (!Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)) {
+					//		if (!Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)) {
+					//			if (!Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)) {
+					//				if (!Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth)) {
+					//					break;
+					//				}
+					//			}
+					//		}
+					//	}						
+					//}
+
 					while ((--maxDepth >= 0) && 
 						(Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
 						||Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
 						|| Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)
 						|| Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth))
 					) {};
+
 					GetParser().pop_back();
 					return p;
 				};
@@ -12318,7 +12440,7 @@ namespace GL {
 						const std::array<utility::Static_String, 2> m_7{ { SS("<<"), SS(">>") } };
 						const std::array<utility::Static_String, 2> m_8{ { SS("+"), SS("-")} };
 						const std::array<utility::Static_String, 3> m_9{ { SS("*"), SS("/"), SS("%")} };
-						const std::array<utility::Static_String, 2> m_10{{ SS("^"), SS("##") }};
+						const std::array<utility::Static_String, 1> m_10{{ SS("^")/*, SS("##")*/ }};
 						const std::array<utility::Static_String, 7> m_11{{ SS("++"), SS("--"), SS("-"), SS("+"), SS("!"), SS("~"), SS("#") }};
 					};
 					static auto const& Data() {
@@ -13556,7 +13678,7 @@ namespace GL {
 					}
 				};
 				/// Reads (and potentially captures) an identifier from input
-				bool Id(const bool validate) {
+				bool Id_Impl(const bool validate) {
 					SkipWS();
 
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
@@ -13630,8 +13752,54 @@ namespace GL {
 					}
 					else {
 						return false;
+					}				
+				};
+				/// Reads (and potentially captures) an identifier from input
+				bool Id(const bool validate) {
+					const auto prev_preprocessor_top = m_preprocessor_stack.size();
+					const auto prev_comment_top = m_comment_stack.size();
+					const auto prev_stack_top = m_match_stack.size();
+					const auto prev_pos = m_position;
+					auto failure = [&]() {
+						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
+						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
+						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						m_position = prev_pos;
+						return false;
+					};
+
+					if (Id_Impl(validate)) {
+#if 1
+						if (optimizer::OptimizationDepth() > 0) {
+							const auto prev_preprocessor_top2 = m_preprocessor_stack.size();
+							const auto prev_comment_top2 = m_comment_stack.size();
+							const auto prev_stack_top2 = m_match_stack.size();
+							const auto prev_pos2 = m_position;
+							auto failure2 = [&]() {
+								while (m_match_stack.size() != prev_stack_top2) m_match_stack.pop_back();
+								while (m_comment_stack.size() != prev_comment_top2) m_comment_stack.pop_back();
+								while (m_preprocessor_stack.size() != prev_preprocessor_top2) m_preprocessor_stack.pop_back();
+								m_position = prev_pos2;
+							};
+
+							if (Symbol("##") && Id(validate)) {
+								Id_Node temp("##", GL::Engine::Parse_Location(m_match_stack[m_match_stack.size() - 2].location.start, m_match_stack[m_match_stack.size() - 1].location.end), { m_match_stack[m_match_stack.size() - 2], m_match_stack[m_match_stack.size() - 1] });
+								m_match_stack.pop_back();
+								m_match_stack.pop_back();
+								m_match_stack.push_back(temp);
+								// build_match<Id_Node>(prev_stack_top - 1, "##");
+								return true;
+							}
+							else {
+								failure2();
+							}
+						}
+#endif
+						return true;						
 					}
-				
+					else {
+						return failure();
+					}
 				};
 				/// Reads (and potentially captures) an type or class identifier from input
 				bool TypeName(bool allowAuto = false) {
@@ -13701,7 +13869,6 @@ namespace GL {
 					}
 					return failure();
 				};
-
 				/// Reads an argument from input
 				bool Arg(const bool t_type_allowed = true) {
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
@@ -13733,7 +13900,6 @@ namespace GL {
 
 					return true;
 				};
-
 				/// Reads a comma-separated list of values from input. Id's only, no types allowed
 				bool Id_Arg_List() {
 					SkipWS(true);
@@ -13765,7 +13931,6 @@ namespace GL {
 
 					return true;
 				};
-
 				/// Reads a comma-separated list of values from input, for function declarations
 				bool Decl_Arg_List() {
 					SkipWS(true);
@@ -13797,7 +13962,6 @@ namespace GL {
 
 					return true;
 				};
-
 				/// Reads a comma-separated list of values from input
 				bool Arg_List(int maxNumArgs = std::numeric_limits<int>::max()) {
 					SkipWS(true);
@@ -13832,7 +13996,6 @@ namespace GL {
 
 					return true;
 				};
-
 				/// Reads a C-style type-cast from input (e.g. (int)0.0f )
 				bool TypeCastOperation() {
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
@@ -13862,7 +14025,6 @@ namespace GL {
 
 					return failure();
 				};
-
 				/// Parses a string of binary equation operators
 				bool Equation() {
 					const auto prev_stack_top = m_match_stack.size();
@@ -13886,7 +14048,6 @@ namespace GL {
 
 					return false;
 				};
-
 				/// Reads a variable declaration from input
 				bool Var_Decl() {
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
@@ -13921,18 +14082,52 @@ namespace GL {
 						// int x;
 						// int& x;
 						// const int& x;
-						if (TypeName()) {
+						if (TypeName()) { // captures Id{ TypeName }
 							build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
 							build_match<Fun_Call_Node>(prev_stack_top); // Fun_Call{ Id{TypeName}, ArgList{} }
 							if (Id(true)) {
-								build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;               
-								build_match < Assign_Retroactively_Node>(prev_stack_top); // Assign_Retroactively_Node{ Fun_Call{ Id{TypeName}, ArgList{} }, Id{ VariableName } }
+								build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;
+								if (is_constexpr) {
+									m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+								}
+								auto var_decl_node = m_match_stack[m_match_stack.size() - 1];
+								if (is_constexpr) {
+									var_decl_node.tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+								}
+								auto fun_call_node = m_match_stack[m_match_stack.size() - 2];
+								m_match_stack.pop_back();
+								m_match_stack.pop_back();
+								m_match_stack.push_back(Assign_Retroactively_Node("", GL::Engine::Parse_Location(fun_call_node.location.start, var_decl_node.location.end), { fun_call_node, var_decl_node }));
 								if (is_constexpr) {
 									m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
 								}
 								return true;
+
+								//auto LHS = m_match_stack[m_match_stack.size() - 1];
+								//auto RHS = m_match_stack[m_match_stack.size() - 2];
+								//m_match_stack[m_match_stack.size() - 1] = RHS;
+								//m_match_stack[m_match_stack.size() - 2] = LHS;
+								//build_match<Equation_Node>(prev_stack_top, "=");
+								//return true;
 							}
 						}
+
+
+
+
+
+						//if (TypeName()) {
+						//	build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
+						//	build_match<Fun_Call_Node>(prev_stack_top); // Fun_Call{ Id{TypeName}, ArgList{} }
+						//	if (Id(true)) {
+						//		build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;               
+						//		build_match<Assign_Retroactively_Node>(prev_stack_top); // Assign_Retroactively_Node{ Fun_Call{ Id{TypeName}, ArgList{} }, Id{ VariableName } }
+						//		if (is_constexpr) {
+						//			m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
+						//		}
+						//		return true;
+						//	}
+						//}
 					}
 					return failure();
 				};
@@ -13954,10 +14149,10 @@ namespace GL {
 					using SS = utility::Static_String;
 					auto& prefix_opers = Operator_Matches::Data().m_11;
 					for (const auto& oper : prefix_opers) {
-						//if (std::string_view(oper.c_str()) == "#") {
-						//	if (optimizer::OptimizationDepth() == 0)
-						//		continue;
-						//}
+						if (std::string_view(oper.c_str()) == "#") {
+							if (optimizer::OptimizationDepth() == 0)
+								continue;
+						}
 
 						const bool is_char = oper.size() == 1;
 						if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(std::string_view(oper.c_str())))) {							
@@ -14389,17 +14584,17 @@ namespace GL {
 								case (Engine::Operator_Precedence::Bitwise_Xor):
 								case (Engine::Operator_Precedence::Bitwise_Or):
 								case (Engine::Operator_Precedence::Comparison):
-									if (oper == "##") {
-										//if (optimizer::OptimizationDepth() > 0) {
-											build_match<Binary_Operator_Node>(prev_stack_top, oper);
-										//}
-										//else {
-										//	return failure();
-										//}
-									}
-									else {
+									//if (oper == "##") {
+									//	if (optimizer::OptimizationDepth() > 0) {
+									//		build_match<Binary_Operator_Node>(prev_stack_top, oper);
+									//	}
+									//	else {
+									//		return failure();
+									//	}
+									//}
+									//else {
 										build_match<Binary_Operator_Node>(prev_stack_top, oper);
-									}
+									//}
 									break;
 
 								case (Engine::Operator_Precedence::Logical_And):
@@ -15211,37 +15406,20 @@ namespace GL {
 						if (Keyword_("\\\n") || Keyword_("\\\r")) {	
 							auto s = GL::Engine::Position::str(start, m_position - 2);
 							start = m_position;
-							out = out + GL::string(s);
+							out = out + GL::string(s) + "\n";
 							continue;
 						}
-						if (Eol()) {
-							auto s = GL::Engine::Position::str(start, m_position);
+						if (Char_('\n')) {
+							auto s = GL::Engine::Position::str(start, m_position - 1);
+							start = m_position;
 							out = out + GL::string(s);
-							while (out.size() > 0) {
-								bool success = false;
-								switch (out[0]) {
-								case ' ':
-								case '\n':
-								case '\r':
-								case '\t':
-									out = out.remove_leading(out[0]);
-									success = true;
-									break;
-								default:
-									switch (out[out.size() - 1]) {
-									case ' ':
-									case '\n':
-									case '\r':
-									case '\t':
-										out = out.remove_trailing(out[out.size() - 1]);
-										success = true;
-										break;
-									default:
-										break;
-									}
-								}
-								if (!success) break;
-							}
+
+							out = out.
+								remove_leading_and_trailing(' ').
+								remove_leading_and_trailing('\t').
+								remove_leading_and_trailing('\n').
+								remove_leading_and_trailing('\r');
+
 							return true;
 						}
 						++m_position;					
@@ -15849,6 +16027,48 @@ int main() {
 				}
 				return x;
 			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int y = 0;
+				constexpr auto x = 1;
+				switch (x) {
+				case 0: 
+					y += 0;
+					// Comment 0
+				case 1: 
+					y += 1;				
+					// Comment 1
+				case 2: {
+					y += 2;
+					break;
+					// Comment 2
+				}	
+				default: 
+					y += -1;
+					// Comment Default
+				}
+				return y;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				int y = 0;
+				constexpr int x = 1;
+				switch (x) {
+				case 0: 
+					y += 0;
+					// Comment 0
+				case 1: 
+					y += 1;				
+					// Comment 1
+				case 2: {
+					y += 2;
+					break;
+					// Comment 2
+				}	
+				default: 
+					y += -1;
+					// Comment Default
+				}
+				return y;
+			)").to_string("", root) + "\n\n");
 		}
 		// units and literals
 		if (1) {
@@ -16398,6 +16618,11 @@ defer(100);
 				constexpr auto a = x + y + z; 
 				constexpr auto b = (x + y) * (z + 2); 
 				constexpr auto c = 10_ft + x;
+				return [x,y,z,w,a,b,c];
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				constexpr double size = ((size_t)10);
+				size("TEST", size);
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				constexpr auto x = 11.0f;
@@ -16422,7 +16647,7 @@ defer(100);
 				for (Z : [x:10, 10:x]) {
 					return Z;
 				}
-				constexpr size_t size = 10;
+				constexpr double size = ((size_t)10);
 				"TEST".size();
 				size("TEST");
 				"TEST".size(size);
@@ -16432,21 +16657,24 @@ defer(100);
 				constexpr auto x = 11.0f;
 				constexpr auto arr = [x, x+2, x+5, x+10_ft];
 				constexpr auto z = arr[0];
+				return [x, arr, z];
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				constexpr auto x = 11.0f;
 				constexpr auto map = [(x):(x+2), (10_ft):(100_m+x)];
 				constexpr auto w = map[x];
+				return [x, map, w];
 			)").to_string("", root) + "\n\n");
-
 			print(parser.Parse(R"(
 				constexpr auto x = 11.0f;
 				constexpr auto y = ((x)_MG / 31_d)_gpm;
+				return [x, y];
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				auto x = 11.0f;
-				constexpr auto vector = [ (double)x, x+1_m, x+2_ft, x+3_s, (x)_MG ];
-				constexpr auto w = vector[4];
+				constexpr auto vector = [ (double)x, x+1_m, x+2_ft, x+3_s, (x)_MG ]; // will NOT compile-down to constexpr, since x is itself not constexpr
+				constexpr auto w = vector[4]; // will NOT compile-down to constexpr, since x is itself not constexpr
+				return [x, vector, w];
 			)").to_string("", root) + "\n\n");
 			//print(parser.Parse(parser.Preprocess(R"(
 			//	// Compile-time absolute value
@@ -16558,6 +16786,7 @@ return x1 + x2 + x3;
 				print(parser.Parse(R"(
 #define factorial(n) ((n <= 1) ? 1ULL : (n * factorial(n - 1)))
 constexpr auto x3 = factorial(50);
+return x3;
 				)").to_string("", root) + "\n\n");
 			} catch (std::exception& e) { print(e.what()); }
 
@@ -16599,13 +16828,6 @@ return TESTING(TEST);
 				)").to_string("", root) + "\n\n");
 			} catch (std::exception& e) { print(e.what()); }
 
-
-
-			//
-			//// #define defer(x) auto CONCAT(defer_, x)(){ return x; }
-			//
-			//CONCAT(defer_, __DATE__);
-			//// defer(100);	
 			
 			print(parser.Parse(R"(
 #define CONCAT1(a, b) a ## b
@@ -16660,7 +16882,7 @@ return CalculateMetricPrefixV(micro);
 
 			try {
 				print(parser.Parse(R"(
-#define CalculateMetricPrefixV(metric) std ## :: ## metric ## :: ## num
+#define CalculateMetricPrefixV(metric) std##::##metric##::##num
 return CalculateMetricPrefixV(micro);
 				)").to_string("", root) + "\n\n");
 			} catch (std::exception& e) { print(e.what()); }
@@ -16672,14 +16894,97 @@ return CalculateMetricPrefixV(micro);
 				)").to_string("", root) + "\n\n");
 			}
 			catch (std::exception& e) { print(e.what()); }
+			
+			try {
+				print(parser.Parse(R"(
+DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); 
+DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0));
+DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0));
+				)").to_string("", root) + "\n\n");
+			}
+			catch (std::exception& e) { print(e.what()); }
 
 
 			try {
 				print(parser.Parse(R"(
-#define CalculateMetricPrefixV(metric) (((ldouble)(std ## :: ## metric ## :: ## num)) / ((ldouble)(std ## :: ## metric ## :: ## den)))
-return CalculateMetricPrefixV(micro);
+#define DerivedUnitList \
+    DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
+    DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0)); \
+	DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0));
+
+DerivedUnitList;
+				)").to_string("", root) + "\n\n");
+			}
+			catch (std::exception& e) { print(e.what()); }
+
+
+
+			try {
+				print(parser.Parse(R"(
+#define DerivedUnitType(type, category, abbreviation, Ratio) \
+	class type##category { \
+		package unique_pkg() {}; \
+		constexpr string abbrev = #abbreviation; \
+		constexpr double conversion_ratio = Ratio; \
+	}
+
+DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 				)").to_string("", root) + "\n\n");
 			} catch (std::exception& e) { print(e.what()); }
+
+			try {
+				print(parser.Parse(R"(
+
+#define Conversion(From, ratio_of) (ratio_of) * (From##::conversion_ratio)
+#define CalculateMetricPrefixV(metric) (((ldouble)(std::##metric##::num)) / ((ldouble)(std::##metric##::den)))
+
+#define DerivedUnitList \
+    DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
+    DerivedUnitType(foot, length, ft, Conversion(meter, 381.0 / 1250.0)); \
+	DerivedUnitType(inch, length, in, Conversion(foot, 1.0 / 12.0));
+
+#define DerivedUnitType(type, category, abbreviation, Ratio) \
+	class type { \
+		package unique_pkg() {}; \
+		constexpr string abbrev = #abbreviation; \
+		constexpr double conversion_ratio = Ratio; \
+	}
+
+#define DerivedUnitTypeWithMetricPrefix(type, prefix, abbreviation, prefixAbbreviation) \
+    class prefix##type { \
+        package unique_pkg() {}; \
+	    constexpr string abbrev = #prefixAbbreviation + #abbreviation; \
+		constexpr double conversion_ratio = type##::conversion_ratio * CalculateMetricPrefixV(prefix); \
+        void prefix##type() {}; \
+	}
+
+#define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
+    DerivedUnitType(type, category, abbreviation, ratio); \
+	DerivedUnitTypeWithMetricPrefix(type, femto, abbreviation, f); \
+	DerivedUnitTypeWithMetricPrefix(type, pico, abbreviation, p); \
+	DerivedUnitTypeWithMetricPrefix(type, nano, abbreviation, n); \
+	DerivedUnitTypeWithMetricPrefix(type, micro, abbreviation, u); \
+	DerivedUnitTypeWithMetricPrefix(type, milli, abbreviation, m); \
+	DerivedUnitTypeWithMetricPrefix(type, centi, abbreviation, c); \
+	DerivedUnitTypeWithMetricPrefix(type, deci, abbreviation, d); \
+	DerivedUnitTypeWithMetricPrefix(type, deca, abbreviation, da); \
+	DerivedUnitTypeWithMetricPrefix(type, hecto, abbreviation, h); \
+	DerivedUnitTypeWithMetricPrefix(type, kilo, abbreviation, k); \
+	DerivedUnitTypeWithMetricPrefix(type, mega, abbreviation, M); \
+	DerivedUnitTypeWithMetricPrefix(type, giga, abbreviation, G); \
+	DerivedUnitTypeWithMetricPrefix(type, tera, abbreviation, T); \
+	DerivedUnitTypeWithMetricPrefix(type, peta, abbreviation, P)
+
+    DerivedUnitList;
+				)").to_string("", root) + "\n\n");
+			}
+			catch (std::exception& e) { print(e.what()); }
+
+
+
+
+
+
 
 
 			try {

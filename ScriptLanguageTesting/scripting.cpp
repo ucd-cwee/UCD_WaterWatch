@@ -2632,7 +2632,7 @@ namespace GL {
                         for (auto& x : rhs) {
                             out->push_back([&]() -> GL::any::fast_any {
                                 if (auto* BC = AnyMap.GetRoot()->try_find_class(x.m_casted_type)) {
-                                    return BC->this_m.scope->call(x.m_casted_type.name(), { x.fast() });
+                                    return BC->this_m.scope->call(BC->this_m.scope_name, { x.fast() });
                                 }
                                 return x.fast();
                             }());
@@ -2650,7 +2650,7 @@ namespace GL {
                             }
                             else {
                                 if (auto* BC = AnyMap.GetRoot()->try_find_class(x.m_casted_type)) {
-                                    p = BC->this_m.scope->call(x.m_casted_type.name(), { x.fast() });
+                                    p = BC->this_m.scope->call(BC->this_m.scope_name, { x.fast() });
                                 }
                                 else {
                                     p = x;
@@ -2935,12 +2935,12 @@ namespace GL {
                             out->insert_fast(*x.first, {
                                 [&]() -> GL::any::fast_any {
                                     if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->first.m_casted_type)) {
-                                        return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->first.fast() });
+                                        return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->first.fast() });
                                     }
                                     return GL::any::fast_any();
                                 }(), [&]() {
                                     if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->second.m_casted_type)) {
-                                        return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->second.fast() });
+                                        return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->second.fast() });
                                     }
                                     return GL::any::fast_any();
                                 }()
@@ -2954,18 +2954,18 @@ namespace GL {
                             auto& destination = out.get_or_make(*x.first, [&]() -> std::pair<GL::any, GL::any> { return {
                                     [&]() -> GL::any::fast_any {
                                         if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->first.m_casted_type)) {
-                                            return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->first.fast() });
+                                            return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->first.fast() });
                                         }
                                         return GL::any::fast_any();
                                     }(),
                                     [&]() {
                                         if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->second.m_casted_type)) {
-                                            return BC->this_m.scope->call(x.second->first.m_casted_type.name(), { x.second->second.fast() });
+                                            return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->second.fast() });
                                         }
                                         return GL::any::fast_any();
                                     }()
                                 };
-                                });
+                            });
                             AnyMap.GetRoot()->call("=", { destination.first.fast(), x.second->first.fast() });
                             AnyMap.GetRoot()->call("=", { destination.second.fast(), x.second->second.fast() });
                         }
