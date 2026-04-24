@@ -2283,6 +2283,11 @@ namespace GL {
                     return std::hash<float>()((float)rhs);
                 }));
 
+                //this->make_class(GL::type_of< GL::value >()).add_function(GL::make_callable("rename_unit", [](GL::value const& at, GL::string const& name, GL::string const& abbreviation) {
+                //    const_cast<GL::string&>(at.unsafe_impl().name) = name.to_string();
+                //    const_cast<GL::string&>(at.unsafe_impl().abbreviation) = abbreviation.to_string();
+                //}));
+
                 auto& constants_NS = this->make_namespace("constants");
                 constants_NS.insert_object_here("pi", GL::constants::pi());
                 constants_NS.insert_object_here("viscosity", GL::constants::viscosity());

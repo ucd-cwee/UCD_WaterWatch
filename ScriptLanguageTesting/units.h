@@ -334,6 +334,13 @@ namespace GL {
         static impl_unit const& impl(package const& pkg) {
             return get_si_unit(pkg.m_bits.si_unit).implimented_units.operator[](pkg.m_bits.impl_unit);
         };
+
+    public:
+        // return the SI ratio of the current type. 
+        impl_unit const& unsafe_impl() const {
+            return impl(packed);
+        };
+    protected:
         // return the abbreviation for the current type. 
         static GL::string const& abbreviation(package const& pkg) {
             return get_si_unit(pkg.m_bits.si_unit).implimented_units.operator[](pkg.m_bits.impl_unit).abbreviation;
