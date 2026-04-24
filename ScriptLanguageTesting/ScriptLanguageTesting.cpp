@@ -8427,8 +8427,8 @@ namespace GL {
 			// Will continue the search until all nodes are searched or until the function returns true. 
 			template <typename F> bool for_each_child(F const& Func, bool depth_first = true, int depth = 0) {
 				if (depth > 2000) {
-					// return false;
-					throw std::runtime_error("Maximum node depth has been reached");
+					// throw std::runtime_error("Maximum node depth has been reached");
+					return false;
 				}
 
 				// for (int i = 0; i < (int)this->children.size(); ++i) {
@@ -9131,13 +9131,11 @@ namespace GL {
 							node.identifier = Engine::AST_Node_Type::Assign_Retroactively;
 							node.children = new_children;
 							
-							EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 							if (!node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
 								node.constant = nullptr;
 								node.children[1].tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 							}
 							else {
-								EXPECT_EQ(node.children[1].tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 								node.children[1].tag.cast<ObjectDeclarationInformation>().is_constexpr = true;
 								if (node.constant) {
 									if (node.children[2].identifier == Engine::AST_Node_Type::Constant
@@ -9477,7 +9475,6 @@ namespace GL {
 						) {
 							auto& this_child = p.children[num_children - 1];
 							if (this_child.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
-								EXPECT_EQ(this_child.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 								if (this_child.tag.cast<ObjectDeclarationInformation&>().is_constexpr && this_child.constant) {
 									// the final object in the block or file is a Constant value. 
 									this_child = Constant_Node(this_child.text, this_child.location, {}, this_child.constant);
@@ -9546,6 +9543,17 @@ namespace GL {
 								}
 							}
 							if (success) return success;
+						}
+
+						// if a file has an inner child that is a file, change that into a block.
+						if (node.identifier == Engine::AST_Node_Type::File) {
+							if (node.for_each_child([](AbstractSyntaxTreeNode& child) -> bool {
+								if (child.identifier == Engine::AST_Node_Type::File) {
+									child = Block_Node(child.text, child.location, child.children);
+									return true;
+								}
+								return false;
+							})) return true;
 						}
 
 						return false;
@@ -11481,7 +11489,6 @@ namespace GL {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						if (node.identifier == Engine::AST_Node_Type::Var_Decl) {
 							// auto x;	
-							EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 							if (node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
 								// this basic invocation cannot be constexpr - it makes no sense.  
 								return false;
@@ -11489,7 +11496,6 @@ namespace GL {
 							}
 						}
 						if (node.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
-							EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 							if (node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
 								if ((node.children.size() == 2) && (node.constant)) return false; // already performed -- nothing to be done.
 
@@ -11519,7 +11525,6 @@ namespace GL {
 									} 
 									catch (...) {
 										// failure to do constexpr folding.
-										EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 										return true;
 									}
@@ -11545,7 +11550,6 @@ namespace GL {
 									}
 									catch (...) {
 										// failure to do constexpr folding.
-										EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 										return true;
 									}
@@ -11577,7 +11581,6 @@ namespace GL {
 									}
 									catch (...) {
 										// failure to do constexpr folding.
-										EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 										return true;
 									}
@@ -11603,7 +11606,6 @@ namespace GL {
 									}
 									catch (...) {
 										// failure to do constexpr folding.
-										EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 										return true;
 									}
@@ -11624,7 +11626,6 @@ namespace GL {
 									}
 									catch (...) {
 										// failure to do constexpr folding.
-										EXPECT_EQ(node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
 										return true;
 									}
@@ -11920,7 +11921,11 @@ namespace GL {
 
 																DepthCounter counter;
 																if (counter.depth > 100) {
-																	throw Engine::except::eval_error("Macro function replacement reached maximum recursive depth", this_child.location.start);
+																	GL::string err_txt = "Macro function replacement reached maximum recursive depth";
+																	CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
+																		Constant_Node(err_txt, this_child.location, {}, err_txt)
+																	}));
+																	throw Engine::except::eval_error(err_txt, this_child.location.start);
 																}
 
 																new_children.back() = optimizer::optimize_all(new_children.back(), &CurrentParser(), 100);
@@ -11928,7 +11933,11 @@ namespace GL {
 
 															DepthCounter counter;
 															if (counter.depth > 100) {
-																throw Engine::except::eval_error("Macro function replacement reached maximum recursive depth", this_child.location.start);
+																GL::string err_txt = "Macro function replacement reached maximum recursive depth";
+																CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
+																	Constant_Node(err_txt, this_child.location, {}, err_txt)
+																}));
+																throw Engine::except::eval_error(err_txt, this_child.location.start);
 															}
 
 															auto new_child = CurrentParser().Parse(info.Remainder);
@@ -12119,7 +12128,11 @@ namespace GL {
 																		}
 																		return false;
 																	})) {
-																		throw except::eval_error("Macro ID replacement includes infinite recursion", this_child.location.start);
+																		GL::string err_txt = "Macro ID replacement includes infinite recursion";
+																		CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
+																			Constant_Node(err_txt, this_child.location, {}, err_txt)
+																		}));
+																		throw except::eval_error(err_txt, this_child.location.start);
 																	}
 
 																	new_child.location = this_child.location;
@@ -12130,7 +12143,11 @@ namespace GL {
 
 																	DepthCounter counter;
 																	if (counter.depth > 100) {
-																		throw Engine::except::eval_error("Macro ID replacement reached maximum recursive depth", this_child.location.start);
+																		GL::string err_txt = "Macro ID replacement reached maximum recursive depth";
+																		CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
+																			Constant_Node(err_txt, this_child.location, {}, err_txt)
+																		}));
+																		throw Engine::except::eval_error(err_txt, this_child.location.start);
 																	}
 
 																	this_child = optimizer::optimize_all(new_child, &current_parser, 100);
@@ -12234,6 +12251,25 @@ namespace GL {
 					};
 				};
 
+				struct ErrorOrWarningDetection {
+					bool optimize(AbstractSyntaxTreeNode& node) {
+						// Equations that may modify lhs const values
+						if (node.identifier == GL::Engine::AST_Node_Type::Equation
+							&& node.children.size() == 2
+							&& node.text != ".."
+						) {
+							if ((node.children[0].identifier == GL::Engine::AST_Node_Type::Constant) || (node.children[0].identifier == GL::Engine::AST_Node_Type::Id && node.children[0].constant)) {
+								auto err_txt = "Modifying equations (including `" + node.text + "`) are not allowed on constexpr values";
+								CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", node.location, {
+									Constant_Node(err_txt, node.location, {}, err_txt)
+								}));
+							}
+						}
+
+						return false;
+					};
+				};
+
 				// re-rorders the tree before other optimizations take place.
 				using Optimizer_Constexpr = Optimizer<
 					optimizer::PreprocessMacroObjects,
@@ -12269,16 +12305,29 @@ namespace GL {
 					optimizer::Switch
 				>;
 
+				using Optimizer_Errors = Optimizer<
+					optimizer::ErrorOrWarningDetection
+				>;
+
 			public:
 				static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
 					GetParser().push_back(parser);
 
-					while ((--maxDepth >= 0) && 
-						(  Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
-						|| Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
-						|| Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)
-						|| Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth))
-					) {};
+					while ((--maxDepth >= 0) &&
+						(Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
+							|| Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
+							|| Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)
+							|| Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth))
+						) {
+					};
+
+					GetParser().pop_back();
+					return p;
+				};
+				static AbstractSyntaxTreeNode incorporate_warnings_and_errors(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
+					GetParser().push_back(parser);
+
+					Optimizer_Errors().optimize(p, parser->analysis_engine, maxDepth);
 
 					GetParser().pop_back();
 					return p;
@@ -14311,7 +14360,7 @@ namespace GL {
 							{ SS{"="}, SS{":="}, SS{"?="}, SS{".."}, SS{"+="}, SS{"-="}, SS{"*="}, SS{"/="}, SS{"%="}, SS{"<<="}, SS{">>="}, SS{"&="}, SS{"^="}, SS{"|="} }) {
 							if (Symbol(std::string_view(sym.c_str()), true)) {
 								SkipWS(true);
-								if (Equation()/* || Value()*/) {
+								if (Equation() || Value()) {
 									build_match<Equation_Node>(prev_stack_top, std::string_view(sym.c_str()));
 									return true;									
 								}
@@ -14348,7 +14397,6 @@ namespace GL {
 						if (Id(true)) {
 							build_match<Var_Decl_Node>(prev_stack_top);
 							if (is_constexpr) {
-								EXPECT_EQ(m_match_stack.back().tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 								m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
 							}
 							return true;
@@ -14364,12 +14412,10 @@ namespace GL {
 							if (Id(true)) {
 								build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;
 								if (is_constexpr) {
-									EXPECT_EQ(m_match_stack.back().tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 									m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
 								}
 								auto var_decl_node = m_match_stack[m_match_stack.size() - 1];
 								if (is_constexpr) {
-									EXPECT_EQ(var_decl_node.tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 									var_decl_node.tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
 								}
 								auto fun_call_node = m_match_stack[m_match_stack.size() - 2];
@@ -14377,7 +14423,6 @@ namespace GL {
 								m_match_stack.pop_back();
 								m_match_stack.push_back(Assign_Retroactively_Node("", GL::Engine::Parse_Location(fun_call_node.location.start, var_decl_node.location.end), { fun_call_node, var_decl_node }));
 								if (is_constexpr) {
-									EXPECT_EQ(m_match_stack.back().tag.can_cast(GL::type_of<ObjectDeclarationInformation>()), true);
 									m_match_stack.back().tag.cast<ObjectDeclarationInformation&>().is_constexpr = true;
 								}
 								return true;
@@ -15954,15 +15999,6 @@ namespace GL {
 				Parser(GL::scope::impl::RootScope& root) : analysis_engine(root) {};
 				~Parser() = default;
 
-				GL::string Preprocess(const GL::string& t_input) {
-					GL::Engine2::Compiler::Preprocessor::PreprocessorState state;
-					if (auto preprocessor_result = GL::Engine2::Compiler::Preprocessor().Parse(t_input)) {
-						preprocessor_result->GenerateExpandedCode(state);
-						return state.GetFinalScript();
-					}
-					return t_input;
-				};
-
 				// highest-level parse request, which starts a new scope from scratch and completes it. 
 				AbstractSyntaxTreeNode Parse(GL::string t_input, int optimization_depth = 1000) {
 					return parse(t_input, optimization_depth);
@@ -15979,37 +16015,72 @@ namespace GL {
 					m_preprocessor_stack.clear();
 
 					// top level stack
-					if (Statements()) {
-						if (m_position.has_more()) {
-							throw except::eval_error("Unparsed input", m_position);
+					try {
+						if (Statements()) {
+							if (m_position.has_more()) {
+								throw except::eval_error("Unparsed input", m_position);
+							}
+							else {
+								for (auto& x : m_match_stack) {
+									x.for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+										if (this_child.identifier == Engine::AST_Node_Type::Comment) {
+											m_comment_stack.push_back(this_child);
+											this_child = Noop_Node("", {}, {});
+										}
+										return false;
+										});
+									if (x.identifier == Engine::AST_Node_Type::Comment) {
+										m_comment_stack.push_back(x);
+										x = Noop_Node("", {}, {});
+									}
+								}
+
+								// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
+								if (1) {
+									auto i = m_comment_stack.rbegin();
+									while (i != m_comment_stack.rend()) {
+										m_match_stack.insert(m_match_stack.begin(), std::move(*i));
+										i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
+									}
+								}
+
+								build_match<File_Node>(0);
+								m_match_stack[0] = optimizer::incorporate_warnings_and_errors(m_match_stack[0], this, optimization_depth);
+								// add the error or warning nodes to the front of the stack, to not interupt the automatic return behavior
+								if (1) {
+									for (auto iter = m_preprocessor_stack.rbegin(); iter != m_preprocessor_stack.rend(); ++iter) {
+										if (iter->text == "#error" || iter->text == "#warning") {
+											m_match_stack.insert(m_match_stack.begin(), *iter);
+										}
+									}
+								}
+								build_match<File_Node>(0);
+								m_match_stack[0] = optimizer::optimize_all(m_match_stack[0], this, optimization_depth);
+							}
 						}
 						else {
-							for (auto& x : m_match_stack) {
-								x.for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
-									if (this_child.identifier == Engine::AST_Node_Type::Comment) {
-										m_comment_stack.push_back(this_child);
-										this_child = Noop_Node("", {}, {});
-									}
-									return false;
-								});
-								if (x.identifier == Engine::AST_Node_Type::Comment) {
-									m_comment_stack.push_back(x);
-									x = Noop_Node("", {}, {});
-								}
-							}
-
-							// add the comment nodes to the front of the stack, to not interupt the automatic return behavior
-							auto i = m_comment_stack.rbegin();
-							while (i != m_comment_stack.rend()) {
-								m_match_stack.insert(m_match_stack.begin(), std::move(*i));
-								i = decltype(i)(m_comment_stack.erase(std::next(i).base()));
-							}
-							build_match<File_Node>(0);
-							m_match_stack[0] = optimizer::optimize_all(m_match_stack[0], this, optimization_depth);
+							m_match_stack.push_back(Noop_Node("", Parse_Location(m_position, m_position), {}));
 						}
 					}
-					else {
-						m_match_stack.push_back(Noop_Node("", Parse_Location(m_position, m_position), {}));
+					catch (except::eval_error& e) {
+						m_match_stack.push_back(PreprocessorMacro_Node("#error", GL::Engine::Parse_Location(e.start_position, e.start_position), {
+							Constant_Node(e.reason, GL::Engine::Parse_Location(e.start_position, e.start_position), {}, e.reason)
+						}));
+						build_match<File_Node>(0);
+					}
+					catch (std::exception& e) {
+						GL::string err_txt = "Error performing AST parsing: \"" + std::string(e.what()) + "\"";
+						m_match_stack.push_back(PreprocessorMacro_Node("#error", {}, {
+							Constant_Node(err_txt, {}, {}, err_txt)
+						}));
+						build_match<File_Node>(0);
+					}
+					catch (...) {
+						GL::string err_txt = "Error performing AST parsing: Error type is unknown.";
+						m_match_stack.push_back(PreprocessorMacro_Node("#error", {}, {
+							Constant_Node(err_txt, {}, {}, err_txt)
+						}));
+						build_match<File_Node>(0);
 					}
 
 					AbstractSyntaxTreeNode retval = m_match_stack.front();
@@ -16106,12 +16177,18 @@ int main() {
 
 
 		if (1) {
-			print(parser.Parse(R"(
+			// 
+			print(parser.Parse(R"(			
+				constexpr value PI = 3.14;
+				PI += 10;
+				return [PI];
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(			
 				constexpr value PI = (double)constant::pi;
 				constexpr value A1 = 1000.0 * PI;
 				A1 += 1;
 				return [PI,A1];
-			)", 0).to_string("", root) + "\n\n");
+			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
 				constexpr cubic_foot_per_second QZERO = 1.e-6;
 				constexpr value PI = (double)constant::pi;
@@ -16759,228 +16836,6 @@ int main() {
 				}
 			)").to_string("", root) + "\n\n");
 		}
-		// Pre-compilation Tests
-		if (0) {
-			print(/*parser.Parse(*/parser.Preprocess(R"(
-#define CONCAT(a, b) a##b
-#define defer(x) auto CONCAT(defer_, x)(){ return x; }
-
-CONCAT(defer_, __DATE__);
-defer(100);	
-			)")/*).to_string("", root) + "\n\n"*/);
-
-			print(/*parser.Parse(*/parser.Preprocess(R"(
-#define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
-
-#define DerivedUnitList \
-    DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
-    DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0)); \
-	DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0)); \
-	DerivedUnitType(furlong, length, fur, Conversion<foot>(660)); \
-	DerivedUnitType(mile, length, mi, Conversion<foot>(5280)); \
-	DerivedUnitType(nautical_mile, length, nmi, Conversion<meter>(1852.0)); \
-	DerivedUnitType(astronical_unit, length, au, Conversion<meter>(149597870700.0)); \
-	DerivedUnitType(yard, length, yd, Conversion<foot>(3.0)); \
-	DerivedUnitTypeWithMetricPrefixes(gram, mass, g, 1.0 / 1000.0); \
-	DerivedUnitType(metric_ton, mass, t, Conversion<kilogram>(1000.0)); \
-	DerivedUnitType(pound, mass, lb, Conversion<kilogram>(45359237.0 / 100000000.0)); \
-	DerivedUnitType(long_ton, mass, ln_t, Conversion<pound>(2240.0)); \
-	DerivedUnitType(short_ton, mass, sh_t, Conversion<pound>(2000.0)); \
-	DerivedUnitType(stone, mass, st, Conversion<pound>(14.0)); \
-	DerivedUnitType(ounce, mass, oz, Conversion<pound>(1.0 / 16.0)); \
-	DerivedUnitType(carat, mass, ct, Conversion<milligram>(200.0)); \
-	DerivedUnitType(slug, mass, slug, Conversion<kilogram>(145939029.0 / 10000000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(second, time, s, 1.0); \
-	DerivedUnitType(minute, time, min, Conversion<second>(60.0)); \
-	DerivedUnitType(hour, time, hr, Conversion<minute>(60.0)); \
-	DerivedUnitType(day, time, d, Conversion<hour>(24.0)); \
-	DerivedUnitType(week, time, wk, Conversion<day>(7.0)); \
-	DerivedUnitType(year, time, yr, Conversion<day>(365.25)); /* includes additional day for every 4 years */ \
-	DerivedUnitType(month, time, mnth, Conversion<year>(1.0 / 12.0)); \
-	DerivedUnitType(julian_year, time, a_j, Conversion<second>(31557600.0)); \
-	DerivedUnitType(gregorian_year, time, a_g, Conversion<second>(31556952.0)); \
-	DerivedUnitTypeWithMetricPrefixes(ampere, current, A, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(hertz, frequency, Hz, 1.0); \
-	DerivedUnitType(meters_per_second, velocity, mps, Conversion<meter>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(feet_per_second, velocity, fps, Conversion<foot>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(feet_per_minute, velocity, fpm, Conversion<foot>(1.0) / Conversion<minute>(1.0)); \
-    DerivedUnitType(inches_per_day, velocity, ipd, Conversion<inch>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(feet_per_hour, velocity, fph, Conversion<foot>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(miles_per_hour, velocity, mph, Conversion<mile>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(kilometers_per_hour, velocity, kph, Conversion<kilometer>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(knot, velocity, kts, Conversion<nautical_mile>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(meters_per_second_squared, acceleration, mps_sq, Conversion<meter>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
-	DerivedUnitType(feet_per_second_squared, acceleration, fps_sq, Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
-	DerivedUnitType(standard_gravity, acceleration, SG, Conversion<meters_per_second_squared>(980665.0 / 100000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(newton, force, N, Conversion<kilogram>(1.0)* Conversion<meters_per_second_squared>(1.0)); \
-	DerivedUnitType(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0)); \
-	DerivedUnitType(dyne, force, dyn, Conversion<newton>(1.0 / 100000.0)); \
-	DerivedUnitType(kilopond, force, kp, Conversion<standard_gravity>(1.0)* Conversion<kilogram>(1.0)); \
-	DerivedUnitType(poundal, force, pdl, Conversion<pound>(1.0)* Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
-	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0); \
-	DerivedUnitType(bar, pressure, bar, Conversion<kilopascals>(100.0)); \
-	DerivedUnitType(atmosphere, pressure, atm, Conversion<pascals>(101325.0)); \
-	DerivedUnitType(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0))); \
-	DerivedUnitType(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0))); \
-	DerivedUnitType(torr, pressure, torr, Conversion<atmosphere>(1.0 / 760.0)); \
-	DerivedUnitType(coulomb, charge, C, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(ampere_hour, charge, Ah, Conversion< ampere>(1.0)* Conversion<hour>(1.0)); \
-	DerivedUnitTypeWithMetricPrefixes(watt, power, W, 1.0); \
-	DerivedUnitType(horsepower, power, hp, Conversion<watt>(7457.0 / 10.0)); \
-	DerivedUnitType(joule, energy, J, 1.0); \
-	DerivedUnitType(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0)); \
-	DerivedUnitType(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0)); \
-	DerivedUnitTypeWithMetricPrefixes(watt_hour, energy, Wh, Conversion<watt>(1.0)* Conversion<hour>(1.0)); \
-	DerivedUnitType(watt_day, energy, Wd, Conversion<watt>(1.0)* Conversion<day>(1.0)); \
-	DerivedUnitType(british_thermal_unit, energy, BTU, Conversion<joule>(105505585262.0 / 100000000.0)); \
-	DerivedUnitType(british_thermal_unit_iso, energy, BTU_iso, Conversion<joule>(1055056.0 / 1000.0)); \
-	DerivedUnitType(british_thermal_unit_59, energy, BTU59, Conversion<joule>(1054804.0 / 1000.0)); \
-	DerivedUnitType(therm, energy, thm, Conversion<british_thermal_unit_59>(100000.0)); \
-	DerivedUnitType(foot_pound, energy, ftlbf, Conversion<joule>(13558179483314004.0 / 10000000000000000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(volt, voltage, V, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(ohm, impedance, Ohm, 1.0); \
-	DerivedUnitType(siemens, conductance, S, 1.0);  \
-	DerivedUnitType(square_meter, area, sq_m, 1.0); \
-	DerivedUnitType(square_foot, area, sq_ft, Conversion<foot>(1.0)* Conversion<foot>(1.0)); \
-	DerivedUnitType(square_inch, area, sq_in, Conversion<inch>(1.0)* Conversion<inch>(1.0)); \
-	DerivedUnitType(square_mile, area, sq_mi, Conversion<mile>(1.0)* Conversion<mile>(1.0)); \
-	DerivedUnitType(square_kilometer, area, sq_km, Conversion<kilometer>(1.0)* Conversion<kilometer>(1.0)); \
-	DerivedUnitType(hectare, area, ha, Conversion<square_meter>(1000.0)); \
-	DerivedUnitType(acre, area, acre, Conversion<square_foot>(43560.0)); \
-	DerivedUnitType(cubic_meter, volume, cu_m, 1.0); \
-	DerivedUnitType(cubic_millimeter, volume, cu_mm, CUBED(Conversion<millimeter>(1.0))); \
-	DerivedUnitType(cubic_kilometer, volume, cu_km, CUBED(Conversion<kilometer>(1.0))); \
-	DerivedUnitTypeWithMetricPrefixes(liter, volume, L, CUBED(Conversion<decimeter>(1.0))); \
-	DerivedUnitType(cubic_inch, volume, cu_in, CUBED(Conversion<inch>(1.0))); \
-	DerivedUnitType(cubic_foot, volume, cu_ft, CUBED(Conversion<foot>(1.0))); \
-	DerivedUnitType(cubic_yard, volume, cu_yd, CUBED(Conversion<yard>(1.0))); \
-	DerivedUnitType(cubic_mile, volume, cu_mi, CUBED(Conversion<mile>(1.0))); \
-	DerivedUnitTypeWithMetricPrefixes(gallon, volume, gal, Conversion<cubic_inch>(231.0)); \
-	DerivedUnitType(imperial_gallon, volume, igal, Conversion<gallon>(10.0 / 12.0)); \
-	DerivedUnitType(million_gallon, volume, MG, Conversion<gallon>(1.0) * CalculateMetricPrefixV(mega)); \
-	DerivedUnitType(imperial_million_gallon, volume, IMG, Conversion<imperial_gallon>(1.0) * CalculateMetricPrefixV(mega)); \
-	DerivedUnitType(acre_foot, volume, ac_ft, Conversion<acre>(1.0)* Conversion<foot>(1.0)); \
-	DerivedUnitType(quart, volume, qt, Conversion<gallon>(0.25)); \
-	DerivedUnitType(pint, volume, pt, Conversion<quart>(0.5)); \
-	DerivedUnitType(cup, volume, c, Conversion<pint>(0.5)); \
-	DerivedUnitType(fluid_ounce, volume, fl_oz, Conversion<cup>(0.125)); \
-	DerivedUnitType(barrel, volume, bl, Conversion<gallon>(42.0)); \
-	DerivedUnitType(bushel, volume, bu, Conversion<cubic_inch>(215042.0 / 100.0)); \
-	DerivedUnitType(cord, volume, cord, Conversion<cubic_foot>(128.0)); \
-	DerivedUnitType(tablespoon, volume, tbsp, Conversion<fluid_ounce>(0.5)); \
-	DerivedUnitType(teaspoon, volume, tsp, Conversion<fluid_ounce>(1.0 / 6.0)); \
-	DerivedUnitType(pinch, volume, pinch, Conversion<teaspoon>(1.0 / 8.0)); \
-	DerivedUnitType(dash, volume, dash, Conversion<pinch>(1.0 / 2.0)); \
-	DerivedUnitType(drop, volume, drop, Conversion<fluid_ounce>(1.0 / 360.0)); \
-	DerivedUnitType(fifth, volume, fifth, Conversion<gallon>(0.2)); \
-	DerivedUnitType(dram, volume, dr, Conversion<fluid_ounce>(0.125)); \
-	DerivedUnitType(gill, volume, gi, Conversion<fluid_ounce>(4.0)); \
-	DerivedUnitType(peck, volume, pk, Conversion<bushel>(0.25)); \
-	DerivedUnitType(sack, volume, sacks, Conversion<bushel>(3.0)); \
-	DerivedUnitType(shot, volume, shots, Conversion<fluid_ounce>(3.0 / 2.0)); \
-	DerivedUnitType(strike, volume, strikes, Conversion<bushel>(2.0)); \
-	DerivedUnitType(gram_per_second, fillrate, gs, 1.0 / 1000.0); \
-	DerivedUnitType(metric_ton_per_second, fillrate, mTs, Conversion<metric_ton>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(metric_ton_per_minute, fillrate, mTm, Conversion<metric_ton>(1.0) / Conversion<minute>(1.0)); \
-	DerivedUnitType(metric_ton_per_hour, fillrate, mTh, Conversion<metric_ton>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(metric_ton_per_day, fillrate, mTd, Conversion<metric_ton>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(metric_ton_per_year, fillrate, mTy, Conversion<metric_ton>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(cubic_meter_per_second, flowrate, cms, 1.0); \
-	DerivedUnitType(cubic_meter_per_hour, flowrate, cmh, Conversion<cubic_meter>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(cubic_meter_per_day, flowrate, cmd, Conversion<cubic_meter>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(cubic_millimeter_per_second, flowrate, cmms, Conversion<cubic_millimeter>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitTypeWithMetricPrefixes(liter_per_second, flowrate, lps, Conversion<liter>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(liter_per_minute, flowrate, lpm, Conversion<liter>(1.0) / Conversion<minute>(1.0)); \
-	DerivedUnitType(liter_per_day, flowrate, lpd, Conversion<liter>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(megaliter_per_day, flowrate, Mlpd, Conversion<megaliter>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(cubic_inch_per_second, flowrate, cis, Conversion<cubic_inch>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(cubic_inch_per_hour, flowrate, cih, Conversion<cubic_inch>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(cubic_foot_per_second, flowrate, cfs, Conversion<cubic_foot>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(cubic_foot_per_hour, flowrate, cfh, Conversion<cubic_foot>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(gallon_per_second, flowrate, gps, Conversion<gallon>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(gallon_per_minute, flowrate, gpm, Conversion<gallon>(1.0) / Conversion<minute>(1.0)); \
-	DerivedUnitType(gallon_per_hour, flowrate, gph, Conversion<gallon>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(gallon_per_day, flowrate, gpd, Conversion<gallon>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(gallon_per_year, flowrate, gpy, Conversion<gallon>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(million_gallon_per_second, flowrate, MGS, Conversion<megagallon>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(million_gallon_per_minute, flowrate, MGM, Conversion<megagallon>(1.0) / Conversion<minute>(1.0)); \
-	DerivedUnitType(million_gallon_per_hour, flowrate, MGH, Conversion<megagallon>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(million_gallon_per_day, flowrate, MGD, Conversion<megagallon>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(million_gallon_per_year, flowrate, MGY, Conversion<megagallon>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(imperial_million_gallon_per_second, flowrate, IMGS, Conversion<imperial_million_gallon>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(imperial_million_gallon_per_minute, flowrate, IMGM, Conversion<imperial_million_gallon>(1.0) / Conversion<minute>(1.0)); \
-	DerivedUnitType(imperial_million_gallon_per_hour, flowrate, IMGH, Conversion<imperial_million_gallon>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(imperial_million_gallon_per_day, flowrate, IMGD, Conversion<imperial_million_gallon>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(imperial_million_gallon_per_year, flowrate, IMGY, Conversion<imperial_million_gallon>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(acre_foot_per_second, flowrate, ac_ft_s, Conversion<acre_foot>(1.0) / Conversion<second>(1.0)); \
-	DerivedUnitType(acre_foot_per_minute, flowrate, ac_ft_m, Conversion<acre_foot>(1.0) / Conversion<minute>(1.0)); \
-	DerivedUnitType(acre_foot_per_hour, flowrate, ac_ft_h, Conversion<acre_foot>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(acre_foot_per_day, flowrate, ac_ft_d, Conversion<acre_foot>(1.0) / Conversion<day>(1.0)); \
-	DerivedUnitType(acre_foot_per_year, flowrate, ac_ft_y, Conversion<acre_foot>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(kilograms_per_cubic_meter, density, kg_per_cu_m, 1.0); \
-	DerivedUnitType(grams_per_milliliter, density, g_per_mL, Conversion<gram>(1.0) / Conversion<milliliter>(1.0)); \
-	DerivedUnitType(kilograms_per_liter, density, kg_per_L, Conversion<kilogram>(1.0) / Conversion<liter>(1.0)); \
-	DerivedUnitType(ounces_per_cubic_foot, density, oz_per_cu_ft, Conversion<ounce>(1.0) / Conversion<cubic_foot>(1.0)); \
-	DerivedUnitType(ounces_per_cubic_inch, density, oz_per_cu_in, Conversion<ounce>(1.0) / Conversion<cubic_inch>(1.0)); \
-	DerivedUnitType(ounces_per_gallon, density, oz_per_gal, Conversion<ounce>(1.0) / Conversion<gallon>(1.0)); \
-	DerivedUnitType(pounds_per_cubic_foot, density, lb_per_cu_ft, Conversion<pound>(1.0) / Conversion<cubic_foot>(1.0)); \
-	DerivedUnitType(pounds_per_cubic_inch, density, lb_per_cu_in, Conversion<pound>(1.0) / Conversion<cubic_inch>(1.0)); \
-	DerivedUnitType(pounds_per_gallon, density, lb_per_gal, Conversion<pound>(1.0) / Conversion<gallon>(1.0)); \
-	DerivedUnitType(slugs_per_cubic_foot, density, slug_per_cu_ft, Conversion<slug>(1.0) / Conversion<cubic_foot>(1.0)); \
-	DerivedUnitType(celsius, temperature, degC, 1.0); \
-    DerivedUnitType(radian, angle, rad, 1.0); \
-    DerivedUnitType(degree, angle, deg, Conversion<radian>(3.141592653589793238462643383279502884197169399375105820974944 / 180.0))
-)"+std::string(R"(
-#define DerivedUnitType(type, category, abbreviation, Ratio) \
-	class type final : public value { \
-    private: \
-        static package unique_pkg(); \
-	public: \
-		constexpr static double conversion_ratio{ Ratio }; \
-        type() : value(unique_pkg()) {}; \
-        type(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; }; \
-        type(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); }; \
-        type(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); }; \
-        ~type() = default; \
-	}
-
-#define DerivedUnitTypeWithMetricPrefix(type, prefix) \
-    class prefix##type final : public value { \
-    private: \
-        static package unique_pkg(); \
-	public: \
-		constexpr static double conversion_ratio{ type::conversion_ratio * CalculateMetricPrefixV(prefix) }; \
-        prefix##type() : value(unique_pkg()) {}; \
-        prefix##type(float rhs) : value(unique_pkg()) { packed.m_bits2.val = rhs; }; \
-        prefix##type(value const& rhs) : value(unique_pkg()) { this->TrySetTo(rhs); }; \
-        prefix##type(value&& rhs) : value(unique_pkg()) { this->TrySetTo(std::move(rhs)); }; \
-        ~prefix##type() = default; \
-	}
-
-#define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
-    DerivedUnitType(type, category, abbreviation, ratio); \
-	DerivedUnitTypeWithMetricPrefix(type, femto); \
-	DerivedUnitTypeWithMetricPrefix(type, pico); \
-	DerivedUnitTypeWithMetricPrefix(type, nano); \
-	DerivedUnitTypeWithMetricPrefix(type, micro); \
-	DerivedUnitTypeWithMetricPrefix(type, milli); \
-	DerivedUnitTypeWithMetricPrefix(type, centi); \
-	DerivedUnitTypeWithMetricPrefix(type, deci); \
-	DerivedUnitTypeWithMetricPrefix(type, deca); \
-	DerivedUnitTypeWithMetricPrefix(type, hecto); \
-	DerivedUnitTypeWithMetricPrefix(type, kilo); \
-	DerivedUnitTypeWithMetricPrefix(type, mega); \
-	DerivedUnitTypeWithMetricPrefix(type, giga); \
-	DerivedUnitTypeWithMetricPrefix(type, tera); \
-	DerivedUnitTypeWithMetricPrefix(type, peta)
-
-    DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
-
-			)"))/*).to_string("", root) + "\n\n"*/);
-
-
-
-		}
 		// constexpr 
 		if (1) {
 			print(parser.Parse(R"(
@@ -17347,70 +17202,6 @@ DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 				)").to_string("", root) + "\n\n");
 			} catch (std::exception& e) { print(e.what()); }
 			
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 			// Moderately sized script test, confirming that we can quickly parse a larger text file. 
 			try {
 				print(parser.Parse(R"(
