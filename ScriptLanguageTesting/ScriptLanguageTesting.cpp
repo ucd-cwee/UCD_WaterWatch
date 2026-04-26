@@ -9811,20 +9811,106 @@ namespace GL {
 						}
 
 						// Reduce a PreprocessedSwitch by eliminating any nodes after an in-line break.
-						if (node.identifier == Engine::AST_Node_Type::PreprocessedSwitch
-							&& node.children.size() == 1
-							&& ((node.children[0].identifier == Engine::AST_Node_Type::Block) || (node.children[0].identifier == Engine::AST_Node_Type::Scopeless_Block))
-						) {
-							auto& block_n = node.children[0];
-							for (int i = 0; i < block_n.children.size(); ++i) {
-								auto& this_child = block_n.children[i];
-								if (this_child.identifier == Engine::AST_Node_Type::Break) {
-									block_n.children.erase(block_n.children.begin() + i, block_n.children.end());
+						if (node.identifier == Engine::AST_Node_Type::PreprocessedSwitch) {
+							std::deque< AbstractSyntaxTreeNode*> parents;
+							bool found = false;
+							node.for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+								if (found) return false;
+								switch (this_child.identifier) {
+								case Engine::AST_Node_Type::DeclarationBlock:
+								case Engine::AST_Node_Type::Do:
+								case Engine::AST_Node_Type::Try:
+								case Engine::AST_Node_Type::Parallel_Ranged_For:
+								case Engine::AST_Node_Type::Parallel_For:
+								case Engine::AST_Node_Type::FunctionBlock:
+								case Engine::AST_Node_Type::If:
+								case Engine::AST_Node_Type::Switch:
+								case Engine::AST_Node_Type::For:
+								case Engine::AST_Node_Type::Ranged_For:
+								case Engine::AST_Node_Type::While:
+									return false;
+								case Engine::AST_Node_Type::Break: {
+									this_child = Noop_Node("break", this_child.location, {});
+
+									AbstractSyntaxTreeNode* current_parent;
+									AbstractSyntaxTreeNode* current_node = &this_child;
+									while (parents.size() > 0) {
+										current_parent = parents.back();
+										if (current_parent->identifier == Engine::AST_Node_Type::Block
+											|| current_parent->identifier == Engine::AST_Node_Type::Scopeless_Block
+											|| current_parent->identifier == Engine::AST_Node_Type::File
+										) {
+											// find the current node
+											int i;
+											for (i = 0; i < current_parent->children.size(); ++i) {
+												if (&current_parent->children[i] == current_node) { // found
+													break;
+												}
+											}
+											if (i >= current_parent->children.size()) throw except::eval_error("Optimization failed for unknown reason", this_child.location.start);
+
+											for (++i; i < current_parent->children.size(); ++i) {
+												current_parent->children[i] = Noop_Node("break", current_parent->children[i].location, {});
+											}
+										}
+
+										current_node = current_parent;
+										parents.pop_back();
+									}
+									found = true;
+									return false;
+								};
+								default:
 									return true;
 								}
+							}, [&](AbstractSyntaxTreeNode& this_child) {
+								if (!found) {
+									parents.push_back(&this_child);
+								}
+							}, [&](AbstractSyntaxTreeNode&) {
+								if (!found) {
+									parents.pop_back();
+								}
+							});
+							if (found) {
+								return true;
 							}
+						}
 
+						// Reduce a PreprocessedSwitch that does not call "break"
+						if (node.identifier == Engine::AST_Node_Type::PreprocessedSwitch
+							&& node.children.size() == 1
+						) {
+							bool found = false;
+							node.for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+								if (found) return false;
+								switch (this_child.identifier) {
+								case Engine::AST_Node_Type::DeclarationBlock:
+								case Engine::AST_Node_Type::Do:
+								case Engine::AST_Node_Type::Try:
+								case Engine::AST_Node_Type::Parallel_Ranged_For:
+								case Engine::AST_Node_Type::Parallel_For:
+								case Engine::AST_Node_Type::FunctionBlock:								
+								case Engine::AST_Node_Type::Switch:
+								case Engine::AST_Node_Type::For:
+								case Engine::AST_Node_Type::Ranged_For:
+								case Engine::AST_Node_Type::While:
+									return false;
+								case Engine::AST_Node_Type::Break: 
+									found = true;
+									return false;
+								default:
+									return true;
+								}
+							}, [&](AbstractSyntaxTreeNode& this_child) {
 
+							}, [&](AbstractSyntaxTreeNode& this_child) {
+
+							});
+							if (!found) {
+								node = node.children[0];
+								return true;
+							}
 						}
 
 						return false;
@@ -11638,6 +11724,26 @@ namespace GL {
 								return false;
 							}
 						}
+
+						if (((node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Arg_List) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File))
+							&& node.children.size() > 0
+						) {
+							if (node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
+								if (this_child.identifier == Engine::AST_Node_Type::Id 
+									&& this_child.constant
+								) {
+									this_child = Constant_Node(this_child.text, this_child.location, {}, this_child.constant);
+									return true;
+								}
+								return false;
+							})) {
+								return true;
+							}
+						}
+
+
+
+
 
 						// perform replacements as appropriate with constexpr values. 					
 						if (node.identifier != Engine::AST_Node_Type::Assign_Retroactively) {
@@ -16502,6 +16608,31 @@ int main() {
 				}
 				return y;
 			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+				switch (1) {
+				case 0: 
+					y += 0;
+				case 1: {
+					if (x){
+						break;
+					}					
+				}
+				case 2: {
+					y += 2;
+					if (true){
+						{
+							y += 1;
+							break;
+							y += 3;
+						}
+					}
+				}	
+				default: 
+					y += -1;
+				}
+				return y;
+			)").to_string("", root) + "\n\n");
+
 		}
 		// units and literals
 		if (1) {
@@ -17205,235 +17336,235 @@ DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 			// Moderately sized script test, confirming that we can quickly parse a larger text file. 
 			try {
 				print(parser.Parse(R"(
-			try{
-				constexpr cubic_foot_per_second QZERO = 1.e-6; // equiv. to 0 flow in CFS
-				constexpr value PI = (double)constant::pi;
-				constexpr value A1 = 1000.0 * PI;
-				constexpr value A2 = 500.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
-				constexpr value A3 = 16.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
-				constexpr value A4 = 2.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
-				constexpr value A8 = 4.61841319859066668690e+00; // 5.74*(PI/4)^.9
-				constexpr value A9 = -8.68588963806503655300e-01;  // -2/ln(10)
-				constexpr value AA = -1.5634601348517065795e+00; // -2*.9*2/ln(10)
-				constexpr value AB = 3.28895476345399058690e-03; // 5.74/(4000^.9)
-				constexpr value AC = AA * AB;
-				constexpr value CSMALL = 1.e-6;
-				constexpr value CBIG = 1.e8;
-				constexpr auto MAXERRS = 10;  // Max. input errors reported
-				constexpr auto MAXCOUNT = 10; // Max. # of disconnected nodes listed
-				constexpr long HASHTABLEMAXSIZE = 128000;
-				constexpr auto ALLOC_BLOCK_SIZE = 64000;   /*(62*1024)*/
-				constexpr auto NOTFOUND = 0;
-				constexpr auto CODEVERSION = 20200;
-				constexpr auto MAGICNUMBER = 516114521;
-				constexpr auto ENGINE_VERSION = 201; // Used for binary hydraulics file
-				constexpr auto EOFMARK = 0x1A; // Use 0x04 for UNIX systems
-				constexpr auto MAXTITLE = 3;   // Max. # title lines
-				constexpr auto TITLELEN = 79;  // Max. # characters in a title line
-				constexpr auto MAXID = 51; //31;   // Max. # characters in ID name (this is very short! Want to fix, but would break current co-op with existing EPAnet files)
-				constexpr auto MAXMSG = 255;  // Max. # characters in message text
-				constexpr auto MAXLINE = 1024;   // Max. # characters read from input line
-				constexpr auto MAXFNAME = 259;  // Max. # characters in file name
-				constexpr auto MAXTOKS = 40;   // Max. items per line of input from INP files
+	try{
+		constexpr cubic_foot_per_second QZERO = 1.e-6; // equiv. to 0 flow in CFS
+		constexpr value PI = (double)constant::pi;
+		constexpr value A1 = 1000.0 * PI;
+		constexpr value A2 = 500.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+		constexpr value A3 = 16.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+		constexpr value A4 = 2.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+		constexpr value A8 = 4.61841319859066668690e+00; // 5.74*(PI/4)^.9
+		constexpr value A9 = -8.68588963806503655300e-01;  // -2/ln(10)
+		constexpr value AA = -1.5634601348517065795e+00; // -2*.9*2/ln(10)
+		constexpr value AB = 3.28895476345399058690e-03; // 5.74/(4000^.9)
+		constexpr value AC = AA * AB;
+		constexpr value CSMALL = 1.e-6;
+		constexpr value CBIG = 1.e8;
+		constexpr auto MAXERRS = 10;  // Max. input errors reported
+		constexpr auto MAXCOUNT = 10; // Max. # of disconnected nodes listed
+		constexpr long HASHTABLEMAXSIZE = 128000;
+		constexpr auto ALLOC_BLOCK_SIZE = 64000;   /*(62*1024)*/
+		constexpr auto NOTFOUND = 0;
+		constexpr auto CODEVERSION = 20200;
+		constexpr auto MAGICNUMBER = 516114521;
+		constexpr auto ENGINE_VERSION = 201; // Used for binary hydraulics file
+		constexpr auto EOFMARK = 0x1A; // Use 0x04 for UNIX systems
+		constexpr auto MAXTITLE = 3;   // Max. # title lines
+		constexpr auto TITLELEN = 79;  // Max. # characters in a title line
+		constexpr auto MAXID = 51; //31;   // Max. # characters in ID name (this is very short! Want to fix, but would break current co-op with existing EPAnet files)
+		constexpr auto MAXMSG = 255;  // Max. # characters in message text
+		constexpr auto MAXLINE = 1024;   // Max. # characters read from input line
+		constexpr auto MAXFNAME = 259;  // Max. # characters in file name
+		constexpr auto MAXTOKS = 40;   // Max. items per line of input from INP files
 
-				constexpr value FULL = 2;
-				constexpr value BIG = 1.E10;
-				constexpr value TINY = 1.E-6;
-				constexpr value MISSING = -1.E-7;     // Missing value indicator // was -1.E-10, but was too small for constexpr math
-				constexpr value DIFFUS = (1.3E-8)_sq_ft / 1_s;     // Diffusivity of chlorine (sq ft/sec)
-				constexpr value VISCOS = (1.1E-5)_sq_ft / 1_s;     // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
-				constexpr value MINPDIFF = 0.1;        // PDA min. pressure difference (psi or m?)
-				constexpr auto SEPSTR = " \t\n\r";  // Token separator characters (space, tab, new line, carriage return)
-				constexpr value GPMperCFS = 1.0 / ((gallon_per_minute)1 / (cubic_foot_per_second)1);
-				constexpr value AFDperCFS = 1.0 / ((acre_foot_per_day)1 / (cubic_foot_per_second)1);
-				constexpr value MGDperCFS = 1.0 / (((million_gallon_per_day)1) / ((cubic_foot_per_second)1));
-				constexpr value IMGDperCFS = 1.0 / (((imperial_million_gallon_per_day)1) / ((cubic_foot_per_second)1)); // was 0.5382; // Disagreement between units??
-				constexpr value LPSperCFS = 1.0 / (((liter_per_second)1) / ((cubic_foot_per_second)1));
-				constexpr value LPMperCFS = 1.0 / (((liter_per_minute)1) / ((cubic_foot_per_second)1));
-				constexpr value CMHperCFS = 1.0 / (((cubic_meter_per_hour)1) / ((cubic_foot_per_second)1));
-				constexpr value CMDperCFS = 1.0 / (((cubic_meter_per_day)1) / ((cubic_foot_per_second)1));
-				constexpr value MLDperCFS = 1.0 / (((megaliter_per_day)1) / ((cubic_foot_per_second)1));
-				constexpr value M3perFT3 = 1.0 / (((cubic_meter)1) / ((cubic_foot)1));
-				constexpr value LperFT3 = 1.0 / (((liter)1) / ((cubic_foot)1));
-				constexpr value MperFT = 1.0 / (((meter)1) / ((foot)1));
-				constexpr value PSIperFT = 1.0 / (((pounds_per_square_inch)1) / ((head)1));
-				constexpr value KPAperPSI = 1.0 / (((kilopascals)1) / ((pounds_per_square_inch)1));
-				constexpr value KWperHP = 1.0 / (((kilowatt)1) / ((horsepower)1));
-				constexpr value SECperDAY = 1.0 / ((second)1 / (day)1); 
+		constexpr value FULL = 2;
+		constexpr value BIG = 1.E10;
+		constexpr value TINY = 1.E-6;
+		constexpr value MISSING = -1.E-7;     // Missing value indicator // was -1.E-10, but was too small for constexpr math
+		constexpr value DIFFUS = (1.3E-8)_sq_ft / 1_s;     // Diffusivity of chlorine (sq ft/sec)
+		constexpr value VISCOS = (1.1E-5)_sq_ft / 1_s;     // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
+		constexpr value MINPDIFF = 0.1;        // PDA min. pressure difference (psi or m?)
+		constexpr auto SEPSTR = " \t\n\r";  // Token separator characters (space, tab, new line, carriage return)
+		constexpr value GPMperCFS = 1.0 / ((gallon_per_minute)1 / (cubic_foot_per_second)1);
+		constexpr value AFDperCFS = 1.0 / ((acre_foot_per_day)1 / (cubic_foot_per_second)1);
+		constexpr value MGDperCFS = 1.0 / (((million_gallon_per_day)1) / ((cubic_foot_per_second)1));
+		constexpr value IMGDperCFS = 1.0 / (((imperial_million_gallon_per_day)1) / ((cubic_foot_per_second)1)); // was 0.5382; // Disagreement between units??
+		constexpr value LPSperCFS = 1.0 / (((liter_per_second)1) / ((cubic_foot_per_second)1));
+		constexpr value LPMperCFS = 1.0 / (((liter_per_minute)1) / ((cubic_foot_per_second)1));
+		constexpr value CMHperCFS = 1.0 / (((cubic_meter_per_hour)1) / ((cubic_foot_per_second)1));
+		constexpr value CMDperCFS = 1.0 / (((cubic_meter_per_day)1) / ((cubic_foot_per_second)1));
+		constexpr value MLDperCFS = 1.0 / (((megaliter_per_day)1) / ((cubic_foot_per_second)1));
+		constexpr value M3perFT3 = 1.0 / (((cubic_meter)1) / ((cubic_foot)1));
+		constexpr value LperFT3 = 1.0 / (((liter)1) / ((cubic_foot)1));
+		constexpr value MperFT = 1.0 / (((meter)1) / ((foot)1));
+		constexpr value PSIperFT = 1.0 / (((pounds_per_square_inch)1) / ((head)1));
+		constexpr value KPAperPSI = 1.0 / (((kilopascals)1) / ((pounds_per_square_inch)1));
+		constexpr value KWperHP = 1.0 / (((kilowatt)1) / ((horsepower)1));
+		constexpr value SECperDAY = 1.0 / ((second)1 / (day)1); 
 
-				constexpr value MAXITER = 200;  // Default max. # hydraulic iterations
-				constexpr value HACC = 0.001;    // Default hydraulics convergence ratio
-				constexpr foot HTOL = 0.0005;   // Default hydraulic head tolerance (ft)
-				constexpr cubic_foot_per_second QTOL = 0.0001;   // Default flow rate tolerance (cfs)
-				constexpr value AGETOL = 0.01;   // Default water age tolerance (hrs)
-				constexpr value CHEMTOL = 0.01;  // Default concentration tolerance
-				constexpr value PAGESIZE = 0;    // Default uses no page breaks
-				constexpr value SPGRAV = 1.0;    // Default specific gravity
-				constexpr value EPUMP = 75;      // Default pump efficiency
-				constexpr auto  DEFPATID = "1";    // Default demand pattern ID
-				constexpr value RQTOL = 1E-7;    // Default low flow resistance tolerance
-				constexpr value CHECKFREQ = 2;   // Default status check frequency
-				constexpr value MAXCHECK = 10;   // Default # iterations for status checks
-				constexpr value DAMPLIMIT = 0;   // Default damping threshold
-				constexpr cubic_foot_per_second Q_STAGNANT = 0.005_gpm;     // 0.005 gpm = 1.114e-5 cfs
+		constexpr value MAXITER = 200;  // Default max. # hydraulic iterations
+		constexpr value HACC = 0.001;    // Default hydraulics convergence ratio
+		constexpr foot HTOL = 0.0005;   // Default hydraulic head tolerance (ft)
+		constexpr cubic_foot_per_second QTOL = 0.0001;   // Default flow rate tolerance (cfs)
+		constexpr value AGETOL = 0.01;   // Default water age tolerance (hrs)
+		constexpr value CHEMTOL = 0.01;  // Default concentration tolerance
+		constexpr value PAGESIZE = 0;    // Default uses no page breaks
+		constexpr value SPGRAV = 1.0;    // Default specific gravity
+		constexpr value EPUMP = 75;      // Default pump efficiency
+		constexpr auto  DEFPATID = "1";    // Default demand pattern ID
+		constexpr value RQTOL = 1E-7;    // Default low flow resistance tolerance
+		constexpr value CHECKFREQ = 2;   // Default status check frequency
+		constexpr value MAXCHECK = 10;   // Default # iterations for status checks
+		constexpr value DAMPLIMIT = 0;   // Default damping threshold
+		constexpr cubic_foot_per_second Q_STAGNANT = 0.005_gpm;     // 0.005 gpm = 1.114e-5 cfs
 
-				print([
-					QZERO, PI, A1, A2, A3, A4, A8, A9, AA, AB, AC, CSMALL, CBIG							
-				]);
-				print([
-					EOFMARK, BIG, TINY, MISSING, DIFFUS, VISCOS, MINPDIFF, SEPSTR
-				]);
-				print([
-					GPMperCFS, AFDperCFS, MGDperCFS, IMGDperCFS, LPSperCFS, LPMperCFS, CMHperCFS, CMDperCFS, MLDperCFS, M3perFT3, LperFT3, MperFT, PSIperFT, KPAperPSI, KWperHP, SECperDAY
-				]);
-				print([
-					MAXITER, HACC, HTOL, QTOL, DEFPATID, RQTOL, CHECKFREQ, MAXCHECK, DAMPLIMIT, Q_STAGNANT
-				]);
+		print([
+			QZERO, PI, A1, A2, A3, A4, A8, A9, AA, AB, AC, CSMALL, CBIG							
+		]);
+		print([
+			EOFMARK, BIG, TINY, MISSING, DIFFUS, VISCOS, MINPDIFF, SEPSTR
+		]);
+		print([
+			GPMperCFS, AFDperCFS, MGDperCFS, IMGDperCFS, LPSperCFS, LPMperCFS, CMHperCFS, CMDperCFS, MLDperCFS, M3perFT3, LperFT3, MperFT, PSIperFT, KPAperPSI, KWperHP, SECperDAY
+		]);
+		print([
+			MAXITER, HACC, HTOL, QTOL, DEFPATID, RQTOL, CHECKFREQ, MAXCHECK, DAMPLIMIT, Q_STAGNANT
+		]);
 
-				int hydsolve(EN_Project const& pr, int& iter, value& relerr, HydraulicSimulationQuality simQuality)
-					/*-------------------------------------------------------------------
-					**  Input:   none
-					**  Output:  *iter   = # of iterations to reach solution
-					**           *relerr = convergence error in solution
-					**           returns error code
-					**  Purpose: solves network nodal equations for heads and flows
-					**           using Todini's Gradient algorithm
-					**
-					**  Notes:   Status checks on CVs, pumps and pipes to tanks are made
-					**           every CheckFreq iteration, up until MaxCheck iterations
-					**           are reached. Status checks on control valves are made
-					**           every iteration if DampLimit = 0 or only when the
-					**           convergence error is at or below DampLimit. If DampLimit
-					**           is > 0 then future computed flow changes are only 60% of
-					**           their full value. A complete status check on all links
-					**           is made when convergence is achieved. If convergence is
-					**           not achieved in MaxIter trials and ExtraIter > 0 then
-					**           another ExtraIter trials are made with no status changes
-					**           made to any links and a warning message is generated.
-					**
-					**   This procedure calls linsolve() which appears in SMATRIX.C.
-					**-----------------------------------------------------------------*/							
-				{
-					EN_Network const& net = pr.network;
-					Hydraul& hyd = pr.hydraul;
-					Smatrix& sm = hyd.smatrix;
-					Report& rpt = pr.report;
+		int hydsolve(EN_Project const& pr, int& iter, value& relerr, HydraulicSimulationQuality simQuality)
+			/*-------------------------------------------------------------------
+			**  Input:   none
+			**  Output:  *iter   = # of iterations to reach solution
+			**           *relerr = convergence error in solution
+			**           returns error code
+			**  Purpose: solves network nodal equations for heads and flows
+			**           using Todini's Gradient algorithm
+			**
+			**  Notes:   Status checks on CVs, pumps and pipes to tanks are made
+			**           every CheckFreq iteration, up until MaxCheck iterations
+			**           are reached. Status checks on control valves are made
+			**           every iteration if DampLimit = 0 or only when the
+			**           convergence error is at or below DampLimit. If DampLimit
+			**           is > 0 then future computed flow changes are only 60% of
+			**           their full value. A complete status check on all links
+			**           is made when convergence is achieved. If convergence is
+			**           not achieved in MaxIter trials and ExtraIter > 0 then
+			**           another ExtraIter trials are made with no status changes
+			**           made to any links and a warning message is generated.
+			**
+			**   This procedure calls linsolve() which appears in SMATRIX.C.
+			**-----------------------------------------------------------------*/							
+		{
+			EN_Network const& net = pr.network;
+			Hydraul& hyd = pr.hydraul;
+			Smatrix& sm = hyd.smatrix;
+			Report& rpt = pr.report;
 
-					int    i;							// Node index
-					int    errcode = 0;					// Node causing solution error
-					int    nextcheck;					// Next status check trial
-					int    maxtrials;					// Max. trials for convergence
-					value  newerr;						// New convergence error
-					int    valveChange;					// Valve status change flag
-					int    statChange;					// Non-valve status change flag
-					Hydbalance hydbal;					// Hydraulic balance errors
-					cubic_foot_per_second fullDemand;   // Full demand for a node (cfs)
+			int    i;							// Node index
+			int    errcode = 0;					// Node causing solution error
+			int    nextcheck;					// Next status check trial
+			int    maxtrials;					// Max. trials for convergence
+			value  newerr;						// New convergence error
+			int    valveChange;					// Valve status change flag
+			int    statChange;					// Non-valve status change flag
+			Hydbalance hydbal;					// Hydraulic balance errors
+			cubic_foot_per_second fullDemand;   // Full demand for a node (cfs)
 
-					// Initialize status checking & relaxation factor
-					nextcheck = hyd.CheckFreq;
-					hyd.RelaxFactor = 1.0;
+			// Initialize status checking & relaxation factor
+			nextcheck = hyd.CheckFreq;
+			hyd.RelaxFactor = 1.0;
 
-					// Initialize convergence criteria and PDA results
-					hydbal.maxheaderror = 0.0_ft;
-					hydbal.maxflowchange = 0.0_cfs;
-					hyd.DeficientNodes = 0;
-					hyd.DemandReduction = 0.0;
+			// Initialize convergence criteria and PDA results
+			hydbal.maxheaderror = 0.0_ft;
+			hydbal.maxflowchange = 0.0_cfs;
+			hyd.DeficientNodes = 0;
+			hyd.DemandReduction = 0.0;
 
-					// Repeat iterations until convergence or trial limit is exceeded. (ExtraIter used to increase trials in case of status cycling.)
-					if (((SCALER)rpt.Statflag) == FULL) writerelerr(pr, 0, 0);
-					maxtrials = hyd.MaxIter;
-					if (hyd.ExtraIter > 0) maxtrials += hyd.ExtraIter;
-					iter = 1;
-					while (iter <= maxtrials) {
-						/* Compute coefficient matrices A & F and solve A*H = F
-							where H = heads, A = Jacobian coeffs. derived from
-							head loss gradients, & F = flow correction terms.
-							Solution for H is returned in F from call to linsolve(). */
- 						headlosscoeffs(pr); // parallelized
-						matrixcoeffs(pr);
-						errcode = smatrix_t::linsolve(sm, net.Njuncs);
+			// Repeat iterations until convergence or trial limit is exceeded. (ExtraIter used to increase trials in case of status cycling.)
+			if (((SCALER)rpt.Statflag) == FULL) writerelerr(pr, 0, 0);
+			maxtrials = hyd.MaxIter;
+			if (hyd.ExtraIter > 0) maxtrials += hyd.ExtraIter;
+			iter = 1;
+			while (iter <= maxtrials) {
+				/* Compute coefficient matrices A & F and solve A*H = F
+					where H = heads, A = Jacobian coeffs. derived from
+					head loss gradients, & F = flow correction terms.
+					Solution for H is returned in F from call to linsolve(). */
+ 				headlosscoeffs(pr); // parallelized
+				matrixcoeffs(pr);
+				errcode = smatrix_t::linsolve(sm, net.Njuncs);
 
-						// Matrix ill-conditioning problem - if control valve causing problem, fix its status & continue, otherwise quit with no solution.
-						if (errcode > 0) {
-							if (badvalve(pr, sm.Order[errcode])) continue;
-							else break;
-						}
+				// Matrix ill-conditioning problem - if control valve causing problem, fix its status & continue, otherwise quit with no solution.
+				if (errcode > 0) {
+					if (badvalve(pr, sm.Order[errcode])) continue;
+					else break;
+				}
 
-						// Update current solution. (Row[i] = row of solution matrix corresponding to node i)
-						for (i = 1; i <= net.Njuncs; i++) {
-							hyd.NodeHead[i] = sm.B_ft[sm.Row[i]];   // Update heads
-						}
+				// Update current solution. (Row[i] = row of solution matrix corresponding to node i)
+				for (i = 1; i <= net.Njuncs; i++) {
+					hyd.NodeHead[i] = sm.B_ft[sm.Row[i]];   // Update heads
+				}
 
-						newerr = newflows(pr, hydbal);             // Update flows
-						relerr = newerr;
+				newerr = newflows(pr, hydbal);             // Update flows
+				relerr = newerr;
 
-						// Write convergence error to status report if called for
-						if (((SCALER)rpt.Statflag) == FULL) {
-							writerelerr(pr, iter, relerr);
-						}
+				// Write convergence error to status report if called for
+				if (((SCALER)rpt.Statflag) == FULL) {
+					writerelerr(pr, iter, relerr);
+				}
 
-						// Apply solution damping & check for change in valve status
-						hyd.RelaxFactor = 1.0;
-						valveChange = false;
-						if (hyd.DampLimit > 0.0) {
-							if (relerr <= hyd.DampLimit) {
-								hyd.RelaxFactor = 0.6;
-								valveChange = calc_and_set_prv_and_psv_status(pr);
-							}
-						}
-						else {
-							valveChange = calc_and_set_prv_and_psv_status(pr);
-						}
-
-						// Check for convergence
-						if (hasconverged(pr, relerr, hydbal)) {
-							// We have convergence - quit if we are into extra iterations
-							if (iter > hyd.MaxIter) break;
-
-							// Quit if no status changes occur
-							statChange = false;
-							if (valveChange)    statChange = true;
-							if (linkstatus(pr)) statChange = true;
-							if (pswitch(pr))    statChange = true;
-							if (!statChange)    break;
-
-							// We have a status change so continue the iterations
-							nextcheck = iter + hyd.CheckFreq;
-						}
-
-						// No convergence yet - see if its time for a periodic status check  on pumps, CV's, and pipes connected to tank
-						else if ((iter <= hyd.MaxCheck) && (iter == nextcheck)) {
-							linkstatus(pr);
-							nextcheck += hyd.CheckFreq;
-						}
-						iter++;
+				// Apply solution damping & check for change in valve status
+				hyd.RelaxFactor = 1.0;
+				valveChange = false;
+				if (hyd.DampLimit > 0.0) {
+					if (relerr <= hyd.DampLimit) {
+						hyd.RelaxFactor = 0.6;
+						valveChange = calc_and_set_prv_and_psv_status(pr);
 					}
+				}
+				else {
+					valveChange = calc_and_set_prv_and_psv_status(pr);
+				}
 
-					// Iterations ended - report any errors.
-					if (errcode > 0) {
-						writehyderr(pr, sm.Order[errcode]); // Ill-conditioned matrix error
-						errcode = 110;
-					}
+				// Check for convergence
+				if (hasconverged(pr, relerr, hydbal)) {
+					// We have convergence - quit if we are into extra iterations
+					if (iter > hyd.MaxIter) break;
 
-					// Store actual junction outflow in NodeDemand & full demand in DemandFlow
-					for (i = 1; i <= net.Njuncs; i++) {
-						fullDemand = hyd.NodeDemand[i];
-						hyd.NodeDemand[i] = hyd.DemandFlow[i] + hyd.EmitterFlow[i];
-						hyd.DemandFlow[i] = fullDemand;
-					}
+					// Quit if no status changes occur
+					statChange = false;
+					if (valveChange)    statChange = true;
+					if (linkstatus(pr)) statChange = true;
+					if (pswitch(pr))    statChange = true;
+					if (!statChange)    break;
 
-					// Save the simulation data for this timestep            
-					SaveResultsForTimeStep(pr, simQuality);
+					// We have a status change so continue the iterations
+					nextcheck = iter + hyd.CheckFreq;
+				}
 
-					// Save convergence info
-					hyd.RelativeError = relerr;
-					hyd.MaxHeadError = hydbal.maxheaderror;
-					hyd.MaxFlowChange = hydbal.maxflowchange;
-					hyd.Iterations = iter;
-					return errcode;
-				};
-				return hydsolve(a,b,c,d);
-			}		
+				// No convergence yet - see if its time for a periodic status check  on pumps, CV's, and pipes connected to tank
+				else if ((iter <= hyd.MaxCheck) && (iter == nextcheck)) {
+					linkstatus(pr);
+					nextcheck += hyd.CheckFreq;
+				}
+				iter++;
+			}
+
+			// Iterations ended - report any errors.
+			if (errcode > 0) {
+				writehyderr(pr, sm.Order[errcode]); // Ill-conditioned matrix error
+				errcode = 110;
+			}
+
+			// Store actual junction outflow in NodeDemand & full demand in DemandFlow
+			for (i = 1; i <= net.Njuncs; i++) {
+				fullDemand = hyd.NodeDemand[i];
+				hyd.NodeDemand[i] = hyd.DemandFlow[i] + hyd.EmitterFlow[i];
+				hyd.DemandFlow[i] = fullDemand;
+			}
+
+			// Save the simulation data for this timestep            
+			SaveResultsForTimeStep(pr, simQuality);
+
+			// Save convergence info
+			hyd.RelativeError = relerr;
+			hyd.MaxHeadError = hydbal.maxheaderror;
+			hyd.MaxFlowChange = hydbal.maxflowchange;
+			hyd.Iterations = iter;
+			return errcode;
+		};
+		return hydsolve(a,b,c,d);
+	}		
 		)").to_string("", root) + "\n\n");
 			}
 			catch (std::exception& e) { print(e.what()); }
