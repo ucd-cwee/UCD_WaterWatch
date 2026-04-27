@@ -242,24 +242,84 @@ namespace GL {
 				, col(-1)
 				, pos(-1)
 				, m_pos(0)
-				, m_str(nullptr)
+				, m_str_sets(nullptr)
 				, m_last_col(-1) {
 			};
-			Position(size_t t_pos, GL::string& srce) noexcept
+			Position(size_t t_pos, GL::string const& srce) noexcept
 				: line(1)
 				, col(1)
 				, pos(0)
 				, m_pos(t_pos)
-				, m_str(&srce)
-				, m_last_col(1) {
+				, m_last_col(1) 
+			{
+				m_str_sets = std::make_shared<std::vector< std::pair<GL::string, bool> >>();
+				m_str_sets->push_back({ srce.to_string(), true });
 				current_position = srce.substr(m_pos);
 			};
+			GL::string str() const noexcept {
+				GL::string out;
+				for (auto& x : *m_str_sets) {
+					out = out + x.first;
+				}
+				return out;
+			};
+			size_t size() const noexcept {
+				size_t out = 0;
+				for (auto& x : *m_str_sets) {
+					out += x.first.length();
+				}
+				return out;
+			};
+			const char& operator[](size_t pos) const {
+				for (auto& x : *m_str_sets) {
+					if (pos >= x.first.length()) {
+						pos -= x.first.length();
+					}
+					else {
+						return x.first[pos];
+					}
+				}
+				static const char out = '\0';
+				return out;
+			};
+			char& operator[](size_t pos) {
+				for (auto& x : *m_str_sets) {
+					if (pos >= x.first.length()) {
+						pos -= x.first.length();
+					}
+					else {
+						return const_cast<char&>(x.first[pos]);
+					}
+				}
+				static char out = '\0';
+				return out;
+			};
+			void insert_at(size_t pos, GL::string insert) {
+				int index = 0;
+				for (auto& x : *m_str_sets) {
+					if (pos >= x.first.length()) {
+						pos -= x.first.length();
+						++index;
+					}
+					else {
+						auto LHS = m_str_sets->operator[](index).first.left(pos);
+						auto RHS = m_str_sets->operator[](index).first.right(m_str_sets->operator[](index).first.length() - LHS.length());
+
+						m_str_sets->insert(m_str_sets->begin() + index + 1, { RHS, m_str_sets->operator[](index).second });
+						(m_str_sets->begin() + index)->first = LHS;
+						m_str_sets->insert(m_str_sets->begin() + index + 1, { insert, false });
+						return;
+					}
+				}
+			};
+
+
 			static GL::string str(const Position& t_begin, const Position& t_end) noexcept {
-				return t_begin.m_str->substr(t_begin.m_pos, t_end.m_pos - t_begin.m_pos);
+				return t_begin.str().substr(t_begin.m_pos, t_end.m_pos - t_begin.m_pos);
 			};
 			Position& operator++() noexcept {
-				if (m_pos < m_str->size()) {
-					if (m_str->operator[](m_pos) == '\n') {
+				if (m_pos < size()) {
+					if (operator[](m_pos) == '\n') {
 						++line;
 						m_last_col = col;
 						col = 1;
@@ -270,21 +330,21 @@ namespace GL {
 
 					++pos;
 					++m_pos;
-					current_position = m_str->substr(m_pos);
+					current_position = str().substr(m_pos);
 				}
 				return *this;
 			};
 			Position& operator--() noexcept {
 				--pos;
 				--m_pos;
-				if (m_str->operator[](m_pos) == '\n') {
+				if (operator[](m_pos) == '\n') {
 					--line;
 					col = m_last_col;
 				}
 				else {
 					--col;
 				}
-				current_position = m_str->substr(m_pos);
+				current_position = str().substr(m_pos);
 				return *this;
 			};
 			Position& operator+=(size_t t_distance) noexcept {
@@ -311,14 +371,14 @@ namespace GL {
 			}
 			bool operator==(const Position& t_rhs) const noexcept { return m_pos == t_rhs.m_pos; }
 			bool operator!=(const Position& t_rhs) const noexcept { return m_pos != t_rhs.m_pos; }
-			bool has_more() const noexcept { return m_pos != m_str->size(); }
-			size_t remaining() const noexcept { return static_cast<size_t>(m_str->size() - m_pos); }
+			bool has_more() const noexcept { return m_pos != size(); }
+			size_t remaining() const noexcept { return static_cast<size_t>(size() - m_pos); }
 			const char& operator*() const noexcept {
-				if (m_pos == m_str->size()) {
+				if (m_pos == size()) {
 					return ""[0];
 				}
 				else {
-					return m_str->operator[](m_pos);
+					return operator[](m_pos);
 				}
 			};
 
@@ -329,13 +389,13 @@ namespace GL {
 			GL::string to_string() const {
 				return GL::printf("L%iC%i(#%i)", line, col, pos);
 			};
-			GL::string& Source() {
-				return *m_str;
+			std::vector< std::pair<GL::string, bool> >& Source() {
+				return *m_str_sets;
 			};
 
 		private:
 			size_t m_pos = 0;
-			GL::string* m_str;
+			std::shared_ptr<std::vector< std::pair<GL::string, bool> >> m_str_sets;
 			GL::string current_position;
 			int m_last_col = -1;
 		};
@@ -15934,14 +15994,15 @@ namespace GL {
 						if (current_preprocessor_node.children.size() >= 1
 							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
 						) {
-							auto LHS = m_position.Source().left(current_preprocessor_node.location.start.pos);
-							auto RHS = m_position.Source().right(m_position.Source().length() - m_position.pos);
-
 							GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
 							GL::string downloaded_script = node_text; // "void Foo(int x){ return x; };";
-							GL::string new_script = LHS + "\n" + downloaded_script + "\n" + RHS;
 
-							m_position.Source() = new_script;
+							for (size_t pos = current_preprocessor_node.location.start.pos; pos < current_preprocessor_node.location.end.pos; ++pos) {
+								m_position[pos] = ' ';
+							}
+
+							m_position.insert_at(current_preprocessor_node.location.start.pos, downloaded_script);
+
 							m_position = current_preprocessor_node.location.start;
 
 							m_preprocessor_stack.push_back(current_preprocessor_node);
