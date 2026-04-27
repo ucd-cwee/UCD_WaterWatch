@@ -8515,9 +8515,9 @@ namespace GL {
 				if (!this->text.empty()) {
 					return this->text;					
 				}
-				if (const_cast<AbstractSyntaxTreeNode*>(this)->for_each_child([&](AbstractSyntaxTreeNode& this_child) -> bool {
+				if (const_cast<AbstractSyntaxTreeNode*>(this)->for_each_child([&out](AbstractSyntaxTreeNode& this_child) -> bool {
 					if (!this_child.text.empty()) {
-						out = text;
+						out = this_child.text;
 						return true;
 					}
 					return false;
@@ -9334,6 +9334,24 @@ namespace GL {
 								return true;
 							}
 						}
+
+						// Var_Decl nodes whose ID's have been converted into constexpr values...
+						if (node.identifier == Engine::AST_Node_Type::Var_Decl
+							&& node.children.size() == 1
+							&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+						) {
+							node = Noop_Node(node.text, node.location, {});
+							return true;
+						};
+
+						// Assign_Retroactively nodes whose ID's have been converted into constexpr values...
+						if (node.identifier == Engine::AST_Node_Type::Assign_Retroactively
+							&& node.children.size() >= 2
+							&& node.children[1].identifier == Engine::AST_Node_Type::Noop
+						) {
+							node = Noop_Node(node.text, node.location, {});
+							return true;
+						};
 
 						return false;
 					}
@@ -11725,22 +11743,33 @@ namespace GL {
 							}
 						}
 
+#if 1
 						if (((node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Arg_List) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File))
 							&& node.children.size() > 0
 						) {
-							if (node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
-								if (this_child.identifier == Engine::AST_Node_Type::Id 
+							for (auto& this_child : node.children) {
+								if (this_child.identifier == Engine::AST_Node_Type::Id
 									&& this_child.constant
 								) {
 									this_child = Constant_Node(this_child.text, this_child.location, {}, this_child.constant);
 									return true;
 								}
-								return false;
-							})) {
-								return true;
 							}
-						}
 
+
+							//if (node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
+							//	if (this_child.identifier == Engine::AST_Node_Type::Id 
+							//		&& this_child.constant
+							//	) {
+							//		this_child = Constant_Node(this_child.text, this_child.location, {}, this_child.constant);
+							//		return true;
+							//	}
+							//	return false;
+							//})) {
+							//	return true;
+							//}
+						}
+#endif
 
 
 
@@ -12004,7 +12033,7 @@ namespace GL {
 							) {
 								for (int preprocessorPos = (int)CurrentParser().m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
 									auto* iter = &CurrentParser().m_preprocessor_stack[preprocessorPos];
-									if (this_child.location.start.pos > iter->location.end.pos) {
+									if (this_child.location.start.pos >= iter->location.end.pos) {
 										if (iter->identifier == Engine::AST_Node_Type::PreprocessorMacro) {
 											if (iter->text == "#define") {
 												auto& info = iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorDefineInformation>();
@@ -12023,7 +12052,7 @@ namespace GL {
 																		Id_Node(new_name, input_node.location, {})
 																	})
 																}));
-																new_children.back().tag.cast< ObjectDeclarationInformation>().is_constexpr = true;
+																new_children.back().tag.cast< ObjectDeclarationInformation>().is_constexpr = true; // hints to try and compile this out.
 
 																DepthCounter counter;
 																if (counter.depth > 100) {
@@ -12045,8 +12074,11 @@ namespace GL {
 																}));
 																throw Engine::except::eval_error(err_txt, this_child.location.start);
 															}
+															
+															std::vector< AbstractSyntaxTreeNode > constexpr_children;
+															for (auto& x : new_children) if (x.constant) constexpr_children.push_back(x);
 
-															auto new_child = CurrentParser().Parse(info.Remainder);
+															auto new_child = CurrentParser().Parse(info.Remainder, 1000, constexpr_children);
 															new_child.location = this_child.location;
 															new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
 																this_child_2.location = this_child.location;
@@ -12192,16 +12224,15 @@ namespace GL {
 				struct PreprocessMacroObjects {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						auto& current_parser = CurrentParser();
-#if 1
 						for (int preprocessorPos = (int)current_parser.m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
 							auto* iter = &current_parser.m_preprocessor_stack[preprocessorPos];
-							if (node.location.start.pos > iter->location.end.pos) {
+							if (node.location.start.pos >= iter->location.end.pos) {
 								if ((iter->text == "#define") || (iter->text == "#undef")) {
 									if (node.for_each_child([&iter, &current_parser](AbstractSyntaxTreeNode& this_child) -> bool {
 										if (this_child.identifier == Engine::AST_Node_Type::Id
 											&& this_child.children.size() == 0
 										) {
-											if (this_child.location.start.pos > iter->location.end.pos) {
+											if (this_child.location.start.pos >= iter->location.end.pos) {
 												if (iter->identifier == Engine::AST_Node_Type::PreprocessorMacro) {
 													if (iter->text == "#define") {
 														auto& info = iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorDefineInformation>();
@@ -12280,80 +12311,6 @@ namespace GL {
 							}
 						}
 						return false;
-#else
-						return node.for_each_child([&current_parser](AbstractSyntaxTreeNode& this_child) -> bool {
-							if (this_child.identifier == Engine::AST_Node_Type::Id
-								&& this_child.children.size() == 0
-							) {								
-								for (int preprocessorPos = (int)current_parser.m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
-									auto* iter = &current_parser.m_preprocessor_stack[preprocessorPos];
-									if (this_child.location.start.pos > iter->location.end.pos) {
-										if (iter->identifier == Engine::AST_Node_Type::PreprocessorMacro) {
-											if (iter->text == "#define") {
-												auto& info = iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorDefineInformation>();
-												if (!info.is_function) {
-													if (info.use_preprocessed_Remainder) {
-														auto new_child = info.Remainder_Preprocessed;
-														new_child.location = this_child.location;
-														new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
-															this_child_2.location = this_child.location;
-															return false;
-														});
-														this_child = new_child;
-														return true;
-													}
-													else {
-														if (info.VarName == this_child.text) {
-															// this define has been... defined.
-															auto new_child = current_parser.Parse(info.Remainder);
-
-															if ((new_child.identifier == Engine::AST_Node_Type::Id) && (new_child.text == info.VarName) && (new_child.children.size() == 0)) {
-																// returns itself?
-																return false;
-															}
-															if (new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
-																if (this_child_2.identifier == Engine::AST_Node_Type::Id
-																	&& this_child_2.identifier._size() == 0
-																	&& this_child_2.text == info.VarName
-																) {
-																	return true;
-																}
-																return false;
-															})) {
-																throw except::eval_error("Macro ID replacement includes infinite recursion", this_child.location.start);
-															}
-
-															new_child.location = this_child.location;
-															new_child.for_each_child([&](AbstractSyntaxTreeNode& this_child_2) -> bool {
-																this_child_2.location = this_child.location;
-																return false;
-															});
-
-															DepthCounter counter;
-															if (counter.depth > 100) {
-																throw Engine::except::eval_error("Macro ID replacement reached maximum recursive depth", this_child.location.start);
-															}
-
-															this_child = optimizer::optimize_all(new_child, &current_parser, 100);
-
-															return true;
-														}
-													}
-												}
-											}
-											if (iter->text == "#undef") {
-												if (iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorUndefineInformation>().VarName == this_child.text) {
-													// this define has been... undefined. 
-													break;
-												}
-											}
-										}
-									}
-								}
-							}
-							return false;
-						});
-#endif
 					};
 				};
 
@@ -12916,6 +12873,12 @@ namespace GL {
 				std::vector<AbstractSyntaxTreeNode> m_comment_stack;
 			public:
 				std::vector<AbstractSyntaxTreeNode> m_preprocessor_stack;
+				enum class preprocessor_state {
+					TRUE_UNTIL_ELSE,
+					FALSE_UNTIL_ELSE,
+					FALSE_UNTIL_ENDIF
+				};
+				std::vector<preprocessor_state> m_preprocessor_if_stack;
 
 			private:
 				// check if the string is a valid operator
@@ -13637,6 +13600,7 @@ namespace GL {
 				};
 				/// Reads (and potentially captures) a number from the input, detecting if it's an integer or floating point, without skipping initial whitespace
 				bool Num_() {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -13645,6 +13609,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14079,6 +14044,7 @@ namespace GL {
 				bool Id_Impl(const bool validate) {
 					SkipWS();
 
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14087,6 +14053,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14154,6 +14121,7 @@ namespace GL {
 				};
 				/// Reads (and potentially captures) an identifier from input
 				bool Id(const bool validate) {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14162,13 +14130,14 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
 
 					if (Id_Impl(validate)) {
-#if 1
 						if (optimizer::OptimizationDepth() > 0) {
+							const auto prev_preprocessorif_top2 = m_preprocessor_if_stack.size();
 							const auto prev_preprocessor_top2 = m_preprocessor_stack.size();
 							const auto prev_comment_top2 = m_comment_stack.size();
 							const auto prev_stack_top2 = m_match_stack.size();
@@ -14177,7 +14146,9 @@ namespace GL {
 								while (m_match_stack.size() != prev_stack_top2) m_match_stack.pop_back();
 								while (m_comment_stack.size() != prev_comment_top2) m_comment_stack.pop_back();
 								while (m_preprocessor_stack.size() != prev_preprocessor_top2) m_preprocessor_stack.pop_back();
+								while (m_preprocessor_if_stack.size() != prev_preprocessorif_top2) m_preprocessor_if_stack.pop_back();
 								m_position = prev_pos2;
+								return false;
 							};
 
 							if (Symbol("##") && Id(validate)) {
@@ -14192,7 +14163,6 @@ namespace GL {
 								failure2();
 							}
 						}
-#endif
 						return true;						
 					}
 					else {
@@ -14201,6 +14171,7 @@ namespace GL {
 				};
 				/// Reads (and potentially captures) an type or class identifier from input
 				bool TypeName(bool allowAuto = false) {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14209,6 +14180,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14269,6 +14241,7 @@ namespace GL {
 				};
 				/// Reads an argument from input
 				bool Arg(const bool t_type_allowed = true) {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14277,6 +14250,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14302,6 +14276,7 @@ namespace GL {
 				bool Id_Arg_List() {
 					SkipWS(true);
 
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14310,6 +14285,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14333,6 +14309,7 @@ namespace GL {
 				bool Decl_Arg_List() {
 					SkipWS(true);
 
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14341,6 +14318,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14364,6 +14342,7 @@ namespace GL {
 				bool Arg_List(int maxNumArgs = std::numeric_limits<int>::max()) {
 					SkipWS(true);
 
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14372,6 +14351,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14396,6 +14376,7 @@ namespace GL {
 				};
 				/// Reads a C-style type-cast from input (e.g. (int)0.0f )
 				bool TypeCastOperation() {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14404,6 +14385,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14480,6 +14462,7 @@ namespace GL {
 				};
 				/// Reads a variable declaration from input
 				bool Var_Decl() {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14488,9 +14471,11 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
+
 					bool is_constexpr = false;
 
 					if (Keyword("constexpr")) {
@@ -14564,17 +14549,7 @@ namespace GL {
 
 				/// Reads a unary prefixed expression from input
 				bool Prefix() {
-					//const auto prev_preprocessor_top = m_preprocessor_stack.size();
-					//const auto prev_comment_top = m_comment_stack.size();
-					const auto prev_stack_top = m_match_stack.size();
-					//const auto prev_pos = m_position;
-					//auto failure = [&]() {
-					//	while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-					//	while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
-					//	while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
-					//	m_position = prev_pos;
-					//	return false;
-					//};
+					const auto prev_stack_top = m_match_stack.size();					
 
 					using SS = utility::Static_String;
 					auto& prefix_opers = Operator_Matches::Data().m_11;
@@ -14608,6 +14583,7 @@ namespace GL {
 				}
 
 				bool Postfix(bool gotValueAlready) {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14616,6 +14592,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14676,6 +14653,7 @@ namespace GL {
 				bool Map_Pair() {
 					SkipWS(true);
 
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14684,6 +14662,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14767,6 +14746,7 @@ namespace GL {
 
 				/// Reads a lambda (anonymous function) from input
 				bool Lambda() {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14775,6 +14755,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -14853,6 +14834,8 @@ namespace GL {
 					return true;
 				};
 
+				/// Parses a chain of function or member calls, such as: 
+				/// `x.y.z` or `x.function().z` or `function(x,y,z).w.function(a).b`
 				bool Dot_Fun_Array() {
 					bool retval = false;
 					const auto prev_stack_top = m_match_stack.size();
@@ -14948,8 +14931,12 @@ namespace GL {
 					}
 				};
 
+				/// Parses equation components that are meant to be processed together.
+				/// For example, `+`, `-`, and `%` would be operators. 
+				/// Whereas `+=`, `=`, and `%=` would be equations.
 				bool Operator(const size_t t_precedence = 0) {
 					bool retval = false;
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -14958,6 +14945,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -15035,6 +15023,7 @@ namespace GL {
 
 				/// Reads an expression surrounded by parentheses from input
 				bool Paren_Expression() {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -15043,6 +15032,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -15553,36 +15543,47 @@ namespace GL {
 					while (has_more) {
 						const auto start = m_position;
 
-						// TO-DO, complete impl of these evaluations:
-						if (PreprocessorDirectives() || DeclNamespace() || DeclFunction() || DeclClass()) {
-							if (!saw_eol) {
-								throw except::eval_error("Two function definitions missing line separator", start);
+						if ((this->m_preprocessor_if_stack.size() == 0) || (this->m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE)) {
+							// TO-DO, complete impl of these evaluations:
+							if (PreprocessorDirectives(true) || DeclNamespace() || DeclFunction() || DeclClass()) {
+								if (!saw_eol) {
+									throw except::eval_error("Two function definitions missing line separator", start);
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = true;
 							}
-							has_more = true;
-							retval = true;
-							saw_eol = true;
-						}
-						else if (Equation()) {
-							if (!saw_eol) {
-								throw except::eval_error("Two expressions missing line separator", start);
+							else if (Equation()) {
+								if (!saw_eol) {
+									throw except::eval_error("Two expressions missing line separator", start);
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = false;
 							}
-							has_more = true;
-							retval = true;
-							saw_eol = false;
-						}
-						else if (DeclarationsBlock() || Eol()) {
-							has_more = true;
-							retval = true;
-							saw_eol = true;
+							else if (DeclarationsBlock() || Eol()) {
+								has_more = true;
+								retval = true;
+								saw_eol = true;
+							}
+							else {
+								has_more = false;
+							}
 						}
 						else {
-							has_more = false;
+							SkipWS();
+							if (!PreprocessorDirectives(false)) {
+								++m_position;
+							}
 						}
+
 					}
 					return retval;
 				};
 
+				/// Reads a single-line statement from input, such as those following an if()/while()/case: statement without the C-style {} braces. 
 				bool SingleStatement() {
+					const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
 					const auto prev_preprocessor_top = m_preprocessor_stack.size();
 					const auto prev_comment_top = m_comment_stack.size();
 					const auto prev_stack_top = m_match_stack.size();
@@ -15591,6 +15592,7 @@ namespace GL {
 						while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
 						while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
 						while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+						while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
 						m_position = prev_pos;
 						return false;
 					};
@@ -15620,29 +15622,38 @@ namespace GL {
 
 					while (has_more) {
 						const auto start = m_position;
-						if (PreprocessorDirectives() || DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
-							if (!saw_eol) {
-								throw except::eval_error("Two function definitions missing line separator", start);
+
+						if ((this->m_preprocessor_if_stack.size() == 0) || (this->m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE)) {
+							if (PreprocessorDirectives(true) || DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
+								if (!saw_eol) {
+									throw except::eval_error("Two function definitions missing line separator", start);
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = true;
 							}
-							has_more = true;
-							retval = true;
-							saw_eol = true;
-						}
-						else if (Return() || Break() || Continue() || Equation()) {
-							if (!saw_eol) {
-								throw except::eval_error("Two expressions missing line separator", start);
+							else if (Return() || Break() || Continue() || Equation()) {
+								if (!saw_eol) {
+									throw except::eval_error("Two expressions missing line separator", start);
+								}
+								has_more = true;
+								retval = true;
+								saw_eol = false;
 							}
-							has_more = true;
-							retval = true;
-							saw_eol = false;
-						}
-						else if (Block() || Eol()) {
-							has_more = true;
-							retval = true;
-							saw_eol = true;
+							else if (Block() || Eol()) {
+								has_more = true;
+								retval = true;
+								saw_eol = true;
+							}
+							else {
+								has_more = false;
+							}
 						}
 						else {
-							has_more = false;
+							SkipWS();
+							if (!PreprocessorDirectives(false)) {
+								++m_position;
+							}
 						}
 					}
 					return retval;
@@ -15806,6 +15817,7 @@ namespace GL {
 					return retval;
 				};
 
+				/// Reads and processes preprocessor commands, such as #include, #define, #if, etc. 
 				bool PreprocessorText(GL::string& out) {
 					// SkipWS();
 					auto start = m_position;
@@ -15856,12 +15868,13 @@ namespace GL {
 				};
 
 				bool ProcessMacroNode(AbstractSyntaxTreeNode& current_preprocessor_node, bool at_end_of_match_stack = true) {
+					bool invert_decision = false;
 					// now that we know we "found" a preprocessor token, how should we handle it?
 					switch (hash(current_preprocessor_node.text.c_str())) {
 					case hash("#warning"):
 						if (current_preprocessor_node.children.size() >= 1
 							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
-							) {
+						) {
 							// ALSO push this warning onto the preprocessor stack, for now.
 							m_preprocessor_stack.push_back(current_preprocessor_node);
 							if (at_end_of_match_stack) m_match_stack.pop_back();
@@ -15871,7 +15884,7 @@ namespace GL {
 					case hash("#error"):
 						if (current_preprocessor_node.children.size() >= 1
 							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
-							) {
+						) {
 							// ALSO push this warning onto the preprocessor stack, for now.
 							m_preprocessor_stack.push_back(current_preprocessor_node);
 							if (at_end_of_match_stack) m_match_stack.pop_back();
@@ -15936,34 +15949,168 @@ namespace GL {
 						}
 						break;
 					case hash("#ifndef"):
-						m_preprocessor_stack.push_back(current_preprocessor_node);
-						if (at_end_of_match_stack) m_match_stack.pop_back();
-						else current_preprocessor_node = Noop_Node("", {}, {});
-						break;
+						invert_decision = true;
+						[[fallthrough]];
 					case hash("#ifdef"):
-						m_preprocessor_stack.push_back(current_preprocessor_node);
-						if (at_end_of_match_stack) m_match_stack.pop_back();
-						else current_preprocessor_node = Noop_Node("", {}, {});
+						if (current_preprocessor_node.children.size() >= 1
+							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
+						) {
+							auto current_position = m_position;
+							GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
+							GL::string VarName;
+							auto local_pos = GL::Engine::Position(0, node_text);
+
+							// #ifdef VarName
+							if (Id_FreeStanding(&VarName, local_pos)) {			
+								bool success = false;
+								for (int preprocessorPos = (int)m_preprocessor_stack.size() - 1; preprocessorPos >= 0; --preprocessorPos) {
+									auto* iter = &m_preprocessor_stack[preprocessorPos];
+									if (current_preprocessor_node.location.start.pos >= iter->location.end.pos) {
+										if ((iter->text == "#define") || (iter->text == "#undef")) {
+											if (iter->text == "#define") {
+												if (iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorDefineInformation>().VarName == VarName) {
+													m_preprocessor_if_stack.push_back(invert_decision ? preprocessor_state::FALSE_UNTIL_ELSE : preprocessor_state::TRUE_UNTIL_ELSE);
+													success = true;
+													break;
+												}
+											}
+											else {
+												if (iter->tag.cast<Engine::ScriptParser::Parser::PreprocessorUndefineInformation>().VarName == VarName) {
+													m_preprocessor_if_stack.push_back(invert_decision ? preprocessor_state::TRUE_UNTIL_ELSE : preprocessor_state::FALSE_UNTIL_ELSE);
+													success = true;
+													break;
+												}
+											}
+										}
+									}
+								}		
+								if (!success) {
+									m_preprocessor_if_stack.push_back(invert_decision ? preprocessor_state::TRUE_UNTIL_ELSE : preprocessor_state::FALSE_UNTIL_ELSE);
+								}
+							}
+							else {
+								throw except::eval_error("#ifdef preprocessor must include an ID of some type.", current_position);
+							}							
+							m_preprocessor_stack.push_back(current_preprocessor_node);
+							if (at_end_of_match_stack) m_match_stack.pop_back();
+							else current_preprocessor_node = Noop_Node("", {}, {});
+						}
 						break;
-					case hash("#if"):
-						m_preprocessor_stack.push_back(current_preprocessor_node);
-						if (at_end_of_match_stack) m_match_stack.pop_back();
-						else current_preprocessor_node = Noop_Node("", {}, {});
+					case hash("#if"): if (current_preprocessor_node.children.size() >= 1
+						&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant) {
+							GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
+							auto this_text = GL::string(std::string((size_t)current_preprocessor_node.location.start.pos, ' ')) + node_text;
+							AbstractSyntaxTreeNode this_node = this->parse_instr_eval(this_text);
+							AbstractSyntaxTreeNode temp_combo_node = Block_Node("", {}, {});
+							temp_combo_node.children = this->m_match_stack;
+							temp_combo_node.children.push_back(this_node);
+							temp_combo_node.location.start = temp_combo_node.children.front().location.start;
+							temp_combo_node.location.end = temp_combo_node.children.back().location.end;
+
+							temp_combo_node = optimizer::optimize_all(temp_combo_node, this);
+							if (temp_combo_node.children.size() > 0) {
+								this_node = temp_combo_node.children.back();
+								if (this_node.constant) {
+									try {
+										m_preprocessor_if_stack.push_back(this->analysis_engine.cast<bool>(this_node.constant) ? preprocessor_state::TRUE_UNTIL_ELSE : preprocessor_state::FALSE_UNTIL_ELSE);
+									}
+									catch (std::exception& e) {
+										throw except::eval_error(GL::string("#if preprocessor did not compile to a constexpr boolean value: ") + std::string(e.what()), m_position);
+									}
+								}
+								else {
+									throw except::eval_error("#if preprocessor did not compile to a constexpr value: " + this_node.to_string("", this->analysis_engine), m_position);
+								}
+							}
+							else {
+								throw except::eval_error("#if preprocessor compiled down to nothing -- no value was returned.", m_position);
+							}
+
+							m_preprocessor_stack.push_back(current_preprocessor_node);
+							if (at_end_of_match_stack) m_match_stack.pop_back();
+							else current_preprocessor_node = Noop_Node("", {}, {});
+						}
 						break;
-					case hash("#elif"):
-						m_preprocessor_stack.push_back(current_preprocessor_node);
-						if (at_end_of_match_stack) m_match_stack.pop_back();
-						else current_preprocessor_node = Noop_Node("", {}, {});
+					case hash("#elif"): if (current_preprocessor_node.children.size() >= 1
+						&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant 
+						&& m_preprocessor_if_stack.size() > 0) {
+						    if (m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE) { 
+								// already true -- the else statement has failed.
+								m_preprocessor_if_stack.pop_back();
+								m_preprocessor_if_stack.push_back(preprocessor_state::FALSE_UNTIL_ENDIF);
+						    }
+							else if (m_preprocessor_if_stack.back() == preprocessor_state::FALSE_UNTIL_ENDIF) {
+								// was true at some point in the past and is now processing the `else` statements. remains false.								
+							}
+							else if (m_preprocessor_if_stack.back() == preprocessor_state::FALSE_UNTIL_ELSE) {
+								// was never true (yet)
+								GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
+								auto this_text = GL::string(std::string((size_t)current_preprocessor_node.location.start.pos, ' ')) + node_text;
+								AbstractSyntaxTreeNode this_node = this->parse_instr_eval(this_text);
+								AbstractSyntaxTreeNode temp_combo_node = Block_Node("", {}, {});
+								temp_combo_node.children = this->m_match_stack;
+								temp_combo_node.children.push_back(this_node);
+								temp_combo_node.location.start = temp_combo_node.children.front().location.start;
+								temp_combo_node.location.end = temp_combo_node.children.back().location.end;
+
+								temp_combo_node = optimizer::optimize_all(temp_combo_node, this);
+								if (temp_combo_node.children.size() > 0) {
+									this_node = temp_combo_node.children.back();
+									if (this_node.constant) {
+										try {
+											m_preprocessor_if_stack.pop_back();
+											m_preprocessor_if_stack.push_back(this->analysis_engine.cast<bool>(this_node.constant) ? preprocessor_state::TRUE_UNTIL_ELSE : preprocessor_state::FALSE_UNTIL_ELSE);
+										}
+										catch (std::exception& e) {
+											throw except::eval_error(GL::string("#if preprocessor did not compile to a constexpr boolean value: ") + std::string(e.what()), m_position);
+										}
+									}
+									else {
+										throw except::eval_error("#if preprocessor did not compile to a constexpr value: " + this_node.to_string("", this->analysis_engine), m_position);
+									}
+								}
+								else {
+									throw except::eval_error("#if preprocessor compiled down to nothing -- no value was returned.", m_position);
+								}
+							}
+
+							m_preprocessor_stack.push_back(current_preprocessor_node);
+							if (at_end_of_match_stack) m_match_stack.pop_back();
+							else current_preprocessor_node = Noop_Node("", {}, {});
+					    }
+						else {
+						    throw except::eval_error("#elif preprocessor must follow either an #if, #ifdef, #ifndef, or #elif statement.", m_position);
+					    }
 						break;
-					case hash("#else"):
-						m_preprocessor_stack.push_back(current_preprocessor_node);
-						if (at_end_of_match_stack) m_match_stack.pop_back();
-						else current_preprocessor_node = Noop_Node("", {}, {});
+					case hash("#else"): if (m_preprocessor_if_stack.size() > 0) {		
+							if (m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE) {
+								// already true -- the else statement has failed.
+								m_preprocessor_if_stack.pop_back();
+								m_preprocessor_if_stack.push_back(preprocessor_state::FALSE_UNTIL_ENDIF);
+							}
+							else if (m_preprocessor_if_stack.back() == preprocessor_state::FALSE_UNTIL_ENDIF) {
+								// was true at some point in the past and is now processing the `else` statements. remains false.								
+							}
+							else {
+								m_preprocessor_if_stack.back() = preprocessor_state::TRUE_UNTIL_ELSE;
+							}
+							m_preprocessor_stack.push_back(current_preprocessor_node);
+							if (at_end_of_match_stack) m_match_stack.pop_back();
+							else current_preprocessor_node = Noop_Node("", {}, {});
+					    }
+						else {
+						    throw except::eval_error("#else preprocessor must follow either an #if, #ifdef, #ifndef, or #elif statement.", m_position);
+					    }
 						break;
-					case hash("#endif"):
-						m_preprocessor_stack.push_back(current_preprocessor_node);
-						if (at_end_of_match_stack) m_match_stack.pop_back();
-						else current_preprocessor_node = Noop_Node("", {}, {});
+					case hash("#endif"): if (m_preprocessor_if_stack.size() > 0) {
+							m_preprocessor_if_stack.pop_back();
+							m_preprocessor_stack.push_back(current_preprocessor_node);
+							if (at_end_of_match_stack) m_match_stack.pop_back();
+							else current_preprocessor_node = Noop_Node("", {}, {});
+						}
+						else {
+						    throw except::eval_error("#endif preprocessor must follow either an #if, #ifdef, #ifndef, #elif, or #else statement.", m_position);
+					    }
 						break;
 					case hash("#define"):
 						if (current_preprocessor_node.children.size() >= 1
@@ -16057,26 +16204,39 @@ namespace GL {
 
 			private:
 				// Attempt to read a pre-processor directive from input
-				bool PreprocessorDirectives() {
-					const auto prev_prev_pos = m_position;
-					for (auto& preprocessor_call : std::vector<GL::utility::Static_String>({ 
-						"#warning", 
-						"#error", 
-						"#pragma", 
-						"#include", 
+				bool PreprocessorDirectives(bool allow_any_preprocessor) {
+					static auto options1 = std::vector<GL::utility::Static_String>({
+						"#warning",
+						"#error",
+						"#pragma",
+						"#include",
 						"#ifndef", "#ifdef", "#if", "#elif", "#else", "#endif",
 						"#define", "#undef"
-					})) {
+					});
+					static auto options2 = std::vector<GL::utility::Static_String>({
+						"#elif", "#else", "#endif"
+					});
+					std::vector<GL::utility::Static_String>* options;
+					if (allow_any_preprocessor) {
+						options = &options1;
+					}
+					else {
+						options = &options2;
+					}
+					const auto prev_prev_pos = m_position;
+					for (auto& preprocessor_call : *options) {
 						if ([&]() -> bool {
-							const auto prev_preprocessor_top = m_preprocessor_stack.size();
-							const auto prev_comment_top = m_comment_stack.size();
-							const auto prev_stack_top = m_match_stack.size();
-							const auto prev_pos = m_position;
-							auto failure = [&]() {
+							const auto prev_preprocessorif_top = m_preprocessor_if_stack.size();
+								const auto prev_preprocessor_top = m_preprocessor_stack.size();
+								const auto prev_comment_top = m_comment_stack.size();
+								const auto prev_stack_top = m_match_stack.size();
+								const auto prev_pos = m_position;
+								auto failure = [&]() {
 								while (m_match_stack.size() != prev_stack_top) m_match_stack.pop_back();
-								while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
-								while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
-								m_position = prev_pos;
+									while (m_comment_stack.size() != prev_comment_top) m_comment_stack.pop_back();
+									while (m_preprocessor_stack.size() != prev_preprocessor_top) m_preprocessor_stack.pop_back();
+									while (m_preprocessor_if_stack.size() != prev_preprocessorif_top) m_preprocessor_if_stack.pop_back();
+									m_position = prev_pos;
 								return false;
 							};
 
@@ -16106,19 +16266,16 @@ namespace GL {
 				~Parser() = default;
 
 				// highest-level parse request, which starts a new scope from scratch and completes it. 
-				AbstractSyntaxTreeNode Parse(GL::string t_input, int optimization_depth = 1000) {
-					return parse(t_input, optimization_depth);
+				AbstractSyntaxTreeNode Parse(GL::string t_input, int optimization_depth = 1000, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
+					return parse(t_input, optimization_depth, preloaded_matches);
 				};
 
 			private:
-				AbstractSyntaxTreeNode parse(GL::string& t_input, int optimization_depth = 1000) {
-					return parse_instr_eval(t_input, optimization_depth);
+				AbstractSyntaxTreeNode parse(GL::string& t_input, int optimization_depth = 1000, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
+					return parse_instr_eval(t_input, optimization_depth, preloaded_matches);
 				};
 				AbstractSyntaxTreeNode parse_internal(GL::string& t_input, int optimization_depth = 1000) {
 					m_position = Engine::Position(0, t_input);
-					m_match_stack.clear();
-					m_comment_stack.clear();
-					m_preprocessor_stack.clear();
 
 					// top level stack
 					try {
@@ -16134,7 +16291,7 @@ namespace GL {
 											this_child = Noop_Node("", {}, {});
 										}
 										return false;
-										});
+									});
 									if (x.identifier == Engine::AST_Node_Type::Comment) {
 										m_comment_stack.push_back(x);
 										x = Noop_Node("", {}, {});
@@ -16152,16 +16309,23 @@ namespace GL {
 
 								build_match<File_Node>(0);
 								m_match_stack[0] = optimizer::incorporate_warnings_and_errors(m_match_stack[0], this, optimization_depth);
-								// add the error or warning nodes to the front of the stack, to not interupt the automatic return behavior
+
+								// add the error or warning nodes to the front of the stack, to not interupt the automatic return behavior.
 								if (1) {
+									bool added_warnings = false;
 									for (auto iter = m_preprocessor_stack.rbegin(); iter != m_preprocessor_stack.rend(); ++iter) {
-										if (iter->text == "#error" || iter->text == "#warning") {
+										if (iter->text == "#error" 
+										 || iter->text == "#warning"
+										) {
 											m_match_stack.insert(m_match_stack.begin(), *iter);
+											added_warnings = true;
 										}
 									}
+									if (added_warnings) {
+										build_match<File_Node>(0);
+										m_match_stack[0] = optimizer::optimize_all(m_match_stack[0], this, optimization_depth);
+									}
 								}
-								build_match<File_Node>(0);
-								m_match_stack[0] = optimizer::optimize_all(m_match_stack[0], this, optimization_depth);
 							}
 						}
 						else {
@@ -16189,24 +16353,23 @@ namespace GL {
 						build_match<File_Node>(0);
 					}
 
-					AbstractSyntaxTreeNode retval = m_match_stack.front();
-					m_match_stack.clear();
-					m_comment_stack.clear();
-					m_preprocessor_stack.clear();
-					return retval;
+					return m_match_stack.front();
 				};
-				AbstractSyntaxTreeNode parse_instr_eval(GL::string& t_input, int optimization_depth = 1000) {
+				AbstractSyntaxTreeNode parse_instr_eval(GL::string& t_input, int optimization_depth = 1000, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
 					auto last_position = m_position;
 					auto last_match_stack = std::exchange(m_match_stack, decltype(m_match_stack){});
 					auto last_comment_stack = std::exchange(m_comment_stack, decltype(m_comment_stack){});
 					auto last_preprocessor_stack = std::exchange(m_preprocessor_stack, decltype(m_preprocessor_stack){});
+					auto last_preprocessor_if_stack = std::exchange(m_preprocessor_if_stack, decltype(m_preprocessor_if_stack){});
 
+					m_match_stack = preloaded_matches;
 					auto retval = parse_internal(t_input, optimization_depth);
 
 					m_position = std::move(last_position);
 					m_match_stack = std::move(last_match_stack);
 					m_comment_stack = std::move(last_comment_stack);
 					m_preprocessor_stack = std::move(last_preprocessor_stack);
+					m_preprocessor_if_stack = std::move(last_preprocessor_if_stack);
 
 					return retval;
 				};
@@ -16281,8 +16444,298 @@ int main() {
 		root.perform_builtins();
 		GL::Engine::ScriptParser::Parser parser(root);
 
-
 		if (1) {
+			print(parser.Parse(R"(
+#define CONCAT1(a, b) a ## b
+return CONCAT1(defer_, 200); // returns Id_Node{ "defer_200" }
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define CONCAT2(a) #a
+return CONCAT2(100); // returns "100"
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define PASS_THROUGH(a) a
+#define CONCAT2(a) #a
+constexpr auto x = PASS_THROUGH(100); // returns 100
+return [CONCAT2(x), x]; // returns \"x\"
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define CONCAT2(a) x + a + a##a
+return CONCAT2(VAR);
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define CONCAT2(a) x + #a + a##a
+return CONCAT2(VAR);
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define CONCAT2(a) #x + #a + a##a
+return CONCAT2(VAR);
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define CONCAT2(a) #x + #a + #(a##a)
+return CONCAT2(VAR);
+			)").to_string("", root) + "\n\n");
+		}
+		if (1) {
+			print(parser.Parse(R"(
+				#ifdef TEST
+					#error "ERROR"
+				#else
+					#warning "SUCCESSFUL"
+				#endif
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+					0.0f;
+				#ifdef TEST
+					#error "ERR"
+				#else
+					200.0f;
+				#endif
+					300.0f;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+                #define TEST
+					0.0f;
+				#ifdef TEST
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+					300.0f;
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+                #define TEST
+				#ifndef TEST
+					#error "ERR"
+				#else
+					100.0f;
+				#endif
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+                #if 1
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+                #if 100
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using basic math as part of the #if macros
+			print(parser.Parse(R"(
+                #if 1 > 0
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using constexpr values as part of the #if macros
+			print(parser.Parse(R"(
+				constexpr auto x = 10;
+                #if x > 0
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using constexpr values as part of the #if macros
+			print(parser.Parse(R"(
+				constexpr bool x = true;
+                #if x
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using constexpr values as part of the #if macros
+			print(parser.Parse(R"(
+				constexpr bool x = false;
+                #if x
+					#error "ERR"
+				#else
+					100.0f;
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using constexpr values as part of the #if and #elif macros
+			print(parser.Parse(R"(
+				constexpr bool x = false;
+				constexpr bool y = true;
+                #if x
+					#error "ERR"
+                #elif y
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using constexpr values as part of the #if and #elif macros
+			print(parser.Parse(R"(
+				constexpr bool x = false;
+				constexpr bool y = false;
+				constexpr bool z = true;
+                #if x
+					#error "ERR";
+                #elif y
+					#error "ERR";
+                #elif z
+					100.0f;
+				#else
+					#error "ERR";
+				#endif
+			)").to_string("", root) + "\n\n");
+			
+			// Using constexpr values as part of the #if and #elif macros
+			print(parser.Parse(R"(
+				constexpr bool x = false;
+				constexpr bool y = false;
+				constexpr bool z = false;
+                #if x
+					#error "ERR";
+                #elif y
+					#error "ERR";
+                #elif z
+					#error "ERR";
+				#else
+					100.0f;
+				#endif
+
+                #if x
+					#error "ERR";                
+				#else
+					100.0f;
+				#endif
+
+                #if x
+					#error "ERR";                
+				#else
+					#if y
+						#error "ERR";                
+					#else
+						#if z
+							#error "ERR";                
+						#else
+							100.0f;
+						#endif
+					#endif
+				#endif
+			)").to_string("", root) + "\n\n");
+			
+			// Using a constexpr array and array access functions in the #if macro
+			print(parser.Parse(R"(
+				constexpr auto x = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+                #if x[0]
+					#error "ERR"
+				#elif x[2] - 2
+					#error "ERR"
+				#elif x[9] > x[0]
+					100.0f;
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using a macro ID replacement within the #if macro
+			print(parser.Parse(R"(
+				#define TEST 100
+				#if TEST
+					100.0f;
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using a macro function within the #if macro
+			print(parser.Parse(R"(
+				#define TEST(x) x + 1
+				#ifdef TEST
+					#if TEST(10)
+						100.0f;
+					#else
+						#error "ERR"
+					#endif
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// Using a macro function within the #if and #elif macros
+			print(parser.Parse(R"(
+				#define TEST(x) x - 1
+				#ifdef TEST
+					#if TEST(0) >= 1
+						#error "ERR";
+					#elif TEST(1) >= 1
+						#error "ERR";
+					#elif TEST(2) >= 1	
+						100.0f;
+					#else
+						#error "ERR";
+					#endif
+				#else
+					#error "ERR"
+				#endif
+			)").to_string("", root) + "\n\n");
+
+			// This will return a (intentional) warning. 
+			print(parser.Parse(R"(
+#if 1
+				if (true) {
+					100;
+				}
+				else{
+					#warning "Successfully demonstrates that warnings and errors are collected if they are parsed at all"
+				}
+#else
+				if (true) {
+					#error "ERR"
+				}
+				else{
+					#error "ERR"
+				}
+#endif
+			)").to_string("", root) + "\n\n");
+
+			// this will retun an error, since it could not parse the "x" into a constexpr value.
+			print(parser.Parse(R"(
+				bool x = false;
+                #if x
+					#error "ERR"
+				#else
+					100.0f;
+				#endif
+			)").to_string("", root) + "\n\n");
+
+
+			// This will return an error, since the #if statement could not parse the 'y' vaue inside the #define statement. 
+			// This might be fixable with some effort, but the value seems limited. 
+			print(parser.Parse(R"(
+				#define Thingy(x,y,z) class x { \
+					#if y \
+						constexpr auto z = "SUCCESS"; \
+					#else \
+						constexpr auto z = "OTHERWISE"; \
+					#endif \
+				}
+	
+				Thingy(className, true, varName);
+			)").to_string("", root) + "\n\n");
+
+
+
 			// 
 			print(parser.Parse(R"(			
 				constexpr value PI = 3.14;
@@ -17548,9 +18001,13 @@ DerivedUnitType(foot, length, ft, 381.0 / 1250.0);
 
 			// Store actual junction outflow in NodeDemand & full demand in DemandFlow
 			for (i = 1; i <= net.Njuncs; i++) {
+#if 1
 				fullDemand = hyd.NodeDemand[i];
 				hyd.NodeDemand[i] = hyd.DemandFlow[i] + hyd.EmitterFlow[i];
 				hyd.DemandFlow[i] = fullDemand;
+#else
+				#error We should not process this line, ever. 
+#endif
 			}
 
 			// Save the simulation data for this timestep            
@@ -17628,23 +18085,20 @@ for (DateTime i = __DATE__; i < __DATE__ + 365_d; ++i) print(i);
 
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
-	        R"(
-				10_ft; // constexpr
+			R"(
+				10_ft; // constexpr `foot`
 			)",
 			R"(
-				10_ft; // constexpr
+				(10_ft + 12_in) == (11_ft); // constexpr `bool`
 			)",
 			R"(
-				(10_ft + 12_in) == (11_ft); // constexpr	
+				return (100+12)_in; // constexpr `inch`
 			)",
 			R"(
-				return (100+12)_in; // constexpr
-			)",
-			R"(
-				return (x+12)_in; // inch(x+12)
+				return (x+12)_in; // Postfix{ BinaryFoldRight{x; 12}; "in" };
 			)",
             R"(
-				return (x ? x : y) + 10;
+				return (x ? x : y) + 10; 
 			)",
             R"(
 				auto x = (y ? ::int() : ::double());
