@@ -8592,14 +8592,14 @@ namespace GL {
 			/// Errors generated during parsing or evaluation
 			struct eval_error : std::runtime_error {
 				GL::string reason;
-				Engine::Position start_position;
+				Engine::Parse_Location position;
 				GL::string filename;
 				GL::string detail;
 
-				eval_error(const GL::string& t_why, const Engine::Position& t_where, const GL::string& t_fname = "__EVAL__") noexcept
+				eval_error(const GL::string& t_why, const Engine::Parse_Location& t_where, const GL::string& t_fname = "__EVAL__") noexcept
 					: std::runtime_error(format(t_why, t_where, t_fname).to_string())
 					, reason(t_why)
-					, start_position(t_where)
+					, position(t_where)
 					, filename(t_fname) {
 				}
 
@@ -8650,12 +8650,10 @@ namespace GL {
 
 					return ss.str();
 				};
-				static GL::string format_location(const Engine::Position& t_where) {
-					std::stringstream ss;
-					ss << "at (" << t_where.line << ", " << t_where.col << ")";
-					return ss.str();
+				static GL::string format_location(const Engine::Parse_Location& t_where) {
+					return "at (" + t_where.to_string() + ")";
 				};
-				static GL::string format(const GL::string& t_why, const Engine::Position& t_where, const GL::string& t_fname) {
+				static GL::string format(const GL::string& t_why, const Engine::Parse_Location& t_where, const GL::string& t_fname) {
 					return format_why(t_why) + " " + format_filename(t_fname) + " " + format_location(t_where);
 				};
 			};
@@ -9925,7 +9923,7 @@ namespace GL {
 													break;
 												}
 											}
-											if (i >= current_parent->children.size()) throw except::eval_error("Optimization failed for unknown reason", this_child.location.start);
+											if (i >= current_parent->children.size()) throw except::eval_error("Optimization failed for unknown reason", this_child.location);
 
 											for (++i; i < current_parent->children.size(); ++i) {
 												current_parent->children[i] = Noop_Node("break", current_parent->children[i].location, {});
@@ -10019,6 +10017,17 @@ namespace GL {
 								if (GL::any::fast_any out; AttemptCalculation("*", { rhs, GL::any::fast_any::instance(-1) }, out)) {
 									node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
 									return true;
+								}
+							}
+							else if (node.text == "!") {
+								if (GL::any::fast_any out; AttemptCalculation("bool", { rhs }, out)) {
+									try {
+										node = Constant_Node(node.text, (Parse_Location)node.location, {}, !out.cast<bool>());
+										return true;
+									}
+									catch (...) {
+										return false;
+									}
 								}
 							}
 						}
@@ -10148,6 +10157,38 @@ namespace GL {
 						}
 						return false;
 					}
+				};
+
+				struct LogicalBinaryFold {
+					bool optimize(AbstractSyntaxTreeNode& node) {
+						if (node.identifier == Engine::AST_Node_Type::Logical_Or
+							&& node.children.size() == 2
+							&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+							&& node.children[1].identifier == Engine::AST_Node_Type::Constant
+						) {
+							auto& lhs = node.children[0].constant;
+							auto& rhs = node.children[1].constant;
+							if (GL::any::fast_any out; AttemptCalculation("||", { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
+								node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
+								return true;
+							}
+							return false;
+						}
+						if (node.identifier == Engine::AST_Node_Type::Logical_And
+							&& node.children.size() == 2
+							&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+							&& node.children[1].identifier == Engine::AST_Node_Type::Constant
+						) {
+							auto& lhs = node.children[0].constant;
+							auto& rhs = node.children[1].constant;
+							if (GL::any::fast_any out; AttemptCalculation("&&", { lhs | GL::type::Const | GL::type::Reference, rhs | GL::type::Const | GL::type::Reference }, out)) {
+								node = Constant_Node(node.text, (Parse_Location)node.location, {}, out);
+								return true;
+							}
+							return false;
+						}
+						return false;
+					};
 				};
 
 				// Try to fold a basic binary operation (e.g. +/-/*) with one constant value, to speed-up evaluation in the future
@@ -11816,7 +11857,6 @@ namespace GL {
 								}
 							}
 
-
 							//if (node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
 							//	if (this_child.identifier == Engine::AST_Node_Type::Id 
 							//		&& this_child.constant
@@ -11830,9 +11870,6 @@ namespace GL {
 							//}
 						}
 #endif
-
-
-
 
 						// perform replacements as appropriate with constexpr values. 					
 						if (node.identifier != Engine::AST_Node_Type::Assign_Retroactively) {
@@ -12009,7 +12046,7 @@ namespace GL {
 										else {
 											if ((this_child.text == "++") || (this_child.text == "--")) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.children[0].text, temp)) {
-													throw except::eval_error("Calling postfix increment or decrement operations on constexpr objects is not supported.", this_child.location.start);
+													throw except::eval_error("Calling postfix increment or decrement operations on constexpr objects is not supported.", this_child.location);
 												}
 											}
 										}
@@ -12038,6 +12075,36 @@ namespace GL {
 												return true;
 											}										
 										}
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Equation
+										&& this_child.children.size() == 2
+										&& this_child.children[1].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[1].children.size() == 0
+									) {
+										if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.children[1].text, temp)) {
+											this_child.children[1] = Constant_Node(this_child.text, this_child.location, {}, temp);
+											made_update = true;
+											return true;
+										}
+									}
+									if (this_child.identifier == Engine::AST_Node_Type::Equation
+										&& this_child.children.size() == 2
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
+									) {
+										if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.children[0].text, temp)) {
+											this_child.children[0] = Constant_Node(this_child.text, this_child.location, {}, temp);
+											made_update = true;
+											return true;
+										}
+									}
+									if (this_child.identifier == Engine::AST_Node_Type::Equation
+										&& this_child.children.size() == 2
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Constant
+										&& this_child.text != ".."
+									) {
+										throw except::eval_error("Calling a modifying equation on constexpr objects is not supported.", this_child.location);
 									}
 
 									if (this_child.identifier == Engine::AST_Node_Type::Id
@@ -12082,6 +12149,7 @@ namespace GL {
 					};
 				};
 
+				// #define foo(x) #x;
 				struct PreprocessMacroFunctions {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						return node.for_each_child([](AbstractSyntaxTreeNode& this_child) -> bool {
@@ -12120,7 +12188,7 @@ namespace GL {
 																	CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
 																		Constant_Node(err_txt, this_child.location, {}, err_txt)
 																	}));
-																	throw Engine::except::eval_error(err_txt, this_child.location.start);
+																	throw Engine::except::eval_error(err_txt, this_child.location);
 																}
 
 																new_children.back() = optimizer::optimize_all(new_children.back(), &CurrentParser(), 100);
@@ -12132,7 +12200,7 @@ namespace GL {
 																CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
 																	Constant_Node(err_txt, this_child.location, {}, err_txt)
 																}));
-																throw Engine::except::eval_error(err_txt, this_child.location.start);
+																throw Engine::except::eval_error(err_txt, this_child.location);
 															}
 															
 															std::vector< AbstractSyntaxTreeNode > constexpr_children;
@@ -12281,6 +12349,8 @@ namespace GL {
 						}, false);
 					};
 				};
+
+				// #define one_hundred 100;
 				struct PreprocessMacroObjects {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						auto& current_parser = CurrentParser();
@@ -12329,7 +12399,7 @@ namespace GL {
 																		CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
 																			Constant_Node(err_txt, this_child.location, {}, err_txt)
 																		}));
-																		throw except::eval_error(err_txt, this_child.location.start);
+																		throw except::eval_error(err_txt, this_child.location);
 																	}
 
 																	new_child.location = this_child.location;
@@ -12344,7 +12414,7 @@ namespace GL {
 																		CurrentParser().m_preprocessor_stack.push_back(PreprocessorMacro_Node("#error", this_child.location, {
 																			Constant_Node(err_txt, this_child.location, {}, err_txt)
 																		}));
-																		throw Engine::except::eval_error(err_txt, this_child.location.start);
+																		throw Engine::except::eval_error(err_txt, this_child.location);
 																	}
 
 																	this_child = optimizer::optimize_all(new_child, &current_parser, 100);
@@ -12400,6 +12470,7 @@ namespace GL {
 					optimizer::PostfixFold,
 					optimizer::PrefixFold,
 					optimizer::BinaryFold,
+					optimizer::LogicalBinaryFold,
 					optimizer::PartialBinaryFold,
 					optimizer::ToStringFunctionCallWithConstant,
 					optimizer::ConstArray,
@@ -12682,7 +12753,7 @@ namespace GL {
 										match = match + "$";
 										break;
 									default:
-										throw except::eval_error("Unknown escaped sequence in string", pos);
+										throw except::eval_error("Unknown escaped sequence in string", Parse_Location(pos, pos));
 									}
 									is_escaped = false;
 								}
@@ -12946,7 +13017,7 @@ namespace GL {
 				static bool validate_object_name(GL::string const& name, Engine::Position const& m_position) {
 					switch (Engine::hash(name.c_str())) {
 					case Engine::hash(""):
-						throw except::eval_error("Id names cannot be empty", m_position);
+						throw except::eval_error("Id names cannot be empty", Parse_Location(m_position, m_position));
 					case Engine::hash("#define"):
 					case Engine::hash("#undef"):
 					case Engine::hash("#ifdef"):
@@ -13651,7 +13722,7 @@ namespace GL {
 							++m_position;
 						}
 						else {
-							throw except::eval_error("Unclosed quoted string", m_position);
+							throw except::eval_error("Unclosed quoted string", Parse_Location(m_position, m_position));
 						}
 
 						return true;
@@ -13880,7 +13951,7 @@ namespace GL {
 
 					while (m_position.has_more()) {
 						if (static_cast<unsigned char>(*m_position) > 0x7e) {
-							throw except::eval_error("Illegal character", m_position);
+							throw except::eval_error("Illegal character", Parse_Location(m_position, m_position));
 						}
 						auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
 
@@ -13913,7 +13984,7 @@ namespace GL {
 
 					while (m_position.has_more()) {
 						if (static_cast<unsigned char>(*m_position) > 0x7e) {
-							throw except::eval_error("Illegal character", m_position);
+							throw except::eval_error("Illegal character", Parse_Location(m_position, m_position));
 						}
 						auto end_line = (*m_position != 0) && ((*m_position == '\n') || (*m_position == '\r' && *(m_position + 1) == '\n'));
 
@@ -14052,7 +14123,7 @@ namespace GL {
 												m_match_stack.push_back(parse_instr_eval(eval_match));
 											}
 											catch (const except::eval_error& e) {
-												throw except::eval_error(std::string(e.what()), start);
+												throw except::eval_error(std::string(e.what()), Parse_Location(start, start));
 											}									
 
 											//if (
@@ -14067,7 +14138,7 @@ namespace GL {
 											build_match<Binary_Operator_Node>(prev_stack_top, "+");
 										}
 										else {
-											throw except::eval_error("Unclosed in-string eval", start);
+											throw except::eval_error("Unclosed in-string eval", Parse_Location(start, start));
 										}
 									}
 									else {
@@ -14460,8 +14531,13 @@ namespace GL {
 						else {
 							while (TypeCastOperation() || /*Postfix(false) || */Dot_Fun_Array() || Prefix()) {}
 							Postfix(true);
-							build_match<Type_Cast_Node>(prev_stack_top);
-							return true;
+							if ((m_match_stack.size() - prev_stack_top) >= 2) {
+								build_match<Type_Cast_Node>(prev_stack_top);
+								return true;
+							}
+							else {
+								return failure();
+							}
 
 							//if (Dot_Fun_Array() || TypeCastOperation() || Prefix() || Paren_Expression() || Quoted_String() || Num() || Value()) {
 							//	Postfix(true);
@@ -14512,7 +14588,7 @@ namespace GL {
 									build_match<Equation_Node>(prev_stack_top, std::string_view(sym.c_str()));
 									return true;									
 								}
-								throw except::eval_error("Incomplete equation", m_position);								
+								throw except::eval_error("Incomplete equation", Parse_Location(m_position, m_position));
 							}
 						}
 						return true;
@@ -14622,7 +14698,7 @@ namespace GL {
 						const bool is_char = oper.size() == 1;
 						if ((is_char && Char(oper.c_str()[0])) || (!is_char && Symbol(std::string_view(oper.c_str())))) {							
 							if (!Operator(operators().size() - 1)) {
-								throw except::eval_error("Incomplete prefix '" + GL::string(std::string_view(oper.c_str())) + "' expression", m_position);
+								throw except::eval_error("Incomplete prefix '" + GL::string(std::string_view(oper.c_str())) + "' expression", Parse_Location(m_position, m_position));
 							}
 
 							build_match<Prefix_Node>(prev_stack_top, std::string_view(oper.c_str()));
@@ -14729,7 +14805,7 @@ namespace GL {
 
 					if (Operator()) {
 						if (Symbol(":")) {
-							if (!Operator()) { throw except::eval_error("Incomplete map pair", m_position); }
+							if (!Operator()) { throw except::eval_error("Incomplete map pair", Parse_Location(m_position, m_position)); }
 							build_match<Map_Pair_Node>(prev_stack_top);
 							return true;
 						}
@@ -14751,7 +14827,7 @@ namespace GL {
 						while (Char(',')) {
 							SkipWS(true);
 							if (!Map_Pair()) {
-								throw except::eval_error("Unexpected value in container", m_position);
+								throw except::eval_error("Unexpected value in container", Parse_Location(m_position, m_position));
 							}
 						}
 						build_match<Arg_List_Node>(prev_stack_top);
@@ -14762,7 +14838,7 @@ namespace GL {
 						while (Char(',')) {
 							SkipWS(true);
 							if (!Operator()) {
-								throw except::eval_error("Unexpected value in container", m_position);
+								throw except::eval_error("Unexpected value in container", Parse_Location(m_position, m_position));
 							}
 							SkipWS(true);
 						}
@@ -14783,7 +14859,7 @@ namespace GL {
 						Container_Arg_List();
 						SkipWS(true);
 						if (!Char(']')) {
-							throw except::eval_error("Missing closing square bracket ']' in container initializer", m_position);
+							throw except::eval_error("Missing closing square bracket ']' in container initializer", Parse_Location(m_position, m_position));
 						}
 						if ((prev_stack_top != m_match_stack.size()) && (!m_match_stack.back().children.empty())) {
 							if (m_match_stack.back().children[0].identifier == Engine::AST_Node_Type::Map_Pair) {
@@ -14912,7 +14988,7 @@ namespace GL {
 								Arg_List();
 								SkipWS(true);
 								if (!Char(')')) {
-									throw except::eval_error("Incomplete function call", m_position);
+									throw except::eval_error("Incomplete function call", Parse_Location(m_position, m_position));
 								}
 
 								build_match<Fun_Call_Node>(prev_stack_top, "()");
@@ -14920,23 +14996,23 @@ namespace GL {
 								if (!m_match_stack.back().children.empty()) {
 									if (m_match_stack.back().children[0].identifier == Engine::AST_Node_Type::Dot_Access) {
 										if (m_match_stack.empty()) {
-											throw except::eval_error("Incomplete dot access fun call", m_position);
+											throw except::eval_error("Incomplete dot access fun call", Parse_Location(m_position, m_position));
 										}
 										if (m_match_stack.back().children.empty()) {
-											throw except::eval_error("Incomplete dot access fun call", m_position);
+											throw except::eval_error("Incomplete dot access fun call", Parse_Location(m_position, m_position));
 										}
 										auto dot_access = std::move(m_match_stack.back().children[0]);
 										auto func_call = std::move(m_match_stack.back());
 										m_match_stack.pop_back();
 										func_call.children.erase(func_call.children.begin());
 										if (dot_access.children.empty()) {
-											throw except::eval_error("Incomplete dot access fun call", m_position);
+											throw except::eval_error("Incomplete dot access fun call", Parse_Location(m_position, m_position));
 										}
 										func_call.children.insert(func_call.children.begin(), std::move(dot_access.children.back()));
 										dot_access.children.pop_back();
 										dot_access.children.push_back(std::move(func_call));
 										if (dot_access.children.size() != 2) {
-											throw except::eval_error("Incomplete dot access fun call", m_position);
+											throw except::eval_error("Incomplete dot access fun call", Parse_Location(m_position, m_position));
 										}
 										m_match_stack.push_back(dot_access);
 									}
@@ -14946,7 +15022,7 @@ namespace GL {
 								has_more = true;
 								if (!(Operator() && Char(']'))) {
 									// TO-DO, Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
-									throw except::eval_error("Incomplete array access", m_position);
+									throw except::eval_error("Incomplete array access", Parse_Location(m_position, m_position));
 								}
 
 								build_match<Array_Call_Node>(prev_stack_top, "[]");
@@ -14954,11 +15030,11 @@ namespace GL {
 							else if (Symbol(".")) {
 								has_more = true;
 								if (!(Id(true))) {
-									throw except::eval_error("Incomplete dot access fun call", m_position);
+									throw except::eval_error("Incomplete dot access fun call", Parse_Location(m_position, m_position));
 								}
 
 								if (std::distance(m_match_stack.begin() + static_cast<int>(prev_stack_top), m_match_stack.end()) != 2) {
-									throw except::eval_error("Incomplete dot access fun call", m_position);
+									throw except::eval_error("Incomplete dot access fun call", Parse_Location(m_position, m_position));
 								}
 
 								build_match<Dot_Access_Node>(prev_stack_top, ".");
@@ -15018,7 +15094,7 @@ namespace GL {
 								while (Eol()) {}
 
 								if (!Operator(t_precedence + 1)) {
-									throw except::eval_error("Incomplete '" + oper + "' expression", m_position);
+									throw except::eval_error("Incomplete '" + oper + "' expression", Parse_Location(m_position, m_position));
 								}
 
 								switch (operators()[t_precedence]) {
@@ -15029,12 +15105,12 @@ namespace GL {
 									else {
 										if (Symbol(":")) {
 											if (!Operator(t_precedence + 1)) {
-												throw except::eval_error("Incomplete '" + oper + "' expression", m_position);
+												throw except::eval_error("Incomplete '" + oper + "' expression", Parse_Location(m_position, m_position));
 											}
 											build_match<If_Node>(prev_stack_top);
 										}
 										else {
-											throw except::eval_error("Incomplete '" + oper + "' expression", m_position);
+											throw except::eval_error("Incomplete '" + oper + "' expression", Parse_Location(m_position, m_position));
 										}
 									}
 									break;
@@ -15105,7 +15181,7 @@ namespace GL {
 						SkipWS(true);
 						if (!Char(')')) {
 							// return failure();					
-							throw except::eval_error("Missing closing parenthesis ')'", m_position);
+							throw except::eval_error("Missing closing parenthesis ')'", Parse_Location(m_position, m_position));
 						}
 						return true;
 					}
@@ -15124,18 +15200,18 @@ namespace GL {
 						retval = true;
 
 						if (!Char('(')) {
-							throw except::eval_error("Incomplete 'while' expression", m_position);
+							throw except::eval_error("Incomplete 'while' expression", Parse_Location(m_position, m_position));
 						}
 
 						if (!(Operator() && Char(')'))) {
-							throw except::eval_error("Incomplete 'while' expression", m_position);
+							throw except::eval_error("Incomplete 'while' expression", Parse_Location(m_position, m_position));
 						}
 
 						SkipWS(true);
 
 						if (!Block()) {
 							if (!SingleStatement()) {
-								throw except::eval_error("Incomplete 'while' block", m_position);
+								throw except::eval_error("Incomplete 'while' block", Parse_Location(m_position, m_position));
 							}
 						}
 
@@ -15199,7 +15275,7 @@ namespace GL {
 						SkipWS(true);
 
 						if (!Char('(')) {
-							throw except::eval_error("Incomplete 'for' expression", m_position);
+							throw except::eval_error("Incomplete 'for' expression", Parse_Location(m_position, m_position));
 						}
 
 						SkipWS(true);
@@ -15213,7 +15289,7 @@ namespace GL {
 							if (classic_for) classic_for = classic_for && Char(')');
 
 							if (!classic_for) {
-								throw except::eval_error("Incomplete 'for' expression", m_position);
+								throw except::eval_error("Incomplete 'for' expression", Parse_Location(m_position, m_position));
 							}
 
 							classic_for = false;
@@ -15223,7 +15299,7 @@ namespace GL {
 
 						if (!Block()) {
 							if (!SingleStatement()) {
-								throw except::eval_error("Incomplete 'for' block", m_position);
+								throw except::eval_error("Incomplete 'for' block", Parse_Location(m_position, m_position));
 							}
 						}
 
@@ -15231,13 +15307,13 @@ namespace GL {
 
 						if (classic_for) {
 							if (num_children != 4) {
-								throw except::eval_error("Incomplete 'for' expression", m_position);
+								throw except::eval_error("Incomplete 'for' expression", Parse_Location(m_position, m_position));
 							}
 							build_match<For_Node>(prev_stack_top, "", is_parallel);
 						}
 						else {
 							if (num_children != 3) {
-								throw except::eval_error("Incomplete ranged-for expression", m_position);
+								throw except::eval_error("Incomplete ranged-for expression", Parse_Location(m_position, m_position));
 							}
 							build_match<Ranged_For_Node>(prev_stack_top, "", is_parallel);
 						}
@@ -15284,7 +15360,7 @@ namespace GL {
 						SkipWS(true);
 
 						if (!Operator()) {
-							throw except::eval_error("Incomplete 'case' expression", m_position);
+							throw except::eval_error("Incomplete 'case' expression", Parse_Location(m_position, m_position));
 						}
 
 						SkipWS(true);
@@ -15295,7 +15371,7 @@ namespace GL {
 
 						if (!Block()) {
 							if (!SingleStatement()) {
-								throw except::eval_error("Incomplete 'case' block", m_position);
+								throw except::eval_error("Incomplete 'case' block", Parse_Location(m_position, m_position));
 							}						
 						}
 
@@ -15314,7 +15390,7 @@ namespace GL {
 
 						if (!Block()) {
 							if (!SingleStatement()) {
-								throw except::eval_error("Incomplete 'default' block", m_position);
+								throw except::eval_error("Incomplete 'default' block", Parse_Location(m_position, m_position));
 							}
 						}
 
@@ -15330,11 +15406,11 @@ namespace GL {
 
 					if (Keyword("switch")) {
 						if (!Char('(')) {
-							throw except::eval_error("Incomplete 'switch' expression", m_position);
+							throw except::eval_error("Incomplete 'switch' expression", Parse_Location(m_position, m_position));
 						}
 
 						if (!(Operator() && Char(')'))) {
-							throw except::eval_error("Incomplete 'switch' expression", m_position);
+							throw except::eval_error("Incomplete 'switch' expression", Parse_Location(m_position, m_position));
 						}
 
 						SkipWS(true);
@@ -15349,11 +15425,11 @@ namespace GL {
 							SkipWS(true);
 
 							if (!Char('}')) {
-								throw except::eval_error("Incomplete block", m_position);
+								throw except::eval_error("Incomplete block", Parse_Location(m_position, m_position));
 							}
 						}
 						else {
-							throw except::eval_error("Incomplete block", m_position);
+							throw except::eval_error("Incomplete block", Parse_Location(m_position, m_position));
 						}
 
 						build_match<Switch_Node>(prev_stack_top);
@@ -15375,7 +15451,7 @@ namespace GL {
 						SkipWS(true);
 
 						if (!Block()) {
-							throw except::eval_error("Incomplete 'try' block", m_position);
+							throw except::eval_error("Incomplete 'try' block", Parse_Location(m_position, m_position));
 						}
 
 						bool has_matches = true;
@@ -15389,27 +15465,27 @@ namespace GL {
 									if (Symbol("...")) {
 										// captures anything...
 										if (!Char(')')) {
-											throw except::eval_error("Incomplete 'catch(...)' expression", m_position);
+											throw except::eval_error("Incomplete 'catch(...)' expression", Parse_Location(m_position, m_position));
 										}
 										success = true;
 									}
 
 									if (Arg(true)) {
 										if (!Char(')')) {
-											throw except::eval_error("Incomplete 'catch' expression", m_position);
+											throw except::eval_error("Incomplete 'catch' expression", Parse_Location(m_position, m_position));
 										}
 										success = true;
 									}
 
 									if (!success) {
-										throw except::eval_error("Incomplete 'catch' expression", m_position);
+										throw except::eval_error("Incomplete 'catch' expression", Parse_Location(m_position, m_position));
 									}
 								}
 
 								SkipWS(true);
 
 								if (!Block()) {
-									throw except::eval_error("Incomplete 'catch' block", m_position);
+									throw except::eval_error("Incomplete 'catch' block", Parse_Location(m_position, m_position));
 								}
 								build_match<Catch_Node>(catch_stack_top);
 								has_matches = true;
@@ -15422,7 +15498,7 @@ namespace GL {
 							SkipWS(true);
 
 							if (!Block()) {
-								throw except::eval_error("Incomplete 'finally' block", m_position);
+								throw except::eval_error("Incomplete 'finally' block", Parse_Location(m_position, m_position));
 							}
 							build_match<Finally_Node>(finally_stack_top);
 						}
@@ -15458,15 +15534,15 @@ namespace GL {
 						SkipWS(true);
 	#if 1
 						if (!Char('(')) {
-							throw except::eval_error("Incomplete 'evaluate' expression", m_position);
+							throw except::eval_error("Incomplete 'evaluate' expression", Parse_Location(m_position, m_position));
 						}
 						SkipWS(true);
 						if (!Equation()) {
-							throw except::eval_error("Incomplete 'evaluate' expression", m_position);
+							throw except::eval_error("Incomplete 'evaluate' expression", Parse_Location(m_position, m_position));
 						}
 						SkipWS(true);
 						if (!Char(')')) {
-							throw except::eval_error("Incomplete 'evaluate' expression", m_position);
+							throw except::eval_error("Incomplete 'evaluate' expression", Parse_Location(m_position, m_position));
 						}
 	#else
 						if (!Block()) {
@@ -15495,13 +15571,13 @@ namespace GL {
 							/* Great! Got the desired name of the new namespace */
 						}
 						else {
-							throw except::eval_error("Incomplete 'class' block: class must have a name", m_position);
+							throw except::eval_error("Incomplete 'class' block: class must have a name", Parse_Location(m_position, m_position));
 						}
 						auto this_class_name = GL::string(m_match_stack.back().get_text());
 
 						// instead of collecting statements, we want to collect declarations...
 						if (!DeclarationsBlock()) {
-							throw except::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", m_position);
+							throw except::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", Parse_Location(m_position, m_position));
 						}
 
 						build_match<Class_Node>(prev_stack_top);
@@ -15523,14 +15599,14 @@ namespace GL {
 							/* Great! Got the desired name of the new namespace */
 						}
 						else {
-							throw except::eval_error("Incomplete 'namespace' block: namespace must have a name", m_position);
+							throw except::eval_error("Incomplete 'namespace' block: namespace must have a name", Parse_Location(m_position, m_position));
 						}
 
 						auto this_class_name = m_match_stack.back().get_text();
 
 						// instead of collecting statements, we want to collect declarations...
 						if (!DeclarationsBlock()) {
-							throw except::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", m_position);
+							throw except::eval_error("Incomplete 'namespace' block: namespace declarations must be wrapped in a curly-bracket block", Parse_Location(m_position, m_position));
 						}
 						build_match<Namespace_Node>(prev_stack_top);
 					}
@@ -15607,7 +15683,7 @@ namespace GL {
 							// TO-DO, complete impl of these evaluations:
 							if (PreprocessorDirectives(true) || DeclNamespace() || DeclFunction() || DeclClass()) {
 								if (!saw_eol) {
-									throw except::eval_error("Two function definitions missing line separator", start);
+									throw except::eval_error("Two function definitions missing line separator", Parse_Location(start, start));
 								}
 								has_more = true;
 								retval = true;
@@ -15615,7 +15691,7 @@ namespace GL {
 							}
 							else if (Equation()) {
 								if (!saw_eol) {
-									throw except::eval_error("Two expressions missing line separator", start);
+									throw except::eval_error("Two expressions missing line separator", Parse_Location(start, start));
 								}
 								has_more = true;
 								retval = true;
@@ -15630,8 +15706,11 @@ namespace GL {
 								has_more = false;
 							}
 						}
-						else {
+						else {							
 							SkipWS();
+							if (Quoted_String_()) {
+								continue;
+							}
 							if (!PreprocessorDirectives(false)) {
 								++m_position;
 							}
@@ -15680,13 +15759,14 @@ namespace GL {
 					bool has_more = true;
 					bool saw_eol = true;
 
+					auto start = m_position;
 					while (has_more && m_position.has_more()) {
-						const auto start = m_position;
+						start = m_position;
 
 						if ((this->m_preprocessor_if_stack.size() == 0) || (this->m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE)) {
 							if (PreprocessorDirectives(true) || DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
 								if (!saw_eol) {
-									throw except::eval_error("Two function definitions missing line separator", start);
+									throw except::eval_error("Two statements missing line separator", Parse_Location(start, start));
 								}
 								has_more = true;
 								retval = true;
@@ -15694,7 +15774,7 @@ namespace GL {
 							}
 							else if (Return() || Break() || Continue() || Equation()) {
 								if (!saw_eol) {
-									throw except::eval_error("Two expressions missing line separator", start);
+									throw except::eval_error("Two expressions missing line separator", Parse_Location(start, start));
 								}
 								has_more = true;
 								retval = true;
@@ -15711,6 +15791,9 @@ namespace GL {
 						}
 						else {
 							SkipWS();
+							if (Quoted_String_()) {
+								continue;
+							}
 							if (!PreprocessorDirectives(false)) {
 								++m_position;
 							}
@@ -15731,7 +15814,7 @@ namespace GL {
 						Statements();
 
 						if (!Char('}')) {
-							throw except::eval_error("Incomplete block", m_position);
+							throw except::eval_error("Incomplete block", Parse_Location(m_position, m_position));
 						}
 
 						if (m_match_stack.size() == prev_stack_top) {
@@ -15756,7 +15839,7 @@ namespace GL {
 						Declarations();
 
 						if (!Char('}')) {
-							throw except::eval_error("Incomplete declaration block", m_position);
+							throw except::eval_error("Incomplete declaration block", Parse_Location(m_position, m_position));
 						}
 
 						if (m_match_stack.size() == prev_stack_top) {
@@ -15781,7 +15864,7 @@ namespace GL {
 						Statements();
 
 						if (!Char('}')) {
-							throw except::eval_error("Incomplete function block", m_position);
+							throw except::eval_error("Incomplete function block", Parse_Location(m_position, m_position));
 						}
 
 						if (m_match_stack.size() == prev_stack_top) {
@@ -15817,24 +15900,24 @@ namespace GL {
 						retval = true;
 						SkipWS(true);
 						if (!Char('(')) {
-							throw except::eval_error("Incomplete 'if' expression: cannot find '('", m_position);
+							throw except::eval_error("Incomplete 'if' expression: cannot find '('", Parse_Location(m_position, m_position));
 						}
 						SkipWS(true);
 						if (!Equation()) {
-							throw except::eval_error("Incomplete 'if' expression: cannot find equation block", m_position);
+							throw except::eval_error("Incomplete 'if' expression: cannot find equation block", Parse_Location(m_position, m_position));
 						}
 						SkipWS(true);
 						const bool is_if_init = Eol() && Equation();
 						SkipWS(true);
 						if (!Char(')')) {
-							throw except::eval_error("Incomplete 'if' expression: cannot find ')'", m_position);
+							throw except::eval_error("Incomplete 'if' expression: cannot find ')'", Parse_Location(m_position, m_position));
 						}
 
 						SkipWS(true);
 
 						if (!Block()) {
 							if (!SingleStatement()) {
-								throw except::eval_error("Incomplete 'if' block", m_position);
+								throw except::eval_error("Incomplete 'if' block", Parse_Location(m_position, m_position));
 							}
 						}
 
@@ -15851,7 +15934,7 @@ namespace GL {
 									SkipWS(true);
 									if (!Block()) {
 										if (!SingleStatement()) {
-											throw except::eval_error("Incomplete 'else' block", m_position);
+											throw except::eval_error("Incomplete 'else' block", Parse_Location(m_position, m_position));
 										}
 									}
 									has_matches = true;
@@ -16051,7 +16134,7 @@ namespace GL {
 								}
 							}
 							else {
-								throw except::eval_error("#ifdef preprocessor must include an ID of some type.", current_position);
+								throw except::eval_error("#ifdef preprocessor must include an ID of some type.", Parse_Location(current_position, current_position));
 							}							
 							m_preprocessor_stack.push_back(current_preprocessor_node);
 							if (at_end_of_match_stack) m_match_stack.pop_back();
@@ -16077,15 +16160,15 @@ namespace GL {
 										m_preprocessor_if_stack.push_back(this->analysis_engine.cast<bool>(this_node.constant) ? preprocessor_state::TRUE_UNTIL_ELSE : preprocessor_state::FALSE_UNTIL_ELSE);
 									}
 									catch (std::exception& e) {
-										throw except::eval_error(GL::string("#if preprocessor did not compile to a constexpr boolean value: ") + std::string(e.what()), m_position);
+										throw except::eval_error(GL::string("#if preprocessor did not compile to a constexpr boolean value: ") + std::string(e.what()), Parse_Location(m_position, m_position));
 									}
 								}
 								else {
-									throw except::eval_error("#if preprocessor did not compile to a constexpr value: " + this_node.to_string("", this->analysis_engine), m_position);
+									throw except::eval_error("#if preprocessor did not compile to a constexpr value: " + this_node.to_string("", this->analysis_engine), Parse_Location(m_position, m_position));
 								}
 							}
 							else {
-								throw except::eval_error("#if preprocessor compiled down to nothing -- no value was returned.", m_position);
+								throw except::eval_error("#if preprocessor compiled down to nothing -- no value was returned.", Parse_Location(m_position, m_position));
 							}
 
 							m_preprocessor_stack.push_back(current_preprocessor_node);
@@ -16124,15 +16207,15 @@ namespace GL {
 											m_preprocessor_if_stack.push_back(this->analysis_engine.cast<bool>(this_node.constant) ? preprocessor_state::TRUE_UNTIL_ELSE : preprocessor_state::FALSE_UNTIL_ELSE);
 										}
 										catch (std::exception& e) {
-											throw except::eval_error(GL::string("#if preprocessor did not compile to a constexpr boolean value: ") + std::string(e.what()), m_position);
+											throw except::eval_error(GL::string("#if preprocessor did not compile to a constexpr boolean value: ") + std::string(e.what()), Parse_Location(m_position, m_position));
 										}
 									}
 									else {
-										throw except::eval_error("#if preprocessor did not compile to a constexpr value: " + this_node.to_string("", this->analysis_engine), m_position);
+										throw except::eval_error("#if preprocessor did not compile to a constexpr value: " + this_node.to_string("", this->analysis_engine), Parse_Location(m_position, m_position));
 									}
 								}
 								else {
-									throw except::eval_error("#if preprocessor compiled down to nothing -- no value was returned.", m_position);
+									throw except::eval_error("#if preprocessor compiled down to nothing -- no value was returned.", Parse_Location(m_position, m_position));
 								}
 							}
 
@@ -16141,7 +16224,7 @@ namespace GL {
 							else current_preprocessor_node = Noop_Node("", {}, {});
 					    }
 						else {
-						    throw except::eval_error("#elif preprocessor must follow either an #if, #ifdef, #ifndef, or #elif statement.", m_position);
+						    throw except::eval_error("#elif preprocessor must follow either an #if, #ifdef, #ifndef, or #elif statement.", Parse_Location(m_position, m_position));
 					    }
 						break;
 					case hash("#else"): if (m_preprocessor_if_stack.size() > 0) {		
@@ -16161,7 +16244,7 @@ namespace GL {
 							else current_preprocessor_node = Noop_Node("", {}, {});
 					    }
 						else {
-						    throw except::eval_error("#else preprocessor must follow either an #if, #ifdef, #ifndef, or #elif statement.", m_position);
+						    throw except::eval_error("#else preprocessor must follow either an #if, #ifdef, #ifndef, or #elif statement.", Parse_Location(m_position, m_position));
 					    }
 						break;
 					case hash("#endif"): if (m_preprocessor_if_stack.size() > 0) {
@@ -16171,7 +16254,7 @@ namespace GL {
 							else current_preprocessor_node = Noop_Node("", {}, {});
 						}
 						else {
-						    throw except::eval_error("#endif preprocessor must follow either an #if, #ifdef, #ifndef, #elif, or #else statement.", m_position);
+						    throw except::eval_error("#endif preprocessor must follow either an #if, #ifdef, #ifndef, #elif, or #else statement.", Parse_Location(m_position, m_position));
 					    }
 						break;
 					case hash("#define"):
@@ -16217,7 +16300,7 @@ namespace GL {
 								}
 							}
 							else {
-								throw except::eval_error("#define preprocessor must include an ID of some type.", current_position);
+								throw except::eval_error("#define preprocessor must include an ID of some type.", Parse_Location(current_position, current_position));
 							}
 
 							PreprocessorDefineInformation info;
@@ -16242,11 +16325,11 @@ namespace GL {
 							GL::string VarName;
 							auto local_pos = GL::Engine::Position(0, node_text);
 							if (!Id_FreeStanding(&VarName, local_pos)) {
-								throw except::eval_error("#undef preprocessor must include an ID of some type.", current_position);
+								throw except::eval_error("#undef preprocessor must include an ID of some type.", Parse_Location(current_position, current_position));
 							}
 							SkipWS_FreeStanding(false, local_pos);
 							if (local_pos.has_more()) {
-								throw except::eval_error("#undef preprocessor included unparsed inputs after the ID", current_position);
+								throw except::eval_error("#undef preprocessor included unparsed inputs after the ID", Parse_Location(current_position, current_position));
 							}
 
 							PreprocessorUndefineInformation info;
@@ -16259,7 +16342,7 @@ namespace GL {
 						}
 						break;
 					default:
-						throw except::eval_error("Unknown preprocessor directive: " + current_preprocessor_node.text, m_position);
+						throw except::eval_error("Unknown preprocessor directive: " + current_preprocessor_node.text, Parse_Location(m_position, m_position));
 					}
 					return true;
 				}
@@ -16343,7 +16426,7 @@ namespace GL {
 					try {
 						if (Statements()) {
 							if (m_position.has_more()) {
-								throw except::eval_error("Unparsed input", m_position);
+								throw except::eval_error("Unparsed input", Parse_Location(m_position, m_position));
 							}
 							else {
 								for (auto& x : m_match_stack) {
@@ -16393,10 +16476,13 @@ namespace GL {
 						else {
 							m_match_stack.push_back(Noop_Node("", Parse_Location(m_position, m_position), {}));
 						}
+						if (m_preprocessor_if_stack.size() > 0) {
+							throw except::eval_error("A preprocessor macro (e.g. #if, #ifdef, or #ifndef) failed to have a closing condition (e.g. #endif)", Parse_Location(m_position, m_position));
+						}
 					}
 					catch (except::eval_error& e) {
-						m_match_stack.push_back(PreprocessorMacro_Node("#error", GL::Engine::Parse_Location(e.start_position, e.start_position), {
-							Constant_Node(e.reason, GL::Engine::Parse_Location(e.start_position, e.start_position), {}, e.reason)
+						m_match_stack.push_back(PreprocessorMacro_Node("#error", e.position, {
+							Constant_Node(e.reason, e.position, {}, e.reason)
 						}));
 						build_match<File_Node>(0);
 					}
@@ -16508,12 +16594,33 @@ int main() {
 
 		if (1) {
 			print(parser.Parse(R"(
+constexpr auto x = 10_ft
+constexpr auto y = 10_ft + 10_ft;
+constexpr auto z = 10_ft - 10_ft;
+constexpr auto w = 10_ft * 10_ft;
+constexpr auto a = 10_ft / 10_ft;
+constexpr auto b = 10_ft == 10_ft;
+constexpr auto c = 10_ft != 10_ft;
+constexpr auto d = 10_ft > 10_ft;
+constexpr auto e = 10_ft < 10_ft;
+constexpr auto f = 10_ft >= 10_ft;
+constexpr auto g = 10_ft <= 10_ft;
+constexpr auto h1 = 10_ft % 3;
+constexpr auto h2 = 10_ft % 3_ft;
+constexpr auto h3 = 10_sq_ft % 3_ft;
+constexpr auto i = 10 && 10_ft;
+constexpr auto j = 10 || 10_ft;
+#define in(Val) [#Val:Val]
+return [ in(x), in(y), in(z), in(w), in(a), in(b), in(c), in(d), in(e), in(f), in(g), in(h1), in(h2), in(h3), in(i), in(j) ];
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
 #include 10 + 10;			
 			)").to_string("", root) + "\n\n");
 			
 			print(parser.Parse(R"(
 auto x = 0;
-#include x + 10;			
+#include x += 10;			
 return x;
 			)").to_string("", root) + "\n\n");
 
@@ -16547,13 +16654,17 @@ auto y;
 		#if z > x \\
 			y = z; \\
 		#else \\
-			#error "ERR2" \\
+			#error "#endif" \\
 		#endif
 
 return y + 10;
 			)").to_string("", root) + "\n\n");
 
-
+			print(parser.Parse(R"(
+constexpr auto x = 10;
+auto y = x + 10;
+x += 10;
+			)").to_string("", root) + "\n\n");
 
 
 
@@ -16857,7 +16968,7 @@ return CONCAT2(VAR);
 			print(parser.Parse(R"(			
 				constexpr value PI = (double)constant::pi;
 				constexpr value A1 = 1000.0 * PI;
-				A1 += 1;
+				A1 += 1; // this does not throw because A1 ended up NOT being constexpr. It is therefore a runtime object, and can safely be operated on this way. 				
 				return [PI,A1];
 			)").to_string("", root) + "\n\n");
 			print(parser.Parse(R"(
@@ -18269,7 +18380,7 @@ for (DateTime i = __DATE__; i < __DATE__ + 365_d; ++i) print(i);
 				}
 			)",
 			R"(
-#define assert(x) if (!(x)){ throw(err); }
+#define assert(x) if (!(x)){ throw("Error at ${ __LINE__ }: " + #x); }
 				var y;
 				assert(true); // constexpr check will reduce down to a no-op
 				assert(10 == 10); // constexpr check will reduce down to a no-op

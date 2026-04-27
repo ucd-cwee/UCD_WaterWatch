@@ -1072,10 +1072,17 @@ namespace GL {
             return (float)out;
         };
         // return the modulus (or remainder of division) of the current value with the provided divisor. Returns with the same units as originally used.
-        value mod(float rhs) const {
-            value out{ *this };
-            out.packed.m_bits2.val = std::fmod(out.packed.m_bits2.val, rhs);
-            return out;
+        value mod(value const& rhs) const {
+            if (rhs.is_scalar()) {
+                value out{ *this };
+                out.packed.m_bits2.val = std::fmod(out.packed.m_bits2.val, (float)rhs);
+                return out;
+            }
+            else {
+                value out{ *this };
+                out.packed.m_bits2.val = std::fmod(out.packed.m_bits2.val, (float)rhs);
+                return out / (value(rhs) = 1.0f);
+            }
         };
         // wraps the number between [min, max]. Numbers larger than max or smaller than min wrap to the other side, and stay within that range. For example, (2).wrap(0, 1) returns 1, whereas (-1).wrap(-2,0) returns -1. 
         value wrap(value const& min_bound, value const& max_bound) const {
