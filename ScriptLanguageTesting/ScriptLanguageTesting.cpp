@@ -15620,7 +15620,7 @@ namespace GL {
 					bool has_more = true;
 					bool saw_eol = true;
 
-					while (has_more) {
+					while (has_more && m_position.has_more()) {
 						const auto start = m_position;
 
 						if ((this->m_preprocessor_if_stack.size() == 0) || (this->m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE)) {
@@ -15871,8 +15871,7 @@ namespace GL {
 					bool invert_decision = false;
 					// now that we know we "found" a preprocessor token, how should we handle it?
 					switch (hash(current_preprocessor_node.text.c_str())) {
-					case hash("#warning"):
-						if (current_preprocessor_node.children.size() >= 1
+					case hash("#warning"): if (current_preprocessor_node.children.size() >= 1
 							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
 						) {
 							// ALSO push this warning onto the preprocessor stack, for now.
@@ -15881,8 +15880,7 @@ namespace GL {
 							else current_preprocessor_node = Noop_Node("", {}, {});
 						}
 						break;
-					case hash("#error"):
-						if (current_preprocessor_node.children.size() >= 1
+					case hash("#error"): if (current_preprocessor_node.children.size() >= 1
 							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
 						) {
 							// ALSO push this warning onto the preprocessor stack, for now.
@@ -15932,20 +15930,23 @@ namespace GL {
 							else current_preprocessor_node = Noop_Node("", {}, {});
 						}
 						break;
-					case hash("#include"):
+					case hash("#include"):  // to-do, update the "downloaded_script" variable to actually download or find the associated script.
 						if (current_preprocessor_node.children.size() >= 1
 							&& current_preprocessor_node.children[0].identifier == GL::Engine::AST_Node_Type::Constant
 						) {
-							//auto LHS = m_position.Source().left(prev_prev_pos.pos);
-							//auto LHS_including = m_position.Source().left(m_position.pos);
-							//auto PreprocessingText_Replacement = GL::string(std::string(LHS_including.length() - LHS.length(), ' '));
-							//auto RHS = m_position.Source().right(m_position.Source().length() - m_position.pos);
+							auto LHS = m_position.Source().left(current_preprocessor_node.location.start.pos);
+							auto RHS = m_position.Source().right(m_position.Source().length() - m_position.pos);
 
-							GL::string downloaded_script = "void Foo(int x){ return x; };";
+							GL::string node_text = this->analysis_engine.cast<GL::string>(current_preprocessor_node.children[0].constant);
+							GL::string downloaded_script = node_text; // "void Foo(int x){ return x; };";
+							GL::string new_script = LHS + "\n" + downloaded_script + "\n" + RHS;
 
+							m_position.Source() = new_script;
+							m_position = current_preprocessor_node.location.start;
+
+							m_preprocessor_stack.push_back(current_preprocessor_node);
 							if (at_end_of_match_stack) m_match_stack.pop_back();
 							else current_preprocessor_node = Noop_Node("", {}, {});
-							m_match_stack.push_back(parse_instr_eval(downloaded_script));
 						}
 						break;
 					case hash("#ifndef"):
@@ -16445,6 +16446,56 @@ int main() {
 		GL::Engine::ScriptParser::Parser parser(root);
 
 		if (1) {
+			print(parser.Parse(R"(
+#include 10 + 10;			
+			)").to_string("", root) + "\n\n");
+			
+			print(parser.Parse(R"(
+auto x = 0;
+#include x + 10;			
+return x;
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+constexpr auto x = 10;
+#include x + 10;
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define TEST 10;
+#include constexpr auto x = TEST + 10;
+return x;
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+#define TEST(x) #x;
+#include TEST(100);
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+constexpr auto x = 10;
+auto y;
+#include \
+	constexpr auto z = x + 10; \
+	#if x \
+		y = x; \
+	#else \
+		#error "ERR1" \
+	#endif \
+	#include \\
+		#if z > x \\
+			y = z; \\
+		#else \\
+			#error "ERR2" \\
+		#endif
+
+return y + 10;
+			)").to_string("", root) + "\n\n");
+
+
+
+
+
 			print(parser.Parse(R"(
 #define CONCAT1(a, b) a ## b
 return CONCAT1(defer_, 200); // returns Id_Node{ "defer_200" }
@@ -17516,6 +17567,7 @@ TEST 4
 TEST 4
 				return 10;				
 			)").to_string("", root) + "\n\n");
+
 			print(parser.Parse(R"(
 #include "path.h"
 #include path.h
