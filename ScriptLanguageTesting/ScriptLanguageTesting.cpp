@@ -8415,7 +8415,18 @@ namespace GL {
 
 		};
 	};
+	
 	namespace Engine {
+		enum class throwing {
+			Nothing,
+			Return,
+			Continue,
+			Break
+		};
+		struct eval_state {
+			GL::any::fast_any to_return;
+			throwing throwing;
+		};
 		class AbstractSyntaxTreeNode {
 		public:
 			AbstractSyntaxTreeNode(Engine::AST_Node_Type id) : identifier{ id } {};
@@ -8587,6 +8598,9 @@ namespace GL {
 				};
 				return GL::string::empty_string();
 			};
+
+			// evaluate the node and perform the scripting.
+			GL::any::fast_any evaluate(eval_state& state, GL::scope::impl::BasicScope& current_scope) const;
 		};
 		
 		namespace except {
@@ -8988,7 +9002,7 @@ namespace GL {
 			};
 		};
 
-		class ScriptParser{
+		class ScriptParser {
 		public:
 			class Parser;
 			class optimizer {
@@ -9152,26 +9166,16 @@ namespace GL {
 							&& node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
 							&& node.children[0].children.size() == 1
 							&& ((node.text == "=") || (node.text == ":=") || (node.text == "?="))
-							) {
+						) {
 							std::vector<AbstractSyntaxTreeNode> new_children = {
-								node.children[1],
-								node.children[0]
+								node.children[1], // Constant, Fun_Call, Dot_Access, etc.
+								node.children[0] // Var_Decl node
 							};
-							node = node.children[0];
-							node.identifier = Engine::AST_Node_Type::Assign_Retroactively;
-							node.children = new_children;
+							node = Assign_Retroactively_Node(node.text, node.location, new_children);
+							node.tag = new_children[1].tag;
 							node.children[1].tag = GL::any::fast_any::instance(ObjectDeclarationInformation{ 
 								false 
 							});
-
-
-							//node = Assign_Retroactively_Node(
-							//	node.text, (Engine::Parse_Location)node.location, {
-							//		node.children[1],
-							//		node.children[0]
-							//	}
-							//);
-
 							return true;
 						}
 
@@ -9220,14 +9224,6 @@ namespace GL {
 								//}
 							}
 
-
-							//node = Assign_Retroactively_Node(
-							//	node.text, (Engine::Parse_Location)node.location, {
-							//		node.children[0].children[0],
-							//		node.children[0].children[1],
-							//		node.children[1]
-							//	}
-							//);
 							return true;
 						}
 						return false;
@@ -11703,11 +11699,13 @@ namespace GL {
 						}
 						if (node.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
 							if (node.tag.cast<ObjectDeclarationInformation>().is_constexpr) {
-								if ((node.children.size() == 2) && (node.constant)) return false; // already performed -- nothing to be done.
+								// if ((node.children.size() == 2) && (node.constant)) return false; // already performed -- nothing to be done.
+								if (node.constant) return false; // already performed -- nothing to be done.
 
 								if (node.children.size() == 2
 									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& !node.constant
 								) {
 									// this is a perfect example of a constexpr object.
 									node.constant = node.children[0].constant;
@@ -11722,11 +11720,12 @@ namespace GL {
 									&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[0].children[1].children.size() == 0
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& !node.constant
 								) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										node.constant = initial_value;
-										node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+										// node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
 										return true;
 									} 
 									catch (...) {
@@ -11745,13 +11744,14 @@ namespace GL {
 									&& node.children[0].children[1].children.size() == 0
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
+									&& !node.constant
 								) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										CurrentEngine().call("=", { initial_value, node.children[2].constant | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value;
-										node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
-										node.children.erase(node.children.begin()+2, node.children.end());
+										//node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+										//node.children.pop_back();
 										return true;
 									}
 									catch (...) {
@@ -11775,14 +11775,15 @@ namespace GL {
 									&& node.children[2].children[0].children.size() == 0
 									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[2].children[1].children.size() == 0
+									&& !node.constant
 								) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
 										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value;
-										node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
-										node.children.erase(node.children.begin() + 2, node.children.end());
+										//node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+										//node.children.erase(node.children.begin() + 2, node.children.end());
 										return true;
 									}
 									catch (...) {
@@ -11800,14 +11801,15 @@ namespace GL {
 									&& node.children[2].children[0].children.size() == 0
 									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[2].children[1].children.size() == 0
+									&& !node.constant
 								) {
 									try {
 										auto initial_value = node.children[0].constant;
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
 										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value;
-										node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
-										node.children.erase(node.children.begin() + 2, node.children.end());
+										//node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
+										//node.children.erase(node.children.begin() + 2, node.children.end());
 										return true;
 									}
 									catch (...) {
@@ -11820,14 +11822,15 @@ namespace GL {
 									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
+									&& !node.constant
 								) {
 									try {
 										auto initial_value = node.children[0].constant;
 										auto new_value = node.children[2].constant;
 										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
 										node.constant = initial_value;
-										node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
-										node.children.erase(node.children.begin() + 2, node.children.end());
+										//node.children[0] = Constant_Node("", node.children[0].location, {}, node.constant);
+										//node.children.erase(node.children.begin() + 2, node.children.end());
 										return true;
 									}
 									catch (...) {
@@ -11836,8 +11839,6 @@ namespace GL {
 										return true;
 									}
 								}
-
-
 
 								// failure to do any constexpr folding.
 								// node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
@@ -11894,7 +11895,7 @@ namespace GL {
 									// capture the constexpr value for the current block
 									if (this_child.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
 										if (this_child.constant
-											&& this_child.children.size() == 2
+											&& this_child.children.size() >= 2
 											&& this_child.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 											&& this_child.children[1].children.size() >= 1
 											&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
@@ -12661,7 +12662,6 @@ namespace GL {
 					return p;
 				};
 			}; // namespace optimizer
-
 			class Parser {
 			private:
 				constexpr static utility::Static_String m_multiline_comment_end{ "*/" };
@@ -16660,7 +16660,491 @@ namespace GL {
 				};
 
 			};
+
 		};
+
+		GL::any::fast_any AbstractSyntaxTreeNode::evaluate(eval_state& state, GL::scope::impl::BasicScope& current_scope) const {
+			switch (this->identifier) {
+			case Engine::AST_Node_Type::PreprocessorMacro:
+			case Engine::AST_Node_Type::Comment:
+			case Engine::AST_Node_Type::Noop: {
+				return nullptr;
+			}
+			case Engine::AST_Node_Type::Block:
+			case Engine::AST_Node_Type::File: {
+				auto new_scope = current_scope.make_scope();
+				for (int i = 0; i < (this->children.size() - 1); ++i) {
+					this->children[i].evaluate(state, new_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+				}
+				return state.to_return = this->children.back().evaluate(state, new_scope);
+			}
+			case Engine::AST_Node_Type::Scopeless_Block: {
+				for (int i = 0; i < (this->children.size() - 1); ++i) {
+					this->children[i].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+				}
+				return state.to_return = this->children.back().evaluate(state, current_scope);
+			}
+			case Engine::AST_Node_Type::Constant: {
+				return state.to_return = this->constant;
+			}
+			case Engine::AST_Node_Type::Id: { // x
+				if (this->constant) {
+					return state.to_return = this->constant;
+				}
+				else {
+					return state.to_return = current_scope.find_object(this->text);
+				}				
+			}
+			case Engine::AST_Node_Type::Var_Decl: {
+				if (this->children.size() == 1
+					&& this->children[0].identifier == Engine::AST_Node_Type::Id
+				) {
+					current_scope.emplace_object_here(this->children[1].children[0].text, GL::var());
+					return state.to_return = nullptr;
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Assign_Retroactively: {
+				// constexpr auto x = 10;
+				if (this->constant) {
+					// Constexpr value.
+					current_scope.emplace_object_here(this->children[1].children[0].text, this->constant | GL::type::Const | GL::type::Reference);
+					return state.to_return = nullptr;
+				}
+
+				// auto x = 10;
+				if (this->children.size() == 2
+					&& this->children[0].identifier == Engine::AST_Node_Type::Constant
+					&& this->children[1].identifier == Engine::AST_Node_Type::Var_Decl
+					&& this->children[1].children.size() == 1
+					&& this->children[1].children[0].identifier == Engine::AST_Node_Type::Id
+				) {
+					// Constant value provided. Need to copy it. 
+					auto to_copy = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+						auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy });
+						current_scope.emplace_object_here(this->children[1].children[0].text, copied);
+					}
+					else {
+						throw except::eval_error("Unable to copy variable to new object", this->location);
+					}
+					return state.to_return = nullptr;
+				}
+
+				// auto x = int();
+				if (this->children.size() == 2
+					&& this->children[0].identifier != Engine::AST_Node_Type::Constant
+					&& this->children[1].identifier == Engine::AST_Node_Type::Var_Decl
+					&& this->children[1].children.size() == 1
+					&& this->children[1].children[0].identifier == Engine::AST_Node_Type::Id
+				) {
+					auto to_add = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					current_scope.emplace_object_here(this->children[1].children[0].text, to_add);
+					return state.to_return = nullptr;
+				}
+
+				// int x = 10.0f;
+				if (this->children.size() == 3
+					&& this->children[0].identifier == Engine::AST_Node_Type::Constant
+					&& this->children[1].identifier == Engine::AST_Node_Type::Var_Decl
+					&& this->children[1].children.size() == 1
+					&& this->children[1].children[0].identifier == Engine::AST_Node_Type::Id
+				) {
+					// Constant value provided. Need to copy it. 
+					auto to_copy = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					auto to_assign = this->children[2].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+						auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy });
+						BC->this_m.scope->call("=", { copied, to_assign });
+						current_scope.emplace_object_here(this->children[1].children[0].text, copied);
+					}
+					else {
+						throw except::eval_error("Unable to copy variable to new object", this->location);
+					}
+					return state.to_return = nullptr;
+				}
+
+				// SOMETHING x = 10.0f;
+				if (this->children.size() == 3
+					&& this->children[0].identifier != Engine::AST_Node_Type::Constant
+					&& this->children[1].identifier == Engine::AST_Node_Type::Var_Decl
+					&& this->children[1].children.size() == 1
+					&& this->children[1].children[0].identifier == Engine::AST_Node_Type::Id
+				) {
+					// Constant value provided. Need to copy it. 
+					auto copied = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					auto to_assign = this->children[2].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
+						BC->this_m.scope->call("=", { copied, to_assign });
+						current_scope.emplace_object_here(this->children[1].children[0].text, copied);
+					}
+					else {
+						current_scope.call("=", { copied, to_assign });
+						current_scope.emplace_object_here(this->children[1].children[0].text, copied);
+					}
+					return state.to_return = nullptr;
+				}
+
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Return: {
+				if (this->children.size() == 0) {
+					state.throwing = throwing::Return;
+					return state.to_return = nullptr;
+				}
+				else if (this->children.size() == 1) {
+					auto to_return = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					state.throwing = throwing::Return;
+					return state.to_return = to_return;
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);				
+			}
+			case Engine::AST_Node_Type::Break: {
+				state.throwing = throwing::Break;
+				return state.to_return = nullptr;
+			}
+			case Engine::AST_Node_Type::Continue: {
+				state.throwing = throwing::Continue;
+				return state.to_return = nullptr;
+			}
+			case Engine::AST_Node_Type::Binary:
+			case Engine::AST_Node_Type::Equation: {
+				if (this->children.size() == 2) {
+					auto assignee = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					auto assigner = this->children[1].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					return state.to_return = current_scope.call(this->text, { assignee, assigner });
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::BinaryFoldRight: {
+				if (this->children.size() == 1
+					&& this->constant
+				) {
+					auto assignee = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					return state.to_return = current_scope.call(this->text, { assignee, this->constant });					
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::BinaryFoldLeft: {
+				if (this->children.size() == 1
+					&& this->constant
+				) {
+					auto assignee = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					return state.to_return = current_scope.call(this->text, { this->constant, assignee });
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Logical_And: {
+				if (this->children.size() == 2) {
+					auto assignee = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					auto assigner = this->children[1].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					return state.to_return = current_scope.call("&&", { assignee, assigner });
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Logical_Or: {
+				if (this->children.size() == 2) {
+					auto assignee = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					auto assigner = this->children[1].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) {
+						return state.to_return;
+					}
+					return state.to_return = current_scope.call("||", { assignee, assigner });
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Unused_Return_Fun_Call:
+			case Engine::AST_Node_Type::Fun_Call: {
+				if (this->children.size() == 2
+					&& this->children[0].identifier == Engine::AST_Node_Type::Id
+					&& this->children[1].identifier == Engine::AST_Node_Type::Arg_List
+				) {
+					auto function_name = this->children[0].text;
+					std::vector<GL::any::fast_any> inputs;
+					for (auto& child : this->children[1].children) {
+						auto this_output = child.evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) {
+							return state.to_return;
+						}
+						inputs.push_back(this_output);
+					}
+					return state.to_return = current_scope.call(function_name, inputs);
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Dot_Access: {
+				if (this->children.size() == 2
+					&& this->children[1].identifier == Engine::AST_Node_Type::Fun_Call
+					&& this->children[1].children[0].identifier == Engine::AST_Node_Type::Id
+					&& this->children[1].children[1].identifier == Engine::AST_Node_Type::Arg_List
+				) {
+					auto function_name = this->children[1].children[0].text;
+					std::vector<GL::any::fast_any> inputs;
+					if (1) {
+						auto this_output = this->children[0].evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) {
+							return state.to_return;
+						}
+						inputs.push_back(this_output);
+					}
+					for (auto& child : this->children[1].children[1].children) {
+						auto this_output = child.evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) {
+							return state.to_return;
+						}
+						inputs.push_back(this_output);
+					}
+					return state.to_return = current_scope.call(function_name, inputs);
+				}
+				if (this->children.size() == 2
+					&& this->children[1].identifier == Engine::AST_Node_Type::Id
+				) {
+					auto function_name = this->children[1].text;
+					std::vector<GL::any::fast_any> inputs;
+					if (1) {
+						auto this_output = this->children[0].evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) {
+							return state.to_return;
+						}
+						inputs.push_back(this_output);
+					}
+					return state.to_return = current_scope.call(function_name, inputs);
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Type_Cast: {
+				if (this->children.size() == 2
+					&& this->children[0].identifier == Engine::AST_Node_Type::Id
+				) {
+					auto to_cast = this->children[1].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) return state.to_return;
+					
+					auto type = current_scope.DetermineType(this->children[0].text);
+					if (type == GL::type_of<GL::undefined>()) throw except::eval_error("Type-cast was unable to determine the requested type: " + this->children[0].text, this->location);
+					
+					if (auto* BC = current_scope.GetRoot()->try_find_class(type)) {
+						return state.to_return = BC->this_m.scope->call(BC->this_m.scope_name, { to_cast });
+					}
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Array_Call: {
+				if (this->children.size() == 2) {
+					auto Who = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) return state.to_return;
+					auto Where = this->children[1].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) return state.to_return;
+					return state.to_return = current_scope.call("[]", { Who, Where });
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::If: {
+				if (this->children.size() == 2) { // condition, then
+					auto condition = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) return state.to_return;
+					if (current_scope.cast<bool>(condition)) {
+						auto then = this->children[1].evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) return state.to_return;
+						return state.to_return = then;
+					}
+					else {
+						return state.to_return = nullptr;
+					}
+				}
+				if (this->children.size() == 3) { // condition, then, else
+					auto condition = this->children[0].evaluate(state, current_scope);
+					if (state.throwing != throwing::Nothing) return state.to_return;
+					if (current_scope.cast<bool>(condition)) {
+						auto then = this->children[1].evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) return state.to_return;
+						return state.to_return = then;
+					}
+					else {
+						auto then = this->children[2].evaluate(state, current_scope);
+						if (state.throwing != throwing::Nothing) return state.to_return;
+						return state.to_return = then;
+					}
+				}
+				throw except::eval_error("Parameters for " + std::string(this->identifier.ToString()) + " were not handled: " + this->to_string("", *current_scope.GetRoot()), this->location);
+			}
+			case Engine::AST_Node_Type::Lambda: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::FunctionBlock: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::DeclarationBlock: {
+
+				break;
+			}
+
+			case Engine::AST_Node_Type::Parallel: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Parallel_For: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Parallel_Ranged_For: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::For: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Ranged_For: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::While: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Inline_Array: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Inline_Map: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Prefix: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Postfix: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Map_Pair: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Value_Range: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Inline_Range: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Do: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Try: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Catch: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Finally: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Switch: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::PreprocessedSwitch: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Case: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Default: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Class: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Namespace: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::FunctionDecl: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::JustInTimeCompilation: {
+
+				break;
+			}
+			case Engine::AST_Node_Type::Arg_List:
+			case Engine::AST_Node_Type::Arg:
+			case Engine::AST_Node_Type::Def:
+			case Engine::AST_Node_Type::ControlBlock:
+			case Engine::AST_Node_Type::Method:
+			case Engine::AST_Node_Type::Attr_Decl:
+			case Engine::AST_Node_Type::Reference:
+			case Engine::AST_Node_Type::Assign_Decl:
+			case Engine::AST_Node_Type::Global_Decl:
+			case Engine::AST_Node_Type::Compiled:
+			case Engine::AST_Node_Type::TypeId:
+			default:
+				throw except::eval_error("Unhandled Node Type During Evaluation: " + std::string(this->identifier.ToString()), this->location);
+			}
+	        return {};
+		};
+
 	};
 
 };
@@ -16723,6 +17207,92 @@ int main() {
 			print(each.first + ": " + root.call<GL::string>("to_string", {each.second}));
 		}
 	}
+
+	if (1) {
+		for (GL::string& Script : std::vector<GL::string>{
+R"(
+	auto x = 10;
+	if (x >= 10){
+		if (x == 10){
+			return x;
+		}
+		x += 1;
+	}
+	return x + 5;
+)",R"(
+	auto vector = [1,2,3,4];
+	return (foot)vector[1];
+)",R"(
+	auto x = 10;
+	if (x >= 10){
+		return 10;
+	}
+	return 20;
+)",R"(
+	var x = 10;
+	return (float)x;
+)",R"(
+	10_ft; // constexpr `foot`
+)",R"(
+	var x = 10;
+	x += 10;
+	return x;
+)",R"(
+	foot x = 10;
+	x = 0_m;
+	return x;
+)",R"(
+	vector<int> out;
+	push_back(out, 1);
+	push_back(out, 2);
+	push_back(out, 3);
+	return out;
+)",R"(
+	vector<int> out;
+	out.push_back(1);
+	out.push_back(2);
+	out.push_back(3);
+	return out;
+)",R"(
+	auto x = 10;
+	auto y = 10;
+	auto z = 10;
+	return x + y + z;
+)",R"(
+	auto x = 10;
+	auto y = 10;
+	auto z = 10;
+	return (((x + y) * z) - y) + 10;
+)",R"(
+	auto x = 10;
+	auto y = 10;
+	auto z = 10;
+	return (((x + y) / 10) - 5) + z;
+)"
+		}) {
+			GL::scope::impl::RootScope root;
+			root.perform_builtins();
+			GL::Engine::ScriptParser::Parser parser(root);
+			auto parsed = parser.Parse(Script);
+
+			print(Script);
+			print(" >> ");
+			print(parsed.to_string("", root));
+
+			GL::Engine::eval_state evaluation_state;
+			auto returned = parsed.evaluate(evaluation_state, root);
+			print("returned: " + root.call<GL::string>("to_string", { returned }));
+			if (evaluation_state.throwing != GL::Engine::throwing::Nothing) {
+				print("thrown: " + root.call<GL::string>("to_string", { evaluation_state.to_return }));
+			}
+			print("\n\n");
+
+		}
+
+		
+	}
+
+
 
 	if (1) {
 		GL::scope::impl::RootScope root;
@@ -17828,7 +18398,7 @@ return data[0];
 			)").to_string("", root) + "\n\n");
 
 			print(parser.Parse(R"(
-return "TEST".add_to_delim("ING", "...");
+return "TEST".add_to_delim("ING", "...").split(".");
 			)").to_string("", root) + "\n\n");
 
 			print(parser.Parse(R"(		
@@ -17838,7 +18408,7 @@ auto MAP = map<int, string>();
 // Utilizing a macro function to unroll, rather than using a for-loop.
 #define factorial(n) if (n >= 0){ if (n < LIST.size()) { MAP.insert(n, LIST[n]); } factorial(n-1); }
 factorial(LIST.size() - 1);
-
+#undef factorial
 return MAP;
 			)").to_string("", root) + "\n\n");
 
@@ -18657,8 +19227,6 @@ for (DateTime i = __DATE__; i < __DATE__ + 365_d; ++i) print(i);
 			print("");
 		}
 	}
-
-
 
 	if (1) {
 		GL::string Script = R"(
