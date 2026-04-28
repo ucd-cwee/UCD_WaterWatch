@@ -5890,6 +5890,7 @@ namespace GL {
 						case Engine::hash("do"):
 						case Engine::hash("evaluate"):
 						case Engine::hash("namespace"):
+						case Engine::hash("class"):
 						case Engine::hash("return"):
 						case Engine::hash("if"):
 						case Engine::hash("else"):
@@ -13047,6 +13048,7 @@ namespace GL {
 					case Engine::hash("do"):
 					case Engine::hash("evaluate"):
 					case Engine::hash("namespace"):
+					case Engine::hash("class"):
 					case Engine::hash("return"):
 					case Engine::hash("if"):
 					case Engine::hash("else"):
@@ -14976,7 +14978,7 @@ namespace GL {
 					bool retval = false;
 					const auto prev_stack_top = m_match_stack.size();
 
-					if (Lambda() || Postfix(false) || Num() || Quoted_String() || Paren_Expression() || Inline_Container() || Id(false)) {
+					if (Eval() || Lambda() || Postfix(false) || Num() || Quoted_String() || Paren_Expression() || Inline_Container() || Id(false)) {
 						retval = true;
 						bool has_more = true;
 
@@ -15527,6 +15529,8 @@ namespace GL {
 
 				/// Reads a just-in-time compilation request from input
 				bool Eval() {
+					// SkipWS(true);
+
 					bool retval = false;
 					const auto prev_stack_top = m_match_stack.size();
 					if (Keyword("evaluate")) {
@@ -15737,7 +15741,7 @@ namespace GL {
 					};
 
 					SkipWS();
-					if (Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
+					if (Try() || If() || While() || /* Class() || */ For() || Switch()) {
 						if (Eol()) return true;
 						else return failure();
 					}
@@ -15764,7 +15768,7 @@ namespace GL {
 						start = m_position;
 
 						if ((this->m_preprocessor_if_stack.size() == 0) || (this->m_preprocessor_if_stack.back() == preprocessor_state::TRUE_UNTIL_ELSE)) {
-							if (PreprocessorDirectives(true) || DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch() || Eval()) {
+							if (PreprocessorDirectives(true) || DeclNamespace() || DeclClass() || DeclFunction() || /*Def() || */ Try() || If() || While() || /* Class() || */ For() || Switch()) {
 								if (!saw_eol) {
 									throw except::eval_error("Two statements missing line separator", Parse_Location(start, start));
 								}
@@ -16593,6 +16597,10 @@ int main() {
 		GL::Engine::ScriptParser::Parser parser(root);
 
 		if (1) {
+			print(parser.Parse(R"(
+return evaluate("100");
+			)").to_string("", root) + "\n\n");
+
 			print(parser.Parse(R"(
 constexpr auto x = 10_ft
 constexpr auto y = 10_ft + 10_ft;
