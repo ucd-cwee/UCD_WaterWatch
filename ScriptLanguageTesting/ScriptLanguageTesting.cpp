@@ -12445,6 +12445,141 @@ namespace GL {
 					};
 				};
 
+				// Compiles a JustInTime node into the actual script, rather than waiting for the runtime analysis to do so. 
+				struct JustInTime_Constexpr {
+					bool optimize(AbstractSyntaxTreeNode& node) {
+						//if (node.identifier == Engine::AST_Node_Type::File) {
+						//	std::deque< AbstractSyntaxTreeNode* > children;							
+						//	node.for_each_child(
+						//		[](AbstractSyntaxTreeNode& this_child) -> bool { return true; },
+						//		[](AbstractSyntaxTreeNode& this_child) -> void { /* push */ },
+						//		[](AbstractSyntaxTreeNode& this_child) -> void { /* pop */ }
+						//	);
+						//}
+
+						if (node.identifier == Engine::AST_Node_Type::JustInTimeCompilation
+							&& node.children.size() >= 1
+							&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+							&& node.children[0].constant
+							&& node.children[0].constant.can_cast(GL::type_of<GL::string>())
+						) {
+							node = CurrentParser().Parse(node.children[0].constant.cast<GL::string>());
+							return true;
+						}
+
+						return false;
+					};
+				};
+
+				struct ConstexprFunctionCalls {
+					bool optimize(AbstractSyntaxTreeNode& node) {
+						if (node.identifier != Engine::AST_Node_Type::Fun_Call) {
+							if (node.for_each_child([](AbstractSyntaxTreeNode& node) -> bool {
+								if (node.identifier == Engine::AST_Node_Type::Dot_Access
+									&& node.children.size() == 2
+									&& node.children[0].constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Fun_Call
+									&& node.children[1].children.size() == 2
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[1].children[1].identifier == Engine::AST_Node_Type::Arg_List
+								) {
+									std::vector<GL::any::fast_any> inputs;
+									inputs.push_back(node.children[0].constant | GL::type::Const | GL::type::Reference);
+									for (auto& child : node.children[1].children[1].children) {
+										if (!child.constant) {
+											break;
+										}
+										else {
+											inputs.push_back(child.constant | GL::type::Const | GL::type::Reference);
+										}
+									}
+
+									if (inputs.size() == (node.children[1].children[1].children.size() + 1)) {
+										if (auto callable = CurrentEngine().try_find_callable(node.children[1].children[0].text, inputs.begin(), inputs.end()); callable) {
+											if (   ((callable->m_signature.state_m & GL::function_signature::Static) > 0)
+												|| ((callable->m_signature.state_m & GL::function_signature::Constructor) > 0)
+												|| ((callable->m_signature.state_m & GL::function_signature::Constant) > 0)
+											) {
+												try {
+													auto result = CurrentEngine().call(callable.get(), inputs);
+													node = Constant_Node(node.text, node.location, {}, result);
+													return true;
+												} catch (...) {}
+											}
+										}
+									}
+								}
+
+								if (node.identifier == Engine::AST_Node_Type::Dot_Access
+									&& node.children.size() == 2
+									&& node.children[0].constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Id
+								) {
+									std::vector<GL::any::fast_any> inputs;
+									inputs.push_back(node.children[0].constant | GL::type::Const | GL::type::Reference);
+									if (auto callable = CurrentEngine().try_find_callable(node.children[1].text, inputs.begin(), inputs.end()); callable) {
+										try {
+											if (   ((callable->m_signature.state_m & GL::function_signature::Static) > 0)
+												|| ((callable->m_signature.state_m & GL::function_signature::Constructor) > 0)
+												|| ((callable->m_signature.state_m & GL::function_signature::Constant) > 0)
+											) {
+												try {
+													auto result = CurrentEngine().call(callable.get(), inputs);
+													node = Constant_Node(node.text, node.location, {}, result);
+													return true;
+												} catch (...) {}
+											}
+										}
+										catch (...) {}
+									}									
+								}
+
+								if (node.identifier != Engine::AST_Node_Type::Dot_Access) {
+									for (auto& child : node.children) {
+										if (child.identifier == Engine::AST_Node_Type::Fun_Call
+											&& child.children.size() == 2
+											&& child.children[0].identifier == Engine::AST_Node_Type::Id
+											&& child.children[1].identifier == Engine::AST_Node_Type::Arg_List
+											) {
+											std::vector<GL::any::fast_any> inputs;
+											for (auto& child : child.children[1].children) {
+												if (!child.constant) {
+													break;
+												}
+												else {
+													inputs.push_back(child.constant | GL::type::Const | GL::type::Reference);
+												}
+											}
+											if (inputs.size() == child.children[1].children.size()) {
+												if (auto callable = CurrentEngine().try_find_callable(child.children[0].text, inputs.begin(), inputs.end()); callable) {
+													if (((callable->m_signature.state_m & GL::function_signature::Static) > 0)
+														|| ((callable->m_signature.state_m & GL::function_signature::Constructor) > 0)
+														|| ((callable->m_signature.state_m & GL::function_signature::Constant) > 0)
+														) {
+														try {
+															auto result = CurrentEngine().call(callable.get(), inputs);
+															child = Constant_Node(child.children[0].text, child.location, {}, result);
+															return true;
+														}
+														catch (...) {}
+													}
+												}
+											}
+										}
+									}
+								}
+
+
+
+								return false;
+							}, false)) {
+								return true;
+							};
+						}
+						return false;
+					};
+				};
+
 				struct ErrorOrWarningDetection {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						// Equations that may modify lhs const values
@@ -12477,27 +12612,26 @@ namespace GL {
 					optimizer::ConstArray,
 					optimizer::ConstMap,
 					optimizer::ConstexprObject,
+					optimizer::JustInTime_Constexpr,
 					optimizer::If,
 					optimizer::Return,
 					optimizer::Dead_Code
 				>;
 				using Optimizer_Preprocess = Optimizer<
-					optimizer::PreprocessMacroObjects,
 					optimizer::PreprocessMacroFunctions				
 				>;
 				using Optimizer_Reorg = Optimizer<
-					optimizer::PreprocessMacroObjects,
 					optimizer::PullOutNamespaceDeclarations,
 					optimizer::TryCatch					
 				>;
 				// reduce the tree and remove dead code
 				using Optimizer_Normal = Optimizer<	
-					optimizer::PreprocessMacroObjects,
 					optimizer::Unused_Fun_Return,
 					optimizer::ArgListFileConstant,
 					optimizer::ForLoopSignature,
 					optimizer::Block,
-					optimizer::Switch
+					optimizer::Switch, 
+					optimizer::ConstexprFunctionCalls
 				>;
 
 				using Optimizer_Errors = Optimizer<
@@ -12508,13 +12642,12 @@ namespace GL {
 				static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
 					GetParser().push_back(parser);
 
-					while ((--maxDepth >= 0) &&
-						(Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
-							|| Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
-							|| Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)
-							|| Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth))
-						) {
-					};
+					while ((--maxDepth >= 0) 
+						&& (Optimizer_Constexpr().optimize(p, parser->analysis_engine, maxDepth)
+						 || Optimizer_Preprocess().optimize(p, parser->analysis_engine, maxDepth)
+						 || Optimizer_Reorg().optimize(p, parser->analysis_engine, maxDepth)
+						 || Optimizer_Normal().optimize(p, parser->analysis_engine, maxDepth)
+					)) {};
 
 					GetParser().pop_back();
 					return p;
@@ -16598,8 +16731,18 @@ int main() {
 
 		if (1) {
 			print(parser.Parse(R"(
-return evaluate("100");
+return evaluate("100_ft" + "+" + "200_m");
 			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return evaluate("${ 100 }_ft + ${ 200 }_m");
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return evaluate("[100, 200, 300, 400]");
+			)").to_string("", root) + "\n\n");
+
+
 
 			print(parser.Parse(R"(
 constexpr auto x = 10_ft
@@ -17635,13 +17778,89 @@ return CONCAT2(VAR);
 		// Combined Examples
 		if (1) {
 			print(parser.Parse(R"(
-				auto x0 = 100.0_ft;
-				auto v0 = 10_ft / 1_s;
-				auto a0 = v0 / 1_s;
-				auto t = 5_s;
-				auto d = v0 * t + t.pow(2) * a * 0.5;
-				auto x = x0 + d;
+				constexpr auto x0 = 100.0_ft; // 100 ft
+				constexpr auto v0 = 10_ft / 1_s; // 10 fps
+				constexpr auto a0 = v0 / 1_s; // 10 fps_sq
+				constexpr auto t = 5_s; // 5 s
+				constexpr auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+				constexpr auto d2 = v0 * t + pow(t, 2) * a0 * 0.5; // 175 ft
+				constexpr auto x = x0 + d; // 275 ft
+				return [x0,v0,a0,t,d,d2,x]
 			)").to_string("", root) + "\n\n");
+			print(parser.Parse(R"(
+#if "TEST1 TEST2".left_and_right_of(" ").first.size >= 4
+				return [ "TEST".size(), size("TEST"), "TEST".distance("test"), "TEST".distance("test", false), "TEST1 TEST2".left_and_right_of(" ").first ];				
+#else
+				#error "CONSTEXPR FAILED"
+#endif
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return [1,2,3,4].begin().get().to_string();
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return ([1,2,3,4].begin() + 3).get().to_string();
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return ([1_ft,2_m,3_fps,[4_gpm:4_MG]].begin() + 3).get().to_string();
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return ([1_ft,2_m,3_fps,[4_gpm:4_MG]].begin() + 3).get().begin().get().first.to_string();
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+constexpr auto data_map = [ "a":1_MGD, "b":2_gpm, "c":3_ft, "d":4_fps, "e":5_L ];
+constexpr auto data_map_access_1 = data_map["b"];
+constexpr auto data_map_access_2 = (data_map.begin() + 4).get();
+#if data_map_access_2.first == "e"
+	return data_map_access_2.second;
+#else
+	#error ERR
+#endif
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+constexpr auto data = "TESTING";
+return data[0];
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(
+return "TEST".add_to_delim("ING", "...");
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(		
+constexpr auto LIST = ["a", "b", "c", "d", "e", "f", "g", "h"];
+auto MAP = map<int, string>();
+
+// Utilizing a macro function to unroll, rather than using a for-loop.
+#define factorial(n) if (n >= 0){ if (n < LIST.size()) { MAP.insert(n, LIST[n]); } factorial(n-1); }
+factorial(LIST.size() - 1);
+
+return MAP;
+			)").to_string("", root) + "\n\n");
+
+			print(parser.Parse(R"(		
+var y;
+if (constexpr auto x = 100){
+	y = x + 1;
+}else{
+	y = x + 2;
+}
+
+auto x = 105;
+return y + x;
+			)").to_string("", root) + "\n\n");
+
+
+
+
+
+
+
+
 			print(parser.Parse(R"(				
 				for (int i = 0; i < 10; ++i){
 					namespace NS {
@@ -18400,7 +18619,7 @@ for (DateTime i = __DATE__; i < __DATE__ + 365_d; ++i) print(i);
 				return foot(10).meter.float.int + 10;
 			)",
 			R"(
-				return string("test").add_to_delimiter("a", " ");
+				return string("test").add_to_delim("a", " ");
 			)",
 			R"(
 				return [];

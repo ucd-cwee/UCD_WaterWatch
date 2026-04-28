@@ -253,7 +253,7 @@ namespace GL {
             return false;
         };
         string to_lower() const {
-            if (has_lower()) {
+            if (has_upper()) {
                 auto out = this->to_string();
                 ToLower(const_cast<char*>(out.c_str()));
                 return out;
@@ -261,7 +261,7 @@ namespace GL {
             return *this;
         };
         string to_upper() const {
-            if (has_upper()) {
+            if (has_lower()) {
                 auto out = this->to_string();
                 ToUpper(const_cast<char*>(out.c_str()));
                 return out;

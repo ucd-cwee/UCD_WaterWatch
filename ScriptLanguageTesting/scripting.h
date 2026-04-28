@@ -1198,6 +1198,8 @@ namespace GL {
                 };
 
             public:
+                // calls the requested function
+                GL::any::fast_any call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any::fast_any> const& params = {}) const;
                 // calls the requested function or finds the requested object
                 GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const;
                 // casts to the requested c++ type.
