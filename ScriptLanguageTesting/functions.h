@@ -25,6 +25,7 @@ namespace GL {
             NoCost = 64,
             Constructor = 128,
             MemberObject = 256,
+            Volatile = 512,
             // TemplateConstructor = 512 // indicates that the name and return type for the function should be updated once template-initialization is performed. 
         };
 

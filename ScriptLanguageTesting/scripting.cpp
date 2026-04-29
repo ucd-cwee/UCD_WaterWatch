@@ -2505,6 +2505,7 @@ namespace GL {
             // datetime
             if (1) {
                 using class_t = GL::datetime;
+                GL::type_of<class_t>().try_update_name("datetime");
                 auto& Class = this->make_class(GL::type_of<class_t>());
                 Class.add_function(GL::make_callable(Class.this_type.name(), []() -> class_t { return class_t(); }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, Class.this_type));
                 Class.add_function(GL::make_callable(Class.this_type.name(), [](class_t const& rhs) -> class_t { return rhs; }, GL::function_signature::Constructor));
@@ -2532,7 +2533,7 @@ namespace GL {
                 this->add_function(GL::make_callable("/=", [](GL::any::fast_any lhs, double const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>() /= rhs; return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", GL::type_of<double const&>() } }, Class.this_type | GL::type::Reference));
 
                 Class.add_function(GL::decl_func(&class_t::Epoch));
-                Class.add_function(GL::decl_func(&class_t::Now));
+                Class.add_function(GL::make_callable("Now", []() -> datetime { return datetime::Now(); }, GL::function_signature::Static | GL::function_signature::Constant | GL::function_signature::Volatile, {}, {}));
                 Class.add_function(GL::decl_func(&class_t::getNumDaysInSameMonth));
                 Class.add_function(GL::decl_func(&class_t::GetUtcOffset));
                 Class.add_function(GL::make_callable("make_time", [](int year, int month, int day, int hour, int minute, float second) -> datetime { return datetime::make_time(year,month,day,hour,minute,second); }, { 1970,1,1,0,0,0 }));

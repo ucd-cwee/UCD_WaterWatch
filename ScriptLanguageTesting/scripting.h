@@ -1174,7 +1174,7 @@ namespace GL {
                     return try_find_callable(PossiblyScopedName, params.begin(), params.end());
                 };
 
-            protected:
+            // protected:
                 template<typename iter_type> GL::any::fast_any call_impl(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
                     auto handler = push_back_caller(this);
 

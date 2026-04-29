@@ -269,14 +269,15 @@ namespace GL {
         GL::type_of<float>().try_update_name("float");
         GL::type_of<double>().try_update_name("double");
         GL::type_of<long double>().try_update_name("ldouble");
-
+        
         GL::type_of<std::string>().try_update_name("string"); // on-purpose, this is a stress test for the system to handle classes that share the same name in alternative namespaces. 
         GL::type_of<GL::string>().try_update_name("string");        
         GL::type_of<GL::any>().try_update_name("any");
         GL::type_of<GL::any::fast_any>().try_update_name("fast_any");
         GL::type_of<GL::type>().try_update_name("type");
         GL::type_of<GL::var>().try_update_name("var");
-        GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition. 
+        GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition.         
+        
         GL::type_of<GL::undefined>().try_update_name("undefined");
 
         return true;
