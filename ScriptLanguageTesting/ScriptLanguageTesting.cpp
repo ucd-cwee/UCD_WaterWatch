@@ -16735,7 +16735,14 @@ namespace GL {
 					return retval;
 				};
 
-			public:
+			public:		
+				// mode 0 == pre-evaluate the classes & namespaces. 
+				// mode 1 == populate the return type information (as much as possible) for every node.
+				// mode 2 == select the functions that should be used, and their return types. 
+				bool pre_evaluate(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope, int mode) {
+
+					return false;
+				};
 				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope) {					
 					switch (node.identifier) {
 					case Engine::AST_Node_Type::PreprocessorMacro: {
@@ -17524,7 +17531,7 @@ namespace GL {
 									captured_thrown = state.to_return;
 								}
 								else {
-									return state.to_return = returned;
+									state.to_return = returned;
 								}
 							}
 							catch (except::eval_error& e1) {
@@ -17542,16 +17549,18 @@ namespace GL {
 							catch (...) {
 								captured_thrown = GL::any::fast_any::instance(GL::string("Unknown error"));
 							}
-							
+
 							state.throwing = throwing::Nothing;
 							if (captured_thrown) {
-								for (size_t child_index = 1; child_index < node.children.size(); ++child_index) {
+								for (size_t child_index = 1; captured_thrown && (child_index < node.children.size()); ++child_index) {
 									if (node.children[child_index].identifier == Engine::AST_Node_Type::Catch) {
 										if (node.children[child_index].children.size() == 1) { // catch(...)
 											auto new_scope_2 = new_scope.make_scope();
 											auto returned = evaluate(node.children[child_index].children[0], state, new_scope_2);
 											if (state.throwing != throwing::Nothing) return state.to_return;
-											else return state.to_return = returned;
+											state.to_return = returned;
+											captured_thrown = nullptr;
+											break;
 										}
 										else if (node.children[child_index].children.size() == 2) { // catch(e) or catch(int e)
 											auto new_scope_2 = new_scope.make_scope();
@@ -17579,28 +17588,41 @@ namespace GL {
 											}											
 											
 											auto returned = evaluate(node.children[child_index].children[1], state, new_scope_2);
-											if (state.throwing != throwing::Nothing) {
-												return state.to_return;
+											if (state.throwing != throwing::Nothing) {												
+												captured_thrown = nullptr;
+												break; 
 											}
 											else {
-												return state.to_return = returned;
+												state.to_return = returned;
+												captured_thrown = nullptr;
+												break; //  return state.to_return;
 											}
 										}
 									}
 								}	
-
-								// went un-handled, so re-throw
-								state.throwing = throwing::Error;
-								return state.to_return;
+								if (captured_thrown) {
+									// went un-handled, so re-throw
+									state.throwing = throwing::Error;
+									return state.to_return;
+								}
 							}
 							else {
 								throw except::eval_error("Exception caught but nothing was captured", node.location);
 							}
-						}
-						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
-					}
-					case Engine::AST_Node_Type::Finally: {
 
+							for (size_t child_index = 1; child_index < node.children.size(); ++child_index) {
+								if (node.children[child_index].identifier == Engine::AST_Node_Type::Finally) {
+									if (node.children[child_index].children.size() == 1) { // finally{ ... }
+										auto new_scope_2 = new_scope.make_scope();
+										auto returned = evaluate(node.children[child_index].children[0], state, new_scope_2);
+										if (state.throwing != throwing::Nothing) return state.to_return;
+										return state.to_return = returned;
+									}									
+								}
+							}
+
+							return state.to_return;
+						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
 					case Engine::AST_Node_Type::Lambda: {
@@ -17651,6 +17673,7 @@ namespace GL {
 
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
+					case Engine::AST_Node_Type::Finally: [[fallthrough]];
 					case Engine::AST_Node_Type::Catch: [[fallthrough]];
 					case Engine::AST_Node_Type::Case: [[fallthrough]];
 					case Engine::AST_Node_Type::Default: [[fallthrough]];
@@ -17671,6 +17694,14 @@ namespace GL {
 					return nullptr;					
 				};
 				GL::any::fast_any Eval(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::RootScope& parent_scope)  {
+					node.for_each_child([this, &parent_scope](AbstractSyntaxTreeNode& this_node) -> bool {
+						pre_evaluate(this_node, parent_scope, 0);
+						return false;
+					});
+					while (node.for_each_child([this, &parent_scope](AbstractSyntaxTreeNode& this_node) -> bool {
+						return pre_evaluate(this_node, parent_scope, 1) || pre_evaluate(this_node, parent_scope, 2);
+					}, true)) {};
+
 					try {
 						return evaluate(node, state, parent_scope);
 					}
@@ -17707,6 +17738,28 @@ int main() {
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
 R"(
+	try{
+		auto x = 0;
+		while (true){
+			++x;
+			if (x > 1000){
+				throw x;
+			}
+		}
+	}catch(string e){
+		e + " caught 1";
+	}catch(double e){
+		e.to_string + " caught 2";
+	}catch(value e){
+		e.to_string + " caught 3";
+	}catch(int e){
+		e.to_string + " caught 4";
+	}catch(e){
+		e.to_string + " caught 5";
+	}finally{
+		"superceded?";
+	};
+)",R"(
 	auto t0 = datetime::Now();
 	for (auto i = 0; i < 1'000'000; ++i) {
 		constexpr auto x0 = 100.0_ft; // 100 ft
@@ -17731,26 +17784,6 @@ R"(
 		auto x = x0 + d; // 275 ft			
 	}
 	return (datetime::Now() - t0)_ms
-)",R"(
-	try{
-		auto x = 0;
-		while (true){
-			++x;
-			if (x > 1000){
-				throw x;
-			}
-		}
-	}catch(string e){
-		return e + " caught 1";
-	}catch(double e){
-		return e.to_string + " caught 2";
-	}catch(value e){
-		return e.to_string + " caught 3";
-	}catch(int e){
-		return e.to_string + " caught 4";
-	}catch(e){
-		return e.to_string + " caught 5";
-	}
 )",R"(
 	string out;
 	for (x : [1,2,3,4,5,6,7,8]){
