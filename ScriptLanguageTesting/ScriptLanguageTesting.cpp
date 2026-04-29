@@ -13558,7 +13558,7 @@ namespace GL {
 					return exponent ? base * std::pow(T(10), t * static_cast<T>(exponent)) : t;
 				};
 				/// Parses a floating point value
-				static GL::value buildFloat(GL::string t_val) {
+				static GL::any::fast_any buildFloat(GL::string t_val) {
 					bool float_ = false;
 					bool long_ = false;
 
@@ -13579,17 +13579,17 @@ namespace GL {
 					}
 
 					if (float_) {
-						return GL::value((float)parse_num_<float>(t_val.substr(0, i).replace("\'", "")));
+						return GL::any::fast_any::instance(parse_num_<float>(t_val.substr(0, i).replace("\'", "")));
 					}
 					else if (long_) {
-						return GL::value((float)parse_num_<long double>(t_val.substr(0, i).replace("\'", "")));
+						return GL::any::fast_any::instance(parse_num_<long double>(t_val.substr(0, i).replace("\'", "")));
 					}
 					else {
-						return GL::value((float)parse_num_<double>(t_val.substr(0, i).replace("\'", "")));
+						return GL::any::fast_any::instance(parse_num_<double>(t_val.substr(0, i).replace("\'", "")));
 					}
 				}
 				/// Parses a integer value and returns a wrapped representation of it
-				static GL::value buildInt(const int base, GL::string t_val, const bool prefixed) {
+				static GL::any::fast_any buildInt(const int base, GL::string t_val, const bool prefixed) {
 					bool unsigned_ = false;
 					bool long_ = false;
 					bool longlong_ = false;
@@ -13623,24 +13623,24 @@ namespace GL {
 						auto u = std::stoll(t_val.replace("\'", "").to_string(), nullptr, base);
 
 						if (!unsigned_ && !long_ && u >= std::numeric_limits<int>::min() && u <= std::numeric_limits<int>::max()) {
-							return (float)static_cast<int>(u);
+							return GL::any::fast_any::instance(static_cast<int>(u));
 						}
 						else if ((unsigned_ || base != 10) && !long_ && u >= std::numeric_limits<unsigned int>::min()
 							&& u <= std::numeric_limits<unsigned int>::max()) {
-							return (float)static_cast<unsigned int>(u);
+							return GL::any::fast_any::instance(static_cast<unsigned int>(u));
 						}
 						else if (!unsigned_ && !longlong_ && u >= std::numeric_limits<long>::min() && u <= std::numeric_limits<long>::max()) {
-							return (float)static_cast<long>(u);
+							return GL::any::fast_any::instance(static_cast<long>(u));
 						}
 						else if ((unsigned_ || base != 10) && !longlong_ && u >= std::numeric_limits<unsigned long>::min()
 							&& u <= std::numeric_limits<unsigned long>::max()) {
-							return (float)static_cast<unsigned long>(u);
+							return GL::any::fast_any::instance(static_cast<unsigned long>(u));
 						}
 						else if (!unsigned_ && u >= std::numeric_limits<long long>::min() && u <= std::numeric_limits<long long>::max()) {
-							return (float)static_cast<long long>(u);
+							return GL::any::fast_any::instance(static_cast<long long>(u));
 						}
 						else {
-							return (float)static_cast<unsigned long long>(u);
+							return GL::any::fast_any::instance(static_cast<unsigned long long>(u));
 						}
 					}
 					catch (const std::out_of_range&) {
@@ -13650,15 +13650,15 @@ namespace GL {
 							auto u = std::stoull(t_val.replace("\'", "").to_string(), nullptr, base);
 
 							if (!longlong_ && u >= std::numeric_limits<unsigned long>::min() && u <= std::numeric_limits<unsigned long>::max()) {
-								return (float)static_cast<unsigned long>(u);
+								return GL::any::fast_any::instance(static_cast<unsigned long>(u));
 							}
 							else {
-								return (float)static_cast<unsigned long long>(u);
+								return GL::any::fast_any::instance(static_cast<unsigned long long>(u));
 							}
 						}
 						catch (const std::out_of_range&) {
 							// it's just simply too big
-							return (float)std::numeric_limits<long long>::max();
+							return GL::any::fast_any::instance(std::numeric_limits<long long>::max());
 						}
 					}
 				}
@@ -17851,7 +17851,10 @@ R"(
 )",R"(
 	auto vector = [1,2,3,4];
 	return (foot)vector[1];
-)",R"(
+)", R"(
+	constexpr auto vector = [1,2,3,4];
+	return (foot)vector[1];
+)", R"(
 	auto x = 10;
 	if (x >= 10){
 		return 10;
