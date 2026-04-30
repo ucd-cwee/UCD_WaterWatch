@@ -16736,13 +16736,281 @@ namespace GL {
 				};
 
 			public:		
-				// mode 0 == pre-evaluate the classes & namespaces. 
-				// mode 1 == populate the return type information (as much as possible) for every node.
-				// mode 2 == select the functions that should be used, and their return types. 
-				bool pre_evaluate(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope, int mode) {
+				GL::Proxy_Function make_callable_from_node(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
+#if 0
+					if (node.identifier == GL::Engine::AST_Node_Type::FunctionDecl
+						&& node.children.size() == 4
+						&& node.children[0].identifier == GL::Engine::AST_Node_Type::Id // Return TypeName
+						&& node.children[1].identifier == GL::Engine::AST_Node_Type::Id // FunctionName
+						&& node.children[2].identifier == GL::Engine::AST_Node_Type::Arg_List // Arguments
+					) {
+						auto& function_name = node.children[1].text;
+						auto num_arguments = node.children[2].children.size();
 
+						auto eval_node_function = [this, this_node = node.children[3]](std::vector<std::pair<GL::string, GL::any::fast_any>> const& inputs) -> GL::any::fast_any {
+							auto Node = this_node;
+							eval_state state;
+							auto this_scope = GL::scope::GetCurrentCaller()->make_scope();
+
+							GL::any::fast_any result = evaluate(Node, state, this_scope);
+							if (state.throwing != throwing::Nothing) {
+								if (state.throwing == throwing::Return) {
+									return state.to_return;
+								}
+								throw except::eval_error("Error inside of script function", Node.location);
+							}
+							return result;
+						};
+
+
+
+
+
+						if (node.children[0].text == "void") {
+
+							return GL::make_callable(function_name, []() -> void {
+
+							}, 0, {}, {}, GL::type_of<void>());
+						}
+						else {
+							auto return_type = current_scope.DetermineType(node.children[0].text);
+
+
+
+
+
+						}
+					}
+
+
+
+
+					GL::make_callable(node.children[1].text, [this, return_type, this_node = node.children[3]]()->GL::any::fast_any {
+						auto Node = this_node;
+						eval_state state;
+						GL::any::fast_any result = evaluate(Node, state, *GL::scope::GetCurrentCaller());
+						if (state.throwing != throwing::Nothing) {
+							if (state.throwing == throwing::Return) {
+								return GL::scope::GetCurrentCaller()->cast(state.to_return, return_type);
+							}
+							throw except::eval_error("Error inside of script function", Node.location);
+						}
+						return GL::scope::GetCurrentCaller()->cast(result, return_type);
+					}, 0, {}, {}, return_type);
+
+
+
+
+
+
+#endif
+				};
+				// pre-evaluate the classes & namespaces. This will happen only one time. 
+				bool preEval_declarations(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
+					if (node.identifier == GL::Engine::AST_Node_Type::Namespace) {
+						// node.tag.cast< NamespaceClassInformation>().
+						auto& this_namespace = current_scope.GetNamespace()->make_namespace(node.children[0].text);
+						for (auto& child_node : node.children) {
+							switch (child_node.identifier) {
+							case GL::Engine::AST_Node_Type::Assign_Retroactively: {
+
+								// constexpr auto x = 10;
+								if (child_node.constant) { // Constexpr value.
+									current_scope.emplace_object_here(child_node.children[1].children[0].text, child_node.constant | GL::type::Const | GL::type::Reference);
+									break;
+								}
+
+								// auto x = 10;
+								if (child_node.children.size() == 2
+									&& child_node.children[0].identifier == Engine::AST_Node_Type::Constant
+									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& child_node.children[1].children.size() == 1
+									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									// Constant value provided. Need to copy it. 
+									auto& to_copy = child_node.children[0].constant;
+									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+										current_scope.emplace_object_here(child_node.children[1].children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference }));
+									}
+									else {
+										throw except::eval_error("Unable to copy variable to new object", child_node.location);
+									}
+									break;
+								}
+
+								// auto x = int();
+								if (child_node.children.size() == 2
+									&& child_node.children[0].identifier != Engine::AST_Node_Type::Constant
+									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& child_node.children[1].children.size() == 1
+									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									eval_state state;
+									auto to_add = evaluate(child_node.children[0], state, current_scope);
+									if (state.throwing != throwing::Nothing) {
+										break;
+									}
+									current_scope.emplace_object_here(child_node.children[1].children[0].text, to_add);
+									break;
+								}
+
+								// int x = 10.0f;
+								if (child_node.children.size() == 3
+									&& child_node.children[0].identifier == Engine::AST_Node_Type::Constant
+									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& child_node.children[1].children.size() == 1
+									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+									) {
+									// Constant value provided. Need to copy it. 
+									auto& to_copy = child_node.children[0].constant;
+									eval_state state;
+									auto to_assign = evaluate(child_node.children[2], state, current_scope);
+									if (state.throwing != throwing::Nothing) {
+										break;
+									}
+									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+										auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference });
+										BC->this_m.scope->call("=", { copied, to_assign });
+										current_scope.emplace_object_here(child_node.children[1].children[0].text, copied);
+									}
+									else {
+										throw except::eval_error("Unable to copy variable to new object", child_node.location);
+									}
+									break;
+								}
+
+								// SOMETHING x = 10.0f;
+								if (child_node.children.size() == 3
+									&& child_node.children[0].identifier != Engine::AST_Node_Type::Constant
+									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& child_node.children[1].children.size() == 1
+									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									eval_state state;
+									auto copied = evaluate(child_node.children[0], state, current_scope);
+									if (state.throwing != throwing::Nothing) {
+										break;
+									}
+									auto to_assign = evaluate(child_node.children[2], state, current_scope);
+									if (state.throwing != throwing::Nothing) {
+										break;
+									}
+									if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
+										BC->this_m.scope->call("=", { copied, to_assign });
+										current_scope.emplace_object_here(child_node.children[1].children[0].text, copied);
+									}
+									else {
+										current_scope.call("=", { copied, to_assign });
+										current_scope.emplace_object_here(child_node.children[1].children[0].text, copied);
+									}
+								}
+
+								break;
+							}
+							default: break;
+							}
+						}
+						node.for_each_child([this, &this_namespace](AbstractSyntaxTreeNode& this_node) -> bool {
+							if (preEval_declarations(this_node, this_namespace)) {
+								// returned true, meaning continue deeper into the child during THIS search
+								return true;
+							}
+							else {
+								// returned false, meaning DO NOT continue deeper into the child during THIS search
+								return false;
+							}
+						}, [](AbstractSyntaxTreeNode&) {}, [](AbstractSyntaxTreeNode&) {});
+						return false;
+					}
+					else if (node.identifier == GL::Engine::AST_Node_Type::Class) {						
+						auto& this_class = current_scope.GetNamespace()->make_class(node.children[0].text);
+						for (int i = 0; i < node.tag.cast< NamespaceClassInformation>().template_types.size(); ++i) {
+							this_class.template_types.push_back({ node.tag.cast< NamespaceClassInformation>().template_types[i], GL::is_template::type(i,node.tag.cast< NamespaceClassInformation>().template_types[i]) });
+						}
+						node.for_each_child([this, &this_class](AbstractSyntaxTreeNode& this_node) -> bool {
+							if (preEval_declarations(this_node, this_class)) {
+								// returned true, meaning continue deeper into the child during THIS search
+								return true;
+							}
+							else {
+								// returned false, meaning DO NOT continue deeper into the child during THIS search
+								return false;
+							}
+						}, [](AbstractSyntaxTreeNode&) {}, [](AbstractSyntaxTreeNode&) {});
+						return false;
+					}
+					else if (node.identifier == GL::Engine::AST_Node_Type::FunctionDecl) {
+						if (node.children.size() == 4
+							&& node.children[0].identifier == GL::Engine::AST_Node_Type::Id // Return TypeName
+							&& node.children[1].identifier == GL::Engine::AST_Node_Type::Id // FunctionName
+							&& node.children[2].identifier == GL::Engine::AST_Node_Type::Arg_List // Arguments
+						) {
+							if (node.children[0].text == "void") {
+								current_scope.GetNamespace()->add_function(GL::make_callable(node.children[1].text, []() -> void {
+									
+								}, 0, {}, {}, GL::type_of<void>()));
+							}
+							else {
+								auto return_type = current_scope.DetermineType(node.children[0].text);
+								switch (node.children[2].children.size()) {
+								case 0: {
+									current_scope.GetNamespace()->add_function(GL::make_callable(node.children[1].text, [this, return_type, this_node = node.children[3]]() -> GL::any::fast_any {
+										auto Node = this_node;
+										eval_state state; 
+										GL::any::fast_any result = evaluate(Node, state, *GL::scope::GetCurrentCaller());
+										if (state.throwing != throwing::Nothing) {
+											if (state.throwing == throwing::Return) {
+												return GL::scope::GetCurrentCaller()->cast(state.to_return, return_type);
+											}											
+											throw except::eval_error("Error inside of script function", Node.location);											
+										}
+										return GL::scope::GetCurrentCaller()->cast(result, return_type);
+									}, 0, {}, {}, return_type));
+									break;
+								}
+								case 1: {
+									current_scope.GetNamespace()->add_function(GL::make_callable(node.children[1].text, [return_type, node](GL::any::fast_any input_1) -> GL::any::fast_any {
+										GL::any::fast_any result;
+
+										return GL::scope::GetCurrentCaller()->cast(result, return_type);
+									}, 0, {}, {}, return_type));
+									break;
+								}
+								default: break;
+								}
+
+
+
+
+
+
+							}
+						}
+						return false;
+					}
+					else {
+						node.for_each_child([this,&current_scope](AbstractSyntaxTreeNode& this_node) -> bool {
+							if (preEval_declarations(this_node, current_scope)) {
+								// returned true, meaning continue deeper into the child during THIS search
+								return true;
+							}
+							else {
+								// returned false, meaning DO NOT continue deeper into the child during THIS search
+								return false;
+							}
+						}, [](AbstractSyntaxTreeNode&) {}, [](AbstractSyntaxTreeNode&) {});
+						return true;
+					}
+				};
+				// populate the return type information (as much as possible) for every node. This will happen on repeat until all nodes return false.
+				bool preEval_returnTypes(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
 					return false;
 				};
+				// select the functions that should be used, and their return types (as much as possible) for every node. This will happen on repeat until all nodes return false.
+				bool preEval_functionSelections(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
+					return false;
+				};
+
 				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope) {					
 					switch (node.identifier) {
 					case Engine::AST_Node_Type::PreprocessorMacro: {
@@ -17640,18 +17908,6 @@ namespace GL {
 					case Engine::AST_Node_Type::Do: {
 
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
-					}							
-					case Engine::AST_Node_Type::Class: {
-
-						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
-					}
-					case Engine::AST_Node_Type::Namespace: {
-
-						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
-					}
-					case Engine::AST_Node_Type::FunctionDecl: {
-
-						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
 					case Engine::AST_Node_Type::Parallel: {
 
@@ -17673,6 +17929,9 @@ namespace GL {
 
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
+					case Engine::AST_Node_Type::Namespace: break;
+					case Engine::AST_Node_Type::Class: break;
+					case Engine::AST_Node_Type::FunctionDecl: break;
 					case Engine::AST_Node_Type::Finally: [[fallthrough]];
 					case Engine::AST_Node_Type::Catch: [[fallthrough]];
 					case Engine::AST_Node_Type::Case: [[fallthrough]];
@@ -17693,13 +17952,11 @@ namespace GL {
 					}
 					return nullptr;					
 				};
-				GL::any::fast_any Eval(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::RootScope& parent_scope)  {
-					node.for_each_child([this, &parent_scope](AbstractSyntaxTreeNode& this_node) -> bool {
-						pre_evaluate(this_node, parent_scope, 0);
-						return false;
-					});
+				GL::any::fast_any Eval(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::RootScope& parent_scope)  {					
+					preEval_declarations(node, parent_scope);
+
 					while (node.for_each_child([this, &parent_scope](AbstractSyntaxTreeNode& this_node) -> bool {
-						return pre_evaluate(this_node, parent_scope, 1) || pre_evaluate(this_node, parent_scope, 2);
+						return preEval_returnTypes(this_node, parent_scope) || preEval_functionSelections(this_node, parent_scope);
 					}, true)) {};
 
 					try {
@@ -17738,6 +17995,11 @@ int main() {
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
 R"(
+	namespace TEST {
+		foot Foo(){ return 10; }
+	}
+	return TEST::Foo();
+)",R"(
 	try{
 		auto x = 0;
 		while (true){
